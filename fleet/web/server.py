@@ -14,10 +14,11 @@ import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from fleet import transport
+from fleet import projects, transport
+from fleet.projects import Registry
 from fleet.transport import FleetError, Host
 from fleet.web.documents import fetch_document
 from fleet.web.fixture import FixtureLibrary, FixtureState
@@ -43,11 +44,20 @@ class FleetState:
 
     Hosts running a fleetd older than session support never send session lines, so
     their `sessions` list simply stays empty.
+
+    Each job and session keeps its host-local `project` label and gains `project_id`,
+    resolved from the registry's explicit (host, label) links; unlinked labels get
+    null. The registry is re-read for every document so CLI edits show without a
+    restart. If a re-read fails, the last good registry is used and `projects_error`
+    says why.
     """
 
-    def __init__(self, hosts: list[Host], project_labels: dict[str, str] | None = None) -> None:
+    def __init__(self, hosts: list[Host], project_labels: dict[str, str] | None = None,
+                 load_registry: Callable[[], Registry] | None = None) -> None:
         self.hosts = hosts
         self.project_labels = project_labels or {}
+        self.load_registry = load_registry or Registry
+        self.registry = self.load_registry()
         self.changed = threading.Condition()
         self.version = 0
         self.by_host: dict[str, dict[str, Any]] = {
@@ -60,13 +70,31 @@ class FleetState:
             self.version += 1
             self.changed.notify_all()
 
+    def refresh_registry(self) -> str | None:
+        try:
+            self.registry = self.load_registry()
+            return None
+        except (FleetError, ValueError, KeyError, TypeError) as error:
+            return f"project registry not reloaded: {error}"
+
     def document(self) -> dict[str, Any]:
+        projects_error = self.refresh_registry()
+        registry = self.registry
+
+        def resolved(host_name: str, item: dict[str, Any]) -> dict[str, Any]:
+            project = registry.project_for(host_name, item["project"]) if item.get("project") else None
+            return {**item, "project_id": project.id if project else None}
+
         with self.changed:
-            return {"time": time.time(), "project_labels": self.project_labels, "hosts": [
+            return {"time": time.time(), "project_labels": self.project_labels,
+                    "projects": [{"id": project_id, **entry} for project_id, entry in registry.to_config().items()],
+                    "projects_error": projects_error, "hosts": [
                 {**{key: value for key, value in self.by_host[host.name].items() if key not in ("jobs", "sessions")},
-                 "jobs": sorted(self.by_host[host.name]["jobs"].values(), key=lambda job: job["created_at"]),
-                 "sessions": sorted(self.by_host[host.name]["sessions"].values(),
-                                    key=lambda session: session.get("started_at") or 0)}
+                 "jobs": [resolved(host.name, job) for job in
+                          sorted(self.by_host[host.name]["jobs"].values(), key=lambda job: job["created_at"])],
+                 "sessions": [resolved(host.name, session) for session in
+                              sorted(self.by_host[host.name]["sessions"].values(),
+                                     key=lambda session: session.get("started_at") or 0)]}
                 for host in self.hosts]}
 
     def wait_for_change(self, seen_version: int, timeout: float) -> int:
@@ -252,7 +280,7 @@ def make_handler(state: FleetState | FixtureState,
 
 def serve(hosts: list[Host], *, port: int, bind: str, open_browser: bool = False,
           libraries: dict[str, str] | None = None, project_labels: dict[str, str] | None = None) -> None:
-    state = FleetState(hosts, project_labels)
+    state = FleetState(hosts, project_labels, projects.load_registry)
     for host in hosts:
         threading.Thread(target=follow_host, args=(state, host), daemon=True).start()
     run_server(make_handler(state, ProjectLibrary(libraries or {})), port=port, bind=bind, open_browser=open_browser)
