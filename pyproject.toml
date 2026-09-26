@@ -8,7 +8,12 @@ dependencies = ["rich>=13", "markdown-it-py>=3", "mdit-py-plugins>=0.4"]
 
 [dependency-groups]
 # Browser tests need Chromium for the locked playwright: uv run playwright install chromium
-dev = ["pytest>=8", "pytest-playwright>=0.5", "playwright>=1.44"]
+dev = [
+    "pytest>=8",
+    "pytest-playwright>=0.5",
+    "playwright>=1.44",
+    "pillow>=12.3.0",
+]
 
 [project.scripts]
 fleet = "fleet.cli:main"

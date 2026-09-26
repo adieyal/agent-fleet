@@ -18,11 +18,14 @@ from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from fleet import projects, transport
+from fleet.attention import AttentionBoard, ItemResolved
+from fleet.workspace import FOCUSES, WorkspaceStore
 from fleet.projects import Registry
 from fleet.transport import FleetError, Host
 from fleet.web.documents import fetch_document
 from fleet.web.fixture import FixtureLibrary, FixtureState
 from fleet.web.library import ProjectLibrary
+from fleet.web.live import LiveWorkspace
 
 WEB_ROOT = Path(__file__).parent.resolve()
 INDEX_PATH = WEB_ROOT / "index.html"
@@ -32,6 +35,7 @@ STATIC_TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; char
                 ".glb": "model/gltf-binary", ".gltf": "model/gltf+json",
                 ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".json": "application/json",
                 ".md": "text/markdown; charset=utf-8", ".txt": "text/plain; charset=utf-8"}
+ATTENTION_ACTIONS = ("acknowledge", "snooze", "reopen")
 EVENTS_PER_JOB = "15"
 STREAM_SILENCE_LIMIT = 20  # seconds without a heartbeat before the stream is considered dead
 RECONNECT_DELAY = 3
@@ -39,7 +43,7 @@ SSE_PING_INTERVAL = 10
 SSE_COALESCE = 0.1  # batch bursts of changes into one push
 
 
-class FleetState:
+class FleetState(LiveWorkspace):
     """Live jobs and interactive sessions per host plus a version counter that browsers wait on.
 
     Hosts running a fleetd older than session support never send session lines, so
@@ -50,14 +54,22 @@ class FleetState:
     null. The registry is re-read for every document so CLI edits show without a
     restart. If a re-read fails, the last good registry is used and `projects_error`
     says why.
+
+    Each also gains `focus`, from its project when linked and its label otherwise; the
+    document carries the stored choices under `focus` and the attention items derived
+    from the hosts under `attention` (see fleet.workspace, fleet.attention). The deck
+    writes only the user's choices: focus, and acknowledging or snoozing an item.
     """
 
     def __init__(self, hosts: list[Host], project_labels: dict[str, str] | None = None,
-                 load_registry: Callable[[], Registry] | None = None) -> None:
+                 load_registry: Callable[[], Registry] | None = None,
+                 workspace: WorkspaceStore | None = None) -> None:
         self.hosts = hosts
         self.project_labels = project_labels or {}
         self.load_registry = load_registry or Registry
         self.registry = self.load_registry()
+        self.workspace = workspace or WorkspaceStore(None)
+        self.board = AttentionBoard(self.workspace)
         self.changed = threading.Condition()
         self.version = 0
         self.by_host: dict[str, dict[str, Any]] = {
@@ -77,30 +89,24 @@ class FleetState:
         except (FleetError, ValueError, KeyError, TypeError) as error:
             return f"project registry not reloaded: {error}"
 
+    def known_projects(self) -> dict[str, Any]:
+        self.refresh_registry()   # a project registered a moment ago can be focused
+        return self.registry.projects
+
     def document(self) -> dict[str, Any]:
         projects_error = self.refresh_registry()
         registry = self.registry
-
-        def resolved(host_name: str, item: dict[str, Any]) -> dict[str, Any]:
-            project = registry.project_for(host_name, item["project"]) if item.get("project") else None
-            return {**item, "project_id": project.id if project else None}
-
         with self.changed:
-            return {"time": time.time(), "project_labels": self.project_labels,
+            return self.with_attention({"time": time.time(), "project_labels": self.project_labels,
                     "projects": [{"id": project_id, **entry} for project_id, entry in registry.to_config().items()],
                     "projects_error": projects_error, "hosts": [
                 {**{key: value for key, value in self.by_host[host.name].items() if key not in ("jobs", "sessions")},
-                 "jobs": [resolved(host.name, job) for job in
+                 "jobs": [self.workspace.annotate(registry.resolve(host.name, job)) for job in
                           sorted(self.by_host[host.name]["jobs"].values(), key=lambda job: job["created_at"])],
-                 "sessions": [resolved(host.name, session) for session in
+                 "sessions": [self.workspace.annotate(registry.resolve(host.name, session)) for session in
                               sorted(self.by_host[host.name]["sessions"].values(),
                                      key=lambda session: session.get("started_at") or 0)]}
-                for host in self.hosts]}
-
-    def wait_for_change(self, seen_version: int, timeout: float) -> int:
-        with self.changed:
-            self.changed.wait_for(lambda: self.version != seen_version, timeout=timeout)
-            return self.version
+                for host in self.hosts]})
 
     def host_names(self) -> list[str]:
         return [host.name for host in self.hosts]
@@ -208,6 +214,69 @@ def make_handler(state: FleetState | FixtureState,
             else:
                 self.respond(404, "text/plain", b"not found")
 
+        def do_POST(self) -> None:  # noqa: N802 — http.server naming
+            path = self.path.split("?", 1)[0]
+            action = path.removeprefix("/api/attention/") if path.startswith("/api/attention/") else None
+            if path != "/api/focus" and action not in ATTENTION_ACTIONS:
+                self.respond(404, "text/plain", b"not found")
+            elif not self.same_origin():
+                self.respond(403, "application/json", b'{"error": "cross-origin writes are refused"}')
+            elif self.headers.get("Content-Type", "").split(";")[0].strip() != "application/json":
+                self.respond(415, "application/json", b'{"error": "send JSON"}')
+            else:
+                try:
+                    body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)))
+                except ValueError:
+                    body = None
+                body = body if isinstance(body, dict) else {}
+                if action:
+                    self.attention(action, body)
+                else:
+                    self.focus(body)
+
+        def same_origin(self) -> bool:
+            """Browsers send Origin on every POST; a page from another site must not change anything."""
+            origin = self.headers.get("Origin")
+            return origin is None or urlsplit(origin).netloc == self.headers.get("Host")
+
+        def error(self, status: int, message: str) -> None:
+            self.respond(status, "application/json", json.dumps({"error": message}).encode())
+
+        def focus(self, body: dict[str, Any]) -> None:
+            """POST /api/focus {"focus": "priority" | "background", "projects": [id, …], "labels": [label, …]}
+
+            Projects are focused by ID; labels are for jobs and sessions with no linked project.
+            """
+            project_ids, labels = body.get("projects", []), body.get("labels", [])
+            if (body.get("focus") not in FOCUSES or not isinstance(project_ids, list) or not isinstance(labels, list)
+                    or not all(isinstance(name, str) for name in project_ids + labels) or not project_ids + labels):
+                self.error(400, "focus (priority or background) and some projects or labels are required")
+                return
+            try:
+                state.set_focus(body["focus"], project_ids, labels)
+            except FleetError as error:
+                self.error(400, str(error))
+                return
+            self.respond(200, "application/json", json.dumps(state.workspace.focus_snapshot()).encode())
+
+        def attention(self, action: str, body: dict[str, Any]) -> None:
+            """POST /api/attention/acknowledge|snooze|reopen {"id": item id, "seconds": snooze length}"""
+            if not isinstance(body.get("id"), str):
+                self.error(400, "the item's id is required")
+                return
+            try:
+                state.act_on_attention(action, body["id"], body.get("seconds"))
+            except LookupError as error:
+                self.error(404, str(error.args[0]))
+                return
+            except ItemResolved as error:
+                self.error(409, str(error))
+                return
+            except FleetError as error:
+                self.error(400, str(error))
+                return
+            self.respond(200, "application/json", json.dumps({"id": body["id"], "action": action}).encode())
+
         def static_file(self, path: str) -> None:
             """Vendored libraries and 3D assets; anything resolving outside those folders is refused."""
             target = (WEB_ROOT / unquote(path).lstrip("/")).resolve()
@@ -278,9 +347,14 @@ def make_handler(state: FleetState | FixtureState,
     return Handler
 
 
+def workspace_path() -> Path:
+    """Live workspace state sits beside the Fleet config, outside Git."""
+    return transport.CONFIG_PATH.parent / "workspace.json"
+
+
 def serve(hosts: list[Host], *, port: int, bind: str, open_browser: bool = False,
           libraries: dict[str, str] | None = None, project_labels: dict[str, str] | None = None) -> None:
-    state = FleetState(hosts, project_labels, projects.load_registry)
+    state = FleetState(hosts, project_labels, projects.load_registry, WorkspaceStore(workspace_path()))
     for host in hosts:
         threading.Thread(target=follow_host, args=(state, host), daemon=True).start()
     run_server(make_handler(state, ProjectLibrary(libraries or {})), port=port, bind=bind, open_browser=open_browser)

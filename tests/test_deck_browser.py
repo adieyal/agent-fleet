@@ -1,10 +1,14 @@
 """Browser smoke tests: the deck against the recorded fleet, at desktop and phone widths."""
 
+import io
+import json
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.request import urlopen
 
 import pytest
+from PIL import Image, ImageStat
 from playwright.sync_api import Browser, Page, expect
 
 VIEWPORTS = {"desktop": {"width": 1440, "height": 900}, "narrow": {"width": 390, "height": 844}}
@@ -41,9 +45,9 @@ def deck(request: pytest.FixtureRequest, browser: Browser, base_url: str,
 
 def test_every_project_gets_a_room(deck: Deck, fixture_data: dict[str, Any]) -> None:
     projects = {item["project"] for host in fixture_data["hosts"] for item in host["jobs"] + host["sessions"]}
-    rooms = deck.page.evaluate("fleetDeck.rooms()")
-    assert {room["name"] for room in rooms} == projects
-    assert {"name": "invoice-parser", "label": "Invoice parser"} in rooms
+    rooms = rooms_by_name(deck.page)
+    assert set(rooms) == projects
+    assert rooms["invoice-parser"]["label"] == "Invoice parser"
     assert deck.errors == []
 
 
@@ -61,7 +65,7 @@ def test_every_job_and_session_is_an_agent(deck: Deck, fixture_data: dict[str, A
 
 def test_document_reader_opens_from_an_agent(deck: Deck) -> None:
     page = deck.page
-    page.locator("#tags .tag", has_text="step 1 failed").dispatch_event("click")
+    page.locator("#tags .tag", has_text="e1b5c8").dispatch_event("click")
     expect(page.locator("#panel")).to_have_class("open")
     expect(page.locator("#panelHead h2")).to_have_text("Upgrade Django to 5.2")
     page.locator('#panelBody [data-doc="report-0"]').click()
@@ -103,4 +107,150 @@ def test_library_lists_and_opens_documents(deck: Deck) -> None:
     expect(page.locator("#reader")).to_be_hidden()
     page.locator(".lib-head [data-lib-close]").click()
     expect(page.locator("#libraryPane")).to_be_hidden()
+    assert deck.errors == []
+
+
+def rooms_by_name(page: Page) -> dict[str, dict[str, Any]]:
+    return {room["name"]: room for room in page.evaluate("fleetDeck.rooms()")}
+
+
+def tag_is_calm(page: Page, job_id: str) -> bool:
+    """A calm tag has no speech bubble showing."""
+    tag = page.locator("#tags .tag", has_text=job_id)
+    return tag.evaluate("tag => tag.classList.contains('calm') && getComputedStyle(tag.firstChild).display === 'none'")
+
+
+def focus_on_server(base_url: str, room: str) -> set[str]:
+    """The focus the server resolves for every job and session in a room."""
+    with urlopen(base_url + "/api/state", timeout=5) as response:
+        hosts = json.load(response)["hosts"]
+    return {item["focus"] for host in hosts for item in host["jobs"] + host["sessions"] if item["project"] == room}
+
+
+def room_colour(page: Page, room: str) -> tuple[float, float]:
+    """Mean brightness and saturation of the rendered floor around a room's centre, with overlays hidden."""
+    centre = rooms_by_name(page)[room]["screen"]
+    viewport = page.viewport_size
+    box = {"x": max(0, centre["x"] - 40), "y": max(0, centre["y"] - 30), "width": 80, "height": 60}
+    assert box["x"] + 80 <= viewport["width"] and box["y"] + 60 <= viewport["height"]
+    style = page.add_style_tag(content="#tags,#floorUi,header,.card,#zoom{visibility:hidden!important}")
+    page.wait_for_timeout(100)
+    image = Image.open(io.BytesIO(page.screenshot(clip=box))).convert("HSV")
+    style.evaluate("tag => tag.remove()")
+    _, saturation, value = ImageStat.Stat(image).mean
+    return value, saturation
+
+
+def wait_for_dim(page: Page, room: str, dim: int) -> None:
+    page.wait_for_function(f"fleetDeck.rooms().find(room => room.name === '{room}').dim === {dim}")
+
+
+def test_background_rooms_are_dim_and_quiet(deck: Deck) -> None:
+    page = deck.page
+    wait_for_dim(page, "invoice-parser", 1)
+    rooms = rooms_by_name(page)
+    assert {name: (room["focus"], room["dim"]) for name, room in rooms.items()} == {
+        "restoke": ("priority", 0), "invoice-parser": ("background", 1), "agent-fleet": ("priority", 0)}
+    expect(page.locator('.focus-switch[data-room="invoice-parser"]')).to_have_attribute("data-focus", "background")
+    expect(page.locator('.focus-switch[data-room="agent-fleet"]')).to_have_attribute("data-focus", "priority")
+    assert tag_is_calm(page, "0a9e3b") and tag_is_calm(page, "3c71d5")
+    assert not tag_is_calm(page, "c90e11") and not tag_is_calm(page, "f20a6d")
+    assert deck.errors == []
+
+
+def test_the_switch_dims_the_room_and_nothing_moves(deck: Deck, base_url: str) -> None:
+    page = deck.page
+    before = {name: (room["x"], room["y"], room["screen"]) for name, room in rooms_by_name(page).items()}
+    bright, vivid = room_colour(page, "restoke")
+    switch = page.locator('.focus-switch[data-room="restoke"]')
+    switch.locator('[data-set="background"]').dispatch_event("click")
+    expect(switch).to_have_attribute("data-focus", "background")
+    wait_for_dim(page, "restoke", 1)
+    assert focus_on_server(base_url, "restoke") == {"background"}
+    dim, grey = room_colour(page, "restoke")
+    assert dim < bright * 0.75 and grey < vivid * 0.6
+    assert tag_is_calm(page, "c90e11") and tag_is_calm(page, "e1b5c8")
+    assert {name: (room["x"], room["y"], room["screen"]) for name, room in rooms_by_name(page).items()} == before
+
+    switch.locator('[data-set="priority"]').dispatch_event("click")
+    wait_for_dim(page, "restoke", 0)
+    assert focus_on_server(base_url, "restoke") == {"priority"}
+    assert not tag_is_calm(page, "c90e11")
+    assert {name: (room["x"], room["y"], room["screen"]) for name, room in rooms_by_name(page).items()} == before
+    assert deck.errors == []
+
+
+def test_focus_of_an_unregistered_room_survives_reload(deck: Deck, base_url: str, fixture_data: dict[str, Any]) -> None:
+    page = deck.page
+    page.locator('.focus-switch[data-room="agent-fleet"] [data-set="background"]').dispatch_event("click")
+    wait_for_dim(page, "agent-fleet", 1)
+    assert focus_on_server(base_url, "agent-fleet") == {"background"}
+    page.reload()
+    agent_count = sum(len(host["jobs"]) + len(host["sessions"]) for host in fixture_data["hosts"])
+    page.wait_for_function(f"window.fleetDeck && fleetDeck.agents().length === {agent_count}")
+    wait_for_dim(page, "agent-fleet", 1)
+    expect(page.locator('.focus-switch[data-room="agent-fleet"]')).to_have_attribute("data-focus", "background")
+    assert tag_is_calm(page, "f20a6d")
+    page.locator('.focus-switch[data-room="agent-fleet"] [data-set="priority"]').dispatch_event("click")
+    wait_for_dim(page, "agent-fleet", 0)
+    assert focus_on_server(base_url, "agent-fleet") == {"priority"}
+    assert deck.errors == []
+
+
+def attention_on_server(base_url: str) -> dict[str, str]:
+    with urlopen(base_url + "/api/state", timeout=5) as response:
+        return {item["owner"]["key"]: item["state"] for item in json.load(response)["attention"]}
+
+
+def act_on_every_item(page: Page, action: str, state: str) -> None:
+    """Press an action on each listed item in turn, waiting for the pushed state each time."""
+    for row in page.locator("#attnPanel .attn-item").all():
+        row.locator(f'[data-act="{action}"]').click()
+        expect(row).to_have_attribute("data-state", state)
+
+
+def test_a_room_with_open_items_gets_one_lantern_with_a_count(deck: Deck, base_url: str) -> None:
+    page = deck.page
+    expect(page.locator(".lantern")).to_have_count(2)
+    lantern = page.locator('.lantern[data-room="restoke"]')
+    expect(lantern).to_have_count(1)
+    expect(lantern).to_have_attribute("data-count", "2")   # the failed job and the session asking a question
+    expect(lantern.locator("b")).to_have_text("2")
+    expect(lantern).to_have_attribute("data-state", "open")
+    expect(page.locator('.lantern[data-room="invoice-parser"] b')).to_have_text("")   # one item: no count
+    expect(page.locator('.lantern[data-room="agent-fleet"]')).to_have_count(0)      # a running job and an idle session: nothing needs you
+    assert rooms_by_name(page)["agent-fleet"]["attention"] is None
+
+    before = attention_on_server(base_url)
+    lantern.dispatch_event("click")
+    expect(page.locator("#attnPanel")).to_be_visible()
+    expect(page.locator("#attnPanel .attn-item")).to_have_count(2)
+    expect(page.locator('#attnPanel .attn-item[data-kind="decision"] b')).to_contain_text("Keep the double fetch")
+    page.locator('#attnPanel [data-owner="home:e1b5c8"]').click()
+    expect(page.locator("#panelHead h2")).to_have_text("Upgrade Django to 5.2")
+    assert attention_on_server(base_url) == before   # reading and opening change nothing
+    page.locator("#panel #close").click()
+    page.keyboard.press("Escape")
+    expect(page.locator("#attnPanel")).to_be_hidden()
+    assert deck.errors == []
+
+
+def test_acknowledging_dims_the_lantern_and_snoozing_hides_it(deck: Deck, base_url: str) -> None:
+    page = deck.page
+    lantern = page.locator('.lantern[data-room="restoke"]')
+    lantern.dispatch_event("click")
+    act_on_every_item(page, "acknowledge", "acknowledged")
+    expect(lantern).to_have_class("lantern ack")
+    expect(lantern).to_have_attribute("data-state", "acknowledged")
+    expect(lantern).to_have_attribute("data-count", "2")
+    assert set(attention_on_server(base_url).values()) == {"acknowledged", "open"}   # invoice-parser untouched
+
+    act_on_every_item(page, "snooze", "snoozed")
+    expect(lantern).to_have_count(0)
+    assert rooms_by_name(page)["restoke"]["attention"] is None
+    act_on_every_item(page, "reopen", "open")
+    expect(lantern).to_have_attribute("data-state", "open")
+    expect(lantern).not_to_have_class("lantern ack")
+    page.keyboard.press("Escape")
+    assert set(attention_on_server(base_url).values()) == {"open"}
     assert deck.errors == []

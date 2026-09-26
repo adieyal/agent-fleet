@@ -1,6 +1,6 @@
 // Deck entry point: the frame loop and boot.
 
-import { BK, DEBUG, DEMO, POLL_MS, QS, REDUCED, WARP, canvas } from './env.js';
+import { BK, DEBUG, DEMO, POLL_MS, QS, RD, REDUCED, RW, WARP, canvas } from './env.js';
 import { esc } from './util.js';
 import { hostLook } from './looks.js';
 import { isActive } from './activity.js';
@@ -11,6 +11,8 @@ import { _la, _lb, dashedLine, docSlots, liftHovered, lineGeo, nSeg, setNSeg, st
 import { positionTags } from './agents.js';
 import { stepMotion, stepParticles, updateEnt, updateRoom } from './motion.js';
 import { applyState, stream } from './state.js';
+import { positionSwitches, stepFocus } from './focus.js';
+import { positionLanterns, stepLanterns } from './attention.js';
 import { resize } from './camera.js';
 import { miniBot, panelScrollUntil, renderLive } from './panel.js';
 import './library.js';
@@ -35,11 +37,12 @@ function frame(ts) {
   applyCamera();
   setNSeg(0);
   for (const r of rooms) { r.busyTerm = 0; r.testTerm = 0; r.busyWeb = false; r.busyPlan = false; r.busyCab = 0; r.busyRack = false; r.busyKitchen = false; r.busyPress = null; }
+  stepFocus(rooms, dt);
   for (const e of ents.values()) {
     const r = roomByName.get(e.room);
     if (!r) continue;
     updateEnt(e, r, dt, t, now);
-    if (e.walking || !e.target || !isActive(e.job.status)) continue;
+    if (e.walking || !e.target || !isActive(e.job.status) || r.focus === 'background') continue;   // a background room's props rest
     const p = e.target.prop;
     if (p === 'terminal') { r.busyTerm |= 1 << e.target.propIdx; if (e.act === 'test') r.testTerm |= 1 << e.target.propIdx; }
     else if (p === 'cabinet') r.busyCab |= 1 << e.target.propIdx;
@@ -56,6 +59,7 @@ function frame(ts) {
     }
   }
   for (const r of rooms) updateRoom(r, t, dt, now);
+  stepLanterns(rooms, now);
   stepDocFx(t);
   liftHovered();
   lineGeo.setDrawRange(0, nSeg * 2);
@@ -63,10 +67,11 @@ function frame(ts) {
   lineGeo.attributes.color.needsUpdate = true;
   if (!REDUCED) for (const tex of edgeStrips) tex.offset.x = -t * 0.35;
   M.beacon.color.set(REDUCED || Math.sin(t * 2.4) > 0.6 ? 0xf87171 : 0x5a1d1d);
-  M.failGlow.opacity = REDUCED ? 0.6 : 0.45 + Math.sin(t * 8) * 0.3;
   stepParticles(dt);
   renderer.render(scene, camera);
   positionTags();
+  positionSwitches();
+  positionLanterns();
   if (fpsEl) {
     fpsN++;
     if (t - fpsT > 1) { fpsEl.textContent = `${Math.round(fpsN / (t - fpsT))} fps · ${renderer.info.render.calls} calls`; fpsN = 0; fpsT = t; }
@@ -113,7 +118,9 @@ loadAssets().then(() => {
   }
   // read-only probe for browser tests: rooms live only in WebGL, so they have no DOM to query
   window.fleetDeck = Object.freeze({
-    rooms: () => rooms.map(r => ({ name: r.name, label: r.label })),
+    rooms: () => rooms.map(r => ({ name: r.name, label: r.label, x: r.ox, y: r.oy,
+      screen: toScreen(_w.set(r.ox + RW / 2, 0, r.oy + RD / 2), { x: 0, y: 0 }), focus: r.focus, dim: r.dimK ?? null,
+      attention: r.attention?.level ? { kind: r.attention.kind, state: r.attention.level, count: r.attention.shown.length } : null })),
     agents: () => [...ents.values()].map(e => ({ key: e.key, kind: e.kind, room: e.room, status: e.job.status })),
   });
   if (DEMO) {

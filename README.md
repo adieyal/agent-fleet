@@ -87,6 +87,26 @@ suggests links in `fleet project ls`; nothing links until you run `fleet project
 The deck's `/api/state` reports each job's and session's `project_id`, which is null
 when its label is unlinked.
 
+Focus is where you are putting resources: priority or background. Each room in the
+deck has a priority/background switch at its front corner; one click sets it. A
+background room is dimmed and desaturated, its androids lose their speech bubbles and
+stay nearly still however busy they are, and its props rest. Rooms never move when
+focus changes. Work is focused through its registered project when its label is
+linked, otherwise through the label itself, so unregistered rooms can be focused too.
+Anything you have never set is in priority. Choices are live workspace state, kept in
+`workspace.json` beside the config file (not in the registry, not in Git), and every open
+deck updates as soon as one changes.
+
+Things that need you are attention items, derived only from what the hosts report:
+a failed or stalled job is a blocker, and a session whose latest step is a question
+for you (`AskUserQuestion`) or a plan to approve (`ExitPlanMode`) is a decision. A
+room with an open item gets a lantern outside its front corner: a diamond with ✋ or
+?, and a count when there is more than one. It swings once when an item arrives and
+then stays still. Click it to list the room's items, open the job or session, and
+acknowledge (the lantern stays, dimmer) or snooze one for an hour (it hides until
+then). Items resolve by themselves when the job is retried or removed or the session
+moves on; looking at one never changes it. `/api/state` lists them under `attention`.
+
 ## Read the work
 
 The deck collects step reports, Markdown files the agent wrote, and Markdown in its
@@ -150,7 +170,9 @@ Claude jobs default to `acceptEdits`; Codex jobs default to `workspace-write`. U
 working directories, session details, and Markdown documents. The library endpoints
 also expose Markdown under configured local project roots. Anyone who can reach
 the dashboard can read that data. Keep it on loopback or use an SSH tunnel. Add
-access control before binding it to a shared network.
+access control before binding it to a shared network. Its writes, `POST /api/focus` and
+`POST /api/attention/…`, change `workspace.json`; they refuse requests from pages on
+other origins, but anyone who can reach the dashboard directly can use them.
 
 Agents can place Markdown outside the job directory in the document list, so review
 the dashboard's reachability before running jobs with sensitive files.

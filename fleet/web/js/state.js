@@ -12,6 +12,9 @@ import {
   closePanel, collectEvents, renderFeed, renderLegend, renderLive, renderPanel, renderStats, updateHint,
 } from './panel.js';
 import { openReader } from './reader.js';
+import { applyFocus } from './focus.js';
+import { applyAttention } from './attention.js';
+import { patchScene } from './dim.js';
 
 // Dismissed agents are hidden in this browser only (the deck stays view-only). Each is remembered with
 // the updated_at it had when dismissed, so any new activity brings it back.
@@ -95,6 +98,7 @@ export function applyState(doc) {
   for (const h of hosts) for (const s of h.sessions || []) if (s.project) projects.add(s.project);
   layoutRooms([...projects].sort());
   for (const room of rooms) room.label = doc.project_labels?.[room.name] || room.name;
+  applyFocus(doc, rooms);
   const seen = new Set();
   const now = performance.now() / 1000;
   for (const h of hosts) {
@@ -124,6 +128,8 @@ export function applyState(doc) {
   }
   for (const [k, e] of ents) if (!seen.has(k)) { dropEnt(e); ents.delete(k); if (selectedKey === k) closePanel(); }
   setEverLoaded(true);
+  applyAttention(rooms, doc);
+  patchScene();
   collectEvents();
   assignTargets();
   buildDocs();

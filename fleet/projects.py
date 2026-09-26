@@ -167,6 +167,11 @@ class Registry:
         project_id = self.owners.get(Link(host, label))
         return self.projects[project_id] if project_id else None
 
+    def resolve(self, host: str, item: dict[str, Any]) -> dict[str, Any]:
+        """A job or session from `host` with `project_id` added: its label's project, or None."""
+        project = self.project_for(host, item["project"]) if item.get("project") else None
+        return {**item, "project_id": project.id if project else None}
+
     def display_name(self, host: str, label: str, project_labels: dict[str, str]) -> str | None:
         """Linked project name, else the `project_labels` entry, else None (show the label itself)."""
         project = self.project_for(host, label)
