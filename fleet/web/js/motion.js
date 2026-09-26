@@ -230,7 +230,9 @@ function clipFor(e, now) {
   if (now < e.holdUntil && e.holdClip) return e.holdClip;
   if (e.walking) return 'Walking';
   if (!e.target) return 'Idle';
-  if (isActive(e.job.status) && e.act === 'delegate') return 'Wave';
+  const st = e.job.status;
+  if (st === 'idle') return 'Sitting';   // an idle session sits and rests
+  if (isActive(st) && e.act === 'delegate') return 'Wave';
   return e.target.sit != null ? 'Sitting' : 'Idle';
 }
 

@@ -246,10 +246,9 @@ export function renderLegend() {
 }
 export function renderStats() {
   const count = { running: 0, queued: 0, done: 0 }, live = { working: 0, idle: 0 };
-  for (const e of ents.values()) {
-    const tally = isSession(e) ? live : count;
-    if (tally[e.job.status] !== undefined) tally[e.job.status]++;
-  }
+  for (const e of ents.values()) if (!isSession(e) && count[e.job.status] !== undefined) count[e.job.status]++;
+  // every session counts, including idle ones that have left the deck
+  for (const h of hosts) for (const s of h.sessions || []) if (s.project && live[s.status] !== undefined) live[s.status]++;
   document.getElementById('stats').innerHTML = `
     ${live.working + live.idle ? `<span class="chip sess" title="interactive Claude Code / Codex sessions"><i></i><b>${live.working + live.idle}</b> live${live.idle ? `<span class="opt"> · ${live.idle} waiting</span>` : ''}</span>` : ''}
     <span class="chip"><i style="background:var(--run)"></i><b>${count.running}</b> working</span>

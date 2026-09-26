@@ -10,7 +10,7 @@ import { edgeStrips, layoutRooms, roomByName, rooms } from './rooms.js';
 import { _la, _lb, dashedLine, docSlots, liftHovered, lineGeo, nSeg, setNSeg, stepDocFx } from './docs3d.js';
 import { positionTags } from './agents.js';
 import { stepMotion, stepParticles, updateEnt, updateRoom } from './motion.js';
-import { applyState, stream } from './state.js';
+import { applyState, departIdle, stream } from './state.js';
 import { positionSwitches, stepFocus } from './focus.js';
 import { positionLanterns, stepLanterns } from './attention.js';
 import { fit, resize } from './camera.js';
@@ -137,7 +137,7 @@ loadAssets().then(() => {
     rooms: () => rooms.map(r => ({ name: r.name, label: r.label, x: r.ox, y: r.oy,
       screen: toScreen(_w.set(r.ox + RW / 2, 0, r.oy + RD / 2), { x: 0, y: 0 }), focus: r.focus, dim: r.dimK ?? null,
       attention: r.attention?.level ? { kind: r.attention.kind, state: r.attention.level, count: r.attention.shown.length } : null })),
-    agents: () => [...ents.values()].map(e => ({ key: e.key, kind: e.kind, room: e.room, status: e.job.status, leaving: !!e.leaving })),
+    agents: () => [...ents.values()].map(e => ({ key: e.key, kind: e.kind, room: e.room, status: e.job.status, leaving: !!e.leaving, clip: e.bot.clip })),
     apply: doc => applyState(doc),   // feed a state document as the stream would
     pipelines: () => pipelines.map(p => {
       const s = screenOf(keyOf(p));
@@ -168,6 +168,7 @@ loadAssets().then(() => {
     stream();
   }
   setInterval(renderLive, 1000);
+  setInterval(departIdle, 1000);
   requestAnimationFrame(frame);
 }, err => {
   const hint = document.getElementById('hint');
