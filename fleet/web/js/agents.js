@@ -214,7 +214,12 @@ export function positionTags() {
   const small = cam.z < (vw < 760 ? SMALL_Z * 2.2 : SMALL_Z), tiny = cam.z < TINY_Z;
   tagList.length = 0;
   for (const e of ents.values()) {
-    if (!roomByName.has(e.room)) continue;
+    const r = roomByName.get(e.room);
+    if (!r) continue;
+    // a background room shows light in its windows, not its androids' chatter
+    const behind = r.focus === 'background';
+    if (behind !== !!e.behind) { e.behind = behind; e.el.style.display = behind ? 'none' : ''; }
+    if (behind) continue;
     if (e.sizeDirty) { e.tw = e.el.offsetWidth; e.th = e.el.offsetHeight; e.sizeDirty = false; }
     // anchor on the head bone, lifted clear of the head and its kit, plus a few pixels at every zoom
     e.bot.head.getWorldPosition(_w);

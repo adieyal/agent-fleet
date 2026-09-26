@@ -1,8 +1,11 @@
 """Browser smoke tests: the deck against the recorded fleet, at desktop and phone widths."""
 
+import json
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.request import urlopen
 
 import pytest
 from playwright.sync_api import Browser, Page, expect
@@ -41,9 +44,9 @@ def deck(request: pytest.FixtureRequest, browser: Browser, base_url: str,
 
 def test_every_project_gets_a_room(deck: Deck, fixture_data: dict[str, Any]) -> None:
     projects = {item["project"] for host in fixture_data["hosts"] for item in host["jobs"] + host["sessions"]}
-    rooms = deck.page.evaluate("fleetDeck.rooms()")
-    assert {room["name"] for room in rooms} == projects
-    assert {"name": "invoice-parser", "label": "Invoice parser"} in rooms
+    rooms = rooms_by_name(deck.page)
+    assert set(rooms) == projects
+    assert rooms["invoice-parser"]["label"] == "Invoice parser"
     assert deck.errors == []
 
 
@@ -103,4 +106,52 @@ def test_library_lists_and_opens_documents(deck: Deck) -> None:
     expect(page.locator("#reader")).to_be_hidden()
     page.locator(".lib-head [data-lib-close]").click()
     expect(page.locator("#libraryPane")).to_be_hidden()
+    assert deck.errors == []
+
+
+def rooms_by_name(page: Page) -> dict[str, dict[str, Any]]:
+    return {room["name"]: room for room in page.evaluate("fleetDeck.rooms()")}
+
+
+def tag_shown(page: Page, job_id: str) -> bool:
+    return page.locator("#tags .tag", has_text=job_id).evaluate("tag => tag.style.display !== 'none'")
+
+
+def focus_on_server(base_url: str, project_id: str) -> str:
+    with urlopen(base_url + "/api/state", timeout=5) as response:
+        return next(project["focus"] for project in json.load(response)["projects"] if project["id"] == project_id)
+
+
+def test_background_rooms_are_closed_and_keep_their_androids_quiet(deck: Deck) -> None:
+    page = deck.page
+    page.wait_for_function("fleetDeck.rooms().find(room => room.name === 'invoice-parser').closed")
+    rooms = rooms_by_name(page)
+    assert {name: (room["project"], room["focus"], room["open"]) for name, room in rooms.items()} == {
+        "restoke": ("p-5e1f0a01", "priority", True),
+        "invoice-parser": ("p-1c0ce5a2", "background", False),
+        "agent-fleet": (None, None, True)}
+    expect(page.locator('.focus-switch[data-room="invoice-parser"]')).to_have_attribute("data-focus", "background")
+    unregistered = page.locator('.focus-switch[data-room="agent-fleet"]')
+    expect(unregistered).to_have_attribute("data-focus", "none")
+    expect(unregistered.locator("button:disabled")).to_have_count(2)
+    expect(unregistered).to_have_attribute("title", re.compile("Not a registered project"))
+    assert not tag_shown(page, "0a9e3b") and not tag_shown(page, "3c71d5")
+    assert tag_shown(page, "c90e11") and tag_shown(page, "f20a6d")
+    assert deck.errors == []
+
+
+def test_the_switch_changes_focus_and_nothing_moves(deck: Deck, base_url: str) -> None:
+    page = deck.page
+    places = {name: (room["x"], room["y"]) for name, room in rooms_by_name(page).items()}
+    switch = page.locator('.focus-switch[data-room="restoke"]')
+    switch.locator('[data-set="background"]').dispatch_event("click")
+    expect(switch).to_have_attribute("data-focus", "background")
+    page.wait_for_function("fleetDeck.rooms().find(room => room.name === 'restoke').closed")
+    assert focus_on_server(base_url, "p-5e1f0a01") == "background"
+    assert not tag_shown(page, "c90e11")
+    switch.locator('[data-set="priority"]').dispatch_event("click")
+    page.wait_for_function("fleetDeck.rooms().find(room => room.name === 'restoke').open")
+    assert focus_on_server(base_url, "p-5e1f0a01") == "priority"
+    assert tag_shown(page, "c90e11")
+    assert {name: (room["x"], room["y"]) for name, room in rooms_by_name(page).items()} == places
     assert deck.errors == []

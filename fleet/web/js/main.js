@@ -11,6 +11,7 @@ import { _la, _lb, dashedLine, docSlots, liftHovered, lineGeo, nSeg, setNSeg, st
 import { positionTags } from './agents.js';
 import { stepMotion, stepParticles, updateEnt, updateRoom } from './motion.js';
 import { applyState, stream } from './state.js';
+import { positionSwitches, stepFocus } from './focus.js';
 import { resize } from './camera.js';
 import { miniBot, panelScrollUntil, renderLive } from './panel.js';
 import './library.js';
@@ -35,9 +36,12 @@ function frame(ts) {
   applyCamera();
   setNSeg(0);
   for (const r of rooms) { r.busyTerm = 0; r.testTerm = 0; r.busyWeb = false; r.busyPlan = false; r.busyCab = 0; r.busyRack = false; r.busyKitchen = false; r.busyPress = null; }
+  stepFocus(rooms, dt);
   for (const e of ents.values()) {
     const r = roomByName.get(e.room);
     if (!r) continue;
+    e.bot.root.visible = !r.closed;   // a closed room keeps its androids to itself
+    if (r.closed) continue;
     updateEnt(e, r, dt, t, now);
     if (e.walking || !e.target || !isActive(e.job.status)) continue;
     const p = e.target.prop;
@@ -55,7 +59,7 @@ function frame(ts) {
       dashedLine(_w, _p, e.look.color, t, 0.7);
     }
   }
-  for (const r of rooms) updateRoom(r, t, dt, now);
+  for (const r of rooms) if (!r.closed) updateRoom(r, t, dt, now);
   stepDocFx(t);
   liftHovered();
   lineGeo.setDrawRange(0, nSeg * 2);
@@ -67,6 +71,7 @@ function frame(ts) {
   stepParticles(dt);
   renderer.render(scene, camera);
   positionTags();
+  positionSwitches();
   if (fpsEl) {
     fpsN++;
     if (t - fpsT > 1) { fpsEl.textContent = `${Math.round(fpsN / (t - fpsT))} fps · ${renderer.info.render.calls} calls`; fpsN = 0; fpsT = t; }
@@ -113,7 +118,8 @@ loadAssets().then(() => {
   }
   // read-only probe for browser tests: rooms live only in WebGL, so they have no DOM to query
   window.fleetDeck = Object.freeze({
-    rooms: () => rooms.map(r => ({ name: r.name, label: r.label })),
+    rooms: () => rooms.map(r => ({ name: r.name, label: r.label, x: r.ox, y: r.oy, project: r.project?.id ?? null,
+      focus: r.focus, closed: !!r.closed, open: !r.shellK })),
     agents: () => [...ents.values()].map(e => ({ key: e.key, kind: e.kind, room: e.room, status: e.job.status })),
   });
   if (DEMO) {

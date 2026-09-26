@@ -11,6 +11,7 @@ import {
 } from './scene.js';
 import { setDocSig } from './docs3d.js';
 import { deckBounds, fit } from './camera.js';
+import { buildFront, carryFocus } from './focus.js';
 
 // ------------------------------------------------------------------ the deck: plates, rooms, furniture
 export let placer = null;
@@ -191,8 +192,10 @@ function buildRoom(r, place) {
   const sign = new THREE.Mesh(G.plane, signMat);
   sign.scale.set(6, 1.5, 1); sign.position.set(ox + 3.2, WALL_H + 0.8, oy + 0.02);
   g.add(sign);
+  r.signMesh = sign; r.signY = sign.position.y;
   disposables.push(r.sign.tex, signMat);
   drawSign(r);
+  buildFront(r);
 }
 
 export let rooms = [];
@@ -209,7 +212,7 @@ export function layoutRooms(names) {
   if (key === layoutKey) return;
   layoutKey = key;
   const cols = Math.ceil(Math.sqrt(names.length));
-  const taken = new Set(), themes = new Set();
+  const taken = new Set(), themes = new Set(), before = rooms;
   rooms = names.map((name, i) => {
     const forced = DEBUG && QS.get('themes') ? QS.get('themes').split(',')[i] : null;   // ?debug&themes=library,studio,…: for screenshots
     const look = projectLook(name, taken), theme = THEMES[forced] ? forced : themeFor(name, themes);
@@ -227,5 +230,6 @@ export function layoutRooms(names) {
   roomByName.clear();
   for (const r of rooms) roomByName.set(r.name, r);
   buildDeck();
+  carryFocus(before, rooms);
   if (!cam.userMoved) fit(true);
 }
