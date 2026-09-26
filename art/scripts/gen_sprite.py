@@ -31,8 +31,8 @@ INSTRUCTIONS = ('You are a sprite generator. Always answer by calling the image_
                 'exactly once. Do not reply with text.')
 STYLE = ('Style: match the attached reference crops from the concept art exactly. Soft, clean, '
          'slightly stylised 3D render of an isometric office, three-quarter view from above at the '
-         "same camera angle as the references (about 30 degrees down, the object's long axis running "
-         'from lower left to upper right). Warm soft key light from the upper left, gentle ambient '
+         'same camera angle as the references (about 30 degrees down). Warm soft key light from the '
+         'upper left, gentle ambient '
          'occlusion, no harsh shadows. Pale, desaturated palette. Render only the object, centred, '
          'whole and uncropped, on a fully transparent background: no floor, no ground shadow, no '
          'backdrop, no text, no border.')

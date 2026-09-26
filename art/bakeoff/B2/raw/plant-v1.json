@@ -1,0 +1,22 @@
+{
+  "description": "a potted plant: a leafy green plant with long pointed leaves in a square light-grey concrete \\\nplanter, the planter seen corner-on as in the reference.",
+  "prompt": "Generate a single game sprite: a potted plant: a leafy green plant with long pointed leaves in a square light-grey concrete \\\nplanter, the planter seen corner-on as in the reference.\n\nStyle: match the attached reference crops from the concept art exactly. Soft, clean, slightly stylised 3D render of an isometric office, three-quarter view from above at the same camera angle as the references (about 30 degrees down). Warm soft key light from the upper left, gentle ambient occlusion, no harsh shadows. Pale, desaturated palette. Render only the object, centred, whole and uncropped, on a fully transparent background: no floor, no ground shadow, no backdrop, no text, no border.",
+  "instructions": "You are a sprite generator. Always answer by calling the image_generation tool exactly once. Do not reply with text.",
+  "references": [
+    {
+      "path": "docs/images/concept/l2.png@1500,460,140,270",
+      "sha256": "4e416790a5fc995c5924b97a79643e0ede3d9af848748af7a40ec11b6f3018a6"
+    }
+  ],
+  "model": "gpt-5.5",
+  "image_model": "gpt-image-2-codex",
+  "quality_requested": "high",
+  "quality": "medium",
+  "size": "1145x1374",
+  "revised_prompt": "Single game sprite of a potted plant, matching the provided concept art style: soft clean slightly stylised 3D render from an isometric office scene, three-quarter view from above at about 30 degrees down. Object only, centered, whole and uncropped. A leafy green indoor plant with many long pointed arching leaves, pale desaturated greens with subtle highlights, growing from dark soil. The planter is a square light-grey concrete pot, seen corner-on with two visible faces, thick rim, slight bevels, subtle concrete speckles and soft wear, matching the reference crop. Warm soft key light from upper left, gentle ambient occlusion in creases and soil, no harsh shadows. Pale desaturated palette. Transparent background, no floor, no ground shadow, no backdrop, no text, no border. High-quality game asset sprite, clean edges, consistent perspective.",
+  "response_id": "resp_0028ee07a5483060016ab81f82aea887d29d16878d076fea36",
+  "request_sha256": "fba086ff8be73e0f3d95d4ddcfe48c817fc2cb03b44e9cff57b6f259ca1b75a4",
+  "output_sha256": "a159add1f7081366c9369d7b3f97aded40d905373f62f2ae9ef0625132de4a66",
+  "timestamp": "2026-09-26T19:40:38Z",
+  "seconds": 53.1
+}

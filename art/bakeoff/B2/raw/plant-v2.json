@@ -1,0 +1,26 @@
+{
+  "description": "a potted plant: a leafy green plant with long pointed leaves in a square light-grey concrete \\\nplanter, the planter seen corner-on as in the reference.",
+  "prompt": "Generate a single game sprite: a potted plant: a leafy green plant with long pointed leaves in a square light-grey concrete \\\nplanter, the planter seen corner-on as in the reference.\n\nStyle: match the attached reference crops from the concept art exactly. Soft, clean, slightly stylised 3D render of an isometric office, three-quarter view from above at the same camera angle as the references (about 30 degrees down). Warm soft key light from the upper left, gentle ambient occlusion, no harsh shadows. Pale, desaturated palette. Render only the object, centred, whole and uncropped, on a fully transparent background: no floor, no ground shadow, no backdrop, no text, no border.",
+  "instructions": "You are a sprite generator. Always answer by calling the image_generation tool exactly once. Do not reply with text.",
+  "references": [
+    {
+      "path": "docs/images/concept/l2.png@1500,460,140,270",
+      "sha256": "4e416790a5fc995c5924b97a79643e0ede3d9af848748af7a40ec11b6f3018a6"
+    },
+    {
+      "path": "docs/images/concept/l1.png@70,390,80,110",
+      "sha256": "4eb6792050f5f7c29f307576e117ab2b602d03be6539dc4dd3b6ca5c132c7e39"
+    }
+  ],
+  "model": "gpt-5.5",
+  "image_model": "gpt-image-2-codex",
+  "quality_requested": "high",
+  "quality": "medium",
+  "size": "1214x1295",
+  "revised_prompt": "Generate a single game sprite of a potted plant matching the provided concept art style: a leafy green office plant with long pointed leaves, growing from dark soil inside a square light-grey concrete planter. The planter is seen corner-on in three-quarter isometric view from above, about 30 degrees down, with visible front corner and two side faces. Soft, clean, slightly stylised 3D render suitable for an isometric office game asset. Warm soft key light from upper left, gentle ambient occlusion, no harsh shadows. Pale, desaturated palette. Plant centered, whole and uncropped, render only the object on a fully transparent background: no floor, no ground shadow, no backdrop, no text, no border. Square planter with subtle concrete texture, clean bevels, muted grey; lush green leaves with slightly varied tones and smooth stylised shapes.",
+  "response_id": "resp_03d66500080236a5016ab81fac8ddc87d295705c501a20f144",
+  "request_sha256": "94c898c7ef436e13cd3dc03992da85e55e4b9c868bee314fdd2ac80759674aea",
+  "output_sha256": "85a64e8f8371e6831523f669b805e1af07148a3bf18f0bedd54f9492961a50e9",
+  "timestamp": "2026-09-26T19:41:31Z",
+  "seconds": 64.4
+}

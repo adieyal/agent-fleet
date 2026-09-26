@@ -1,0 +1,88 @@
+{
+  "bench": {
+    "file": "bench.webp",
+    "from": "raw/bench-v1.png",
+    "size": [
+      1395,
+      789
+    ],
+    "l2_scale": 0.6667,
+    "bytes": 167806
+  },
+  "plant": {
+    "file": "plant.webp",
+    "from": "raw/plant-v1.png",
+    "size": [
+      224,
+      360
+    ],
+    "l2_scale": 0.6667,
+    "bytes": 27888
+  },
+  "robot-typing": {
+    "file": "robot-typing.webp",
+    "from": "raw/robot-typing-grey-v2.png",
+    "size": [
+      264,
+      308
+    ],
+    "l2_scale": 0.6667,
+    "bytes": 22204,
+    "mask": "robot-typing.mask.png",
+    "mask_bytes": 13067
+  },
+  "robot-pencil": {
+    "file": "robot-pencil.webp",
+    "from": "raw/robot-pencil-grey-v2.png",
+    "size": [
+      214,
+      308
+    ],
+    "l2_scale": 0.6667,
+    "bytes": 21888,
+    "mask": "robot-pencil.mask.png",
+    "mask_bytes": 13480
+  },
+  "robot-tube": {
+    "file": "robot-tube.webp",
+    "from": "raw/robot-tube-grey-v2.png",
+    "size": [
+      224,
+      308
+    ],
+    "l2_scale": 0.6667,
+    "bytes": 24016,
+    "mask": "robot-tube.mask.png",
+    "mask_bytes": 14435
+  },
+  "robot-typing-teal": {
+    "file": "robot-typing-teal.webp",
+    "from": "raw/robot-typing-teal-v2.png",
+    "size": [
+      264,
+      308
+    ],
+    "l2_scale": 0.6667,
+    "bytes": 25554
+  },
+  "robot-pencil-teal": {
+    "file": "robot-pencil-teal.webp",
+    "from": "raw/robot-pencil-teal-v2.png",
+    "size": [
+      239,
+      308
+    ],
+    "l2_scale": 0.6667,
+    "bytes": 24098
+  },
+  "robot-tube-teal": {
+    "file": "robot-tube-teal.webp",
+    "from": "raw/robot-tube-teal-v2.png",
+    "size": [
+      218,
+      308
+    ],
+    "l2_scale": 0.6667,
+    "bytes": 24220
+  }
+}
