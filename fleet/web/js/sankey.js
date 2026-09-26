@@ -458,6 +458,7 @@ function renderSide() {
   }
   const ends = [...terminals(run, sk.p.baseline)], base = sk.p.baseline, done = run.status === 'done';
   const sub = !base ? '' : done ? '; change is on the outlined run' : '; prev is the outlined run\'s share, until this one finishes';
+  if (!ends.length) { side.innerHTML = '<h3>End nodes</h3><p class="sk-sub">No item has ended anywhere yet.</p>'; return; }
   side.innerHTML = `<h3>End nodes</h3><p class="sk-sub">Choose one for its latest items. Share is of the items that reached its column${sub}.</p>
     <table class="sk-table"><thead><tr><th scope="col">Node</th><th scope="col">Items</th><th scope="col">Share</th>${base ? `<th scope="col">${done ? 'Change' : 'Prev'}</th>` : ''}</tr></thead>
     <tbody>${ends.map(n => {

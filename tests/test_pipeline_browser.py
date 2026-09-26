@@ -321,6 +321,11 @@ def test_the_demo_pipeline_moves_while_the_sankey_is_open(browser: Browser, pipe
         .textContent.replace(/,/g, '')) > {first}""", timeout=8000)
     page.wait_for_timeout(250)   # mid-way through an update: bands easing, dots on their way
     deck.shot("sankey-live")
+    # the table lists exactly the chart's end nodes, and an end node holds items: empty ones are in neither
+    ends = page.evaluate("""[[...document.querySelectorAll('#skSvg .sk-node.end')].map(g => g.dataset.node),
+      [...document.querySelectorAll('#skSide tbody tr')].map(r => [r.dataset.node, r.cells[1].textContent])]""")
+    assert sorted(ends[0]) == sorted(node for node, _ in ends[1])
+    assert all(count != "0" for _, count in ends[1]), ends
     if motion == "reduce":
         assert page.evaluate(DOT_PIXELS) == 0
     else:
