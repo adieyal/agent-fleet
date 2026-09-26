@@ -114,7 +114,8 @@ def test_the_screen_opens_the_run_as_a_sankey(deck: Deck, fixture_pipelines: dic
     expect(page.locator("#skTitle")).to_have_text("sample-training")
     expect(page.locator("#skMeta")).to_contain_text("synthetic run")
     expect(page.locator("#skMeta")).to_contain_text("running")
-    expect(page.locator("#skMeta")).to_contain_text("3,000 total")
+    expect(page.locator("#skMeta")).to_contain_text(f"{run['counts']['items']:,} / 3,000 processed")
+    expect(page.locator("#skMeta")).to_contain_text("items/s")
     nodes = [node for column in run["nodes"] for node in column]
     expect(page.locator("#skSvg .sk-node")).to_have_count(len(nodes))
     expect(page.locator("#skSvg .sk-band")).to_have_count(len(run["edges"]))
@@ -122,8 +123,13 @@ def test_the_screen_opens_the_run_as_a_sankey(deck: Deck, fixture_pipelines: dic
     for node in nodes:
         label = page.locator(f'#skSvg .sk-node[data-node="{node}"] text')
         expect(label).to_contain_text(f"{run['counts'][node]:,}")
-    expect(page.locator('#skSvg .sk-node[data-node="confident"] text')).to_contain_text(
-        f"{100 * run['counts']['confident'] / run['total']:.1f}%")
+    # a share is of the items that reached the node's column; a running run shows the baseline's figure, no change
+    counts, base = run["counts"], fixture_pipelines["pipeline_reports"][0]["baseline"]["counts"]
+    confident = page.locator('#skSvg .sk-node[data-node="confident"] text')
+    expect(confident).to_contain_text(f"{100 * counts['confident'] / (counts['confident'] + counts['review']):.1f}%")
+    expect(confident).to_contain_text(f"prev {base['confident']:,}")
+    expect(page.locator("#skSide thead")).to_contain_text("Prev")
+    assert not any(ch in page.locator("#skSvg").text_content() for ch in "+−±")
     deck.shot("sankey")
     close(deck)
     assert deck.errors == []
@@ -149,7 +155,16 @@ def test_an_end_node_lists_its_latest_items(deck: Deck, fixture_pipelines: dict[
     assert deck.errors == []
 
 
-DOT_PIXELS = """(() => { const c = document.getElementById('skDots'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+def test_a_finished_run_shows_its_change_on_the_baseline(deck: Deck) -> None:
+    got = deck.page.evaluate("""import('/js/sankey.js').then(({ versus }) => {
+      const base = { counts: { confident: 100 } };
+      return [versus({ status: 'running' }, base, 'confident', 90), versus({ status: 'done' }, base, 'confident', 90),
+              versus({ status: 'done' }, base, 'confident', 112), versus({ status: 'done' }, null, 'confident', 1)];
+    })""")
+    assert got == [{"text": "prev 100"}, {"text": "−10"}, {"text": "+12"}, None]
+
+
+DOT_PIXELS ="""(() => { const c = document.getElementById('skDots'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
   let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n; })()"""
 
 

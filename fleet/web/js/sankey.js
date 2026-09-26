@@ -64,7 +64,24 @@ export function terminals(run, base) {
   return new Set(run.nodes.flatMap((col, ci) => col.filter(n => !left.has(n)
     && (run.status !== 'running' || ci === last || col.some(m => left.has(m))))));
 }
-export const shareBase = run => run.total || run.nodes[0]?.reduce((s, n) => s + (run.counts[n] || 0), 0) || 0;
+// A node's share is of the items that reached its column, not of the run's declared total: part-way through a run
+// most items have not reached the later columns yet.
+export function shareOf(columns, counts, node) {
+  const col = columns.find(c => c.includes(node)) || [];
+  const reached = col.reduce((s, n) => s + (counts[n] || 0), 0);
+  return reached ? (counts[node] || 0) / reached : null;
+}
+export const processed = run => run.nodes[0]?.reduce((s, n) => s + (run.counts[n] || 0), 0) || 0;
+// Against a finished baseline a run is comparable only once it has finished too; until then the baseline's figure is
+// shown beside it ("prev"), not a difference.
+export function versus(run, base, node, value) {
+  if (!base) return null;
+  const was = base.counts?.[node] || 0;
+  if (run.status !== 'done') return { text: `prev ${fmt(was)}` };
+  const d = Math.round(value) - was;
+  return { text: `${d > 0 ? '+' : d < 0 ? '−' : '±'}${fmt(Math.abs(d))}` };
+}
+const pct = share => share === null ? '' : `${(100 * share).toFixed(1)}%`;
 
 // What the file says about the run, and whether its host can still be asked.
 const QUIET_S = 60;
@@ -176,7 +193,7 @@ function drawFrame() {
 // Labels sit right of their node: name over figures, so a middle column's label fits before the next column; the
 // last column has room for one line on a wide screen. Baseline outlines go under the bands, which show through.
 function renderChart(L, run, base, width, height, narrow) {
-  const ends = terminals(run, base), whole = shareBase(run), baseCounts = base?.counts || {};
+  const ends = terminals(run, base), values = Object.fromEntries([...L.nodes.values()].map(n => [n.name, n.value]));
   const baseEdges = Object.fromEntries((base?.edges || []).map(([s, t, c]) => [s + '→' + t, c]));
   const lastCol = run.nodes.length - 1;
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
@@ -188,10 +205,10 @@ function renderChart(L, run, base, width, height, narrow) {
   }).join('');
   const nodes = [...L.nodes.values()].map(n => {
     const end = ends.has(n.name), y = n.y + n.h / 2, x = n.x + L.nodeW + 6;
-    const share = end && whole ? ` · ${(100 * n.value / whole).toFixed(1)}%` : '';
-    const delta = end && base ? Math.round(n.value) - (baseCounts[n.name] || 0) : null;
-    const figures = `<tspan class="ct"${n.col === lastCol && !narrow ? ' dx="7"' : ` x="${x}" y="${y + 12}"`}>${fmt(n.value)}${share}</tspan>${
-      delta !== null ? `<tspan class="dl" dx="7">${delta > 0 ? '+' : delta < 0 ? '−' : '±'}${fmt(Math.abs(delta))}</tspan>` : ''}`;
+    const share = end ? pct(shareOf(run.nodes, values, n.name)) : '';
+    const vs = end ? versus(run, base, n.name, n.value) : null;
+    const figures = `<tspan class="ct"${n.col === lastCol && !narrow ? ' dx="7"' : ` x="${x}" y="${y + 12}"`}>${fmt(n.value)}${share ? ' · ' + share : ''}</tspan>${
+      vs ? `<tspan class="dl" dx="7">${esc(vs.text)}</tspan>` : ''}`;
     const oneLine = n.col === lastCol && !narrow;
     return `<g class="sk-node${end ? ' end' : ''}${sk.selected === n.name ? ' on' : ''}" data-node="${esc(n.name)}" tabindex="${end ? 0 : -1}"
       ${end ? `role="button" aria-label="${esc(`${n.name}: ${fmt(n.value)}, show its latest items`)}"` : ''}>
@@ -234,7 +251,7 @@ function renderHead() {
     r ? `<span title="${esc(r.run_id)}">${esc(r.label || r.run_id)}</span>` : '',
     `<span class="sk-status ${st.kind}">${esc(st.text)}</span>`,
     r?.started_at ? `<span>started ${age(r.started_at)} ago</span>` : '',
-    r?.total ? `<span>${fmt(r.total)} total</span>` : '',
+    r ? `<span title="items that entered ${esc(r.nodes[0]?.join(', ') || 'the run')}${r.total ? ', of the run\'s declared total' : ''}">${fmt(processed(r))}${r.total ? ' / ' + fmt(r.total) : ''} processed</span>` : '',
     r && r.status === 'running' ? `<span title="items entering ${esc(r.nodes[0]?.join(', ') || 'the first column')}, over the last 10 s">${r.item_rate ?? 0} items/s</span>` : '',
     p.baseline ? `<span title="${esc(p.baseline.run_id)}">outlines: ${esc(p.baseline.label || p.baseline.run_id)}</span>` : '',
   ].join('');
@@ -267,13 +284,14 @@ function renderSide() {
             : `<em>${esc(typeof v === 'object' ? JSON.stringify(v) : v)}</em>`}</div>`).join('')}</li>`).join('')}</ol>`;
     return;
   }
-  const ends = [...terminals(run, sk.p.baseline)], whole = shareBase(run), base = sk.p.baseline?.counts;
-  side.innerHTML = `<h3>End nodes</h3><p class="sk-sub">Choose one for its latest items${base ? '; change is on the outlined run' : ''}.</p>
-    <table class="sk-table"><thead><tr><th scope="col">Node</th><th scope="col">Items</th><th scope="col">Share</th>${base ? '<th scope="col">Change</th>' : ''}</tr></thead>
+  const ends = [...terminals(run, sk.p.baseline)], base = sk.p.baseline, done = run.status === 'done';
+  const sub = !base ? '' : done ? '; change is on the outlined run' : '; prev is the outlined run, until this one finishes';
+  side.innerHTML = `<h3>End nodes</h3><p class="sk-sub">Choose one for its latest items. Share is of the items that reached its column${sub}.</p>
+    <table class="sk-table"><thead><tr><th scope="col">Node</th><th scope="col">Items</th><th scope="col">Share</th>${base ? `<th scope="col">${done ? 'Change' : 'Prev'}</th>` : ''}</tr></thead>
     <tbody>${ends.map(n => {
-      const c = run.counts[n] || 0, d = base ? c - (base[n] || 0) : 0;
-      return `<tr data-node="${esc(n)}" tabindex="0"><th scope="row">${esc(n)}</th><td>${fmt(c)}</td><td>${whole ? (100 * c / whole).toFixed(1) + '%' : ''}</td>${
-        base ? `<td>${d > 0 ? '+' : d < 0 ? '−' : '±'}${fmt(Math.abs(d))}</td>` : ''}</tr>`;
+      const c = run.counts[n] || 0, vs = versus(run, base, n, c);
+      return `<tr data-node="${esc(n)}" tabindex="0"><th scope="row">${esc(n)}</th><td>${fmt(c)}</td><td>${pct(shareOf(run.nodes, run.counts, n))}</td>${
+        vs ? `<td>${esc(done ? vs.text : fmt(base.counts?.[n] || 0))}</td>` : ''}</tr>`;
     }).join('')}</tbody></table>`;
 }
 function choose(node) {
