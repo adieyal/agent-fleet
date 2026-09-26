@@ -34,6 +34,9 @@ class LiveWorkspace:
     registry: Registry
     project_labels: dict[str, str]
     capacity: int
+    pipeline_config: dict[str, dict[str, str]]           # name → {"host", "project": room label}, as configured
+    pipeline_runs: dict[tuple[str, str], dict[str, Any]]  # (host, name) → {"run", "baseline", "seq"} as last reported
+    pipeline_seq: int
 
     def known_projects(self) -> Container[str]:
         raise NotImplementedError
@@ -198,13 +201,48 @@ class LiveWorkspace:
         return {**document, "focus": self.workspace.focus_snapshot(),
                 "attention": self.board.items(document["hosts"], time.time())}
 
-    def wait_for_change(self, seen_version: int, timeout: float) -> int:
-        """Also wakes when a snooze ends, so the item comes back on every deck without a reload."""
+    def report_pipeline(self, host: str, name: str, run: dict[str, Any] | None,
+                        baseline: dict[str, Any] | None) -> None:
+        """A host's latest summary of a pipeline's run; browsers get it as a pipeline event, not a new document."""
+        with self.changed:
+            self.pipeline_seq += 1
+            self.pipeline_runs[(host, name)] = {"run": run, "baseline": baseline, "seq": self.pipeline_seq}
+            self.changed.notify_all()
+
+    def pipelines(self, registry: Registry, hosts: dict[str, dict[str, Any]],
+                  after: int | None = None) -> list[dict[str, Any]]:
+        """Declared pipelines, reported or not, and any other a host reports; with `after`, only reports since that seq.
+
+        A declared pipeline names the room (project label) it belongs to; one nobody declared has no room.
+        `host_ok` and `host_error` say whether its host is reachable now; `run` is the last report, or null."""
+        with self.changed:
+            reported = dict(self.pipeline_runs)
+        keys = [(entry.get("host"), name) for name, entry in self.pipeline_config.items()]
+        keys += [key for key in sorted(reported) if key[1] not in self.pipeline_config]
+        out = []
+        for host, name in keys:
+            report = reported.get((host, name)) or {"run": None, "baseline": None, "seq": 0}
+            if after is not None and report["seq"] <= after:
+                continue
+            declared = self.pipeline_config.get(name)
+            label = declared.get("project") if declared else None
+            project = registry.project_for(host, label) if host and label else None
+            host_entry = hosts.get(host) or {"ok": False, "error": f"{host} is not a host this deck follows"}
+            out.append({"host": host, "pipeline": name, "project": label, "project_id": project.id if project else None,
+                        "declared": declared is not None, "host_ok": bool(host_entry.get("ok")),
+                        "host_error": host_entry.get("error"), "run": report["run"], "baseline": report["baseline"],
+                        "seq": report["seq"]})
+        return out
+
+    def wait_for_change(self, seen_version: int, timeout: float, seen_pipelines: int | None = None) -> int:
+        """Also wakes when a snooze ends, so the item comes back on every deck without a reload, and when a pipeline
+        report arrives if `seen_pipelines` is given (compare `pipeline_seq` to tell)."""
         now = time.time()
         ending = self.board.snooze_ending(now)
         wait = timeout if ending is None else max(0.0, min(timeout, ending - now))
         with self.changed:
-            self.changed.wait_for(lambda: self.version != seen_version, timeout=wait)
+            self.changed.wait_for(lambda: self.version != seen_version or (
+                seen_pipelines is not None and self.pipeline_seq != seen_pipelines), timeout=wait)
             if self.version == seen_version and ending is not None and time.time() >= ending:
                 self.board.announce(ending)
                 self.version += 1

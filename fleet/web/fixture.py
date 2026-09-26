@@ -11,6 +11,8 @@ behind them:
      "shuttered": {"p-…": {"at": …, "floor": 2}},   # optional: projects in the storehouse
      "remotes": {"<host>": {"<cwd>": ["git@…"]}},   # optional: repository remotes, for move-in offers
      "job_documents": {"<host>/<job>/<document id>": "markdown", …},
+     "pipelines": {"<pipeline>": {"host": …, "project": "<label>"}},   # optional: as in the Fleet config
+     "pipeline_reports": [{"host": …, "pipeline": …, "run": …, "baseline": …}, …],   # as fleetd streams them
      "library": {"<project>": [{"id": "README.md", "mtime": …, "markdown": "…"}, …]}}
 
 Jobs and sessions gain `project_id` and `focus`, and attention items are derived, as they are live. Timestamps
@@ -46,6 +48,11 @@ class FixtureState(LiveWorkspace):
         self.board = AttentionBoard(self.workspace)
         self.changed = threading.Condition()
         self.version = 0
+        self.pipeline_config = fixture.get("pipelines", {})
+        self.pipeline_runs = {(report["host"], report["pipeline"]): {"run": report.get("run"),
+                                                                     "baseline": report.get("baseline"), "seq": 1}
+                              for report in fixture.get("pipeline_reports", [])}
+        self.pipeline_seq = 1 if self.pipeline_runs else 0
 
     @classmethod
     def load(cls, path: str | Path) -> FixtureState:
@@ -72,7 +79,11 @@ class FixtureState(LiveWorkspace):
                 for host in self.fixture["hosts"]]})
         document = self.with_building(document, self.registry)
         document["building"]["capacity_error"] = None
+        document["pipelines"] = self.pipelines(self.registry, {host["name"]: host for host in self.fixture["hosts"]})
         return document
+
+    def pipeline_updates(self, after: int) -> list[dict[str, Any]]:
+        return self.pipelines(self.registry, {host["name"]: host for host in self.fixture["hosts"]}, after)
 
     def known_projects(self) -> dict[str, Any]:
         return self.registry.projects
