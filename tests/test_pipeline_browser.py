@@ -474,6 +474,21 @@ def test_a_finished_run_shows_its_change_on_the_baseline(deck: Deck) -> None:
     assert got == ["prev 62.5%", "−10", "+12", None]
 
 
+ALL_IN_VIEW = """(() => {
+  const c = document.getElementById('skChart').getBoundingClientRect(), out = [], onNodes = [];
+  const nodes = [...document.querySelectorAll('#skSvg .sk-node')];
+  const rects = nodes.map(g => [g.dataset.node, g.querySelector('rect:not(.sk-chip)').getBoundingClientRect()]);
+  for (const g of nodes) {
+    const t = g.querySelector('text').getBoundingClientRect();
+    for (const [what, r] of [['node', rects.find(([n]) => n === g.dataset.node)[1]], ['label', t]])
+      if (r.top < c.top - 0.5 || r.bottom > c.bottom + 0.5 || r.left < c.left - 0.5 || r.right > c.right + 0.5) out.push([g.dataset.node, what]);
+    for (const [n, r] of rects)
+      if (t.left < r.right && r.left < t.right && t.top < r.bottom && r.top < t.bottom) onNodes.push([g.dataset.node, n]);
+  }
+  return { out, onNodes };
+})()"""
+
+
 DOT_PIXELS ="""(() => { const c = document.getElementById('skDots'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
   let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n; })()"""
 
@@ -501,6 +516,16 @@ def test_the_demo_pipeline_moves_while_the_sankey_is_open(browser: Browser, pipe
         .textContent.replace(/,/g, '')) > {first}""", timeout=8000)
     page.wait_for_timeout(250)   # mid-way through an update: bands easing, dots on their way
     deck.shot("sankey-live")
+    # every node and label is in the chart's view, off every node and band, and no two labels overlap: now, mid-way
+    # through an update, and again after the next
+    count = lambda: int(page.locator('#skSvg .sk-node[data-node="items"] text .ct').first.text_content().replace(",", ""))
+    for moment in range(2):
+        if moment:
+            page.wait_for_function(f"""Number(document.querySelector('#skSvg .sk-node[data-node="items"] text .ct')
+                .textContent.replace(/,/g, '')) > {count()}""", timeout=8000)
+        fit, placed = page.evaluate(ALL_IN_VIEW), page.evaluate(LABELS_ON_BANDS)
+        assert fit == {"out": [], "onNodes": []} and placed["crowded"] == [], (moment, fit, placed)
+        assert [hit for hit in placed["hits"] if not hit[2] or hit[1] == "stub"] == [], (moment, placed)
     # the table lists exactly the chart's end nodes, and an end node holds items: empty ones are in neither
     ends = page.evaluate("""[[...document.querySelectorAll('#skSvg .sk-node.end')].map(g => g.dataset.node),
       [...document.querySelectorAll('#skSide tbody tr')].map(r => [r.dataset.node, r.cells[1].textContent])]""")
