@@ -147,7 +147,7 @@ header{position:fixed;top:0;left:0;right:0;height:52px;display:flex;align-items:
 .bubble.pop .glyph{animation:glyphPop .35s ease-out}
 @keyframes glyphPop{from{transform:scale(.4);opacity:0}to{transform:none;opacity:1}}
 @media (prefers-reduced-motion: reduce){.bubble.pop .glyph{animation:none}}
-.tag.small .bubble{display:none}
+.tag.far .bubble{display:none}
 .tag.tiny{display:none}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 

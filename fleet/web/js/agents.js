@@ -2,14 +2,14 @@
 
 import * as THREE from 'three';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
-import { BK, HALF, PI, RD, REDUCED, SMALL_Z, TINY_Z, tagsEl, vw } from './env.js';
+import { BK, HALF, PI, RD, PHONE_ROOM_FILL, REDUCED, ROOM_FILL, RW, TINY_Z, tagsEl, vh, vw } from './env.js';
 import { clamp, clock, esc, trunc } from './util.js';
 import { AGENT_COLOR, hostLook } from './looks.js';
 import { isSession, mumble, shortId } from './activity.js';
 import { actionOf, glyphHtml } from './glyphs.js';
 import { G, M, ROBOT, _w, botGroup, cam, toScreen } from './scene.js';
 import { ents, everLoaded, selectedKey } from './model.js';
-import { roomByName } from './rooms.js';
+import { roomByName, rooms } from './rooms.js';
 import { select } from './panel.js';
 
 // ------------------------------------------------------------------ the android
@@ -218,13 +218,25 @@ export function updateTag(e) {
 // colliding tags are pushed upward, with a thin lead line back to their android.
 const tagList = [], placed = [];
 const _s = { x: 0, y: 0 };
+// A room you have zoomed into: its floor spans a good share of the view's width and its middle is on screen.
+function zoomedInto(r) {
+  let x0 = Infinity, x1 = -Infinity;
+  for (const [x, z] of [[r.ox, r.oy], [r.ox + RW, r.oy], [r.ox, r.oy + RD], [r.ox + RW, r.oy + RD]]) {
+    toScreen(_w.set(x, 0, z), _s);
+    x0 = Math.min(x0, _s.x); x1 = Math.max(x1, _s.x);
+  }
+  toScreen(_w.set(r.ox + RW / 2, 0, r.oy + RD / 2), _s);
+  return x1 - x0 >= vw * (vw < 760 ? PHONE_ROOM_FILL : ROOM_FILL) &&_s.x > 0 && _s.x < vw && _s.y > 0 && _s.y < vh;
+}
 export function positionTags() {
-  // phones have little room: speech bubbles appear once zoomed in (or for the selected android)
-  const small = cam.z < (vw < 760 ? SMALL_Z * 2.2 : SMALL_Z), tiny = cam.z < TINY_Z;
+  // the overview stays quiet: speech bubbles appear only in a room you have zoomed into (or for the selected android)
+  const tiny = cam.z < TINY_Z;
+  for (const r of rooms) r.close = zoomedInto(r);
   tagList.length = 0;
   for (const e of ents.values()) {
     const r = roomByName.get(e.room);
     if (!r) continue;
+    e.far = !r.close;
     e.calm = r.focus === 'background';   // a background room's androids keep their chatter to themselves
     if (e.sizeDirty) { e.tw = e.el.offsetWidth; e.th = e.el.offsetHeight; e.sizeDirty = false; }
     // anchor on the head bone, lifted clear of the head and its kit, plus a few pixels at every zoom
@@ -263,7 +275,7 @@ export function positionTags() {
   for (const e of tagList) {
     const z = ++order + (e.key === selectedKey ? 1000 : 0);
     if (z !== e.qz) { e.qz = z; e.el.style.zIndex = String(z); }
-    const cls = e.tagBase + (e.calm ? ' calm' : '') + (tiny ? ' tiny' : e.key === selectedKey ? ' sel' : small ? ' small' : '');
+    const cls = e.tagBase + (e.calm ? ' calm' : '') + (tiny ? ' tiny' : e.key === selectedKey ? ' sel' : e.far ? ' far' : '');
     if (e.el.className !== cls) { e.el.className = cls; e.sizeDirty = true; }
   }
 }
