@@ -21,9 +21,11 @@ const SNOOZE_S = 3600;
 // ------------------------------------------------------------------ items per room, from the state document
 const seen = new Set();   // open item ids already announced: each swings the lantern once
 let items = [];
+export let openCount = 0;   // open items under the lanterns: the header's "need you"
 export function applyAttention(rooms, doc) {
   if (doc) items = doc.attention || [];
   const now = performance.now() / 1000;
+  openCount = 0;
   for (const r of rooms) {
     const mine = items.filter(i => i.project === r.name && i.state !== 'resolved');
     const shown = mine.filter(i => i.state === 'open' || i.state === 'acknowledged');
@@ -32,6 +34,7 @@ export function applyAttention(rooms, doc) {
       level: shown.some(i => i.state === 'open') ? 'open' : shown.length ? 'acknowledged' : null,
       kind: shown.some(i => i.kind === 'blocker') ? 'blocker' : 'decision',   // a blocker outranks a decision
     } : null;
+    openCount += shown.filter(i => i.state === 'open').length;
     const arrived = shown.filter(i => i.state === 'open' && !seen.has(i.id));
     if (arrived.length && !REDUCED) r.swingFrom = now;
     for (const i of arrived) seen.add(i.id);

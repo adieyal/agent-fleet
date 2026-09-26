@@ -2,7 +2,8 @@
 
 import { QS, RD, REDUCED } from './env.js';
 import { store } from './util.js';
-import { ROBOT, drawSign } from './scene.js';
+import { ROBOT, cam, drawSign } from './scene.js';
+import { fit } from './camera.js';
 import { ents, everLoaded, hosts, live, selectedKey, setEverLoaded, setHosts, setLive } from './model.js';
 import { layoutRooms, rooms } from './rooms.js';
 import { buildDocs, noteDocs } from './docs3d.js';
@@ -15,6 +16,7 @@ import { openReader } from './reader.js';
 import { applyFocus } from './focus.js';
 import { applyAttention } from './attention.js';
 import { patchScene } from './dim.js';
+import { applyBuilding } from './building.js';
 
 // Dismissed agents are hidden in this browser only (the deck stays view-only). Each is remembered with
 // the updated_at it had when dismissed, so any new activity brings it back.
@@ -89,9 +91,21 @@ export function restoreDismissed() {
   if (lastDoc) applyState(lastDoc);
 }
 
+// A floor entered from the building shows only its project's work on the deck (a stand-in for the floor view, L1).
+export let entered = null;   // the project ID, or null for the whole deck
+export function enterProject(projectId) {
+  entered = projectId;
+  cam.userMoved = false;
+  if (lastDoc) applyState(lastDoc);
+  fit(false);
+}
+
 export function applyState(doc) {
   lastDoc = doc;
-  setHosts(visibleHosts(doc));
+  applyBuilding(doc);   // from the whole document: dismissed and finished work still counts there
+  const shown = visibleHosts(doc);
+  setHosts(entered ? shown.map(h => ({ ...h, jobs: h.jobs.filter(j => j.project_id === entered),
+    sessions: h.sessions.filter(s => s.project_id === entered) })) : shown);
   const projects = new Set();
   for (const h of hosts) for (const j of h.jobs || []) projects.add(j.project);
   // hosts on an older fleetd send no sessions; a session whose cwd fleetd could not tell has no room and is not drawn

@@ -11,8 +11,9 @@ import {
 } from './model.js';
 import { DOC_KIND, docMeta, docsOf, kindOf } from './docs3d.js';
 import { action, buildRobot } from './agents.js';
-import { dismiss, hiddenCount, restoreDismissed, retiredCount, showFinished, toggleFinished } from './state.js';
+import { dismiss, entered, hiddenCount, restoreDismissed, retiredCount, showFinished, toggleFinished } from './state.js';
 import { focusOn } from './camera.js';
+import { openCount } from './attention.js';
 import { openReader } from './reader.js';
 
 // ------------------------------------------------------------------ portraits for the manifest and the panel
@@ -240,7 +241,7 @@ export function renderLegend() {
   }
 }
 export function renderStats() {
-  const count = { running: 0, queued: 0, done: 0, failed: 0, stalled: 0 }, live = { working: 0, idle: 0 };
+  const count = { running: 0, queued: 0, done: 0 }, live = { working: 0, idle: 0 };
   for (const e of ents.values()) {
     const tally = isSession(e) ? live : count;
     if (tally[e.job.status] !== undefined) tally[e.job.status]++;
@@ -250,7 +251,7 @@ export function renderStats() {
     <span class="chip"><i style="background:var(--run)"></i><b>${count.running}</b> working</span>
     <span class="chip opt"><i style="background:var(--warn)"></i><b>${count.queued}</b> queued</span>
     <span class="chip opt"><i style="background:var(--ok)"></i><b>${count.done}</b> done</span>
-    <span class="chip"><i style="background:var(--bad)"></i><b>${count.failed + count.stalled}</b> need you</span>
+    <span class="chip" id="needYou" title="open attention items: acknowledged and snoozed ones aren't counted"><i style="background:var(--bad)"></i><b>${openCount}</b> need you</span>
     ${retiredCount ? `<button class="chip restore" id="toggleFinished" title="Show finished jobs that have left the deck"><b>${retiredCount}</b> finished · show</button>`
       : showFinished ? '<button class="chip restore" id="toggleFinished" title="Let finished jobs leave the deck again">hide finished</button>' : ''}
     ${hiddenCount ? `<button class="chip restore" id="restoreDismissed" title="Show dismissed agents again"><b>${hiddenCount}</b> hidden · show</button>` : ''}`;
@@ -307,7 +308,9 @@ export function updateHint() {
   const hint = document.getElementById('hint');
   if (ents.size) { hint.hidden = true; return; }
   hint.hidden = false;
-  hint.innerHTML = everLoaded
+  hint.innerHTML = entered && everLoaded
+    ? '<h2>Nobody’s working here right now</h2><p>Work for this project shows up here when it starts.</p>'
+    : everLoaded
     ? `<h2>The deck is quiet</h2><p>No jobs on any host in the last day. Send one with</p><p><code>fleet send -H worker -p myrepo -d "…" -C ~/src/myrepo -s "…"</code></p><p><a href="?demo">See the demo crew</a></p>`
     : `<h2>Waiting for the fleet server</h2><p>This page is served by <code>fleet web</code>. It couldn&apos;t reach <code>/api/stream</code> yet.</p><p><a href="?demo">Open the demo instead</a></p>`;
 }

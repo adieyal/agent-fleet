@@ -10,8 +10,12 @@ anything without one is in priority, so the deck looks as it did before focus ex
 Attention actions are what the user did to an attention item (see fleet.attention):
 acknowledged, or snoozed until a time. Items themselves are derived and never stored.
 
+Floors are which floor of the building each registered project occupies (see
+fleet.building), numbered from 1 above the lobby.
+
     {"focus": {"projects": {"p-1a2b3c4d": "background"}, "labels": {"scratch": "background"}},
-     "attention": {"<item id>": {"state": "snoozed", "at": 1790400000.0, "until": 1790403600.0}}}
+     "attention": {"<item id>": {"state": "snoozed", "at": 1790400000.0, "until": 1790403600.0}},
+     "floors": {"p-1a2b3c4d": 1}}
 """
 from __future__ import annotations
 
@@ -21,6 +25,7 @@ import threading
 from pathlib import Path
 from typing import Any, Container, Iterable
 
+from fleet.building import NoVacancy
 from fleet.transport import FleetError
 
 FOCUSES = ("priority", "background")
@@ -51,6 +56,11 @@ class WorkspaceStore:
             if action.get("state") not in ACTIONS or (action["state"] == "snoozed" and not action.get("until")):
                 raise FleetError(f"attention item '{item_id}' has an unknown action {action}")
             self.attention[item_id] = dict(action)
+        self.floors: dict[str, int] = {}
+        for project_id, floor in (initial.get("floors") or {}).items():
+            if isinstance(floor, bool) or not isinstance(floor, int) or floor < 1 or floor in self.floors.values():
+                raise FleetError(f"project '{project_id}' has floor {floor!r}: floors are distinct whole numbers from 1")
+            self.floors[project_id] = floor
 
     def save(self) -> None:
         """Write the whole file atomically; call with the lock held."""
@@ -58,7 +68,7 @@ class WorkspaceStore:
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_suffix(".tmp")
-        temporary.write_text(json.dumps({"focus": self.focus, "attention": self.attention}, indent=2, sort_keys=True) + "\n")
+        temporary.write_text(json.dumps({"focus": self.focus, "attention": self.attention, "floors": self.floors}, indent=2, sort_keys=True) + "\n")
         os.replace(temporary, self.path)
 
     # ------------------------------------------------------------ focus
@@ -115,3 +125,44 @@ class WorkspaceStore:
                 del self.attention[item_id]
             if gone:
                 self.save()
+
+    # ------------------------------------------------------------ floors
+    def floors_snapshot(self) -> dict[str, int]:
+        with self.lock:
+            return dict(self.floors)
+
+    def move_in(self, project_id: str, capacity: int) -> int:
+        """The project's floor: the one it has, else the lowest free one within capacity."""
+        with self.lock:
+            if project_id not in self.floors:
+                self.floors[project_id] = self.free_floor(capacity)
+                self.save()
+            return self.floors[project_id]
+
+    def settle(self, project_ids: Iterable[str], capacity: int) -> None:
+        """Free the floors of projects no longer registered and move in registered ones that have none, in order,
+        while floors are free. A floor once held is never reassigned, even above a lowered capacity."""
+        project_ids = list(project_ids)
+        with self.lock:
+            changed = False
+            for project_id in [known for known in self.floors if known not in project_ids]:
+                del self.floors[project_id]
+                changed = True
+            for project_id in project_ids:
+                if project_id in self.floors:
+                    continue
+                try:
+                    self.floors[project_id] = self.free_floor(capacity)
+                except NoVacancy:
+                    break
+                changed = True
+            if changed:
+                self.save()
+
+    def free_floor(self, capacity: int) -> int:
+        """The lowest free floor; call with the lock held."""
+        taken = set(self.floors.values())
+        free = next((floor for floor in range(1, capacity + 1) if floor not in taken), None)
+        if free is None:
+            raise NoVacancy("The building's full: every floor is taken")
+        return free

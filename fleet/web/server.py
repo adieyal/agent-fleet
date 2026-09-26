@@ -17,15 +17,16 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from fleet import projects, transport
+from fleet import building, projects, transport
 from fleet.attention import AttentionBoard, ItemResolved
+from fleet.building import DEFAULT_CAPACITY, NoVacancy
 from fleet.workspace import FOCUSES, WorkspaceStore
 from fleet.projects import Registry
 from fleet.transport import FleetError, Host
 from fleet.web.documents import fetch_document
 from fleet.web.fixture import FixtureLibrary, FixtureState
 from fleet.web.library import ProjectLibrary
-from fleet.web.live import LiveWorkspace
+from fleet.web.live import AlreadyHoused, LiveWorkspace
 
 WEB_ROOT = Path(__file__).parent.resolve()
 INDEX_PATH = WEB_ROOT / "index.html"
@@ -63,11 +64,14 @@ class FleetState(LiveWorkspace):
 
     def __init__(self, hosts: list[Host], project_labels: dict[str, str] | None = None,
                  load_registry: Callable[[], Registry] | None = None,
-                 workspace: WorkspaceStore | None = None) -> None:
+                 workspace: WorkspaceStore | None = None,
+                 load_capacity: Callable[[], int] | None = None) -> None:
         self.hosts = hosts
         self.project_labels = project_labels or {}
         self.load_registry = load_registry or Registry
         self.registry = self.load_registry()
+        self.load_capacity = load_capacity or (lambda: DEFAULT_CAPACITY)
+        self.capacity = self.load_capacity()
         self.workspace = workspace or WorkspaceStore(None)
         self.board = AttentionBoard(self.workspace)
         self.changed = threading.Condition()
@@ -89,15 +93,31 @@ class FleetState(LiveWorkspace):
         except (FleetError, ValueError, KeyError, TypeError) as error:
             return f"project registry not reloaded: {error}"
 
+    def refresh_capacity(self) -> str | None:
+        try:
+            self.capacity = self.load_capacity()
+            return None
+        except (FleetError, ValueError) as error:
+            return f"capacity not reloaded: {error}"
+
     def known_projects(self) -> dict[str, Any]:
         self.refresh_registry()   # a project registered a moment ago can be focused
         return self.registry.projects
 
+    def register(self, name: str, host: str, label: str) -> str:
+        registry = self.load_registry()
+        project = registry.create(name)
+        registry.link(project.id, host, label)
+        projects.save_registry(registry)
+        self.registry = registry
+        return project.id
+
     def document(self) -> dict[str, Any]:
         projects_error = self.refresh_registry()
+        capacity_error = self.refresh_capacity()
         registry = self.registry
         with self.changed:
-            return self.with_attention({"time": time.time(), "project_labels": self.project_labels,
+            document = self.with_attention({"time": time.time(), "project_labels": self.project_labels,
                     "projects": [{"id": project_id, **entry} for project_id, entry in registry.to_config().items()],
                     "projects_error": projects_error, "hosts": [
                 {**{key: value for key, value in self.by_host[host.name].items() if key not in ("jobs", "sessions")},
@@ -107,6 +127,9 @@ class FleetState(LiveWorkspace):
                               sorted(self.by_host[host.name]["sessions"].values(),
                                      key=lambda session: session.get("started_at") or 0)]}
                 for host in self.hosts]})
+        document = self.with_building(document, registry)
+        document["building"]["capacity_error"] = capacity_error
+        return document
 
     def host_names(self) -> list[str]:
         return [host.name for host in self.hosts]
@@ -217,7 +240,7 @@ def make_handler(state: FleetState | FixtureState,
         def do_POST(self) -> None:  # noqa: N802 — http.server naming
             path = self.path.split("?", 1)[0]
             action = path.removeprefix("/api/attention/") if path.startswith("/api/attention/") else None
-            if path != "/api/focus" and action not in ATTENTION_ACTIONS:
+            if path not in ("/api/focus", "/api/move-in") and action not in ATTENTION_ACTIONS:
                 self.respond(404, "text/plain", b"not found")
             elif not self.same_origin():
                 self.respond(403, "application/json", b'{"error": "cross-origin writes are refused"}')
@@ -231,6 +254,8 @@ def make_handler(state: FleetState | FixtureState,
                 body = body if isinstance(body, dict) else {}
                 if action:
                     self.attention(action, body)
+                elif path == "/api/move-in":
+                    self.move_in(body)
                 else:
                     self.focus(body)
 
@@ -258,6 +283,21 @@ def make_handler(state: FleetState | FixtureState,
                 self.error(400, str(error))
                 return
             self.respond(200, "application/json", json.dumps(state.workspace.focus_snapshot()).encode())
+
+        def move_in(self, body: dict[str, Any]) -> None:
+            """POST /api/move-in {"host": host, "label": label} — register the label as a project on the lowest free floor."""
+            if not isinstance(body.get("host"), str) or not isinstance(body.get("label"), str):
+                self.error(400, "host and label are required")
+                return
+            try:
+                moved = state.move_in(body["host"], body["label"])
+            except (NoVacancy, AlreadyHoused) as error:
+                self.error(409, str(error))
+                return
+            except FleetError as error:
+                self.error(400, str(error))
+                return
+            self.respond(200, "application/json", json.dumps(moved).encode())
 
         def attention(self, action: str, body: dict[str, Any]) -> None:
             """POST /api/attention/acknowledge|snooze|reopen {"id": item id, "seconds": snooze length}"""
@@ -354,7 +394,8 @@ def workspace_path() -> Path:
 
 def serve(hosts: list[Host], *, port: int, bind: str, open_browser: bool = False,
           libraries: dict[str, str] | None = None, project_labels: dict[str, str] | None = None) -> None:
-    state = FleetState(hosts, project_labels, projects.load_registry, WorkspaceStore(workspace_path()))
+    state = FleetState(hosts, project_labels, projects.load_registry, WorkspaceStore(workspace_path()),
+                       building.load_capacity)
     for host in hosts:
         threading.Thread(target=follow_host, args=(state, host), daemon=True).start()
     run_server(make_handler(state, ProjectLibrary(libraries or {})), port=port, bind=bind, open_browser=open_browser)

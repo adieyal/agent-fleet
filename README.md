@@ -107,6 +107,19 @@ acknowledge (the lantern stays, dimmer) or snooze one for an hour (it hides unti
 then). Items resolve by themselves when the job is retried or removed or the session
 moves on; looking at one never changes it. `/api/state` lists them under `attention`.
 
+The header's **deck | building** switch shows the same fleet as a building seen in
+cross-section, one floor per registered project; the deck stays the default and the
+choice is remembered. Priority floors are open, background floors are windowed and
+glow warm while runs are active, and free floors say "To let". The building has six
+floors unless the config sets `"capacity"` (1 to 10); raising it is a deliberate
+edit. A project keeps its floor, kept in `workspace.json`: the lowest free one when it
+moves in. The lobby shows the host key and any visitors, labels with work that no
+project claims; **Move in** registers one as a project on the lowest free floor.
+A floor with attention items gets one lantern beside it (items on no floor hang theirs
+by the lobby). Each name plate has an open · windows switch for the project's focus.
+Click a floor to enter it: the deck shows just that project's work, with a lift panel
+on the right edge (a button per floor, L for the whole building); Esc steps back out.
+
 ## Read the work
 
 The deck collects step reports, Markdown files the agent wrote, and Markdown in its
@@ -170,8 +183,9 @@ Claude jobs default to `acceptEdits`; Codex jobs default to `workspace-write`. U
 working directories, session details, and Markdown documents. The library endpoints
 also expose Markdown under configured local project roots. Anyone who can reach
 the dashboard can read that data. Keep it on loopback or use an SSH tunnel. Add
-access control before binding it to a shared network. Its writes, `POST /api/focus` and
-`POST /api/attention/…`, change `workspace.json`; they refuse requests from pages on
+access control before binding it to a shared network. Its writes, `POST /api/focus`,
+`POST /api/attention/…` and `POST /api/move-in`, change `workspace.json` (and, for
+moving in, the project registry in the config); they refuse requests from pages on
 other origins, but anyone who can reach the dashboard directly can use them.
 
 Agents can place Markdown outside the job directory in the document list, so review
