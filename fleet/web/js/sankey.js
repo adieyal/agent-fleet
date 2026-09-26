@@ -308,81 +308,92 @@ function renderChart(L, run, base, width, height, clear, firsts, now) {
   const note = chart.querySelector('.sk-note');
   if (off && !note) chart.insertAdjacentHTML('afterbegin', off); else if (!off && note) note.remove();
 }
-// Which parts of the plot are taken: a grid of CELL-sized cells over the SVG, filled where bands (swept along their
-// centre lines), nodes and stubs lie, summed so any box is tested at once. Returns (box) → whether it touches any.
+// Which parts of the plot are taken: a grid of CELL-sized cells over the SVG (column by column, so a band's slice is
+// one fill), filled where bands (swept along their centre lines), nodes and stubs lie, and a copy with the baseline
+// outlines added; each summed so a box is tested at once. Returns [with outlines, without], each (x, y, w, h) →
+// whether that box touches anything.
 const CELL = 2, BAND_STEPS = 48;
-function occupancy(bands, rects, x0, y0, width, height) {
-  const cols = Math.ceil(width / CELL), rows = Math.ceil(height / CELL), grid = new Uint8Array(cols * rows);
+function occupancy(L, rects, x0, y0, width, height) {
+  const cols = Math.ceil(width / CELL), rows = Math.ceil(height / CELL);
   const cell = (v, o, n) => Math.min(n - 1, Math.max(0, Math.floor((v - o) / CELL)));
-  const fill = (xa, xb, ya, yb) => {
-    const c0 = cell(xa, x0, cols), c1 = cell(xb, x0, cols), r1 = cell(yb, y0, rows);
-    for (let r = cell(ya, y0, rows); r <= r1; r++) grid.fill(1, r * cols + c0, r * cols + c1 + 1);
+  const fill = (grid, xa, xb, ya, yb) => {
+    const r0 = cell(ya, y0, rows), r1 = cell(yb, y0, rows) + 1, c1 = cell(xb, x0, cols);
+    for (let c = cell(xa, x0, cols); c <= c1; c++) grid.fill(1, c * rows + r0, c * rows + r1);
   };
-  for (const [b, half] of bands) {
+  const sweep = (grid, b, half) => {
     let p = bandPoint(b, 0, 0);
     for (let i = 1; i <= BAND_STEPS; i++) {
       const q = bandPoint(b, i / BAND_STEPS, 0);
-      fill(p.x, q.x, Math.min(p.y, q.y) - half, Math.max(p.y, q.y) + half);
+      fill(grid, p.x, q.x, Math.min(p.y, q.y) - half, Math.max(p.y, q.y) + half);
       p = q;
     }
-  }
-  for (const r of rects) fill(r.x, r.x + r.width, r.y, r.y + r.height);
-  const W = cols + 1, sum = new Uint32Array(W * (rows + 1));
-  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++)
-    sum[(r + 1) * W + c + 1] = grid[r * cols + c] + sum[r * W + c + 1] + sum[(r + 1) * W + c] - sum[r * W + c];
-  return b => {
-    const c0 = cell(b.x, x0, cols), c1 = cell(b.x + b.width, x0, cols) + 1, r0 = cell(b.y, y0, rows), r1 = cell(b.y + b.height, y0, rows) + 1;
-    return sum[r1 * W + c1] - sum[r0 * W + c1] - sum[r1 * W + c0] + sum[r0 * W + c0] > 0;
   };
+  const loose = new Uint8Array(cols * rows);
+  for (const b of L.bands) sweep(loose, b, b.w / 2 + 0.5);
+  for (const r of rects) fill(loose, r.x, r.x + r.width, r.y, r.y + r.height);
+  const strict = loose.slice();
+  for (const b of L.bands) if (b.ghost) sweep(strict, b.ghost, b.ghost.w / 2 + 1);
+  const H = rows + 1;
+  return [strict, loose].map(grid => {
+    const sum = new Uint32Array((cols + 1) * H);
+    for (let c = 0, o = 0, s = H; c < cols; c++, o += rows, s += H) {
+      let run = 0;
+      for (let r = 0; r < rows; r++) { run += grid[o + r]; sum[s + r + 1] = sum[s - H + r + 1] + run; }
+    }
+    return (x, y, w, h) => {
+      const c0 = cell(x, x0, cols), c1 = cell(x + w, x0, cols) + 1, r0 = cell(y, y0, rows), r1 = cell(y + h, y0, rows) + 1;
+      return sum[c1 * H + r1] - sum[c0 * H + r1] - sum[c1 * H + r0] + sum[c0 * H + r0] > 0;
+    };
+  });
 }
-const overlaps = (p, q, m = 0) => p.x < q.x + q.width + m && q.x < p.x + p.width + m && p.y < q.y + q.height + m && q.y < p.y + p.height + m;
-const grow = (b, m) => ({ x: b.x - m, y: b.y - m, width: b.width + 2 * m, height: b.height + 2 * m });
 // Labels never lie on a band. The last column's sit right of their node, where nothing flows. Every other label goes
 // in the nearest free spot of the gaps above or below its node, from wholly left of it to wholly right: clear of
 // outlines too if it can be, else of the bands only. With no free spot it sits on a chip level with its node, left of
 // it (its stub is on the right), covering the bands there.
-const LABEL_REACH = 60, LABEL_M = 2;
+const LABEL_REACH = 60, LABEL_STEP = 4, LABEL_M = 2;
 function placeLabels(L, lastCol, width, height, stubs) {
-  const x0 = -PAD, y0 = -PAD - LABEL_TOP, nodeRects = [...L.nodes.values()].map(n => ({ x: n.x, y: n.y, width: L.nodeW, height: n.hc }));
-  const strict = occupancy([...L.bands.map(b => [b, b.w / 2 + 0.5]), ...L.bands.filter(b => b.ghost).map(b => [b.ghost, b.ghost.w / 2 + 1])],
-    [...nodeRects, ...stubs], x0, y0, width, height);
-  const loose = occupancy(L.bands.map(b => [b, b.w / 2 + 0.5]), [...nodeRects, ...stubs], x0, y0, width, height);
+  const x0 = -PAD, y0 = -PAD - LABEL_TOP, M = LABEL_M;
+  const nodeRects = [...L.nodes.values()].map(n => ({ x: n.x, y: n.y, width: L.nodeW, height: n.hc }));
+  const [strict, loose] = occupancy(L, [...nodeRects, ...stubs], x0, y0, width, height);
   const placed = [...svg.querySelectorAll('.sk-cap')].map(el => el.getBBox());
-  const inView = b => b.x >= x0 + 1 && b.y >= y0 + 1 && b.x + b.width <= x0 + width - 1 && b.y + b.height <= y0 + height - 1;
-  const free = (taken, b) => inView(b) && !taken(grow(b, LABEL_M)) && !placed.some(p => overlaps(p, b, LABEL_M));
+  const inView = (x, y, w, h) => x >= x0 + 1 && y >= y0 + 1 && x + w <= x0 + width - 1 && y + h <= y0 + height - 1;
+  const free = (taken, x, y, w, h) => {
+    if (!inView(x, y, w, h) || taken(x - M, y - M, w + 2 * M, h + 2 * M)) return false;
+    for (const p of placed) if (x < p.x + p.width + M && p.x < x + w + M && y < p.y + p.height + M && p.y < y + h + M) return false;
+    return true;
+  };
   const labels = [...svg.querySelectorAll('.sk-node')].map(g => ({ g, n: L.nodes.get(g.dataset.node), text: g.querySelector('text') }))
     .map(l => ({ ...l, box: l.text.getBBox() }))   // the last column's first: their spots are fixed
-    .sort((p, q) => (q.n.col === lastCol) - (p.n.col === lastCol) || p.n.col - q.n.col || p.n.y - q.n.y);
-  for (const { g, n, text, box } of labels) {
-    const at = (x, y) => ({ x, y, width: box.width, height: box.height });
+    .sort((p, q) => (q.n.col === lastCol) - (p.n.col === lastCol) || p.n.col - q.n.col || p.n.y - q.n.y);  for (const { g, n, text, box } of labels) {
+    const w = box.width, h = box.height;
     let spot = null;
-    if (n.col === lastCol) spot = at(n.x + L.nodeW + 7, n.y + n.hc / 2 - box.height / 2);
+    if (n.col === lastCol) spot = { x: n.x + L.nodeW + 7, y: n.y + n.hc / 2 - h / 2 };
     else {
       for (const taken of [strict, loose]) {
         let best = null;
-        for (const below of [false, true]) for (let dy = 0; dy <= LABEL_REACH; dy += CELL) {
-          const y = below ? n.y + n.hc + 4 + dy : n.y - 4 - box.height - dy;
-          for (let dx = 0; dx <= box.width + L.nodeW; dx += CELL) {   // left-aligned first, then either way
+        for (const below of [false, true]) for (let dy = 0; dy <= LABEL_REACH; dy += LABEL_STEP) {
+          const y = below ? n.y + n.hc + 4 + dy : n.y - 4 - h - dy;
+          for (let dx = 0; dx <= w + L.nodeW; dx += LABEL_STEP) {   // left-aligned first, then either way
             const cost = dy * 2 + dx + (below ? 12 : 0);
             if (best && cost >= best.cost) break;
-            const b = [at(n.x - dx, y), at(n.x + dx, y)].find(b => free(taken, b));
-            if (b) { best = { cost, b }; break; }
+            const x = free(taken, n.x - dx, y, w, h) ? n.x - dx : free(taken, n.x + dx, y, w, h) ? n.x + dx : null;
+            if (x !== null) { best = { cost, x, y }; break; }
           }
         }
-        if (best) { spot = best.b; break; }
+        if (best) { spot = best; break; }
       }
       if (!spot) {
-        const y = n.y + n.hc / 2 - box.height / 2;
-        spot = [at(n.x - 4 - box.width, y), at(n.x + L.nodeW + WAIT_W + 4, y)].find(inView) || at(n.x, y);
+        const y = n.y + n.hc / 2 - h / 2, left = n.x - 4 - w, right = n.x + L.nodeW + WAIT_W + 4;
+        spot = { x: inView(left, y, w, h) ? left : inView(right, y, w, h) ? right : n.x, y };
         const chip = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        for (const [k, v] of Object.entries({ class: 'sk-chip', x: spot.x - 4, y: spot.y - 2, width: spot.width + 8, height: spot.height + 4, rx: 4 }))
+        for (const [k, v] of Object.entries({ class: 'sk-chip', x: spot.x - 4, y: spot.y - 2, width: w + 8, height: h + 4, rx: 4 }))
           chip.setAttribute(k, v);
         g.insertBefore(chip, text);
         g.classList.add('chip');
       }
     }
     text.setAttribute('transform', `translate(${spot.x - box.x},${spot.y - box.y})`);
-    placed.push(spot);
+    placed.push({ x: spot.x, y: spot.y, width: w, height: h });
   }
 }
 function drawDots(L, width, height) {
