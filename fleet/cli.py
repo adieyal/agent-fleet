@@ -21,7 +21,7 @@ from rich.tree import Tree
 
 from fleet import transport
 from fleet.transport import FleetError, Host, HostReport
-from fleet.web.server import serve
+from fleet.web.server import serve, serve_fixture
 
 console = Console()
 error_console = Console(stderr=True)
@@ -553,6 +553,9 @@ def command_unlock(arguments: argparse.Namespace) -> None:
 
 
 def command_web(arguments: argparse.Namespace) -> None:
+    if arguments.fixture:
+        serve_fixture(arguments.fixture, port=arguments.port, bind=arguments.bind, open_browser=arguments.open)
+        return
     config = transport.load_config()
     serve(selected_hosts(arguments), port=arguments.port, bind=arguments.bind, open_browser=arguments.open,
           libraries=config.get("libraries", {}), project_labels=config.get("project_labels", {}))
@@ -718,6 +721,7 @@ def build_parser() -> argparse.ArgumentParser:
     web.add_argument("--port", type=int, default=8787)
     web.add_argument("--bind", default="127.0.0.1")
     web.add_argument("--open", action="store_true", help="open a browser tab")
+    web.add_argument("--fixture", help=argparse.SUPPRESS)  # serve a recorded fleet from JSON, for tests
     web.set_defaults(handler=command_web)
     return parser
 
