@@ -205,7 +205,7 @@ def test_work_without_a_floor_waits_in_the_lobby(page: Page, ten_floors_url: str
     expect(page.locator(".lobby .novacancy")).to_be_visible()
     expect(visitors.locator("button")).to_have_count(2)
     for button in visitors.locator("button").all():
-        expect(button).to_be_disabled()
+        expect(button).to_have_text("No vacancies")   # it offers a floor to clear, never more floors
     expect(page.locator('.hostkey .host[data-host="gpu-box"]')).to_have_class("host off")
     expect(page.locator('.hostkey .host[data-host="home"]')).to_have_class("host")
 
@@ -318,7 +318,7 @@ def test_the_lift_goes_between_floors_and_back_to_the_building(page: Page, fresh
     lift = page.locator("#lift")
     expect(lift.locator("button")).to_have_count(8)   # six floors, L and S
     assert lift.locator("button").all_inner_texts() == ["6", "5", "4", "3", "2", "1", "L", "S"]
-    expect(lift.locator('[data-lift="S"]')).to_be_disabled()
+    expect(lift.locator('[data-lift="S"]')).to_be_enabled()
     for free in ("3", "4", "5", "6"):
         expect(lift.locator(f'[data-lift="{free}"]')).to_be_disabled()
     expect(lift.locator(".lift-lantern")).to_have_count(2)   # floors 1 and 2 need you
@@ -343,6 +343,12 @@ def test_the_lift_goes_between_floors_and_back_to_the_building(page: Page, fresh
     expect(page.locator("body")).to_have_attribute("data-view", "floor")
     page.keyboard.press("Escape")
     expect(page.locator("body")).to_have_attribute("data-view", "building")
+
+    # S rides to the storehouse
+    page.locator('.plate[data-floor="1"] .enter').click()
+    lift.locator('[data-lift="S"]').click()
+    expect(page.locator("body")).to_have_attribute("data-view", "building")
+    expect(page.locator(".storehouse")).to_be_visible()
 
 
 def layout(page: Page) -> dict[str, Any]:
@@ -372,3 +378,88 @@ def test_the_focus_switch_changes_a_floor_and_moves_nothing(page: Page) -> None:
         assert state(url)["building"]["focus"][project] == "priority"
         page.wait_for_timeout(300)
         assert layout(page) == before
+
+
+# ------------------------------------------------------------------ shuttering and the storehouse
+INVOICES = "p-1c0ce5a2"   # Invoice analysis: floor 2 in the Restoke fleet, in the background, with a failed job
+
+
+def test_shuttering_packs_a_floor_away_and_undo_brings_it_back(page: Page, fresh_restoke_url: str) -> None:
+    url = fresh_restoke_url
+    open_building(page, url)
+    page.locator('.shutter-handle[data-floor="2"]').click()   # one pull, no confirmation
+
+    plate = page.locator('.plate[data-floor="2"]')
+    expect(plate).to_have_attribute("data-mode", "to-let")
+    toast = page.locator("#toast")
+    expect(toast).to_be_visible()
+    expect(toast).to_contain_text("Invoice analysis is packed away in the storehouse. Floor 2 is free.")
+    assert [crate["id"] for crate in page.evaluate("fleetBuilding.crates()")] == [INVOICES]
+    expect(page.locator(".annex-sign b")).to_have_text("1")
+    # its attention goes to the front desk and the storehouse door, never the floor it left
+    assert set(lanterns(page)) == {1, "lobby", "store"}
+    expect(page.locator('.floor-lantern[data-place="2"]')).to_have_count(0)
+    assert state(url)["building"]["shuttered"][INVOICES]["floor"] == 2
+
+    toast.locator("[data-undo]").click()
+    expect(plate).to_have_attribute("data-mode", "windowed")          # as it was: its floor, its focus
+    expect(plate).to_have_attribute("data-project", INVOICES)
+    expect(toast).to_be_hidden()
+    assert page.evaluate("fleetBuilding.crates()") == []
+    assert set(lanterns(page)) == {1, 2}
+    building = state(url)["building"]
+    assert building["floors"][INVOICES] == 2 and building["focus"][INVOICES] == "background" and building["shuttered"] == {}
+
+
+def test_a_crate_opens_read_only_and_moves_back_to_its_floor(page: Page, fresh_restoke_url: str) -> None:
+    url = fresh_restoke_url
+    open_building(page, url)
+    page.locator('.shutter-handle[data-floor="2"]').click()
+    expect(page.locator("#toast")).to_be_hidden(timeout=10000)     # the chance to undo passes; it stays shuttered
+    assert INVOICES in state(url)["building"]["shuttered"]
+
+    page.locator(".annex-sign").click()
+    crate = page.locator(f'.storehouse .crate[data-project="{INVOICES}"]')
+    expect(crate.locator("b")).to_have_text("Invoice analysis")
+    expect(crate.locator(".runs")).to_have_text("2 runs")           # its runs still show, in the storehouse
+
+    crate.locator("[data-open-crate]").click()
+    expect(page.locator("body")).to_have_attribute("data-view", "floor")
+    expect(page.locator("body")).to_have_attribute("data-readonly", "")
+    page.wait_for_function("fleetDeck.rooms().map(room => room.name).join() === 'invoice-parser'")
+    expect(page.locator("#readonlyTag")).to_be_visible()
+    expect(page.locator(".focus-switch").first).to_be_hidden()      # nothing to change in a crate
+    expect(page.locator('#lift [aria-current="true"]')).to_have_attribute("data-lift", "S")
+
+    page.keyboard.press("Escape")                                   # back out to the storehouse
+    expect(page.locator("body")).to_have_attribute("data-view", "building")
+    expect(page.locator("body")).not_to_have_attribute("data-readonly", "")
+    page.locator(f'.storehouse .crate[data-project="{INVOICES}"] [data-restore]').click()
+    expect(page.locator('.plate[data-floor="2"]')).to_have_attribute("data-project", INVOICES)
+    expect(page.locator(".storehouse .crate")).to_have_count(0)
+    page.keyboard.press("Escape")
+    expect(page.locator(".storehouse")).to_have_count(0)
+
+
+def test_a_full_building_offers_only_clearing_a_floor_or_cancelling(page: Page) -> None:
+    with serve_fixture(TEN_FLOORS) as url:
+        open_building(page, url)
+        notes = page.locator('.lobby .visitor[data-label="notes"] button')
+        notes.click()
+        prompt = page.locator(".vacancy")
+        expect(prompt).to_be_visible()
+        expect(prompt.locator("[data-clear]")).to_have_count(10)
+        expect(prompt.locator("button")).to_have_count(11)                 # a floor to clear, or cancel: nothing else
+        prompt.locator("[data-cancel]").click()
+        expect(prompt).to_have_count(0)
+        assert state(url)["building"]["shuttered"] == {}
+
+        notes.click()
+        research = state(url)["building"]
+        top = next(project for project, floor in research["floors"].items() if floor == 10)
+        page.locator(f'.vacancy [data-clear="{top}"]').click()
+        expect(page.locator('.plate[data-floor="10"] b')).to_have_text("notes")
+        expect(page.locator(".vacancy")).to_have_count(0)
+        building = state(url)["building"]
+        assert building["capacity"] == 10 and list(building["shuttered"]) == [top]
+        assert [crate["name"] for crate in page.evaluate("fleetBuilding.crates()")] == ["Research notes"]
