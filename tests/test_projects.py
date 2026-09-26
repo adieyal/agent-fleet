@@ -122,6 +122,19 @@ def test_registry_round_trips_through_config_keeping_other_keys(config_path):
     assert reloaded.project_for("home", "agent-fleet").id == project.id
 
 
+def test_focus_round_trips_and_older_entries_load_in_priority(config_path):
+    config_path.write_text(json.dumps({"projects": {"p-00000001": {"name": "Stored before focus"}}}))
+    registry = projects.load_registry()
+    assert registry.get("p-00000001").focus == "priority"
+    registry.set_focus("p-00000001", "background")
+    projects.save_registry(registry)
+    assert projects.load_registry().get("p-00000001").focus == "background"
+    with pytest.raises(FleetError, match="priority or background"):
+        registry.set_focus("p-00000001", "parked")
+    with pytest.raises(FleetError, match="unknown project"):
+        registry.set_focus("p-00000002", "priority")
+
+
 def test_config_without_projects_loads_empty(config_path):
     config_path.write_text(json.dumps({"hosts": {}, "project_labels": {"x": "X"}}))
     assert projects.load_registry().projects == {}
@@ -131,6 +144,7 @@ def test_config_without_projects_loads_empty(config_path):
     ({"agent-fleet": {"name": "Bad id"}}, "invalid project id"),
     ({"p-00000001": {"name": "A", "links": [{"host": "h", "label": "l"}]},
       "p-00000002": {"name": "B", "links": [{"host": "h", "label": "l"}]}}, "already linked"),
+    ({"p-00000001": {"name": "A", "focus": "parked"}}, "priority or background"),
 ])
 def test_inconsistent_config_is_rejected(config_path, entries, message):
     config_path.write_text(json.dumps({"projects": entries}))

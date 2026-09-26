@@ -76,7 +76,7 @@ def test_linked_label_resolves_on_its_host_only(deck):
     assert ids(document, "home") == {"j0": ("agent-fleet", project_id)}
     assert ids(document, "home", "sessions")["s0"] == ("agent-fleet", project_id)
     assert ids(document, "gpu") == {"j1": ("agent-fleet", None)}
-    assert document["projects"] == [{"id": project_id, "name": "Agent Fleet", "repositories": [],
+    assert document["projects"] == [{"id": project_id, "name": "Agent Fleet", "repositories": [], "focus": "priority",
                                      "links": [{"host": "home", "label": "agent-fleet"}]}]
 
 
