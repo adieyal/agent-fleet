@@ -1,3 +1,7 @@
 __pycache__/
 *.egg-info/
 .venv/
+
+# art pipeline
+art/sources/
+art/build/

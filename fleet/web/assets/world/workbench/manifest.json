@@ -1,0 +1,186 @@
+{
+  "scene": "workbench",
+  "glb": "workbench.glb",
+  "lightmap": {
+    "uv_channel": 1,
+    "encoding": "srgb8",
+    "apply": "irradiance = decode_srgb(texel) * scale; colour = albedo * irradiance. With MeshBasicMaterial set lightMap.channel = 1, lightMap.colorSpace = SRGBColorSpace and lightMapIntensity = scale * PI (the shader divides by PI).",
+    "texel_m": 0.015,
+    "layers": {
+      "base": {
+        "file": "lightmap-base.webp",
+        "size": 2048,
+        "scale": 1.65412
+      },
+      "desk1": {
+        "file": "lightmap-desk1.webp",
+        "size": 1024,
+        "scale": 0.4528
+      },
+      "desk2": {
+        "file": "lightmap-desk2.webp",
+        "size": 1024,
+        "scale": 0.57973
+      },
+      "desk3": {
+        "file": "lightmap-desk3.webp",
+        "size": 1024,
+        "scale": 0.7889
+      },
+      "planwall": {
+        "file": "lightmap-planwall.webp",
+        "size": 1024,
+        "scale": 1.47587
+      }
+    }
+  },
+  "warm_groups": {
+    "desk1": [
+      "desk1_lamp_bulb"
+    ],
+    "desk2": [
+      "desk2_lamp_bulb"
+    ],
+    "desk3": [
+      "desk3_lamp_bulb"
+    ],
+    "planwall": [
+      "washer_bulb_0",
+      "washer_bulb_1",
+      "washer_bulb_2",
+      "washer_bulb_3",
+      "washer_bulb_4"
+    ]
+  },
+  "dynamic": [
+    "desk1_lamp_bulb",
+    "desk1_plant",
+    "desk2_lamp_bulb",
+    "desk3_lamp_bulb",
+    "lantern",
+    "lift_button_0",
+    "lift_button_1",
+    "lift_button_2",
+    "plan_tile_r0_c0",
+    "plan_tile_r0_c1",
+    "plan_tile_r0_c2",
+    "plan_tile_r0_c3",
+    "plan_tile_r0_c4",
+    "plan_tile_r0_c5",
+    "plan_tile_r0_c6",
+    "plan_tile_r0_c7",
+    "plan_tile_r0_c8",
+    "plan_tile_r1_c0",
+    "plan_tile_r1_c1",
+    "plan_tile_r1_c2",
+    "plan_tile_r1_c3",
+    "plan_tile_r1_c4",
+    "plan_tile_r1_c5",
+    "plan_tile_r1_c6",
+    "plan_tile_r1_c7",
+    "plan_tile_r1_c8",
+    "plan_tile_r2_c0",
+    "plan_tile_r2_c1",
+    "plan_tile_r2_c2",
+    "plan_tile_r2_c3",
+    "plan_tile_r2_c4",
+    "plan_tile_r2_c5",
+    "plan_tile_r2_c6",
+    "plan_tile_r2_c7",
+    "plan_tile_r2_c8",
+    "plan_tile_r3_c0",
+    "plan_tile_r3_c1",
+    "plan_tile_r3_c2",
+    "plan_tile_r3_c3",
+    "plan_tile_r3_c4",
+    "plan_tile_r3_c5",
+    "plan_tile_r3_c6",
+    "plan_tile_r3_c7",
+    "plan_tile_r3_c8",
+    "plan_tile_r4_c0",
+    "plan_tile_r4_c1",
+    "plan_tile_r4_c2",
+    "plan_tile_r4_c3",
+    "plan_tile_r4_c4",
+    "plan_tile_r4_c5",
+    "plan_tile_r4_c6",
+    "plan_tile_r4_c7",
+    "plan_tile_r4_c8",
+    "plan_tile_r5_c0",
+    "plan_tile_r5_c1",
+    "plan_tile_r5_c2",
+    "plan_tile_r5_c3",
+    "plan_tile_r5_c4",
+    "plan_tile_r5_c5",
+    "plan_tile_r5_c6",
+    "plan_tile_r5_c7",
+    "plan_tile_r5_c8",
+    "planter_0_plant",
+    "planter_1_plant",
+    "planter_2_plant",
+    "qdesk_card",
+    "shelf_binder_0",
+    "shelf_binder_1",
+    "shelf_binder_2",
+    "shelf_binder_3",
+    "shelf_binder_4",
+    "shelf_binder_5",
+    "shelf_binder_6",
+    "shelf_box",
+    "washer_bulb_0",
+    "washer_bulb_1",
+    "washer_bulb_2",
+    "washer_bulb_3",
+    "washer_bulb_4"
+  ],
+  "seat_height": 0.47,
+  "camera": "camera_l2",
+  "environment": {
+    "hdri": "white_studio_06_1k.hdr",
+    "rotation_deg": 120.0
+  },
+  "built_with": {
+    "blender": "4.5.14 LTS",
+    "bake_device": "OPTIX: NVIDIA GeForce RTX 3090",
+    "samples": {
+      "base": 512,
+      "warm": 256
+    }
+  },
+  "files": {
+    "lightmap-base.webp": {
+      "bytes": 104526,
+      "sha256": "dcaecae02b53df49441078af7f2c36be55da35cac347966335847642304ca550"
+    },
+    "lightmap-desk1.webp": {
+      "bytes": 17972,
+      "sha256": "d0a19eb7596122f0cf0c605a480805b995882e1a9abfab144b31effcd1e61b11"
+    },
+    "lightmap-desk2.webp": {
+      "bytes": 13626,
+      "sha256": "cb4ff01004e170d3125963202346ada5ec733bdb979d3b4d866072b1d2b35406"
+    },
+    "lightmap-desk3.webp": {
+      "bytes": 11084,
+      "sha256": "e2f4e0a917b823af1aa837c6b73753874eeb58e6e75ee51845f28363a20f3e8c"
+    },
+    "lightmap-planwall.webp": {
+      "bytes": 46178,
+      "sha256": "ecae1987f3a8799efd8f4b0b44cc853ff1a0261f743cc090c495ed49b0729ac1"
+    },
+    "workbench.glb": {
+      "bytes": 3249304,
+      "sha256": "d7f4174d2e1421a088d002bd4ee4d565ca9bd2fd77de0dc08bec3db87074aca8"
+    }
+  },
+  "glb_summary": {
+    "nodes": 292,
+    "meshes": 283,
+    "images": 15,
+    "extensions": [
+      "KHR_materials_specular",
+      "KHR_materials_ior",
+      "EXT_texture_webp"
+    ]
+  }
+}

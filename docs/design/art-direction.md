@@ -89,16 +89,16 @@ Blender bakes in scene-linear values (view transform *Standard*, no look); three
 - `/usr/bin/blender` is the Debian package **3.0.1**. Cycles sees the RTX 3090 through **CUDA** in background mode; a headless 1024² diffuse bake of a small scene took 2.5 s once kernels were compiled (the first run spent ~85 s compiling). **OptiX is not available** in this build.
 - The build ships **no OpenColorIO config**: only *Linear* and *sRGB* colour spaces and no view transforms (no Filmic, no AgX). Linear float bakes still work, but reference renders can't be colour-managed the way three.js tone-maps.
 - The glTF exporter (`io_scene_gltf2`) is present, but it is the 3.0-era version.
-- **Recommendation:** use the official Blender 4.2 LTS Linux tarball, unpacked under the user's home (no root needed). It brings OptiX, OCIO with AgX, OIDN denoising and a current glTF exporter. The build scripts assert the Blender version.
-- Network access to Poly Haven and ambientCG was **not verified**: outbound `curl` was denied in this session. Asset download and the Blender tarball both depend on it.
+- **Decision:** the pipeline pins the official Blender **4.5.14 LTS** Linux build. `art/scripts/fetch_assets.py` fetches it into `art/sources/tools/` like any other source. It brings OptiX, OCIO with AgX, OIDN denoising and WebP glTF export. The build scripts refuse older versions.
+- Python on this host can reach Poly Haven, ambientCG and download.blender.org.
 
-**Layout.**
-- `art/`: sources and build scripts. Nothing here is shipped.
-  - `art/sources.toml`: manifest of every downloaded asset (id, source, URL, licence, sha256).
-  - `art/fetch.py`: downloads into `~/.cache/fleet-art/` and verifies the hashes. Downloaded files never go into git.
-  - `art/blender/`: Python scripts that build each scene (`build_workbench.py`, …), bake (`bake.py`) and export (`export.py`), run with `blender -b -P`.
-  - `art/robot/robot.blend`: the hand-tuned robot model and rig, the one committed `.blend`.
-- `fleet/web/assets/world/`: built outputs only, i.e. `<scene>.glb`, the lightmaps, and a `<scene>.json` manifest naming the warm layers, pickable nodes and state-bearing nodes. Credits go in `fleet/web/assets/CREDITS.md` as today.
+**Layout.** As built; details in `art/README.md`.
+- `art/`: sources, build scripts and `build.sh`. Nothing here is shipped.
+  - `art/assets.json` and `art/assets.lock.json`: what we use, and the exact URL and sha256 of every file.
+  - `art/scripts/`: fetching, then the Blender steps (`build_<scene>.py`, `bake.py`, `export.py`, `preview.py`) run with `blender -b -P`.
+  - `art/sources/` and `art/build/`: downloads and intermediates, gitignored.
+  - Planned: `art/robot/robot.blend`, the hand-tuned robot model and rig, the one committed `.blend`.
+- `fleet/web/assets/world/<scene>/`: built output only, i.e. `<scene>.glb`, `lightmap-<layer>.webp`, and `manifest.json` naming the warm groups and dynamic nodes. Source credits are in `art/CREDITS.md`.
 
 **Sources.** All CC0.
 - Poly Haven: HDRIs, PBR textures and the occasional prop.
@@ -118,7 +118,7 @@ Lightmaps start as 8-bit sRGB WebP with a per-scene scale; if banding shows in t
 
 **Robots.** One base mesh (subdivided, rounded), with the host colour as a single material slot tinted at runtime, and emissive eyes. The rig is a simple humanoid armature (about 20 bones). Actions are exported as glTF animations and played through `AnimationMixer`: `sit_idle`, `sit_type`, `sit_write`, `hold_up`, `perk_up`, `walk`, `carry`. Seat and desk heights are shared constants between furniture and rig so seated poses land without per-desk fixes. Prop attach points are bones: `hand.R` holds a pencil, flask or box.
 
-**three.js additions.** Vendor these from r186 (the version already vendored):
+**three.js additions.** WebP textures need nothing new: the vendored r186 `GLTFLoader` reads `EXT_texture_webp` and browsers decode WebP natively. KTX2 would need `KTX2Loader` plus the Basis transcoder; it isn't used because WebP keeps scenes well under budget. Vendor these from r186 when the renderer is built:
 - `postprocessing/`: EffectComposer, RenderPass, UnrealBloomPass, SMAAPass, OutputPass and their shaders.
 - `loaders/HDRLoader.js`.
 
