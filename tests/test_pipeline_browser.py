@@ -148,6 +148,12 @@ def test_an_end_node_lists_its_latest_items(deck: Deck, fixture_pipelines: dict[
     expect(newest).to_contain_text(items[-1]["item"])
     for reason in items[-1]["attrs"]["reasons"]:
         expect(newest).to_contain_text(reason)
+    # each item is counted under its first reason: the chart and the list say so
+    expect(newest.locator("li.first")).to_have_text("null cell first · counted here")
+    expect(page.locator("#skSide .sk-items li.first")).to_have_count(len(items))
+    expect(page.locator("#skSide .sk-sub")).to_contain_text("counted once, under the first")
+    expect(page.locator("#skSvg .sk-cap")).to_have_count(1)
+    expect(page.locator("#skSvg .sk-cap")).to_contain_text("by first of its reasons")
     deck.shot("drilldown")
     page.locator("#skSide [data-back]").click()
     expect(page.locator("#skSide tbody tr")).to_have_count(6)

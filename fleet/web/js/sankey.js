@@ -81,6 +81,21 @@ export function versus(run, base, node, value) {
   const d = Math.round(value) - was;
   return { text: `${d > 0 ? '+' : d < 0 ? '−' : '±'}${fmt(Math.abs(d))}` };
 }
+// A column whose items each carry a list (their reasons) and are counted under its first entry: every recorded item in
+// it names its node first in the same attr. Returns column index → attr key.
+export function firstOfColumns(run) {
+  const out = new Map();
+  run.nodes.forEach((col, ci) => {
+    let key = null, seen = 0;
+    for (const n of col) for (const item of run.recent?.[n] || []) {
+      const k = Object.entries(item.attrs || {}).find(([, v]) => Array.isArray(v) && v[0] === n)?.[0];
+      if (!k || (key && k !== key)) return;
+      key = k; seen++;
+    }
+    if (seen) out.set(ci, key);
+  });
+  return out;
+}
 const pct = share => share === null ? '' : `${(100 * share).toFixed(1)}%`;
 
 // What the file says about the run, and whether its host can still be asked.
@@ -99,7 +114,7 @@ const sheet = sankeyPane.querySelector('.rd-sheet');
 const chart = document.getElementById('skChart'), svg = document.getElementById('skSvg'), dotsCanvas = document.getElementById('skDots');
 const side = document.getElementById('skSide');
 const TWEEN_MS = 400, DOT_MS = 1400, DOTS_PER_UPDATE = 80, PAD = 18, LABEL_GAP = 28;   // nodes apart by a two-line label
-const LABEL_W = 250, MIN_WIDTH = 760, NARROW = 700, LABEL_W_NARROW = 130, MIN_WIDTH_NARROW = 620;
+const CAPTION_H = 38, LABEL_W = 250, MIN_WIDTH = 760, NARROW = 700, LABEL_W_NARROW = 130, MIN_WIDTH_NARROW = 620;
 const sk = { key: null, p: null, from: null, to: null, t0: 0, dots: [], carry: {}, raf: 0, selected: null, lastFocus: null, geo: null };
 
 const keyOf = p => `${p.host}:${p.pipeline}`;
@@ -180,11 +195,11 @@ function drawFrame() {
   sk.raf = 0;
   if (!sk.key || !sk.p?.run) return;
   const values = current(), run = sk.p.run, base = sk.p.baseline;
-  const { W, H, width, height, narrow } = geometry();
+  const { W, H, width, height, narrow } = geometry(), firsts = firstOfColumns(run);
   const edges = Object.entries(values.edges).map(([key, c]) => [...key.split('→'), c]);
-  const L = layout(run.nodes, values.counts, edges, W, H, { baseline: base?.counts, gap: LABEL_GAP });
+  const L = layout(run.nodes, values.counts, edges, W, firsts.size ? H - CAPTION_H : H, { baseline: base?.counts, gap: LABEL_GAP });
   sk.geo = L;
-  renderChart(L, run, base, width, height, narrow);
+  renderChart(L, run, base, width, height, narrow, firsts);
   edgeFade();
   drawDots(L, width, height);
   const tweening = performance.now() - sk.t0 < TWEEN_MS;
@@ -192,7 +207,7 @@ function drawFrame() {
 }
 // Labels sit right of their node: name over figures, so a middle column's label fits before the next column; the
 // last column has room for one line on a wide screen. Baseline outlines go under the bands, which show through.
-function renderChart(L, run, base, width, height, narrow) {
+function renderChart(L, run, base, width, height, narrow, firsts) {
   const ends = terminals(run, base), values = Object.fromEntries([...L.nodes.values()].map(n => [n.name, n.value]));
   const baseEdges = Object.fromEntries((base?.edges || []).map(([s, t, c]) => [s + '→' + t, c]));
   const lastCol = run.nodes.length - 1;
@@ -215,7 +230,13 @@ function renderChart(L, run, base, width, height, narrow) {
       <rect x="${n.x}" y="${n.y}" width="${L.nodeW}" height="${n.h}" rx="2"/>
       <text x="${x}" y="${oneLine ? y + 4 : y - 2}"><tspan class="nm">${esc(n.name)}</tspan>${figures}</text></g>`;
   }).join('');
-  svg.innerHTML = `<g transform="translate(${PAD},${PAD})">${ghosts}${bands}${nodes}</g>`;
+  // under a column that counts each item once, by the first of its reasons, say so
+  const captions = [...firsts].map(([ci, key]) => {
+    const col = [...L.nodes.values()].filter(n => n.col === ci), x = col[0]?.x ?? 0;
+    const bottom = Math.max(0, ...col.map(n => n.y + n.h));
+    return `<text class="sk-cap" x="${x}" y="${bottom + 22}"><tspan>by first of its ${esc(key)}:</tspan><tspan x="${x}" dy="14">each item counted once</tspan></text>`;
+  }).join('');
+  svg.innerHTML = `<g transform="translate(${PAD},${PAD})">${ghosts}${bands}${nodes}${captions}</g>`;
   chart.querySelector('.sk-empty')?.remove();
   const off = !sk.p.host_ok ? `<div class="sk-note" role="status">${esc(sk.p.host)} is offline (${esc(sk.p.host_error || 'no connection')}): this is its last report, written ${age(run.updated_at)} ago</div>` : '';
   const note = chart.querySelector('.sk-note');
@@ -274,13 +295,19 @@ function renderSide() {
   const run = sk.p?.run;
   if (!run) { side.innerHTML = ''; return; }
   if (sk.selected) {
-    const items = [...(run.recent?.[sk.selected] || [])].reverse();
+    const items = [...(run.recent?.[sk.selected] || [])].reverse(), node = sk.selected;
+    // in a list that starts with this node (the item's reasons), the first is why it is counted here
+    const entry = (v, i) => i === 0 && v[0] === node
+      ? `<li class="first"><b>${esc(v[0])}</b> <small>first · counted here</small></li>`
+      : `<li>${esc(typeof v[i] === 'object' ? JSON.stringify(v[i]) : v[i])}</li>`;
+    const by = firstOfColumns(run).get(run.nodes.findIndex(col => col.includes(node)));
     side.innerHTML = `<button class="sk-back" data-back>← All end nodes</button>
       <h3>${esc(sk.selected)} <span>${fmt(run.counts[sk.selected] || 0)}</span></h3>
-      <p class="sk-sub">${items.length ? `The latest ${items.length} item${items.length === 1 ? '' : 's'} in, newest first` : 'No items recorded into this node yet'}</p>
+      <p class="sk-sub">${items.length ? `The latest ${items.length} item${items.length === 1 ? '' : 's'} in, newest first` : 'No items recorded into this node yet'}${
+        by ? `. An item with several ${esc(by)} is counted once, under the first; the others are listed with it` : ''}</p>
       <ol class="sk-items">${items.map(item => `<li><div class="it"><b>${esc(item.item)}</b><time>${item.ts ? age(item.ts) + ' ago' : ''}</time></div>${
         Object.entries(item.attrs || {}).map(([key, v]) => `<div class="at"><span>${esc(key)}</span>${
-          Array.isArray(v) ? `<ul>${v.map(x => `<li>${esc(typeof x === 'object' ? JSON.stringify(x) : x)}</li>`).join('')}</ul>`
+          Array.isArray(v) ? `<ul>${v.map((_, i) => entry(v, i)).join('')}</ul>`
             : `<em>${esc(typeof v === 'object' ? JSON.stringify(v) : v)}</em>`}</div>`).join('')}</li>`).join('')}</ol>`;
     return;
   }
