@@ -64,10 +64,10 @@ Each asset family has a `manifest.json` beside its files under `fleet/web/assets
     "bench-3": {
       "source": "ai",                          // ai | blender | procedural
       "from": "art/props/raw/bench-3-v1.png",  // the curated generation; its sidecar holds the prompt
-      "tiers": {
-        "171.5": { "file": "bench-3@1x.webp", "size": [1117, 755], "anchor_px": [558, 244] },
-        "343":   { "file": "bench-3@2x.webp", "size": [2234, 1510], "anchor_px": [1116, 488] }
-      },
+      "tiers": [                               // size is one frame; sheets add "frames", "fps", and "mask" for tint
+        { "ppm": 171.5, "file": "bench-3@1x.webp", "size": [1117, 755], "anchor_px": [558, 244] },
+        { "ppm": 343,   "file": "bench-3@2x.webp", "size": [2234, 1510], "anchor_px": [1116, 488] }
+      ],
       "anchor": "desk_top_far_edge_middle",
       "anchor_world": [0, 0, 0.74],            // the anchor's offset from the instance origin, metres
       "footprint": [-2.7, -0.8, 0, 2.7, 0.1, 0.74],
@@ -97,21 +97,21 @@ The canvas is drawn in five passes, back to front. Text and controls are DOM, no
 
 | Pass | Contents | Cached? |
 |---|---|---|
-| 1. Shell | Sky gradient, floor slab and its edge, floor tiles, back and left walls with pilasters and caps, wall-mounted fixtures (lift bay, plan-wall frames, posters, shelves against the wall) | Yes: one bitmap per view, repainted when the zoom settles or the layout changes |
-| 2. Ground | Contact shadows, rugs, footprints, parcels on the floor, floor-level glow spill | Static part cached with pass 1; footprints and robot shadows drawn per frame |
-| 3. Standing | Every object that can occlude another: furniture, props, robots, held items, the lantern, crates, dust sheets | Static part cached; see below |
-| 4. Light | Additive glow sprites: lamp pools, wall-washer scallops, lit plan tiles, lantern halo | Per frame, only where warmth is changing |
+| 1. Shell | Sky gradient, floor slab and its edge, floor tiles, back and left walls with pilasters and caps, wall-mounted fixtures (lift bay, plan-wall frames, posters, shelves against the wall) | Yes: the ground snapshot, see below |
+| 2. Ground | Contact shadows, rugs, footprints, parcels on the floor, floor-level glow spill | In the ground snapshot; a change repaints the snapshot |
+| 3. Standing | Every object that can occlude another: furniture, props, robots, held items, the lantern, crates, dust sheets | No; redrawn only inside changed rectangles |
+| 4. Light | Additive glow sprites: lamp pools, wall-washer scallops, lit plan tiles, lantern halo | No; redrawn with the standing pass |
 | 5. DOM overlay | Labels, headlines, action glyph bubbles, lantern glyph and count, focus ring, hit targets for keyboard | DOM; positioned from the projection |
 
-Nothing stands behind the back or left wall, so the walls and everything fixed to them never occlude and can live in the shell cache.
+Nothing stands behind the back or left wall, so the walls and everything fixed to them never occlude and can live in the ground snapshot.
 
-**Standing objects with a cache.** Static standing props are painted into a second cache in depth order. Each frame the renderer blits the two caches, then draws the dynamic sprites (robots, held items, lantern, flipping tiles) in depth order, and after each one redraws the static sprites that overlap it on screen and are nearer. That occluder list is computed when a dynamic sprite moves to a new 0.3 m cell, not per frame. A seated robot at a bench therefore costs: its sprite, its bench's `front` crop, and at most one or two chairs.
+**The ground snapshot** (`ground.js`). Tiled planes are drawn through a skewed pattern, which a software canvas fills at about 20 ns a pixel: 20–40 ms for a full screen, far too slow to repaint every frame. So passes 1 and 2 are painted into a bitmap 1.5 times the screen's size, then blitted: shifted while panning and scaled while zooming. When the view settles somewhere the snapshot doesn't serve (another zoom, or panned past its margin), a new one is painted in 96-row bands at up to 6 ms a frame and swapped in when complete. A whole-room snapshot from the widest framing sits beneath it and fills any edge the current one doesn't reach while zooming out.
 
-**Render on demand.** The loop draws only when something changed: a robot moved or advanced a frame, warmth is fading, the camera is moving. A floor with no activity where you are looking draws nothing, which is also the PRD's calm rule. Animation clocks for background places run at the deck's `CALM` rate or stop.
+**Standing objects by dirty rectangle.** While the camera moves, every frame is drawn in full: the snapshot, then the standing sprites in depth order, then glow. While it is still, a change (an animation frame, an item set by the caller, a glow) marks its old and new screen rectangles, and only their union is repainted, from the snapshot up. At a steady zoom each sprite frame is drawn from a copy pre-scaled to that zoom at whole device pixels, so a repaint is a set of plain copies; while zooming, sprites are scaled on the fly, and one full frame from the pre-scaled copies follows when the zoom comes to rest.
 
-**Zooming.** During a zoom gesture the cached layers are scaled as bitmaps; when the gesture settles (150 ms idle) they are repainted at the new tier. Sprite positions are rounded to device pixels at rest to keep edges crisp.
+**Render on demand.** The loop draws only when something changed: a robot moved or advanced a frame, warmth is fading, the camera is moving, a tier finished loading. Between animation frames it sleeps on a timer until the next frame is due rather than running every display refresh. A still scene draws nothing, which is also the PRD's calm rule. Animation clocks for background places run at the deck's `CALM` rate or stop.
 
-**Budget** (1672 × 941, no GPU): the shell and standing blits under 2 ms, up to 40 dynamic sprites under 4 ms, glow under 1 ms. The bake-off's `measure.py` is extended to the prototype and gates it.
+**Budget.** The engine measures each frame's work (and, when frames run back to back, the gap between them, since a canvas can rasterise after the frame returns). When that runs over the budget (8 ms by default), ambient animation (items marked `ambient`, such as working robots' loops) updates half as often, down to an eighth; it recovers when frames are cheap again. Frames still show the right frame for the time, just fewer of them. Measured on carbon without a GPU at 1672 × 941 with the bake-off scene: zooming 15 ms a frame (median), panning 2.5 ms, an animation step under 1 ms.
 
 ### Depth sorting
 
@@ -207,28 +207,29 @@ The three.js deck and the sprite world can then share `behaviour` while both exi
 Picking walks the draw list front to back and returns the first hit:
 
 1. The DOM overlay handles its own elements (bubbles, lantern glyph, labels).
-2. For standing sprites, a screen-rectangle test, then a lookup in a 1-bit alpha mask at quarter resolution, built once per sprite and tier at load. Sprites marked `"hit": "box"` use their projected footprint instead.
+2. For standing sprites, a screen-rectangle test, then a lookup in a 1-bit alpha mask of at most 128 cells a side, built once per sprite from the first tier to load. A seated robot's layers also test which side of the desk-top line the point is on. Sprites marked `"hit": "box"` use their projected footprint instead.
 3. Otherwise the point is projected onto the floor plane and looked up in the place polygons (lane slot, room, floor).
 
 Every instance carries a `place` id from the model (floor, room, lane, bench, seat, plan-wall tile, lantern, lift, library shelf), so a hit resolves to the thing it represents, and clicking enters that place by fitting the camera to its frame. Hover draws an outline traced from the same alpha mask. Keyboard focus and screen readers use invisible DOM buttons placed over each place's projected frame; they also make the redacted-text and text-budget tests (PRD *Testing*) read the DOM rather than the canvas.
 
 ## Modules
 
-Planned under `fleet/web/world/`, loaded as ES modules without a build step:
+Under `fleet/web/js/world/`, plain ES modules with no dependencies and no build step. Built:
 
 | Module | Role |
 |---|---|
-| `projection.js` | Camera, zoom, frames, screen ↔ world |
-| `manifest.js` | Loading manifests, tier choice, tint and state-variant caches |
-| `layout.js` | Floor layout: slots, bays, places, spots, frames |
-| `render.js` | Caches, the five passes, depth sort, render on demand |
-| `glow.js` | Warmth per workarea and glow sprites |
-| `nav.js` | Navigation grid and routes |
-| `behaviour.js` | Renderer-agnostic agent behaviour, extracted from `motion.js` |
-| `actors.js` | Robot poses to sprites |
-| `pick.js` | Hit testing and the DOM hit layer |
+| `projection.js` | The camera's projection, depth, screen ↔ world, fitting a framing |
+| `camera.js` | Pan and zoom between the far and near framings, damping, clamping, pointer, wheel and pinch input |
+| `tiers.js` | Tier choice with hysteresis, the stand-in tier while loading, crossfade timing |
+| `sort.js` | Footprint depth sort and attached layers |
+| `hit.js` | Alpha masks and front-to-back picking |
+| `paint.js` | Tinting through a mask, glow discs, hit masks, affine texture fill |
+| `ground.js` | The ground snapshot |
+| `engine.js` | `World`: manifests, items, the frame loop, dirty rectangles, budget, picking |
 
-The first page is `/prototype/world`: one floor from a fixture, zooming from the l1 framing to the l2 framing, with the placeholder robots.
+Planned: `layout.js` (floor layout: slots, bays, places, spots, frames), `glow.js` (warmth per workarea), `nav.js` (navigation grid and routes), `behaviour.js` (renderer-agnostic agent behaviour, extracted from `motion.js`), `actors.js` (robot poses to sprites) and the DOM overlay.
+
+`/prototype/world` runs the engine over the bake-off's l2 scene (`art/bakeoff/world.json`: B2 bench, robots and lantern, B1 plants for their three tiers), from the whole room to l2's framing. The floor-kit prototype replaces it.
 
 ## Open questions
 

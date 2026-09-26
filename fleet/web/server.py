@@ -33,7 +33,8 @@ INDEX_PATH = WEB_ROOT / "index.html"
 APP_DIRECTORIES = ("css", "js")  # the deck's own code, read at startup together with the page
 STATIC_PREFIXES = ("/vendor/", "/assets/", "/prototype/")
 PROTOTYPES = {"/prototype/bakeoff": "/prototype/bakeoff.html",  # art prototypes; not linked from the deck
-              "/prototype/bench": "/prototype/bench.html"}
+              "/prototype/bench": "/prototype/bench.html",
+              "/prototype/world": "/prototype/world.html"}
 REPO_ROOT = WEB_ROOT.parent.parent
 # Source-checkout folders the art prototypes read; absent from an installed package, so they 404 there.
 CHECKOUT_FOLDERS = {"/art/bakeoff/": REPO_ROOT / "art" / "bakeoff", "/concept/": REPO_ROOT / "docs" / "images" / "concept"}
