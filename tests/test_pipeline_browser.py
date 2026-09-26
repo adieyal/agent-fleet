@@ -258,6 +258,28 @@ def test_no_label_lies_on_a_band(deck: Deck, fixture_pipelines: dict[str, Any]) 
     assert set(got["chips"]) <= {n for column in nodes[1:-1] for n in column}
 
 
+SHEET_FIT = """(() => {
+  const r = el => el.getBoundingClientRect(), sheet = r(document.querySelector('#sankey .rd-sheet'));
+  const chart = document.getElementById('skChart'), cap = r(document.querySelector('#skSvg .sk-cap'));
+  cap.left - r(chart).left > chart.clientWidth - 40 && (chart.scrollLeft = cap.left - r(chart).left - 20);   // a phone scrolls to it
+  const c = r(document.querySelector('#skSvg .sk-cap')), box = r(chart), side = document.getElementById('skSide');
+  return { sheet: [sheet.top, sheet.bottom, innerHeight], page: document.scrollingElement.scrollHeight <= innerHeight,
+    caption: c.top >= box.top && c.bottom <= box.bottom && c.bottom <= innerHeight && c.left >= box.left && c.right <= box.right,
+    inside: getComputedStyle(side).overflowY === 'auto' || getComputedStyle(document.querySelector('.sk-body')).overflowY === 'auto' };
+})()"""
+
+
+def test_the_sheet_fits_the_viewport_and_its_caption_shows(deck: Deck) -> None:
+    """The sheet ends inside the viewport and scrolls within itself; the reasons caption under the chart is in view."""
+    open_screen(deck, "home:sample-training")
+    got = deck.page.evaluate(SHEET_FIT)
+    deck.shot("sheet-bottom")
+    close(deck)
+    top, bottom, height = got["sheet"]
+    assert 0 <= top and bottom <= height - (0 if deck.name == "narrow" else 12), got   # a desktop sheet shows its edge
+    assert got["page"] and got["inside"] and got["caption"], got
+
+
 def test_on_a_phone_the_chart_scrolls_to_every_column(deck: Deck) -> None:
     """A phone keeps the columns apart and scrolls sideways: a button says how many columns are out of view and takes
     the reader there, and at the end every label is in view."""
