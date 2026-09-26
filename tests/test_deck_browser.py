@@ -197,9 +197,30 @@ def test_focus_of_an_unregistered_room_survives_reload(deck: Deck, base_url: str
     assert deck.errors == []
 
 
+def test_the_deck_log_leaves_every_focus_switch_clear(deck: Deck) -> None:
+    page = deck.page
+    if page.viewport_size["width"] < 760:
+        pytest.skip("on phones the log starts closed and the column scrolls under it")
+    log = page.locator("#feed").bounding_box()
+    switches = page.locator(".focus-switch")
+    expect(switches).to_have_count(3)
+    for switch in switches.all():
+        box = switch.bounding_box()
+        overlaps = (box["x"] < log["x"] + log["width"] and log["x"] < box["x"] + box["width"]
+                    and box["y"] < log["y"] + log["height"] and log["y"] < box["y"] + box["height"])
+        assert not overlaps, f"{switch.get_attribute('data-room')}'s switch is under the deck log"
+    assert deck.errors == []
+
+
 def attention_on_server(base_url: str) -> dict[str, str]:
     with urlopen(base_url + "/api/state", timeout=5) as response:
         return {item["owner"]["key"]: item["state"] for item in json.load(response)["attention"]}
+
+
+def expect_need_you(page: Page, base_url: str) -> None:
+    """The header's count is the open items, the same ones the lanterns stand for."""
+    open_items = sum(state == "open" for state in attention_on_server(base_url).values())
+    expect(page.locator("#needYou b")).to_have_text(str(open_items))
 
 
 def act_on_every_item(page: Page, action: str, state: str) -> None:
@@ -220,6 +241,8 @@ def test_a_room_with_open_items_gets_one_lantern_with_a_count(deck: Deck, base_u
     expect(page.locator('.lantern[data-room="invoice-parser"] b')).to_have_text("")   # one item: no count
     expect(page.locator('.lantern[data-room="agent-fleet"]')).to_have_count(0)      # a running job and an idle session: nothing needs you
     assert rooms_by_name(page)["agent-fleet"]["attention"] is None
+    expect(page.locator("#needYou b")).to_have_text("3")
+    expect_need_you(page, base_url)
 
     before = attention_on_server(base_url)
     lantern.dispatch_event("click")
@@ -244,13 +267,17 @@ def test_acknowledging_dims_the_lantern_and_snoozing_hides_it(deck: Deck, base_u
     expect(lantern).to_have_attribute("data-state", "acknowledged")
     expect(lantern).to_have_attribute("data-count", "2")
     assert set(attention_on_server(base_url).values()) == {"acknowledged", "open"}   # invoice-parser untouched
+    expect(page.locator("#needYou b")).to_have_text("1")
+    expect_need_you(page, base_url)
 
     act_on_every_item(page, "snooze", "snoozed")
     expect(lantern).to_have_count(0)
     assert rooms_by_name(page)["restoke"]["attention"] is None
+    expect(page.locator("#needYou b")).to_have_text("1")
     act_on_every_item(page, "reopen", "open")
     expect(lantern).to_have_attribute("data-state", "open")
     expect(lantern).not_to_have_class("lantern ack")
+    expect(page.locator("#needYou b")).to_have_text("3")
     page.keyboard.press("Escape")
     assert set(attention_on_server(base_url).values()) == {"open"}
     assert deck.errors == []
