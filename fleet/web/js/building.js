@@ -153,7 +153,7 @@ function floorsOf(state) {
   const byFloor = new Map(Object.entries(b.floors).map(([id, floor]) => [floor, id]));
   // a floor's rooms are its project's rooms on the deck: one per label with work, looking as that room does there
   const looks = roomLooks(state), roomsOf = new Map();
-  for (const h of state.hosts || []) for (const item of [...(h.jobs || []), ...(h.sessions || [])]) {
+  for (const h of state.hosts || []) for (const item of roomItems(state, h)) {
     if (!item.project_id || !item.project) continue;
     if (!roomsOf.has(item.project_id)) roomsOf.set(item.project_id, new Map());
     const rooms = roomsOf.get(item.project_id);
@@ -171,11 +171,17 @@ function floorsOf(state) {
       mode: focus === 'background' ? 'windowed' : 'open', active: rooms.some(r => r.active) };
   });
 }
+// What gives a project a room: its jobs and sessions, and a pipeline declared to live there, with work or without.
+function roomItems(state, h) {
+  const declared = (state.pipelines || []).filter(p => p.host === h.name && p.project)
+    .map(p => ({ project: p.project, project_id: p.project_id, status: p.run?.status === 'running' ? 'running' : 'idle' }));
+  return [...(h.jobs || []), ...(h.sessions || []), ...declared];
+}
 // The deck gives each room a colour and a theme in name order (rooms.js layoutRooms); the same here, so a room looks
 // the same on its floor as on the deck.
 function roomLooks(state) {
   const names = new Set();
-  for (const h of state.hosts || []) for (const item of [...(h.jobs || []), ...(h.sessions || [])]) if (item.project) names.add(item.project);
+  for (const h of state.hosts || []) for (const item of roomItems(state, h)) if (item.project) names.add(item.project);
   const hues = new Set(), themes = new Set(), out = new Map();
   for (const name of [...names].sort()) {
     const look = projectLook(name, hues), theme = themeFor(name, themes);
@@ -241,13 +247,13 @@ function applyLanterns(state) {
   }
 }
 
-// Visitors: labels with jobs or sessions that no project claims, one per label listing the hosts it is unclaimed on.
+// Visitors: labels with jobs, sessions or declared pipelines that no project claims, one per label listing the hosts it is unclaimed on.
 // Registered projects without a floor, and work fleetd couldn't place in a project, are listed too: nothing with work
 // drops out of view.
 function lobbyOf(state) {
   const visitors = new Map();
   const projects = new Map((state.projects || []).map(p => [p.id, p]));
-  for (const h of state.hosts || []) for (const item of [...(h.jobs || []), ...(h.sessions || [])]) {
+  for (const h of state.hosts || []) for (const item of roomItems(state, h)) {
     if (item.project_id) continue;
     const key = item.project ?? '';
     if (!visitors.has(key)) visitors.set(key, { label: item.project ?? null, hosts: [], count: 0, active: false });
