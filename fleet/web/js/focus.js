@@ -151,7 +151,7 @@ const _a = new THREE.Vector3(), _s = { x: 0, y: 0 };
 export function stepFocus(rooms, dt) {
   for (const r of rooms) {
     const f = r.front;
-    if (!f) continue;
+    if (!f || r.shellK == null) continue;   // not yet placed by a state document
     const want = r.focus === 'background' ? 1 : 0;
     r.shellK = want > r.shellK ? Math.min(want, r.shellK + dt / SLIDE_S) : Math.max(want, r.shellK - dt / SLIDE_S);
     r.closed = r.shellK >= 1;
