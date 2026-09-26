@@ -10,6 +10,7 @@ import pytest
 
 from conftest import FIXTURE
 from fleet.cli import build_parser
+from fleet.web.server import WEB_ROOT
 
 
 def get(base_url: str, path: str, **query: str) -> dict:
@@ -65,6 +66,18 @@ def test_library_lists_and_reads_fixture_markdown(base_url: str) -> None:
     document = get(base_url, "/api/library/doc", project="restoke", id="docs/suppliers-v2.md")
     assert 'type="checkbox"' in document["html"]
     assert status_of(base_url, "/api/library/doc", project="restoke", id="docs/missing.md") == 404
+
+
+@pytest.mark.parametrize("directory, content_type", [("css", "text/css"), ("js", "text/javascript")])
+def test_deck_code_is_served_fresh_with_its_type(base_url: str, directory: str, content_type: str) -> None:
+    files = sorted((WEB_ROOT / directory).rglob("*.*"))
+    assert files
+    for path in files:
+        with urlopen(f"{base_url}/{path.relative_to(WEB_ROOT).as_posix()}", timeout=5) as response:
+            assert response.headers["Content-Type"].startswith(content_type)
+            assert response.headers["Cache-Control"] == "no-store"
+            assert response.read() == path.read_bytes()
+    assert status_of(base_url, f"/{directory}/../server.py") == 404
 
 
 def test_fixture_is_a_hidden_web_option() -> None:

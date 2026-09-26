@@ -25,8 +25,10 @@ from fleet.web.library import ProjectLibrary
 
 WEB_ROOT = Path(__file__).parent.resolve()
 INDEX_PATH = WEB_ROOT / "index.html"
+APP_DIRECTORIES = ("css", "js")  # the deck's own code, read at startup together with the page
 STATIC_PREFIXES = ("/vendor/", "/assets/")
-STATIC_TYPES = {".js": "text/javascript; charset=utf-8", ".glb": "model/gltf-binary", ".gltf": "model/gltf+json",
+STATIC_TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
+                ".glb": "model/gltf-binary", ".gltf": "model/gltf+json",
                 ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".json": "application/json",
                 ".md": "text/markdown; charset=utf-8", ".txt": "text/plain; charset=utf-8"}
 EVENTS_PER_JOB = "15"
@@ -144,8 +146,11 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
 
 def make_handler(state: FleetState | FixtureState,
                  library: ProjectLibrary | FixtureLibrary | None = None) -> type[BaseHTTPRequestHandler]:
-    # Read once so a running server keeps serving the page that matches its API.
+    # Read once so a running server keeps serving the page and code that match its API.
     index_page = INDEX_PATH.read_bytes()
+    app_files = {"/" + path.relative_to(WEB_ROOT).as_posix(): path.read_bytes()
+                 for directory in APP_DIRECTORIES for path in sorted((WEB_ROOT / directory).rglob("*"))
+                 if path.is_file()}
     library = library or ProjectLibrary({})
 
     class Handler(BaseHTTPRequestHandler):
@@ -168,6 +173,8 @@ def make_handler(state: FleetState | FixtureState,
                 self.respond(200, "application/json", json.dumps(state.document()).encode())
             elif path in ("/", "/index.html"):
                 self.respond(200, "text/html; charset=utf-8", index_page)
+            elif path in app_files:
+                self.respond(200, STATIC_TYPES.get(Path(path).suffix, "application/octet-stream"), app_files[path])
             elif path.startswith(STATIC_PREFIXES):
                 self.static_file(path)
             else:
