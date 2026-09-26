@@ -20,6 +20,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from fleet import transport
 from fleet.transport import FleetError, Host
 from fleet.web.documents import fetch_document
+from fleet.web.library import ProjectLibrary
 
 WEB_ROOT = Path(__file__).parent.resolve()
 INDEX_PATH = WEB_ROOT / "index.html"
@@ -41,8 +42,9 @@ class FleetState:
     their `sessions` list simply stays empty.
     """
 
-    def __init__(self, hosts: list[Host]) -> None:
+    def __init__(self, hosts: list[Host], project_labels: dict[str, str] | None = None) -> None:
         self.hosts = hosts
+        self.project_labels = project_labels or {}
         self.changed = threading.Condition()
         self.version = 0
         self.by_host: dict[str, dict[str, Any]] = {
@@ -57,7 +59,7 @@ class FleetState:
 
     def document(self) -> dict[str, Any]:
         with self.changed:
-            return {"time": time.time(), "hosts": [
+            return {"time": time.time(), "project_labels": self.project_labels, "hosts": [
                 {**{key: value for key, value in self.by_host[host.name].items() if key not in ("jobs", "sessions")},
                  "jobs": sorted(self.by_host[host.name]["jobs"].values(), key=lambda job: job["created_at"]),
                  "sessions": sorted(self.by_host[host.name]["sessions"].values(),
@@ -132,9 +134,10 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
         state.update(host.name, lambda entry: entry.update(ok=False, error=message.get("error")))
 
 
-def make_handler(state: FleetState) -> type[BaseHTTPRequestHandler]:
+def make_handler(state: FleetState, library: ProjectLibrary | None = None) -> type[BaseHTTPRequestHandler]:
     # Read once so a running server keeps serving the page that matches its API.
     index_page = INDEX_PATH.read_bytes()
+    library = library or ProjectLibrary({})
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802 — http.server naming
@@ -143,6 +146,15 @@ def make_handler(state: FleetState) -> type[BaseHTTPRequestHandler]:
                 self.stream()
             elif path == "/api/doc":
                 self.document()
+            elif path == "/api/library":
+                try:
+                    documents = library.list()
+                except ValueError as error:
+                    self.respond(400, "application/json", json.dumps({"error": str(error)}).encode())
+                    return
+                self.respond(200, "application/json", json.dumps({"documents": documents}).encode())
+            elif path == "/api/library/doc":
+                self.library_document()
             elif path == "/api/state":
                 self.respond(200, "application/json", json.dumps(state.document()).encode())
             elif path in ("/", "/index.html"):
@@ -173,6 +185,18 @@ def make_handler(state: FleetState) -> type[BaseHTTPRequestHandler]:
                 body = fetch_document(host, query["job"], query["id"])
             except FleetError as error:
                 self.respond(404, "application/json", json.dumps({"error": str(error)}).encode())
+                return
+            self.respond(200, "application/json", json.dumps(body).encode())
+
+        def library_document(self) -> None:
+            """GET /api/library/doc?project=&id= — Markdown under a configured local root."""
+            query = {key: values[0] for key, values in parse_qs(urlsplit(self.path).query).items()}
+            if not query.get("project") or not query.get("id"):
+                self.respond(400, "application/json", b'{"error": "project and id are required"}')
+                return
+            body = library.read(query["project"], query["id"])
+            if body is None:
+                self.respond(404, "application/json", b'{"error": "document not found"}')
                 return
             self.respond(200, "application/json", json.dumps(body).encode())
 
@@ -211,11 +235,12 @@ def make_handler(state: FleetState) -> type[BaseHTTPRequestHandler]:
     return Handler
 
 
-def serve(hosts: list[Host], *, port: int, bind: str, open_browser: bool = False) -> None:
-    state = FleetState(hosts)
+def serve(hosts: list[Host], *, port: int, bind: str, open_browser: bool = False,
+          libraries: dict[str, str] | None = None, project_labels: dict[str, str] | None = None) -> None:
+    state = FleetState(hosts, project_labels)
     for host in hosts:
         threading.Thread(target=follow_host, args=(state, host), daemon=True).start()
-    server = ThreadingHTTPServer((bind, port), make_handler(state))
+    server = ThreadingHTTPServer((bind, port), make_handler(state, ProjectLibrary(libraries or {})))
     server.daemon_threads = True
     url = f"http://{'localhost' if bind in ('127.0.0.1', '0.0.0.0') else bind}:{port}/"
     print(f"fleet deck at {url}  (demo: {url}?demo)", flush=True)

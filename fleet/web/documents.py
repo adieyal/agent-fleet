@@ -39,6 +39,11 @@ def outline(markdown: str) -> list[dict[str, Any]]:
 def fetch_document(host: Host, job_id: str, document_id: str) -> dict[str, Any]:
     document = transport.call(host, ["read", job_id, document_id], timeout=30)
     markdown = STATUS_LINE.sub("", document.pop("content")).strip()
+    return {**document, "host": host.name, **render_markdown(markdown)}
+
+
+def render_markdown(markdown: str) -> dict[str, Any]:
+    """Render Markdown for both job documents and local project libraries."""
     words = len(markdown.split())
-    return {**document, "host": host.name, "markdown": markdown, "html": renderer.render(markdown),
+    return {"markdown": markdown, "html": renderer.render(markdown),
             "toc": outline(markdown), "words": words, "minutes": max(1, round(words / WORDS_PER_MINUTE))}

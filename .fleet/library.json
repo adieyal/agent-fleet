@@ -1,0 +1,10 @@
+{
+  "order": [
+    "docs/design/workspace-prd.md",
+    "docs/design/philosophy.md",
+    "docs/design/workspace-hierarchy.md",
+    "CONTEXT.md",
+    "README.md"
+  ],
+  "show_unlisted": true
+}

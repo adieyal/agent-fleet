@@ -466,6 +466,27 @@ def command_hosts(arguments: argparse.Namespace) -> None:
         console.print(f"[bold]{report.host.name}[/] {target} · {state}")
 
 
+def command_library_add(arguments: argparse.Namespace) -> None:
+    root = Path(arguments.path).expanduser().resolve()
+    if not root.is_dir():
+        raise FleetError(f"not a directory: {root}")
+    config = transport.load_config()
+    config.setdefault("libraries", {})[arguments.project] = str(root)
+    transport.save_config(config)
+    console.print(f"added library {arguments.project}: {root}")
+
+
+def command_library_remove(arguments: argparse.Namespace) -> None:
+    config = transport.load_config()
+    config.get("libraries", {}).pop(arguments.project, None)
+    transport.save_config(config)
+
+
+def command_libraries(arguments: argparse.Namespace) -> None:
+    for project, path in sorted(transport.load_config().get("libraries", {}).items()):
+        console.print(f"[bold]{project}[/] {path}")
+
+
 # Agents are often only on PATH in interactive login shells (nvm, pyenv), so ask those first.
 # Each shell may set up a different PATH (e.g. nvm only in .bashrc), so every one is asked.
 DETECT_SCRIPT = r"""
@@ -532,7 +553,9 @@ def command_unlock(arguments: argparse.Namespace) -> None:
 
 
 def command_web(arguments: argparse.Namespace) -> None:
-    serve(selected_hosts(arguments), port=arguments.port, bind=arguments.bind, open_browser=arguments.open)
+    config = transport.load_config()
+    serve(selected_hosts(arguments), port=arguments.port, bind=arguments.bind, open_browser=arguments.open,
+          libraries=config.get("libraries", {}), project_labels=config.get("project_labels", {}))
 
 
 # --------------------------------------------------------------- parser
@@ -668,6 +691,18 @@ def build_parser() -> argparse.ArgumentParser:
     host_remove = host.add_parser("rm")
     host_remove.add_argument("name")
     host_remove.set_defaults(handler=command_host_remove)
+
+    libraries = commands.add_parser("libraries", help="configured local project libraries")
+    libraries.set_defaults(handler=command_libraries)
+    library = commands.add_parser("library", help="manage local project libraries").add_subparsers(
+        dest="library_command", required=True)
+    library_add = library.add_parser("add")
+    library_add.add_argument("project")
+    library_add.add_argument("path")
+    library_add.set_defaults(handler=command_library_add)
+    library_remove = library.add_parser("rm")
+    library_remove.add_argument("project")
+    library_remove.set_defaults(handler=command_library_remove)
 
     install = commands.add_parser("install", help="install/upgrade fleetd on a host")
     install.add_argument("name")

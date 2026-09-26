@@ -65,11 +65,43 @@ for outbox files. `fleet wait worker:<id>` blocks until it finishes.
 After starting the deck, open `http://localhost:8787/?demo` to explore it with
 synthetic jobs. The demo works even when the configured host is offline.
 
+Room signs can use friendly names without changing the project identifiers used by
+jobs. Add `"project_labels": {"restoke-analytics": "Bang bang!"}` to
+`~/.config/fleet/config.json` (or the file selected by `FLEET_CONFIG`), then
+restart `fleet web`.
+
 ## Read the work
 
 The deck collects step reports, Markdown files the agent wrote, and Markdown in its
 outbox. Select a document to read it with a contents list, tables, footnotes, and
 task lists. You can copy the Markdown source or download it as a `.md` file.
+
+To browse documents from a local project repository, add it to the deck's library:
+
+```bash
+fleet library add agent-fleet ~/src/agent-fleet
+fleet web
+```
+
+Open **Library** in the deck header to search its top-level Markdown files and
+`docs/` tree. These files stay in their repository; the library reads them from the
+machine running `fleet web`. Run `fleet libraries` to see configured roots.
+
+Automatic discovery is the default. To choose the display order or hide documents,
+add `.fleet/library.json` to the project repository:
+
+```json
+{
+  "order": ["docs/design/philosophy.md", "docs/design/workspace-hierarchy.md"],
+  "hide": ["README.md"],
+  "show_unlisted": true
+}
+```
+
+Paths are relative to the project root. Listed documents appear first, followed by
+other discovered Markdown files. Set `show_unlisted` to `false` to show only the
+listed documents; `hide` always takes precedence. The manifest controls the list,
+not access to files through the local dashboard.
 
 ![Fleet Markdown reader showing a report, contents list, and table](docs/images/fleet-markdown-reader.png)
 
@@ -98,7 +130,8 @@ Claude jobs default to `acceptEdits`; Codex jobs default to `workspace-write`. U
 
 `fleet web` binds to `127.0.0.1` by default. Its `/api/state`, `/api/stream`, and
 `/api/doc` endpoints have no authentication and can show job descriptions, activity,
-working directories, session details, and Markdown documents. Anyone who can reach
+working directories, session details, and Markdown documents. The library endpoints
+also expose Markdown under configured local project roots. Anyone who can reach
 the dashboard can read that data. Keep it on loopback or use an SSH tunnel. Add
 access control before binding it to a shared network.
 
