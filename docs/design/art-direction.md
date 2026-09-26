@@ -137,8 +137,22 @@ It renders in a standalone page beside the current deck, with the camera fitted 
 - action bubbles
 - desk lamps that follow activity
 
-Gaps to close next, largest first:
-1. **Tone.** The render is brighter and whiter overall. l2 has darker, warmer mid-tones, a glossy floor with warm reflections, and visible warm pools around each working desk.
-2. **Density.** l2 has more plants and props per desk, and a lit box on the shelf.
-3. **Robot finish.** l2's robots have more saturated bodies, smaller eyes and darker joints.
-4. **Lantern shape.** The lantern needs an elongated, faceted diamond shape instead of a flat rhombus.
+Iteration rounds, each committed as `style(art):`, with side-by-sides in the job outbox:
+1. **Round 1.** Warmer, darker tone with warm downlight scallops per wall bay; deep grey pilasters and a thick cap; a blurred floor reflection; glossier robots with grey joints, a larger face plate and smaller eyes.
+2. **Round 2.** Cooler grey wall bays and paler oak; potted desk plants, plan sketches, full pen pots and tall planter plants; the lantern became an elongated six-sided diamond; sprites and the lantern were kept out of the floor reflection.
+3. **Round 3.** A light-grey bezel and whiter tiles on the plan wall, with larger criteria lamps; broad baked desk washes instead of hot spots; robots 12% larger and filled by a hemisphere light that reaches only live objects.
+4. **Round 4.** Legible pencil lines on the sketches; the olive robot's flask arm raised higher.
+
+**Performance** at 1440 x 900 on this host's RTX 3090, measured by `art/scripts/perf_bench.py` in headless Chromium through ANGLE on Vulkan with vsync off (the GL paths fall back to llvmpipe):
+
+| Frame time (median / p95 / worst) | Frame rate | First frame | Page load (3D assets / code) |
+|---|---|---|---|
+| 3.9 / 4.3 / 7.8 ms | ~256 fps | 1.9 s | 8.5 MB (6.1 / 2.45) |
+
+The 60 fps target leaves about 4x headroom. The floor reflection roughly doubled frame cost (1.6 ms before round 1).
+
+Gaps still open, largest first:
+1. **Oak colour.** The Wood095 texture is orange, so the oak reads orange; l2's desks are pale and take their warmth from the lamps. The fix is a paler source texture or a desaturated copy made at build time.
+2. **Olive robot.** Its flask is still mostly hidden by the monitor, where l2 holds it up in clear view. It needs its own pose or a different monitor placement.
+3. **Floor tone.** l2's floor is a cooler lilac-grey with brighter warm reflections under the desks. The reflection strength and floor albedo need a pass together.
+4. **Right edge.** The shelf of binders and the lit box are only half in frame; l2 shows them fully.

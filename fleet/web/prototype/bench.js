@@ -252,7 +252,8 @@ function setupRobots(robotGltf, root) {
       o.material.envMapIntensity = 1.0;
       if (o.material.name === 'robot_body') o.material.color.set(HOSTS[cast.host]);
       if (o.material.name === 'robot_eye') o.material.emissiveIntensity = 1.1;
-      if (o.material.name === 'robot_glass') Object.assign(o.material, { transparent: true, opacity: 0.55 });
+      if (o.material.name === 'robot_glass') Object.assign(o.material, { transparent: true, opacity: 0.75 });
+      if (o.material.name === 'robot_liquid') o.material.emissiveIntensity = 0.6;
     });
     for (const name of ['prop_pencil', 'prop_flask']) robot.getObjectByName(name).visible = name === cast.prop;
     scene.add(robot);

@@ -42,7 +42,7 @@ def materials() -> dict:
                            texture=A.source('ambientcg', 'PaintedPlaster017', 'PaintedPlaster017_1K-JPG_Color.jpg')),
         'cap': A.material('wall_cap', '#d2cfd6', rough=0.8),
         'pilaster': A.material('pilaster', '#b4afb4', rough=0.8),
-        'oak': A.material('oak', '#e2d8ce', rough=0.45,
+        'oak': A.material('oak', '#dcd7d2', rough=0.45,
                           texture=A.source('ambientcg', 'Wood095', 'Wood095_1K-JPG_Color.jpg')),
         'steel': A.material('steel_grey', '#6f6f77', rough=0.45, metal=0.3),
         'bezel': A.material('plan_bezel', '#c3c0c6', rough=0.6),
@@ -117,14 +117,15 @@ def sketch_texture(out: Path) -> Path:
     img = np.ones((h, w, 4), dtype=np.float32)
     img[..., :3] = (0.93, 0.91, 0.87)
     yy, xx = np.mgrid[0:h, 0:w]
-    ink = (0.45, 0.45, 0.48)
+    ink = (0.3, 0.3, 0.34)
+    # strokes are thick: a sheet is only ~40 px wide on screen at the l2 zoom
     for (x0, y0) in ((24, 30), (134, 30), (24, 196), (134, 196)):
         x1, y1 = x0 + 98, y0 + 136
         frame = ((xx >= x0) & (xx <= x1) & (yy >= y0) & (yy <= y1)) & \
-            ~((xx > x0 + 3) & (xx < x1 - 3) & (yy > y0 + 3) & (yy < y1 - 3))
+            ~((xx > x0 + 8) & (xx < x1 - 8) & (yy > y0 + 8) & (yy < y1 - 8))
         img[frame, :3] = ink
-        img[(abs((yy - y0) - (xx - x0) * 1.2) < 2) & (xx > x0 + 10) & (xx < x1 - 30), :3] = ink
-        img[(abs(yy - (y0 + 100)) < 2) & (xx > x0 + 14) & (xx < x1 - 14), :3] = ink
+        img[(abs((yy - y0) - (xx - x0) * 1.2) < 5) & (xx > x0 + 14) & (xx < x1 - 30), :3] = ink
+        img[(abs(yy - (y0 + 100)) < 5) & (xx > x0 + 18) & (xx < x1 - 18), :3] = ink
     return save_png(out, 'sketch', img)
 
 

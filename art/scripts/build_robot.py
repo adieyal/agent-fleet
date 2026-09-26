@@ -44,7 +44,7 @@ def mats() -> dict:
             'visor': A.material('robot_visor', '#0b0d0f', rough=0.12),
             'eye': A.material('robot_eye', '#7ff7f4', rough=0.3, emission='#62f3ef'),
             'glass': A.material('robot_glass', '#dff2f5', rough=0.05),
-            'liquid': A.material('robot_liquid', '#9fd86a', rough=0.2),
+            'liquid': A.material('robot_liquid', '#8fe04a', rough=0.2, emission='#5fbf2a'),
             'pencil': A.material('robot_pencil', '#f0b43c', rough=0.5)}
 
 
@@ -223,7 +223,8 @@ def actions(rig) -> None:
     key(rig, 'hold', 3.0, lambda t: {
         'spine': (-2, 0, 3),
         'head': (6, 0, -14 + 3 * s(t)),
-        'upper_arm.R': (-55 + 3 * s(t), 0, 12), 'forearm.R': (-35, 0, 0), 'hand.R': (20, 0, 4 * s(t, 1, 0.3))})
+        # arm up and out to the side, so the flask shows above the desk clutter as in l2
+        'upper_arm.R': (-80 + 3 * s(t), 0, 25), 'forearm.R': (-30, 0, 0), 'hand.R': (25, 0, 4 * s(t, 1, 0.3))})
 
 
 def main() -> None:
