@@ -39,8 +39,8 @@ for side, sx in (('L', 1), ('R', -1)):
 
 
 def mats() -> dict:
-    return {'body': A.material('robot_body', '#41ced1', rough=0.35),
-            'joint': A.material('robot_joint', '#d4d8de', rough=0.4),
+    return {'body': A.material('robot_body', '#41ced1', rough=0.22),
+            'joint': A.material('robot_joint', '#858b95', rough=0.35, metal=0.3),
             'visor': A.material('robot_visor', '#0b0d0f', rough=0.12),
             'eye': A.material('robot_eye', '#7ff7f4', rough=0.3, emission='#62f3ef'),
             'glass': A.material('robot_glass', '#dff2f5', rough=0.05),
@@ -78,9 +78,9 @@ def body(m) -> None:
     part(A.cylinder('neck', 0.05, 0.06, (0, 0.01, 0.43), m['joint'], kind='dynamic', segments=20, tile=None), 'head')
     # a big round head, as in the concept: wider than the torso, with a dark face plate
     rbox('head', (0.46, 0.38, 0.34), (0, 0, 0.66), m['body'], 'head', 0.15)
-    rbox('visor', (0.36, 0.05, 0.22), (0, -0.175, 0.665), m['visor'], 'head', 0.07)
+    rbox('visor', (0.38, 0.06, 0.25), (0, -0.172, 0.665), m['visor'], 'head', 0.085)
     for sx in (-1, 1):
-        rbox(f'eye_{sx:+d}', (0.056, 0.012, 0.085), (0.075 * sx, -0.203, 0.675), m['eye'], 'head', 0.027)
+        rbox(f'eye_{sx:+d}', (0.042, 0.012, 0.066), (0.07 * sx, -0.205, 0.672), m['eye'], 'head', 0.02)
         ear = A.cylinder(f'ear_{sx:+d}', 0.07, 0.05, (0.22 * sx, 0, 0.66), m['joint'], kind='dynamic', segments=24,
                          bevel=0.012, rot=(0, math.pi / 2 * sx, 0), tile=None)
         part(ear, 'head')

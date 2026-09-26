@@ -25,7 +25,7 @@ import numpy as np  # noqa: E402
 SCENE = 'workbench'
 X0, X1 = -1.0, 12.5          # extent of floor and back wall
 Y0, WALL_Y = -3.5, 6.0       # near floor edge, back wall face
-WALL_H, WALL_T, CAP_H = 3.2, 0.3, 0.14
+WALL_H, WALL_T, CAP_H = 3.2, 0.3, 0.26
 TILE = 0.6
 DESK_W, DESK_D, DESK_H, TOP_T = 1.6, 0.8, 0.74, 0.03
 BENCH_X0, BENCH_Y = 4.0, 4.35  # left end and centre line of the bench: close to the plan wall, as in l2
@@ -37,11 +37,11 @@ PILASTERS = (2.25, 4.55, 8.05, 9.65)
 def materials() -> dict:
     p = A.paths(SCENE)
     return {
-        'floor': A.material('floor_tile', '#d3cfd9', rough=0.3, texture=floor_tile_texture(p['textures'])),
-        'wall': A.material('wall_plaster', '#b9ada7', rough=0.9,
+        'floor': A.material('floor_tile', '#cbc5d0', rough=0.3, texture=floor_tile_texture(p['textures'])),
+        'wall': A.material('wall_plaster', '#b3a69f', rough=0.9,
                            texture=A.source('ambientcg', 'PaintedPlaster017', 'PaintedPlaster017_1K-JPG_Color.jpg')),
-        'cap': A.material('wall_cap', '#e9e6e8', rough=0.8),
-        'pilaster': A.material('pilaster', '#dcd6d5', rough=0.8),
+        'cap': A.material('wall_cap', '#d2cfd6', rough=0.8),
+        'pilaster': A.material('pilaster', '#b4afb4', rough=0.8),
         'oak': A.material('oak', '#f2d6b4', rough=0.45,
                           texture=A.source('ambientcg', 'Wood095', 'Wood095_1K-JPG_Color.jpg')),
         'steel': A.material('steel_grey', '#6f6f77', rough=0.45, metal=0.3),
@@ -130,11 +130,13 @@ def shell(m) -> None:
     A.box('floor', (w, WALL_Y - Y0, 0.004), (cx, (Y0 + WALL_Y) / 2, 0.0), m['floor'], bevel=0, tile=TILE)
     A.box('wall_back', (w, WALL_T, WALL_H), (cx, WALL_Y + WALL_T / 2, 0), m['wall'], bevel=0.01, tile=1.5,
           drop=('+y', '+z'))
-    # the top cap overhangs the room a little, as the cut edge in l2 does
-    A.box('wall_cap', (w + 0.04, WALL_T + 0.25, CAP_H), (cx, WALL_Y + WALL_T / 2 - 0.125, WALL_H), m['cap'],
-          bevel=0.015, drop=('+y',))
+    # the thick cut edge on top of the wall, and a heavier block capping each pilaster, as in l2
+    A.box('wall_cap', (w + 0.04, WALL_T + 0.2, CAP_H), (cx, WALL_Y + WALL_T / 2 - 0.1, WALL_H), m['cap'],
+          bevel=0.02, drop=('+y',))
     for i, x in enumerate(PILASTERS):
-        A.box(f'pilaster_{i}', (0.55, 0.22, WALL_H), (x, WALL_Y - 0.11, 0), m['pilaster'], bevel=0.012, drop=('+z',))
+        # deep, heavy columns: l2's pilasters stand well proud of the wall
+        A.box(f'pilaster_{i}', (0.6, 0.45, WALL_H), (x, WALL_Y - 0.225, 0), m['pilaster'], bevel=0.015, drop=('+z',))
+        A.box(f'pilaster_cap_{i}', (0.7, 0.55, CAP_H + 0.06), (x, WALL_Y - 0.225, WALL_H), m['cap'], bevel=0.02)
     A.box('skirting', (w, 0.015, 0.08), (cx, WALL_Y - 0.0075, 0), m['pilaster'], bevel=0.003)
 
 
@@ -383,7 +385,7 @@ def question_desk(m, props: dict) -> None:
 
 
 def planters(m, props: dict) -> None:
-    spots = ((-0.55, WALL_Y - 0.45, 0.0), (7.6, WALL_Y - 0.45, 1.3), (9.7, WALL_Y - 0.75, 2.6),
+    spots = ((-0.55, WALL_Y - 0.45, 0.0), (7.3, WALL_Y - 0.45, 1.3), (9.7, WALL_Y - 0.75, 2.6),
              (12.1, 3.9, 3.9), (-0.5, 2.6, 5.2))
     for i, (x, y, rz) in enumerate(spots):
         A.box(f'planter_{i}', (0.42, 0.42, 0.5), (x, y, 0), m['pot'], bevel=0.02)
@@ -399,17 +401,17 @@ def footprints(m) -> None:
 
 
 def lights() -> None:
-    A.world_hdri(A.source('polyhaven', 'white_studio_06', 'white_studio_06_1k.hdr'), strength=0.9,
+    A.world_hdri(A.source('polyhaven', 'white_studio_06', 'white_studio_06_1k.hdr'), strength=0.7,
                  rotation=math.radians(120))
     sun = A.light('sun', 'SUN', (0, 0, 10), 1.6, '#fff2e0', angle=math.radians(10))
     sun.rotation_euler = (math.radians(48), 0, math.radians(-30))
     for i, x in enumerate((1.5, 5.0, 8.5, 12.0)):
-        A.light(f'fill_{i}', 'AREA', (x, 2.5, WALL_H + 0.4), 140, '#f6f3ee', shape='RECTANGLE', size=3.0, size_y=6.0)
-    # soft downlights along the wall, the scallops above the pilasters in l2
-    for i, x in enumerate(PILASTERS):
-        spot = A.light(f'wallwash_{i}', 'SPOT', (x, WALL_Y - 0.5, WALL_H - 0.1), 70, '#ffc98f',
-                       spot_size=math.radians(90), spot_blend=1.0, shadow_soft_size=0.2)
-        A.aim(spot, (x, WALL_Y, 1.4))
+        A.light(f'fill_{i}', 'AREA', (x, 2.5, WALL_H + 0.4), 90, '#f6f3ee', shape='RECTANGLE', size=3.0, size_y=6.0)
+    # warm downlights grazing each wall bay: the scallops of light on the wall in l2
+    for i, x in enumerate((0.95, 3.4, 5.5, 7.2, 8.85, 11.0)):
+        spot = A.light(f'wallwash_{i}', 'SPOT', (x, WALL_Y - 0.28, WALL_H - 0.08), 120, '#ffbe7a',
+                       spot_size=math.radians(75), spot_blend=1.0, shadow_soft_size=0.05)
+        A.aim(spot, (x, WALL_Y, 1.1))
 
 
 def props() -> dict:

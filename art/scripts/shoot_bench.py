@@ -29,7 +29,9 @@ def shoot(out: Path) -> Path:
     errors: list[str] = []
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(args=['--use-angle=gl', '--enable-gpu', '--ignore-gpu-blocklist'])
+            # ANGLE on Vulkan reaches the NVIDIA GPU headless; the GL paths fall back to llvmpipe
+            browser = p.chromium.launch(args=['--use-angle=vulkan', '--enable-features=Vulkan', '--enable-gpu',
+                                              '--ignore-gpu-blocklist'])
             page = browser.new_page(viewport=SIZE, device_scale_factor=1)
             page.on('pageerror', lambda e: errors.append(str(e)))
             page.on('console', lambda m: m.type == 'error' and errors.append(m.text))

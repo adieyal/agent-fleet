@@ -11,6 +11,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import { Reflector } from 'three/addons/objects/Reflector.js';
 import * as glyph from './glyphs.js';
 
 const WORLD = '/assets/world/workbench/';
@@ -315,6 +316,42 @@ function shadowCatchers(root) {
   });
 }
 
+// The satin floor of l2: a half-resolution mirror, blurred and laid over the baked floor at low opacity,
+// so lamps, lit tiles and furniture leave soft reflections.
+const GlossShader = {
+  name: 'FloorGloss',
+  uniforms: { color: { value: null }, tDiffuse: { value: null }, textureMatrix: { value: null },
+              strength: { value: 0.2 }, texel: { value: new THREE.Vector2() } },
+  vertexShader: `uniform mat4 textureMatrix; varying vec4 vUv;
+    void main() { vUv = textureMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `uniform vec3 color; uniform sampler2D tDiffuse; uniform float strength; uniform vec2 texel; varying vec4 vUv;
+    void main() {
+      vec2 uv = vUv.xy / vUv.w;
+      vec3 c = vec3(0.0); float w = 0.0;
+      for (int x = -2; x <= 2; x++) for (int y = -2; y <= 2; y++) {
+        float k = exp(-float(x * x + y * y) / 3.0);
+        c += texture2D(tDiffuse, uv + vec2(float(x), float(y)) * texel).rgb * k; w += k;
+      }
+      gl_FragColor = vec4(c / w * color, strength);
+    }`,
+};
+
+function floorGloss(root) {
+  const floor = root.getObjectByName('floor');
+  const box = new THREE.Box3().setFromObject(floor);
+  const size = box.getSize(new THREE.Vector3());
+  const res = new THREE.Vector2(innerWidth, innerHeight).multiplyScalar(0.5 * renderer.getPixelRatio());
+  const mirror = new Reflector(new THREE.PlaneGeometry(size.x, size.z), {
+    shader: GlossShader, textureWidth: res.x, textureHeight: res.y, color: '#fff2e6', multisample: 0 });
+  mirror.material.uniforms.texel.value.set(2.5 / res.x, 2.5 / res.y);
+  Object.assign(mirror.material, { transparent: true, depthWrite: false });
+  mirror.rotation.x = -Math.PI / 2;
+  mirror.position.set((box.min.x + box.max.x) / 2, box.max.y + 0.001, (box.min.z + box.max.z) / 2);
+  mirror.renderOrder = -1;
+  scene.add(mirror);
+  return mirror;
+}
+
 function footprints(root) {
   const mat = new THREE.MeshBasicMaterial({ map: glyph.footprint(), transparent: true, opacity: 0.45,
     depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 });
@@ -401,6 +438,7 @@ async function main() {
   robots.forEach(r => setWarm(r.desk, true, true));
   shadowCatchers(root);
   footprints(root);
+  floorGloss(root);
 
   const sun = new THREE.DirectionalLight('#fff3e2', 1.6);
   sun.position.copy(bl(2.5, -2.5, 9));
@@ -434,7 +472,7 @@ async function main() {
     runTweens(STILL ? 1 : dt);
     updateWarmth(STILL ? 1 : dt);
     composer.render();
-    if (++frames === 3) window.bench.ready = true;
+    if (++frames === 3) Object.assign(window.bench, { ready: true, readyAt: performance.now() });
   });
 }
 
