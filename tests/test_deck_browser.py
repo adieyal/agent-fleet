@@ -75,6 +75,22 @@ def test_document_reader_opens_from_an_agent(deck: Deck) -> None:
     assert deck.errors == []
 
 
+def test_demo_mode_fills_the_deck_without_errors(browser: Browser, base_url: str) -> None:
+    context = browser.new_context(viewport=VIEWPORTS["desktop"], reduced_motion="reduce")
+    page = context.new_page()
+    errors: list[str] = []
+    page.on("console", lambda message: message.type == "error" and errors.append(message.text))
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.goto(base_url + "/?demo")
+    page.wait_for_function("window.fleetDeck && fleetDeck.agents().length > 0")
+    expect(page.locator("#live")).to_contain_text("demo data")
+    assert len(page.evaluate("fleetDeck.rooms()")) > 1
+    page.locator("#tags .tag").first.dispatch_event("click")
+    expect(page.locator("#panel")).to_have_class("open")
+    context.close()
+    assert errors == []
+
+
 def test_library_lists_and_opens_documents(deck: Deck) -> None:
     page = deck.page
     page.locator("#libraryOpen").click()
