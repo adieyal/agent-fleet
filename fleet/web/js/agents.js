@@ -6,6 +6,7 @@ import { BK, HALF, PI, RD, REDUCED, SMALL_Z, TINY_Z, tagsEl, vw } from './env.js
 import { clamp, clock, esc, trunc } from './util.js';
 import { AGENT_COLOR, hostLook } from './looks.js';
 import { isSession, mumble, shortId } from './activity.js';
+import { actionOf, glyphHtml } from './glyphs.js';
 import { G, M, ROBOT, _w, botGroup, cam, toScreen } from './scene.js';
 import { ents, everLoaded, selectedKey } from './model.js';
 import { roomByName } from './rooms.js';
@@ -152,24 +153,48 @@ export function dropEnt(e) {
 }
 
 // ------------------------------------------------------------------ overlay tags
-function sessionBubble(s) {
+// The bubble is an action glyph (glyphs.js); what it stands for in words is its tooltip, and in full in the agent panel
+// (a click away) and the deck log.
+function sessionWords(s) {
   const a = s.activity;
-  if (s.status === 'idle') return [`<span class="ic">⏸</span>waiting for you since ${esc(clock(s.updated_at).slice(0, 5))}`, 'wait'];
-  if (a && a.kind === 'error') return [`<span class="ic">!</span>${esc(trunc(a.summary, 120))}`, 'bad'];
-  if (a && a.kind === 'text') return [`<span class="ic">“</span>${esc(trunc(a.summary, 120))}`, ''];
-  if (a) return [esc(mumble(a)), ''];
-  return ['<span class="ic">∴</span>working…', ''];
+  if (s.status === 'idle') return [`waiting for you since ${clock(s.updated_at).slice(0, 5)}`, 'wait'];
+  if (a && a.kind === 'error') return [trunc(a.summary, 120), 'bad'];
+  if (a && a.kind === 'text') return [trunc(a.summary, 120), ''];
+  if (a) return [mumble(a), ''];
+  return ['working…', ''];
+}
+function jobWords(j, done, total, cur) {
+  const a = j.activity;
+  switch (j.status) {
+    case 'running':
+      if (a && a.kind === 'error') return [trunc(a.summary, 120), 'bad'];
+      if (a && a.kind === 'text') return [trunc(a.summary, 120), ''];
+      return [a ? mumble(a) : 'warming up…', ''];
+    case 'queued': return ['queued · waiting at the door', 'quiet'];
+    case 'done': return [`done · ${done}/${total}`, 'done'];
+    case 'failed': return [`step ${cur + 1} failed`, 'bad'];
+    case 'stalled': return ['runner stalled mid-step', 'stall'];
+    case 'cancelled': return ['cancelled', 'quiet'];
+  }
+  return [j.status, 'quiet'];
+}
+function setBubble(e, action, words, cls) {
+  const b = e.el.firstChild;
+  const changed = b.dataset.action !== action;
+  b.className = 'bubble glyphs ' + cls + (changed && e.sig && !REDUCED ? ' pop' : '');   // a new action pops in once
+  b.dataset.action = action;
+  b.title = words;
+  b.innerHTML = glyphHtml(action);
 }
 export function updateTag(e) {
   const j = e.job;
   if (isSession(e)) {
-    const [bubble, cls] = sessionBubble(j);
+    const [words, cls] = sessionWords(j), action = actionOf(j);
     const stack = `<span class="lv${j.status === 'idle' ? ' idle' : ''}">LIVE</span><span class="id">${esc(trunc(j.title || shortId(j.id), vw < 760 ? 16 : 28))}</span><span class="ag">${esc(j.agent)}</span>`;
-    const sig = bubble + '|' + cls + '|' + stack;
+    const sig = action + '|' + words + '|' + cls + '|' + stack;
     if (sig === e.sig) return;
+    setBubble(e, action, words, cls);
     e.sig = sig;
-    e.el.firstChild.className = 'bubble ' + cls;
-    e.el.firstChild.innerHTML = `<span class="bt">${bubble}</span>`;
     e.el.lastChild.innerHTML = stack;
     e.sizeDirty = true;
     return;
@@ -177,30 +202,14 @@ export function updateTag(e) {
   const steps = j.steps || [];
   const done = steps.filter(s => s.status === 'done').length;
   const cur = steps.findIndex(s => s.status === 'running' || s.status === 'failed');
-  let bubble, cls = '';
-  const a = j.activity;
-  switch (j.status) {
-    case 'running':
-      if (a && a.kind === 'error') { bubble = `<span class="ic">!</span>${esc(trunc(a.summary, 120))}`; cls = 'bad'; }
-      else if (a && a.kind === 'text') bubble = `<span class="ic">“</span>${esc(trunc(a.summary, 120))}`;
-      else if (a) bubble = esc(mumble(a));
-      else bubble = '<span class="ic">∴</span>warming up…';
-      break;
-    case 'queued': bubble = 'queued · waiting at the door'; cls = 'quiet'; break;
-    case 'done': bubble = `✓ done · ${done}/${steps.length}`; cls = 'done'; break;
-    case 'failed': bubble = `✗ step ${cur + 1} failed`; cls = 'bad'; break;
-    case 'stalled': bubble = 'runner stalled mid-step'; cls = 'stall'; break;
-    case 'cancelled': bubble = 'cancelled'; cls = 'quiet'; break;
-    default: bubble = esc(j.status); cls = 'quiet';
-  }
+  const [words, cls] = jobWords(j, done, steps.length, cur), action = actionOf(j);
   let window0 = 0;
   if (steps.length > 12) window0 = clamp((cur < 0 ? done : cur) - 5, 0, steps.length - 12);
   const pips = steps.slice(window0, window0 + 12).map(s => `<i class="pip ${esc(s.status)}"></i>`).join('');
-  const sig = bubble + '|' + cls + '|' + pips + done;
+  const sig = action + '|' + words + '|' + cls + '|' + pips + done;
   if (sig === e.sig) return;
+  setBubble(e, action, words, cls);
   e.sig = sig;
-  e.el.firstChild.className = 'bubble ' + cls;
-  e.el.firstChild.innerHTML = `<span class="bt">${bubble}</span>`;
   e.el.lastChild.innerHTML = `<span class="id">${esc(j.id)}</span>${window0 > 0 ? '<b>…</b>' : ''}${pips}<b>${done}/${steps.length}</b>`;
   e.sizeDirty = true;
 }

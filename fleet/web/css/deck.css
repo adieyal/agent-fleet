@@ -133,6 +133,20 @@ header{position:fixed;top:0;left:0;right:0;height:52px;display:flex;align-items:
 .stack .ag{font:500 11px var(--mono);color:var(--muted)}
 .bubble.wait{border-style:dashed;border-color:rgba(251,191,36,.7);color:#fde68a;background:rgba(7,12,22,.85)}
 .bubble.wait .ic{color:var(--warn)}
+/* action glyphs instead of sentences: one small picture per android, its words in the tooltip and the panel */
+.bubble.glyphs{display:grid;place-items:center;width:30px;height:30px;padding:0;border-radius:50%;max-width:none}
+.bubble.glyphs::after{content:"";position:absolute;left:50%;bottom:-4px;width:7px;height:7px;transform:translateX(-50%) rotate(45deg);
+  background:inherit;border-right:inherit;border-bottom:inherit}
+.glyph{display:grid;place-items:center;color:var(--hc,#eef4ff)}
+.glyph svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.bubble.wait .glyph{color:var(--warn)}
+.bubble.bad .glyph{color:var(--bad)}
+.bubble.done .glyph{color:var(--ok)}
+.bubble.stall .glyph{color:var(--stall)}
+.bubble.quiet .glyph{color:var(--muted)}
+.bubble.pop .glyph{animation:glyphPop .35s ease-out}
+@keyframes glyphPop{from{transform:scale(.4);opacity:0}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion: reduce){.bubble.pop .glyph{animation:none}}
 .tag.small .bubble{display:none}
 .tag.tiny{display:none}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
@@ -153,18 +167,18 @@ header{position:fixed;top:0;left:0;right:0;height:52px;display:flex;align-items:
 
 /* ---------- attention lantern: a marked diamond, glyph for the kind, count when more than one. Never animated here:
    the 3D cord it hangs from swings once when an item arrives. */
-:is(.lantern,.floor-lantern){--lantern:#ff4fb0;position:absolute;left:0;top:0;width:34px;height:34px;padding:0;border:0;background:none;
+:is(.lantern,.floor-lantern,.wa-lantern){--lantern:#ff4fb0;position:absolute;left:0;top:0;width:34px;height:34px;padding:0;border:0;background:none;
   display:grid;place-items:center;cursor:pointer;pointer-events:auto;will-change:transform}
-:is(.lantern,.floor-lantern)::before{content:"";position:absolute;inset:6px;transform:rotate(45deg);border-radius:3px;background:var(--lantern);
+:is(.lantern,.floor-lantern,.wa-lantern)::before{content:"";position:absolute;inset:6px;transform:rotate(45deg);border-radius:3px;background:var(--lantern);
   border:2.5px solid #fff;box-shadow:0 0 0 2px #05080f,0 0 16px 3px rgba(255,79,176,.55)}
-:is(.lantern,.floor-lantern) .lg{position:relative;font:800 14px/1 var(--sans);color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)}
-:is(.lantern,.floor-lantern) b{position:absolute;right:-8px;top:-6px;min-width:17px;height:17px;padding:0 4px;border-radius:9px;
+:is(.lantern,.floor-lantern,.wa-lantern) .lg{position:relative;font:800 14px/1 var(--sans);color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)}
+:is(.lantern,.floor-lantern,.wa-lantern) b{position:absolute;right:-8px;top:-6px;min-width:17px;height:17px;padding:0 4px;border-radius:9px;
   font:700 10.5px/17px var(--mono);color:#05080f;background:#fff;box-shadow:0 0 0 2px #05080f}
-:is(.lantern,.floor-lantern) b:empty{display:none}
+:is(.lantern,.floor-lantern,.wa-lantern) b:empty{display:none}
 /* acknowledged: still there, steady and dimmer — the diamond outline stays so it still reads as attention */
-:is(.lantern,.floor-lantern).ack::before{background:#6b3a58;border-color:#c9b4c1;box-shadow:0 0 0 2px #05080f}
-:is(.lantern,.floor-lantern).ack .lg{color:#e5d7df}
-:is(.lantern,.floor-lantern).ack b{background:#c9b4c1}
+:is(.lantern,.floor-lantern,.wa-lantern).ack::before{background:#6b3a58;border-color:#c9b4c1;box-shadow:0 0 0 2px #05080f}
+:is(.lantern,.floor-lantern,.wa-lantern).ack .lg{color:#e5d7df}
+:is(.lantern,.floor-lantern,.wa-lantern).ack b{background:#c9b4c1}
 
 /* ---------- attention list: opened from a lantern */
 #attnPanel{position:fixed;left:0;top:0;z-index:40;width:320px;max-width:calc(100vw - 16px);max-height:60vh;overflow:auto;
@@ -243,10 +257,10 @@ body[data-view=floor] #lift{display:flex}
 .annex-sign{position:absolute;left:0;top:0;display:flex;align-items:center;gap:7px;padding:3px 9px;border-radius:6px;border:1px solid #7a6040;
   background:#2a2118;color:#e8dcc2;font:700 11px var(--display);letter-spacing:.14em;text-transform:uppercase;cursor:pointer;pointer-events:auto;will-change:transform}
 .annex-sign b{font:600 11px var(--mono);letter-spacing:0;color:#05080f;background:#e8dcc2;border-radius:8px;padding:0 6px}
-.storehouse,.vacancy{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;width:min(520px,calc(100vw - 24px));max-height:70vh;overflow:auto;
+.storehouse,.vacancy,.movein,.merge{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;width:min(520px,calc(100vw - 24px));max-height:70vh;overflow:auto;
   padding:14px 16px;border-radius:14px;background:var(--panel-solid);border:1px solid var(--line2);box-shadow:0 18px 50px rgba(0,0,0,.55);pointer-events:auto}
 .storehouse .sh-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
-.storehouse h3,.vacancy h3{margin:0;font:600 15px var(--display);letter-spacing:.04em}
+.storehouse h3,:is(.vacancy,.movein,.merge) h3{margin:0;font:600 15px var(--display);letter-spacing:.04em}
 .storehouse .sh-head button{border:0;background:none;color:var(--muted);cursor:pointer;font-size:15px}
 .crates{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
 .crate{position:relative;display:flex;flex-direction:column;gap:5px;padding:10px 10px 9px;border-radius:6px;background:#6f5536;
@@ -258,16 +272,26 @@ body[data-view=floor] #lift{display:flex}
 .crate .runs.busy::before{content:"";display:inline-block;width:6px;height:6px;margin-right:5px;border-radius:50%;background:#ffc47a;box-shadow:0 0 6px #ffc47a}
 .crate .lift-lantern{right:-6px;top:-6px}
 .crate .acts{display:flex;gap:6px}
-.crate .acts button,.vacancy button{padding:3px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.35);background:rgba(0,0,0,.2);color:inherit;font:600 11.5px var(--sans);cursor:pointer}
-.crate .err,.vacancy .err{color:#fecaca;font-size:11.5px}
-.crate .err:empty,.vacancy .err:empty{display:none}
+.crate .acts button,:is(.vacancy,.movein,.merge) button{padding:3px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.35);background:rgba(0,0,0,.2);color:inherit;font:600 11.5px var(--sans);cursor:pointer}
+.crate .err,:is(.vacancy,.movein,.merge) .err{color:#fecaca;font-size:11.5px}
+.crate .err:empty,:is(.vacancy,.movein,.merge) .err:empty{display:none}
 .storehouse .none{margin:0;color:var(--dim)}
 .vacancy{width:min(360px,calc(100vw - 24px));border-color:var(--warn)}
-.vacancy p{margin:4px 0 10px;color:var(--muted);font-size:13px}
-.vacancy ul{list-style:none;margin:0 0 10px;padding:0;display:flex;flex-direction:column;gap:5px}
-.vacancy li button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;border-radius:8px;padding:6px 10px;color:var(--text);background:rgba(255,255,255,.04);border-color:var(--line2)}
-.vacancy li button:hover{border-color:var(--warn)}
-.vacancy [data-cancel]{color:var(--muted)}
+:is(.vacancy,.movein,.merge) p{margin:4px 0 10px;color:var(--muted);font-size:13px}
+:is(.vacancy,.movein,.merge) ul{list-style:none;margin:0 0 10px;padding:0;display:flex;flex-direction:column;gap:5px}
+:is(.vacancy,.movein,.merge) li button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;border-radius:8px;padding:6px 10px;color:var(--text);background:rgba(255,255,255,.04);border-color:var(--line2)}
+:is(.vacancy,.movein,.merge) li button:hover{border-color:var(--warn)}
+:is(.vacancy,.movein,.merge) [data-cancel]{color:var(--muted)}
+/* moving in: link to a project it may belong to, or a new one; merging two projects */
+.movein,.merge{width:min(400px,calc(100vw - 24px))}
+.movein .why{margin-left:auto;color:var(--dim);font:500 10.5px var(--sans)}
+.movein .mhosts label{display:flex;align-items:center;gap:7px;font:500 12px var(--mono);cursor:pointer}
+.movein .mhosts i{width:8px;height:8px;border-radius:50%}
+.movein .note{color:var(--warn);font-size:12px}
+:is(.movein,.merge) .acts{display:flex;gap:6px;margin-top:4px}
+:is(.movein,.merge) button:disabled{opacity:.5;cursor:default}
+.merge-handle{flex:none;border:0;background:none;padding:0 2px;color:var(--dim);font:600 13px var(--sans);cursor:pointer;pointer-events:auto}
+.merge-handle:hover,.merge-handle:focus-visible{color:var(--text)}
 /* the undo toast after shuttering */
 #toast{position:fixed;left:12px;right:12px;bottom:22px;width:fit-content;margin:0 auto;z-index:50;display:flex;align-items:center;gap:14px;
   padding:10px 14px 12px;border-radius:12px;background:var(--panel-solid);border:1px solid var(--line2);box-shadow:0 12px 32px rgba(0,0,0,.5);font-size:13px;overflow:hidden}
@@ -303,6 +327,9 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 .visitor button{margin-left:auto;flex:none;padding:2px 9px;border-radius:999px;border:1px solid var(--line2);background:rgba(56,189,248,.08);
   font:600 11px var(--sans);color:var(--text);cursor:pointer}
 .visitor button:disabled{opacity:.55;cursor:default}
+.visitor .vhosts{display:flex;flex-wrap:wrap;gap:3px;flex:none}
+.visitor .vhosts i{display:inline-flex;align-items:center;gap:4px;width:auto;height:auto;font:500 10.5px var(--mono);font-style:normal;color:var(--muted)}
+.visitor .vhosts i::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--c)}
 .visitor .err{color:var(--bad)}
 .visitor .err:empty{display:none}
 .lobby .none{margin:0;color:var(--dim)}
@@ -615,3 +642,51 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
   .rd-scrim,.rd-sheet{animation:none}
   .rd-skel i{animation:none}
 }
+
+/* ---------- the workarea (L3): a room's benches, flat and minimal until the baked scene replaces it */
+#workarea{position:fixed;inset:0;z-index:55;display:flex;align-items:center;justify-content:center;background:rgba(3,6,12,.6)}
+#workarea[hidden]{display:none}
+.wa-sheet{width:min(980px,calc(100vw - 24px));max-height:calc(100vh - 80px);overflow:auto;padding:14px 18px 18px;border-radius:14px;
+  background:var(--panel-solid);border:1px solid var(--line2);box-shadow:0 18px 50px rgba(0,0,0,.55)}
+.wa-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.wa-head h2{margin:0;font:600 16px var(--display);letter-spacing:.04em}
+.wa-head button{border:0;background:none;color:var(--muted);cursor:pointer;font-size:15px}
+.wa-floor{position:relative;padding:4px 0 0}
+.wa-steps{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+.wa-steps path{fill:none;stroke:#a3b2cb;stroke-opacity:.5;stroke-width:3;stroke-linecap:round;stroke-dasharray:.1 9}
+.wa-front{position:relative;display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:26px}
+.wa-door{width:34px;height:50px;border-radius:17px 17px 3px 3px;border:2px solid var(--line2);background:linear-gradient(#1b2436,#111827)}
+.wa-desk{position:relative;display:flex;flex-direction:column;align-items:center;padding-top:44px}
+.wa-lantern{position:absolute;left:50%;top:0;transform:translateX(-50%);cursor:default}
+.wa-lantern::after{content:"";position:absolute;left:50%;bottom:100%;width:1px;height:8px;background:#a3b2cb}
+.desk-top{display:flex;gap:4px;justify-content:center;min-width:120px;min-height:22px;padding:4px 8px;border-radius:6px 6px 2px 2px;
+  background:#6f5536;border:2px solid #4c3a24}
+.slip{width:12px;height:14px;border-radius:2px;background:#e8dcc2}
+.slip[data-kind=blocker]{clip-path:polygon(0 0,100% 0,100% 70%,70% 100%,0 100%)}
+.wa-benches{position:relative;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.wa-floor .none{margin:0;color:var(--dim)}
+.bench{position:relative;display:flex;flex-direction:column;gap:8px;padding:10px;border-radius:10px;background:#131b2a;border:1px solid var(--line2)}
+.bench[data-recent]{border-color:rgba(163,178,203,.45)}
+.bench-head{display:flex;align-items:center;gap:8px;min-width:0}
+.bench-head .glyph svg{width:16px;height:16px}
+.bench-head b{flex:1;min-width:0;font:600 12.5px var(--sans);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bench-head small{flex:none;font:500 10.5px var(--mono);color:var(--muted)}
+.plan-wall{list-style:none;margin:0;padding:6px;display:grid;grid-template-columns:repeat(auto-fill,minmax(56px,1fr));gap:5px;
+  border-radius:6px;background:#1b2436}
+.tile{position:relative;display:flex;flex-direction:column;gap:2px;height:48px;padding:4px 5px;border-radius:3px;background:#2c3748;
+  border:1px solid #3b4a60;color:var(--muted);overflow:hidden}
+.tile .mk{font:700 13px/1 var(--sans)}
+.tile .tt{font:500 9.5px/1.2 var(--sans);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.tile[data-mark=check]{background:#e8f5ec;border-color:#e8f5ec;color:#14532d}                  /* flipped over */
+.tile[data-mark=glow]{border-color:#ffc47a;color:#fde7c4;box-shadow:0 0 10px 1px rgba(255,196,122,.55)}
+.tile[data-mark=glow] .mk{color:#ffc47a}
+.tile[data-mark=cross]{border:2px solid var(--bad);color:#fecaca}
+.tile[data-mark=dash]{opacity:.55}
+.criteria{display:flex;align-items:center;gap:4px}
+.criteria i{width:9px;height:9px;border-radius:50%;border:1.5px solid #6b7c9c}
+.criteria i[data-on]{background:var(--ok);border-color:var(--ok);box-shadow:0 0 6px var(--ok)}
+.criteria b{margin-left:4px;font:600 11px var(--mono);color:var(--muted)}
+.tray{align-self:flex-start;display:flex;align-items:flex-end;gap:2px;min-width:54px;height:22px;padding:3px 6px;border-radius:3px;
+  background:#4c3a24;border:1px solid #6f5536;cursor:pointer}
+.tray:disabled{cursor:default;opacity:.55}
+.tray .paper{width:14px;height:12px;border-radius:1px;background:#e8dcc2;box-shadow:0 -2px 0 #cdbf9f}

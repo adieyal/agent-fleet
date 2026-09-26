@@ -3,6 +3,7 @@ import json
 import threading
 from http.server import ThreadingHTTPServer
 from urllib.error import HTTPError
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 import pytest
@@ -40,7 +41,7 @@ def start_deck():
 
     def fill_gpu(entry):
         entry["ok"], entry["error"] = True, None
-        entry["sessions"]["s0"] = {"id": "s0", "project": "agent-fleet", "started_at": 0}
+        entry["sessions"]["s0"] = {"id": "s0", "project": "agent-fleet", "started_at": 0, "cwd": "/src/agent-fleet"}
 
     state.update("home", fill_home)
     state.update("gpu", fill_gpu)
@@ -208,6 +209,120 @@ def test_moving_in_refuses_a_linked_label_an_unknown_host_and_other_sites(deck):
     assert post(deck, "/api/move-in", {"host": "home"})[0] == 400
     assert post(deck, "/api/move-in", {"host": "home", "label": "invoices"}, Origin="http://evil.example")[0] == 403
     assert len(projects.load_registry().projects) == 1
+
+
+def test_moving_in_a_label_on_several_hosts_makes_one_project(deck):
+    status, moved = post(deck, "/api/move-in", {"hosts": ["home", "gpu"], "label": "agent-fleet"})
+    assert status == 200 and moved["floor"] == 1
+    project = projects.load_registry().get(moved["project_id"])
+    assert sorted((link.host, link.label) for link in project.links) == [("gpu", "agent-fleet"), ("home", "agent-fleet")]
+    assert post(deck, "/api/move-in", {"hosts": [], "label": "restoke"})[0] == 400
+    assert post(deck, "/api/move-in", {"hosts": ["home", "nowhere"], "label": "restoke"})[0] == 400
+
+
+# ------------------------------------------------------------------ linking a label to a project it belongs to
+def options(base_url, label, *hosts):
+    query = urlencode([("label", label), *(("host", host) for host in hosts)])
+    with urlopen(f"{base_url}/api/move-in?{query}", timeout=5) as response:
+        return json.load(response)
+
+
+def test_move_in_offers_the_project_a_label_is_linked_to_on_another_host(deck, monkeypatch):
+    monkeypatch.setattr(transport, "repository_remotes", lambda host, directories: {directory: [] for directory in directories})
+    (agent_fleet,) = housed(deck, "agent-fleet")          # "Agent-Fleet", linked on home, floor 1
+    register("Unrelated", ("home", "restoke"))
+    offered = options(deck, "agent-fleet", "gpu")
+    assert offered["candidates"] == [{"project_id": agent_fleet, "name": "Agent-Fleet", "reasons": ["linked", "name"],
+                                      "floor": 1, "shuttered": False}]
+    assert offered["errors"] == []
+
+
+def test_move_in_offers_a_name_match_but_never_links_by_itself(deck):
+    invoices = register("Invoice Analysis")                # the room's display name for "invoices", unlinked
+    offered = options(deck, "invoices", "home")
+    assert [(c["project_id"], c["reasons"], c["floor"]) for c in offered["candidates"]] == [(invoices, ["name"], 1)]
+    home = next(host for host in fetch_state(deck)["hosts"] if host["name"] == "home")
+    assert next(job for job in home["jobs"] if job["project"] == "invoices")["project_id"] is None
+
+
+def test_move_in_offers_a_matching_repository(deck, monkeypatch):
+    fleet = register("Fleet")
+    registry = projects.load_registry()
+    registry.add_repository(fleet, "git@github.com:adieyal/agent-fleet.git")
+    projects.save_registry(registry)
+    asked = []
+
+    def remotes(host, directories):
+        asked.append((host.name, directories))
+        return {directory: ["https://github.com/adieyal/agent-fleet"] for directory in directories}
+
+    monkeypatch.setattr(transport, "repository_remotes", remotes)
+    offered = options(deck, "agent-fleet", "gpu")
+    assert asked == [("gpu", ["/src/agent-fleet"])]
+    assert [(c["project_id"], c["reasons"]) for c in offered["candidates"]] == [(fleet, ["repository"])]
+
+    def unreachable(host, directories):
+        raise FleetError(f"{host.name}: could not read repository remotes")
+
+    monkeypatch.setattr(transport, "repository_remotes", unreachable)
+    offered = options(deck, "agent-fleet", "gpu")
+    assert offered["candidates"] == [] and offered["errors"] == ["gpu: could not read repository remotes"]
+
+
+def test_linking_joins_a_project_and_takes_no_floor(deck):
+    (agent_fleet,) = housed(deck, "agent-fleet")
+    before = building_of(deck)
+    status, body = post(deck, "/api/link", {"project": agent_fleet, "hosts": ["gpu"], "label": "agent-fleet"})
+    assert status == 200 and body == {"project_id": agent_fleet, "floor": 1}
+    document = fetch_state(deck)
+    assert document["building"] == before and len(document["projects"]) == 1
+    assert document["projects"][0]["links"] == [{"host": "gpu", "label": "agent-fleet"}, {"host": "home", "label": "agent-fleet"}]
+    gpu = next(host for host in document["hosts"] if host["name"] == "gpu")
+    assert gpu["sessions"][0]["project_id"] == agent_fleet
+
+
+def test_linking_refuses_what_makes_no_sense(deck, config_path):
+    set_config(config_path, capacity=1)
+    agent_fleet, restoke = housed(deck, "agent-fleet", "restoke")   # restoke gets no floor: the building is full
+    assert post(deck, "/api/link", {"project": restoke, "hosts": ["gpu"], "label": "agent-fleet"})[0] == 200   # full: still fine
+    assert post(deck, "/api/link", {"project": agent_fleet, "hosts": ["gpu"], "label": "agent-fleet"})[0] == 409
+    assert post(deck, "/api/link", {"project": "p-00000000", "hosts": ["home"], "label": "invoices"})[0] == 404
+    assert post(deck, "/api/link", {"hosts": ["home"], "label": "invoices"})[0] == 400
+    assert post(deck, "/api/link", {"project": agent_fleet, "hosts": ["home"], "label": "invoices"},
+                Origin="http://evil.example")[0] == 403
+
+
+# ------------------------------------------------------------------ merging projects registered by mistake
+def test_merging_keeps_the_older_project_and_frees_the_others_floor(deck):
+    older, restoke, newer = housed(deck, "agent-fleet", "restoke", "fleet")
+    registry = projects.load_registry()
+    registry.unlink("home", "fleet")
+    registry.link(newer, "gpu", "agent-fleet")
+    registry.add_repository(newer, "git@github.com:adieyal/agent-fleet.git")
+    projects.save_registry(registry)
+    assert post(deck, "/api/focus", {"focus": "background", "projects": [newer]})[0] == 200
+
+    assert post(deck, "/api/merge", {"keep": newer, "other": older})[0] == 400   # the newer one isn't kept
+    status, body = post(deck, "/api/merge", {"keep": older, "other": newer})
+    assert status == 200 and body == {"project_id": older, "merged": newer, "freed": 3, "floor": 1}
+
+    document = fetch_state(deck)
+    assert document["building"]["floors"] == {older: 1, restoke: 2}
+    assert newer not in document["focus"]["projects"] and newer not in stored_floors()
+    kept = next(project for project in document["projects"] if project["id"] == older)
+    assert kept["name"] == "Agent-Fleet" and kept["repositories"] == ["git@github.com:adieyal/agent-fleet.git"]
+    assert kept["links"] == [{"host": "gpu", "label": "agent-fleet"}, {"host": "home", "label": "agent-fleet"}]
+    assert {project["id"] for project in document["projects"]} == {older, restoke}
+
+
+def test_merging_projects_of_unknown_age_keeps_the_one_the_user_chose(deck, config_path):
+    set_config(config_path, projects={"p-0000000a": {"name": "A", "links": [], "repositories": []},
+                                      "p-0000000b": {"name": "B", "links": [], "repositories": [], "created_at": 1.0}})
+    status, body = post(deck, "/api/merge", {"keep": "p-0000000b", "other": "p-0000000a"})
+    assert status == 200 and body["project_id"] == "p-0000000b"   # the user said which to keep
+    assert post(deck, "/api/merge", {"keep": "p-0000000b", "other": "p-0000000b"})[0] == 400
+    assert post(deck, "/api/merge", {"keep": "p-0000000b", "other": "p-00000000"})[0] == 404
+    assert post(deck, "/api/merge", {"keep": "p-0000000b"})[0] == 400
 
 
 # ------------------------------------------------------------------ shuttering and the storehouse

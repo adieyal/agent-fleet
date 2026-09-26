@@ -1,4 +1,4 @@
-// What an agent is doing: event classification and the phrases its speech bubble mumbles.
+// What an agent is doing: event classification and the phrases it mumbles (its glyph bubble's tooltip; see glyphs.js).
 
 import { hash, trunc } from './util.js';
 
@@ -56,7 +56,7 @@ export function activityOf(ev) {
 }
 
 // ------------------------------------------------------------------ mumbling: tool events → what an agent would mutter
-// Speech bubbles say what the agent is doing in plain English; the log and panel keep the raw commands.
+// The phrases say what the agent is doing in plain English; the log and panel keep the raw commands.
 // Claude's shell calls carry their own description (ev.intent); everything else is phrased from the tool and its argument.
 const MUMBLE_LEADS = ['', '', '', 'now ', 'ok, ', 'hmm, ', 'right, ', 'just '];
 const DOUBLED_VERBS = new Set(['run', 'rerun', 'get', 'set', 'put', 'stop', 'cut', 'sit', 'plan', 'begin', 'commit', 'drop', 'ship',
@@ -118,7 +118,7 @@ function shellClass(command) {
   const is = (cls, sub = w[1] || '') => ({ cls, prog, sub, arg, w });
   if (!prog) return is('none');
   if (prog === 'git') return is('git', w.find((x, i) => i > 0 && !x.startsWith('-')) || '');
-  if (/^(pytest|vitest|jest|mocha|tox|nox)$/.test(prog) || /\btest\b/.test(w.slice(0, 3).join(' '))) return is('test');
+  if (/^(pytest|vitest|jest|mocha|tox|nox)$/.test(prog) || /\b(test|pytest|vitest|jest)\b/.test(w.slice(0, 3).join(' '))) return is('test');
   if (/^(npm|pnpm|yarn|bun)$/.test(prog)) {
     if (/^(i|install|ci|add)$/.test(w[1] || '')) return is('install');
     const script = w[1] === 'run' ? w[2] || '' : w[1] || '';

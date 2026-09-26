@@ -76,8 +76,10 @@ def test_linked_label_resolves_on_its_host_only(deck):
     assert ids(document, "home") == {"j0": ("agent-fleet", project_id)}
     assert ids(document, "home", "sessions")["s0"] == ("agent-fleet", project_id)
     assert ids(document, "gpu") == {"j1": ("agent-fleet", None)}
-    assert document["projects"] == [{"id": project_id, "name": "Agent Fleet", "repositories": [],
-                                     "links": [{"host": "home", "label": "agent-fleet"}]}]
+    (project,) = document["projects"]
+    assert isinstance(project.pop("created_at"), float)
+    assert project == {"id": project_id, "name": "Agent Fleet", "repositories": [],
+                       "links": [{"host": "home", "label": "agent-fleet"}]}
 
 
 def test_same_label_on_two_hosts_merges_only_when_both_link_one_id(deck):

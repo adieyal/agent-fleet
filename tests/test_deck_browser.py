@@ -2,6 +2,7 @@
 
 import io
 import json
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
@@ -60,6 +61,71 @@ def test_every_job_and_session_is_an_agent(deck: Deck, fixture_data: dict[str, A
     expect(deck.page.locator("#tags .tag")).to_have_count(len(expected))
     expect(deck.page.locator("#tags .tag.sess")).to_have_count(2)
     expect(deck.page.locator("#legendBody .crew.off")).to_have_count(1)
+    assert deck.errors == []
+
+
+def test_bubbles_show_action_glyphs_and_the_words_stay_a_click_away(deck: Deck) -> None:
+    page = deck.page
+    expected = {"a1c3e9": "test", "b7d042": "edit", "Why does the st": "ask", "f20a6d": "edit", "c90e11": "think",
+                "0a9e3b": "queued", "e1b5c8": "failed", "d4f7a2": "done"}
+    for agent, action in expected.items():
+        bubble = page.locator("#tags .tag", has_text=agent).locator(".bubble")
+        expect(bubble).to_have_attribute("data-action", action)
+        expect(bubble.locator(f'.glyph[data-action="{action}"][role="img"]')).to_have_count(1)
+        assert bubble.text_content().strip() == ""                       # no sentence in the bubble
+    running = page.locator("#tags .tag", has_text="a1c3e9")
+    expect(running.locator(".bubble")).to_have_attribute("title", re.compile("tests"))
+    running.dispatch_event("click")
+    expect(page.locator("#panel")).to_have_class("open")
+    expect(page.locator("#panelBody .evs")).to_contain_text("pnpm vitest run suppliers")
+    page.locator("#panel #close").click()
+    expect(page.locator("#panel")).not_to_have_class("open")
+    expect(page.locator("#feed")).to_contain_text("pnpm vitest run suppliers")   # and the deck log keeps it
+    assert deck.errors == []
+
+
+def test_a_jobs_workarea_shows_its_plan_desk_and_tray(deck: Deck, fixture_data: dict[str, Any]) -> None:
+    page = deck.page
+    page.locator("#tags .tag", has_text="a1c3e9").dispatch_event("click")
+    page.locator("#panelBody [data-workarea]").click()
+    workarea = page.locator("#workarea")
+    expect(workarea).to_be_visible()
+    expect(workarea.locator(".wa-head h2")).to_have_text("restoke")
+
+    # tiles match each bench's step statuses, marked without relying on colour
+    jobs = {f"{host['name']}:{job['id']}": job for host in fixture_data["hosts"] for job in host["jobs"]}
+    benches = workarea.locator("[data-bench]")
+    expect(benches).to_have_count(4)
+    marks = {"done": "✓", "running": "●", "failed": "✗", "pending": ""}
+    for key in benches.evaluate_all("benches => benches.map(b => b.dataset.bench)"):
+        tiles = workarea.locator(f'[data-bench="{key}"] [data-tile]')
+        steps = jobs[key]["steps"]
+        assert tiles.evaluate_all("tiles => tiles.map(t => t.dataset.status)") == [step["status"] for step in steps]
+        assert [text.strip() for text in tiles.locator(".mk").all_inner_texts()] == [marks[step["status"]] for step in steps]
+        done = sum(step["status"] == "done" for step in steps)
+        expect(workarea.locator(f'[data-bench="{key}"] .criteria')).to_have_attribute("aria-label", f"{done} of {len(steps)} steps done")
+    expect(workarea.locator('[data-bench="home:b7d042"] [data-mark="glow"]')).to_have_count(1)
+
+    # the lantern hangs over the question desk, with the room's two items
+    lantern = workarea.locator(".wa-lantern")
+    expect(lantern).to_have_attribute("data-count", "2")
+    hang, desk = lantern.bounding_box(), workarea.locator(".desk-top").bounding_box()
+    assert desk["x"] <= hang["x"] + hang["width"] / 2 <= desk["x"] + desk["width"]
+    assert hang["y"] + hang["height"] <= desk["y"] + 2
+    expect(workarea.locator(".wa-steps path")).to_have_count(4)   # every bench here was used in the last hour
+
+    # the tray opens the job's step report in the reader; Esc closes the reader, then the workarea
+    expect(workarea.locator('[data-tray="home:a1c3e9"]')).to_be_disabled()
+    workarea.locator('[data-tray="worker:d4f7a2"]').click()
+    expect(page.locator("#reader")).to_be_visible()
+    expect(page.locator("#rdTitle")).to_have_text("Step 2: Draft the article")
+    page.keyboard.press("Escape")
+    expect(page.locator("#reader")).to_be_hidden()
+    expect(workarea).to_be_visible()
+    page.keyboard.press("Escape")
+    expect(workarea).to_be_hidden()
+    expect(page.locator("#panel")).to_have_class(re.compile("open"))   # one level at a time
+    page.locator("#panel #close").click()
     assert deck.errors == []
 
 

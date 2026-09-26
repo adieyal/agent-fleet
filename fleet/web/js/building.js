@@ -7,7 +7,9 @@
 // than any open floor, with a soft warm glow behind a few panes while active. Free floors have a small "To let" card in
 // one window and a dotted outline. The spine carries a name plate (at most three words) and a progress ring per floor, shown
 // as unknown until projects have plans. No androids and no speech here: activity is light. The lobby holds the host
-// colour key and the visitors: labels with work that no project claims, each of which can move in.
+// colour key and the visitors: labels with work that no project claims, one row per label with its hosts. Moving one in
+// first offers linking it to a project it may belong to (no floor taken), then a new project. A floor's ⇄ merges its
+// project with another registered for the same work by mistake.
 //
 // Attention rolls up to floors: a floor with open or acknowledged items gets one marked lantern on a bracket from the
 // spine beside its name plate, the diamond
@@ -74,10 +76,11 @@ function enter(floor) {
 // the library, a panel or a list closes first), a floor goes back to the building and an open crate to the storehouse.
 document.addEventListener('keydown', ev => {
   if (ev.key !== 'Escape') return;
-  if (buildingShown) { if (vacancy || storehouseOpen) { closeDialogs(); renderUi(); } return; }
+  if (buildingShown) { if (vacancy || storehouseOpen || moving || merging) { closeDialogs(); renderUi(); } return; }
   if (current === null) return;
   const open = !document.getElementById('reader').hidden || !document.getElementById('libraryPane').hidden
-    || document.getElementById('panel').classList.contains('open') || !document.getElementById('attnPanel').hidden;
+    || document.getElementById('panel').classList.contains('open') || !document.getElementById('attnPanel').hidden
+    || !document.getElementById('workarea').hidden;
   if (open) return;
   if (current === 'S') openStorehouse(); else showView('building');
 }, { capture: true });
@@ -238,23 +241,26 @@ function applyLanterns(state) {
   }
 }
 
-// Visitors: host:label pairs with jobs or sessions that no project claims. Registered projects without a floor, and
-// work fleetd couldn't place in a project, are listed too: nothing with work drops out of view.
+// Visitors: labels with jobs or sessions that no project claims, one per label listing the hosts it is unclaimed on.
+// Registered projects without a floor, and work fleetd couldn't place in a project, are listed too: nothing with work
+// drops out of view.
 function lobbyOf(state) {
   const visitors = new Map();
   const projects = new Map((state.projects || []).map(p => [p.id, p]));
   for (const h of state.hosts || []) for (const item of [...(h.jobs || []), ...(h.sessions || [])]) {
     if (item.project_id) continue;
-    const key = h.name + ':' + (item.project ?? '');
-    if (!visitors.has(key)) visitors.set(key, { host: h.name, label: item.project ?? null, count: 0, active: false });
+    const key = item.project ?? '';
+    if (!visitors.has(key)) visitors.set(key, { label: item.project ?? null, hosts: [], count: 0, active: false });
     const v = visitors.get(key);
+    if (!v.hosts.includes(h.name)) v.hosts.push(h.name);
     v.count++;
     v.active ||= working(item);
   }
+  for (const v of visitors.values()) v.hosts.sort();
   const b = state.building || { capacity: 0, floors: {}, no_floor: [] };
   return {
     hosts: (state.hosts || []).map(h => ({ name: h.name, ok: !!h.ok, color: hostLook(h.name).color })),
-    visitors: [...visitors.values()].sort((a, c) => (a.label ?? '').localeCompare(c.label ?? '') || a.host.localeCompare(c.host)),
+    visitors: [...visitors.values()].sort((a, c) => (a.label ?? '').localeCompare(c.label ?? '')),
     noFloor: b.no_floor.map(id => ({ id, name: projects.get(id)?.name ?? id })),
     full: Object.keys(b.floors).length >= b.capacity,
     labels: state.project_labels || {},
@@ -599,6 +605,8 @@ function renderUi() {
       <span class="progress" data-progress="unknown" title="Progress unknown: no plan yet" aria-label="progress unknown">${RING}</span>
       <span class="fswitch" role="group" aria-label="Focus for ${esc(f.name)}" data-focus="${f.focus}"${error ? ` data-error title="Couldn’t change focus: ${esc(error)}"` : ''}>${
         Object.entries(SWITCH).map(([focus, label]) => `<button data-focus="${focus}" aria-pressed="${f.focus === focus}" title="${focus}">${label}</button>`).join('')}</span>
+      <button class="merge-handle" data-merge="${esc(f.projectId)}" aria-label="Merge ${esc(f.name)} with another project"
+        title="Merge with a project registered for the same work by mistake">⇄</button>
     </div>`;
   }).join('');
   const now = performance.now() / 1000;
@@ -614,15 +622,17 @@ function renderUi() {
     return `<div class="lantern-hang" data-floor="${place}"><span class="bob"${swing}>${lantern}</span></div>`;
   }).join('');
   const L = lobby;
-  const visitor = v => `<li class="visitor" data-host="${esc(v.host)}" data-label="${esc(v.label ?? '')}" title="${esc(`${v.host}:${v.label ?? 'no label'} · ${v.count}`)}">
-      <i style="background:${hostLook(v.host).color}"></i><span>${esc(v.label === null ? 'no label' : L.labels[v.label] || v.label)}</span>${v.active ? '<em class="busy" aria-label="active"></em>' : ''}
-      ${v.label === null ? '' : `<button data-move-in${L.full ? ' data-full title="Every floor is taken: clear one to move in"' : ''}>Move in</button>`}
+  const visitor = v => `<li class="visitor" data-label="${esc(v.label ?? '')}" data-hosts="${esc(v.hosts.join(' '))}" title="${esc(`${v.label ?? 'no label'} on ${v.hosts.join(', ')} · ${v.count}`)}">
+      <span>${esc(v.label === null ? 'no label' : L.labels[v.label] || v.label)}</span>${v.active ? '<em class="busy" aria-label="active"></em>' : ''}
+      <small class="vhosts">${v.hosts.map(h => `<i data-host="${esc(h)}" style="--c:${hostLook(h).color}">${esc(h)}</i>`).join('')}</small>
+      ${v.label === null ? '' : `<button data-move-in>Move in</button>`}
       <small class="err"></small></li>`;
   // the shutter handle: a pull-down bar at the floor's top corner, apart from the focus switch on the plate
   const handles = floors.filter(f => f.projectId).map(f => `<button class="shutter-handle" data-shutter="${esc(f.projectId)}" data-floor="${f.floor}"
       aria-label="Shutter ${esc(f.name)}" title="Pull down the shutter: pack ${esc(f.name)} away in the storehouse"></button>`).join('');
   const sign = `<button class="annex-sign" data-storehouse aria-label="Storehouse: ${crates.length} crate${crates.length === 1 ? '' : 's'}">Storehouse<b>${crates.length}</b></button>`;
-  ui.innerHTML = `${plates}${handles}${lamps}${sign}${storehouseOpen ? storehouseHtml() : ''}${vacancy ? vacancyHtml() : ''}
+  ui.innerHTML = `${plates}${handles}${lamps}${sign}${storehouseOpen ? storehouseHtml() : ''}${vacancy ? vacancyHtml() : ''}${
+    moving ? moveInHtml(moving) : ''}${merging ? mergeHtml(merging) : ''}
     <div class="lobby" role="region" aria-label="Lobby">
       <div class="hostkey" aria-label="Hosts">${L.hosts.map(h => `<span class="host${h.ok ? '' : ' off'}" data-host="${esc(h.name)}" title="${esc(h.name)}${h.ok ? '' : ': offline'}"><i style="background:${h.ok ? h.color : 'var(--dim)'}"></i>${esc(h.name)}</span>`).join('')}</div>
       ${L.full ? '<div class="novacancy">No vacancies</div>' : ''}
@@ -666,14 +676,33 @@ ui.addEventListener('click', async ev => {
   if (clear) {
     const v = vacancy, shutterId = clear.dataset.clear;
     await act(clear, () => v.kind === 'restore' ? post('/api/restore', { project: v.project, shutter: shutterId })
-      : post('/api/move-in', { host: v.host, label: v.label, shutter: shutterId }), () => { vacancy = null; storehouseOpen = false; renderUi(); });
+      : post('/api/move-in', { hosts: v.hosts, label: v.label, shutter: shutterId }), () => { vacancy = null; storehouseOpen = false; renderUi(); });
     return;
   }
+  const link = t.closest('[data-link]');
+  if (link) {
+    const m = moving;
+    await act(link, () => post('/api/link', { project: link.dataset.link, hosts: [...m.chosen], label: m.label }), () => { moving = null; renderUi(); });
+    return;
+  }
+  const fresh = t.closest('[data-new-project]');
+  if (fresh) { await newProject(fresh, moving.label, [...moving.chosen]); return; }
+  const mergeHandle = t.closest('[data-merge]');
+  if (mergeHandle) { closeDialogs(); merging = { project: mergeHandle.dataset.merge, other: null }; renderUi(); return; }
+  const mergeWith = t.closest('[data-merge-with]');
+  if (mergeWith) { merging.other = mergeWith.dataset.mergeWith; renderUi(); return; }
+  const keep = t.closest('[data-merge-keep]');
+  if (keep) { await merge(keep, keep.dataset.mergeKeep, [merging.project, merging.other].find(id => id !== keep.dataset.mergeKeep)); return; }
   const b = t.closest('[data-move-in]');
   if (!b) return;
   const row = b.closest('.visitor');
-  if (b.hasAttribute('data-full')) { vacancy = { kind: 'move-in', host: row.dataset.host, label: row.dataset.label }; renderUi(); return; }
-  await act(b, () => post('/api/move-in', { host: row.dataset.host, label: row.dataset.label }));
+  await moveIn(b, row.dataset.label, row.dataset.hosts.split(' '));
+});
+ui.addEventListener('change', ev => {   // the hosts a move-in covers, kept across redraws
+  const pick = ev.target.closest('[data-host-pick]');
+  if (!pick || !moving) return;
+  if (pick.checked) moving.chosen.add(pick.dataset.hostPick); else moving.chosen.delete(pick.dataset.hostPick);
+  renderUi();
 });
 // run a change from a button: disabled while it runs, and a short note beside it if it fails
 async function act(button, change, done = () => {}) {
@@ -683,7 +712,7 @@ async function act(button, change, done = () => {}) {
     done();
   } catch (err) {
     button.disabled = false;
-    const note = button.closest('li, .vacancy')?.querySelector('.err');
+    const note = button.closest('li')?.querySelector('.err') || button.closest('[role=dialog]')?.querySelector(':scope > .err');
     if (note) { note.textContent = 'Failed'; note.title = err.message; }
   }
 }
@@ -722,7 +751,7 @@ function openStorehouse() {
   storehouseOpen = true;
   renderUi();
 }
-function closeDialogs() { storehouseOpen = false; vacancy = null; }
+function closeDialogs() { storehouseOpen = false; vacancy = null; moving = null; merging = null; }
 function storehouseHtml() {
   const needs = new Set((doc?.attention || []).filter(i => i.state === 'open' || i.state === 'acknowledged').map(i => i.project_id));
   const crateHtml = c => `<li class="crate" data-project="${esc(c.id)}" title="${esc(c.name)}">
@@ -742,6 +771,86 @@ function vacancyHtml() {
       <h3>The building’s full.</h3><p>Which floor should we clear?</p>
       <ul>${occupied.map(f => `<li><button data-clear="${esc(f.projectId)}" title="Shutter ${esc(f.name)}"><span class="fn">${f.floor}</span>${esc(plateName(f.name))}</button></li>`).join('')}</ul>
       <button data-cancel>Cancel</button><small class="err"></small>
+    </div>`;
+}
+
+// ------------------------------------------------------------------ moving in: link to a project it belongs to, or a new one
+// A label may belong to a project already: linked on another host, the same repository, or the same name. Those come
+// first as "Link to …", which takes no floor; a new project comes second. Names alone never link anything by
+// themselves (ADR 0001): the user picks. A label on several hosts also asks, so joining them is a choice too.
+let moving = null;    // { label, hosts, chosen: Set of hosts, candidates, errors }
+let merging = null;   // { project, other: the project picked to merge with, or null }
+const WHY = { linked: 'linked on another host', repository: 'same repository', name: 'same name' };
+async function moveIn(button, label, hosts) {
+  let options;
+  await act(button, async () => {
+    const query = new URLSearchParams([['label', label], ...hosts.map(h => ['host', h])]);
+    const res = await fetch(`/api/move-in?${query}`);
+    options = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(options.error || `HTTP ${res.status}`);
+  });
+  if (!options?.candidates) return;
+  button.disabled = false;
+  if (!options.candidates.length && hosts.length === 1 && !options.errors.length) { await newProject(button, label, hosts); return; }
+  closeDialogs();
+  moving = { label, hosts, chosen: new Set(hosts), candidates: options.candidates, errors: options.errors };
+  renderUi();
+}
+async function newProject(button, label, hosts) {
+  if (lobby.full) { closeDialogs(); vacancy = { kind: 'move-in', label, hosts }; renderUi(); return; }
+  await act(button, () => post('/api/move-in', { hosts, label }), () => { moving = null; renderUi(); });
+}
+function whereIs(c) {
+  return c.floor ? `floor ${c.floor}` : c.shuttered ? 'in the storehouse' : 'no floor';
+}
+function moveInHtml(m) {
+  const none = !m.chosen.size ? ' disabled' : '';
+  return `<div class="movein" role="dialog" aria-label="Move ${esc(m.label)} in">
+      <h3>Move ${esc(lobby.labels[m.label] || m.label)} in</h3>
+      ${m.hosts.length > 1 ? `<p>From these hosts:</p><ul class="mhosts">${m.hosts.map(h => `<li><label><input type="checkbox" data-host-pick="${esc(h)}"${
+        m.chosen.has(h) ? ' checked' : ''}><i style="background:${hostLook(h).color}"></i>${esc(h)}</label></li>`).join('')}</ul>` : ''}
+      ${m.candidates.length ? `<p>It may belong to a project you have:</p><ul class="links">${m.candidates.map(c => `<li><button data-link="${esc(c.project_id)}"${none}
+        title="${esc(c.reasons.map(r => WHY[r]).join(', '))}">Link to ${esc(c.name)} <span class="fn">(${whereIs(c)})</span><small class="why">${
+        esc(c.reasons.map(r => WHY[r]).join(' · '))}</small></button></li>`).join('')}</ul>` : ''}
+      ${m.errors.map(e => `<p class="note" title="${esc(e)}">Couldn’t check repositories on ${esc(e.split(':')[0])}.</p>`).join('')}
+      <div class="acts"><button data-new-project${none}>New project</button><button data-cancel>Cancel</button></div><small class="err"></small>
+    </div>`;
+}
+
+// ------------------------------------------------------------------ merging a project registered twice by mistake
+// From a floor's ⇄: pick the other project, then merge. The older keeps its ID and name and takes the other's links and
+// repositories; the other's floor is freed. Projects registered before ages were recorded can't be told apart by age,
+// so then the user says which stays.
+async function merge(button, keep, other) {
+  const [kept, gone] = [keep, other].map(id => doc.projects.find(p => p.id === id));
+  const freed = floors.find(f => f.projectId === other)?.floor;
+  await act(button, () => post('/api/merge', { keep, other }), () => {
+    merging = null;
+    renderUi();
+    showToast(`${gone.name} is merged into ${kept.name}.${freed ? ` Floor ${freed} is free.` : ''}`);
+  });
+}
+function mergeHtml(m) {
+  const projects = new Map((doc?.projects || []).map(p => [p.id, p]));
+  const a = projects.get(m.project), b = m.other && projects.get(m.other);
+  if (!a) return '';
+  const place = id => { const f = floors.find(x => x.projectId === id); return f ? `floor ${f.floor}` : id in (doc.building?.shuttered || {}) ? 'in the storehouse' : 'no floor'; };
+  let body;
+  if (!b) {
+    const others = [...projects.values()].filter(p => p.id !== a.id).sort((x, y) => x.name.localeCompare(y.name));
+    body = `<p>Which project is the same work?</p>${others.length ? `<ul>${others.map(p => `<li><button data-merge-with="${esc(p.id)}">${
+      esc(p.name)} <span class="fn">(${place(p.id)})</span></button></li>`).join('')}</ul>` : '<p class="none">No other projects</p>'}`;
+  } else if (a.created_at != null && b.created_at != null) {
+    const [older, newer] = a.created_at <= b.created_at ? [a, b] : [b, a];
+    body = `<p>${esc(older.name)} is older, so it stays; ${esc(newer.name)}’s hosts and repositories join it${
+      floors.some(f => f.projectId === newer.id) ? ` and ${place(newer.id)} is freed` : ''}.</p>
+      <div class="acts"><button data-merge-keep="${esc(older.id)}">Merge</button></div>`;
+  } else {
+    body = `<p>Which one should stay? The other’s hosts and repositories join it, and its floor is freed.</p>
+      <ul>${[a, b].map(p => `<li><button data-merge-keep="${esc(p.id)}">Keep ${esc(p.name)} <span class="fn">(${place(p.id)})</span></button></li>`).join('')}</ul>`;
+  }
+  return `<div class="merge" role="dialog" aria-label="Merge ${esc(a.name)}">
+      <h3>Merge ${esc(a.name)}</h3>${body}<div class="acts"><button data-cancel>Cancel</button></div><small class="err"></small>
     </div>`;
 }
 

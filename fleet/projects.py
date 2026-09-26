@@ -13,6 +13,13 @@ on different hosts. The registry adds identity on top without changing labels:
   (host, label) pairs whose repository matches; accepting one is an explicit link.
 - A (host, label) pair with no link stays an unregistered group, grouped and shown
   exactly as before the registry existed.
+- Moving a label in looks for projects it may belong to (`link_candidates`): the same
+  label linked on another host, a matching repository, or a matching name. These are
+  only offers; the user chooses between linking and a new project.
+- Two projects registered for one piece of work by mistake merge into the older one
+  (`merge`): it keeps its ID and name and gains the other's links and repositories.
+  Projects registered before `created_at` was recorded have no known age; merging
+  them needs the user to say which to keep.
 
 `project_labels` (label → friendly room name, host-agnostic) is kept as is and is
 not migrated: turning it into links would merge every host's same-named label into
@@ -23,12 +30,14 @@ Stored under `projects` in the config file:
 
     "projects": {"p-1a2b3c4d": {"name": "Agent Fleet",
                                 "links": [{"host": "home", "label": "agent-fleet"}],
-                                "repositories": ["git@github.com:adieyal/agent-fleet.git"]}}
+                                "repositories": ["git@github.com:adieyal/agent-fleet.git"],
+                                "created_at": 1790400000.0}}
 """
 from __future__ import annotations
 
 import re
 import secrets
+import time
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
@@ -50,11 +59,13 @@ class Project:
     name: str
     links: list[Link] = field(default_factory=list)
     repositories: list[str] = field(default_factory=list)
+    created_at: float | None = None   # unknown for projects registered before it was recorded
 
     def to_config(self) -> dict[str, Any]:
-        return {"name": self.name,
-                "links": [{"host": link.host, "label": link.label} for link in sorted(self.links)],
-                "repositories": list(self.repositories)}
+        entry = {"name": self.name,
+                 "links": [{"host": link.host, "label": link.label} for link in sorted(self.links)],
+                 "repositories": list(self.repositories)}
+        return entry if self.created_at is None else {**entry, "created_at": self.created_at}
 
 
 @dataclass(frozen=True)
@@ -63,6 +74,22 @@ class Suggestion:
     link: Link
     project_id: str
     repository: str
+
+
+# why a label may belong to a project, strongest first
+REASONS = ("linked", "repository", "name")
+
+
+@dataclass(frozen=True)
+class Candidate:
+    """A registered project a label may belong to, and why."""
+    project_id: str
+    reasons: tuple[str, ...]
+
+
+def name_key(text: str) -> str:
+    """Names compare without case, spaces or punctuation: "Agent Fleet" matches "agent-fleet"."""
+    return re.sub(r"[^0-9a-z]+", "", text.casefold())
 
 
 def normalize_repository(url: str) -> str:
@@ -86,7 +113,7 @@ class Registry:
         for project in projects:
             if not PROJECT_ID.match(project.id):
                 raise FleetError(f"invalid project id '{project.id}' in config")
-            self.projects[project.id] = Project(project.id, project.name)
+            self.projects[project.id] = Project(project.id, project.name, created_at=project.created_at)
             for repository in project.repositories:
                 self.add_repository(project.id, repository)
             for link in project.links:
@@ -96,7 +123,7 @@ class Registry:
     def from_config(cls, config: dict[str, Any]) -> Registry:
         return cls(Project(project_id, entry["name"],
                            [Link(link["host"], link["label"]) for link in entry.get("links", [])],
-                           list(entry.get("repositories", [])))
+                           list(entry.get("repositories", [])), entry.get("created_at"))
                    for project_id, entry in config.get("projects", {}).items())
 
     def to_config(self) -> dict[str, Any]:
@@ -113,7 +140,7 @@ class Registry:
         project_id = new_project_id()
         while project_id in self.projects:
             project_id = new_project_id()
-        self.projects[project_id] = Project(project_id, name.strip())
+        self.projects[project_id] = Project(project_id, name.strip(), created_at=time.time())
         for repository in repositories:
             self.add_repository(project_id, repository)
         return self.projects[project_id]
@@ -129,6 +156,42 @@ class Registry:
         for link in project.links:
             del self.owners[link]
         return self.projects.pop(project_id)
+
+    def merge(self, keep_id: str, other_id: str) -> Project:
+        """Fold `other` into `keep`, which must be the older when both ages are known (when either isn't, the caller
+        chose): `keep` keeps its ID and name and gains the other's links and repositories; the other is forgotten."""
+        if keep_id == other_id:
+            raise FleetError("a project can't be merged with itself")
+        keep, other = self.get(keep_id), self.get(other_id)
+        if keep.created_at is not None and other.created_at is not None and other.created_at < keep.created_at:
+            raise FleetError(f"{other_id} is older, so it is the one to keep: merge {other_id} {keep_id}")
+        self.remove(other_id)
+        for repository in other.repositories:
+            self.add_repository(keep_id, repository)
+        for link in other.links:
+            self.link(keep_id, link.host, link.label)
+        return keep
+
+    def link_candidates(self, label: str, hosts: Iterable[str], remotes: Iterable[tuple[str, str, str]] = (),
+                        display_name: str | None = None) -> list[Candidate]:
+        """Projects the label on `hosts` may belong to: the label linked on another host, a repository matching one
+        of `remotes` (host, label, url), or a name matching the label or its display name. Strongest first."""
+        hosts = set(hosts)
+        reasons: dict[str, set[str]] = {}
+        for link, project_id in self.owners.items():
+            if link.label == label and link.host not in hosts:
+                reasons.setdefault(project_id, set()).add("linked")
+        for suggestion in self.suggest_links((host, found, url) for host, found, url in remotes
+                                             if found == label and host in hosts):
+            reasons.setdefault(suggestion.project_id, set()).add("repository")
+        keys = {name_key(text) for text in (label, display_name or "")} - {""}
+        for project_id, project in self.projects.items():
+            if name_key(project.name) in keys:
+                reasons.setdefault(project_id, set()).add("name")
+        found = [Candidate(project_id, tuple(reason for reason in REASONS if reason in why))
+                 for project_id, why in reasons.items()]
+        return sorted(found, key=lambda c: (REASONS.index(c.reasons[0]), -len(c.reasons),
+                                            self.projects[c.project_id].name.lower(), c.project_id))
 
     def link(self, project_id: str, host: str, label: str) -> Link:
         project = self.get(project_id)

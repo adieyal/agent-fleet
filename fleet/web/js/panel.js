@@ -15,6 +15,7 @@ import { dismiss, entered, hiddenCount, restoreDismissed, retiredCount, showFini
 import { focusOn } from './camera.js';
 import { openCount } from './attention.js';
 import { openReader } from './reader.js';
+import { openWorkarea } from './workarea.js';
 
 // ------------------------------------------------------------------ portraits for the manifest and the panel
 // Rendered once per look into an offscreen target with the main renderer, then copied into small 2D canvases.
@@ -125,7 +126,8 @@ export function renderPanel() {
       ${j.permission ? `<dt>perms</dt><dd>${esc(j.permission)}</dd>` : ''}
       <dt>updated</dt><dd>${esc(age(j.updated_at))} ago</dd>
     </dl>`, `
-    <h3>Steps · ${steps.filter(s => s.status === 'done').length}/${steps.length}</h3>
+    <h3>Steps · ${steps.filter(s => s.status === 'done').length}/${steps.length}<button class="wa-open" data-workarea="${esc(j.project ?? '')}"${
+      j.project ? '' : ' disabled'} title="Open this room's workarea: plan wall, question desk and report tray">Workarea</button></h3>
     <ol class="steps">${steps.map(s => `<li class="${esc(s.status)}"><span class="si">${stepIcon[s.status] || '?'}</span>
       <span class="t">${s.index + 1}. ${esc(s.title)}</span>${s.result ? `<span class="r">${esc(trunc(s.result, 400))}</span>` : ''}</li>`).join('')}</ol>`,
     docsPanelHtml(e),
@@ -195,6 +197,8 @@ function docsPanelHtml(e) {
   }).join('')}</ul>`;
 }
 panel.addEventListener('click', ev => {
+  const workarea = ev.target.closest('[data-workarea]');
+  if (workarea) { if (!workarea.disabled) openWorkarea(workarea.dataset.workarea); return; }
   const open = ev.target.closest('[data-doc]');
   if (open) {
     const e = ents.get(selectedKey), doc = e && (e.job.documents || []).find(d => d.id === open.dataset.doc);

@@ -527,6 +527,18 @@ def command_project_unlink(arguments: argparse.Namespace) -> None:
     console.print(f"unlinked {escape(host)}:{escape(label)} from {project_id}")
 
 
+def command_project_merge(arguments: argparse.Namespace) -> None:
+    """Fold a project registered by mistake into the older one. The deck frees the other's floor when it next looks,
+    as it does for any project no longer registered."""
+    registry = projects.load_registry()
+    other = registry.get(arguments.other)
+    keep = registry.merge(arguments.keep, arguments.other)
+    projects.save_registry(registry)
+    console.print(f"merged {arguments.other} {escape(other.name)} into [bold]{keep.id}[/] {escape(keep.name)}")
+    for link in sorted(keep.links):
+        console.print(f"  {escape(link.host)}:{escape(link.label)}")
+
+
 def command_project_repo_add(arguments: argparse.Namespace) -> None:
     registry = projects.load_registry()
     registry.add_repository(arguments.id, arguments.url)
@@ -847,6 +859,10 @@ def build_parser() -> argparse.ArgumentParser:
     project_unlink = project.add_parser("unlink", help="detach a host's label from its project")
     project_unlink.add_argument("link", metavar="HOST:LABEL")
     project_unlink.set_defaults(handler=command_project_unlink)
+    project_merge = project.add_parser("merge", help="fold a project registered by mistake into the older one")
+    project_merge.add_argument("keep", metavar="KEEP-ID", help="the older project: keeps its ID and name")
+    project_merge.add_argument("other", metavar="OTHER-ID", help="gives up its links, repositories and floor")
+    project_merge.set_defaults(handler=command_project_merge)
     project_repo = project.add_parser("repo", help="repository remotes used to suggest links").add_subparsers(
         dest="project_repo_command", required=True)
     project_repo_add = project_repo.add_parser("add")

@@ -37,6 +37,7 @@ STATIC_TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; char
                 ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".json": "application/json",
                 ".md": "text/markdown; charset=utf-8", ".txt": "text/plain; charset=utf-8"}
 ATTENTION_ACTIONS = ("acknowledge", "snooze", "reopen")
+FLOOR_CHANGES = ("/api/move-in", "/api/link", "/api/merge", "/api/shutter", "/api/restore")
 EVENTS_PER_JOB = "15"
 STREAM_SILENCE_LIMIT = 20  # seconds without a heartbeat before the stream is considered dead
 RECONNECT_DELAY = 3
@@ -104,13 +105,15 @@ class FleetState(LiveWorkspace):
         self.refresh_registry()   # a project registered a moment ago can be focused
         return self.registry.projects
 
-    def register(self, name: str, host: str, label: str) -> str:
+    def edit_registry(self, change: Callable[[Registry], Any]) -> Any:
         registry = self.load_registry()
-        project = registry.create(name)
-        registry.link(project.id, host, label)
+        result = change(registry)
         projects.save_registry(registry)
         self.registry = registry
-        return project.id
+        return result
+
+    def repository_remotes(self, host: str, directories: list[str]) -> dict[str, list[str]]:
+        return transport.repository_remotes(next(known for known in self.hosts if known.name == host), directories)
 
     def document(self) -> dict[str, Any]:
         projects_error = self.refresh_registry()
@@ -226,6 +229,8 @@ def make_handler(state: FleetState | FixtureState,
                 self.respond(200, "application/json", json.dumps({"documents": documents}).encode())
             elif path == "/api/library/doc":
                 self.library_document()
+            elif path == "/api/move-in":
+                self.move_in_options()
             elif path == "/api/state":
                 self.respond(200, "application/json", json.dumps(state.document()).encode())
             elif path in ("/", "/index.html"):
@@ -240,7 +245,7 @@ def make_handler(state: FleetState | FixtureState,
         def do_POST(self) -> None:  # noqa: N802 — http.server naming
             path = self.path.split("?", 1)[0]
             action = path.removeprefix("/api/attention/") if path.startswith("/api/attention/") else None
-            if path not in ("/api/focus", "/api/move-in", "/api/shutter", "/api/restore") and action not in ATTENTION_ACTIONS:
+            if path not in FLOOR_CHANGES + ("/api/focus",) and action not in ATTENTION_ACTIONS:
                 self.respond(404, "text/plain", b"not found")
             elif not self.same_origin():
                 self.respond(403, "application/json", b'{"error": "cross-origin writes are refused"}')
@@ -254,8 +259,10 @@ def make_handler(state: FleetState | FixtureState,
                 body = body if isinstance(body, dict) else {}
                 if action:
                     self.attention(action, body)
-                elif path == "/api/move-in":
-                    self.move_in(body)
+                elif path in ("/api/move-in", "/api/link"):
+                    self.move_in(path.removeprefix("/api/"), body)
+                elif path == "/api/merge":
+                    self.merge(body)
                 elif path in ("/api/shutter", "/api/restore"):
                     self.storehouse(path.removeprefix("/api/"), body)
                 else:
@@ -286,14 +293,39 @@ def make_handler(state: FleetState | FixtureState,
                 return
             self.respond(200, "application/json", json.dumps(state.workspace.focus_snapshot()).encode())
 
-        def move_in(self, body: dict[str, Any]) -> None:
-            """POST /api/move-in {"host": host, "label": label, "shutter": project ID to make room, if full}
-            — register the label as a project on the lowest free floor."""
-            if (not isinstance(body.get("host"), str) or not isinstance(body.get("label"), str)
-                    or not isinstance(body.get("shutter", ""), str)):
-                self.error(400, "host and label are required")
+        def move_in_options(self) -> None:
+            """GET /api/move-in?label=&host=&host=… — projects the label on those hosts may belong to, to offer
+            linking before a new project."""
+            query = parse_qs(urlsplit(self.path).query)
+            try:
+                options = state.move_in_options((query.get("label") or [""])[0], query.get("host", []))
+            except FleetError as error:
+                self.error(400, str(error))
                 return
-            self.change_floors(lambda: state.move_in(body["host"], body["label"], body.get("shutter")))
+            self.respond(200, "application/json", json.dumps(options).encode())
+
+        def move_in(self, action: str, body: dict[str, Any]) -> None:
+            """POST /api/move-in {"hosts": [host, …], "label": label, "shutter": project ID to make room, if full}
+            — register the label on those hosts as one project on the lowest free floor.
+            POST /api/link {"project": ID, "hosts": [host, …], "label": label} — link it to that project instead.
+            A single "host" may stand for "hosts"."""
+            hosts = body.get("hosts", [body["host"]] if "host" in body else [])
+            if (not isinstance(hosts, list) or not all(isinstance(host, str) for host in hosts)
+                    or not isinstance(body.get("label"), str) or not isinstance(body.get("shutter", ""), str)
+                    or (action == "link" and not isinstance(body.get("project"), str))):
+                self.error(400, "hosts and a label are required" + (", and a project" if action == "link" else ""))
+                return
+            if action == "link":
+                self.change_floors(lambda: state.link_in(body["project"], hosts, body["label"]))
+            else:
+                self.change_floors(lambda: state.move_in(hosts, body["label"], body.get("shutter")))
+
+        def merge(self, body: dict[str, Any]) -> None:
+            """POST /api/merge {"keep": ID, "other": ID} — fold a project registered by mistake into the older one."""
+            if not isinstance(body.get("keep"), str) or not isinstance(body.get("other"), str):
+                self.error(400, "keep and other are required")
+                return
+            self.change_floors(lambda: state.merge(body["keep"], body["other"]))
 
         def storehouse(self, action: str, body: dict[str, Any]) -> None:
             """POST /api/shutter {"project": ID} — pack it away and free its floor.
