@@ -67,28 +67,37 @@ function bandPoint(b, u, dy) {   // a point along the band's centre line, dy off
   return { x: v * v * v * b.x0 + 3 * v * v * u * xm + 3 * v * u * u * xm + u * u * u * b.x1,
     y: v * v * v * b.y0 + 3 * v * v * u * b.y0 + 3 * v * u * u * b.y1 + u * u * u * b.y1 + dy };
 }
-// Nodes items end in: nothing has left them in this run nor in the baseline, and the run has got past their column
-// (it finished, they are in the last column, or a neighbour in their column already passes items on). A run part-way
-// has not reached its gates, so its middle columns are not ends yet.
+// What a node holds beyond what has left it: items that ended there, or that have not gone on yet.
+const leaving = (edges, n) => edges.reduce((s, [a, , c]) => s + (a === n ? c : 0), 0);
+export const held = (report, n) => Math.max(0, (report.counts?.[n] || 0) - leaving(report.edges || [], n));
+// Nodes items end in, holding at least one. Once the run is done, whatever a node holds ended there. Before that a node
+// ends items only if nothing has left it in this run nor in the baseline and the run has got past its column (it is
+// the last, a neighbour already passes items on, or the run failed); what any other node holds is still waiting.
 export function terminals(run, base) {
   const left = new Set([...run.edges, ...(base?.edges || [])].map(([s]) => s));
-  const last = run.nodes.length - 1;
-  return new Set(run.nodes.flatMap((col, ci) => col.filter(n => !left.has(n)
-    && (run.status !== 'running' || ci === last || col.some(m => left.has(m))))));
+  const last = run.nodes.length - 1, done = run.status === 'done';
+  return new Set(run.nodes.flatMap((col, ci) => col.filter(n => held(run, n) > 0 && (done
+    || (!left.has(n) && (run.status !== 'running' || ci === last || col.some(m => left.has(m))))))));
 }
+// Items held by nodes that are not ends: waiting for their next step while the run goes, left unfinished if it failed.
+export function waiting(run, ends) {
+  if (run.status === 'done') return new Map();
+  return new Map(run.nodes.flat().filter(n => !ends.has(n)).map(n => [n, held(run, n)]).filter(([, w]) => w > 0));
+}
+export const waitWord = run => run.status === 'running' ? 'waiting' : 'unfinished';
 // A node's share is of the items that reached its column, not of the run's declared total: part-way through a run
 // most items have not reached the later columns yet.
-export function shareOf(columns, counts, node) {
+export function shareOf(columns, counts, node, value = counts[node] || 0) {
   const col = columns.find(c => c.includes(node)) || [];
   const reached = col.reduce((s, n) => s + (counts[n] || 0), 0);
-  return reached ? (counts[node] || 0) / reached : null;
+  return reached ? value / reached : null;
 }
 export const processed = run => run.nodes[0]?.reduce((s, n) => s + (run.counts[n] || 0), 0) || 0;
 // Against a finished baseline a run is comparable only once it has finished too; until then the baseline's figure is
 // shown beside it ("prev"), not a difference.
 export function versus(run, base, node, value) {
   if (!base) return null;
-  const was = base.counts?.[node] || 0;
+  const was = held(base, node);
   if (run.status !== 'done') return { text: `prev ${fmt(was)}` };
   const d = Math.round(value) - was;
   return { text: `${d > 0 ? '+' : d < 0 ? '−' : '±'}${fmt(Math.abs(d))}` };
@@ -140,7 +149,7 @@ export const sankeyPane = document.getElementById('sankey');
 const sheet = sankeyPane.querySelector('.rd-sheet');
 const chart = document.getElementById('skChart'), svg = document.getElementById('skSvg'), dotsCanvas = document.getElementById('skDots');
 const side = document.getElementById('skSide');
-const TWEEN_MS = 400, DOT_MS = 1400, DOTS_PER_UPDATE = 80, PAD = 18;
+const TWEEN_MS = 400, DOT_MS = 1400, DOTS_PER_UPDATE = 80, PAD = 18, WAIT_W = 16;
 const LABEL_GAP = 36, LABEL_TOP = 36;   // room above each node, and above the top ones, for a two-line label
 const CAPTION_H = 38, LABEL_W = 250, MIN_WIDTH = 760, NARROW = 700, LABEL_W_NARROW = 190, COL_W_NARROW = 150;
 const sk = { key: null, p: null, from: null, to: null, t0: 0, dots: [], carry: {}, raf: 0, selected: null, lastFocus: null, geo: null };
@@ -240,17 +249,17 @@ function drawFrame() {
   const L = layout(run.nodes, values.counts, edges, W, H - LABEL_TOP - (firsts.size ? CAPTION_H : 0),
     { baseline: base?.counts, baseEdges: base?.edges, gap: LABEL_GAP });
   sk.geo = L;
-  renderChart(L, run, base, width, height, narrow, firsts);
+  renderChart(L, run, base, width, height, narrow, firsts, { ...run, counts: values.counts, edges });
   edgeFade();
   drawDots(L, width, height);
   const tweening = performance.now() - sk.t0 < TWEEN_MS;
   if (tweening || sk.dots.length) sk.raf = requestAnimationFrame(drawFrame);
 }
 // Labels keep off the bands and outlines: the last column's sit right of their node, where nothing flows; every other
-// node's sits in the gap above it (name and count, then share and prev for an end node). Baseline outlines go under
-// the bands.
-function renderChart(L, run, base, width, height, narrow, firsts) {
-  const ends = terminals(run, base), values = Object.fromEntries([...L.nodes.values()].map(n => [n.name, n.value]));
+// node's sits in the gap above it (name and count, then share and prev for an end node, or what waits in it). Baseline
+// outlines go under the bands; what a node holds that has not gone on yet is a hatched stub at its right edge.
+function renderChart(L, run, base, width, height, narrow, firsts, now) {
+  const ends = terminals(run, base), values = now.counts, waits = waiting(now, ends);
   const lastCol = run.nodes.length - 1;
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
   const ghosts = L.bands.filter(b => b.ghost).map(b => `<path class="sk-ghost" d="${bandPath(b.ghost)}"/>`).join('');
@@ -261,10 +270,16 @@ function renderChart(L, run, base, width, height, narrow, firsts) {
     const tip = `${b.s.name} → ${b.t.name}: ${fmt(b.count)}${was !== undefined ? ` (baseline ${fmt(was)})` : ''}`;
     return `<path class="sk-band${tone ? ' t-' + tone : ''}${sk.selected && b.t.name === sk.selected ? ' on' : ''}" data-band="${esc(b.key)}" d="${bandPath(b)}"><title>${esc(tip)}</title></path>`;
   }).join('');
+  const stubs = [...waits].map(([name, w]) => {
+    const n = L.nodes.get(name), y = n.y + n.out.reduce((s, b) => s + b.w, 0);
+    return `<rect class="sk-wait" x="${n.x + L.nodeW}" y="${y}" width="${WAIT_W}" height="${Math.max(MIN_BAND, w * L.k)}"><title>${
+      esc(`${name}: ${fmt(w)} ${waitWord(run)}`)}</title></rect>`;
+  }).join('');
   const nodes = [...L.nodes.values()].map(n => {
-    const end = ends.has(n.name), share = end ? pct(shareOf(run.nodes, values, n.name)) : '';
-    const vs = end ? versus(run, base, n.name, n.value) : null;
-    const rest = [share, vs?.text].filter(Boolean).join(' · ');
+    const end = ends.has(n.name), kept = end ? held(now, n.name) : 0, share = end ? pct(shareOf(run.nodes, values, n.name, kept)) : '';
+    const vs = end ? versus(run, base, n.name, kept) : null;
+    const rest = end ? [Math.round(kept) < Math.round(n.value) ? `${fmt(kept)} end here` : '', share, vs?.text].filter(Boolean).join(' · ')
+      : waits.has(n.name) ? `${fmt(waits.get(n.name))} ${waitWord(run)}` : '';
     let label;
     if (n.col === lastCol) {
       const x = n.x + L.nodeW + 7, y = n.y + n.hc / 2;
@@ -286,7 +301,9 @@ function renderChart(L, run, base, width, height, narrow, firsts) {
     const bottom = Math.max(0, ...col.map(n => n.y + n.h));
     return `<text class="sk-cap" x="${x}" y="${bottom + 22}"><tspan>by first of its ${esc(key)}:</tspan><tspan x="${x}" dy="14">each item counted once</tspan></text>`;
   }).join('');
-  svg.innerHTML = `<g transform="translate(${PAD},${PAD + LABEL_TOP})">${ghosts}${bands}${nodes}${captions}</g>`;
+  svg.innerHTML = `<defs><pattern id="skHatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+    <rect class="sk-hatch" width="2" height="5"/></pattern></defs>
+    <g transform="translate(${PAD},${PAD + LABEL_TOP})">${ghosts}${bands}${stubs}${nodes}${captions}</g>`;
   chart.querySelector('.sk-empty')?.remove();
   const off = !sk.p.host_ok ? `<div class="sk-note" role="status">${esc(sk.p.host)} is offline (${esc(sk.p.host_error || 'no connection')}): this is its last report, written ${age(run.updated_at)} ago</div>` : '';
   const note = chart.querySelector('.sk-note');
@@ -353,8 +370,10 @@ function renderSide() {
       : `<li>${esc(typeof v[i] === 'object' ? JSON.stringify(v[i]) : v[i])}</li>`;
     const by = firstOfColumns(run).get(run.nodes.findIndex(col => col.includes(node)));
     side.innerHTML = `<button class="sk-back" data-back>← All end nodes</button>
-      <h3>${esc(sk.selected)} <span>${fmt(run.counts[sk.selected] || 0)}</span></h3>
-      <p class="sk-sub">${items.length ? `The latest ${items.length} item${items.length === 1 ? '' : 's'} in, newest first` : 'No items recorded into this node yet'}${
+      <h3>${esc(sk.selected)} <span>${fmt(held(run, node))}</span></h3>
+      <p class="sk-sub">${items.length ? `The latest ${items.length} item${items.length === 1 ? '' : 's'} in, newest first`
+        : run.edges.some(([s]) => s === node) ? 'Items that ended here are not listed: only nodes nothing leaves keep their latest items'
+        : 'No items recorded into this node yet'}${
         by ? `. An item with several ${esc(by)} is counted once, under the first; the others are listed with it` : ''}</p>
       <ol class="sk-items">${items.map(item => `<li><div class="it"><b>${esc(item.item)}</b><time>${item.ts ? age(item.ts) + ' ago' : ''}</time></div>${
         Object.entries(item.attrs || {}).map(([key, v]) => `<div class="at"><span>${esc(key)}</span>${
@@ -367,9 +386,9 @@ function renderSide() {
   side.innerHTML = `<h3>End nodes</h3><p class="sk-sub">Choose one for its latest items. Share is of the items that reached its column${sub}.</p>
     <table class="sk-table"><thead><tr><th scope="col">Node</th><th scope="col">Items</th><th scope="col">Share</th>${base ? `<th scope="col">${done ? 'Change' : 'Prev'}</th>` : ''}</tr></thead>
     <tbody>${ends.map(n => {
-      const c = run.counts[n] || 0, vs = versus(run, base, n, c);
-      return `<tr data-node="${esc(n)}" tabindex="0"><th scope="row">${esc(n)}</th><td>${fmt(c)}</td><td>${pct(shareOf(run.nodes, run.counts, n))}</td>${
-        vs ? `<td>${esc(done ? vs.text : fmt(base.counts?.[n] || 0))}</td>` : ''}</tr>`;
+      const c = held(run, n), vs = versus(run, base, n, c);
+      return `<tr data-node="${esc(n)}" tabindex="0"><th scope="row">${esc(n)}</th><td>${fmt(c)}</td><td>${pct(shareOf(run.nodes, run.counts, n, c))}</td>${
+        vs ? `<td>${esc(done ? vs.text : fmt(held(base, n)))}</td>` : ''}</tr>`;
     }).join('')}</tbody></table>`;
 }
 function choose(node) {

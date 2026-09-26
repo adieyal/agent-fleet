@@ -655,6 +655,8 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 .sk-band.t-bad{fill:#b4524f}
 .sk-band.t-muted{fill:#4f5b70}
 .sk-band:hover,.sk-band.on{fill-opacity:1;stroke:var(--rd-strong)}
+.sk-wait{fill:url(#skHatch);stroke:var(--rd-muted);stroke-opacity:.55;stroke-width:.75;stroke-dasharray:2 2}
+.sk-hatch{fill:rgba(232,228,219,.4)}
 .sk-ghost{fill:none;stroke:rgba(232,228,219,.42);stroke-width:1;stroke-dasharray:2 4;pointer-events:none}
 .sk-chart.more-r{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 40px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 40px),transparent)}
 .sk-chart.more-l{-webkit-mask-image:linear-gradient(to left,#000 calc(100% - 40px),transparent);mask-image:linear-gradient(to left,#000 calc(100% - 40px),transparent)}

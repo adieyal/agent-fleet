@@ -1,6 +1,7 @@
 """Browser tests: a pipeline's wall screen on the deck and the Sankey it opens, over fixtures/pipelines.json."""
 
 import json
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -213,6 +214,37 @@ def test_on_a_phone_the_chart_scrolls_to_every_column(deck: Deck) -> None:
     close(deck)
     assert {node for node, _ in in_view} >= {"null cell", "sum mismatch", "profile disagree", "low support"}
     assert all(inside for _, inside in in_view), in_view
+
+
+def test_items_not_yet_gone_on_are_waiting(deck: Deck, fixture_pipelines: dict[str, Any]) -> None:
+    """Mid-run, what a middle column holds beyond what has left it is waiting: a stub and 'N waiting' per node, adding
+    up to the difference between that column and the next."""
+    page = deck.page
+    open_screen(deck, "home:sample-training")
+    run = fixture_pipelines["pipeline_reports"][0]["run"]
+    counts, (middle, after) = run["counts"], run["nodes"][2:4]
+    gap = sum(counts[n] for n in middle) - sum(counts[n] for n in after)
+    assert gap > 0
+    shown = 0
+    for node in middle:
+        text = page.locator(f'#skSvg .sk-node[data-node="{node}"] text tspan').last.text_content()
+        assert re.fullmatch(r"[\d,]+ waiting", text), text
+        shown += int(text.split()[0].replace(",", ""))
+    assert shown == gap
+    expect(page.locator("#skSvg .sk-wait")).to_have_count(len(middle))
+    close(deck)
+    assert deck.errors == []
+
+
+def test_once_a_run_is_done_what_a_node_holds_ended_there(deck: Deck) -> None:
+    got = deck.page.evaluate("""import('/js/sankey.js').then(({ terminals, waiting }) => {
+      const run = status => ({ status, nodes: [['in'], ['a', 'b'], ['x', 'y']], counts: { in: 10, a: 6, b: 4, x: 5, y: 0 },
+        edges: [['in', 'a', 6], ['in', 'b', 4], ['a', 'x', 5]] });
+      return ['running', 'failed', 'done'].map(s => { const r = run(s), ends = terminals(r, null);
+        return [[...ends].sort(), Object.fromEntries(waiting(r, ends))]; });
+    })""")
+    # an empty end node (y) is never an end; b has nothing leaving it but its neighbour passes items on
+    assert got == [[["b", "x"], {"a": 1}], [["b", "x"], {"a": 1}], [["a", "b", "x"], {}]]
 
 
 def test_a_finished_run_shows_its_change_on_the_baseline(deck: Deck) -> None:
