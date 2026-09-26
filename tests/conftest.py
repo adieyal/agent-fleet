@@ -19,6 +19,10 @@ from fleet.web.server import make_handler
 FIXTURE = Path(__file__).parent / "fixtures" / "restoke.json"
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption("--shots", default=None, help="a directory browser tests leave screenshots in, for reviewing the look")
+
+
 @pytest.fixture(scope="session")
 def fixture_data() -> dict[str, Any]:
     return json.loads(FIXTURE.read_text())

@@ -1,7 +1,9 @@
 """Pipelines on the deck: fleetd's reports kept per host, declared rooms, and the pipeline SSE event."""
 import json
+import runpy
 import threading
 from http.server import ThreadingHTTPServer
+from pathlib import Path
 from urllib.request import urlopen
 
 import pytest
@@ -11,6 +13,7 @@ from fleet.transport import Host
 from fleet.web.fixture import FixtureState
 from fleet.web.server import FleetState, apply_message, make_handler
 
+FIXTURES = Path(__file__).parent / "fixtures"
 HOME = Host("home", None)
 DECLARED = {"invoice-training": {"host": "home", "project": "invoice-training"}}
 RUN = {"run_id": "r2", "label": "orient v4", "status": "running", "nodes": [["invoices"], ["decided"]],
@@ -93,6 +96,12 @@ def read_event(stream) -> tuple[str, dict]:
             if kind != "ping":
                 return kind, data
             kind = None
+
+
+def test_the_pipeline_fixture_is_what_its_generator_makes() -> None:
+    """Regenerate with: uv run python tests/fixtures/make_pipelines.py"""
+    generator = runpy.run_path(str(FIXTURES / "make_pipelines.py"))
+    assert json.loads((FIXTURES / "pipelines.json").read_text()) == generator["fixture"]()
 
 
 def test_a_fixture_serves_its_recorded_pipeline_reports() -> None:
