@@ -11,7 +11,8 @@ import pytest
 from fleet import projects, transport
 from fleet.transport import Host
 from fleet.web.fixture import FixtureState
-from fleet.web.server import FleetState, apply_message, make_handler
+from fleet.web.server import FleetState, apply_message, make_handler, workspace_path
+from fleet.workspace import WorkspaceStore
 
 FIXTURES = Path(__file__).parent / "fixtures"
 HOME = Host("home", None)
@@ -64,6 +65,23 @@ def test_a_declared_pipeline_resolves_its_room_to_a_registered_project(config_pa
     registry.link(project.id, "home", "invoice-training")
     projects.save_registry(registry)
     state = FleetState([HOME], load_registry=projects.load_registry, pipelines=DECLARED)
+    assert state.document()["pipelines"][0]["project_id"] == project.id
+
+
+def test_a_pipeline_label_moves_in_like_any_visitor(config_path, monkeypatch) -> None:
+    """A room held only by a declared pipeline has no working directory to read remotes from; linking it to a
+    project it may belong to is offered as for any label, and once linked the pipeline's room is that project's."""
+    monkeypatch.setattr(transport, "repository_remotes", lambda host, directories: pytest.fail("no directories"))
+    registry = projects.load_registry()
+    project = registry.create("Invoice training")
+    projects.save_registry(registry)
+    state = FleetState([HOME], load_registry=projects.load_registry,
+                       workspace=WorkspaceStore(workspace_path()), pipelines=DECLARED)
+    online(state)
+    offered = state.move_in_options("invoice-training", ["home"])
+    assert [(c["project_id"], c["reasons"]) for c in offered["candidates"]] == [(project.id, ["name"])]
+    assert offered["errors"] == []
+    state.link_in(project.id, ["home"], "invoice-training")
     assert state.document()["pipelines"][0]["project_id"] == project.id
 
 

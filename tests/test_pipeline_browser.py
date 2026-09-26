@@ -93,6 +93,20 @@ def test_declared_pipelines_get_rooms_even_without_work(deck: Deck) -> None:
     assert deck.errors == []
 
 
+def test_pipeline_labels_wait_in_the_lobby_as_visitors(deck: Deck) -> None:
+    """No project claims these labels, so the building lists them as visitors, one row per label; a label with a job
+    and a pipeline on the same host is still one row."""
+    page = deck.page
+    page.locator('#viewToggle [data-view="building"]').click()
+    visitors = page.locator(".lobby .visitor")
+    expect(visitors).to_have_count(3)
+    assert {(row.get_attribute("data-label"), row.get_attribute("data-hosts")) for row in visitors.all()} == {
+        ("nightly-eval", "worker"), ("restoke", "home"), ("sample-training", "home")}
+    expect(visitors.locator("[data-move-in]")).to_have_count(3)
+    page.locator('#viewToggle [data-view="deck"]').click()
+    assert deck.errors == []
+
+
 def test_the_screen_opens_the_run_as_a_sankey(deck: Deck, fixture_pipelines: dict[str, Any]) -> None:
     page = deck.page
     open_screen(deck, "home:sample-training", hover_shot="hover")
