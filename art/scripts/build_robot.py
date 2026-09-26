@@ -229,8 +229,9 @@ def actions(rig) -> None:
     key(rig, 'hold', 3.0, lambda t: {
         'spine': (-2, 0, 3),
         'head': (6, 0, -14 + 3 * s(t)),
-        # arm up and out to the side, so the flask shows above the desk clutter as in l2
-        'upper_arm.R': (-80 + 3 * s(t), 0, 25), 'forearm.R': (-30, 0, 0), 'hand.R': (25, 0, 4 * s(t, 1, 0.3))})
+        # hand raised beside the face, clear of the head (found by searching joint angles for a wrist near
+        # (-0.32, -0.27, 0.77)), so the flask shows above the desk clutter as in l2
+        'upper_arm.R': (-100 + 3 * s(t), 0, -30), 'forearm.R': (30, 0, -45), 'hand.R': (0, 0, 4 * s(t, 1, 0.3))})
 
 
 def main() -> None:

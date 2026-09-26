@@ -52,6 +52,26 @@ def encode_lightmap(exr: Path, dest: Path) -> dict:
     return {'file': dest.name, 'size': w, 'scale': round(scale, 5)}
 
 
+def encode_ao(exr: Path, dest: Path) -> dict:
+    """Occlusion is already 0..1 data: write it linear (no scale, no sRGB curve) for three's aoMap."""
+    img = bpy.data.images.load(str(exr))
+    w, h = img.size
+    px = np.empty(w * h * 4, dtype=np.float32)
+    img.pixels.foreach_get(px)
+    px = px.reshape(-1, 4)
+    px[:, :3] = np.clip(px[:, :3], 0.0, 1.0)
+    px[:, 3] = 1.0
+    enc = bpy.data.images.new(dest.stem, w, h, alpha=False)
+    enc.colorspace_settings.name = 'Non-Color'
+    enc.pixels.foreach_set(px.ravel())
+    enc.filepath_raw = str(dest)
+    enc.file_format = 'WEBP'
+    enc.save(quality=LIGHTMAP_QUALITY)
+    bpy.data.images.remove(enc)
+    bpy.data.images.remove(img)
+    return {'file': dest.name, 'size': w, 'encoding': 'linear8'}
+
+
 def strip_bake_nodes() -> None:
     for mat in bpy.data.materials:
         if mat.node_tree and 'fleet_bake' in mat.node_tree.nodes:
@@ -116,6 +136,7 @@ def main() -> None:
     layers = {}
     for layer in bake['layers']:
         layers[layer] = encode_lightmap(p['lightmaps'] / f'{layer}.exr', out / f'lightmap-{layer}.webp')
+    ao = encode_ao(p['lightmaps'] / bake['ao']['file'], out / 'ao.webp') if bake.get('ao') else None
     strip_bake_nodes()
     glb = out / f'{scene_name}.glb'
     export_glb(glb)
@@ -133,6 +154,7 @@ def main() -> None:
                      'and lightMapIntensity = scale * PI (the shader divides by PI).',
             'texel_m': info['texel_m'],
             'layers': layers,
+            'ao': ao,  # multiply baked meshes by it: aoMap with channel 1, NoColorSpace
         } if layers else None,
         'warm_groups': {g: sorted(o.name for o in objs if o.type == 'MESH' and o.get('warm') == g)
                         for g in info['warm_groups']},

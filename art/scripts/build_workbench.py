@@ -37,12 +37,13 @@ PILASTERS = (2.25, 4.55, 8.45, 10.05)
 def materials() -> dict:
     p = A.paths(SCENE)
     return {
-        'floor': A.material('floor_tile', '#cbc5d0', rough=0.3, texture=floor_tile_texture(p['textures'])),
+        # sampled against l2: its open floor is a cool, light lilac-grey (~#d2d1de)
+        'floor': A.material('floor_tile', '#c6cbe6', rough=0.3, texture=floor_tile_texture(p['textures'])),
         'wall': A.material('wall_plaster', '#aaa3a5', rough=0.9,
                            texture=A.source('ambientcg', 'PaintedPlaster017', 'PaintedPlaster017_1K-JPG_Color.jpg')),
         'cap': A.material('wall_cap', '#d2cfd6', rough=0.8),
-        'pilaster': A.material('pilaster', '#b4afb4', rough=0.8),
-        'oak': A.material('oak', '#f1e6d8', rough=0.45, texture=pale_wood_texture(p['textures'])),
+        'pilaster': A.material('pilaster', '#9d989e', rough=0.8),
+        'oak': A.material('oak', '#f3dcc0', rough=0.45, texture=pale_wood_texture(p['textures'])),
         'steel': A.material('steel_grey', '#6f6f77', rough=0.45, metal=0.3),
         'bezel': A.material('plan_bezel', '#c3c0c6', rough=0.6),
         'frame': A.material('frame_dark', '#4a474e', rough=0.4, metal=0.4),
@@ -90,7 +91,7 @@ def pale_wood_texture(out: Path) -> Path:
     rgb = px[..., :3]
     grey = rgb @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
     rgb[:] = grey[..., None] + (rgb - grey[..., None]) * 0.35  # keep a third of the saturation
-    rgb[:] = 0.78 + (rgb - rgb.mean()) * 0.8                    # lift it to a pale wood, keep the grain
+    rgb[:] = 0.66 + (rgb - rgb.mean()) * 0.8                    # a pale wood, keeping the grain
     bpy.data.images.remove(src)
     return save_png(out, 'pale_wood', px)
 
@@ -381,6 +382,10 @@ def bench(m, rng: random.Random, props: dict) -> None:
         A.empty(f'seat_{name}', (seat_x, seat_y, SEAT_H), (0, 0, 0), desk=name)
         chair(m, f'{name}_chair_near', cx - 0.3, BENCH_Y - DESK_D / 2 - 0.42, math.pi)
         desk_lamp(m, f'{name}_lamp', name, x0 + 0.18, far + 0.1, 1)
+        # the warm spill on the floor in front of a working desk (l2's floor there samples ~#fce5d6)
+        # low and in front of the bench, so it lights the floor and not the desk tops
+        A.light(f'{name}_spill', 'AREA', (cx, BENCH_Y - DESK_D / 2 - 0.9, 0.55), 10, '#ff9a55', warm=name,
+                shape='DISK', size=1.0)
         pen_pot(m, f'{name}_penpot', cx + 0.38, far - 0.02, rng)
     # desk 1 (teal, searching): open laptop, a potted plant, books, a sheet of notes
     laptop(m, 'desk1_laptop', BENCH_X0 + 0.85, far - 0.02, math.pi)
@@ -460,14 +465,15 @@ def footprints(m) -> None:
 def lights() -> None:
     A.world_hdri(A.source('polyhaven', 'white_studio_06', 'white_studio_06_1k.hdr'), strength=0.7,
                  rotation=math.radians(120))
-    sun = A.light('sun', 'SUN', (0, 0, 10), 1.6, '#fff2e0', angle=math.radians(10))
+    # daylight is cool and neutral; the warm light in the room comes from lamps and wall washers only
+    sun = A.light('sun', 'SUN', (0, 0, 10), 1.6, '#fbf8f4', angle=math.radians(10))
     sun.rotation_euler = (math.radians(48), 0, math.radians(-30))
     for i, x in enumerate((1.5, 5.0, 8.5, 12.0)):
-        A.light(f'fill_{i}', 'AREA', (x, 2.5, WALL_H + 0.4), 90, '#f6f3ee', shape='RECTANGLE', size=3.0, size_y=6.0)
+        A.light(f'fill_{i}', 'AREA', (x, 2.5, WALL_H + 0.4), 90, '#e6ecf6', shape='RECTANGLE', size=3.0, size_y=6.0)
     # warm downlights grazing each wall bay: the scallops of light on the wall in l2
     for i, x in enumerate((0.95, 3.4, 5.8, 7.4, 9.25, 11.2)):
-        spot = A.light(f'wallwash_{i}', 'SPOT', (x, WALL_Y - 0.28, WALL_H - 0.08), 120, '#ffbe7a',
-                       spot_size=math.radians(75), spot_blend=1.0, shadow_soft_size=0.05)
+        spot = A.light(f'wallwash_{i}', 'SPOT', (x, WALL_Y - 0.28, WALL_H - 0.08), 60, '#ffbe7a',
+                       spot_size=math.radians(65), spot_blend=1.0, shadow_soft_size=0.05)
         A.aim(spot, (x, WALL_Y, 1.1))
 
 

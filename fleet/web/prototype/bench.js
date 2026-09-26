@@ -10,6 +10,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { Reflector } from 'three/addons/objects/Reflector.js';
 import * as glyph from './glyphs.js';
@@ -24,6 +25,22 @@ if (params.has('shot')) document.body.classList.add('shot');
 // Fitted to landmarks in l2.png (bench corners weighted most) by art/scripts/fit_camera.py.
 const VIEW = { target: [6.269, 4.229, 1.698], pitch: 44.5, yaw: 21.25, height: 5.486 };
 const HOSTS = { teal: '#27b3b8', blue: '#2e62dc', olive: '#7a8a32' };
+const AO_STRENGTH = 0.9;
+// A light grade in linear light before tone mapping: more contrast around mid-grey, and mid-tones cooled
+// slightly: l2's ambient is a cool lilac-grey, and its warmth comes only from the lamps and wall lights,
+// which are bright enough to sit outside the mid-tone mask.
+const GradeShader = {
+  uniforms: { tDiffuse: { value: null }, contrast: { value: 1.18 }, warm: { value: new THREE.Vector3(0.96, 0.99, 1.06) } },
+  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float contrast; uniform vec3 warm; varying vec2 vUv;
+    void main() {
+      vec4 c = texture2D(tDiffuse, vUv);
+      vec3 g = 0.18 * pow(max(c.rgb, 0.0) / 0.18, vec3(contrast));
+      float lum = dot(g, vec3(0.2126, 0.7152, 0.0722));
+      float mid = smoothstep(0.02, 0.25, lum) * (1.0 - smoothstep(0.6, 1.5, lum));
+      gl_FragColor = vec4(g * mix(vec3(1.0), warm, mid), c.a);
+    }`,
+};
 const CAST = [
   { desk: 'desk1', host: 'teal', action: 'type', icon: 'search' },
   { desk: 'desk2', host: 'blue', action: 'write', icon: 'pencil', prop: 'prop_pencil' },
@@ -71,7 +88,7 @@ function placeCamera() {
 
 function bakedMaterial(source, lightmaps, warm) {
   const m = new THREE.MeshBasicMaterial({ color: source.color, map: source.map, lightMap: lightmaps.base.texture,
-    lightMapIntensity: lightmaps.base.scale * Math.PI });
+    lightMapIntensity: lightmaps.base.scale * Math.PI, aoMap: lightmaps.ao, aoMapIntensity: AO_STRENGTH });
   m.onBeforeCompile = shader => {
     let decl = '', sum = '';
     warm.forEach((w, i) => {
@@ -99,6 +116,9 @@ async function loadLightmaps(manifest) {
     t.flipY = false;
     out[name] = { texture: t, scale: layer.scale };
   }));
+  // short-range baked occlusion, multiplied over the lightmaps: contact shadows under furniture and in corners
+  out.ao = await loader.loadAsync(WORLD + manifest.lightmap.ao.file);
+  Object.assign(out.ao, { channel: manifest.lightmap.uv_channel, colorSpace: THREE.NoColorSpace, flipY: false });
   return out;
 }
 
@@ -107,7 +127,7 @@ async function loadLightmaps(manifest) {
 const warmth = {};  // group -> { level, target, uniform, bulbs: [], light }
 
 // Desk lamps are pushed past their baked strength: l2's working desks glow amber around the lamp.
-const WARM_GAIN = { desk: 1.35, corner: 1.35 };  // higher and white paper under the lamp blooms
+const WARM_GAIN = { desk: 1.4, corner: 1.4 };  // much higher and white paper under the lamp blooms
 
 function warmGroup(name, scale) {
   const gain = WARM_GAIN[name.replace(/\d+$/, '')] ?? 1;
@@ -131,6 +151,7 @@ function updateWarmth(dt) {
       b.material.color.set(w.level > 0.5 ? '#fff4d8' : '#6b6a70');
     }
     if (w.light) w.light.intensity = w.light.userData.full * w.level;
+    if (w.halo) w.halo.material.opacity = w.level;
   }
 }
 
@@ -138,6 +159,7 @@ function updateWarmth(dt) {
 
 const tiles = {};  // "r,c" -> { pivot, mesh, decal, state }
 const TICK = glyph.tick();
+const LAMP_HALO = glyph.halo('rgba(255, 170, 80, 0.95)');
 const TICK_LIT = glyph.tick('#7a4a10');
 
 function setupTile(mesh, r, c) {
@@ -431,6 +453,13 @@ async function main() {
         light.userData.full = 0.5;
         scene.add(light);
         warmth[g].light = light;
+        // the lamp's glow as seen from above (its bulb faces down, under the shade): l2's amber halo
+        const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: LAMP_HALO, blending: THREE.AdditiveBlending,
+          depthWrite: false, toneMapped: false, transparent: true }));
+        halo.scale.setScalar(1.1);
+        halo.position.copy(light.position);
+        scene.add(halo);
+        warmth[g].halo = halo;
       }
     }
   }
@@ -475,6 +504,7 @@ async function main() {
   composer.addPass(new RenderPass(scene, camera));
   // a high threshold: only emissive light (bulbs, lit tiles, the lantern) blooms, not white paper
   composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.6, 0.55, 2.4));
+  composer.addPass(new ShaderPass(GradeShader));
   composer.addPass(new SMAAPass());
   composer.addPass(new OutputPass());
   addEventListener('resize', () => {

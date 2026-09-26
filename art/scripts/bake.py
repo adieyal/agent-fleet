@@ -17,6 +17,7 @@ import bpy  # noqa: E402
 
 SAMPLES = {'base': 512, 'warm': 256}
 WARM_SCALE = 0.5  # warm layers bake at half the base resolution: their light is soft and local
+AO_DISTANCE = 0.45  # metres; the AO layer darkens contact, not whole rooms
 
 
 def gpu() -> str:
@@ -104,9 +105,14 @@ def bake_layer(layer: str, res: int, objs, out: Path) -> Path:
     image = bpy.data.images.new(f'lm_{layer}', res, res, alpha=False, float_buffer=True)
     image.colorspace_settings.name = 'Linear Rec.709'
     attach(image, objs)
-    lights_for(layer)
     t = time.time()
-    bpy.ops.object.bake(type='DIFFUSE', pass_filter={'DIRECT', 'INDIRECT'})
+    if layer == 'ao':
+        # short-range occlusion: the dark contact under furniture and in corners that l2 shows
+        scene.world.light_settings.distance = AO_DISTANCE
+        bpy.ops.object.bake(type='AO')
+    else:
+        lights_for(layer)
+        bpy.ops.object.bake(type='DIFFUSE', pass_filter={'DIRECT', 'INDIRECT'})
     raw = out / f'{layer}.raw.exr'
     image.filepath_raw = str(raw)
     image.file_format = 'OPEN_EXR'
@@ -164,12 +170,13 @@ def main() -> None:
     objs = [proxy(A.baked_objects())]
     p['lightmaps'].mkdir(parents=True, exist_ok=True)
     layers = ['base'] + info['warm_groups']
-    for layer in layers:
-        res = info['resolution'] if layer == 'base' else int(info['resolution'] * WARM_SCALE)
+    for layer in layers + ['ao']:
+        res = info['resolution'] if layer in ('base', 'ao') else int(info['resolution'] * WARM_SCALE)
         raw = bake_layer(layer, res, objs, p['lightmaps'])
         denoise(raw, p['lightmaps'] / f'{layer}.exr')
     (p['lightmaps'] / 'bake.json').write_text(json.dumps(
-        {'layers': layers, 'samples': SAMPLES, 'device': gpu(), 'blender': bpy.app.version_string}, indent=2))
+        {'layers': layers, 'ao': {'file': 'ao.exr', 'distance_m': AO_DISTANCE}, 'samples': SAMPLES,
+         'device': gpu(), 'blender': bpy.app.version_string}, indent=2))
 
 
 main()
