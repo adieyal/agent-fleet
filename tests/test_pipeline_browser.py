@@ -2,6 +2,7 @@
 
 import json
 import re
+import runpy
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -357,6 +358,49 @@ def test_items_not_yet_gone_on_are_waiting(deck: Deck, fixture_pipelines: dict[s
     assert deck.errors == []
 
 
+SHOW_REPORT = """(async report => {   // what fleetd would stream next for the open pipeline
+  const { pipelineByKey, applyPipeline } = await import('/js/pipelines.js');
+  const p = pipelineByKey('home:sample-training');
+  applyPipeline({ ...p, ...report, seq: (p.seq || 0) + 1 });
+})"""
+SIDE_AND_WAITS = """[[...document.querySelectorAll('#skSide tbody tr')].map(r => r.dataset.node),
+  [...document.querySelectorAll('#skSvg .sk-node')].filter(g => / waiting$/.test(g.querySelector('text').textContent))
+    .map(g => g.dataset.node)]"""
+
+
+def test_mid_run_nodes_waiting_for_a_gate_burst_are_not_ends(deck: Deck, fixture_pipelines: dict[str, Any]) -> None:
+    """A run with no finished run before it, part-way, whose gates run as a burst at the end: nothing has left agree,
+    disagree or profile yet, but alone and unsettled beside them pass items on. The run line's `ends` says they are
+    waiting; without it the deck can only guess, and takes them for ends as it always has."""
+    generator = runpy.run_path(str(FIXTURE.parent / "make_pipelines.py"))
+    page = deck.page
+    open_screen(deck, "home:sample-training")
+    try:
+        got = {}
+        for declared in (None, generator["ENDS"]):
+            report = generator["gate_burst"](declared)
+            burst, run = set(generator["BURST"]), report["run"]
+            assert all(source not in burst for source, _, _ in run["edges"]) and report["baseline"] is None
+            page.evaluate(f"{SHOW_REPORT}({json.dumps(report)})")
+            expect(page.locator("#skMeta")).to_contain_text("gates at the end")
+            got[bool(declared)] = page.evaluate(SIDE_AND_WAITS)
+        deck.shot("gate-burst-mid-run")
+        ends, waits = got[True]
+        last = run["nodes"][-1]
+        assert set(ends) == {n for n in ["unlearnable", "confident", *last] if run["counts"].get(n)}
+        assert burst <= set(waits) and not burst & set(ends)
+        assert burst <= set(got[False][0])   # undeclared: today's guess
+        page.evaluate(f"{SHOW_REPORT}({json.dumps(generator['gate_burst'](generator['ENDS'], 'done'))})")
+        expect(page.locator("#skMeta")).to_contain_text("done")
+        ends, waits = page.evaluate(SIDE_AND_WAITS)
+        deck.shot("gate-burst-done")
+        assert waits == [] and not burst & set(ends)   # the burst passed every item on
+    finally:
+        page.evaluate(f"{SHOW_REPORT}({json.dumps(fixture_pipelines['pipeline_reports'][0])})")
+        close(deck)
+    assert deck.errors == []
+
+
 def test_once_a_run_is_done_what_a_node_holds_ended_there(deck: Deck) -> None:
     got = deck.page.evaluate("""import('/js/sankey.js').then(({ terminals, waiting }) => {
       const run = status => ({ status, nodes: [['in'], ['a', 'b'], ['x', 'y']], counts: { in: 10, a: 6, b: 4, x: 5, y: 0 },
@@ -366,6 +410,17 @@ def test_once_a_run_is_done_what_a_node_holds_ended_there(deck: Deck) -> None:
     })""")
     # an empty end node (y) is never an end; b has nothing leaving it but its neighbour passes items on
     assert got == [[["b", "x"], {"a": 1}], [["b", "x"], {"a": 1}], [["a", "b", "x"], {}]]
+
+
+def test_declared_ends_settle_which_nodes_end_items_until_the_run_is_done(deck: Deck) -> None:
+    got = deck.page.evaluate("""import('/js/sankey.js').then(({ terminals, waiting }) => {
+      const run = (status, ends) => ({ status, ends, nodes: [['in'], ['a', 'b', 'c'], ['x', 'y']],
+        counts: { in: 10, a: 5, b: 3, c: 2, x: 5, y: 0 }, edges: [['in', 'a', 5], ['in', 'b', 3], ['in', 'c', 2], ['a', 'x', 5]] });
+      return ['running', 'failed', 'done'].map(s => { const r = run(s, ['c']), ends = terminals(r, null);
+        return [[...ends].sort(), Object.fromEntries(waiting(r, ends))]; });
+    })""")
+    # b has nothing leaving it and its neighbour a passes items on, but only c is declared: b's items wait
+    assert got == [[["c", "x"], {"b": 3}], [["c", "x"], {"b": 3}], [["b", "c", "x"], {}]]
 
 
 def test_a_finished_run_shows_its_change_on_the_baseline(deck: Deck) -> None:

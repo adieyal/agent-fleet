@@ -70,14 +70,18 @@ function bandPoint(b, u, dy) {   // a point along the band's centre line, dy off
 // What a node holds beyond what has left it: items that ended there, or that have not gone on yet.
 const leaving = (edges, n) => edges.reduce((s, [a, , c]) => s + (a === n ? c : 0), 0);
 export const held = (report, n) => Math.max(0, (report.counts?.[n] || 0) - leaving(report.edges || [], n));
-// Nodes items end in, holding at least one. Once the run is done, whatever a node holds ended there. Before that a node
-// ends items only if nothing has left it in this run nor in the baseline and the run has got past its column (it is
-// the last, a neighbour already passes items on, or the run failed); what any other node holds is still waiting.
+// Nodes items end in, holding at least one. Once the run is done, whatever a node holds ended there. Before that, a run
+// line that declares its `ends` (the nodes before the last column that items may stop at) settles it: those and the
+// last column end items, what any other node holds is still waiting. Without it a node ends items only if nothing has
+// left it in this run nor in the baseline and the run has got past its column (it is the last, a neighbour already
+// passes items on, or the run failed). That guess fails for a stage that runs in a burst at the end of a run with no
+// baseline: its nodes look like ends until the burst.
 export function terminals(run, base) {
+  const last = run.nodes.length - 1, done = run.status === 'done', declared = Array.isArray(run.ends) ? new Set(run.ends) : null;
   const left = new Set([...run.edges, ...(base?.edges || [])].map(([s]) => s));
-  const last = run.nodes.length - 1, done = run.status === 'done';
   return new Set(run.nodes.flatMap((col, ci) => col.filter(n => held(run, n) > 0 && (done
-    || (!left.has(n) && (run.status !== 'running' || ci === last || col.some(m => left.has(m))))))));
+    || (declared ? ci === last || declared.has(n)
+      : !left.has(n) && (run.status !== 'running' || ci === last || col.some(m => left.has(m))))))));
 }
 // Items held by nodes that are not ends: waiting for their next step while the run goes, left unfinished if it failed.
 export function waiting(run, ends) {

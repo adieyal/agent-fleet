@@ -77,6 +77,10 @@
      "unsettled": "muted",
      "unlearnable": "muted"
     },
+    "ends": [
+     "unlearnable",
+     "confident"
+    ],
     "nodes": [
      [
       "items"
@@ -228,22 +232,22 @@
      ]
     ],
     "counts": {
+     "unsettled": 331,
+     "profile": 272,
+     "review": 571,
+     "sum mismatch": 117,
+     "agree": 864,
+     "decided": 1787,
+     "low support": 113,
+     "alone": 540,
      "confident": 1376,
      "line totals do not add up to the printed total": 118,
-     "tied": 475,
-     "profile": 272,
-     "sum mismatch": 117,
-     "decided": 1787,
      "unlearnable": 138,
-     "alone": 540,
-     "disagree": 255,
-     "low support": 113,
-     "agree": 864,
      "null cell": 113,
-     "review": 571,
-     "unsettled": 331,
+     "disagree": 255,
+     "profile disagree": 110,
      "items": 2400,
-     "profile disagree": 110
+     "tied": 475
     },
     "flows": 7180,
     "recent": {
@@ -1911,22 +1915,22 @@
      ]
     ],
     "counts": {
+     "unsettled": 366,
+     "profile": 301,
+     "review": 734,
+     "sum mismatch": 155,
+     "agree": 816,
+     "decided": 1772,
+     "tied": 509,
+     "low support": 161,
      "confident": 1547,
      "line totals do not add up to the printed total": 137,
-     "tied": 509,
-     "profile": 301,
-     "sum mismatch": 155,
-     "decided": 1772,
      "unlearnable": 319,
-     "alone": 523,
-     "disagree": 275,
-     "low support": 161,
-     "agree": 816,
      "null cell": 131,
-     "review": 734,
-     "unsettled": 366,
+     "disagree": 275,
+     "profile disagree": 150,
      "items": 2600,
-     "profile disagree": 150
+     "alone": 523
     }
    }
   }
