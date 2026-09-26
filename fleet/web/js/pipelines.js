@@ -5,7 +5,7 @@ import { HALF, WALL_H } from './env.js';
 import { rgba, rr } from './util.js';
 import { G, canvasTex, scene } from './scene.js';
 import { roomByName, rooms } from './rooms.js';
-import { bandPath, fmt, layout, runStatus, updateSankey } from './sankey.js';
+import { bandPath, fmt, layout, runStatus, tonesOf, updateSankey } from './sankey.js';
 
 export let pipelines = [];   // as in the state document: declared ones and any a host reports
 const group = new THREE.Group();
@@ -85,7 +85,8 @@ export function hoverScreen(key) {
   if (key && screens.get(key)) screens.get(key).frame.material = hotMat;
 }
 
-const STATUS_COLOR = { running: '#4ade80', done: '#38bdf8', failed: '#f87171', quiet: '#fbbf24', offline: '#f87171', none: '#7384a0' };
+const TONE_COLOR = { good: '#4ade80', warn: '#fbbf24', bad: '#f87171', muted: '#7384a0' };
+const STATUS_COLOR ={ running: '#4ade80', done: '#38bdf8', failed: '#f87171', quiet: '#fbbf24', offline: '#f87171', none: '#7384a0' };
 function drawThumb(s) {
   const { g, c, p } = s, w = c.width, h = c.height, st = runStatus(p), r = p.run;
   g.fillStyle = '#071a30'; g.fillRect(0, 0, w, h);
@@ -100,8 +101,11 @@ function drawThumb(s) {
   if (r) {
     const L = layout(r.nodes, r.counts, r.edges, w - 44, 100, { nodeW: 6, gap: 3 });
     g.save(); g.translate(22, 158);
-    g.fillStyle = rgba('#38bdf8', 0.45);
-    for (const b of L.bands) g.fill(new Path2D(bandPath(b)));
+    const tones = tonesOf(r);
+    for (const b of [...L.bands].sort((p, q) => q.w - p.w)) {
+      g.fillStyle = rgba(TONE_COLOR[tones.get(b.t.name)] || '#38bdf8', 0.6);
+      g.fill(new Path2D(bandPath(b)));
+    }
     g.fillStyle = '#e6edf8';
     for (const n of L.nodes.values()) g.fillRect(n.x, n.y, L.nodeW, n.h);
     g.restore();

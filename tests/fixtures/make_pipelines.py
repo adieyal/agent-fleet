@@ -14,7 +14,8 @@ from fleet.remote.fleetd import PipelineTracker
 TIME = 1790400000
 NODES = [["items"], ["decided", "tied", "unlearnable"], ["alone", "agree", "disagree", "profile", "unsettled"],
          ["confident", "review"], ["null cell", "sum mismatch", "profile disagree", "low support"]]
-REASONS = ["null cell", "sum mismatch", "profile disagree", "low support"]
+TONES = {"confident": "good", "review": "warn", "unsettled": "muted", "unlearnable": "muted"}
+REASONS =["null cell", "sum mismatch", "profile disagree", "low support"]
 
 
 def choose(rng: random.Random, weights: dict[str, float]) -> str:
@@ -27,7 +28,7 @@ def run_events(run_id: str, label: str, started: float, until: float, items: int
     unfinished run has gated only its earlier items. Lines are written in ts order, as a pipeline would."""
     rng = random.Random(seed)
     meta = {"type": "run", "run_id": run_id, "pipeline": "sample-training", "label": label, "started_at": started,
-            "nodes": NODES, "total": total}
+            "nodes": NODES, "total": total, "tones": TONES}
     lines = []
     for index in range(items):
         item, ts = f"S-{seed}{index:05d}", started + (until - started) * index / items

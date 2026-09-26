@@ -957,7 +957,8 @@ PIPELINE_READ_BYTES = 16 * 1024 * 1024  # most read per scan, so catching up on 
 class PipelineRun:
     """An aggregate of one run's event file (`pipelines/<pipeline>/<run id>.jsonl`), read incrementally.
 
-    Lines: {"type": "run", nodes, label, total, …} once, {"type": "flow", item, from, to, ts, attrs?} per item
+    Lines: {"type": "run", nodes, label, total, tones?, …} once (tones: node → good, warn or muted, how the deck
+    colours the bands into it), {"type": "flow", item, from, to, ts, attrs?} per item
     and edge, {"type": "end", status, ts} at the end. Raw events never leave the host; only the summary does.
     """
 
@@ -1051,6 +1052,7 @@ class PipelineRun:
         return {
             "run_id": self.meta.get("run_id") or self.path.stem, "pipeline": self.meta.get("pipeline"),
             "label": self.meta.get("label"), "started_at": self.meta.get("started_at"), "total": self.meta.get("total"),
+            "tones": self.meta["tones"] if isinstance(self.meta.get("tones"), dict) else None,
             "nodes": columns, "edges": [[source, target, count] for (source, target), count in self.edges.items()],
             "counts": self.counts(), "flows": sum(self.edges.values()),
             "recent": {node: list(items) for node, items in self.recent.items() if not self.outflow[node]},

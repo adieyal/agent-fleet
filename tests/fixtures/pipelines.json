@@ -71,6 +71,12 @@
     "label": "synthetic run",
     "started_at": 1790398800,
     "total": 3000,
+    "tones": {
+     "confident": "good",
+     "review": "warn",
+     "unsettled": "muted",
+     "unlearnable": "muted"
+    },
     "nodes": [
      [
       "items"
@@ -217,20 +223,20 @@
     ],
     "counts": {
      "confident": 1367,
-     "disagree": 258,
-     "alone": 538,
-     "sum mismatch": 144,
-     "unsettled": 332,
-     "items": 2400,
      "review": 584,
      "decided": 1776,
-     "unlearnable": 146,
-     "profile": 268,
-     "profile disagree": 162,
-     "null cell": 135,
-     "tied": 478,
      "agree": 858,
-     "low support": 143
+     "items": 2400,
+     "sum mismatch": 144,
+     "profile": 268,
+     "low support": 143,
+     "alone": 538,
+     "unlearnable": 146,
+     "null cell": 135,
+     "profile disagree": 162,
+     "tied": 478,
+     "disagree": 258,
+     "unsettled": 332
     },
     "flows": 7189,
     "recent": {
@@ -1641,20 +1647,20 @@
     ],
     "counts": {
      "confident": 1582,
-     "disagree": 278,
-     "alone": 520,
-     "sum mismatch": 174,
-     "unsettled": 341,
-     "items": 2600,
      "review": 688,
      "decided": 1806,
-     "unlearnable": 330,
-     "profile": 282,
-     "profile disagree": 158,
-     "null cell": 160,
-     "tied": 464,
      "agree": 849,
-     "low support": 196
+     "items": 2600,
+     "sum mismatch": 174,
+     "profile": 282,
+     "low support": 196,
+     "alone": 520,
+     "unlearnable": 330,
+     "null cell": 160,
+     "profile disagree": 158,
+     "tied": 464,
+     "disagree": 278,
+     "unsettled": 341
     }
    }
   }

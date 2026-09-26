@@ -433,7 +433,8 @@ export function demoSource() {
   // A synthetic pipeline shaped like fleetd's reports: items pass the first two columns tick by tick, the gates run
   // in a burst at the end, and a few ticks later a new run starts with the finished one as its baseline.
   const PIPE = { nodes: [['items'], ['decided', 'tied', 'unlearnable'], ['alone', 'agree', 'disagree', 'profile', 'unsettled'],
-    ['confident', 'review'], ['null cell', 'sum mismatch', 'profile disagree', 'low support']], total: 1800 };
+    ['confident', 'review'], ['null cell', 'sum mismatch', 'profile disagree', 'low support']], total: 1800,
+    tones: { confident: 'good', review: 'warn', unsettled: 'muted', unlearnable: 'muted' } };
   const prand = seeded(7), ppick = arr => arr[Math.floor(prand() * arr.length)];   // its own stream: the fleet's stays as it was
   const weighted = weights => { let x = prand() * Object.values(weights).reduce((s, w) => s + w, 0); for (const [k, w] of Object.entries(weights)) if ((x -= w) <= 0) return k; return Object.keys(weights)[0]; };
   let pipe = null, pipeBase = null, pipeSeq = 0;
@@ -486,7 +487,7 @@ export function demoSource() {
     return { host: 'node-a', pipeline: 'demo-training', project: 'demo-training', project_id: null, declared: true, host_ok: true,
       host_error: null, seq: ++pipeSeq,
       run: { run_id: pipe.run_id, pipeline: 'demo-training', label: pipe.label, started_at: pipe.started_at, total: PIPE.total,
-        nodes: PIPE.nodes, edges, counts, flows: edges.reduce((s, e) => s + e[2], 0),
+        tones: PIPE.tones, nodes: PIPE.nodes, edges, counts, flows: edges.reduce((s, e) => s + e[2], 0),
         recent: Object.fromEntries(Object.entries(pipe.recent).filter(([n]) => !pipe.outflow[n])),
         item_rate: pipe.status === 'running' ? pipe.rate : 0, updated_at: pipe.updated_at, status: pipe.status, ended_at: pipe.ended_at },
       baseline: pipeBase && { run_id: pipeBase.run_id, label: pipeBase.label, started_at: pipeBase.started_at, total: PIPE.total,

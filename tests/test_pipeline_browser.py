@@ -130,6 +130,11 @@ def test_the_screen_opens_the_run_as_a_sankey(deck: Deck, fixture_pipelines: dic
     expect(confident).to_contain_text(f"prev {base['confident']:,}")
     expect(page.locator("#skSide thead")).to_contain_text("Prev")
     assert not any(ch in page.locator("#skSvg").text_content() for ch in "+−±")
+    # bands take the tone the run line gives their target; reasons after a warning are bad; the rest stay neutral
+    tone = lambda key: page.locator(f'#skSvg .sk-band[data-band="{key}"]').get_attribute("class")
+    assert [tone(key) for key in ("items→decided", "agree→confident", "alone→review", "review→null cell",
+                                  "items→unlearnable")] == [
+        "sk-band", "sk-band t-good", "sk-band t-warn", "sk-band t-bad", "sk-band t-muted"]
     deck.shot("sankey")
     close(deck)
     assert deck.errors == []

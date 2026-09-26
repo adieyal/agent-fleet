@@ -54,6 +54,7 @@ def test_a_run_is_aggregated_and_read_incrementally(pipelines: Path) -> None:
     assert edges(run) == {("invoices", "decided"): 1, ("invoices", "tied"): 1}
     assert run["counts"] == {"invoices": 2, "decided": 1, "tied": 1}
     assert message["baseline"] is None
+    assert run["tones"] is None
 
     reader = tracker.runs[path]
     offset = reader.offset
@@ -80,6 +81,13 @@ def test_unlisted_nodes_go_in_the_column_after_their_source(pipelines: Path) -> 
     # only terminal nodes carry their recent items, with attrs
     assert set(run["recent"]) == {"null cell"}
     assert run["recent"]["null cell"] == [{"item": "1", "ts": 100.0, "attrs": {"reasons": ["null cell", "rows do not sum"]}}]
+
+
+def test_the_run_line_can_say_how_its_outcomes_are_coloured(pipelines: Path) -> None:
+    tones = {"confident": "good", "review": "warn"}
+    write(pipelines / "invoice-training" / "r1.jsonl", line(type="run", run_id="r1", nodes=NODES, tones=tones))
+    [message] = fleetd.PipelineTracker(pipelines).scan(clock=100)
+    assert message["run"]["tones"] == tones
 
 
 def test_the_previous_finished_run_is_the_baseline_and_older_runs_are_ignored(pipelines: Path) -> None:

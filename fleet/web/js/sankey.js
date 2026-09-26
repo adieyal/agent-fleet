@@ -108,6 +108,21 @@ export function firstOfColumns(run) {
   });
   return out;
 }
+// How the bands into each node are coloured: as the run line declares (good, warn, muted), and a node it doesn't name
+// that is fed only by nodes of one tone takes theirs, except that what follows a warning (its reasons) is bad.
+// Anything else stays neutral.
+const TONES = ['good', 'warn', 'bad', 'muted'];
+export function tonesOf(run) {
+  const tones = new Map(Object.entries(run.tones || {}).filter(([, t]) => TONES.includes(t)));
+  for (const col of run.nodes) for (const n of col) {
+    if (tones.has(n)) continue;
+    const from = new Set(run.edges.filter(([, t]) => t === n).map(([s]) => tones.get(s) ?? null));
+    if (from.size !== 1 || from.has(null)) continue;
+    const [t] = from;
+    tones.set(n, t === 'warn' ? 'bad' : t);
+  }
+  return tones;
+}
 const pct = share => share === null ? '' : `${(100 * share).toFixed(1)}%`;
 
 // What the file says about the run, and whether its host can still be asked.
@@ -227,10 +242,12 @@ function renderChart(L, run, base, width, height, narrow, firsts) {
   const lastCol = run.nodes.length - 1;
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
   const ghosts = L.bands.filter(b => b.ghost).map(b => `<path class="sk-ghost" d="${bandPath(b.ghost)}"/>`).join('');
-  const bands = L.bands.map(b => {
-    const was = base?.edges?.find(([s, t]) => s + '→' + t === b.key)?.[2];
+  // nearly opaque, edged in the background colour and widest first, so crossings don't add up into phantom bands
+  const tones = tonesOf(run);
+  const bands = [...L.bands].sort((p, q) => q.w - p.w).map(b => {
+    const was = base?.edges?.find(([s, t]) => s + '→' + t === b.key)?.[2], tone = tones.get(b.t.name);
     const tip = `${b.s.name} → ${b.t.name}: ${fmt(b.count)}${was !== undefined ? ` (baseline ${fmt(was)})` : ''}`;
-    return `<path class="sk-band${sk.selected && b.t.name === sk.selected ? ' on' : ''}" d="${bandPath(b)}"><title>${esc(tip)}</title></path>`;
+    return `<path class="sk-band${tone ? ' t-' + tone : ''}${sk.selected && b.t.name === sk.selected ? ' on' : ''}" data-band="${esc(b.key)}" d="${bandPath(b)}"><title>${esc(tip)}</title></path>`;
   }).join('');
   const nodes = [...L.nodes.values()].map(n => {
     const end = ends.has(n.name), share = end ? pct(shareOf(run.nodes, values, n.name)) : '';

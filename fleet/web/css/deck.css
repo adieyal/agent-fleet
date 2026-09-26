@@ -649,8 +649,12 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 .sk-chart{position:relative;flex:1;min-width:0;overflow-x:auto;overflow-y:hidden}
 .sk-chart svg,.sk-chart canvas{position:absolute;left:0;top:0;height:100%}
 .sk-chart canvas{pointer-events:none}
-.sk-band{fill:rgba(56,189,248,.34);transition:fill .15s}
-.sk-band:hover,.sk-band.on{fill:rgba(56,189,248,.6)}
+.sk-band{fill:#2b6f95;fill-opacity:.82;stroke:var(--rd-bg);stroke-width:.75;transition:fill-opacity .15s}
+.sk-band.t-good{fill:#2f8a57}
+.sk-band.t-warn{fill:#b7862a}
+.sk-band.t-bad{fill:#b4524f}
+.sk-band.t-muted{fill:#4f5b70}
+.sk-band:hover,.sk-band.on{fill-opacity:1;stroke:var(--rd-strong)}
 .sk-ghost{fill:none;stroke:rgba(232,228,219,.42);stroke-width:1;stroke-dasharray:2 4;pointer-events:none}
 .sk-chart.more-r{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 40px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 40px),transparent)}
 .sk-chart.more-l{-webkit-mask-image:linear-gradient(to left,#000 calc(100% - 40px),transparent);mask-image:linear-gradient(to left,#000 calc(100% - 40px),transparent)}
