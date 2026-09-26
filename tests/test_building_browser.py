@@ -1,5 +1,11 @@
 """The building view (L0) in the browser: the view switch, a ten-floor building on one screen, open, windowed and
-free floors, the text budget, and moving a visitor in."""
+free floors, the text budget, lanterns, entering floors and the lift, the focus switch, shuttering and the storehouse,
+and moving in.
+
+One server per recorded fleet and one browser context per motion setting serve the whole module, so the 3D assets
+load once. Tests that change a fleet put it back as they found it (reopen, undo, restore, flip back); the two that
+can't (moving a visitor in, clearing a floor for one) come last for their fleet.
+"""
 
 import io
 import json
@@ -11,13 +17,14 @@ from urllib.request import Request, urlopen
 
 import pytest
 from PIL import Image, ImageStat
-from playwright.sync_api import Browser, Page, expect
+from playwright.sync_api import Browser, BrowserContext, Page, expect
 
 from conftest import FIXTURE, serve_fixture
 
 TEN_FLOORS = Path(__file__).parent / "fixtures" / "building10.json"
 DESKTOP = {"width": 1440, "height": 900}
 HEADER = 52
+INVOICES = "p-1c0ce5a2"   # Invoice analysis: floor 2 in the Restoke fleet, in the background, with a failed job
 
 
 @pytest.fixture(scope="module")
@@ -33,33 +40,65 @@ def restoke_url() -> Iterator[str]:
         yield url
 
 
-@pytest.fixture
-def page(browser: Browser) -> Iterator[Page]:
-    yield from new_page(browser, "reduce")
+@pytest.fixture(scope="module")
+def visitor_asks_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
+    """The Restoke fleet with a question from a visitor: work no floor holds."""
+    fixture = json.loads(FIXTURE.read_text())
+    worker = next(host for host in fixture["hosts"] if host["name"] == "worker")
+    session = next(session for session in worker["sessions"] if session["project"] == "agent-fleet")
+    session["activity"] = {"kind": "tool", "name": "AskUserQuestion", "summary": "Ship it?", "ts": fixture["time"] - 60}
+    path = tmp_path_factory.mktemp("visitor") / "visitor.json"
+    path.write_text(json.dumps(fixture))
+    with serve_fixture(path) as url:
+        yield url
 
 
-@pytest.fixture
-def moving_page(browser: Browser) -> Iterator[Page]:
+@pytest.fixture(scope="module")
+def still(browser: Browser) -> Iterator[BrowserContext]:
+    context = browser.new_context(viewport=DESKTOP, reduced_motion="reduce")
+    yield context
+    context.close()
+
+
+@pytest.fixture(scope="module")
+def moving(browser: Browser) -> Iterator[BrowserContext]:
     """Motion allowed, so lanterns swing."""
-    yield from new_page(browser, "no-preference")
+    context = browser.new_context(viewport=DESKTOP, reduced_motion="no-preference")
+    yield context
+    context.close()
 
 
-def new_page(browser: Browser, reduced_motion: str) -> Iterator[Page]:
-    context = browser.new_context(viewport=DESKTOP, reduced_motion=reduced_motion)
+def page_in(context: BrowserContext) -> Iterator[Page]:
     page = context.new_page()
     errors: list[str] = []
     page.on("console", lambda message: message.type == "error" and errors.append(message.text))
     page.on("pageerror", lambda error: errors.append(str(error)))
     yield page
-    context.close()
+    page.close()
     assert errors == []
+
+
+@pytest.fixture
+def page(still: BrowserContext) -> Iterator[Page]:
+    yield from page_in(still)
+
+
+@pytest.fixture
+def moving_page(moving: BrowserContext) -> Iterator[Page]:
+    yield from page_in(moving)
 
 
 def open_building(page: Page, url: str) -> list[dict[str, Any]]:
     page.goto(url + "/")
     page.locator('#viewToggle [data-view="building"]').click()
     page.wait_for_function("fleetBuilding.floors().length > 0 && fleetBuilding.floors().every(floor => floor.built)")
+    settle(page)
     return page.evaluate("fleetBuilding.floors()")
+
+
+def settle(page: Page) -> None:
+    """Wait for the next two frames: the building draws on demand and places its labels after drawing."""
+    page.evaluate("new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))")
 
 
 def state(url: str) -> dict[str, Any]:
@@ -67,8 +106,21 @@ def state(url: str) -> dict[str, Any]:
         return json.load(response)
 
 
+def post(url: str, path: str, body: dict[str, Any]) -> int:
+    request = Request(url + path, data=json.dumps(body).encode(), method="POST", headers={"Content-Type": "application/json"})
+    with urlopen(request, timeout=5) as response:
+        return response.status
+
+
+def lanterns(page: Page) -> dict[Any, dict[str, Any]]:
+    return {lantern["place"]: lantern for lantern in page.evaluate("fleetBuilding.lanterns()")}
+
+
+# ------------------------------------------------------------------ the view switch
 def test_the_deck_stays_the_default_and_the_choice_is_remembered(page: Page, restoke_url: str) -> None:
     page.goto(restoke_url + "/")
+    page.evaluate("localStorage.removeItem('fleet.view')")   # the context is shared: start from a first visit
+    page.reload()
     page.wait_for_function("window.fleetDeck && fleetDeck.agents().length > 0")
     expect(page.locator("body")).to_have_attribute("data-view", "deck")
     expect(page.locator("#world")).to_be_visible()
@@ -90,6 +142,7 @@ def test_the_deck_stays_the_default_and_the_choice_is_remembered(page: Page, res
     expect(page.locator("#tags .tag").first).to_be_visible()
 
 
+# ------------------------------------------------------------------ the building at L0
 def test_ten_floors_and_the_lobby_fit_one_desktop_screen(page: Page, ten_floors_url: str) -> None:
     floors = open_building(page, ten_floors_url)
     assert [floor["floor"] for floor in floors] == list(range(1, 11))
@@ -115,7 +168,7 @@ def floor_pixels(page: Page, floor: dict[str, Any]) -> tuple[float, float, float
     box = {"x": screen["left"] + (screen["right"] - screen["left"]) * 0.35, "y": (screen["top"] + screen["bottom"]) / 2 - height / 2,
            "width": (screen["right"] - screen["left"]) * 0.3, "height": height}
     style = page.add_style_tag(content="#buildingUi{visibility:hidden!important}")
-    page.wait_for_timeout(100)
+    settle(page)
     image = Image.open(io.BytesIO(page.screenshot(clip=box))).convert("RGB")
     style.evaluate("tag => tag.remove()")
     return tuple(ImageStat.Stat(image).mean)
@@ -156,11 +209,10 @@ def test_free_floors_are_to_let(page: Page, restoke_url: str) -> None:
     floors = open_building(page, restoke_url)
     document = state(restoke_url)
     assert document["building"]["capacity"] == 6 and len(floors) == 6
-    by_floor = {floor["floor"]: floor for floor in floors}
-    occupied = {floor for floor in document["building"]["floors"].values()}
-    for number, floor in by_floor.items():
-        plate = page.locator(f'.plate[data-floor="{number}"]')
-        if number in occupied:
+    occupied = set(document["building"]["floors"].values())
+    for floor in floors:
+        plate = page.locator(f'.plate[data-floor="{floor["floor"]}"]')
+        if floor["floor"] in occupied:
             assert floor["mode"] in ("open", "windowed")
             expect(plate.locator("[data-progress=unknown]")).to_have_count(1)   # no plans yet: unknown, never zero
         else:
@@ -210,96 +262,53 @@ def test_work_without_a_floor_waits_in_the_lobby(page: Page, ten_floors_url: str
     expect(page.locator('.hostkey .host[data-host="home"]')).to_have_class("host")
 
 
-def test_a_visitor_moves_in_to_the_lowest_free_floor(page: Page, restoke_url: str) -> None:
-    open_building(page, restoke_url)
-    visitor = page.locator('.lobby .visitor[data-label="agent-fleet"]')
-    expect(visitor).to_have_attribute("data-host", "worker")
-    visitor.locator("[data-move-in]").click()
-    expect(page.locator('.plate[data-floor="3"]')).not_to_have_attribute("data-mode", "to-let")
-    expect(page.locator('.plate[data-floor="3"] b')).to_have_text("agent-fleet")
-    expect(page.locator('.lobby .visitor[data-label="agent-fleet"]')).to_have_count(0)
-    document = state(restoke_url)
-    project = next(project for project in document["projects"] if project["name"] == "agent-fleet")
-    assert project["links"] == [{"host": "worker", "label": "agent-fleet"}]
-    assert document["building"]["floors"][project["id"]] == 3
+# ------------------------------------------------------------------ attention
+def test_attention_rolls_up_to_one_lantern_per_floor(moving_page: Page, restoke_url: str) -> None:
+    page, url = moving_page, restoke_url
+    open_building(page, url)
+    # restoke (floor 1): a failed job and a session asking a question; invoice analysis (floor 2): a failed job
+    page.wait_for_function("fleetBuilding.lanterns().length === 2")
+    assert {place: (lantern["level"], lantern["count"], lantern["swings"]) for place, lantern in lanterns(page).items()} == {
+        1: ("open", 2, 1), 2: ("open", 1, 1)}
+    expect(page.locator(".floor-lantern")).to_have_count(2)
+    restoke = page.locator('.floor-lantern[data-place="1"]')
+    expect(restoke.locator(".lg")).to_have_text("✱")
+    expect(restoke.locator("b")).to_have_text("2")
+    expect(page.locator('.floor-lantern[data-place="2"] b')).to_have_text("")   # one item: no count
+    expect(page.locator('.floor-lantern[data-place="lobby"]')).to_have_count(0)
+
+    items = [item for item in state(url)["attention"] if item["project"] == "restoke"]
+    for item in items:
+        post(url, "/api/attention/acknowledge", {"id": item["id"]})
+    expect(restoke).to_have_attribute("data-state", "acknowledged")
+    expect(restoke).to_have_class("floor-lantern ack")
+    for item in items:
+        post(url, "/api/attention/snooze", {"id": item["id"], "seconds": 3600})
+    expect(restoke).to_have_count(0)
+    for item in items:
+        post(url, "/api/attention/reopen", {"id": item["id"]})
+    expect(restoke).to_have_attribute("data-state", "open")
+    # it swung once when the items arrived; coming back from a snooze is not an arrival
+    assert lanterns(page)[1]["swings"] == 1
 
 
-# ------------------------------------------------------------------ attention and wayfinding
-def post(url: str, path: str, body: dict[str, Any]) -> int:
-    request = Request(url + path, data=json.dumps(body).encode(), method="POST", headers={"Content-Type": "application/json"})
-    with urlopen(request, timeout=5) as response:
-        return response.status
+def test_attention_with_no_floor_hangs_by_the_lobby(page: Page, visitor_asks_url: str) -> None:
+    open_building(page, visitor_asks_url)
+    lobby = page.locator('.floor-lantern[data-place="lobby"]')
+    expect(lobby).to_have_count(1)
+    expect(lobby).to_have_attribute("data-state", "open")
+    assert lanterns(page)["lobby"]["count"] == 1
 
 
-def lanterns(page: Page) -> dict[Any, dict[str, Any]]:
-    return {lantern["place"]: lantern for lantern in page.evaluate("fleetBuilding.lanterns()")}
-
-
-def test_attention_rolls_up_to_one_lantern_per_floor(moving_page: Page) -> None:
-    page = moving_page
-    with serve_fixture(FIXTURE) as url:
-        open_building(page, url)
-        # restoke (floor 1): a failed job and a session asking a question; invoice analysis (floor 2): a failed job
-        page.wait_for_function("fleetBuilding.lanterns().length === 2")
-        assert {place: (lantern["level"], lantern["count"], lantern["swings"]) for place, lantern in lanterns(page).items()} == {
-            1: ("open", 2, 1), 2: ("open", 1, 1)}
-        expect(page.locator(".floor-lantern")).to_have_count(2)
-        restoke = page.locator('.floor-lantern[data-place="1"]')
-        expect(restoke.locator(".lg")).to_have_text("✱")
-        expect(restoke.locator("b")).to_have_text("2")
-        expect(page.locator('.floor-lantern[data-place="2"] b')).to_have_text("")   # one item: no count
-        expect(page.locator('.floor-lantern[data-place="lobby"]')).to_have_count(0)
-
-        items = [item for item in state(url)["attention"] if item["project"] == "restoke"]
-        for item in items:
-            post(url, "/api/attention/acknowledge", {"id": item["id"]})
-        expect(restoke).to_have_attribute("data-state", "acknowledged")
-        expect(restoke).to_have_class("floor-lantern ack")
-        for item in items:
-            post(url, "/api/attention/snooze", {"id": item["id"], "seconds": 3600})
-        expect(restoke).to_have_count(0)
-        for item in items:
-            post(url, "/api/attention/reopen", {"id": item["id"]})
-        expect(restoke).to_have_attribute("data-state", "open")
-        # it swung once when the items arrived; coming back from a snooze is not an arrival
-        assert lanterns(page)[1]["swings"] == 1
-
-
-def test_attention_with_no_floor_hangs_by_the_lobby(page: Page, tmp_path: Path) -> None:
-    fixture = json.loads(FIXTURE.read_text())
-    worker = next(host for host in fixture["hosts"] if host["name"] == "worker")
-    session = next(session for session in worker["sessions"] if session["project"] == "agent-fleet")   # a visitor
-    session["activity"] = {"kind": "tool", "name": "AskUserQuestion", "summary": "Ship it?", "ts": fixture["time"] - 60}
-    path = tmp_path / "visitor.json"
-    path.write_text(json.dumps(fixture))
-    with serve_fixture(path) as url:
-        open_building(page, url)
-        lobby = page.locator('.floor-lantern[data-place="lobby"]')
-        expect(lobby).to_have_count(1)
-        expect(lobby).to_have_attribute("data-state", "open")
-        assert lanterns(page)["lobby"]["count"] == 1
-
-
+# ------------------------------------------------------------------ entering floors and the lift
 def enter_by_click(page: Page, floor: int) -> None:
     """Click the middle of a floor's front, clear of the lobby's list."""
     screen = next(f for f in page.evaluate("fleetBuilding.floors()") if f["floor"] == floor)["screen"]
     page.mouse.click((screen["left"] + screen["right"]) / 2, screen["top"] + (screen["bottom"] - screen["top"]) * 0.4)
 
 
-def deck_rooms(page: Page) -> list[str]:
-    page.wait_for_function("fleetDeck.rooms().length > 0")
-    return sorted(room["name"] for room in page.evaluate("fleetDeck.rooms()"))
-
-
-@pytest.fixture
-def fresh_restoke_url() -> Iterator[str]:
-    """The Restoke fleet as recorded: no one has moved in yet."""
-    with serve_fixture(FIXTURE) as url:
-        yield url
-
-
-def test_clicking_a_floor_enters_it(page: Page, fresh_restoke_url: str) -> None:
-    open_building(page, fresh_restoke_url)
+def test_clicking_a_floor_enters_it(page: Page, restoke_url: str) -> None:
+    open_building(page, restoke_url)
     enter_by_click(page, 1)
     expect(page.locator("body")).to_have_attribute("data-view", "floor")
     expect(page.locator("#world")).to_be_visible()
@@ -312,14 +321,15 @@ def test_clicking_a_floor_enters_it(page: Page, fresh_restoke_url: str) -> None:
     expect(page.locator('.lantern[data-room="restoke"]')).to_have_count(1)
 
 
-def test_the_lift_goes_between_floors_and_back_to_the_building(page: Page, fresh_restoke_url: str) -> None:
-    open_building(page, fresh_restoke_url)
+def test_the_lift_goes_between_floors_and_back_to_the_building(page: Page, restoke_url: str) -> None:
+    open_building(page, restoke_url)
+    occupied = set(state(restoke_url)["building"]["floors"].values())
     page.locator('.plate[data-floor="1"] .enter').click()
     lift = page.locator("#lift")
     expect(lift.locator("button")).to_have_count(8)   # six floors, L and S
     assert lift.locator("button").all_inner_texts() == ["6", "5", "4", "3", "2", "1", "L", "S"]
     expect(lift.locator('[data-lift="S"]')).to_be_enabled()
-    for free in ("3", "4", "5", "6"):
+    for free in {1, 2, 3, 4, 5, 6} - occupied:
         expect(lift.locator(f'[data-lift="{free}"]')).to_be_disabled()
     expect(lift.locator(".lift-lantern")).to_have_count(2)   # floors 1 and 2 need you
     expect(lift.locator('[data-lift="2"] .lift-lantern')).to_have_count(1)
@@ -351,41 +361,38 @@ def test_the_lift_goes_between_floors_and_back_to_the_building(page: Page, fresh
     expect(page.locator(".storehouse")).to_be_visible()
 
 
+# ------------------------------------------------------------------ focus
 def layout(page: Page) -> dict[str, Any]:
     """Where every floor, plate and lantern is on screen."""
     return {"floors": [floor["screen"] for floor in page.evaluate("fleetBuilding.floors()")],
-            "plates": [box for box in (plate.bounding_box() for plate in page.locator(".plate").all())],
+            "plates": [plate.bounding_box() for plate in page.locator(".plate").all()],
             "lanterns": [lantern.bounding_box() for lantern in page.locator(".floor-lantern").all()]}
 
 
-def test_the_focus_switch_changes_a_floor_and_moves_nothing(page: Page) -> None:
-    with serve_fixture(TEN_FLOORS) as url:
-        open_building(page, url)
-        page.wait_for_timeout(300)
-        before = layout(page)
-        plate = page.locator('.plate[data-floor="1"]')
-        project = plate.get_attribute("data-project")
-        plate.locator('.fswitch [data-focus="background"]').click()
-        expect(plate).to_have_attribute("data-mode", "windowed")
-        page.wait_for_function("fleetBuilding.floors()[0].built.mode === 'windowed'")
-        assert state(url)["building"]["focus"][project] == "background"
-        expect(page.locator("body")).to_have_attribute("data-view", "building")   # a switch is not a way in
-        page.wait_for_timeout(300)
-        assert layout(page) == before
+def test_the_focus_switch_changes_a_floor_and_moves_nothing(page: Page, ten_floors_url: str) -> None:
+    url = ten_floors_url
+    open_building(page, url)
+    before = layout(page)
+    plate = page.locator('.plate[data-floor="1"]')
+    project = plate.get_attribute("data-project")
+    plate.locator('.fswitch [data-focus="background"]').click()
+    expect(plate).to_have_attribute("data-mode", "windowed")
+    page.wait_for_function("fleetBuilding.floors()[0].built.mode === 'windowed'")
+    assert state(url)["building"]["focus"][project] == "background"
+    expect(page.locator("body")).to_have_attribute("data-view", "building")   # a switch is not a way in
+    settle(page)
+    assert layout(page) == before
 
-        plate.locator('.fswitch [data-focus="priority"]').click()
-        page.wait_for_function("fleetBuilding.floors()[0].built.mode === 'open'")
-        assert state(url)["building"]["focus"][project] == "priority"
-        page.wait_for_timeout(300)
-        assert layout(page) == before
+    plate.locator('.fswitch [data-focus="priority"]').click()
+    page.wait_for_function("fleetBuilding.floors()[0].built.mode === 'open'")
+    assert state(url)["building"]["focus"][project] == "priority"
+    settle(page)
+    assert layout(page) == before
 
 
 # ------------------------------------------------------------------ shuttering and the storehouse
-INVOICES = "p-1c0ce5a2"   # Invoice analysis: floor 2 in the Restoke fleet, in the background, with a failed job
-
-
-def test_shuttering_packs_a_floor_away_and_undo_brings_it_back(page: Page, fresh_restoke_url: str) -> None:
-    url = fresh_restoke_url
+def test_shuttering_packs_a_floor_away_and_undo_brings_it_back(page: Page, restoke_url: str) -> None:
+    url = restoke_url
     open_building(page, url)
     page.locator('.shutter-handle[data-floor="2"]').click()   # one pull, no confirmation
 
@@ -411,12 +418,12 @@ def test_shuttering_packs_a_floor_away_and_undo_brings_it_back(page: Page, fresh
     assert building["floors"][INVOICES] == 2 and building["focus"][INVOICES] == "background" and building["shuttered"] == {}
 
 
-def test_a_crate_opens_read_only_and_moves_back_to_its_floor(page: Page, fresh_restoke_url: str) -> None:
-    url = fresh_restoke_url
+def test_a_crate_opens_read_only_and_moves_back_to_its_floor(page: Page, restoke_url: str) -> None:
+    url = restoke_url
     open_building(page, url)
     page.locator('.shutter-handle[data-floor="2"]').click()
-    expect(page.locator("#toast")).to_be_hidden(timeout=10000)     # the chance to undo passes; it stays shuttered
-    assert INVOICES in state(url)["building"]["shuttered"]
+    expect(page.locator('.plate[data-floor="2"]')).to_have_attribute("data-mode", "to-let")
+    assert INVOICES in state(url)["building"]["shuttered"]   # no undo: it stays packed away
 
     page.locator(".annex-sign").click()
     crate = page.locator(f'.storehouse .crate[data-project="{INVOICES}"]')
@@ -439,27 +446,42 @@ def test_a_crate_opens_read_only_and_moves_back_to_its_floor(page: Page, fresh_r
     expect(page.locator(".storehouse .crate")).to_have_count(0)
     page.keyboard.press("Escape")
     expect(page.locator(".storehouse")).to_have_count(0)
+    assert state(url)["building"]["shuttered"] == {}
 
 
-def test_a_full_building_offers_only_clearing_a_floor_or_cancelling(page: Page) -> None:
-    with serve_fixture(TEN_FLOORS) as url:
-        open_building(page, url)
-        notes = page.locator('.lobby .visitor[data-label="notes"] button')
-        notes.click()
-        prompt = page.locator(".vacancy")
-        expect(prompt).to_be_visible()
-        expect(prompt.locator("[data-clear]")).to_have_count(10)
-        expect(prompt.locator("button")).to_have_count(11)                 # a floor to clear, or cancel: nothing else
-        prompt.locator("[data-cancel]").click()
-        expect(prompt).to_have_count(0)
-        assert state(url)["building"]["shuttered"] == {}
+# ------------------------------------------------------------------ moving in: these change their fleet for good, so come last
+def test_a_visitor_moves_in_to_the_lowest_free_floor(page: Page, restoke_url: str) -> None:
+    open_building(page, restoke_url)
+    visitor = page.locator('.lobby .visitor[data-label="agent-fleet"]')
+    expect(visitor).to_have_attribute("data-host", "worker")
+    visitor.locator("[data-move-in]").click()
+    expect(page.locator('.plate[data-floor="3"]')).not_to_have_attribute("data-mode", "to-let")
+    expect(page.locator('.plate[data-floor="3"] b')).to_have_text("agent-fleet")
+    expect(page.locator('.lobby .visitor[data-label="agent-fleet"]')).to_have_count(0)
+    document = state(restoke_url)
+    project = next(project for project in document["projects"] if project["name"] == "agent-fleet")
+    assert project["links"] == [{"host": "worker", "label": "agent-fleet"}]
+    assert document["building"]["floors"][project["id"]] == 3
 
-        notes.click()
-        research = state(url)["building"]
-        top = next(project for project, floor in research["floors"].items() if floor == 10)
-        page.locator(f'.vacancy [data-clear="{top}"]').click()
-        expect(page.locator('.plate[data-floor="10"] b')).to_have_text("notes")
-        expect(page.locator(".vacancy")).to_have_count(0)
-        building = state(url)["building"]
-        assert building["capacity"] == 10 and list(building["shuttered"]) == [top]
-        assert [crate["name"] for crate in page.evaluate("fleetBuilding.crates()")] == ["Research notes"]
+
+def test_a_full_building_offers_only_clearing_a_floor_or_cancelling(page: Page, ten_floors_url: str) -> None:
+    url = ten_floors_url
+    open_building(page, url)
+    notes = page.locator('.lobby .visitor[data-label="notes"] button')
+    notes.click()
+    prompt = page.locator(".vacancy")
+    expect(prompt).to_be_visible()
+    expect(prompt.locator("[data-clear]")).to_have_count(10)
+    expect(prompt.locator("button")).to_have_count(11)                 # a floor to clear, or cancel: nothing else
+    prompt.locator("[data-cancel]").click()
+    expect(prompt).to_have_count(0)
+    assert state(url)["building"]["shuttered"] == {}
+
+    notes.click()
+    top = next(project for project, floor in state(url)["building"]["floors"].items() if floor == 10)
+    page.locator(f'.vacancy [data-clear="{top}"]').click()
+    expect(page.locator('.plate[data-floor="10"] b')).to_have_text("notes")
+    expect(page.locator(".vacancy")).to_have_count(0)
+    building = state(url)["building"]
+    assert building["capacity"] == 10 and list(building["shuttered"]) == [top]
+    assert [crate["name"] for crate in page.evaluate("fleetBuilding.crates()")] == ["Research notes"]
