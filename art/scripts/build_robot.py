@@ -39,7 +39,12 @@ for side, sx in (('L', 1), ('R', -1)):
 
 
 def mats() -> dict:
-    return {'body': A.material('robot_body', '#41ced1', rough=0.22),
+    body = A.material('robot_body', '#41ced1', rough=0.3)
+    # a clear coat over the shell: the glossy, toy-like highlight of l2's robots (KHR_materials_clearcoat)
+    bsdf = body.node_tree.nodes['Principled BSDF']
+    bsdf.inputs['Coat Weight'].default_value = 0.8
+    bsdf.inputs['Coat Roughness'].default_value = 0.08
+    return {'body': body,
             'joint': A.material('robot_joint', '#858b95', rough=0.35, metal=0.3),
             'visor': A.material('robot_visor', '#0b0d0f', rough=0.12),
             'eye': A.material('robot_eye', '#7ff7f4', rough=0.3, emission='#62f3ef'),
@@ -77,14 +82,15 @@ def body(m) -> None:
     rbox('chest_plate', (0.16, 0.02, 0.1), (0, -0.115, 0.3), m['joint'], 'spine', 0.009)
     part(A.cylinder('neck', 0.05, 0.06, (0, 0.01, 0.43), m['joint'], kind='dynamic', segments=20, tile=None), 'head')
     # a big round head, as in the concept: wider than the torso, with a dark face plate
-    rbox('head', (0.46, 0.38, 0.34), (0, 0, 0.66), m['body'], 'head', 0.15)
+    # nearly a capsule: the bevel takes almost half the height, so it reads as a round helmet
+    rbox('head', (0.46, 0.38, 0.36), (0, 0, 0.67), m['body'], 'head', 0.17)
     rbox('visor', (0.38, 0.06, 0.25), (0, -0.172, 0.665), m['visor'], 'head', 0.085)
     for sx in (-1, 1):
-        rbox(f'eye_{sx:+d}', (0.042, 0.012, 0.066), (0.07 * sx, -0.205, 0.672), m['eye'], 'head', 0.02)
+        rbox(f'eye_{sx:+d}', (0.056, 0.012, 0.086), (0.075 * sx, -0.205, 0.672), m['eye'], 'head', 0.027)
         ear = A.cylinder(f'ear_{sx:+d}', 0.07, 0.05, (0.22 * sx, 0, 0.66), m['joint'], kind='dynamic', segments=24,
                          bevel=0.012, rot=(0, math.pi / 2 * sx, 0), tile=None)
         part(ear, 'head')
-    part(A.cylinder('antenna', 0.024, 0.05, (0, 0.0, 0.82), m['joint'], kind='dynamic', segments=16, bevel=0.008,
+    part(A.cylinder('antenna', 0.024, 0.05, (0, 0.0, 0.835), m['joint'], kind='dynamic', segments=16, bevel=0.008,
                     tile=None), 'head')
     for side, sx in (('L', 1), ('R', -1)):
         mx = Vector((sx, 1, 1))

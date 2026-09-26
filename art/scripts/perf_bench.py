@@ -15,6 +15,7 @@ from playwright.sync_api import sync_playwright
 
 from fleet.web.fixture import FixtureLibrary, FixtureState
 from fleet.web.server import make_handler
+from shoot_bench import headless_env
 
 REPO = Path(__file__).resolve().parents[2]
 FIXTURE = REPO / 'tests' / 'fixtures' / 'restoke.json'
@@ -50,7 +51,7 @@ def main() -> None:
             # vsync and the frame cap are off so the numbers are real frame times, not 16.7 ms.
             browser = p.chromium.launch(args=['--use-angle=vulkan', '--enable-features=Vulkan', '--enable-gpu',
                                               '--ignore-gpu-blocklist', '--disable-gpu-vsync',
-                                              '--disable-frame-rate-limit'])
+                                              '--disable-frame-rate-limit'], env=headless_env())
             page = browser.new_page(viewport={'width': w, 'height': h})
             page.on('response', lambda r: sizes.__setitem__(r.url, len(r.body())) if r.ok else None)
             page.goto(f'http://127.0.0.1:{server.server_port}/prototype/bench')

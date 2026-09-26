@@ -5,6 +5,7 @@
 Serves the deck over the test fixture, opens /prototype/bench?still&shot in headless Chromium at
 1672 x 941, and writes bench.png and bench-vs-l2.png to OUT_DIR (default art/build/prototype).
 """
+import os
 import sys
 import threading
 from http.server import ThreadingHTTPServer
@@ -22,6 +23,12 @@ CONCEPT = REPO / 'docs' / 'images' / 'concept' / 'l2.png'
 SIZE = {'width': 1672, 'height': 941}
 
 
+def headless_env() -> dict[str, str]:
+    """The environment without a display: with DISPLAY set (say a dead SSH X forward) ANGLE's Vulkan backend
+    tries to reach X and WebGL fails; without it, it runs headless on the GPU."""
+    return {k: v for k, v in os.environ.items() if k not in ('DISPLAY', 'WAYLAND_DISPLAY')}
+
+
 def shoot(out: Path) -> Path:
     state = FixtureState.load(FIXTURE)
     server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(state, FixtureLibrary(state.fixture)))
@@ -31,7 +38,7 @@ def shoot(out: Path) -> Path:
         with sync_playwright() as p:
             # ANGLE on Vulkan reaches the NVIDIA GPU headless; the GL paths fall back to llvmpipe
             browser = p.chromium.launch(args=['--use-angle=vulkan', '--enable-features=Vulkan', '--enable-gpu',
-                                              '--ignore-gpu-blocklist'])
+                                              '--ignore-gpu-blocklist'], env=headless_env())
             page = browser.new_page(viewport=SIZE, device_scale_factor=1)
             page.on('pageerror', lambda e: errors.append(str(e)))
             page.on('console', lambda m: m.type == 'error' and errors.append(m.text))

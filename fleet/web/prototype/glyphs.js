@@ -112,7 +112,7 @@ export function bubble(icon, color) {
 
 export function footprint() {
   return canvas(64, 128, g => {
-    g.fillStyle = '#5b5e66';
+    g.fillStyle = '#44474f';
     g.beginPath();
     g.ellipse(32, 44, 17, 30, 0, 0, Math.PI * 2);
     g.fill();

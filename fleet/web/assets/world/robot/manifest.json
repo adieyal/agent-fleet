@@ -21,14 +21,16 @@
   },
   "files": {
     "robot.glb": {
-      "bytes": 938712,
-      "sha256": "fb96be6b8eb053f404261804a31329c74685c63de9abdd8792479281709c6370"
+      "bytes": 938884,
+      "sha256": "22136a49394866b15095bf553d96bbc7049e238294d32584ad3e44ebebeb8ced"
     }
   },
   "glb_summary": {
     "nodes": 13,
     "meshes": 3,
     "images": 0,
-    "extensions": []
+    "extensions": [
+      "KHR_materials_clearcoat"
+    ]
   }
 }

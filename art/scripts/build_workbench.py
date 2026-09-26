@@ -27,11 +27,11 @@ X0, X1 = -1.0, 12.5          # extent of floor and back wall
 Y0, WALL_Y = -3.5, 6.0       # near floor edge, back wall face
 WALL_H, WALL_T, CAP_H = 3.2, 0.3, 0.26
 TILE = 0.6
-DESK_W, DESK_D, DESK_H, TOP_T = 1.6, 0.8, 0.74, 0.03
-BENCH_X0, BENCH_Y = 4.0, 4.35  # left end and centre line of the bench: close to the plan wall, as in l2
+DESK_W, DESK_D, DESK_H, TOP_T = 1.8, 0.8, 0.74, 0.03  # l2's bench is long next to the wall features
+BENCH_X0, BENCH_Y = 3.8, 4.35  # left end and centre line of the bench: close to the plan wall, as in l2
 SEAT_H = 0.47                  # shared with the robot rig
-PLAN = dict(x0=5.2, z0=0.95, cols=9, rows=6, pitch=0.27)
-PILASTERS = (2.25, 4.55, 8.05, 9.65)
+PLAN = dict(x0=5.2, z0=0.8, cols=9, rows=6, pitch=0.3)
+PILASTERS = (2.25, 4.55, 8.45, 10.05)
 
 
 def materials() -> dict:
@@ -42,8 +42,7 @@ def materials() -> dict:
                            texture=A.source('ambientcg', 'PaintedPlaster017', 'PaintedPlaster017_1K-JPG_Color.jpg')),
         'cap': A.material('wall_cap', '#d2cfd6', rough=0.8),
         'pilaster': A.material('pilaster', '#b4afb4', rough=0.8),
-        'oak': A.material('oak', '#dcd7d2', rough=0.45,
-                          texture=A.source('ambientcg', 'Wood095', 'Wood095_1K-JPG_Color.jpg')),
+        'oak': A.material('oak', '#f1e6d8', rough=0.45, texture=pale_wood_texture(p['textures'])),
         'steel': A.material('steel_grey', '#6f6f77', rough=0.45, metal=0.3),
         'bezel': A.material('plan_bezel', '#c3c0c6', rough=0.6),
         'frame': A.material('frame_dark', '#4a474e', rough=0.4, metal=0.4),
@@ -79,6 +78,21 @@ def floor_tile_texture(out: Path) -> Path:
         rgb[sl] *= 0.8
     bpy.data.images.remove(src)
     return save_png(out, 'floor_tile', px)
+
+
+def pale_wood_texture(out: Path) -> Path:
+    """Wood095 with most of its orange taken out: l2's desks are pale, and warmth comes from the lamps."""
+    src = bpy.data.images.load(str(A.source('ambientcg', 'Wood095', 'Wood095_1K-JPG_Color.jpg')))
+    w, h = src.size
+    px = np.empty(w * h * 4, dtype=np.float32)
+    src.pixels.foreach_get(px)
+    px = px.reshape(h, w, 4)
+    rgb = px[..., :3]
+    grey = rgb @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
+    rgb[:] = grey[..., None] + (rgb - grey[..., None]) * 0.35  # keep a third of the saturation
+    rgb[:] = 0.78 + (rgb - rgb.mean()) * 0.8                    # lift it to a pale wood, keep the grain
+    bpy.data.images.remove(src)
+    return save_png(out, 'pale_wood', px)
 
 
 def poster_texture(out: Path) -> Path:
@@ -186,7 +200,7 @@ def plan_wall(m) -> None:
                   m['tile'], kind='dynamic', bevel=0.012)
     # criteria lights: a row of round lamps on the wall above the plan wall; each is its own warm group
     for i in range(5):
-        x = x0 + 0.37 + i * 0.46
+        x = x0 + 0.45 + i * 0.5
         z = z0 + h + 0.3
         A.cylinder(f'criteria_housing_{i}', 0.13, 0.06, (x, y, z), m['frame'], bevel=0.012, rot=(math.pi / 2, 0, 0))
         bulb = A.cylinder(f'criteria_light_{i}', 0.105, 0.01, (x, y - 0.06, z), m['bulb'], kind='dynamic',
@@ -200,7 +214,7 @@ def plan_wall(m) -> None:
 
 
 def poster(m) -> None:
-    x, z = 8.85, 1.05
+    x, z = 9.25, 1.05
     A.panel('poster', 0.72, 0.96, (x, WALL_Y - 0.004, z), m['poster'])
     for i, (dx, dz) in enumerate(((-0.32, 0.9), (0.32, 0.9), (-0.32, 0.06), (0.32, 0.06))):
         A.cylinder(f'poster_pin_{i}', 0.012, 0.01, (x + dx, WALL_Y - 0.005, z + dz), m['brass'], segments=10,
@@ -209,16 +223,18 @@ def poster(m) -> None:
 
 def shelf(m, props: dict) -> None:
     """Shelf in the recess right of the last pilaster: binders, a box and a plant."""
-    x0, y, w = 10.05, WALL_Y - 0.22, 1.5
+    x0, y, w = 10.45, WALL_Y - 0.22, 1.5
     for side in (0, 1):
         A.box(f'shelf_side_{side}', (0.03, 0.4, 1.9), (x0 + side * w, y, 0), m['steel'], bevel=0.004)
     for k, z in enumerate((0.06, 0.66, 1.26, 1.86)):
         A.box(f'shelf_board_{k}', (w, 0.4, 0.025), (x0 + w / 2, y, z), m['steel'], bevel=0.004)
     A.box('shelf_back', (w, 0.02, 1.9), (x0 + w / 2, y + 0.19, 0), m['steel'], bevel=0.003)
+    spines = ('#8a9bb4', '#5f6f86', '#b9b2a6', '#7f8a78', '#9a8f86', '#5f6f86')  # muted, like l2's shelf
     for k in range(6):
-        A.duplicate(props['binder'], f'shelf_binder_{k}', (x0 + 0.12 + k * 0.045, y, 0.685))
+        A.tint(A.duplicate(props['binder'], f'shelf_binder_{k}', (x0 + 0.12 + k * 0.045, y, 0.685)), spines[k])
     for k in range(4):
-        A.duplicate(props['binder'], f'shelf_binder_hi_{k}', (x0 + 0.9 + k * 0.045, y, 1.285))
+        A.tint(A.duplicate(props['binder'], f'shelf_binder_hi_{k}', (x0 + 0.9 + k * 0.045, y, 1.285)),
+               spines[(k + 2) % 6])
     A.duplicate(props['box'], 'shelf_box', (x0 + 0.95, y, 0.685))
     potted(m, props, 'shelf_plant', x0 + 0.35, y, 1.885, 0.7, pot=0.16)
 
@@ -380,7 +396,7 @@ def bench(m, rng: random.Random, props: dict) -> None:
     potted(m, props, 'desk2_plant', BENCH_X0 + DESK_W + 1.1, far - 0.08, DESK_H, 2.3)
     # desk 3 (olive, testing): monitor to the robot's right (screen left) so the robot and its flask
     # stay in view as in l2, closed laptop, report tray, a sketch
-    monitor(m, 'desk3_monitor', BENCH_X0 + 2 * DESK_W + 0.2, far - 0.1, math.radians(-25))
+    monitor(m, 'desk3_monitor', BENCH_X0 + 2 * DESK_W - 0.05, far - 0.1, math.radians(-35))
     laptop(m, 'desk3_laptop_closed', BENCH_X0 + 2 * DESK_W + 0.55, near - 0.05, 0.3, closed=True)
     report_tray(m, 'desk3_tray', BENCH_X0 + 3 * DESK_W - 0.2, near - 0.02)
     sketch(m, 'desk3_sketch', BENCH_X0 + 2 * DESK_W + 1.0, near - 0.1, -0.2)
@@ -390,7 +406,7 @@ def bench(m, rng: random.Random, props: dict) -> None:
 
 def corner_desk(m, rng: random.Random, props: dict) -> None:
     """The desk cut by the frame's near-left corner in l2: monitor, keyboard, lamp and a plant."""
-    x0, y = 2.0, 1.5
+    x0, y = 0.3, 0.9  # far enough into the near-left corner that only a corner shows, as in l2
     desk_frame(m, 'corner', x0, y)
     desk_frame(m, 'corner_b', x0 + DESK_W, y)
     monitor(m, 'corner_monitor', x0 + 0.9, y + 0.15, 0.0)
@@ -404,7 +420,7 @@ def corner_desk(m, rng: random.Random, props: dict) -> None:
 
 
 def question_desk(m, props: dict) -> None:
-    x, y = 3.35, WALL_Y - 0.45
+    x, y = 3.6, WALL_Y - 0.45
     A.box('qdesk_body', (1.1, 0.6, 0.7), (x, y, 0.02), m['steel'], bevel=0.012)
     A.box('qdesk_drawer', (0.5, 0.008, 0.16), (x - 0.18, y - 0.302, 0.5), m['steel'], bevel=0.003)
     A.box('qdesk_top', (1.2, 0.66, 0.035), (x, y, 0.72), m['oak'], bevel=0.008, tile=1.2)
@@ -426,8 +442,8 @@ def question_desk(m, props: dict) -> None:
 
 def planters(m, props: dict) -> None:
     """Square concrete planters with tall leafy plants, as l2 has by each pilaster and at the bench's end."""
-    spots = ((-0.55, WALL_Y - 0.45, 0.0), (7.3, WALL_Y - 0.45, 1.3), (9.7, WALL_Y - 0.75, 2.6),
-             (12.1, 3.9, 3.9), (-0.5, 2.6, 5.2), (9.35, 3.8, 0.8))
+    spots = ((-0.55, WALL_Y - 0.45, 0.0), (8.45, WALL_Y - 0.85, 1.3), (10.05, WALL_Y - 0.85, 2.6),
+             (12.1, 3.9, 3.9), (-0.5, 2.6, 5.2), (10.0, 3.9, 0.8))
     for i, (x, y, rz) in enumerate(spots):
         A.box(f'planter_{i}', (0.42, 0.42, 0.5), (x, y, 0), m['pot'], bevel=0.02)
         plant = props['calathea'] if i == 4 else props['tall']
@@ -449,7 +465,7 @@ def lights() -> None:
     for i, x in enumerate((1.5, 5.0, 8.5, 12.0)):
         A.light(f'fill_{i}', 'AREA', (x, 2.5, WALL_H + 0.4), 90, '#f6f3ee', shape='RECTANGLE', size=3.0, size_y=6.0)
     # warm downlights grazing each wall bay: the scallops of light on the wall in l2
-    for i, x in enumerate((0.95, 3.4, 5.5, 7.2, 8.85, 11.0)):
+    for i, x in enumerate((0.95, 3.4, 5.8, 7.4, 9.25, 11.2)):
         spot = A.light(f'wallwash_{i}', 'SPOT', (x, WALL_Y - 0.28, WALL_H - 0.08), 120, '#ffbe7a',
                        spot_size=math.radians(75), spot_blend=1.0, shadow_soft_size=0.05)
         A.aim(spot, (x, WALL_Y, 1.1))

@@ -292,6 +292,28 @@ def import_gltf(path: Path, part: str, name: str, rot=(0, 0, 0), scale=1.0, kind
     return ob
 
 
+def tint(ob: bpy.types.Object, color: str) -> None:
+    """Give `ob` its own copy of its materials with the base colour multiplied by `color`
+    (exported as baseColorFactor), e.g. to vary binder spines cut from one model."""
+    for slot in ob.material_slots:
+        mat = slot.material.copy()
+        mat.name = f'{slot.material.name}_{color.lstrip("#")}'
+        nt = mat.node_tree
+        bsdf = nt.nodes['Principled BSDF']
+        link = next((lk for lk in nt.links if lk.to_socket == bsdf.inputs['Base Color']), None)
+        mix = nt.nodes.new('ShaderNodeMix')
+        mix.data_type, mix.blend_type = 'RGBA', 'MULTIPLY'
+        mix.inputs['Factor'].default_value = 1.0
+        mix.inputs['B'].default_value = srgb(color)
+        if link:
+            nt.links.new(link.from_socket, mix.inputs['A'])
+        else:
+            mix.inputs['A'].default_value = bsdf.inputs['Base Color'].default_value
+        nt.links.new(mix.outputs['Result'], bsdf.inputs['Base Color'])
+        slot.link = 'OBJECT'
+        slot.material = mat
+
+
 def duplicate(ob: bpy.types.Object, name: str, loc, rot_z=0.0) -> bpy.types.Object:
     d = ob.copy()
     d.name = name

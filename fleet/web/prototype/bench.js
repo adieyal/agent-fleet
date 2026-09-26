@@ -21,7 +21,8 @@ const STILL = params.has('still');            // no motion: screenshots and redu
 if (params.has('shot')) document.body.classList.add('shot');
 
 // The l2 view: orthographic, looking down PITCH degrees, turned YAW from square-on to the back wall.
-const VIEW = { target: [6.1, 3.7, 2.05], pitch: 37, yaw: 23, height: 5.1 };
+// Fitted to landmarks in l2.png (bench corners weighted most) by art/scripts/fit_camera.py.
+const VIEW = { target: [6.269, 4.229, 1.698], pitch: 44.5, yaw: 21.25, height: 5.486 };
 const HOSTS = { teal: '#27b3b8', blue: '#2e62dc', olive: '#7a8a32' };
 const CAST = [
   { desk: 'desk1', host: 'teal', action: 'type', icon: 'search' },
@@ -370,7 +371,7 @@ function floorGloss(root) {
 }
 
 function footprints(root) {
-  const mat = new THREE.MeshBasicMaterial({ map: glyph.footprint(), transparent: true, opacity: 0.45,
+  const mat = new THREE.MeshBasicMaterial({ map: glyph.footprint(), transparent: true, opacity: 0.75,
     depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 });
   const geo = new THREE.PlaneGeometry(0.11, 0.22).rotateX(-Math.PI / 2);
   for (let i = 0; root.getObjectByName(`footprint_${i}`); i++) {
