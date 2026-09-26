@@ -2,13 +2,15 @@
 // the ground floor. A view beside the deck, chosen with the header's deck | building switch and remembered.
 //
 // Floors come from the server (fleet/building.py): capacity, and which floor each project holds. A floor never moves
-// or resizes; only what is on it changes. Priority floors are open (no front wall, furniture on view, a pennant on the
-// edge, warm light while runs are active); background floors show a windowed facade that glows warm while active;
-// free floors say "To let". The spine carries a name plate (at most three words) and a progress ring per floor, shown
+// or resizes; only what is on it changes. Priority floors are open (no front wall, a pennant on the edge): one furnished
+// room per project room on the deck, lit warm only where runs are working. Background floors show cool glass, quieter
+// than any open floor, with a soft warm glow behind a few panes while active. Free floors have a small "To let" card in
+// one window and a dotted outline. The spine carries a name plate (at most three words) and a progress ring per floor, shown
 // as unknown until projects have plans. No androids and no speech here: activity is light. The lobby holds the host
 // colour key and the visitors: labels with work that no project claims, each of which can move in.
 //
-// Attention rolls up to floors: a floor with open or acknowledged items gets one marked lantern beside it, the diamond
+// Attention rolls up to floors: a floor with open or acknowledged items gets one marked lantern on a bracket from the
+// spine beside its name plate, the diamond
 // with the attention glyph and a count when it stands for more than one item. It swings once when an open item arrives,
 // then hangs still. Items that belong to no floor light a lantern by the lobby. Each floor's plate carries its focus
 // switch (open · windows), which sets the project's focus with one click and moves nothing.
@@ -28,8 +30,8 @@
 
 import * as THREE from 'three';
 import { DESK_TOP, HALF, PI, QS, REDUCED, vh, vw } from './env.js';
-import { esc, store } from './util.js';
-import { hostLook, projectLook } from './looks.js';
+import { esc, mix, store } from './util.js';
+import { THEMES, hostLook, projectLook, themeFor } from './looks.js';
 import { working } from './activity.js';
 import { G, KIT, Placer, canvasTex, softDot } from './scene.js';
 import { enterProject } from './state.js';
@@ -86,6 +88,7 @@ const LH = 4.2;                              // the lobby is a little taller
 const SPINE = 3.2;                           // the column on the left that carries the name plates
 const MAX_Z = 40;                            // pixels per tile at most, so a small building doesn't balloon
 const WARM = '#ffc47a';
+const FLOOR_LIFT = 0.01;                     // a floor covering's centre above the slab: its top clears the slab's, no flicker
 const baseOf = floor => LH + (floor - 1) * FH;
 
 // ------------------------------------------------------------------ renderer, camera, lights
@@ -127,8 +130,8 @@ export function applyBuilding(state) {
   lobby = lobbyOf(state);
   crates = cratesOf(state);
   applyLanterns(state);
-  const key = JSON.stringify([floors.map(f => [f.floor, f.projectId, f.name, f.mode, f.active]), lobby.hosts,
-    [...lanterns.keys()], crates.length]);
+  const key = JSON.stringify([floors.map(f => [f.floor, f.projectId, f.name, f.mode, f.active, f.rooms?.map(r => [r.label, r.active])]),
+    lobby.hosts, [...lanterns.keys()].filter(place => typeof place !== 'number'), crates.length]);
   if (key !== buildKey && KIT.desk) { buildKey = key; build(); }
   renderUi();
   const gone = crate ? !crates.some(c => c.id === crate) : typeof current === 'number' && !floors.find(f => f.floor === current)?.projectId;
@@ -145,9 +148,14 @@ function floorsOf(state) {
   if (!b) return [];
   const projects = new Map((state.projects || []).map(p => [p.id, p]));
   const byFloor = new Map(Object.entries(b.floors).map(([id, floor]) => [floor, id]));
-  const busy = new Set();
+  // a floor's rooms are its project's rooms on the deck: one per label with work, looking as that room does there
+  const looks = roomLooks(state), roomsOf = new Map();
   for (const h of state.hosts || []) for (const item of [...(h.jobs || []), ...(h.sessions || [])]) {
-    if (item.project_id && working(item)) busy.add(item.project_id);
+    if (!item.project_id || !item.project) continue;
+    if (!roomsOf.has(item.project_id)) roomsOf.set(item.project_id, new Map());
+    const rooms = roomsOf.get(item.project_id);
+    if (!rooms.has(item.project)) rooms.set(item.project, { label: item.project, ...looks.get(item.project), active: false });
+    rooms.get(item.project).active ||= working(item);
   }
   const taken = new Set();
   return Array.from({ length: b.capacity }, (_, i) => {
@@ -155,9 +163,23 @@ function floorsOf(state) {
     if (!projectId) return { floor, projectId: null, mode: 'to-let', active: false };
     const project = projects.get(projectId);
     const focus = pending.get(projectId) || b.focus[projectId];
-    return { floor, projectId, name: project.name, look: projectLook(projectId, taken), focus,
-      mode: focus === 'background' ? 'windowed' : 'open', active: busy.has(projectId) };
+    const rooms = [...(roomsOf.get(projectId) || new Map()).values()].sort((a, c) => a.label.localeCompare(c.label));
+    return { floor, projectId, name: project.name, look: projectLook(projectId, taken), focus, rooms,
+      mode: focus === 'background' ? 'windowed' : 'open', active: rooms.some(r => r.active) };
   });
+}
+// The deck gives each room a colour and a theme in name order (rooms.js layoutRooms); the same here, so a room looks
+// the same on its floor as on the deck.
+function roomLooks(state) {
+  const names = new Set();
+  for (const h of state.hosts || []) for (const item of [...(h.jobs || []), ...(h.sessions || [])]) if (item.project) names.add(item.project);
+  const hues = new Set(), themes = new Set(), out = new Map();
+  for (const name of [...names].sort()) {
+    const look = projectLook(name, hues), theme = themeFor(name, themes);
+    Object.assign(look, THEMES[theme].pal(look.hue));
+    out.set(name, { look, theme });
+  }
+  return out;
 }
 
 // ------------------------------------------------------------------ focus: the switch on each plate
@@ -296,7 +318,7 @@ function build() {
   for (const f of floors) buildFloor(f, placer);
   placer.build(group, disposables);
   lanternObjs.clear();
-  for (const place of lanterns.keys()) lanternObjs.set(place, buildLantern(place));
+  for (const place of lanterns.keys()) if (typeof place !== 'number') lanternObjs.set(place, buildLantern(place));
   hits.length = 0;
   const hit = (w, h, d, x, y, z, what) => {   // what a click lands on
     const m = box(w, h, d, x, y, z, HIT, false);
@@ -308,7 +330,7 @@ function build() {
   hit(AW, AH, FD, (AX0 + AX1) / 2, AH / 2, FD / 2, { store: true });
   const mid = new THREE.Vector3((AX1 - SPINE) / 2, top / 2, FD / 2);
   sun.target.position.copy(mid);
-  sun.position.copy(mid).add(new THREE.Vector3(-14, 30, 26));
+  sun.position.copy(mid).add(new THREE.Vector3(-10, 12, 36));   // low and from the front, so it reaches into every floor
   const sc = sun.shadow.camera, rad = Math.max(AX1 + SPINE, top) * 0.8;
   sc.left = -rad; sc.right = rad; sc.top = rad; sc.bottom = -rad; sc.near = 1; sc.far = 120;
   sc.updateProjectionMatrix();
@@ -320,10 +342,11 @@ function buildFloor(f, place) {
   const look = f.look;
   box(FW, SLAB, FD, FW / 2, y + SLAB / 2, FD / 2, mat.slab);
   box(FW, h, 0.2, FW / 2, y + SLAB + h / 2, 0.1, tinted(look ? look.wall : '#2a3446'));   // back wall
-  const record = { mode: f.mode, active: f.active, front: f.mode === 'open' ? 'none' : f.mode, furniture: 0, pennant: false, glow: false };
+  const record = { mode: f.mode, active: f.active, front: f.mode === 'open' ? 'none' : f.mode, furniture: 0, pennant: false,
+    glow: false, rooms: [] };
   built.set(f.floor, record);
   if (f.mode === 'open') {
-    furnish(place, y + SLAB, look, record);
+    furnishRooms(place, y + SLAB, f, record);
     // the pennant: flown from a short pole on the floor's outer edge, in the project's colour
     box(1.3, 0.07, 0.07, FW + 0.95, y + FH - 0.35, FD - 0.3, mat.spine);
     const flag = new THREE.Mesh(PENNANT, new THREE.MeshBasicMaterial({ color: look.accent, side: THREE.DoubleSide }));
@@ -331,43 +354,26 @@ function buildFloor(f, place) {
     flag.position.set(FW + 1.5, y + FH - 0.35, FD - 0.3);
     group.add(flag);
     record.pennant = true;
-    // ceiling light: warm while runs are active, off otherwise
-    box(FW - 3, 0.06, 0.3, FW / 2, y + FH - 0.05, FD / 2, f.active ? LAMP_ON : LAMP_OFF, false);
-    if (f.active) {
-      for (const x of [FW * 0.3, FW * 0.62]) {
-        const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: warmGlow, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.8 }));
-        disposables.push(s.material);
-        s.scale.set(9, 3.4, 1); s.position.set(x, y + SLAB + 1.2, FD / 2 + 0.6);
-        group.add(s);
-      }
-      record.glow = true;
-    }
   } else {
     facade(f, y);
     record.glow = f.mode === 'windowed' && f.active;
   }
 }
-// The lantern: an arm out from the end wall below the ceiling and a cord; the marked diamond itself is drawn over the
-// cord's end (see placeUi) so it stays legible at every size. The pennant flies nearer the wall.
-// A floor's hangs from an arm out of the end wall; the lobby's hangs over the front desk, and the storehouse's from an
-// arm over its door.
-const ARM_X0 = FW + 0.3, ARM_X1 = FW + 3.3, CORD = 0.4, FRONT_DESK_X = 6.8;
-const lanternObjs = new Map();   // place → { pivot, lamp }
-const lanternGlow = softDot('rgba(255,79,176,.6)', 'rgba(255,79,176,0)');
+// Floor lanterns are drawn over the scene beside their name plates (placeUi). The lobby's hangs over the front desk
+// and the storehouse's from an arm over its door; each diamond is drawn over its cord's end, with a modest glow.
+const CORD = 0.4, FRONT_DESK_X = 6.8;
+const lanternObjs = new Map();   // 'lobby' | 'store' → { pivot, lamp, glow }
+const lanternGlow = softDot('rgba(255,79,176,.45)', 'rgba(255,79,176,0)');
 function buildLantern(place) {
   const pivot = new THREE.Group();
   let cordLength = CORD;
   if (place === 'lobby') {
     pivot.position.set(FRONT_DESK_X, LH - 0.05, FD - 1.6);
     cordLength = 0.9;
-  } else if (place === 'store') {
+  } else {
     const y = AH - 0.1, x = AX0 + 1.7;
     box(0.06, 0.06, 1.1, x, y, FD + 0.55, mat.spine);
     pivot.position.set(x, y, FD + 1.1);
-  } else {
-    const y = baseOf(place) + FH - 0.2, z = FD - 0.3;
-    box(ARM_X1 - ARM_X0, 0.06, 0.06, (ARM_X0 + ARM_X1) / 2, y, z, mat.spine);
-    pivot.position.set(ARM_X1, y, z);
   }
   const cord = new THREE.Mesh(G.box, mat.spine);
   cord.scale.set(0.03, cordLength, 0.03); cord.position.y = -cordLength / 2;
@@ -375,7 +381,7 @@ function buildLantern(place) {
   lamp.position.y = -cordLength - 0.55;
   const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: lanternGlow, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
   disposables.push(glow.material);
-  glow.scale.setScalar(2.2);
+  glow.scale.setScalar(1.1);
   lamp.add(glow);
   pivot.add(cord, lamp);
   group.add(pivot);
@@ -412,47 +418,83 @@ const PENNANT = (() => {
   return new THREE.ShapeGeometry(s);
 })();
 
-// An open floor's furniture: the deck's desks, screens and chairs in a row, a bookcase, a sofa and plants.
-function furnish(place, y, look, record) {
-  const at = (model, x, z, rot = 0, lift = 0) => { place.add(model, x, z, rot, y + lift); record.furniture++; };
-  place.add('floor:checker', FW / 2, FD / 2, 0, y - 0.02, new THREE.Vector3(FW, 0.04, FD), look.floor);
-  at('bookcaseOpen', 1.3, 0.45);
-  at('bookcaseOpen', 2.3, 0.45);
-  for (const x of [5.5, 8.2, 10.9, 13.6, 16.3]) {
-    at('desk', x, 1.7);
-    at('computerScreen', x, 1.5, 0, DESK_TOP);
-    at('chairDesk', x, 2.75);
+// An open floor: one room per project room on the deck, side by side behind low partitions, each furnished as that room
+// is on the deck (its floor, wall colour and theme furniture), with warm light only in rooms where runs are working.
+// A project with no work yet has an empty floor.
+function furnishRooms(place, y, f, record) {
+  const x0 = 0.3, width = FW - 0.6, n = f.rooms.length;
+  if (!n) {
+    place.add('floor:checker', FW / 2, FD / 2, 0, y + FLOOR_LIFT, new THREE.Vector3(FW, 0.04, FD), f.look.floor);
+    return;
   }
-  at('loungeSofa', 21.2, 1.0);
-  at('pottedPlant', 19.2, 0.7);
-  at('pottedPlant', FW - 1.0, FD - 0.9);
+  const w = width / n, h = FH - SLAB;
+  f.rooms.forEach((room, i) => {
+    const a = x0 + i * w, b = a + w, cx = (a + b) / 2, T = THEMES[room.theme], look = room.look;
+    let furniture = 0;
+    const at = (model, x, z, rot = 0, lift = 0) => {
+      if (!model || model === 'rack' || !KIT[model]) return;
+      place.add(model, x, z, rot, y + lift);
+      furniture++;
+    };
+    place.add('floor:' + T.floor, cx, FD / 2, 0, y + FLOOR_LIFT, new THREE.Vector3(w, 0.04, FD), look.floor);
+    box(w, h, 0.06, cx, y + h / 2, 0.23, tinted(look.wall), false);                                   // its back wall
+    box(w - 0.4, 0.05, 0.05, cx, y + h - 0.25, 0.28, tinted(look.accent), false);                     // accent strip
+    if (i > 0) box(0.12, h * 0.55, FD - 1.2, a, y + h * 0.275, (FD - 1.2) / 2 + 0.2, tinted(mix(look.wall, '#0b111d', 0.3)));
+    // desks along the back wall, as many as fit; then the theme's back piece, lamp, sofa and plant where there's room
+    const desks = Math.max(1, Math.min(4, Math.floor((w - 3.2) / 2.4)));
+    for (let k = 0; k < desks; k++) {
+      const x = a + 1.9 + k * 2.4;
+      at('desk', x, 1.6); at('computerScreen', x, 1.4, 0, DESK_TOP); at('chairDesk', x, 2.65);
+    }
+    at(T.roles.back, a + 0.8, 0.5);
+    if (w > 7) at(T.roles.sofa, b - 1.8, 1.0);
+    if (w > 9) at(T.roles.lamp, b - 3.4, 0.6);
+    at(T.roles.plant, b - 0.7, FD - 0.9);
+    // light: warm where runs are working, off elsewhere
+    box(w - 1.2, 0.06, 0.3, cx, y + h - 0.05, FD / 2, room.active ? LAMP_ON : LAMP_OFF, false);
+    if (room.active) {
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: warmGlow, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.95 }));
+      disposables.push(s.material);
+      s.scale.set(Math.min(w * 0.9, 14), 3.6, 1); s.position.set(cx, y + 1.2, FD / 2 + 0.6);
+      group.add(s);
+      record.glow = true;
+    }
+    record.furniture += furniture;
+    record.rooms.push({ label: room.label, theme: room.theme, active: room.active, furniture });
+  });
 }
 
-// A windowed facade: panes across the front, warm while runs are active; a free floor's show "To let".
+// A windowed facade: cool neutral glass, quieter than any open floor. While runs are active a soft warm glow shows
+// behind a few panes, never the whole front: a busy background floor must not look important. A free floor's front
+// has a small "To let" card in one window and a dotted outline for the capacity it stands for.
+const WARM_PANES = [2, 6, 10];
 function facade(f, y) {
   const h = FH - SLAB, { c, g, tex } = canvasTex(1024, Math.round(1024 * h / FW));
   disposables.push(tex);
   const W = c.width, H = c.height, cols = 13, pw = W / cols;
-  g.fillStyle = '#2a3446'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#343c4a'; g.fillRect(0, 0, W, H);
   for (let k = 0; k < cols; k++) {
     const x = k * pw + 4, w = pw - 8;
     const glass = g.createLinearGradient(0, 6, 0, H - 6);
-    // a background floor's glow stays low: busy must never look more important than an open floor
-    if (f.mode === 'windowed' && f.active) { glass.addColorStop(0, '#9a6d3e'); glass.addColorStop(1, '#4f3522'); }
-    else { glass.addColorStop(0, '#1d2a42'); glass.addColorStop(1, '#101828'); }
+    glass.addColorStop(0, '#2c333e'); glass.addColorStop(1, '#1b2029');
     g.fillStyle = glass; g.fillRect(x, 6, w, H - 12);
-    g.fillStyle = 'rgba(255,255,255,.07)'; g.fillRect(x + w * 0.15, 6, w * 0.12, H - 12);   // a reflection
-    g.fillStyle = '#2a3446'; g.fillRect(x, H * 0.36, w, 3);                               // transom
+    if (f.mode === 'windowed' && f.active && WARM_PANES.includes(k)) {
+      const glow = g.createRadialGradient(x + w / 2, H * 0.62, 2, x + w / 2, H * 0.62, w * 0.75);
+      glow.addColorStop(0, 'rgba(255,196,130,.42)'); glow.addColorStop(1, 'rgba(255,196,130,0)');
+      g.fillStyle = glow; g.fillRect(x, 6, w, H - 12);
+    }
+    g.fillStyle = 'rgba(255,255,255,.06)'; g.fillRect(x + w * 0.15, 6, w * 0.12, H - 12);   // a reflection
+    g.fillStyle = '#343c4a'; g.fillRect(x, H * 0.36, w, 3);                               // transom
   }
   if (f.mode === 'to-let') {
-    g.setLineDash([10, 8]); g.lineWidth = 3; g.strokeStyle = '#7384a0';
+    g.setLineDash([8, 8]); g.lineWidth = 3; g.strokeStyle = 'rgba(163,178,203,.55)';
     g.strokeRect(3, 3, W - 6, H - 6);
-    const sw = W * 0.2, sh = H * 0.62, sx = W / 2 - sw / 2, sy = (H - sh) / 2;
     g.setLineDash([]);
-    g.fillStyle = '#e6edf8'; g.fillRect(sx, sy, sw, sh);
-    g.fillStyle = '#05080f'; g.font = `700 ${Math.round(sh * 0.5)}px Space Grotesk, system-ui, sans-serif`;
+    const k = 1, x = k * pw + 4, w = pw - 8, sw = w * 0.84, sh = H * 0.34, sx = x + (w - sw) / 2, sy = H * 0.46;
+    g.fillStyle = '#d9dee7'; g.fillRect(sx, sy, sw, sh);
+    g.fillStyle = '#2a3446'; g.font = `700 ${Math.round(sh * 0.42)}px Space Grotesk, system-ui, sans-serif`;
     g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText('TO LET', W / 2, H / 2 + 2);
+    g.fillText('TO LET', sx + sw / 2, sy + sh / 2 + 1, sw - 6);
   }
   const m = new THREE.Mesh(G.plane, new THREE.MeshBasicMaterial({ map: tex, toneMapped: false }));
   disposables.push(m.material);
@@ -467,7 +509,7 @@ function buildLobby(place) {
   box(FW, SLAB, FD, FW / 2, SLAB / 2, FD / 2, mat.slab);
   box(FW, h, 0.2, FW / 2, SLAB + h / 2, 0.1, tinted('#34405a'));
   const at = (model, x, z, rot = 0, lift = 0) => place.add(model, x, z, rot, SLAB + lift);
-  place.add('floor:tile', FW / 2, FD / 2, 0, SLAB - 0.02, new THREE.Vector3(FW, 0.04, FD), '#56627a');
+  place.add('floor:tile', FW / 2, FD / 2, 0, SLAB + FLOOR_LIFT, new THREE.Vector3(FW, 0.04, FD), '#56627a');
   at('desk', 6, 2.4); at('desk', 7.6, 2.4);
   at('computerScreen', 6.8, 2.2, 0, DESK_TOP);
   at('chairDesk', 6.8, 1.2, PI);
@@ -481,7 +523,7 @@ function buildLobby(place) {
 }
 
 // ------------------------------------------------------------------ camera fit: the whole building on one screen
-const TOP_UI = 52, MARGIN = 14, NARROW_LOBBY_H = 150, PLATE_ROOM = 280;
+const TOP_UI = 52, MARGIN = 14, NARROW_LOBBY_H = 150, PLATE_ROOM = 310, NARROW_PLATE_ROOM = 20;   // plates and their lanterns
 function fit() {
   if (!vw || !floors.length) return;
   const top = baseOf(floors.length + 1) + 0.6;
@@ -490,16 +532,16 @@ function fit() {
   camera.up.set(0, 1, 0);
   camera.lookAt(centre);
   camera.updateMatrixWorld();
+  // On a phone the storeys get the width: the name plates sit just inside each floor, the lantern on the spine beside
+  // them, and the storehouse annex runs off the right edge (its sign stays on screen); room below for the lobby's list.
+  const narrow = vw < 760;
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
   const v = new THREE.Vector3();
-  for (const x of [-SPINE, AX1 + 0.4]) for (const y of [-0.5, top]) for (const z of [0, FD + 1.2]) {
+  for (const x of [-SPINE, narrow ? FW + 2.2 : AX1 + 0.4]) for (const y of [-0.5, top]) for (const z of [0, FD + 1.2]) {
     v.set(x, y, z).applyMatrix4(camera.matrixWorldInverse);
     x0 = Math.min(x0, v.x); x1 = Math.max(x1, v.x); y0 = Math.min(y0, v.y); y1 = Math.max(y1, v.y);
   }
-  // room on the left for the name plates, which reach out from the spine; on a phone, room below for the lobby's
-  // list too, which can't fit over the lobby
-  const narrow = vw < 760;
-  const l = MARGIN + (narrow ? 100 : PLATE_ROOM), r = vw - MARGIN, t = TOP_UI + MARGIN, b = vh - MARGIN - (narrow ? NARROW_LOBBY_H : 0);
+  const l = MARGIN + (narrow ? NARROW_PLATE_ROOM : PLATE_ROOM), r = vw - MARGIN, t = TOP_UI + MARGIN, b = vh - MARGIN - (narrow ? NARROW_LOBBY_H : 0);
   zoom = Math.min(MAX_Z, (r - l) / (x1 - x0), (b - t) / (y1 - y0));
   const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, ax = (l + r) / 2;
   const ay = narrow ? b - (my - y0) * zoom : (t + b) / 2;   // on a phone the building stands on the lobby's list
@@ -559,16 +601,22 @@ function renderUi() {
         Object.entries(SWITCH).map(([focus, label]) => `<button data-focus="${focus}" aria-pressed="${f.focus === focus}" title="${focus}">${label}</button>`).join('')}</span>
     </div>`;
   }).join('');
+  const now = performance.now() / 1000;
   const lamps = [...lanterns].map(([place, l]) => {
     const where = place === 'lobby' ? 'the front desk' : place === 'store' ? 'the storehouse' : floors.find(f => f.floor === place)?.name;
     const label = `${where}: ${l.count > 1 ? `${l.count} things need you` : 'something needs you'}${l.level === 'acknowledged' ? ' (acknowledged)' : ''}`;
-    return `<button class="floor-lantern${l.level === 'acknowledged' ? ' ack' : ''}" data-place="${place}" data-state="${l.level}"
+    const lantern = `<button class="floor-lantern${l.level === 'acknowledged' ? ' ack' : ''}" data-place="${place}" data-state="${l.level}"
       data-count="${l.count}" data-kind="${l.kind}" aria-label="${esc(label)}" title="${esc(label)}"><span class="lg">${GLYPH}</span><b>${l.count > 1 ? l.count : ''}</b></button>`;
+    if (typeof place !== 'number') return lantern;
+    // a floor's hangs from a bracket on the spine beside its name plate; the one swing picks up where it was on a redraw
+    const age = l.swingFrom == null ? SWING_S : now - l.swingFrom;
+    const swing = age < SWING_S ? ` data-swing style="animation-delay:-${age.toFixed(2)}s"` : '';
+    return `<div class="lantern-hang" data-floor="${place}"><span class="bob"${swing}>${lantern}</span></div>`;
   }).join('');
   const L = lobby;
   const visitor = v => `<li class="visitor" data-host="${esc(v.host)}" data-label="${esc(v.label ?? '')}" title="${esc(`${v.host}:${v.label ?? 'no label'} · ${v.count}`)}">
       <i style="background:${hostLook(v.host).color}"></i><span>${esc(v.label === null ? 'no label' : L.labels[v.label] || v.label)}</span>${v.active ? '<em class="busy" aria-label="active"></em>' : ''}
-      ${v.label === null ? '' : L.full ? '<button data-move-in data-full title="Every floor is taken: clear one to move in">No vacancies</button>' : '<button data-move-in>Move in</button>'}
+      ${v.label === null ? '' : `<button data-move-in${L.full ? ' data-full title="Every floor is taken: clear one to move in"' : ''}>Move in</button>`}
       <small class="err"></small></li>`;
   // the shutter handle: a pull-down bar at the floor's top corner, apart from the focus switch on the plate
   const handles = floors.filter(f => f.projectId).map(f => `<button class="shutter-handle" data-shutter="${esc(f.projectId)}" data-floor="${f.floor}"
@@ -713,15 +761,20 @@ function floorRect(base, height) {
 }
 const _w = new THREE.Vector3();
 function placeUi() {
+  const narrow = vw < 760;
   for (const el of ui.querySelectorAll('.plate')) {   // right-aligned to the spine's front edge, reaching out to the left
     const r = floorRect(baseOf(Number(el.dataset.floor)), FH);
-    const p = screenOf(-0.15, baseOf(Number(el.dataset.floor)) + FH / 2, FD);
-    el.style.transform = `translate(${Math.round(p.x)}px,${Math.round(p.y)}px) translate(-100%,-50%)`;
+    const p = screenOf(narrow ? 0.2 : -0.15, baseOf(Number(el.dataset.floor)) + FH / 2, FD);
+    el.style.transform = `translate(${Math.round(p.x)}px,${Math.round(p.y)}px) translate(${narrow ? '0' : '-100%'},-50%)`;
     el.style.setProperty('--h', `${Math.round(r.bottom - r.top)}px`);
   }
+  for (const el of ui.querySelectorAll('.lantern-hang')) {   // its bracket meets the plate's left edge
+    const plate = ui.querySelector(`.plate[data-floor="${el.dataset.floor}"]`).getBoundingClientRect();
+    const x = Math.max(2, plate.left - el.offsetWidth), y = (plate.top + plate.bottom) / 2 - LANTERN_DROP;
+    el.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px)`;
+  }
   for (const el of ui.querySelectorAll('.floor-lantern')) {
-    const place = el.dataset.place;
-    const o = lanternObjs.get(place === 'lobby' || place === 'store' ? place : Number(place));
+    const o = lanternObjs.get(el.dataset.place);   // the lobby's and the storehouse's hang in the scene
     if (!o) continue;
     o.lamp.getWorldPosition(_w);
     const p = screenOf(_w.x, _w.y, _w.z);
@@ -739,18 +792,18 @@ function placeUi() {
   }
   const lob = ui.querySelector('.lobby');
   if (lob) {
-    const r = floorRect(0, LH), left = screenOf(9.4, 0, FD).x;
     if (vw < 760) {   // a phone: across the screen below the building
       Object.assign(lob.style, { left: `${MARGIN}px`, top: `${Math.round(vh - MARGIN - NARROW_LOBBY_H + 8)}px`,
-        width: `${vw - 2 * MARGIN}px`, height: `${NARROW_LOBBY_H - 8}px` });
+        width: `${vw - 2 * MARGIN}px`, maxHeight: `${NARROW_LOBBY_H - 8}px` });
       return;
     }
-    // over the lobby, clear of the front desk on its left
-    const width = r.right - left - 10;
-    Object.assign(lob.style, { left: `${Math.round(left)}px`, top: `${Math.round(r.top + 6)}px`,
-      width: `${Math.round(width)}px`, height: `${Math.round(r.bottom - r.top - 12)}px` });
+    // beside the building at the lobby's level, under the name plates: it covers no floor
+    const r = floorRect(0, LH), spine = screenOf(-SPINE, 0, FD).x;
+    Object.assign(lob.style, { left: `${MARGIN}px`, top: `${Math.round(r.top)}px`, width: `${Math.round(spine - MARGIN - 12)}px`,
+      maxHeight: `${Math.round(vh - r.top - MARGIN)}px` });
   }
 }
+const LANTERN_DROP = 27;   // from a lantern's bracket down to its diamond's middle (deck.css .lantern-hang)
 
 // ------------------------------------------------------------------ the lift panel: the way around once inside
 // One button per floor, top floor first, then L (the whole building) and S (the storehouse). The current floor, or S

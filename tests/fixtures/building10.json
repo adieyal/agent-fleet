@@ -30,6 +30,10 @@
     {
      "host": "home",
      "label": "agent-fleet"
+    },
+    {
+     "host": "home",
+     "label": "agent-fleet-docs"
     }
    ]
   },
@@ -338,6 +342,22 @@
      "status": "running",
      "created_at": 1790399400,
      "updated_at": 1790399980,
+     "steps": [],
+     "todos": [],
+     "events": [],
+     "documents": []
+    },
+    {
+     "id": "d0c5a1",
+     "host": "home",
+     "project": "agent-fleet-docs",
+     "description": "Tidy the docs",
+     "agent": "claude",
+     "model": "claude-sonnet-5",
+     "cwd": "/src/agent-fleet/docs",
+     "status": "done",
+     "created_at": 1790395000,
+     "updated_at": 1790396000,
      "steps": [],
      "todos": [],
      "events": [],

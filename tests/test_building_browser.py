@@ -162,11 +162,11 @@ def test_ten_floors_and_the_lobby_fit_one_desktop_screen(page: Page, ten_floors_
 
 
 def floor_pixels(page: Page, floor: dict[str, Any]) -> tuple[float, float, float]:
-    """Mean red, green and blue across the middle of a floor's front, with the plates and lobby hidden."""
+    """Mean red, green and blue across a band through a floor's front, with the plates and lobby hidden."""
     screen = floor["screen"]
     height = (screen["bottom"] - screen["top"]) * 0.3
-    box = {"x": screen["left"] + (screen["right"] - screen["left"]) * 0.35, "y": (screen["top"] + screen["bottom"]) / 2 - height / 2,
-           "width": (screen["right"] - screen["left"]) * 0.3, "height": height}
+    box = {"x": screen["left"] + (screen["right"] - screen["left"]) * 0.2, "y": (screen["top"] + screen["bottom"]) / 2 - height / 2,
+           "width": (screen["right"] - screen["left"]) * 0.7, "height": height}
     style = page.add_style_tag(content="#buildingUi{visibility:hidden!important}")
     settle(page)
     image = Image.open(io.BytesIO(page.screenshot(clip=box))).convert("RGB")
@@ -192,17 +192,36 @@ def test_priority_floors_are_open_and_background_floors_windowed(page: Page, ten
         assert built["glow"] == floor["active"]
         expect(page.locator(f'.plate[data-floor="{floor["floor"]}"]')).to_have_attribute("data-mode", built["mode"])
 
-    # warm light shows where runs are active, through the windows too
+    # warm light shows where runs are active, softly through the windows too; a busy background floor stays quieter
+    # than a busy open one, so busy never looks important
     def warmth(floor: dict[str, Any]) -> float:
         red, _, blue = floor_pixels(page, floor)
         return red - blue
+
+    def brightness(floor: dict[str, Any]) -> float:
+        return sum(floor_pixels(page, floor)) / 3
     windowed = [floor for floor in floors if floor["mode"] == "windowed"]
     busy = next(floor for floor in windowed if floor["active"])
     quiet = next(floor for floor in windowed if not floor["active"])
-    assert warmth(busy) > warmth(quiet) + 20
+    assert warmth(busy) > warmth(quiet) + 4
+    busy_open = [floor for floor in floors if floor["mode"] == "open" and floor["active"]]
+    assert brightness(busy) + 4 < min(brightness(floor) for floor in busy_open)
     # and nothing about the building changes when a floor's work is active or not: every storey is the same size
     heights = {round(floor["screen"]["bottom"] - floor["screen"]["top"]) for floor in floors}
     assert len(heights) == 1
+
+
+def test_open_floors_show_their_projects_rooms(page: Page, ten_floors_url: str) -> None:
+    floors = {floor["floor"]: floor for floor in open_building(page, ten_floors_url)}
+    # Agent Fleet (floor 3) has two rooms on the deck: agent-fleet, working, and agent-fleet-docs, idle
+    rooms = floors[3]["built"]["rooms"]
+    assert [(room["label"], room["active"]) for room in rooms] == [("agent-fleet", True), ("agent-fleet-docs", False)]
+    assert all(room["furniture"] > 0 for room in rooms)
+    open_floors = [floor for floor in floors.values() if floor["mode"] == "open"]
+    for floor in open_floors:   # warm light only where runs are working
+        assert floor["built"]["glow"] == any(room["active"] for room in floor["built"]["rooms"])
+    # floors differ by what is in them: the rooms take their themes from the deck
+    assert len({room["theme"] for floor in open_floors for room in floor["built"]["rooms"]}) > 1
 
 
 def test_free_floors_are_to_let(page: Page, restoke_url: str) -> None:
@@ -255,9 +274,15 @@ def test_work_without_a_floor_waits_in_the_lobby(page: Page, ten_floors_url: str
     assert {(row.get_attribute("data-host"), row.get_attribute("data-label")) for row in visitors.all()} == {
         ("home", "scratch"), ("worker", "notes")}
     expect(page.locator(".lobby .novacancy")).to_be_visible()
+    expect(page.locator("#building").get_by_text("No vacancies")).to_have_count(1)   # one sign in the lobby is enough
     expect(visitors.locator("button")).to_have_count(2)
     for button in visitors.locator("button").all():
-        expect(button).to_have_text("No vacancies")   # it offers a floor to clear, never more floors
+        expect(button).to_have_text("Move in")
+    # the lobby's list sits beside the building and covers no floor
+    card = page.locator(".lobby").bounding_box()
+    for floor in page.evaluate("fleetBuilding.floors()"):
+        screen = floor["screen"]
+        assert card["x"] + card["width"] <= screen["left"] or card["y"] >= screen["bottom"]
     expect(page.locator('.hostkey .host[data-host="gpu-box"]')).to_have_class("host off")
     expect(page.locator('.hostkey .host[data-host="home"]')).to_have_class("host")
 
@@ -276,6 +301,12 @@ def test_attention_rolls_up_to_one_lantern_per_floor(moving_page: Page, restoke_
     expect(restoke.locator("b")).to_have_text("2")
     expect(page.locator('.floor-lantern[data-place="2"] b')).to_have_text("")   # one item: no count
     expect(page.locator('.floor-lantern[data-place="lobby"]')).to_have_count(0)
+    # each hangs on a bracket from the spine, right beside its floor's name plate (the swing turns only the diamond)
+    for floor in (1, 2):
+        hang = page.locator(f'.lantern-hang[data-floor="{floor}"]').bounding_box()
+        plate = page.locator(f'.plate[data-floor="{floor}"]').bounding_box()
+        assert abs(hang["x"] + hang["width"] - plate["x"]) <= 2
+        assert plate["y"] <= hang["y"] + 27 <= plate["y"] + plate["height"]
 
     items = [item for item in state(url)["attention"] if item["project"] == "restoke"]
     for item in items:
