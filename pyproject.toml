@@ -7,8 +7,8 @@ license = "Apache-2.0"
 dependencies = ["rich>=13", "markdown-it-py>=3", "mdit-py-plugins>=0.4"]
 
 [dependency-groups]
-# playwright is pinned to the release whose Chromium (build 1117) is cached locally
-dev = ["pytest>=8", "pytest-playwright>=0.5", "playwright==1.44.0"]
+# Browser tests need Chromium for the locked playwright: uv run playwright install chromium
+dev = ["pytest>=8", "pytest-playwright>=0.5", "playwright>=1.44"]
 
 [project.scripts]
 fleet = "fleet.cli:main"
