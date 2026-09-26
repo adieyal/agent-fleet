@@ -13,7 +13,7 @@ import { stepMotion, stepParticles, updateEnt, updateRoom } from './motion.js';
 import { applyState, stream } from './state.js';
 import { positionSwitches, stepFocus } from './focus.js';
 import { positionLanterns, stepLanterns } from './attention.js';
-import { resize } from './camera.js';
+import { fit, resize } from './camera.js';
 import { miniBot, panelScrollUntil, renderLive } from './panel.js';
 import './library.js';
 import { reader } from './reader.js';
@@ -150,6 +150,12 @@ loadAssets().then(() => {
       if (!s) return;
       if (zoom) cam.z = zoom;
       cam.c.copy(centreFor(s.mesh.getWorldPosition(_w), vw / 2, vh / 2, cam.z)); cam.userMoved = true; cam.tween = null;
+      applyCamera(); camera.updateMatrixWorld();
+    },
+    lookAtRoom: (name, zoom) => {   // bring a room's middle to the middle of the view; no zoom fits the whole deck again
+      const r = rooms.find(r => r.name === name);
+      if (!zoom) fit();
+      else if (r) { cam.z = zoom; cam.c.copy(centreFor(_w.set(r.ox + RW / 2, 0, r.oy + RD / 2), vw / 2, vh / 2, zoom)); cam.userMoved = true; cam.tween = null; }
       applyCamera(); camera.updateMatrixWorld();
     },
   });

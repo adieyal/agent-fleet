@@ -176,6 +176,31 @@ def test_library_lists_and_opens_documents(deck: Deck) -> None:
     assert deck.errors == []
 
 
+def test_bubbles_appear_only_in_a_room_you_zoom_into(deck: Deck) -> None:
+    page = deck.page
+    agents = page.evaluate("fleetDeck.agents()")
+    room = next(agent["room"] for agent in agents if agent["key"].endswith(":a1c3e9"))
+    none_speak = "[...document.querySelectorAll('#tags .tag')].every(tag => getComputedStyle(tag.firstChild).display === 'none')"
+    page.evaluate("fleetDeck.lookAtRoom(null)")                          # the whole deck: no bubbles
+    page.wait_for_function(none_speak)
+    on_screen = rooms_on_screen(page, room)                              # zooms into the room
+    far_away = [agent["key"].split(":")[1] for agent in agents if agent["room"] not in on_screen]
+    expect(page.locator("#tags .tag", has_text="a1c3e9").locator(".bubble")).to_be_visible()
+    for job in far_away:
+        expect(page.locator("#tags .tag", has_text=job).locator(".bubble")).to_be_hidden()
+    page.evaluate("fleetDeck.lookAtRoom(null)")
+    page.wait_for_function(none_speak)
+    assert deck.errors == []
+
+
+def rooms_on_screen(page: Page, zoomed: str) -> set[str]:
+    """Rooms whose middle would be on screen with the view zoomed into another room."""
+    page.evaluate(f"fleetDeck.lookAtRoom({json.dumps(zoomed)}, 60)")
+    size = page.viewport_size
+    return {name for name, room in rooms_by_name(page).items()
+            if 0 < room["screen"]["x"] < size["width"] and 0 < room["screen"]["y"] < size["height"]}
+
+
 def rooms_by_name(page: Page) -> dict[str, dict[str, Any]]:
     return {room["name"]: room for room in page.evaluate("fleetDeck.rooms()")}
 

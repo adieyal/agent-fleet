@@ -13,7 +13,10 @@ export const BOT_H = 2.2;                  // android height in tiles (a Kenney 
 export const BK = BOT_H / 1.7;             // accessories below were sized on a 1.7-tile android
 export const WALL_H = 1.7;                 // back wall height
 export const DESK_TOP = 0.77;              // desk surface height once scaled
-export const SMALL_Z = 16, TINY_Z = 9;     // pixels per tile below which tags shrink / hide
+export const TINY_Z = 9;                   // pixels per tile below which tags hide
+// share of the view's width a room must span before its androids speak; a phone's overview already shows each room
+// across the whole width, so there it takes zooming in past that
+export const ROOM_FILL = 0.45, PHONE_ROOM_FILL = 1.4;
 export const PI = Math.PI, HALF = Math.PI / 2;
 
 export const canvas = document.getElementById('world');
