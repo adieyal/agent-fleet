@@ -1,0 +1,71 @@
+{
+  "scene": "robot",
+  "glb": "robot.glb",
+  "lightmap": null,
+  "warm_groups": {},
+  "dynamic": [
+    "robot_eye_+1",
+    "robot_eye_-1",
+    "robot_face"
+  ],
+  "anchors": [],
+  "actions": [
+    "Dance",
+    "Death",
+    "Hold",
+    "Idle",
+    "Jump",
+    "No",
+    "Punch",
+    "Rest",
+    "Running",
+    "Sitting",
+    "Standing",
+    "ThumbsUp",
+    "Type",
+    "WalkJump",
+    "Walking",
+    "Wave",
+    "Write",
+    "Yes"
+  ],
+  "seat_height": null,
+  "runtime": {
+    "seat_point": [
+      0.0007,
+      0.1735,
+      -0.4119
+    ],
+    "reach_error_units": {
+      "Rest.L": 0.05,
+      "Rest.R": 0.08,
+      "Type.L": 0.02,
+      "Type.R": 0.07,
+      "Write.L": 0.03,
+      "Write.R": 0.06,
+      "Hold.L": 0.02,
+      "Hold.R": 0.05
+    }
+  },
+  "camera": null,
+  "environment": null,
+  "built_with": {
+    "blender": "4.2.23 LTS",
+    "bake_device": null,
+    "samples": null
+  },
+  "files": {
+    "robot.glb": {
+      "bytes": 1230956,
+      "sha256": "0071ab2f860965c2263e78e985fc5f1971cd42a359cc881d4473849e3dc6b2a4"
+    }
+  },
+  "glb_summary": {
+    "nodes": 79,
+    "meshes": 19,
+    "images": 0,
+    "extensions": [
+      "KHR_materials_clearcoat"
+    ]
+  }
+}

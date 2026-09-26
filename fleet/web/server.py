@@ -32,12 +32,13 @@ WEB_ROOT = Path(__file__).parent.resolve()
 INDEX_PATH = WEB_ROOT / "index.html"
 APP_DIRECTORIES = ("css", "js")  # the deck's own code, read at startup together with the page
 STATIC_PREFIXES = ("/vendor/", "/assets/", "/prototype/")
-PROTOTYPES = {"/prototype/bakeoff": "/prototype/bakeoff.html"}  # art prototypes; not linked from the deck
+PROTOTYPES = {"/prototype/bakeoff": "/prototype/bakeoff.html",  # art prototypes; not linked from the deck
+              "/prototype/bench": "/prototype/bench.html"}
 REPO_ROOT = WEB_ROOT.parent.parent
 # Source-checkout folders the art prototypes read; absent from an installed package, so they 404 there.
 CHECKOUT_FOLDERS = {"/art/bakeoff/": REPO_ROOT / "art" / "bakeoff", "/concept/": REPO_ROOT / "docs" / "images" / "concept"}
 STATIC_TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
-                ".html": "text/html; charset=utf-8",
+                ".html": "text/html; charset=utf-8", ".hdr": "image/vnd.radiance",
                 ".glb": "model/gltf-binary", ".gltf": "model/gltf+json",
                 ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".json": "application/json",
                 ".md": "text/markdown; charset=utf-8", ".txt": "text/plain; charset=utf-8"}
