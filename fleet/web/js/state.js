@@ -9,9 +9,9 @@ import { buildDocs, noteDocs } from './docs3d.js';
 import { createEnt, dropEnt, updateTag } from './agents.js';
 import { assignTargets } from './motion.js';
 import {
-  closePanel, collectEvents, openReader, renderFeed, renderLegend, renderLive, renderPanel, renderStats,
-  updateHint,
-} from './main.js';
+  closePanel, collectEvents, renderFeed, renderLegend, renderLive, renderPanel, renderStats, updateHint,
+} from './panel.js';
+import { openReader } from './reader.js';
 
 // Dismissed agents are hidden in this browser only (the deck stays view-only). Each is remembered with
 // the updated_at it had when dismissed, so any new activity brings it back.

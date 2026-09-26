@@ -10,7 +10,7 @@ import {
   G, KIT, M, Placer, SUN_DIR, cam, canvasTex, dashTexture, deckGroup, disposables, drawSign, sun,
 } from './scene.js';
 import { setDocSig } from './docs3d.js';
-import { deckBounds, fit } from './main.js';
+import { deckBounds, fit } from './camera.js';
 
 // ------------------------------------------------------------------ the deck: plates, rooms, furniture
 export let placer = null;

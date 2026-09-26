@@ -1,0 +1,209 @@
+// Viewport, camera fit/zoom/focus, and pointer input: drag to pan, pinch or wheel to zoom, tap to select.
+
+import * as THREE from 'three';
+import { BOT_H, RD, RW, WALL_H, canvas, dpr, setDpr, setVh, setVw, vh, vw } from './env.js';
+import { clamp, esc, seeded } from './util.js';
+import { RIGHT, ROBOT, UP, _p, cam, camera, centreFor, renderer } from './scene.js';
+import { ents, selectedKey } from './model.js';
+import { layoutNames, layoutRooms, plates, roomByName, rooms } from './rooms.js';
+import { DOC_KIND, docKey, docMeshes, docMeta, docSlots, hoverDoc, kindOf, setHoverDoc } from './docs3d.js';
+import { closePanel, select } from './panel.js';
+import { closeLibrary, libraryPane } from './library.js';
+import { closeReader, openReader, reader } from './reader.js';
+
+// ------------------------------------------------------------------ camera: fit, zoom, focus
+export function deckBounds() {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const r of rooms) { x0 = Math.min(x0, r.ox); y0 = Math.min(y0, r.oy); x1 = Math.max(x1, r.ox + RW); y1 = Math.max(y1, r.oy + RD); }
+  return { x0: x0 - 1.8, y0: y0 - 1.8, x1: x1 + 1.8, y1: y1 + 1.8 };
+}
+// extent of the deck along the screen axes, in tiles
+function screenExtent() {
+  let minR = Infinity, maxR = -Infinity, minU = Infinity, maxU = -Infinity;
+  for (const b of plates) for (const x of [b.x0, b.x1]) for (const z of [b.y0, b.y1]) for (const y of [-0.55, WALL_H + 1.4]) {
+    _p.set(x, y, z);
+    const a = _p.dot(RIGHT), u = _p.dot(UP);
+    minR = Math.min(minR, a); maxR = Math.max(maxR, a); minU = Math.min(minU, u); maxU = Math.max(maxU, u);
+  }
+  return { minR, maxR, minU, maxU };
+}
+export function fit(silent) {
+  if (!rooms.length || !vw) return;
+  const b = screenExtent();
+  const mobile = vw < 760;
+  const legendOpen = !document.getElementById('legend').classList.contains('closed');
+  const left = (!mobile && vw > 1100 && legendOpen) ? 270 : 8;
+  const top = mobile ? 100 : 60, bottom = mobile ? 70 : 24, right = 8;
+  const aw = vw - left - right, ah = vh - top - bottom;
+  const W = b.maxR - b.minR, H = b.maxU - b.minU;
+  let z, cy;
+  if (mobile) {
+    // fit the column's width and let it scroll (drag) vertically
+    z = clamp(aw / W, 6, 60);
+    cy = H * z < ah ? top + ah / 2 : top + H * z / 2;
+  } else {
+    z = clamp(Math.min(aw / W, ah / H), 6, 60);
+    cy = top + ah / 2;
+  }
+  const cx = left + aw / 2;
+  cam.z = z;
+  // the world point at the middle of the extent goes to (cx, cy)
+  const mid = new THREE.Vector3().addScaledVector(RIGHT, (b.minR + b.maxR) / 2).addScaledVector(UP, (b.minU + b.maxU) / 2);
+  cam.c.copy(centreFor(mid, cx, cy, z));
+  cam.tween = null;
+  if (!silent) cam.userMoved = false;
+}
+function zoomAt(sx, sy, f) {
+  const nz = clamp(cam.z * f, 5, 140);
+  const P = new THREE.Vector3().copy(cam.c).addScaledVector(RIGHT, (sx - vw / 2) / cam.z).addScaledVector(UP, -(sy - vh / 2) / cam.z);
+  cam.c.copy(centreFor(P, sx, sy, nz));
+  cam.z = nz;
+  cam.userMoved = true; cam.tween = null;
+}
+function panBy(dx, dy) {
+  cam.c.addScaledVector(RIGHT, -dx / cam.z).addScaledVector(UP, dy / cam.z);
+  cam.userMoved = true; cam.tween = null;
+}
+export function focusOn(e) {
+  if (!e || !e.bot) return;
+  const mobile = vw < 760;
+  // centre the android in whatever is left visible beside the side panel / above the bottom sheet
+  const cx = mobile ? vw / 2 : (vw - 420) / 2, cy = mobile ? 52 + (vh * 0.38 - 52) * 0.5 + 40 : vh / 2;
+  const want = mobile ? 30 : 44;
+  if (cam.z < want) zoomAt(cx, cy, want / cam.z);
+  const P = e.bot.root.position.clone(); P.y += BOT_H * 0.7;
+  cam.tween = centreFor(P, cx, cy, cam.z);
+  cam.userMoved = true;
+}
+
+const stars = document.getElementById('stars');
+function drawStars() {
+  stars.width = Math.round(vw * dpr); stars.height = Math.round(vh * dpr);
+  const g = stars.getContext('2d'), rand = seeded(7);
+  g.scale(dpr, dpr);
+  for (let i = 0; i < 170; i++) {
+    g.fillStyle = `rgba(200,220,255,${0.25 + rand() * 0.4})`;
+    const s = rand() * 1.2 + 0.2;
+    g.fillRect(rand() * vw, rand() * vh, s, s);
+  }
+}
+
+export function resize() {
+  setDpr(Math.min(window.devicePixelRatio || 1, 2));
+  setVw(window.innerWidth); setVh(window.innerHeight);
+  renderer.setPixelRatio(dpr);
+  renderer.setSize(vw, vh, false);
+  drawStars();
+  if (!ROBOT) return;
+  layoutRooms(layoutNames);
+  if (!cam.userMoved) fit(true);
+}
+window.addEventListener('resize', resize);
+
+// ------------------------------------------------------------------ pointer: drag to pan, pinch/wheel to zoom, tap to select
+const pointers = new Map();
+let drag = null, pinch = null;
+canvas.addEventListener('pointerdown', ev => {
+  try { canvas.setPointerCapture(ev.pointerId); } catch (err) { /* synthetic pointer (test hook) */ }
+  pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+  if (pointers.size === 1) drag = { x: ev.clientX, y: ev.clientY, moved: false };
+  else if (pointers.size === 2) { const [a, b] = [...pointers.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 }; drag = null; }
+});
+canvas.addEventListener('pointermove', ev => {
+  if (pointers.has(ev.pointerId)) pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+  if (pinch && pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    const d = Math.hypot(a.x - b.x, a.y - b.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    panBy(mx - pinch.mx, my - pinch.my);
+    if (pinch.d > 0) zoomAt(mx, my, d / pinch.d);
+    pinch = { d, mx, my };
+    return;
+  }
+  if (drag) {
+    const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+    if (!drag.moved && Math.hypot(dx, dy) > 4) { drag.moved = true; canvas.classList.add('dragging'); }
+    if (drag.moved) { panBy(dx, dy); drag.x = ev.clientX; drag.y = ev.clientY; hideDocTip(); }
+    return;
+  }
+  const hit = pick(ev.clientX, ev.clientY);
+  canvas.classList.toggle('hot', !!hit);
+  if (hit && hit.doc && ev.pointerType !== 'touch') showDocTip(hit, ev.clientX, ev.clientY); else hideDocTip();
+});
+function endPointer(ev) {
+  pointers.delete(ev.pointerId);
+  if (pointers.size < 2) pinch = null;
+  if (drag && !drag.moved && ev.type === 'pointerup') {
+    const hit = pick(ev.clientX, ev.clientY);
+    if (hit && hit.doc) openReader(hit.e, hit.doc);
+    else if (hit) select(hit.e.key);
+    else if (selectedKey) closePanel();
+  }
+  if (pointers.size === 0) { drag = null; canvas.classList.remove('dragging'); }
+}
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
+canvas.addEventListener('pointerleave', hideDocTip);
+
+const docTip = document.getElementById('docTip');
+function showDocTip(hit, px, py) {
+  const { e, doc } = hit, key = docKey(e, doc);
+  if (!hoverDoc || hoverDoc.key !== key) {
+    setHoverDoc({ key });
+    const K = DOC_KIND[kindOf(doc)];
+    docTip.style.setProperty('--hc', e.look.color);
+    docTip.innerHTML = `<div class="th"><span class="kb">${K.label}</span><b>${esc(doc.name)}</b></div>
+      <div class="tm">${esc(docMeta(doc))}</div><div class="tc">${esc(e.host)}:${esc(e.job.id)} · click to read</div>`;
+    docTip.hidden = false;
+  }
+  const w = docTip.offsetWidth, h = docTip.offsetHeight;
+  const x = px + 16 + w > vw - 8 ? px - 16 - w : px + 16, y = py + 20 + h < vh - 8 ? py + 20 : Math.max(60, py - h - 60);
+  docTip.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px)`;
+}
+export function hideDocTip() { setHoverDoc(null); docTip.hidden = true; }
+canvas.addEventListener('wheel', ev => { ev.preventDefault(); zoomAt(ev.clientX, ev.clientY, Math.exp(-ev.deltaY * 0.0015)); }, { passive: false });
+
+const raycaster = new THREE.Raycaster();
+const _ndc = new THREE.Vector2();
+const proxies = [];
+// the nearest android (an invisible capsule around each) or document sheet under the pointer
+function pick(px, py) {
+  proxies.length = 0;
+  for (const e of ents.values()) if (roomByName.has(e.room)) proxies.push(e.proxy);
+  for (const kind in docMeshes) proxies.push(docMeshes[kind]);
+  _ndc.set(px / vw * 2 - 1, -(py / vh) * 2 + 1);
+  raycaster.setFromCamera(_ndc, camera);
+  const hit = raycaster.intersectObjects(proxies, false)[0];
+  if (!hit) return null;
+  if (hit.object.isInstancedMesh) {
+    const slot = docSlots[hit.object.userData.kind][hit.instanceId];
+    return slot ? { e: slot.e, doc: slot.doc } : null;
+  }
+  return { e: hit.object.userData.ent };
+}
+
+document.getElementById('zoom').addEventListener('click', ev => {
+  const z = ev.target.closest('button')?.dataset.z;
+  if (z === 'in') zoomAt(vw / 2, vh / 2, 1.25);
+  else if (z === 'out') zoomAt(vw / 2, vh / 2, 0.8);
+  else if (z === 'fit') fit(false);
+});
+document.addEventListener('keydown', ev => {
+  if (ev.target.closest && ev.target.closest('input,textarea')) return;
+  if (!reader.hidden) { if (ev.key === 'Escape') closeReader(); return; }
+  if (ev.key === 'Escape') { if (!libraryPane.hidden) closeLibrary(); else closePanel(); }
+  else if (ev.key === '+' || ev.key === '=') zoomAt(vw / 2, vh / 2, 1.2);
+  else if (ev.key === '-' || ev.key === '_') zoomAt(vw / 2, vh / 2, 1 / 1.2);
+  else if (ev.key === 'f' || ev.key === 'F') fit(false);
+});
+for (const b of document.querySelectorAll('[data-toggle]')) {
+  b.addEventListener('click', () => {
+    const card = document.getElementById(b.dataset.toggle);
+    card.classList.toggle('closed');
+    try { localStorage.setItem('fleet.deck.' + b.dataset.toggle, card.classList.contains('closed') ? 'closed' : 'open'); } catch (err) { /* storage unavailable */ }
+  });
+}
+for (const id of ['legend', 'feed']) {
+  let saved = null;
+  try { saved = localStorage.getItem('fleet.deck.' + id); } catch (err) { /* storage unavailable */ }
+  if (saved === 'closed' || (saved === null && window.innerWidth < 760)) document.getElementById(id).classList.add('closed');
+}

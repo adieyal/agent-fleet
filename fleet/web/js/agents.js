@@ -9,7 +9,7 @@ import { isSession, mumble, shortId } from './activity.js';
 import { G, M, ROBOT, _w, botGroup, cam, toScreen } from './scene.js';
 import { ents, everLoaded, selectedKey } from './model.js';
 import { roomByName } from './rooms.js';
-import { select } from './main.js';
+import { select } from './panel.js';
 
 // ------------------------------------------------------------------ the android
 // One RobotExpressive per job: Main material in the host colour, a host accessory, and the agent's face light
