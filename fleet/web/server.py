@@ -20,12 +20,15 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from fleet import transport
 from fleet.transport import FleetError, Host
 from fleet.web.documents import fetch_document
+from fleet.web.fixture import FixtureLibrary, FixtureState
 from fleet.web.library import ProjectLibrary
 
 WEB_ROOT = Path(__file__).parent.resolve()
 INDEX_PATH = WEB_ROOT / "index.html"
+APP_DIRECTORIES = ("css", "js")  # the deck's own code, read at startup together with the page
 STATIC_PREFIXES = ("/vendor/", "/assets/")
-STATIC_TYPES = {".js": "text/javascript; charset=utf-8", ".glb": "model/gltf-binary", ".gltf": "model/gltf+json",
+STATIC_TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
+                ".glb": "model/gltf-binary", ".gltf": "model/gltf+json",
                 ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".json": "application/json",
                 ".md": "text/markdown; charset=utf-8", ".txt": "text/plain; charset=utf-8"}
 EVENTS_PER_JOB = "15"
@@ -70,6 +73,13 @@ class FleetState:
         with self.changed:
             self.changed.wait_for(lambda: self.version != seen_version, timeout=timeout)
             return self.version
+
+    def host_names(self) -> list[str]:
+        return [host.name for host in self.hosts]
+
+    def read_document(self, host_name: str, job_id: str, document_id: str) -> dict[str, Any]:
+        host = next(host for host in self.hosts if host.name == host_name)
+        return fetch_document(host, job_id, document_id)
 
 
 def follow_host(state: FleetState, host: Host) -> None:
@@ -134,9 +144,13 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
         state.update(host.name, lambda entry: entry.update(ok=False, error=message.get("error")))
 
 
-def make_handler(state: FleetState, library: ProjectLibrary | None = None) -> type[BaseHTTPRequestHandler]:
-    # Read once so a running server keeps serving the page that matches its API.
+def make_handler(state: FleetState | FixtureState,
+                 library: ProjectLibrary | FixtureLibrary | None = None) -> type[BaseHTTPRequestHandler]:
+    # Read once so a running server keeps serving the page and code that match its API.
     index_page = INDEX_PATH.read_bytes()
+    app_files = {"/" + path.relative_to(WEB_ROOT).as_posix(): path.read_bytes()
+                 for directory in APP_DIRECTORIES for path in sorted((WEB_ROOT / directory).rglob("*"))
+                 if path.is_file()}
     library = library or ProjectLibrary({})
 
     class Handler(BaseHTTPRequestHandler):
@@ -159,6 +173,8 @@ def make_handler(state: FleetState, library: ProjectLibrary | None = None) -> ty
                 self.respond(200, "application/json", json.dumps(state.document()).encode())
             elif path in ("/", "/index.html"):
                 self.respond(200, "text/html; charset=utf-8", index_page)
+            elif path in app_files:
+                self.respond(200, STATIC_TYPES.get(Path(path).suffix, "application/octet-stream"), app_files[path])
             elif path.startswith(STATIC_PREFIXES):
                 self.static_file(path)
             else:
@@ -177,12 +193,11 @@ def make_handler(state: FleetState, library: ProjectLibrary | None = None) -> ty
         def document(self) -> None:
             """GET /api/doc?host=&job=&id= — one rendered document; ids come from a job's `documents` list."""
             query = {key: values[0] for key, values in parse_qs(urlsplit(self.path).query).items()}
-            host = next((candidate for candidate in state.hosts if candidate.name == query.get("host")), None)
-            if host is None or not query.get("job") or not query.get("id"):
+            if query.get("host") not in state.host_names() or not query.get("job") or not query.get("id"):
                 self.respond(400, "application/json", b'{"error": "host, job and id are required"}')
                 return
             try:
-                body = fetch_document(host, query["job"], query["id"])
+                body = state.read_document(query["host"], query["job"], query["id"])
             except FleetError as error:
                 self.respond(404, "application/json", json.dumps({"error": str(error)}).encode())
                 return
@@ -240,7 +255,17 @@ def serve(hosts: list[Host], *, port: int, bind: str, open_browser: bool = False
     state = FleetState(hosts, project_labels)
     for host in hosts:
         threading.Thread(target=follow_host, args=(state, host), daemon=True).start()
-    server = ThreadingHTTPServer((bind, port), make_handler(state, ProjectLibrary(libraries or {})))
+    run_server(make_handler(state, ProjectLibrary(libraries or {})), port=port, bind=bind, open_browser=open_browser)
+
+
+def serve_fixture(path: str, *, port: int, bind: str, open_browser: bool = False) -> None:
+    """Serve a recorded fleet from JSON (see fleet.web.fixture); no hosts are contacted."""
+    state = FixtureState.load(path)
+    run_server(make_handler(state, FixtureLibrary(state.fixture)), port=port, bind=bind, open_browser=open_browser)
+
+
+def run_server(handler: type[BaseHTTPRequestHandler], *, port: int, bind: str, open_browser: bool) -> None:
+    server = ThreadingHTTPServer((bind, port), handler)
     server.daemon_threads = True
     url = f"http://{'localhost' if bind in ('127.0.0.1', '0.0.0.0') else bind}:{port}/"
     print(f"fleet deck at {url}  (demo: {url}?demo)", flush=True)

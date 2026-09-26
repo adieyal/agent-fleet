@@ -1,0 +1,200 @@
+{
+ "time": 1790400000,
+ "project_labels": {"invoice-parser": "Invoice parser"},
+ "hosts": [
+  {
+   "name": "home", "ok": true, "error": null,
+   "jobs": [
+    {
+     "id": "e1b5c8", "host": "home", "project": "restoke", "description": "Upgrade Django to 5.2",
+     "agent": "codex", "model": "gpt-5-codex", "cwd": "/home/adi/Development/restoke", "permission": "danger-full-access",
+     "status": "failed", "created_at": 1790394600, "updated_at": 1790395900,
+     "steps": [
+      {"index": 0, "title": "Bump Django and run the test suite", "status": "failed", "started_at": 1790394610, "finished_at": 1790395900, "result": "FLEET_STATUS: failed — 41 tests fail on removed index_together"},
+      {"index": 1, "title": "Fix deprecations", "status": "pending", "started_at": null, "finished_at": null, "result": null}
+     ],
+     "todos": [],
+     "activity": {"kind": "error", "summary": "exit 1: pytest -q", "ts": 1790395880},
+     "events": [
+      {"kind": "tool", "tool": "bash", "name": "shell", "summary": "pytest -q", "ts": 1790395300},
+      {"kind": "error", "summary": "exit 1: pytest -q", "ts": 1790395880},
+      {"kind": "step", "step": 0, "status": "failed", "summary": "41 tests fail on removed index_together", "ts": 1790395900},
+      {"kind": "job", "status": "failed", "summary": "job failed", "ts": 1790395900}
+     ],
+     "session_id": "019a7a02-8d61-7c40-a1b9-2e3f4d5c6b70",
+     "tmux": "tmux -L fleet attach -t fleet-e1b5c8",
+     "documents": [
+      {"id": "report-0", "kind": "report", "name": "Step 1: Bump Django and run the test suite", "step": 0, "path": "/home/adi/.fleet/jobs/e1b5c8/result-0.md", "size": 640, "mtime": 1790395900}
+     ]
+    },
+    {
+     "id": "a1c3e9", "host": "home", "project": "restoke", "description": "Migrate the suppliers list to a V2 React route",
+     "agent": "claude", "model": "claude-opus-5-5", "cwd": "/home/adi/Development/restoke", "permission": "bypassPermissions",
+     "status": "running", "created_at": 1790397600, "updated_at": 1790399988,
+     "steps": [
+      {"index": 0, "title": "Map legacy supplier list behaviour", "status": "done", "started_at": 1790397610, "finished_at": 1790398500, "result": "Documented 14 behaviours in docs/suppliers-v2.md"},
+      {"index": 1, "title": "Build the V2 route behind the feature flag", "status": "running", "started_at": 1790398505, "finished_at": null, "result": null}
+     ],
+     "todos": [
+      {"text": "Port filters and sorting", "status": "completed"},
+      {"text": "Wire the supplier drawer", "status": "in_progress"},
+      {"text": "Add Playwright coverage", "status": "pending"}
+     ],
+     "activity": {"kind": "tool", "tool": "bash", "name": "Bash", "summary": "pnpm vitest run suppliers", "intent": "Run supplier route tests", "ts": 1790399988},
+     "events": [
+      {"kind": "step", "step": 1, "status": "running", "summary": "Build the V2 route behind the feature flag", "ts": 1790398505},
+      {"kind": "tool", "tool": "read", "name": "Read", "summary": "frontend/src/routes/suppliers/SupplierDrawer.tsx", "ts": 1790399700},
+      {"kind": "tool", "tool": "edit", "name": "Edit", "summary": "frontend/src/routes/suppliers/v2/index.tsx", "ts": 1790399880},
+      {"kind": "tool", "tool": "bash", "name": "Bash", "summary": "pnpm vitest run suppliers", "intent": "Run supplier route tests", "ts": 1790399988}
+     ],
+     "session_id": "3f2a9c10-6d1e-4b7a-9f3e-0c5d8e7a1b21",
+     "tmux": "tmux -L fleet attach -t fleet-a1c3e9",
+     "documents": []
+    },
+    {
+     "id": "b7d042", "host": "home", "project": "restoke", "description": "Fix the flaky invoice upload e2e test",
+     "agent": "codex", "model": "gpt-5-codex", "cwd": "/home/adi/Development/restoke", "permission": "danger-full-access",
+     "status": "running", "created_at": 1790398200, "updated_at": 1790399960,
+     "steps": [
+      {"index": 0, "title": "Reproduce the flake 20×", "status": "done", "started_at": 1790398210, "finished_at": 1790399100, "result": "Failed 3/20 — upload poll races the redirect"},
+      {"index": 1, "title": "Fix the race in the upload poller", "status": "running", "started_at": 1790399105, "finished_at": null, "result": null},
+      {"index": 2, "title": "Re-run 50× to confirm", "status": "pending", "started_at": null, "finished_at": null, "result": null}
+     ],
+     "todos": [],
+     "activity": {"kind": "tool", "tool": "edit", "name": "apply_patch", "summary": "e2e/invoices/upload.spec.ts", "ts": 1790399960},
+     "events": [
+      {"kind": "step", "step": 1, "status": "running", "summary": "Fix the race in the upload poller", "ts": 1790399105},
+      {"kind": "tool", "tool": "think", "summary": "The poller resolves before the redirect settles…", "ts": 1790399800},
+      {"kind": "tool", "tool": "edit", "name": "apply_patch", "summary": "e2e/invoices/upload.spec.ts", "ts": 1790399960}
+     ],
+     "session_id": "019a7b11-0c4e-7d33-b2a0-6e8f1c9d4a52",
+     "tmux": "tmux -L fleet attach -t fleet-b7d042",
+     "documents": []
+    }
+   ],
+   "sessions": [
+    {
+     "id": "8e1f0c42-2b7d-4a55-9c1e-7f3a2d6b9e10", "host": "home", "agent": "claude",
+     "cwd": "/home/adi/Development/restoke", "project": "restoke",
+     "title": "Why does the stocktake import modal re-render twice?", "status": "working",
+     "started_at": 1790398500, "updated_at": 1790399992, "model": "claude-opus-5-5", "todos": [],
+     "activity": {"kind": "tool", "tool": "search", "name": "Grep", "summary": "useStocktakeImport", "ts": 1790399992},
+     "events": [
+      {"kind": "tool", "tool": "read", "name": "Read", "summary": "frontend/src/stocktake/ImportModal.tsx", "ts": 1790399940},
+      {"kind": "tool", "tool": "search", "name": "Grep", "summary": "useStocktakeImport", "ts": 1790399992}
+     ],
+     "resume": "cd /home/adi/Development/restoke && claude --resume 8e1f0c42-2b7d-4a55-9c1e-7f3a2d6b9e10"
+    }
+   ]
+  },
+  {
+   "name": "worker", "ok": true, "error": null,
+   "jobs": [
+    {
+     "id": "d4f7a2", "host": "worker", "project": "restoke", "description": "Write the PAR-by-weekday support article",
+     "agent": "claude", "model": "claude-opus-5-5", "cwd": "/home/adi/Development/restoke", "permission": "bypassPermissions",
+     "status": "done", "created_at": 1790392800, "updated_at": 1790399700,
+     "steps": [
+      {"index": 0, "title": "Read the feature PR", "status": "done", "started_at": 1790392810, "finished_at": 1790394000, "result": "Read #1432; weekday PAR uses an 8-week trailing mean"},
+      {"index": 1, "title": "Draft the article", "status": "done", "started_at": 1790394010, "finished_at": 1790399700, "result": "Draft in outbox/par-by-weekday.md"}
+     ],
+     "todos": [],
+     "activity": {"kind": "text", "summary": "Draft is in outbox/par-by-weekday.md.", "ts": 1790399695},
+     "events": [
+      {"kind": "text", "summary": "Draft is in outbox/par-by-weekday.md.", "ts": 1790399695},
+      {"kind": "step", "step": 1, "status": "done", "summary": "Draft in outbox/par-by-weekday.md", "ts": 1790399700},
+      {"kind": "job", "status": "done", "summary": "job done", "ts": 1790399700}
+     ],
+     "session_id": "7c3d1e90-2f5a-4b6c-9d8e-0a1b2c3d4e5f",
+     "tmux": "tmux -L fleet attach -t fleet-d4f7a2",
+     "documents": [
+      {"id": "report-1", "kind": "report", "name": "Step 2: Draft the article", "step": 1, "path": "/home/adi/.fleet/jobs/d4f7a2/result-1.md", "size": 812, "mtime": 1790399700},
+      {"id": "outbox-par-by-weekday.md", "kind": "outbox", "name": "par-by-weekday.md", "step": null, "path": "/home/adi/.fleet/jobs/d4f7a2/outbox/par-by-weekday.md", "size": 1460, "mtime": 1790399690}
+     ]
+    },
+    {
+     "id": "c90e11", "host": "worker", "project": "restoke", "description": "Shadow-parse 60 invoices and diff against Textract",
+     "agent": "claude", "model": "claude-sonnet-5", "cwd": "/home/adi/Development/restoke", "permission": "bypassPermissions",
+     "status": "running", "created_at": 1790398800, "updated_at": 1790399995,
+     "steps": [
+      {"index": 0, "title": "Pull today's invoice sample", "status": "done", "started_at": 1790398810, "finished_at": 1790399000, "result": "60 invoices from 9 suppliers"},
+      {"index": 1, "title": "Run both parsers and diff line items", "status": "running", "started_at": 1790399005, "finished_at": null, "result": null}
+     ],
+     "todos": [
+      {"text": "Parse batch 1 (1–20)", "status": "completed"},
+      {"text": "Parse batch 2 (21–40)", "status": "in_progress"},
+      {"text": "Parse batch 3 (41–60)", "status": "pending"}
+     ],
+     "activity": {"kind": "text", "summary": "Batch 2: 18/20 match, 2 differ on credit-note sign", "ts": 1790399995},
+     "events": [
+      {"kind": "tool", "tool": "bash", "name": "Bash", "summary": "python -m parser.shadow --batch 2", "intent": "Parse the second batch", "ts": 1790399940},
+      {"kind": "text", "summary": "Batch 2: 18/20 match, 2 differ on credit-note sign", "ts": 1790399995}
+     ],
+     "session_id": "5b0e7d21-9a3c-4f18-8e62-1d4c7b9a0f33",
+     "tmux": "tmux -L fleet attach -t fleet-c90e11",
+     "documents": []
+    },
+    {
+     "id": "f20a6d", "host": "worker", "project": "agent-fleet", "description": "Split the deck into ES modules",
+     "agent": "claude", "model": "claude-opus-5-5", "cwd": "/home/adi/Development/agent-fleet", "permission": "bypassPermissions",
+     "status": "running", "created_at": 1790399100, "updated_at": 1790399970,
+     "steps": [
+      {"index": 0, "title": "Extract the scene module", "status": "running", "started_at": 1790399110, "finished_at": null, "result": null}
+     ],
+     "todos": [],
+     "activity": {"kind": "tool", "tool": "edit", "name": "Write", "summary": "fleet/web/deck/scene.js", "ts": 1790399970},
+     "events": [
+      {"kind": "tool", "tool": "edit", "name": "Write", "summary": "fleet/web/deck/scene.js", "ts": 1790399970}
+     ],
+     "session_id": "9d8c7b6a-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+     "tmux": "tmux -L fleet attach -t fleet-f20a6d",
+     "documents": []
+    },
+    {
+     "id": "0a9e3b", "host": "worker", "project": "invoice-parser", "description": "Tune LUC tolerance for credit notes",
+     "agent": "codex", "model": "gpt-5-codex", "cwd": "/home/adi/Development/invoice-parser", "permission": "danger-full-access",
+     "status": "queued", "created_at": 1790399940, "updated_at": 1790399940,
+     "steps": [
+      {"index": 0, "title": "Add a failing test for negative LUC", "status": "pending", "started_at": null, "finished_at": null, "result": null},
+      {"index": 1, "title": "Adjust the tolerance", "status": "pending", "started_at": null, "finished_at": null, "result": null}
+     ],
+     "todos": [], "activity": null, "events": [], "session_id": null,
+     "tmux": "tmux -L fleet attach -t fleet-0a9e3b",
+     "documents": []
+    }
+   ],
+   "sessions": [
+    {
+     "id": "019a7c3e-55d1-7b20-a8f4-3c9e0d1b2a67", "host": "worker", "agent": "codex",
+     "cwd": "/home/adi/Development/agent-fleet", "project": "agent-fleet",
+     "title": "review the unstaged changes are they correct and safe?", "status": "idle",
+     "started_at": 1790397400, "updated_at": 1790399300, "model": "gpt-5-codex", "todos": [],
+     "activity": {"kind": "text", "summary": "Two issues: the retry loop never backs off, and…", "ts": 1790399300},
+     "events": [
+      {"kind": "tool", "tool": "bash", "name": "shell", "summary": "git diff", "ts": 1790399200},
+      {"kind": "text", "summary": "Two issues: the retry loop never backs off, and…", "ts": 1790399300}
+     ],
+     "resume": "cd /home/adi/Development/agent-fleet && codex resume 019a7c3e-55d1-7b20-a8f4-3c9e0d1b2a67"
+    }
+   ]
+  },
+  {
+   "name": "gpu-box", "ok": false, "error": "ssh: connect to host gpu-box port 22: No route to host",
+   "jobs": [], "sessions": []
+  }
+ ],
+ "job_documents": {
+  "worker/d4f7a2/report-1": "# PAR by weekday: draft ready\n\nThe article is in `outbox/par-by-weekday.md`.\n\n## What changed\n\n- Explains the 8-week trailing mean per weekday.\n- Adds a worked example for a Friday-heavy site.\n\nFLEET_STATUS: done\n",
+  "worker/d4f7a2/outbox-par-by-weekday.md": "# Setting PAR by weekday\n\nPAR levels can now differ by weekday, so a Friday order is sized for Friday trade.\n\n## How it is calculated\n\nFor each item, Restoke takes the mean usage on that weekday over the last eight weeks.\n\n## Example\n\n| Day | Mean usage | PAR |\n|---|---|---|\n| Tue | 12 | 14 |\n| Fri | 31 | 35 |\n",
+  "home/e1b5c8/report-0": "# Django 5.2 upgrade blocked\n\n41 tests fail because `index_together` was removed.\n\n## Next\n\n1. Convert `index_together` to `Meta.indexes` in 6 models.\n2. Regenerate migrations.\n\nFLEET_STATUS: failed — 41 tests fail on removed index_together\n"
+ },
+ "library": {
+  "restoke": [
+   {"id": "README.md", "mtime": 1790140800, "markdown": "# Restoke\n\nInventory and ordering for restaurant groups.\n\n## Layout\n\n- `backend/` Django API\n- `frontend/` React app\n"},
+   {"id": "docs/suppliers-v2.md", "mtime": 1790398500, "markdown": "# Suppliers V2\n\nBehaviours the V2 route must keep.\n\n- [x] Filter by category\n- [ ] Bulk archive\n"}
+  ],
+  "agent-fleet": [
+   {"id": "README.md", "mtime": 1790313600, "markdown": "# agent-fleet\n\nRun and watch coding agents across machines.\n"}
+  ]
+ }
+}
