@@ -18,6 +18,8 @@ import { applyAttention } from './attention.js';
 import { patchScene } from './dim.js';
 import { applyBuilding } from './building.js';
 import { applyWorkarea } from './workarea.js';
+import { applyPipeline, buildScreens, pipelineRooms, pipelines, setPipelines } from './pipelines.js';
+import { updateSankey } from './sankey.js';
 
 // Dismissed agents are hidden in this browser only (the deck stays view-only). Each is remembered with
 // the updated_at it had when dismissed, so any new activity brings it back.
@@ -103,6 +105,7 @@ export function enterProject(projectId) {
 
 export function applyState(doc) {
   lastDoc = doc;
+  setPipelines(doc.pipelines);
   applyBuilding(doc);   // from the whole document: dismissed and finished work still counts there
   applyWorkarea(doc);
   const shown = visibleHosts(doc);
@@ -112,7 +115,9 @@ export function applyState(doc) {
   for (const h of hosts) for (const j of h.jobs || []) projects.add(j.project);
   // hosts on an older fleetd send no sessions; a session whose cwd fleetd could not tell has no room and is not drawn
   for (const h of hosts) for (const s of h.sessions || []) if (s.project) projects.add(s.project);
+  for (const label of pipelineRooms(entered)) projects.add(label);
   layoutRooms([...projects].sort());
+  buildScreens();
   for (const room of rooms) room.label = doc.project_labels?.[room.name] || room.name;
   applyFocus(doc, rooms);
   const seen = new Set();
@@ -153,6 +158,7 @@ export function applyState(doc) {
   for (const r of rooms) drawSign(r);
   renderLegend(); renderStats(); renderLive(); renderFeed(); updateHint();
   if (selectedKey) renderPanel();
+  for (const p of pipelines) updateSankey(p);
   openLinkedDoc();
 }
 
@@ -175,6 +181,12 @@ export function stream() {
   source.addEventListener('state', (message) => {
     setLive({ ok: true, at: Date.now(), err: null });
     applyState(JSON.parse(message.data));
+  });
+  source.addEventListener('pipeline', (message) => {
+    setLive({ ok: true, at: Date.now(), err: null });
+    const p = JSON.parse(message.data);
+    applyPipeline(p);
+    if (lastDoc) lastDoc.pipelines = pipelines;
   });
   source.addEventListener('ping', () => {
     setLive({ ok: true, at: Date.now(), err: null });

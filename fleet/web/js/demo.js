@@ -1,6 +1,6 @@
 // Demo data (?demo): a synthetic fleet and a small Markdown renderer for its documents.
 
-import { DEBUG, QS } from './env.js';
+import { DEBUG, POLL_MS, QS } from './env.js';
 import { esc, hash, seeded } from './util.js';
 import { DOC_FILE, activityOf } from './activity.js';
 
@@ -430,6 +430,70 @@ export function demoSource() {
   addDoc(article, 'file-2', 'file', 'articles/par-by-weekday.md', 2, DEMO_DOCS.article, t0 - 3500);
   addReport(article, 2, t0 - 3300);
   addDoc(article, 'outbox-par-by-weekday.md', 'outbox', 'par-by-weekday.md', null, DEMO_DOCS.article, t0 - 3200);
+  // A synthetic pipeline shaped like fleetd's reports: items pass the first two columns tick by tick, the gates run
+  // in a burst at the end, and a few ticks later a new run starts with the finished one as its baseline.
+  const PIPE = { nodes: [['items'], ['decided', 'tied', 'unlearnable'], ['alone', 'agree', 'disagree', 'profile', 'unsettled'],
+    ['confident', 'review'], ['null cell', 'sum mismatch', 'profile disagree', 'low support']], total: 1800,
+    tones: { confident: 'good', review: 'warn', unsettled: 'muted', unlearnable: 'muted' } };
+  const prand = seeded(7), ppick = arr => arr[Math.floor(prand() * arr.length)];   // its own stream: the fleet's stays as it was
+  const weighted = weights => { let x = prand() * Object.values(weights).reduce((s, w) => s + w, 0); for (const [k, w] of Object.entries(weights)) if ((x -= w) <= 0) return k; return Object.keys(weights)[0]; };
+  let pipe = null, pipeBase = null, pipeSeq = 0;
+  function newPipeRun(n) {
+    pipe = { n, run_id: `demo-${n}`, label: `demo run ${n} (synthetic)`, started_at: now(), edges: new Map(), inflow: {}, outflow: {},
+      recent: {}, items: [], status: 'running', ended_at: null, updated_at: now(), rate: 0, doneAt: 0 };
+  }
+  function pipeFlow(item, from, to, attrs) {
+    const key = from + '→' + to;
+    pipe.edges.set(key, (pipe.edges.get(key) || 0) + 1);
+    pipe.outflow[from] = (pipe.outflow[from] || 0) + 1; pipe.inflow[to] = (pipe.inflow[to] || 0) + 1;
+    (pipe.recent[to] ||= []).push({ item, ts: now(), ...(attrs ? { attrs } : {}) });
+    if (pipe.recent[to].length > 25) pipe.recent[to].shift();
+  }
+  function pipeCounts(p) {
+    return Object.fromEntries([...new Set([...Object.keys(p.inflow), ...Object.keys(p.outflow)])].map(n => [n, Math.max(p.inflow[n] || 0, p.outflow[n] || 0)]));
+  }
+  function stepPipe() {
+    if (!pipe) newPipeRun(1);
+    if (pipe.status === 'done') { if (++pipe.doneAt > 4) { pipeBase = pipe; newPipeRun(pipe.n + 1); } return; }
+    const before = pipe.items.length;
+    for (let k = 0, n = 60 + Math.floor(prand() * 60); k < n && pipe.items.length < PIPE.total; k++) {
+      const item = `D-${pipe.n}-${String(pipe.items.length).padStart(5, '0')}`;
+      const first = weighted({ decided: 0.7, tied: 0.2, unlearnable: 0.1 });
+      pipeFlow(item, 'items', first, first === 'unlearnable' ? { why: ppick(['no printed total', 'unreadable scan']) } : null);
+      const second = first === 'unlearnable' ? null
+        : weighted(first === 'decided' ? { alone: 0.3, agree: 0.4, disagree: 0.15, profile: 0.15 } : { agree: 0.3, unsettled: 0.7 });
+      if (second) pipeFlow(item, first, second);
+      pipe.items.push([item, second]);
+    }
+    if (pipe.items.length >= PIPE.total) {   // the gates, all at once
+      const reasons = ['null cell', 'sum mismatch', 'profile disagree', 'low support'];
+      for (const [item, second] of pipe.items) {
+        if (!second) continue;
+        const confident = prand() < (['alone', 'agree', 'profile'].includes(second) ? 0.85 : 0.25);
+        pipeFlow(item, second, confident ? 'confident' : 'review');
+        if (!confident) {
+          const why = reasons.filter(() => prand() < 0.45);
+          if (!why.length) why.push(ppick(reasons));
+          pipeFlow(item, 'review', why[0], { reasons: why });
+        }
+      }
+      pipe.status = 'done'; pipe.ended_at = now();
+    }
+    pipe.rate = Math.round((pipe.items.length - before) / (POLL_MS / 1000) * 10) / 10;   // items into the first column
+    pipe.updated_at = now();
+  }
+  function pipeReport() {
+    const edges = [...pipe.edges].map(([key, c]) => [...key.split('→'), c]), counts = pipeCounts(pipe);
+    return { host: 'node-a', pipeline: 'demo-training', project: 'demo-training', project_id: null, declared: true, host_ok: true,
+      host_error: null, seq: ++pipeSeq,
+      run: { run_id: pipe.run_id, pipeline: 'demo-training', label: pipe.label, started_at: pipe.started_at, total: PIPE.total,
+        tones: PIPE.tones, nodes: PIPE.nodes, edges, counts, flows: edges.reduce((s, e) => s + e[2], 0),
+        recent: Object.fromEntries(Object.entries(pipe.recent).filter(([n]) => !pipe.outflow[n])),
+        item_rate: pipe.status === 'running' ? pipe.rate : 0, updated_at: pipe.updated_at, status: pipe.status, ended_at: pipe.ended_at },
+      baseline: pipeBase && { run_id: pipeBase.run_id, label: pipeBase.label, started_at: pipeBase.started_at, total: PIPE.total,
+        edges: [...pipeBase.edges].map(([key, c]) => [...key.split('→'), c]), counts: pipeCounts(pipeBase) } };
+  }
+
   let tickCount = 0;
   demoDoc = async (host, jobId, id) => {
     await new Promise(resolve => setTimeout(resolve, 350));
@@ -510,7 +574,8 @@ export function demoSource() {
       s.activity = s.events[s.events.length - 1];
       s.updated_at = now();
     }
-    const doc = { time: now(), hosts: [
+    stepPipe();
+    const doc = { time: now(), pipelines: [pipeReport()], hosts: [
       ...['node-a', 'node-b', 'node-c'].map(name => ({ name, ok: true, error: null, jobs: jobs.filter(j => j.host === name),
         sessions: sessions.filter(s => s.host === name) })),
       { name: 'node-d', ok: false, error: 'node-d: ssh: connect to host 192.0.2.10 port 22: Connection timed out', jobs: [] },

@@ -66,7 +66,8 @@ class FleetState(LiveWorkspace):
     def __init__(self, hosts: list[Host], project_labels: dict[str, str] | None = None,
                  load_registry: Callable[[], Registry] | None = None,
                  workspace: WorkspaceStore | None = None,
-                 load_capacity: Callable[[], int] | None = None) -> None:
+                 load_capacity: Callable[[], int] | None = None,
+                 pipelines: dict[str, dict[str, str]] | None = None) -> None:
         self.hosts = hosts
         self.project_labels = project_labels or {}
         self.load_registry = load_registry or Registry
@@ -80,6 +81,9 @@ class FleetState(LiveWorkspace):
         self.by_host: dict[str, dict[str, Any]] = {
             host.name: {"name": host.name, "ok": False, "error": "connecting…", "jobs": {}, "sessions": {}}
             for host in hosts}
+        self.pipeline_config = pipelines or {}
+        self.pipeline_runs = {}
+        self.pipeline_seq = 0
 
     def update(self, host_name: str, mutate: Any) -> None:
         with self.changed:
@@ -132,7 +136,11 @@ class FleetState(LiveWorkspace):
                 for host in self.hosts]})
         document = self.with_building(document, registry)
         document["building"]["capacity_error"] = capacity_error
+        document["pipelines"] = self.pipelines(registry, self.by_host)
         return document
+
+    def pipeline_updates(self, after: int) -> list[dict[str, Any]]:
+        return self.pipelines(self.registry, self.by_host, after)
 
     def host_names(self) -> list[str]:
         return [host.name for host in self.hosts]
@@ -200,6 +208,8 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
         state.update(host.name, lambda entry: entry["sessions"].__setitem__(session["id"], session))
     elif kind == "session_removed":
         state.update(host.name, lambda entry: entry["sessions"].pop(message["id"], None))
+    elif kind == "pipeline" and isinstance(message.get("pipeline"), str):
+        state.report_pipeline(host.name, message["pipeline"], message.get("run"), message.get("baseline"))
     elif kind == "error":
         state.update(host.name, lambda entry: entry.update(ok=False, error=message.get("error")))
 
@@ -411,17 +421,22 @@ def make_handler(state: FleetState | FixtureState,
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Accel-Buffering", "no")
             self.end_headers()
-            version = -1
+            version, pipeline_seq = -1, 0
             try:
                 while True:
-                    new_version = state.wait_for_change(version, timeout=SSE_PING_INTERVAL)
-                    if new_version == version:
-                        self.wfile.write(b"event: ping\ndata: {}\n\n")
-                    else:
+                    new_version = state.wait_for_change(version, timeout=SSE_PING_INTERVAL, seen_pipelines=pipeline_seq)
+                    if new_version != version:
                         time.sleep(SSE_COALESCE)
-                        version = state.version
-                        payload = json.dumps(state.document())
+                        version, pipeline_seq = state.version, state.pipeline_seq
+                        payload = json.dumps(state.document())   # carries every pipeline as it is now
                         self.wfile.write(f"event: state\ndata: {payload}\n\n".encode())
+                    elif state.pipeline_seq != pipeline_seq:
+                        updates = state.pipeline_updates(pipeline_seq)
+                        pipeline_seq = max([pipeline_seq] + [update["seq"] for update in updates])
+                        for update in updates:
+                            self.wfile.write(f"event: pipeline\ndata: {json.dumps(update)}\n\n".encode())
+                    else:
+                        self.wfile.write(b"event: ping\ndata: {}\n\n")
                     self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError):
                 return
@@ -446,9 +461,10 @@ def workspace_path() -> Path:
 
 
 def serve(hosts: list[Host], *, port: int, bind: str, open_browser: bool = False,
-          libraries: dict[str, str] | None = None, project_labels: dict[str, str] | None = None) -> None:
+          libraries: dict[str, str] | None = None, project_labels: dict[str, str] | None = None,
+          pipelines: dict[str, dict[str, str]] | None = None) -> None:
     state = FleetState(hosts, project_labels, projects.load_registry, WorkspaceStore(workspace_path()),
-                       building.load_capacity)
+                       building.load_capacity, pipelines)
     for host in hosts:
         threading.Thread(target=follow_host, args=(state, host), daemon=True).start()
     run_server(make_handler(state, ProjectLibrary(libraries or {})), port=port, bind=bind, open_browser=open_browser)

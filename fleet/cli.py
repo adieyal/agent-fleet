@@ -688,7 +688,8 @@ def command_web(arguments: argparse.Namespace) -> None:
         return
     config = transport.load_config()
     serve(selected_hosts(arguments), port=arguments.port, bind=arguments.bind, open_browser=arguments.open,
-          libraries=config.get("libraries", {}), project_labels=config.get("project_labels", {}))
+          libraries=config.get("libraries", {}), project_labels=config.get("project_labels", {}),
+          pipelines=config.get("pipelines", {}))
 
 
 # --------------------------------------------------------------- parser

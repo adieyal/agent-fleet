@@ -943,6 +943,176 @@ class SessionTracker:
         return sessions
 
 
+# --------------------------------------------------------------- pipelines
+
+PIPELINES_DIRECTORY = FLEET_HOME / "pipelines"
+PIPELINE_SCAN_INTERVAL = 1.0
+PIPELINE_EMIT_INTERVAL = 1.0
+PIPELINE_RUNS = 2            # the newest run and the one before it, its baseline if it finished
+PIPELINE_RECENT = 25         # items kept per node, for the terminal nodes' drill-down
+PIPELINE_RATE_WINDOW = 10    # seconds of flows behind the items-per-second figure
+PIPELINE_READ_BYTES = 16 * 1024 * 1024  # most read per scan, so catching up on a long run never stalls the stream
+
+
+class PipelineRun:
+    """An aggregate of one run's event file (`pipelines/<pipeline>/<run id>.jsonl`), read incrementally.
+
+    Lines: {"type": "run", nodes, label, total, tones?, …} once (tones: node → good, warn or muted, how the deck
+    colours the bands into it), {"type": "flow", item, from, to, ts, attrs?} per item
+    and edge, {"type": "end", status, ts} at the end. Raw events never leave the host; only the summary does.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.offset = 0
+        self.caught_up = False
+        self.modified: Optional[float] = None
+        self.meta: JsonObject = {}
+        self.edges: Dict[Tuple[str, str], int] = {}
+        self.inflow: Dict[str, int] = collections.Counter()
+        self.outflow: Dict[str, int] = collections.Counter()
+        self.recent: Dict[str, Deque[JsonObject]] = {}
+        self.per_second: Dict[str, Dict[int, int]] = {}   # flows out of each node, by the second of their ts
+        self.status: Optional[str] = None
+        self.ended_at: Optional[float] = None
+
+    def refresh(self, size: int, modified: float) -> None:
+        if size < self.offset:  # rewritten from scratch
+            self.__init__(self.path)  # type: ignore[misc]
+        self.modified = modified
+        start = self.offset
+        with open(self.path, "rb") as handle:
+            handle.seek(start)
+            data = handle.read(min(size - start, PIPELINE_READ_BYTES))
+        complete = data.rfind(b"\n") + 1  # a line still being written is read next time
+        self.offset = start + complete
+        self.caught_up = start + len(data) >= size
+        for line in data[:complete].splitlines():
+            self._consume(line)
+
+    def _consume(self, line: bytes) -> None:
+        try:
+            record = json.loads(line)
+        except ValueError:
+            return
+        if not isinstance(record, dict):
+            return
+        kind = record.get("type")
+        if kind == "run":
+            self.meta = record
+        elif kind == "end":
+            self.status = str(record.get("status") or "done")
+            self.ended_at = record.get("ts")
+        elif kind == "flow" and record.get("from") is not None and record.get("to") is not None:
+            source, target = str(record["from"]), str(record["to"])
+            self.edges[(source, target)] = self.edges.get((source, target), 0) + 1
+            self.outflow[source] += 1
+            self.inflow[target] += 1
+            ts = record.get("ts") if isinstance(record.get("ts"), (int, float)) else now()
+            seconds = self.per_second.setdefault(source, collections.Counter())
+            seconds[int(ts)] += 1
+            item: JsonObject = {"item": record.get("item"), "ts": ts}
+            if isinstance(record.get("attrs"), dict):
+                item["attrs"] = record["attrs"]
+            self.recent.setdefault(target, collections.deque(maxlen=PIPELINE_RECENT)).append(item)
+
+    def columns(self) -> List[List[str]]:
+        """The run line's columns, with any node it did not list in the column after its source's."""
+        columns = [[str(node) for node in column] for column in self.meta.get("nodes") or [] if isinstance(column, list)]
+        placed = {node: index for index, column in enumerate(columns) for node in column}
+
+        def place(node: str, index: int) -> None:
+            while len(columns) <= index:
+                columns.append([])
+            columns[index].append(node)
+            placed[node] = index
+
+        for source in self.outflow:
+            if source not in placed and not self.inflow[source]:
+                place(source, 0)  # an unlisted source starts at the left
+        changed = True
+        while changed:  # nodes only reachable through a cycle of unlisted nodes stay out
+            changed = False
+            for source, target in self.edges:
+                if target not in placed and source in placed:
+                    place(target, placed[source] + 1)
+                    changed = True
+        return columns
+
+    def counts(self) -> Dict[str, int]:
+        return {node: max(self.inflow[node], self.outflow[node]) for node in set(self.inflow) | set(self.outflow)}
+
+    def summary(self, clock: float) -> JsonObject:
+        horizon = int(clock) - PIPELINE_RATE_WINDOW
+        for seconds in self.per_second.values():
+            for second in [second for second in seconds if second <= horizon]:
+                del seconds[second]
+        columns = self.columns()
+        entered = sum(sum(self.per_second.get(node, {}).values()) for node in (columns[0] if columns else []))
+        return {
+            "run_id": self.meta.get("run_id") or self.path.stem, "pipeline": self.meta.get("pipeline"),
+            "label": self.meta.get("label"), "started_at": self.meta.get("started_at"), "total": self.meta.get("total"),
+            "tones": self.meta["tones"] if isinstance(self.meta.get("tones"), dict) else None,
+            "nodes": columns, "edges": [[source, target, count] for (source, target), count in self.edges.items()],
+            "counts": self.counts(), "flows": sum(self.edges.values()),
+            "recent": {node: list(items) for node, items in self.recent.items() if not self.outflow[node]},
+            "item_rate": round(entered / PIPELINE_RATE_WINDOW, 1), "updated_at": self.modified,
+            "status": self.status or "running", "ended_at": self.ended_at,
+        }
+
+    def baseline(self) -> JsonObject:
+        return {"run_id": self.meta.get("run_id") or self.path.stem, "label": self.meta.get("label"),
+                "started_at": self.meta.get("started_at"), "total": self.meta.get("total"),
+                "edges": [[source, target, count] for (source, target), count in self.edges.items()],
+                "counts": self.counts()}
+
+
+class PipelineTracker:
+    """Follows the newest runs of every pipeline under FLEET_HOME/pipelines and says what changed.
+
+    A pipeline is announced once its runs have been read to the end, then at most once
+    every PIPELINE_EMIT_INTERVAL seconds while its summary keeps changing.
+    """
+
+    def __init__(self, directory: Optional[Path] = None) -> None:
+        self.directory = directory or PIPELINES_DIRECTORY
+        self.runs: Dict[Path, PipelineRun] = {}
+        self.sent: Dict[str, JsonObject] = {}
+        self.sent_at: Dict[str, float] = {}
+
+    def scan(self, clock: Optional[float] = None) -> List[JsonObject]:
+        clock = time.time() if clock is None else clock
+        messages: List[JsonObject] = []
+        live: Dict[Path, PipelineRun] = {}
+        for folder in sorted(scan_directory(self.directory), key=lambda entry: entry.name):
+            if not folder.is_dir():
+                continue
+            names = sorted(entry.name for entry in scan_directory(Path(folder.path)) if entry.name.endswith(".jsonl"))
+            runs = []
+            for name in names[-PIPELINE_RUNS:]:
+                path = Path(folder.path) / name
+                run = live[path] = self.runs.get(path) or PipelineRun(path)
+                try:
+                    stat = path.stat()
+                    modified = round(stat.st_mtime, 3)
+                    if not run.caught_up or stat.st_size != run.offset or modified != run.modified:
+                        run.refresh(stat.st_size, modified)
+                except OSError:
+                    continue
+                runs.append(run)
+            if not runs or not all(run.caught_up for run in runs):
+                continue
+            latest, previous = runs[-1], runs[-2] if len(runs) > 1 else None
+            message = {"type": "pipeline", "pipeline": folder.name, "run": latest.summary(clock),
+                       "baseline": previous.baseline() if previous and previous.status == "done" else None}
+            if message != self.sent.get(folder.name) and clock - self.sent_at.get(folder.name, 0) >= PIPELINE_EMIT_INTERVAL:
+                messages.append(message)
+                self.sent[folder.name] = message
+                self.sent_at[folder.name] = clock
+        self.runs = live
+        return messages
+
+
 # --------------------------------------------------------------- commands
 
 
@@ -1030,8 +1200,9 @@ def command_stream(arguments: argparse.Namespace) -> None:
     """Push job summaries as they change: hello, then job/removed lines, heartbeat every few seconds.
 
     Interactive sessions follow as session/session_removed lines, rescanned every
-    --session-interval seconds. Watches file signatures rather than using inotify so
-    it stays stdlib-only. A broken pipe (the ssh side went away) ends the process.
+    --session-interval seconds, and pipeline runs as pipeline lines (see PipelineTracker).
+    Watches file signatures rather than using inotify so it stays stdlib-only. A broken
+    pipe (the ssh side went away) ends the process.
     """
     signatures: Dict[str, tuple] = {}
     runner_states: Dict[str, bool] = {}
@@ -1041,6 +1212,8 @@ def command_stream(arguments: argparse.Namespace) -> None:
     tracker = SessionTracker()
     sessions: Dict[str, JsonObject] = {}
     last_session_scan = 0.0
+    pipelines = PipelineTracker()
+    last_pipeline_scan = 0.0
     try:
         emit({"type": "hello", "host": os.uname().nodename, "time": now()})
         while True:
@@ -1081,6 +1254,10 @@ def command_stream(arguments: argparse.Namespace) -> None:
                 for session_id in set(sessions) - set(current):
                     emit({"type": "session_removed", "id": session_id})
                 sessions = current
+            if now() - last_pipeline_scan >= PIPELINE_SCAN_INTERVAL:
+                last_pipeline_scan = now()
+                for message in pipelines.scan():
+                    emit(message)
             if now() - last_heartbeat >= arguments.heartbeat:
                 emit({"type": "heartbeat", "time": now()})
                 last_heartbeat = now()

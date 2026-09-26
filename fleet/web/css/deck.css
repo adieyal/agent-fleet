@@ -638,6 +638,86 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
   .prose table{font-size:14px}
   .prose th,.prose td{padding:8px 11px}
 }
+/* ---------- pipeline Sankey: the reader's sheet, a chart and a side list */
+#sankey{position:fixed;inset:0;z-index:60;display:flex;justify-content:center}
+#sankey[hidden]{display:none}
+#sankey .sk-sheet{height:calc(100% - 40px);border-radius:14px}
+.sk-kind{color:#38a3d8}
+.sk-status.running{color:var(--ok)}
+.sk-status.failed,.sk-status.offline{color:var(--bad)}
+.sk-status.quiet{color:var(--warn)}
+.sk-body{flex:1;min-height:0;display:flex}
+.sk-chart{position:relative;flex:1;min-width:0;overflow-x:auto;overflow-y:hidden}
+.sk-chart svg,.sk-chart canvas{position:absolute;left:0;top:0;height:100%}
+.sk-chart canvas{pointer-events:none}
+.sk-band{fill:#2b6f95;fill-opacity:.82;stroke:var(--rd-bg);stroke-width:.75;transition:fill-opacity .15s}
+.sk-band.t-good{fill:#2f8a57}
+.sk-band.t-warn{fill:#b7862a}
+.sk-band.t-bad{fill:#b4524f}
+.sk-band.t-muted{fill:#4f5b70}
+.sk-band:hover,.sk-band.on{fill-opacity:1;stroke:var(--rd-strong)}
+.sk-wait{fill:url(#skHatch);stroke:var(--rd-muted);stroke-opacity:.55;stroke-width:.75;stroke-dasharray:2 2}
+.sk-hatch{fill:rgba(232,228,219,.4)}
+.sk-ghost{fill:none;stroke:rgba(232,228,219,.42);stroke-width:1;stroke-dasharray:2 4;pointer-events:none}
+.sk-chart.more-r{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 40px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 40px),transparent)}
+.sk-chart.more-l{-webkit-mask-image:linear-gradient(to left,#000 calc(100% - 40px),transparent);mask-image:linear-gradient(to left,#000 calc(100% - 40px),transparent)}
+.sk-chart.more-l.more-r{-webkit-mask-image:linear-gradient(to right,transparent,#000 40px,#000 calc(100% - 40px),transparent);
+  mask-image:linear-gradient(to right,transparent,#000 40px,#000 calc(100% - 40px),transparent)}
+.sk-node rect{fill:var(--rd-strong)}
+.sk-node text{font:12.5px var(--sans);fill:var(--rd-text);paint-order:stroke;stroke:var(--rd-bg);stroke-width:4px;stroke-linejoin:round;
+  font-variant-numeric:tabular-nums;pointer-events:none}
+.sk-node .nm{font-weight:600;fill:var(--rd-strong)}
+.sk-node .ct,.sk-node .dl{fill:var(--rd-muted);font-family:var(--mono);font-size:11.5px}
+.sk-node .sk-chip{fill:var(--rd-bg);fill-opacity:.94;stroke:var(--rd-rule);stroke-width:1}
+.sk-node.end{cursor:pointer}
+.sk-node.end:hover rect:first-child,.sk-node.on rect:first-child{fill:#38bdf8}
+.sk-node:focus-visible{outline:none}
+.sk-node:focus-visible rect:first-child{stroke:var(--rd-link);stroke-width:2}
+.sk-note{position:absolute;left:18px;right:18px;top:10px;z-index:1;font:13px var(--sans);color:var(--rd-bad)}
+.sk-empty{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:8px;padding:24px;text-align:center;
+  font:14px/1.5 var(--sans);color:var(--rd-muted)}
+.sk-empty b{font-size:16px;color:var(--rd-strong)}
+.sk-empty code{font:13px var(--mono);color:var(--rd-text)}
+.sk-side{flex:none;width:300px;overflow:auto;border-left:1px solid var(--rd-rule);padding:16px 16px 40px;font:13px/1.45 var(--sans)}
+.sk-side h3{margin:0 0 2px;font:600 15px var(--sans);color:var(--rd-strong);overflow-wrap:anywhere}
+.sk-side h3 span{font:500 13px var(--mono);color:var(--rd-muted);margin-left:6px}
+.sk-sub{margin:0 0 12px;color:var(--rd-muted)}
+.sk-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+.sk-table th,.sk-table td{padding:6px 4px;border-bottom:1px solid var(--rd-rule);text-align:right;font:12.5px var(--mono);color:var(--rd-text)}
+.sk-table thead th{font:600 10.5px var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--rd-muted)}
+.sk-table th[scope=row],.sk-table thead th:first-child{text-align:left;font-family:var(--sans);overflow-wrap:anywhere}
+.sk-table tbody tr{cursor:pointer}
+.sk-table tbody tr:hover,.sk-table tbody tr:focus-visible{background:var(--rd-bg2);outline:none}
+.sk-back{border:1px solid var(--rd-rule);background:none;color:var(--rd-text);border-radius:8px;height:30px;padding:0 10px;font:500 12.5px var(--sans);
+  cursor:pointer;margin-bottom:12px}
+.sk-back:hover,.sk-back:focus-visible{border-color:var(--rd-link);outline:none}
+.sk-items{list-style:none;margin:0;padding:0}
+.sk-items>li{padding:8px 0;border-bottom:1px solid var(--rd-rule)}
+.sk-items .it{display:flex;justify-content:space-between;gap:8px}
+.sk-items .it b{font:600 12.5px var(--mono);color:var(--rd-strong);overflow-wrap:anywhere}
+.sk-items time{font:12px var(--mono);color:var(--rd-muted);flex:none}
+.sk-items .at{margin-top:3px;color:var(--rd-text)}
+.sk-items .at>span{display:block;font:600 10.5px var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--rd-muted)}
+.sk-items .at em{font-style:normal}
+.sk-items .at ul{margin:2px 0 0;padding-left:16px}
+.sk-items .at li.first{list-style:none;margin-left:-16px;padding-left:16px;border-left:2px solid var(--warn)}
+.sk-items .at li.first b{color:var(--rd-strong)}
+.sk-items .at li.first small{font:500 10.5px var(--sans);color:var(--warn);letter-spacing:.04em}
+.sk-cap{font:italic 11.5px var(--sans);fill:var(--rd-muted)}
+.sk-chartwrap{position:relative;flex:1;min-width:0;display:flex}
+.sk-chart{scrollbar-color:var(--rd-muted) transparent}
+.sk-chart::-webkit-scrollbar{height:8px}
+.sk-chart::-webkit-scrollbar-thumb{background:var(--rd-muted);border-radius:4px}
+.sk-more{position:absolute;right:10px;bottom:18px;z-index:2;border:1px solid var(--rd-link);background:var(--rd-bg2);color:var(--rd-strong);
+  border-radius:999px;height:30px;padding:0 12px;font:600 12.5px var(--sans);cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.45)}
+.sk-more[hidden]{display:none}
+@media (max-width:760px){
+  #sankey .sk-sheet{height:100%;border-radius:0}
+  .sk-body{flex-direction:column;overflow:auto}
+  .sk-chartwrap{flex:none;height:62vh}
+  .sk-chart{overflow-x:auto}
+  .sk-side{width:auto;border-left:0;border-top:1px solid var(--rd-rule);overflow:visible}
+}
 @media (prefers-reduced-motion:reduce){
   .rd-scrim,.rd-sheet{animation:none}
   .rd-skel i{animation:none}
