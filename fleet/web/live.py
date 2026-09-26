@@ -15,9 +15,9 @@ from fleet.attention import AttentionBoard
 from fleet.building import NoVacancy
 from fleet.projects import Registry
 from fleet.transport import FleetError
-from fleet.workspace import WorkspaceStore
+from fleet.workspace import NotShuttered, WorkspaceStore
 
-MOVE_IN_LOCK = threading.Lock()
+MOVE_IN_LOCK = threading.Lock()   # moving in, shuttering and restoring change floors one at a time
 
 
 class AlreadyHoused(FleetError):
@@ -43,32 +43,65 @@ class LiveWorkspace:
         """Register a project linked to host:label and return its ID."""
         raise NotImplementedError
 
-    def move_in(self, host: str, label: str) -> dict[str, Any]:
-        """Register an unregistered label as a project on the lowest free floor, named as its room is."""
+    def move_in(self, host: str, label: str, shutter: str | None = None) -> dict[str, Any]:
+        """Register an unregistered label as a project on the lowest free floor, named as its room is. When the
+        building is full the only way in is to shutter a floor first (`shutter`); capacity never grows here."""
         if host not in self.host_names() or not label:
             raise FleetError("a known host and a label are required")
         with MOVE_IN_LOCK:
             self.known_projects()   # the registry as it is on disk now
             if self.registry.project_for(host, label):
                 raise AlreadyHoused(f"{host}:{label} already belongs to {self.registry.project_for(host, label).id}")
-            self.workspace.settle(self.registry.projects, self.capacity)
-            if len(set(self.workspace.floors_snapshot().values()) & set(range(1, self.capacity + 1))) >= self.capacity:
-                raise NoVacancy("The building's full: every floor is taken")
+            self.make_room(shutter)
             project_id = self.register(self.project_labels.get(label) or label, host, label)
             floor = self.workspace.move_in(project_id, self.capacity)
         self.bump()
         return {"project_id": project_id, "floor": floor}
 
+    def shutter(self, project_id: str) -> dict[str, Any]:
+        """Pack a project away in the storehouse (ADR 0005): its floor is freed; its ID, links and records stay."""
+        with MOVE_IN_LOCK:
+            if project_id not in self.known_projects():
+                raise LookupError(f"no project '{project_id}'")
+            floor = self.workspace.shutter(project_id, time.time())
+        self.bump()
+        return {"project_id": project_id, "floor": floor}
+
+    def restore(self, project_id: str, shutter: str | None = None) -> dict[str, Any]:
+        """Move a crate back in: to its old floor if free, else the lowest free one; when full, only by shuttering."""
+        with MOVE_IN_LOCK:
+            if project_id not in self.known_projects():
+                raise LookupError(f"no project '{project_id}'")
+            if project_id not in self.workspace.shuttered_snapshot():
+                raise NotShuttered(f"{project_id} is not in the storehouse")
+            self.make_room(shutter)
+            floor = self.workspace.restore(project_id, self.capacity)
+        self.bump()
+        return {"project_id": project_id, "floor": floor}
+
+    def make_room(self, shutter: str | None) -> None:
+        """Shutter `shutter` if given (it must hold a floor); then there must be a free floor. Call with the lock."""
+        self.workspace.settle(self.registry.projects, self.capacity)
+        floors = self.workspace.floors_snapshot()
+        if shutter is not None:
+            if floors.get(shutter, self.capacity + 1) > self.capacity:
+                raise FleetError(f"{shutter} holds no floor to clear")
+            self.workspace.shutter(shutter, time.time())
+        elif len({floor for floor in floors.values() if floor <= self.capacity}) >= self.capacity:
+            raise NoVacancy("The building's full: shutter a floor to make room")
+
     def with_building(self, document: dict[str, Any], registry: Registry) -> dict[str, Any]:
-        """Add the floors registered projects occupy within capacity with each one's focus, and the projects that
-        have no floor."""
+        """Add the floors registered projects occupy within capacity with each one's focus, the projects in the
+        storehouse, and the live projects that have no floor."""
         self.workspace.settle(registry.projects, self.capacity)
         floors = {project_id: floor for project_id, floor in self.workspace.floors_snapshot().items()
                   if project_id in registry.projects and floor <= self.capacity}
+        shuttered = self.workspace.shuttered_snapshot()
         focus = {project_id: self.workspace.focus_of({"project_id": project_id}) for project_id in floors}
         return {**document, "building": {"capacity": self.capacity, "floors": floors, "focus": focus,
+                                         "shuttered": shuttered,
                                          "no_floor": [project_id for project_id in registry.projects
-                                                      if project_id not in floors]}}
+                                                      if project_id not in floors and project_id not in shuttered]}}
 
     def bump(self) -> None:
         """Push a new document to every browser."""

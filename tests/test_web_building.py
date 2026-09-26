@@ -93,7 +93,8 @@ def stored_floors():
 
 # ------------------------------------------------------------------ capacity
 def test_capacity_is_six_unless_the_config_says_otherwise(deck, config_path):
-    assert fetch_state(deck)["building"] == {"capacity": 6, "floors": {}, "focus": {}, "no_floor": [], "capacity_error": None}
+    assert fetch_state(deck)["building"] == {"capacity": 6, "floors": {}, "focus": {}, "shuttered": {}, "no_floor": [],
+                                             "capacity_error": None}
     set_config(config_path, capacity=10)
     assert fetch_state(deck)["building"]["capacity"] == 10
 
@@ -207,3 +208,125 @@ def test_moving_in_refuses_a_linked_label_an_unknown_host_and_other_sites(deck):
     assert post(deck, "/api/move-in", {"host": "home"})[0] == 400
     assert post(deck, "/api/move-in", {"host": "home", "label": "invoices"}, Origin="http://evil.example")[0] == 403
     assert len(projects.load_registry().projects) == 1
+
+
+# ------------------------------------------------------------------ shuttering and the storehouse
+def building_of(base_url):
+    return fetch_state(base_url)["building"]
+
+
+def housed(base_url, *labels):
+    """Register each label on home as a project, one at a time, so they take floors 1, 2, … in order."""
+    ids = []
+    for label in labels:
+        ids.append(register(label.title(), ("home", label)))
+        fetch_state(base_url)
+    return ids
+
+
+def test_shuttering_frees_the_floor_and_keeps_the_project(deck, config_path):
+    restoke, invoices = housed(deck, "restoke", "invoices")
+    status, body = post(deck, "/api/shutter", {"project": restoke})
+    assert status == 200 and body == {"project_id": restoke, "floor": 1}
+
+    document = fetch_state(deck)
+    assert document["building"]["floors"] == {invoices: 2}
+    assert document["building"]["shuttered"][restoke]["floor"] == 1
+    assert document["building"]["no_floor"] == []
+    project = next(project for project in document["projects"] if project["id"] == restoke)
+    assert project["links"] == [{"host": "home", "label": "restoke"}]                 # same ID, same links
+    home = next(host for host in document["hosts"] if host["name"] == "home")
+    assert next(job for job in home["jobs"] if job["project"] == "restoke")["project_id"] == restoke   # runs still belong
+    assert json.loads(workspace_path().read_text())["shuttered"][restoke]["floor"] == 1
+
+    # the free floor is not handed back by itself: a new project moves into it instead
+    agent_fleet = register("Agent Fleet", ("home", "agent-fleet"))
+    assert building_of(deck)["floors"] == {invoices: 2, agent_fleet: 1}
+    assert restoke in building_of(deck)["shuttered"]
+
+
+def test_restoring_returns_a_project_exactly_as_it_was(deck, config_path):
+    restoke, invoices = housed(deck, "restoke", "invoices")
+    assert post(deck, "/api/focus", {"focus": "background", "projects": [restoke]})[0] == 200
+    before = fetch_state(deck)
+    assert post(deck, "/api/shutter", {"project": restoke})[0] == 200
+    status, body = post(deck, "/api/restore", {"project": restoke})
+    assert status == 200 and body == {"project_id": restoke, "floor": 1}
+    after = fetch_state(deck)
+    for key in ("floors", "focus", "no_floor"):
+        assert after["building"][key] == before["building"][key]
+    assert after["building"]["shuttered"] == {}
+    assert after["projects"] == before["projects"]
+    assert [host["jobs"] for host in after["hosts"]] == [host["jobs"] for host in before["hosts"]]
+
+
+def test_restoring_takes_the_lowest_free_floor_when_its_own_is_taken(deck, config_path):
+    restoke, invoices = housed(deck, "restoke", "invoices")
+    post(deck, "/api/shutter", {"project": restoke})
+    agent_fleet = register("Agent Fleet", ("home", "agent-fleet"))   # moves into floor 1
+    fetch_state(deck)
+    status, body = post(deck, "/api/restore", {"project": restoke})
+    assert status == 200 and body["floor"] == 3
+    assert building_of(deck)["floors"] == {agent_fleet: 1, invoices: 2, restoke: 3}
+
+
+def test_a_full_building_offers_only_shuttering(deck, config_path):
+    set_config(config_path, capacity=2)
+    restoke, invoices = housed(deck, "restoke", "invoices")
+    post(deck, "/api/shutter", {"project": restoke})
+    agent_fleet = register("Agent Fleet", ("home", "agent-fleet"))
+    fetch_state(deck)   # full again: agent fleet has floor 1
+
+    # restoring and moving in are refused when full, and nothing changes
+    status, body = post(deck, "/api/restore", {"project": restoke})
+    assert status == 409 and "full" in body["error"]
+    assert post(deck, "/api/move-in", {"host": "gpu", "label": "agent-fleet"})[0] == 409
+    assert building_of(deck)["capacity"] == 2 and restoke in building_of(deck)["shuttered"]
+    assert len(projects.load_registry().projects) == 3
+
+    # clearing a floor on the way in is the one way through
+    status, body = post(deck, "/api/restore", {"project": restoke, "shutter": invoices})
+    assert status == 200 and body["floor"] == 2
+    building_state = building_of(deck)
+    assert building_state["floors"] == {agent_fleet: 1, restoke: 2}
+    assert list(building_state["shuttered"]) == [invoices] and building_state["capacity"] == 2
+
+    status, moved = post(deck, "/api/move-in", {"host": "gpu", "label": "agent-fleet", "shutter": agent_fleet})
+    assert status == 200 and moved["floor"] == 1
+    assert set(building_of(deck)["shuttered"]) == {invoices, agent_fleet}
+
+
+def test_shuttering_and_restoring_refuse_what_makes_no_sense(deck, config_path):
+    (restoke,) = housed(deck, "restoke")
+    assert post(deck, "/api/shutter", {"project": "p-00000000"})[0] == 404
+    assert post(deck, "/api/restore", {"project": restoke})[0] == 409          # it isn't in the storehouse
+    assert post(deck, "/api/shutter", {"project": restoke})[0] == 200
+    assert post(deck, "/api/shutter", {"project": restoke})[0] == 409          # already there
+    assert post(deck, "/api/restore", {"project": restoke, "shutter": restoke})[0] == 400   # it holds no floor
+    assert post(deck, "/api/shutter", {})[0] == 400
+    assert post(deck, "/api/shutter", {"project": restoke}, Origin="http://evil.example")[0] == 403
+
+
+def test_the_storehouse_survives_a_restart(deck, config_path):
+    (restoke,) = housed(deck, "restoke")
+    post(deck, "/api/shutter", {"project": restoke})
+    server, url = start_deck()
+    try:
+        assert building_of(url)["shuttered"][restoke]["floor"] == 1
+        assert building_of(url)["floors"] == {}
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+# ------------------------------------------------------------------ capacity from the CLI
+def test_capacity_is_set_from_the_cli_only_within_limits(deck, config_path, capsys):
+    from fleet import cli
+    cli.main(["building", "capacity", "8"])
+    assert json.loads(config_path.read_text())["capacity"] == 8
+    assert building_of(deck)["capacity"] == 8
+    for bad in ("11", "0"):
+        with pytest.raises(SystemExit):
+            cli.main(["building", "capacity", bad])
+    assert json.loads(config_path.read_text())["capacity"] == 8
+    assert "hosts" in json.loads(config_path.read_text())   # the rest of the config is kept

@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from fleet import building, projects, transport
 from fleet.attention import AttentionBoard, ItemResolved
 from fleet.building import DEFAULT_CAPACITY, NoVacancy
-from fleet.workspace import FOCUSES, WorkspaceStore
+from fleet.workspace import FOCUSES, AlreadyShuttered, NotShuttered, WorkspaceStore
 from fleet.projects import Registry
 from fleet.transport import FleetError, Host
 from fleet.web.documents import fetch_document
@@ -240,7 +240,7 @@ def make_handler(state: FleetState | FixtureState,
         def do_POST(self) -> None:  # noqa: N802 — http.server naming
             path = self.path.split("?", 1)[0]
             action = path.removeprefix("/api/attention/") if path.startswith("/api/attention/") else None
-            if path not in ("/api/focus", "/api/move-in") and action not in ATTENTION_ACTIONS:
+            if path not in ("/api/focus", "/api/move-in", "/api/shutter", "/api/restore") and action not in ATTENTION_ACTIONS:
                 self.respond(404, "text/plain", b"not found")
             elif not self.same_origin():
                 self.respond(403, "application/json", b'{"error": "cross-origin writes are refused"}')
@@ -256,6 +256,8 @@ def make_handler(state: FleetState | FixtureState,
                     self.attention(action, body)
                 elif path == "/api/move-in":
                     self.move_in(body)
+                elif path in ("/api/shutter", "/api/restore"):
+                    self.storehouse(path.removeprefix("/api/"), body)
                 else:
                     self.focus(body)
 
@@ -285,19 +287,38 @@ def make_handler(state: FleetState | FixtureState,
             self.respond(200, "application/json", json.dumps(state.workspace.focus_snapshot()).encode())
 
         def move_in(self, body: dict[str, Any]) -> None:
-            """POST /api/move-in {"host": host, "label": label} — register the label as a project on the lowest free floor."""
-            if not isinstance(body.get("host"), str) or not isinstance(body.get("label"), str):
+            """POST /api/move-in {"host": host, "label": label, "shutter": project ID to make room, if full}
+            — register the label as a project on the lowest free floor."""
+            if (not isinstance(body.get("host"), str) or not isinstance(body.get("label"), str)
+                    or not isinstance(body.get("shutter", ""), str)):
                 self.error(400, "host and label are required")
                 return
+            self.change_floors(lambda: state.move_in(body["host"], body["label"], body.get("shutter")))
+
+        def storehouse(self, action: str, body: dict[str, Any]) -> None:
+            """POST /api/shutter {"project": ID} — pack it away and free its floor.
+            POST /api/restore {"project": ID, "shutter": project ID to make room, if full} — move its crate back in."""
+            if not isinstance(body.get("project"), str) or not isinstance(body.get("shutter", ""), str):
+                self.error(400, "project is required")
+                return
+            if action == "shutter":
+                self.change_floors(lambda: state.shutter(body["project"]))
+            else:
+                self.change_floors(lambda: state.restore(body["project"], body.get("shutter")))
+
+        def change_floors(self, change: Callable[[], dict[str, Any]]) -> None:
             try:
-                moved = state.move_in(body["host"], body["label"])
-            except (NoVacancy, AlreadyHoused) as error:
+                changed = change()
+            except LookupError as error:
+                self.error(404, str(error.args[0]))
+                return
+            except (NoVacancy, AlreadyHoused, AlreadyShuttered, NotShuttered) as error:
                 self.error(409, str(error))
                 return
             except FleetError as error:
                 self.error(400, str(error))
                 return
-            self.respond(200, "application/json", json.dumps(moved).encode())
+            self.respond(200, "application/json", json.dumps(changed).encode())
 
         def attention(self, action: str, body: dict[str, Any]) -> None:
             """POST /api/attention/acknowledge|snooze|reopen {"id": item id, "seconds": snooze length}"""

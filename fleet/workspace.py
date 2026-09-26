@@ -11,11 +11,14 @@ Attention actions are what the user did to an attention item (see fleet.attentio
 acknowledged, or snoozed until a time. Items themselves are derived and never stored.
 
 Floors are which floor of the building each registered project occupies (see
-fleet.building), numbered from 1 above the lobby.
+fleet.building), numbered from 1 above the lobby. A shuttered project has no floor; it
+is recorded with when it was shuttered and the floor it left, so restoring it can take
+that floor back if it is free. Its ID, links, focus and everything else are untouched.
 
     {"focus": {"projects": {"p-1a2b3c4d": "background"}, "labels": {"scratch": "background"}},
      "attention": {"<item id>": {"state": "snoozed", "at": 1790400000.0, "until": 1790403600.0}},
-     "floors": {"p-1a2b3c4d": 1}}
+     "floors": {"p-1a2b3c4d": 1},
+     "shuttered": {"p-5e6f7a8b": {"at": 1790400000.0, "floor": 2}}}
 """
 from __future__ import annotations
 
@@ -31,6 +34,14 @@ from fleet.transport import FleetError
 FOCUSES = ("priority", "background")
 DEFAULT_FOCUS = "priority"
 ACTIONS = ("acknowledged", "snoozed")
+
+
+class AlreadyShuttered(FleetError):
+    """The project is already in the storehouse."""
+
+
+class NotShuttered(FleetError):
+    """Only a project in the storehouse can be restored."""
 
 
 class WorkspaceStore:
@@ -61,6 +72,13 @@ class WorkspaceStore:
             if isinstance(floor, bool) or not isinstance(floor, int) or floor < 1 or floor in self.floors.values():
                 raise FleetError(f"project '{project_id}' has floor {floor!r}: floors are distinct whole numbers from 1")
             self.floors[project_id] = floor
+        self.shuttered: dict[str, dict[str, Any]] = {}
+        for project_id, record in (initial.get("shuttered") or {}).items():
+            floor = record.get("floor")
+            if project_id in self.floors or not isinstance(record.get("at"), (int, float)) or not (
+                    floor is None or (isinstance(floor, int) and not isinstance(floor, bool) and floor >= 1)):
+                raise FleetError(f"shuttered project '{project_id}' has an unknown record {record}")
+            self.shuttered[project_id] = {"at": record["at"], "floor": floor}
 
     def save(self) -> None:
         """Write the whole file atomically; call with the lock held."""
@@ -68,7 +86,8 @@ class WorkspaceStore:
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_suffix(".tmp")
-        temporary.write_text(json.dumps({"focus": self.focus, "attention": self.attention, "floors": self.floors}, indent=2, sort_keys=True) + "\n")
+        temporary.write_text(json.dumps({"focus": self.focus, "attention": self.attention, "floors": self.floors,
+                                         "shuttered": self.shuttered}, indent=2, sort_keys=True) + "\n")
         os.replace(temporary, self.path)
 
     # ------------------------------------------------------------ focus
@@ -140,16 +159,18 @@ class WorkspaceStore:
             return self.floors[project_id]
 
     def settle(self, project_ids: Iterable[str], capacity: int) -> None:
-        """Free the floors of projects no longer registered and move in registered ones that have none, in order,
-        while floors are free. A floor once held is never reassigned, even above a lowered capacity."""
+        """Free the floors of projects no longer registered and move in registered ones that have none and aren't
+        shuttered, in order, while floors are free. A floor once held is never reassigned, even above a lowered
+        capacity."""
         project_ids = list(project_ids)
         with self.lock:
             changed = False
-            for project_id in [known for known in self.floors if known not in project_ids]:
-                del self.floors[project_id]
-                changed = True
+            for records in (self.floors, self.shuttered):
+                for project_id in [known for known in records if known not in project_ids]:
+                    del records[project_id]
+                    changed = True
             for project_id in project_ids:
-                if project_id in self.floors:
+                if project_id in self.floors or project_id in self.shuttered:
                     continue
                 try:
                     self.floors[project_id] = self.free_floor(capacity)
@@ -158,6 +179,36 @@ class WorkspaceStore:
                 changed = True
             if changed:
                 self.save()
+
+    def shuttered_snapshot(self) -> dict[str, dict[str, Any]]:
+        with self.lock:
+            return {project_id: dict(record) for project_id, record in self.shuttered.items()}
+
+    def shutter(self, project_id: str, now: float) -> int | None:
+        """Take the project off its floor into the storehouse; return the floor it freed."""
+        with self.lock:
+            if project_id in self.shuttered:
+                raise AlreadyShuttered(f"{project_id} is already in the storehouse")
+            floor = self.floors.pop(project_id, None)
+            self.shuttered[project_id] = {"at": now, "floor": floor}
+            self.save()
+            return floor
+
+    def restore(self, project_id: str, capacity: int) -> int:
+        """Bring a shuttered project back: to the floor it left if that is free, else the lowest free one."""
+        with self.lock:
+            record = self.shuttered.get(project_id)
+            if record is None:
+                raise NotShuttered(f"{project_id} is not in the storehouse")
+            old = record["floor"]
+            if old is not None and old <= capacity and old not in self.floors.values():
+                floor = old
+            else:
+                floor = self.free_floor(capacity)
+            del self.shuttered[project_id]
+            self.floors[project_id] = floor
+            self.save()
+            return floor
 
     def free_floor(self, capacity: int) -> int:
         """The lowest free floor; call with the lock held."""
