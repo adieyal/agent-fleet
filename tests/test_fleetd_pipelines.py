@@ -121,15 +121,16 @@ def test_updates_are_sent_at_most_once_a_second_and_only_when_changed(pipelines:
     assert message["run"]["updated_at"] == 100.3
 
 
-def test_flows_per_second_cover_the_last_ten_seconds(pipelines: Path) -> None:
+def test_items_per_second_count_items_entering_the_first_column_in_the_last_ten_seconds(pipelines: Path) -> None:
     path = pipelines / "invoice-training" / "r1.jsonl"
-    write(path, run_line("r1") + "".join(flow(str(k), "invoices", "decided", ts=100 + k * 0.5) for k in range(20))
+    write(path, run_line("r1") + "".join(flow(str(k), "invoices", "decided", ts=100 + k * 0.5)
+                                         + flow(str(k), "decided", "confident", ts=100 + k * 0.5) for k in range(20))
           + flow("old", "invoices", "tied", ts=10))
     tracker = fleetd.PipelineTracker(pipelines)
     [message] = tracker.scan(clock=109.9)
-    assert message["run"]["rate"] == 2.0
+    assert message["run"]["item_rate"] == 2.0            # the gates' flows are the same items again, not more
     [message] = tracker.scan(clock=200)                  # the file stopped growing: the rate falls to nothing
-    assert message["run"]["rate"] == 0.0 and message["run"]["status"] == "running"
+    assert message["run"]["item_rate"] == 0.0 and message["run"]["status"] == "running"
 
 
 def test_a_long_run_is_announced_once_read_to_the_end(pipelines: Path, monkeypatch: pytest.MonkeyPatch) -> None:

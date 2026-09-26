@@ -950,7 +950,7 @@ PIPELINE_SCAN_INTERVAL = 1.0
 PIPELINE_EMIT_INTERVAL = 1.0
 PIPELINE_RUNS = 2            # the newest run and the one before it, its baseline if it finished
 PIPELINE_RECENT = 25         # items kept per node, for the terminal nodes' drill-down
-PIPELINE_RATE_WINDOW = 10    # seconds of flows behind the flows-per-second figure
+PIPELINE_RATE_WINDOW = 10    # seconds of flows behind the items-per-second figure
 PIPELINE_READ_BYTES = 16 * 1024 * 1024  # most read per scan, so catching up on a long run never stalls the stream
 
 
@@ -971,7 +971,7 @@ class PipelineRun:
         self.inflow: Dict[str, int] = collections.Counter()
         self.outflow: Dict[str, int] = collections.Counter()
         self.recent: Dict[str, Deque[JsonObject]] = {}
-        self.per_second: Dict[int, int] = collections.Counter()
+        self.per_second: Dict[str, Dict[int, int]] = {}   # flows out of each node, by the second of their ts
         self.status: Optional[str] = None
         self.ended_at: Optional[float] = None
 
@@ -1008,7 +1008,8 @@ class PipelineRun:
             self.outflow[source] += 1
             self.inflow[target] += 1
             ts = record.get("ts") if isinstance(record.get("ts"), (int, float)) else now()
-            self.per_second[int(ts)] += 1
+            seconds = self.per_second.setdefault(source, collections.Counter())
+            seconds[int(ts)] += 1
             item: JsonObject = {"item": record.get("item"), "ts": ts}
             if isinstance(record.get("attrs"), dict):
                 item["attrs"] = record["attrs"]
@@ -1042,16 +1043,18 @@ class PipelineRun:
 
     def summary(self, clock: float) -> JsonObject:
         horizon = int(clock) - PIPELINE_RATE_WINDOW
-        for second in [second for second in self.per_second if second <= horizon]:
-            del self.per_second[second]
-        recent_flows = sum(self.per_second.values())
+        for seconds in self.per_second.values():
+            for second in [second for second in seconds if second <= horizon]:
+                del seconds[second]
+        columns = self.columns()
+        entered = sum(sum(self.per_second.get(node, {}).values()) for node in (columns[0] if columns else []))
         return {
             "run_id": self.meta.get("run_id") or self.path.stem, "pipeline": self.meta.get("pipeline"),
             "label": self.meta.get("label"), "started_at": self.meta.get("started_at"), "total": self.meta.get("total"),
-            "nodes": self.columns(), "edges": [[source, target, count] for (source, target), count in self.edges.items()],
+            "nodes": columns, "edges": [[source, target, count] for (source, target), count in self.edges.items()],
             "counts": self.counts(), "flows": sum(self.edges.values()),
             "recent": {node: list(items) for node, items in self.recent.items() if not self.outflow[node]},
-            "rate": round(recent_flows / PIPELINE_RATE_WINDOW, 1), "updated_at": self.modified,
+            "item_rate": round(entered / PIPELINE_RATE_WINDOW, 1), "updated_at": self.modified,
             "status": self.status or "running", "ended_at": self.ended_at,
         }
 

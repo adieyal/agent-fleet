@@ -454,7 +454,7 @@ export function demoSource() {
   function stepPipe() {
     if (!pipe) newPipeRun(1);
     if (pipe.status === 'done') { if (++pipe.doneAt > 4) { pipeBase = pipe; newPipeRun(pipe.n + 1); } return; }
-    const before = [...pipe.edges.values()].reduce((s, c) => s + c, 0);
+    const before = pipe.items.length;
     for (let k = 0, n = 60 + Math.floor(prand() * 60); k < n && pipe.items.length < PIPE.total; k++) {
       const item = `D-${pipe.n}-${String(pipe.items.length).padStart(5, '0')}`;
       const first = weighted({ decided: 0.7, tied: 0.2, unlearnable: 0.1 });
@@ -478,7 +478,7 @@ export function demoSource() {
       }
       pipe.status = 'done'; pipe.ended_at = now();
     }
-    pipe.rate = Math.round(([...pipe.edges.values()].reduce((s, c) => s + c, 0) - before) / (POLL_MS / 1000) * 10) / 10;
+    pipe.rate = Math.round((pipe.items.length - before) / (POLL_MS / 1000) * 10) / 10;   // items into the first column
     pipe.updated_at = now();
   }
   function pipeReport() {
@@ -488,7 +488,7 @@ export function demoSource() {
       run: { run_id: pipe.run_id, pipeline: 'demo-training', label: pipe.label, started_at: pipe.started_at, total: PIPE.total,
         nodes: PIPE.nodes, edges, counts, flows: edges.reduce((s, e) => s + e[2], 0),
         recent: Object.fromEntries(Object.entries(pipe.recent).filter(([n]) => !pipe.outflow[n])),
-        rate: pipe.status === 'running' ? pipe.rate : 0, updated_at: pipe.updated_at, status: pipe.status, ended_at: pipe.ended_at },
+        item_rate: pipe.status === 'running' ? pipe.rate : 0, updated_at: pipe.updated_at, status: pipe.status, ended_at: pipe.ended_at },
       baseline: pipeBase && { run_id: pipeBase.run_id, label: pipeBase.label, started_at: pipeBase.started_at, total: PIPE.total,
         edges: [...pipeBase.edges].map(([key, c]) => [...key.split('→'), c]), counts: pipeCounts(pipeBase) } };
   }
