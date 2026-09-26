@@ -61,12 +61,27 @@ def strip_bake_nodes() -> None:
 def export_glb(dest: Path) -> None:
     bpy.ops.object.select_all(action='DESELECT')
     for o in bpy.data.objects:
-        o.select_set(o.type in {'MESH', 'CAMERA'})
+        o.select_set(o.type in {'MESH', 'CAMERA', 'EMPTY', 'ARMATURE'})
+    # export_apply leaves armature modifiers alone, so skinned characters stay skinned
     bpy.ops.export_scene.gltf(
         filepath=str(dest), export_format='GLB', use_selection=True,
         export_image_format='WEBP', export_image_quality=TEXTURE_QUALITY, export_image_add_webp=False,
         export_extras=True, export_texcoords=True, export_normals=True, export_apply=True,
-        export_cameras=True, export_lights=False, export_yup=True, export_materials='EXPORT')
+        export_cameras=True, export_lights=False, export_yup=True, export_materials='EXPORT',
+        export_animations=True, export_animation_mode='ACTIONS', export_force_sampling=True)
+
+
+def export_environment(dest: Path) -> dict:
+    """A small copy of the world HDRI for the runtime environment map (PMREM needs little resolution)."""
+    world = bpy.context.scene.world
+    src = next(n.image for n in world.node_tree.nodes if n.type == 'TEX_ENVIRONMENT')
+    img = src.copy()
+    img.scale(512, 256)
+    img.filepath_raw = str(dest)
+    img.file_format = 'HDR'
+    img.save()
+    return {'file': dest.name, 'hdri': world['hdri'], 'rotation_deg': round(math.degrees(world['hdri_rotation']), 1),
+            'strength': world.node_tree.nodes['Background'].inputs['Strength'].default_value}
 
 
 def check_glb(path: Path) -> dict:
@@ -106,6 +121,7 @@ def main() -> None:
     export_glb(glb)
     summary = check_glb(glb)
     objs = sorted(bpy.data.objects, key=lambda o: o.name)
+    cameras = [o.name for o in objs if o.type == 'CAMERA']
     manifest = {
         'scene': scene_name,
         'glb': glb.name,
@@ -117,15 +133,17 @@ def main() -> None:
                      'and lightMapIntensity = scale * PI (the shader divides by PI).',
             'texel_m': info['texel_m'],
             'layers': layers,
-        },
+        } if layers else None,
         'warm_groups': {g: sorted(o.name for o in objs if o.type == 'MESH' and o.get('warm') == g)
                         for g in info['warm_groups']},
         'dynamic': sorted(o.name for o in objs if o.get('fleet') == 'dynamic'),
+        'anchors': sorted(o.name for o in objs if o.get('fleet') == 'anchor'),
+        'actions': sorted(a.name for a in bpy.data.actions),
         'seat_height': info['seat_height'],
-        'camera': next(o.name for o in objs if o.type == 'CAMERA'),
-        'environment': {'hdri': bpy.context.scene.world['hdri'],
-                        'rotation_deg': round(math.degrees(bpy.context.scene.world['hdri_rotation']), 1)},
-        'built_with': {'blender': bpy.app.version_string, 'bake_device': bake['device'], 'samples': bake['samples']},
+        'camera': cameras[0] if cameras else None,
+        'environment': export_environment(out / 'environment.hdr') if bpy.context.scene.world else None,
+        'built_with': {'blender': bpy.app.version_string, 'bake_device': bake.get('device'),
+                       'samples': bake.get('samples')},
         'files': {f.name: {'bytes': f.stat().st_size, 'sha256': hashlib.sha256(f.read_bytes()).hexdigest()}
                   for f in sorted(out.glob('*'))},
         'glb_summary': summary,

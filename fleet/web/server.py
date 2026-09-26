@@ -31,8 +31,10 @@ from fleet.web.live import AlreadyHoused, LiveWorkspace
 WEB_ROOT = Path(__file__).parent.resolve()
 INDEX_PATH = WEB_ROOT / "index.html"
 APP_DIRECTORIES = ("css", "js")  # the deck's own code, read at startup together with the page
-STATIC_PREFIXES = ("/vendor/", "/assets/")
+STATIC_PREFIXES = ("/vendor/", "/assets/", "/prototype/")
+PROTOTYPES = {"/prototype/bench": "/prototype/bench.html"}  # art prototypes; not linked from the deck
 STATIC_TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
+                ".html": "text/html; charset=utf-8", ".hdr": "image/vnd.radiance",
                 ".glb": "model/gltf-binary", ".gltf": "model/gltf+json",
                 ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".json": "application/json",
                 ".md": "text/markdown; charset=utf-8", ".txt": "text/plain; charset=utf-8"}
@@ -230,6 +232,8 @@ def make_handler(state: FleetState | FixtureState,
                 self.respond(200, "application/json", json.dumps(state.document()).encode())
             elif path in ("/", "/index.html"):
                 self.respond(200, "text/html; charset=utf-8", index_page)
+            elif path in PROTOTYPES:
+                self.static_file(PROTOTYPES[path])
             elif path in app_files:
                 self.respond(200, STATIC_TYPES.get(Path(path).suffix, "application/octet-stream"), app_files[path])
             elif path.startswith(STATIC_PREFIXES):

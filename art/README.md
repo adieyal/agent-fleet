@@ -6,15 +6,22 @@ Builds Fleet's baked 3D scenes from CC0 sources: Blender assembles each scene fr
 art/build.sh              # everything: fetch, build, bake, export, size check
 art/build.sh workbench    # one scene
 PREVIEW=1 art/build.sh    # also render art/build/<scene>/preview.png from the scene camera
+uv run --group dev python art/scripts/shoot_bench.py [DIR]   # screenshot /prototype/bench beside l2.png
 ```
 
 Output goes to `fleet/web/assets/world/<scene>/`, and that is the only thing committed. Each scene must stay under 15 MB; `build.sh` fails when one doesn't.
+
+There are two scenes:
+- `workbench`: the l2 room, baked.
+- `robot`: the rigged character, not baked. It has looping actions `idle`, `type`, `write` and `hold`, and a pencil and a flask on its right hand.
+
+The prototype page `/prototype/bench` combines them in three.js. It is served by `fleet/web/server.py` and not linked from the deck.
 
 ## Layout
 
 | Path | What | In git |
 |---|---|---|
-| `assets.json` | The sources we use: Poly Haven and ambientCG ids, resolutions, and the Blender build | yes |
+| `assets.json` | The sources we use: Poly Haven and ambientCG ids and resolutions | yes |
 | `assets.lock.json` | The exact URLs and sha256 of every downloaded file | yes |
 | `CREDITS.md` | Author, licence and URL of every source, written by `fetch_assets.py --resolve` | yes |
 | `scripts/fetch_assets.py` | Downloads what the lock pins into `sources/` and verifies the hashes | yes |
@@ -23,20 +30,23 @@ Output goes to `fleet/web/assets/world/<scene>/`, and that is the only thing com
 | `scripts/bake.py` | Bakes the lightmaps (Cycles on the GPU, then OpenImageDenoise) | yes |
 | `scripts/export.py` | Writes the glb (WebP textures), the lightmaps (WebP) and `manifest.json` | yes |
 | `scripts/preview.py` | Renders a reference image from the scene camera for comparison with the concept art | yes |
-| `sources/` | Downloaded assets and the pinned Blender | **no** |
+| `scripts/shoot_bench.py` | Screenshots the prototype page at 1672 x 941 and composes it beside `l2.png` | yes |
+| `sources/` | Downloaded assets | **no** |
 | `build/` | `.blend` files, raw EXR lightmaps, logs, previews | **no** |
 
 ## Sources and tools
 
 `fetch_assets.py` without arguments downloads exactly what `assets.lock.json` pins and fails on any hash mismatch. To add or change a source, edit `assets.json`, then run `python3 art/scripts/fetch_assets.py --resolve`. That asks each provider's API for the file, checks it against the provider's own md5, sha256 or size, and rewrites the lock and `CREDITS.md`.
 
-The pipeline uses the official Blender LTS build, pinned in `assets.json` and unpacked into `sources/tools/`. The distro package on this host (3.0.1) lacks OpenImageDenoise, OptiX, colour management and WebP glTF export. The scripts refuse to run on anything older than the pinned major version; set `BLENDER=/path/to/blender` to use another install.
+The pipeline needs Blender 4.2 LTS or newer: OptiX baking, OpenImageDenoise, colour management and WebP glTF export. `build.sh` uses `$BLENDER`, defaulting to `~/.local/bin/blender`, and fails clearly on anything older. The distro package at `/usr/bin/blender` on this host is 3.0.1 and must not be used; the scripts refuse it too.
 
 ## How a scene is made
 
 1. **Build.** Every object is tagged with a `fleet` custom property:
    - `baked`: static. It gets a second UV map, `Lightmap`, in one shared atlas at 1.5 cm per texel. Faces that can never be seen, such as undersides on the floor and the outsides of walls, are removed first.
    - `dynamic`: lit at runtime, e.g. plants, plan tiles, bulbs, the lantern.
+   - `anchor`: an empty the runtime places things at: `seat_desk*`, `lantern_anchor`, `footprint_*`.
+   - `character` / `prop`: the robot's skinned mesh and the props on its bones.
 
    Lights that belong to a workarea carry `warm = <group>`. Random choices use fixed seeds. Islands are packed by our own shelf packer because Blender's packer gives a different layout on every run. Avoid UV spheres on baked objects: `smart_project` unwraps them differently run to run.
 2. **Bake.** The baked objects are joined into one proxy mesh and baked in a single GPU pass. Per-object baking is CPU-bound.

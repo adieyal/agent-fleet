@@ -89,7 +89,7 @@ Blender bakes in scene-linear values (view transform *Standard*, no look); three
 - `/usr/bin/blender` is the Debian package **3.0.1**. Cycles sees the RTX 3090 through **CUDA** in background mode; a headless 1024² diffuse bake of a small scene took 2.5 s once kernels were compiled (the first run spent ~85 s compiling). **OptiX is not available** in this build.
 - The build ships **no OpenColorIO config**: only *Linear* and *sRGB* colour spaces and no view transforms (no Filmic, no AgX). Linear float bakes still work, but reference renders can't be colour-managed the way three.js tone-maps.
 - The glTF exporter (`io_scene_gltf2`) is present, but it is the 3.0-era version.
-- **Decision:** the pipeline pins the official Blender **4.5.14 LTS** Linux build. `art/scripts/fetch_assets.py` fetches it into `art/sources/tools/` like any other source. It brings OptiX, OCIO with AgX, OIDN denoising and WebP glTF export. The build scripts refuse older versions.
+- **Decision:** the pipeline uses Blender **4.2 LTS or newer**, installed at `~/.local/bin/blender` on this host (4.2.23; override with `BLENDER`). It brings OptiX, OCIO with AgX, OIDN denoising and WebP glTF export. `art/build.sh` and the scripts refuse older versions.
 - Python on this host can reach Poly Haven, ambientCG and download.blender.org.
 
 **Layout.** As built; details in `art/README.md`.
@@ -97,7 +97,7 @@ Blender bakes in scene-linear values (view transform *Standard*, no look); three
   - `art/assets.json` and `art/assets.lock.json`: what we use, and the exact URL and sha256 of every file.
   - `art/scripts/`: fetching, then the Blender steps (`build_<scene>.py`, `bake.py`, `export.py`, `preview.py`) run with `blender -b -P`.
   - `art/sources/` and `art/build/`: downloads and intermediates, gitignored.
-  - Planned: `art/robot/robot.blend`, the hand-tuned robot model and rig, the one committed `.blend`.
+  - The robot is scripted too (`art/scripts/build_robot.py`). It is a rigid-skinned mesh on a 12-bone rig, so there's no hand-tuned `.blend` to commit.
 - `fleet/web/assets/world/<scene>/`: built output only, i.e. `<scene>.glb`, `lightmap-<layer>.webp`, and `manifest.json` naming the warm groups and dynamic nodes. Source credits are in `art/CREDITS.md`.
 
 **Sources.** All CC0.
@@ -128,3 +128,17 @@ Lightmaps start as 8-bit sRGB WebP with a per-scene scale; if banding shows in t
 - One rigged robot seated and typing.
 
 It renders in a standalone page beside the current deck, with the camera fitted to `l2.png`. Acceptance is a side-by-side screenshot of `l2.png` and the render, judged on the qualities above, with warmth toggled on and off for the bench.
+
+**Spike result (2026-09-26).** `/prototype/bench` renders the baked workbench with three robots from the l2 camera: orthographic, pitch 37°, yaw 23°. `art/scripts/shoot_bench.py` writes the side-by-side. What matches:
+- the layout: lift, question desk under the lantern, plan wall with criteria lights, poster, bench, near desk
+- mass and contact shadows
+- amber lit tiles with ticks
+- the magenta lantern with its glyph
+- action bubbles
+- desk lamps that follow activity
+
+Gaps to close next, largest first:
+1. **Tone.** The render is brighter and whiter overall. l2 has darker, warmer mid-tones, a glossy floor with warm reflections, and visible warm pools around each working desk.
+2. **Density.** l2 has more plants and props per desk, and a lit box on the shelf.
+3. **Robot finish.** l2's robots have more saturated bodies, smaller eyes and darker joints.
+4. **Lantern shape.** The lantern needs an elongated, faceted diamond shape instead of a flat rhombus.

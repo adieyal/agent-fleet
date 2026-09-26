@@ -20,8 +20,8 @@ def manifest(scene: str) -> dict:
     return json.loads((WORLD / scene / "manifest.json").read_text())
 
 
-def test_there_is_a_scene() -> None:
-    assert "workbench" in SCENES
+def test_there_are_the_workbench_and_the_robot() -> None:
+    assert {"workbench", "robot"} <= set(SCENES)
 
 
 @pytest.mark.parametrize("scene", SCENES)
@@ -34,6 +34,9 @@ def test_output_matches_its_manifest_and_budget(scene: str) -> None:
         data = (folder / name).read_bytes()
         assert len(data) == meta["bytes"] and hashlib.sha256(data).hexdigest() == meta["sha256"], name
     assert sum(f.stat().st_size for f in folder.iterdir()) < BUDGET
+    if m["lightmap"] is None:  # a character: nothing baked, animated instead
+        assert m["actions"]
+        return
     layers = m["lightmap"]["layers"]
     assert "base" in layers and set(layers) - {"base"} == set(m["warm_groups"])
     assert all(layer["scale"] > 0 for layer in layers.values())
@@ -66,7 +69,10 @@ LOAD = """async ([scene, glb, lightmaps]) => {
 }"""
 
 
-@pytest.mark.parametrize("scene", SCENES)
+BAKED = [s for s in SCENES if manifest(s)["lightmap"]]
+
+
+@pytest.mark.parametrize("scene", BAKED)
 def test_three_loads_the_scene(browser: Browser, url: str, scene: str) -> None:
     m = manifest(scene)
     layers = m["lightmap"]["layers"]

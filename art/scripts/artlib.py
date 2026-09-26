@@ -27,13 +27,13 @@ REPO = ART.parent
 SOURCES = ART / 'sources'
 BUILD = ART / 'build'
 WORLD = REPO / 'fleet' / 'web' / 'assets' / 'world'
-MIN_BLENDER = (4, 5, 0)
+MIN_BLENDER = (4, 2, 0)
 
 
 def require_blender() -> None:
     if bpy.app.version < MIN_BLENDER:
         sys.exit(f'art: Blender {".".join(map(str, MIN_BLENDER))}+ required, got {bpy.app.version_string}; '
-                 'run art/build.sh, which uses the pinned build from art/sources/tools')
+                 'set BLENDER to a 4.2 LTS or newer build')
 
 
 def scene_arg() -> str:
@@ -129,19 +129,21 @@ def _finish(name: str, bm: bmesh.types.BMesh, mat: bpy.types.Material, kind: str
 AXES = {'+x': (1, 0, 0), '-x': (-1, 0, 0), '+y': (0, 1, 0), '-y': (0, -1, 0), '+z': (0, 0, 1), '-z': (0, 0, -1)}
 
 
-def box(name, size, loc, mat, kind='baked', bevel=0.006, rot=(0, 0, 0), tile=1.0, parent=None, drop=()):
+def box(name, size, loc, mat, kind='baked', bevel=0.006, rot=(0, 0, 0), tile=1.0, parent=None, drop=(),
+        segments=2):
     """Axis-aligned box of `size` whose base centre is at `loc` (z = bottom).
 
     `drop` names sides that can never be seen (e.g. '+y' for the outside of the back wall);
-    their faces are removed so they take no lightmap space.
+    their faces are removed so they take no lightmap space. A large `bevel` with more `segments`
+    gives the soft, rounded forms of the robots.
     """
     bm = bmesh.new()
     bmesh.ops.create_cube(bm, size=1.0)
     bmesh.ops.scale(bm, vec=Vector(size), verts=bm.verts)
     bmesh.ops.translate(bm, vec=Vector((0, 0, size[2] / 2)), verts=bm.verts)
     if bevel:
-        bmesh.ops.bevel(bm, geom=bm.edges[:] + bm.verts[:], offset=min(bevel, min(size) / 2.5),
-                        segments=2, profile=0.5, affect='EDGES', clamp_overlap=True)
+        bmesh.ops.bevel(bm, geom=bm.edges[:] + bm.verts[:], offset=min(bevel, min(size) / 2.05),
+                        segments=segments, profile=0.5, affect='EDGES', clamp_overlap=True)
     if drop:
         dirs = [Vector(AXES[d]) for d in drop]
         bm.normal_update()
@@ -161,6 +163,62 @@ def cylinder(name, radius, depth, loc, mat, kind='baked', radius2=None, segments
         rims = [e for e in bm.edges if not e.is_manifold or e.calc_face_angle(0) > 0.6]
         bmesh.ops.bevel(bm, geom=rims, offset=bevel, segments=2, profile=0.5, affect='EDGES', clamp_overlap=True)
     return _finish(name, bm, mat, kind, loc, rot, tile, parent)
+
+
+def ball(name, radius, loc, mat, kind='dynamic', scale=(1, 1, 1)):
+    """A quad sphere (subdivided cube pushed out to `radius`) centred on `loc`: no poles, unlike a UV sphere."""
+    bm = bmesh.new()
+    bmesh.ops.create_cube(bm, size=1.0)
+    bmesh.ops.subdivide_edges(bm, edges=bm.edges[:], cuts=5, use_grid_fill=True)
+    for v in bm.verts:
+        v.co = v.co.normalized() * radius
+    bmesh.ops.scale(bm, vec=Vector(scale), verts=bm.verts)
+    ob = _finish(name, bm, mat, kind, loc, (0, 0, 0), 1.0)
+    for p in ob.data.polygons:
+        p.use_smooth = True
+    return ob
+
+
+def panel(name, w, h, loc, mat, kind='baked', rot=(0, 0, 0)):
+    """A flat w x h rectangle standing in the XZ plane, facing -Y, with UVs 0..1 across it (for posters)."""
+    bm = bmesh.new()
+    vs = [bm.verts.new((x, 0, z)) for x, z in ((-w / 2, 0), (w / 2, 0), (w / 2, h), (-w / 2, h))]
+    face = bm.faces.new(vs)
+    uv = bm.loops.layers.uv.new('UVMap')
+    for lp, co in zip(face.loops, ((0, 0), (1, 0), (1, 1), (0, 1))):
+        lp[uv].uv = co
+    return _finish(name, bm, mat, kind, loc, rot, None)
+
+
+def text_mesh(name, text, size, loc, mat, kind='baked', depth=0.002, rot=(math.pi / 2, 0, 0)):
+    """Text as a thin solid (default: standing in the XZ plane, readable from -Y), centred on `loc`."""
+    curve = bpy.data.curves.new(name, 'FONT')
+    curve.body = text
+    curve.size = size
+    curve.extrude = depth / 2
+    curve.align_x, curve.align_y = 'CENTER', 'CENTER'
+    tmp = bpy.data.objects.new(name + '_font', curve)
+    bpy.context.scene.collection.objects.link(tmp)
+    bpy.context.view_layer.update()
+    me = bpy.data.meshes.new_from_object(tmp.evaluated_get(bpy.context.evaluated_depsgraph_get()))
+    bpy.data.objects.remove(tmp)
+    bpy.data.curves.remove(curve)
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bpy.data.meshes.remove(me)
+    return _finish(name, bm, mat, kind, loc, rot, 1.0)
+
+
+def empty(name, loc, rot=(0, 0, 0), **props) -> bpy.types.Object:
+    """A named anchor exported as a glTF node (seats, bubble points); `props` land in its extras."""
+    ob = bpy.data.objects.new(name, None)
+    bpy.context.scene.collection.objects.link(ob)
+    ob.location = loc
+    ob.rotation_euler = rot
+    ob['fleet'] = 'anchor'
+    for k, v in props.items():
+        ob[k] = v
+    return ob
 
 
 def octahedron(name, radius, height, loc, mat, kind='dynamic'):
@@ -392,8 +450,8 @@ def _shelf_pack(objs, px_per_uv: float, margin_px: int, max_res: int) -> int:
         for f in faces:
             for lp in f.loops:
                 du, dv = (lp[uv].uv.x - u0) * px_per_uv, (lp[uv].uv.y - v0) * px_per_uv
-                if rot:
-                    du, dv = dv, w - du
+                if rot:  # transpose: a tall island lies down in its landscape slot
+                    du, dv = dv, du
                 lp[uv].uv = ((x + du) / size, (y + dv) / size)
     for o, bm in meshes:
         bm.to_mesh(o.data)

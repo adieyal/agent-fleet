@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Download the pinned CC0 sources and build tools into art/sources/.
+"""Download the pinned CC0 sources into art/sources/.
 
 Default: fetch exactly what art/assets.lock.json pins and verify every sha256.
---resolve: ask the providers (Poly Haven, ambientCG, blender.org) for the files
-named in art/assets.json, check them against the provider's own hash or size,
-and rewrite the lock and art/CREDITS.md.
+--resolve: ask the providers (Poly Haven, ambientCG) for the files named in
+art/assets.json, check them against the provider's own hash or size, and
+rewrite the lock and art/CREDITS.md.
 """
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ import argparse
 import hashlib
 import json
 import sys
-import tarfile
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -34,12 +33,6 @@ def get_json(url: str) -> dict:
     req = urllib.request.Request(url, headers={'User-Agent': UA})
     with urllib.request.urlopen(req, timeout=60) as r:
         return json.load(r)
-
-
-def get_text(url: str) -> str:
-    req = urllib.request.Request(url, headers={'User-Agent': UA})
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return r.read().decode()
 
 
 def download(url: str, dest: Path) -> tuple[str, str, int]:
@@ -104,25 +97,10 @@ def resolve_ambientcg(a: dict) -> dict:
             'files': [{'path': str(dest.relative_to(SOURCES)), 'url': d['downloadLink'], 'sha256': sha, 'size': size}]}
 
 
-def resolve_tool(t: dict) -> dict:
-    name = Path(t['url']).name
-    sums = dict(reversed(line.split()) for line in get_text(t['sha256_url']).splitlines() if line.strip())
-    dest = SOURCES / 'archives' / name
-    sha, _, size = download(t['url'], dest)
-    if sums.get(name) != sha:
-        raise FetchError(f"{name}: sha256 does not match {t['sha256_url']}")
-    return {'id': t['id'], 'version': t['version'], 'license': t['license'],
-            'files': [{'path': str(dest.relative_to(SOURCES)), 'url': t['url'], 'sha256': sha, 'size': size}]}
-
-
 def resolve() -> dict:
-    manifest = json.loads(MANIFEST.read_text())
     resolvers = {'polyhaven': resolve_polyhaven, 'ambientcg': resolve_ambientcg}
-    lock = {'tools': [], 'assets': []}
-    for t in manifest['tools']:
-        print(f"resolve {t['id']} {t['version']}")
-        lock['tools'].append(resolve_tool(t))
-    for a in manifest['assets']:
+    lock = {'assets': []}
+    for a in json.loads(MANIFEST.read_text())['assets']:
         print(f"resolve {a['source']}:{a['id']}")
         lock['assets'].append(resolvers[a['source']](a))
     LOCK.write_text(json.dumps(lock, indent=2) + '\n')
@@ -132,12 +110,11 @@ def resolve() -> dict:
 # --- locked fetch -------------------------------------------------------------
 
 def fetch_locked(lock: dict) -> None:
-    manifest = json.loads(MANIFEST.read_text())
-    locked = {a['id'] for a in lock['assets']} | {t['id'] for t in lock['tools']}
-    missing = [x['id'] for x in manifest['assets'] + manifest['tools'] if x['id'] not in locked]
+    locked = {a['id'] for a in lock['assets']}
+    missing = [a['id'] for a in json.loads(MANIFEST.read_text())['assets'] if a['id'] not in locked]
     if missing:
         raise FetchError(f"not in {LOCK.name}: {', '.join(missing)}; run with --resolve")
-    for entry in lock['tools'] + lock['assets']:
+    for entry in lock['assets']:
         for f in entry['files']:
             dest = SOURCES / f['path']
             if dest.exists() and sha256_of(dest) == f['sha256']:
@@ -160,27 +137,17 @@ def unpack(lock: dict) -> None:
             for name in z.namelist():
                 if any(name.endswith(f'_{m}.jpg') for m in maps) and not (out / name).exists():
                     z.extract(name, out)
-    for tool in lock['tools']:
-        archive = SOURCES / tool['files'][0]['path']
-        target = SOURCES / 'tools' / archive.name.removesuffix('.tar.xz')
-        if not target.exists():
-            print(f'unpack {archive.name}')
-            with tarfile.open(archive) as t:
-                t.extractall(SOURCES / 'tools')
 
 
 def write_credits(lock: dict) -> None:
     rows = ['# Art sources', '',
-            'Written by `art/scripts/fetch_assets.py --resolve` from `art/assets.lock.json`. '
-            'Downloaded files live in `art/sources/` and are never committed.', '',
-            '| Asset | Source | Authors | Licence | Files |', '|---|---|---|---|---|']
+            'Written by `art/scripts/fetch_assets.py --resolve` from `art/assets.lock.json`, which lists every '
+            'downloaded file with its URL and sha256. Downloaded files live in `art/sources/` and are never committed.',
+            '', '| Asset | Source | Authors | Licence | Download |', '|---|---|---|---|---|']
     for a in lock['assets']:
-        files = '<br>'.join(f"[{Path(f['path']).name}]({f['url']})" for f in a['files'])
+        main = next((f for f in a['files'] if f['path'].endswith(('.gltf', '.hdr', '.zip'))), a['files'][0])
         rows.append(f"| [{a['title']}]({a['page']}) | {a['source']} | {', '.join(a['authors'])} "
-                    f"| {a['license']} | {files} |")
-    rows += ['', '## Build tools (not shipped)', '', '| Tool | Version | Licence | URL |', '|---|---|---|---|']
-    for t in lock['tools']:
-        rows.append(f"| {t['id']} | {t['version']} | {t['license']} | {t['files'][0]['url']} |")
+                    f"| {a['license']} | {main['url']} |")
     CREDITS.write_text('\n'.join(rows) + '\n')
 
 

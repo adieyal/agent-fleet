@@ -1,19 +1,4 @@
 {
-  "tools": [
-    {
-      "id": "blender",
-      "version": "4.5.14",
-      "license": "GPL-3.0-or-later",
-      "files": [
-        {
-          "path": "archives/blender-4.5.14-linux-x64.tar.xz",
-          "url": "https://download.blender.org/release/Blender4.5/blender-4.5.14-linux-x64.tar.xz",
-          "sha256": "9ba871ff2ecd36526b77432745980b7e6664ecd0c7ca11c48849073dcfe06da3",
-          "size": 378045212
-        }
-      ]
-    }
-  ],
   "assets": [
     {
       "id": "white_studio_06",

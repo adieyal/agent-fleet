@@ -1,0 +1,34 @@
+{
+  "scene": "robot",
+  "glb": "robot.glb",
+  "lightmap": null,
+  "warm_groups": {},
+  "dynamic": [],
+  "anchors": [],
+  "actions": [
+    "hold",
+    "idle",
+    "type",
+    "write"
+  ],
+  "seat_height": null,
+  "camera": null,
+  "environment": null,
+  "built_with": {
+    "blender": "4.2.23 LTS",
+    "bake_device": null,
+    "samples": null
+  },
+  "files": {
+    "robot.glb": {
+      "bytes": 938612,
+      "sha256": "93312d31c2843b820b0271cd961b1e678833d3aaeb3a0abd53bf3b8bda39abf5"
+    }
+  },
+  "glb_summary": {
+    "nodes": 13,
+    "meshes": 3,
+    "images": 0,
+    "extensions": []
+  }
+}

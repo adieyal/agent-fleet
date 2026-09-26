@@ -1,14 +1,4 @@
 {
-  "tools": [
-    {
-      "id": "blender",
-      "version": "4.5.14",
-      "url": "https://download.blender.org/release/Blender4.5/blender-4.5.14-linux-x64.tar.xz",
-      "sha256_url": "https://download.blender.org/release/Blender4.5/blender-4.5.14.sha256",
-      "license": "GPL-3.0-or-later",
-      "note": "Build tool only; not shipped. Official build: OptiX, OpenImageDenoise, OCIO and WebP glTF export."
-    }
-  ],
   "assets": [
     {"id": "white_studio_06", "source": "polyhaven", "type": "hdri", "res": "1k", "format": "hdr",
      "use": "world light for baking and the runtime environment"},

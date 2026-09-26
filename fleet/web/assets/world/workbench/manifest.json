@@ -9,32 +9,75 @@
     "layers": {
       "base": {
         "file": "lightmap-base.webp",
-        "size": 2048,
-        "scale": 1.65412
+        "size": 2304,
+        "scale": 1.72443
+      },
+      "corner": {
+        "file": "lightmap-corner.webp",
+        "size": 1152,
+        "scale": 1.24093
+      },
+      "criteria0": {
+        "file": "lightmap-criteria0.webp",
+        "size": 1152,
+        "scale": 1.21326
+      },
+      "criteria1": {
+        "file": "lightmap-criteria1.webp",
+        "size": 1152,
+        "scale": 1.23893
+      },
+      "criteria2": {
+        "file": "lightmap-criteria2.webp",
+        "size": 1152,
+        "scale": 1.26151
+      },
+      "criteria3": {
+        "file": "lightmap-criteria3.webp",
+        "size": 1152,
+        "scale": 1.27267
+      },
+      "criteria4": {
+        "file": "lightmap-criteria4.webp",
+        "size": 1152,
+        "scale": 1.26638
       },
       "desk1": {
         "file": "lightmap-desk1.webp",
-        "size": 1024,
-        "scale": 0.4528
+        "size": 1152,
+        "scale": 1.16776
       },
       "desk2": {
         "file": "lightmap-desk2.webp",
-        "size": 1024,
-        "scale": 0.57973
+        "size": 1152,
+        "scale": 1.20746
       },
       "desk3": {
         "file": "lightmap-desk3.webp",
-        "size": 1024,
-        "scale": 0.7889
-      },
-      "planwall": {
-        "file": "lightmap-planwall.webp",
-        "size": 1024,
-        "scale": 1.47587
+        "size": 1152,
+        "scale": 1.19477
       }
     }
   },
   "warm_groups": {
+    "corner": [
+      "corner_lamp_bulb"
+    ],
+    "criteria0": [
+      "criteria_light_0"
+    ],
+    "criteria1": [
+      "criteria_light_1"
+    ],
+    "criteria2": [
+      "criteria_light_2"
+    ],
+    "criteria3": [
+      "criteria_light_3"
+    ],
+    "criteria4": [
+      "criteria_light_4"
+    ],
     "desk1": [
       "desk1_lamp_bulb"
     ],
@@ -43,24 +86,26 @@
     ],
     "desk3": [
       "desk3_lamp_bulb"
-    ],
-    "planwall": [
-      "washer_bulb_0",
-      "washer_bulb_1",
-      "washer_bulb_2",
-      "washer_bulb_3",
-      "washer_bulb_4"
     ]
   },
   "dynamic": [
+    "corner_lamp_bulb",
+    "corner_plant",
+    "criteria_light_0",
+    "criteria_light_1",
+    "criteria_light_2",
+    "criteria_light_3",
+    "criteria_light_4",
     "desk1_lamp_bulb",
     "desk1_plant",
     "desk2_lamp_bulb",
+    "desk2_plant",
     "desk3_lamp_bulb",
     "lantern",
-    "lift_button_0",
-    "lift_button_1",
-    "lift_button_2",
+    "lantern_cord",
+    "lift_indicator_0",
+    "lift_indicator_1",
+    "lift_indicator_2",
     "plan_tile_r0_c0",
     "plan_tile_r0_c1",
     "plan_tile_r0_c2",
@@ -118,29 +163,47 @@
     "planter_0_plant",
     "planter_1_plant",
     "planter_2_plant",
-    "qdesk_card",
+    "planter_3_plant",
+    "planter_4_plant",
+    "qdesk_plant",
     "shelf_binder_0",
     "shelf_binder_1",
     "shelf_binder_2",
     "shelf_binder_3",
     "shelf_binder_4",
     "shelf_binder_5",
-    "shelf_binder_6",
+    "shelf_binder_hi_0",
+    "shelf_binder_hi_1",
+    "shelf_binder_hi_2",
+    "shelf_binder_hi_3",
     "shelf_box",
-    "washer_bulb_0",
-    "washer_bulb_1",
-    "washer_bulb_2",
-    "washer_bulb_3",
-    "washer_bulb_4"
+    "shelf_plant"
   ],
+  "anchors": [
+    "footprint_0",
+    "footprint_1",
+    "footprint_2",
+    "footprint_3",
+    "footprint_4",
+    "footprint_5",
+    "footprint_6",
+    "footprint_7",
+    "lantern_anchor",
+    "seat_desk1",
+    "seat_desk2",
+    "seat_desk3"
+  ],
+  "actions": [],
   "seat_height": 0.47,
   "camera": "camera_l2",
   "environment": {
+    "file": "environment.hdr",
     "hdri": "white_studio_06_1k.hdr",
-    "rotation_deg": 120.0
+    "rotation_deg": 120.0,
+    "strength": 0.8999999761581421
   },
   "built_with": {
-    "blender": "4.5.14 LTS",
+    "blender": "4.2.23 LTS",
     "bake_device": "OPTIX: NVIDIA GeForce RTX 3090",
     "samples": {
       "base": 512,
@@ -148,35 +211,59 @@
     }
   },
   "files": {
+    "environment.hdr": {
+      "bytes": 335827,
+      "sha256": "557f348b3a48b147afe9b780d205da5ee68a5a5bba45452f4dfffeb4c95f012a"
+    },
     "lightmap-base.webp": {
-      "bytes": 104526,
-      "sha256": "dcaecae02b53df49441078af7f2c36be55da35cac347966335847642304ca550"
+      "bytes": 180438,
+      "sha256": "ea16a813a4d9d7cf3d57303defbb02632b0ea8ea915661dd122907e60ad90664"
+    },
+    "lightmap-corner.webp": {
+      "bytes": 63538,
+      "sha256": "f8f518e01f966ee243cca38ca33e92e81ddb209dd7128768ef255d0d584dce0c"
+    },
+    "lightmap-criteria0.webp": {
+      "bytes": 52108,
+      "sha256": "678cbf33e3ee5df97ff003e3667537b75fb8df835dba9160fd9501ea00bad43d"
+    },
+    "lightmap-criteria1.webp": {
+      "bytes": 52952,
+      "sha256": "45bd9c823a78e8e93d09b10f1b711f5e67f0a4fef272231aad951b40d7ed6b5b"
+    },
+    "lightmap-criteria2.webp": {
+      "bytes": 51938,
+      "sha256": "1084b6fc13620a76d4d765ab27bf9a1746269a2d4e0c4f63f5b35ab8b6c4628e"
+    },
+    "lightmap-criteria3.webp": {
+      "bytes": 51712,
+      "sha256": "caa345cfc472917a8b5cd84170375c9cc4103df4beb1783a472a067e9e9ec48f"
+    },
+    "lightmap-criteria4.webp": {
+      "bytes": 51242,
+      "sha256": "91704a770395e7556e70b2c82a65bd3de903a49b2e295cbce519f844ffda71c3"
     },
     "lightmap-desk1.webp": {
-      "bytes": 17972,
-      "sha256": "d0a19eb7596122f0cf0c605a480805b995882e1a9abfab144b31effcd1e61b11"
+      "bytes": 73782,
+      "sha256": "582b47cb480ac3e286d37b03b3004a98d31bef7bb5a92a4d426cee836ef069ce"
     },
     "lightmap-desk2.webp": {
-      "bytes": 13626,
-      "sha256": "cb4ff01004e170d3125963202346ada5ec733bdb979d3b4d866072b1d2b35406"
+      "bytes": 76406,
+      "sha256": "1f3d4ac6b4e53c2d9466fdf18f7d844fc82d8a3f044e1648c129aba3120e5c4f"
     },
     "lightmap-desk3.webp": {
-      "bytes": 11084,
-      "sha256": "e2f4e0a917b823af1aa837c6b73753874eeb58e6e75ee51845f28363a20f3e8c"
-    },
-    "lightmap-planwall.webp": {
-      "bytes": 46178,
-      "sha256": "ecae1987f3a8799efd8f4b0b44cc853ff1a0261f743cc090c495ed49b0729ac1"
+      "bytes": 73972,
+      "sha256": "d1b69bc8804183ab5dec065a646af5b3af591d01865aac60dc35c63d54844927"
     },
     "workbench.glb": {
-      "bytes": 3249304,
-      "sha256": "d7f4174d2e1421a088d002bd4ee4d565ca9bd2fd77de0dc08bec3db87074aca8"
+      "bytes": 3942708,
+      "sha256": "fd69510ef3f88cc8b20b04659f95885e2754e6b58150847c4e9e2f3478843beb"
     }
   },
   "glb_summary": {
-    "nodes": 292,
-    "meshes": 283,
-    "images": 15,
+    "nodes": 370,
+    "meshes": 341,
+    "images": 16,
     "extensions": [
       "KHR_materials_specular",
       "KHR_materials_ior",

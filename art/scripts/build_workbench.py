@@ -1,10 +1,15 @@
-"""Build the l2 workbench scene: a room corner with the plan wall, one bench of three desks,
-the question desk under the lantern, a shelf and plants.
+"""Build the l2 workbench scene (docs/images/concept/l2.png).
 
     blender -b -P art/scripts/build_workbench.py
 
-Units are metres, Z up. The back wall runs along +X at y = ROOM_D; the lift wall along +Y at x = 0.
-Warm light groups: desk1..desk3 (desk lamps) and planwall (the washers above the plan wall).
+One long back wall with pilasters and a top cap carries, left to right: the lift with its indicator
+lights, the question desk under the lantern, the plan wall with its row of criteria lights, a pinned
+diagram poster, and a recess with a shelf of binders. The bench of three desks stands parallel to it;
+robots sit on the far side (loaded at runtime at the `seat_*` anchors), empty chairs on the near side.
+A second desk sits in the near-left corner.
+
+Units are metres, Z up; the back wall's face is at y = WALL_Y.
+Warm light groups: desk1..desk3 (desk lamps) and criteria0..criteria4 (the lights above the plan wall).
 """
 import math
 import random
@@ -18,111 +23,187 @@ import bpy  # noqa: E402
 import numpy as np  # noqa: E402
 
 SCENE = 'workbench'
-ROOM_W, ROOM_D, WALL_H, WALL_T = 10.0, 7.0, 3.2, 0.3
+X0, X1 = -1.0, 12.5          # extent of floor and back wall
+Y0, WALL_Y = -3.5, 6.0       # near floor edge, back wall face
+WALL_H, WALL_T, CAP_H = 3.2, 0.3, 0.14
 TILE = 0.6
 DESK_W, DESK_D, DESK_H, TOP_T = 1.6, 0.8, 0.74, 0.03
-BENCH_X0, BENCH_Y = 2.6, 3.6  # left end and centre line of the bench
-SEAT_H = 0.47  # shared with the robot rig
-PLAN = dict(x0=3.4, z0=0.75, cols=9, rows=6, pitch=0.38)
+BENCH_X0, BENCH_Y = 4.0, 4.35  # left end and centre line of the bench: close to the plan wall, as in l2
+SEAT_H = 0.47                  # shared with the robot rig
+PLAN = dict(x0=5.2, z0=0.95, cols=9, rows=6, pitch=0.27)
+PILASTERS = (2.25, 4.55, 8.05, 9.65)
 
 
 def materials() -> dict:
     p = A.paths(SCENE)
     return {
-        'floor': A.material('floor_tile', '#e4e0e8', rough=0.35, texture=floor_tile_texture(p['textures'])),
-        'wall': A.material('wall_plaster', '#cfc9cc', rough=0.9,
+        'floor': A.material('floor_tile', '#d3cfd9', rough=0.3, texture=floor_tile_texture(p['textures'])),
+        'wall': A.material('wall_plaster', '#b9ada7', rough=0.9,
                            texture=A.source('ambientcg', 'PaintedPlaster017', 'PaintedPlaster017_1K-JPG_Color.jpg')),
-        'cap': A.material('wall_cap', '#e6dad0', rough=0.8),
-        'pilaster': A.material('pilaster', '#bdb3b2', rough=0.8),
-        'oak': A.material('oak', '#fff4e6', rough=0.45,
+        'cap': A.material('wall_cap', '#e9e6e8', rough=0.8),
+        'pilaster': A.material('pilaster', '#dcd6d5', rough=0.8),
+        'oak': A.material('oak', '#f2d6b4', rough=0.45,
                           texture=A.source('ambientcg', 'Wood095', 'Wood095_1K-JPG_Color.jpg')),
-        'steel': A.material('steel_grey', '#7a7a82', rough=0.5, metal=0.2),
-        'frame': A.material('frame_dark', '#56525a', rough=0.45, metal=0.4),
-        'black': A.material('chair_black', '#2a292c', rough=0.6),
-        'lift': A.material('lift_steel', '#8a8890', rough=0.3, metal=0.6),
-        'screen': A.material('screen', '#15161a', rough=0.2),
-        'paper': A.material('paper', '#fbf3e6', rough=0.9),
-        'pot': A.material('pot', '#b9aeab', rough=0.85),
-        'mug': A.material('mug', '#e9e4de', rough=0.3),
+        'steel': A.material('steel_grey', '#6f6f77', rough=0.45, metal=0.3),
+        'frame': A.material('frame_dark', '#4a474e', rough=0.4, metal=0.4),
+        'black': A.material('chair_black', '#262528', rough=0.6),
+        'lift': A.material('lift_steel', '#7f7d86', rough=0.3, metal=0.6),
+        'screen': A.material('screen', '#141519', rough=0.2),
+        'paper': A.material('paper', '#e6e0d5', rough=0.9),
+        'ink': A.material('ink', '#3a3a3e', rough=0.8),
+        'pot': A.material('pot', '#b8b3b0', rough=0.85),
+        'mug': A.material('mug', '#6c6c72', rough=0.35),
         'pencil': A.material('pencil', '#e8b04a', rough=0.5),
-        'tile': A.material('plan_tile', '#e8e4e6', rough=0.6),
-        'bulb': A.material('bulb', '#fefddd', rough=0.3, emission='#ffd9a0'),
-        'lantern': A.material('lantern', '#a60e9b', rough=0.25, emission='#fa9ffa'),
-        'button': A.material('button', '#e6e2da', rough=0.4, emission='#fff1d6'),
+        'brass': A.material('brass', '#c89b52', rough=0.3, metal=0.8),
+        'tile': A.material('plan_tile', '#ecebee', rough=0.55),
+        'bulb': A.material('bulb', '#fefddd', rough=0.3, emission='#ffcf8a'),
+        'indicator': A.material('indicator', '#fff6e0', rough=0.3, emission='#ffe6b0'),
+        'lantern': A.material('lantern', '#b0189f', rough=0.25, emission='#f25cf0'),
+        'poster': A.material('poster', '#ffffff', rough=0.85, texture=poster_texture(p['textures'])),
     }
 
 
 def floor_tile_texture(out: Path) -> Path:
-    """One 0.6 m tile: the Concrete034 photo with a 3 mm grout line, written for the floor material."""
+    """One 0.6 m tile: the Concrete034 photo, flattened, with a 3 mm grout line."""
     src = bpy.data.images.load(str(A.source('ambientcg', 'Concrete034', 'Concrete034_1K-JPG_Color.jpg')))
     w, h = src.size
     px = np.empty(w * h * 4, dtype=np.float32)
     src.pixels.foreach_get(px)
     px = px.reshape(h, w, 4)
     rgb = px[..., :3]
-    rgb[:] = 0.82 + (rgb - rgb.mean()) * 0.35  # keep the stone's variation, lose most of its tone
+    rgb[:] = 0.82 + (rgb - rgb.mean()) * 0.3
     g = max(2, round(w * 0.003 / TILE))
     for sl in (np.s_[:g, :], np.s_[-g:, :], np.s_[:, :g], np.s_[:, -g:]):
         rgb[sl] *= 0.8
+    bpy.data.images.remove(src)
+    return save_png(out, 'floor_tile', px)
+
+
+def poster_texture(out: Path) -> Path:
+    """The pinned diagram: a circle over two linked boxes, a small bar chart and a few text dashes."""
+    w, h = 384, 512
+    img = np.ones((h, w, 4), dtype=np.float32)
+    img[..., :3] = (0.96, 0.95, 0.93)
+    yy, xx = np.mgrid[0:h, 0:w]
+    ink = (0.33, 0.33, 0.36)
+
+    def stroke(mask):
+        img[mask, :3] = ink
+
+    def rect(x0, y0, x1, y1, t=4):
+        stroke(((xx >= x0) & (xx <= x1) & (yy >= y0) & (yy <= y1))
+               & ~((xx > x0 + t) & (xx < x1 - t) & (yy > y0 + t) & (yy < y1 - t)))
+
+    r = np.hypot(xx - 110, yy - 400)
+    stroke((r < 48) & (r > 43))
+    stroke((abs(xx - 110) < 3) & (yy < 352) & (yy > 300))
+    rect(70, 220, 150, 300)
+    rect(210, 290, 300, 370)
+    stroke((abs(yy - 330) < 3) & (xx > 150) & (xx < 210))
+    stroke((abs(xx - 110) < 3) & (yy < 220) & (yy > 160))
+    rect(70, 80, 150, 160)
+    for i, bh in enumerate((30, 55, 80, 110)):
+        stroke((xx > 230 + i * 22) & (xx < 244 + i * 22) & (yy > 60) & (yy < 60 + bh))
+    for i, ln in enumerate((40, 26, 34)):
+        stroke((abs(yy - (90 - i * 16)) < 3) & (xx > 170) & (xx < 170 + ln))
+    return save_png(out, 'poster', img)
+
+
+def save_png(out: Path, name: str, px: np.ndarray) -> Path:
     out.mkdir(parents=True, exist_ok=True)
-    img = bpy.data.images.new('floor_tile', w, h)
+    h, w = px.shape[:2]
+    img = bpy.data.images.new(name, w, h)
     img.pixels.foreach_set(px.ravel())
-    img.filepath_raw = str(out / 'floor_tile.png')
+    img.filepath_raw = str(out / f'{name}.png')
     img.file_format = 'PNG'
     img.save()
     bpy.data.images.remove(img)
-    bpy.data.images.remove(src)
-    return out / 'floor_tile.png'
+    return out / f'{name}.png'
 
+
+# --- architecture --------------------------------------------------------------
 
 def shell(m) -> None:
-    A.box('floor_slab', (ROOM_W + WALL_T, ROOM_D + WALL_T, 0.3), ((ROOM_W - WALL_T) / 2, (ROOM_D + WALL_T) / 2, -0.3),
-          m['cap'], bevel=0.01, drop=('+z', '+y', '-x'))
-    A.box('floor', (ROOM_W, ROOM_D, 0.004), (ROOM_W / 2, ROOM_D / 2, 0.0), m['floor'], bevel=0, tile=TILE)
-    # the camera never sees the outside of the two standing walls, nor their tops under the caps
-    A.box('wall_back', (ROOM_W + WALL_T, WALL_T, WALL_H), ((ROOM_W - WALL_T) / 2, ROOM_D + WALL_T / 2, 0), m['wall'],
-          bevel=0.01, tile=1.5, drop=('+y', '+z'))
-    A.box('wall_lift', (WALL_T, ROOM_D, WALL_H), (-WALL_T / 2, ROOM_D / 2, 0), m['wall'], bevel=0.01, tile=1.5,
-          drop=('-x', '+z'))
-    A.box('cap_back', (ROOM_W + WALL_T + 0.02, WALL_T + 0.02, 0.03), ((ROOM_W - WALL_T) / 2, ROOM_D + WALL_T / 2, WALL_H),
-          m['cap'], drop=('-z', '+y'))
-    A.box('cap_lift', (WALL_T + 0.02, ROOM_D, 0.03), (-WALL_T / 2, ROOM_D / 2, WALL_H), m['cap'], drop=('-z', '-x'))
-    for i, x in enumerate((2.7, 7.9)):
-        A.box(f'pilaster_{i}', (0.5, 0.16, WALL_H), (x, ROOM_D - 0.08, 0), m['pilaster'], bevel=0.01)
-    A.box('skirting', (ROOM_W, 0.015, 0.08), (ROOM_W / 2, ROOM_D - 0.0075, 0), m['pilaster'], bevel=0.003)
-    # lift: recessed frame, two doors, call buttons
-    A.box('lift_frame', (0.1, 1.5, 2.35), (0.05, 5.2, 0), m['pilaster'], bevel=0.01)
-    for i, y in enumerate((4.87, 5.53)):
-        A.box(f'lift_door_{i}', (0.04, 0.64, 2.2), (0.1, y, 0), m['lift'], bevel=0.004)
-    A.box('lift_buttons', (0.03, 0.12, 0.34), (0.03, 4.25, 1.05), m['lift'], bevel=0.004)
+    w, cx = X1 - X0, (X0 + X1) / 2
+    A.box('floor_slab', (w, WALL_Y + WALL_T - Y0, 0.3), (cx, (Y0 + WALL_Y + WALL_T) / 2, -0.3), m['cap'], bevel=0.01,
+          drop=('+z', '+y'))
+    A.box('floor', (w, WALL_Y - Y0, 0.004), (cx, (Y0 + WALL_Y) / 2, 0.0), m['floor'], bevel=0, tile=TILE)
+    A.box('wall_back', (w, WALL_T, WALL_H), (cx, WALL_Y + WALL_T / 2, 0), m['wall'], bevel=0.01, tile=1.5,
+          drop=('+y', '+z'))
+    # the top cap overhangs the room a little, as the cut edge in l2 does
+    A.box('wall_cap', (w + 0.04, WALL_T + 0.25, CAP_H), (cx, WALL_Y + WALL_T / 2 - 0.125, WALL_H), m['cap'],
+          bevel=0.015, drop=('+y',))
+    for i, x in enumerate(PILASTERS):
+        A.box(f'pilaster_{i}', (0.55, 0.22, WALL_H), (x, WALL_Y - 0.11, 0), m['pilaster'], bevel=0.012, drop=('+z',))
+    A.box('skirting', (w, 0.015, 0.08), (cx, WALL_Y - 0.0075, 0), m['pilaster'], bevel=0.003)
+
+
+def lift(m) -> None:
+    x = 0.95
+    A.box('lift_surround', (1.7, 0.1, 2.45), (x, WALL_Y - 0.05, 0), m['pilaster'], bevel=0.012)
+    A.box('lift_recess', (1.5, 0.02, 2.3), (x, WALL_Y - 0.105, 0), m['frame'], bevel=0.004)
+    for i, dx in enumerate((-0.36, 0.36)):
+        A.box(f'lift_door_{i}', (0.7, 0.04, 2.25), (x + dx, WALL_Y - 0.13, 0), m['lift'], bevel=0.004)
+    A.box('lift_panel', (0.14, 0.03, 0.42), (-0.25, WALL_Y - 0.015, 1.05), m['lift'], bevel=0.006)
     for i in range(3):
-        A.cylinder(f'lift_button_{i}', 0.025, 0.012, (0.045, 4.25, 1.13 + i * 0.09), m['button'], kind='dynamic',
-                   rot=(0, math.pi / 2, 0))
+        A.cylinder(f'lift_indicator_{i}', 0.03, 0.012, (-0.25, WALL_Y - 0.03, 1.33 - i * 0.11), m['indicator'],
+                   kind='dynamic', rot=(math.pi / 2, 0, 0))
 
 
 def plan_wall(m) -> None:
     c, r, pitch = PLAN['cols'], PLAN['rows'], PLAN['pitch']
-    w, h = c * pitch + 0.12, r * pitch + 0.12
-    x0, z0, y = PLAN['x0'], PLAN['z0'], ROOM_D - 0.04
-    A.box('plan_frame', (w, 0.08, h), (x0 + w / 2, y, z0), m['steel'], bevel=0.01)
+    w, h = c * pitch + 0.14, r * pitch + 0.14
+    x0, z0, y = PLAN['x0'], PLAN['z0'], WALL_Y
+    A.box('plan_frame', (w, 0.09, h), (x0 + w / 2, y - 0.045, z0), m['steel'], bevel=0.012)
+    A.box('plan_back', (w - 0.1, 0.02, h - 0.1), (x0 + w / 2, y - 0.1, z0 + 0.05), m['frame'], bevel=0.004)
     for row in range(r):
         for col in range(c):
-            A.box(f'plan_tile_r{row}_c{col}', (pitch - 0.035, 0.03, pitch - 0.035),
-                  (x0 + 0.06 + (col + 0.5) * pitch, y - 0.055, z0 + 0.06 + row * pitch + 0.0175),
-                  m['tile'], kind='dynamic', bevel=0.008)
+            A.box(f'plan_tile_r{row}_c{col}', (pitch - 0.04, 0.035, pitch - 0.04),
+                  (x0 + 0.07 + (col + 0.5) * pitch, y - 0.13, z0 + 0.07 + row * pitch + 0.02),
+                  m['tile'], kind='dynamic', bevel=0.012)
+    # criteria lights: a row of round lamps on the wall above the plan wall; each is its own warm group
     for i in range(5):
-        x = x0 + w * (i + 0.5) / 5
-        A.cylinder(f'washer_{i}', 0.09, 0.07, (x, ROOM_D - 0.1, z0 + h + 0.25), m['frame'], bevel=0.01,
-                   rot=(math.pi / 2, 0, 0))
-        A.cylinder(f'washer_bulb_{i}', 0.07, 0.005, (x, ROOM_D - 0.175, z0 + h + 0.25), m['bulb'], kind='dynamic',
-                   rot=(math.pi / 2, 0, 0))['warm'] = 'planwall'
-        spot = A.light(f'washer_light_{i}', 'SPOT', (x, ROOM_D - 0.3, z0 + h + 0.28), 60, '#ffc98a',
-                       warm='planwall', spot_size=math.radians(70), spot_blend=0.8, shadow_soft_size=0.05)
-        A.aim(spot, (x, ROOM_D, z0 + h * 0.35))
+        x = x0 + 0.37 + i * 0.46
+        z = z0 + h + 0.3
+        A.cylinder(f'criteria_housing_{i}', 0.11, 0.06, (x, y, z), m['frame'], bevel=0.012, rot=(math.pi / 2, 0, 0))
+        bulb = A.cylinder(f'criteria_light_{i}', 0.085, 0.01, (x, y - 0.06, z), m['bulb'], kind='dynamic',
+                          rot=(math.pi / 2, 0, 0))
+        bulb['warm'] = f'criteria{i}'
+        spot = A.light(f'criteria_spot_{i}', 'SPOT', (x, y - 0.3, z + 0.02), 18, '#ffc98a', warm=f'criteria{i}',
+                       spot_size=math.radians(80), spot_blend=0.9, shadow_soft_size=0.06)
+        A.aim(spot, (x, y, z - 0.9))
+        A.light(f'criteria_glow_{i}', 'POINT', (x, y - 0.14, z), 4, '#ffcf8a', warm=f'criteria{i}',
+                shadow_soft_size=0.08)
 
+
+def poster(m) -> None:
+    x, z = 8.85, 1.05
+    A.panel('poster', 0.72, 0.96, (x, WALL_Y - 0.004, z), m['poster'])
+    for i, (dx, dz) in enumerate(((-0.32, 0.9), (0.32, 0.9), (-0.32, 0.06), (0.32, 0.06))):
+        A.cylinder(f'poster_pin_{i}', 0.012, 0.01, (x + dx, WALL_Y - 0.005, z + dz), m['brass'], segments=10,
+                   rot=(math.pi / 2, 0, 0))
+
+
+def shelf(m, props: dict) -> None:
+    """Shelf in the recess right of the last pilaster: binders, a box and a plant."""
+    x0, y, w = 10.05, WALL_Y - 0.22, 1.5
+    for side in (0, 1):
+        A.box(f'shelf_side_{side}', (0.03, 0.4, 1.9), (x0 + side * w, y, 0), m['steel'], bevel=0.004)
+    for k, z in enumerate((0.06, 0.66, 1.26, 1.86)):
+        A.box(f'shelf_board_{k}', (w, 0.4, 0.025), (x0 + w / 2, y, z), m['steel'], bevel=0.004)
+    A.box('shelf_back', (w, 0.02, 1.9), (x0 + w / 2, y + 0.19, 0), m['steel'], bevel=0.003)
+    for k in range(6):
+        A.duplicate(props['binder'], f'shelf_binder_{k}', (x0 + 0.12 + k * 0.045, y, 0.685))
+    for k in range(4):
+        A.duplicate(props['binder'], f'shelf_binder_hi_{k}', (x0 + 0.9 + k * 0.045, y, 1.285))
+    A.duplicate(props['box'], 'shelf_box', (x0 + 0.95, y, 0.685))
+    A.duplicate(props['desk_plant'], 'shelf_plant', (x0 + 0.35, y, 1.885), 0.7)
+
+
+# --- furniture -------------------------------------------------------------------
 
 def chair(m, name, x, y, facing: float) -> None:
-    """Task chair centred at (x, y), seat front facing angle `facing` (0 = -Y)."""
+    """Task chair centred at (x, y), its seat front facing angle `facing` (0 faces -Y)."""
     rz = facing
     for i in range(5):
         a = rz + i * 2 * math.pi / 5
@@ -133,7 +214,7 @@ def chair(m, name, x, y, facing: float) -> None:
     A.cylinder(f'{name}_column', 0.025, SEAT_H - 0.14, (x, y, 0.09), m['frame'], segments=16)
     sx, sy = math.sin(rz), -math.cos(rz)
     A.box(f'{name}_seat', (0.5, 0.48, 0.08), (x, y, SEAT_H - 0.08), m['black'], rot=(0, 0, rz), bevel=0.03)
-    A.box(f'{name}_back', (0.46, 0.06, 0.52), (x - sx * 0.24, y - sy * 0.24, SEAT_H + 0.06), m['black'],
+    A.box(f'{name}_back', (0.46, 0.06, 0.5), (x - sx * 0.24, y - sy * 0.24, SEAT_H + 0.08), m['black'],
           rot=(math.radians(-8), 0, rz), bevel=0.025)
     for side in (-1, 1):
         ax, ay = math.cos(rz) * side * 0.26, math.sin(rz) * side * 0.26
@@ -144,113 +225,198 @@ def chair(m, name, x, y, facing: float) -> None:
 
 
 def desk_lamp(m, name, group, x, y, flip: int) -> None:
+    """Arm lamp standing at (x, y); its head reaches towards -Y*flip. Bulb and light belong to `group`."""
     A.cylinder(f'{name}_base', 0.07, 0.02, (x, y, DESK_H), m['frame'], bevel=0.005)
-    A.box(f'{name}_arm1', (0.015, 0.015, 0.34), (x, y, DESK_H + 0.02), m['frame'], rot=(math.radians(-15) * flip, 0, 0),
-          bevel=0.004)
-    hx, hy, hz = x, y + 0.2 * flip, DESK_H + 0.4
-    A.box(f'{name}_arm2', (0.015, 0.22, 0.015), (x, y + 0.1 * flip, DESK_H + 0.34), m['frame'],
-          rot=(math.radians(-20) * flip, 0, 0), bevel=0.004)
+    A.box(f'{name}_arm1', (0.016, 0.016, 0.36), (x, y, DESK_H + 0.02), m['frame'],
+          rot=(math.radians(12) * flip, 0, 0), bevel=0.004)
+    hx, hy, hz = x, y - 0.2 * flip, DESK_H + 0.42
+    A.box(f'{name}_arm2', (0.016, 0.24, 0.016), (x, y - 0.1 * flip, DESK_H + 0.36), m['frame'],
+          rot=(math.radians(18) * flip, 0, 0), bevel=0.004)
     A.cylinder(f'{name}_shade', 0.035, 0.12, (hx, hy, hz - 0.08), m['frame'], radius2=0.075, segments=20, bevel=0.004,
                rot=(0, math.pi, 0))
-    A.cylinder(f'{name}_bulb', 0.03, 0.004, (hx, hy, hz - 0.205), m['bulb'], kind='dynamic', segments=16)['warm'] = group
+    bulb = A.cylinder(f'{name}_bulb', 0.03, 0.004, (hx, hy, hz - 0.205), m['bulb'], kind='dynamic', segments=16)
+    bulb['warm'] = group
     # just below the shade's mouth: the shade is a closed solid and would swallow the light
-    spot = A.light(f'{name}_light', 'SPOT', (hx, hy, hz - 0.215), 25, '#ffc27a', warm=group,
-                   spot_size=math.radians(100), spot_blend=0.9, shadow_soft_size=0.03)
-    A.aim(spot, (hx, hy + 0.1 * flip, DESK_H))
+    spot = A.light(f'{name}_light', 'SPOT', (hx, hy, hz - 0.215), 4, '#ff9c45', warm=group,
+                   spot_size=math.radians(140), spot_blend=1.0, shadow_soft_size=0.06)
+    A.aim(spot, (hx, hy - 0.1 * flip, DESK_H))
+    # the broad warm wash over the desk that l2 shows around a working lamp (a hot spot alone reads as glare)
+    A.light(f'{name}_wash', 'AREA', (x + 0.6, y - 0.25 * flip, DESK_H + 0.9), 18, '#ff9a40', warm=group,
+            shape='DISK', size=1.1)
 
 
-def desk(m, i: int, rng: random.Random, props: dict) -> None:
-    """Desk i of the bench: top, legs, pedestal, two chairs and a set of props that differs per desk."""
-    x0 = BENCH_X0 + i * DESK_W
-    cx, name = x0 + DESK_W / 2, f'desk{i + 1}'
-    A.box(f'{name}_top', (DESK_W - 0.006, DESK_D, TOP_T), (cx, BENCH_Y, DESK_H - TOP_T), m['oak'], bevel=0.006, tile=1.2)
-    for lx in (x0 + 0.05, x0 + DESK_W - 0.05):
-        for ly in (BENCH_Y - DESK_D / 2 + 0.05, BENCH_Y + DESK_D / 2 - 0.05):
-            A.box(f'{name}_leg_{lx:.2f}_{ly:.2f}', (0.045, 0.045, DESK_H - TOP_T), (lx, ly, 0), m['frame'], bevel=0.006)
-    A.box(f'{name}_rail', (DESK_W - 0.1, 0.03, 0.06), (cx, BENCH_Y, DESK_H - TOP_T - 0.06), m['frame'], bevel=0.005)
-    A.box(f'{name}_pedestal', (0.42, 0.55, 0.6), (x0 + DESK_W - 0.3, BENCH_Y - DESK_D / 2 + 0.3, 0.02), m['steel'],
-          bevel=0.012)
-    for d in range(3):
-        A.box(f'{name}_drawer_{d}', (0.36, 0.008, 0.16), (x0 + DESK_W - 0.3, BENCH_Y - DESK_D / 2 + 0.024, 0.07 + d * 0.19),
-              m['steel'], bevel=0.003)
-    chair(m, f'{name}_chair_far', cx - 0.15, BENCH_Y + DESK_D / 2 + 0.35, math.pi)
-    chair(m, f'{name}_chair_near', cx - 0.25, BENCH_Y - DESK_D / 2 - 0.45, 0.0)
-    top = DESK_H
-    # far side is the robot's working side; lamp on its left
-    desk_lamp(m, f'{name}_lamp', name, x0 + 0.2, BENCH_Y + 0.25, -1)
-    if i == 2:
-        A.box(f'{name}_monitor_stand', (0.2, 0.16, 0.02), (cx, BENCH_Y + 0.1, top), m['frame'])
-        A.box(f'{name}_monitor_neck', (0.04, 0.03, 0.2), (cx, BENCH_Y + 0.14, top), m['frame'])
-        A.box(f'{name}_monitor', (0.56, 0.03, 0.34), (cx, BENCH_Y + 0.12, top + 0.13), m['screen'], bevel=0.008,
-              rot=(math.radians(-5), 0, math.pi))
-    else:
-        lx, ly = cx - 0.1 + rng.uniform(-0.05, 0.05), BENCH_Y + 0.1
-        A.box(f'{name}_laptop_base', (0.34, 0.24, 0.016), (lx, ly, top), m['frame'], bevel=0.004)
-        A.box(f'{name}_laptop_lid', (0.34, 0.012, 0.23), (lx, ly - 0.12, top + 0.012), m['frame'], bevel=0.004,
-              rot=(math.radians(-15), 0, 0))
-    px, py = cx + 0.35, BENCH_Y + 0.2
-    A.cylinder(f'{name}_penpot', 0.035, 0.1, (px, py, top), m['steel'], bevel=0.004)
+def pen_pot(m, name, x, y, rng) -> None:
+    A.cylinder(f'{name}', 0.035, 0.1, (x, y, DESK_H), m['mug'], bevel=0.004)
     for k in range(3):
-        a = rng.uniform(-0.25, 0.25)
-        A.cylinder(f'{name}_pencil_{k}', 0.004, 0.16, (px + 0.01 * (k - 1), py + 0.008 * k, top + 0.02), m['pencil'],
-                   segments=6, rot=(a, rng.uniform(-0.25, 0.25), 0))
-    for k in range(rng.randint(2, 4)):
-        A.box(f'{name}_paper_{k}', (0.21, 0.297, 0.002),
-              (cx + rng.uniform(-0.55, 0.45), BENCH_Y + rng.uniform(-0.3, 0.05), top + 0.001 * (k + 1)),
+        A.cylinder(f'{name}_pencil_{k}', 0.004, 0.16, (x + 0.01 * (k - 1), y + 0.008 * k, DESK_H + 0.02),
+                   m['pencil'] if k != 1 else m['ink'], segments=6, rot=(rng.uniform(-0.25, 0.25), rng.uniform(-0.25, 0.25), 0))
+
+
+def papers(m, name, x, y, rng, n) -> None:
+    for k in range(n):
+        A.box(f'{name}_{k}', (0.21, 0.297, 0.002), (x + rng.uniform(-0.12, 0.12), y + rng.uniform(-0.06, 0.06),
+                                                  DESK_H + 0.001 * (k + 1)),
               m['paper'], bevel=0, rot=(0, 0, rng.uniform(-0.5, 0.5)), tile=None)
-    if i != 1:
-        mx, my = cx + rng.uniform(0.1, 0.5), BENCH_Y - 0.15
-        A.cylinder(f'{name}_mug', 0.04, 0.095, (mx, my, top), m['mug'], bevel=0.004)
-        A.box(f'{name}_mug_handle', (0.012, 0.05, 0.06), (mx + 0.045, my, top + 0.02), m['mug'], bevel=0.005)
-    if i == 0:
-        A.duplicate(props['anthurium'], f'{name}_plant', (x0 + 0.55, BENCH_Y + 0.25, top), rng.uniform(0, 6.28))
-    if i == 1:
-        for k in range(3):
-            A.box(f'{name}_book_{k}', (0.24, 0.17, 0.025), (x0 + 0.5, BENCH_Y - 0.2, top + k * 0.025),
-                  A.material(f'book_{k}', ['#6a7f95', '#c9b99a', '#8d6e63'][k], rough=0.7), bevel=0.003,
-                  rot=(0, 0, rng.uniform(-0.2, 0.2)))
 
 
-def question_desk(m) -> None:
-    x, y = 1.9, ROOM_D - 0.55
-    A.box('qdesk_body', (1.0, 0.6, 0.72), (x, y, 0), m['steel'], bevel=0.012)
-    A.box('qdesk_top', (1.1, 0.66, 0.035), (x, y, 0.72), m['oak'], bevel=0.006, tile=1.2)
-    A.box('qdesk_card', (0.16, 0.004, 0.12), (x - 0.1, y - 0.05, 0.755), m['paper'], rot=(math.radians(-20), 0, 0),
-          kind='dynamic', bevel=0)
-    A.cylinder('lantern_cord', 0.004, 1.0, (x - 0.1, y, WALL_H - 1.0), m['frame'], segments=6)
-    A.octahedron('lantern', 0.12, 0.32, (x - 0.1, y, WALL_H - 1.18), m['lantern'])
+def report_tray(m, name, x, y) -> None:
+    """Two stacked letter trays on posts, with paper in each."""
+    for level in range(2):
+        z = DESK_H + 0.005 + level * 0.075
+        A.box(f'{name}_base_{level}', (0.26, 0.33, 0.008), (x, y, z), m['frame'], bevel=0.002)
+        for side in (-1, 1):
+            A.box(f'{name}_rail_{level}_{side:+d}', (0.008, 0.33, 0.04), (x + side * 0.126, y, z), m['frame'], bevel=0.002)
+        A.box(f'{name}_back_{level}', (0.26, 0.008, 0.05), (x, y + 0.161, z), m['frame'], bevel=0.002)
+        A.box(f'{name}_paper_{level}', (0.21, 0.29, 0.012), (x, y - 0.01, z + 0.008), m['paper'], bevel=0.001, tile=None)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            A.cylinder(f'{name}_post_{sx:+d}{sy:+d}', 0.005, 0.08, (x + sx * 0.12, y + sy * 0.15, DESK_H + 0.005),
+                       m['frame'], segments=8)
 
 
-def shelf(m, props: dict, rng: random.Random) -> None:
-    x0, y, w = 8.4, ROOM_D - 0.22, 1.4
-    for side in (0, 1):
-        A.box(f'shelf_side_{side}', (0.03, 0.4, 1.8), (x0 + side * w, y, 0), m['steel'], bevel=0.004)
-    for k, z in enumerate((0.05, 0.62, 1.2, 1.77)):
-        A.box(f'shelf_board_{k}', (w, 0.4, 0.025), (x0 + w / 2, y, z), m['steel'], bevel=0.004)
-    for k in range(7):
-        A.duplicate(props['binder'], f'shelf_binder_{k}', (x0 + 0.15 + k * 0.05, y, 0.645))
-    A.duplicate(props['box'], 'shelf_box', (x0 + 1.05, y, 1.225), rng.uniform(-0.2, 0.2))
+def book_stack(m, name, x, y, rng, n=2) -> None:
+    for k in range(n):
+        A.box(f'{name}_{k}', (0.24, 0.17, 0.028), (x, y, DESK_H + k * 0.028),
+              A.material(f'book_{k}', ['#5d7792', '#3f5a6e', '#c9b99a'][k % 3], rough=0.7), bevel=0.003,
+              rot=(0, 0, rng.uniform(-0.15, 0.15)))
+
+
+def laptop(m, name, x, y, facing: float, closed=False) -> None:
+    """Laptop at (x, y); open ones face `facing` (0 = user sits at -Y)."""
+    A.box(f'{name}_base', (0.34, 0.24, 0.016), (x, y, DESK_H), m['steel'], bevel=0.004, rot=(0, 0, facing))
+    if closed:
+        A.box(f'{name}_lid', (0.34, 0.24, 0.008), (x, y, DESK_H + 0.016), m['steel'], bevel=0.003, rot=(0, 0, facing))
+        return
+    dx, dy = -math.sin(facing) * 0.12, math.cos(facing) * 0.12
+    A.box(f'{name}_lid', (0.34, 0.012, 0.23), (x + dx, y + dy, DESK_H + 0.012), m['steel'], bevel=0.004,
+          rot=(math.radians(-18), 0, facing))
+
+
+def monitor(m, name, x, y, facing: float) -> None:
+    A.box(f'{name}_stand', (0.22, 0.16, 0.012), (x, y, DESK_H), m['frame'], rot=(0, 0, facing), bevel=0.003)
+    A.box(f'{name}_neck', (0.04, 0.03, 0.2), (x, y, DESK_H), m['frame'], rot=(0, 0, facing))
+    A.box(f'{name}_screen', (0.58, 0.035, 0.36), (x, y, DESK_H + 0.14), m['screen'], bevel=0.008,
+          rot=(math.radians(-5), 0, facing))
+
+
+def desk_frame(m, name, x0, y) -> None:
+    cx = x0 + DESK_W / 2
+    A.box(f'{name}_top', (DESK_W - 0.006, DESK_D, TOP_T), (cx, y, DESK_H - TOP_T), m['oak'], bevel=0.008, tile=1.2)
+    for lx in (x0 + 0.05, x0 + DESK_W - 0.05):
+        for ly in (y - DESK_D / 2 + 0.05, y + DESK_D / 2 - 0.05):
+            A.box(f'{name}_leg_{lx:.2f}_{ly:.2f}', (0.045, 0.045, DESK_H - TOP_T), (lx, ly, 0), m['frame'], bevel=0.006)
+    A.box(f'{name}_rail', (DESK_W - 0.1, 0.03, 0.06), (cx, y, DESK_H - TOP_T - 0.06), m['frame'], bevel=0.005)
+
+
+def pedestal(m, name, x, y) -> None:
+    A.box(name, (0.42, 0.55, 0.6), (x, y, 0.02), m['steel'], bevel=0.014)
+    for d in range(3):
+        A.box(f'{name}_drawer_{d}', (0.37, 0.008, 0.17), (x, y - 0.277, 0.06 + d * 0.19), m['steel'], bevel=0.003)
+        A.box(f'{name}_handle_{d}', (0.12, 0.012, 0.012), (x, y - 0.285, 0.19 + d * 0.19), m['frame'], bevel=0.002)
+
+
+def bench(m, rng: random.Random, props: dict) -> None:
+    """Three desks; far side (robots) faces the room, near side has the empty chairs and pedestals."""
+    far, near = BENCH_Y + 0.12, BENCH_Y - 0.15
+    for i in range(3):
+        x0 = BENCH_X0 + i * DESK_W
+        cx, name = x0 + DESK_W / 2, f'desk{i + 1}'
+        desk_frame(m, name, x0, BENCH_Y)
+        pedestal(m, f'{name}_pedestal', x0 + DESK_W - 0.3, BENCH_Y - DESK_D / 2 + 0.29)
+        seat_x, seat_y = cx - 0.25, BENCH_Y + DESK_D / 2 + 0.34
+        # far-side chairs face the desk (-Y), near-side ones face the wall (+Y)
+        chair(m, f'{name}_chair_far', seat_x, seat_y, 0.0)
+        A.empty(f'seat_{name}', (seat_x, seat_y, SEAT_H), (0, 0, 0), desk=name)
+        chair(m, f'{name}_chair_near', cx - 0.3, BENCH_Y - DESK_D / 2 - 0.42, math.pi)
+        desk_lamp(m, f'{name}_lamp', name, x0 + 0.18, far + 0.1, 1)
+        pen_pot(m, f'{name}_penpot', cx + 0.38, far - 0.02, rng)
+    # desk 1 (teal, searching): open laptop and a plant
+    laptop(m, 'desk1_laptop', BENCH_X0 + 0.85, far - 0.02, math.pi)
+    papers(m, 'desk1_papers', BENCH_X0 + 0.6, near - 0.05, rng, 2)
+    A.duplicate(props['desk_plant'], 'desk1_plant', (BENCH_X0 + 0.45, far - 0.05, DESK_H), 1.1)
+    book_stack(m, 'desk1_books', BENCH_X0 + 1.25, near - 0.02, rng)
+    # desk 2 (blue, writing): sketches spread out, a mug
+    papers(m, 'desk2_papers', BENCH_X0 + DESK_W + 0.75, BENCH_Y + 0.02, rng, 3)
+    papers(m, 'desk2_notes', BENCH_X0 + DESK_W + 0.35, near - 0.08, rng, 2)
+    A.cylinder('desk2_mug', 0.04, 0.095, (BENCH_X0 + DESK_W + 1.25, near, DESK_H), m['mug'], bevel=0.004)
+    A.duplicate(props['desk_plant'], 'desk2_plant', (BENCH_X0 + DESK_W + 1.05, far - 0.1, DESK_H), 2.3)
+    # desk 3 (olive, testing): monitor facing the robot, closed laptop, report tray
+    # to the robot's right (screen left), so the robot and its flask stay in view as in l2
+    monitor(m, 'desk3_monitor', BENCH_X0 + 2 * DESK_W + 0.2, far - 0.1, math.radians(-25))
+    laptop(m, 'desk3_laptop_closed', BENCH_X0 + 2 * DESK_W + 0.55, near - 0.05, 0.3, closed=True)
+    report_tray(m, 'desk3_tray', BENCH_X0 + 3 * DESK_W - 0.2, near - 0.02)
+    papers(m, 'desk3_papers', BENCH_X0 + 2 * DESK_W + 1.0, near - 0.1, rng, 1)
+    A.cylinder('desk3_mug', 0.04, 0.095, (BENCH_X0 + 2 * DESK_W + 0.3, near - 0.05, DESK_H), m['mug'], bevel=0.004)
+
+
+def corner_desk(m, rng: random.Random, props: dict) -> None:
+    """The desk cut by the frame's near-left corner in l2: monitor, keyboard, lamp and a plant."""
+    x0, y = 2.0, 1.5
+    desk_frame(m, 'corner', x0, y)
+    desk_frame(m, 'corner_b', x0 + DESK_W, y)
+    monitor(m, 'corner_monitor', x0 + 0.9, y + 0.15, 0.0)
+    A.box('corner_keyboard', (0.44, 0.14, 0.018), (x0 + 0.9, y - 0.15, DESK_H), m['frame'], bevel=0.004)
+    desk_lamp(m, 'corner_lamp', 'corner', x0 + 0.25, y + 0.2, 1)
+    papers(m, 'corner_papers', x0 + 0.35, y - 0.12, rng, 2)
+    A.duplicate(props['desk_plant'], 'corner_plant', (x0 + DESK_W + 0.4, y + 0.1, DESK_H), 0.4)
+    A.box('corner_box', (0.3, 0.22, 0.12), (x0 + DESK_W + 0.9, y + 0.05, DESK_H), m['cap'], bevel=0.01)
+
+
+def question_desk(m, props: dict) -> None:
+    x, y = 3.35, WALL_Y - 0.45
+    A.box('qdesk_body', (1.1, 0.6, 0.7), (x, y, 0.02), m['steel'], bevel=0.012)
+    A.box('qdesk_drawer', (0.5, 0.008, 0.16), (x - 0.18, y - 0.302, 0.5), m['steel'], bevel=0.003)
+    A.box('qdesk_top', (1.2, 0.66, 0.035), (x, y, 0.72), m['oak'], bevel=0.008, tile=1.2)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            A.cylinder(f'qdesk_foot_{sx:+d}{sy:+d}', 0.015, 0.02, (x + sx * 0.5, y + sy * 0.25, 0), m['frame'], segments=8)
+    # the "?" tent card: a card leaning back 15 degrees, the glyph standing just proud of its face
+    cx, cy, top, lean = x - 0.15, y - 0.02, 0.755, math.radians(15)
+    A.box('qdesk_card', (0.22, 0.004, 0.17), (cx, cy, top), m['paper'], bevel=0, rot=(-lean, 0, 0), tile=None)
+    A.text_mesh('qdesk_card_glyph', '?', 0.13, (cx, cy + 0.085 * math.sin(lean) - 0.004, top + 0.085 * math.cos(lean)),
+                m['ink'], rot=(math.pi / 2 - lean, 0, 0))
+    A.duplicate(props['desk_plant'], 'qdesk_plant', (x + 0.38, y + 0.08, 0.755), 0.3)
+    # the lantern hangs over the desk from the cap; it is dynamic and driven by attention state
+    A.cylinder('lantern_cord', 0.005, 0.95, (cx, y, WALL_H - 0.95), m['frame'], kind='dynamic', segments=6)
+    A.octahedron('lantern', 0.19, 0.5, (cx, y, WALL_H - 1.2), m['lantern'])
+    A.empty('lantern_anchor', (cx, y, WALL_H), attention='question')
 
 
 def planters(m, props: dict) -> None:
-    for i, (x, y) in enumerate(((2.15, ROOM_D - 1.3), (7.3, ROOM_D - 0.4), (9.4, 1.0))):
-        A.box(f'planter_{i}', (0.36, 0.36, 0.42), (x, y, 0), m['pot'], bevel=0.015)
-        A.duplicate(props['calathea'], f'planter_{i}_plant', (x, y, 0.4), i * 1.3)
+    spots = ((-0.55, WALL_Y - 0.45, 0.0), (7.6, WALL_Y - 0.45, 1.3), (9.7, WALL_Y - 0.75, 2.6),
+             (12.1, 3.9, 3.9), (-0.5, 2.6, 5.2))
+    for i, (x, y, rz) in enumerate(spots):
+        A.box(f'planter_{i}', (0.42, 0.42, 0.5), (x, y, 0), m['pot'], bevel=0.02)
+        plant = props['calathea'] if i % 2 == 0 else props['anthurium']
+        A.duplicate(plant, f'planter_{i}_plant', (x, y, 0.48), rz)
+
+
+def footprints(m) -> None:
+    """Anchors along the path from the lift to the bench; the runtime lays footprints on them."""
+    for i in range(8):
+        t = i / 7
+        A.empty(f'footprint_{i}', (0.9 + t * 3.0, WALL_Y - 0.8 - t * 1.4, 0.005), (0, 0, math.radians(-60)), foot=i % 2)
 
 
 def lights() -> None:
-    A.world_hdri(A.source('polyhaven', 'white_studio_06', 'white_studio_06_1k.hdr'), strength=1.0,
+    A.world_hdri(A.source('polyhaven', 'white_studio_06', 'white_studio_06_1k.hdr'), strength=0.9,
                  rotation=math.radians(120))
-    sun = A.light('sun', 'SUN', (0, 0, 10), 2.0, '#fff4e5', angle=math.radians(8))
-    sun.rotation_euler = (math.radians(50), 0, math.radians(-35))
-    for i, x in enumerate((2.5, 5.0, 7.5)):
-        A.light(f'fill_{i}', 'AREA', (x, ROOM_D / 2, WALL_H), 120, '#f4f1ec', shape='RECTANGLE', size=2.2, size_y=5.0)
+    sun = A.light('sun', 'SUN', (0, 0, 10), 1.6, '#fff2e0', angle=math.radians(10))
+    sun.rotation_euler = (math.radians(48), 0, math.radians(-30))
+    for i, x in enumerate((1.5, 5.0, 8.5, 12.0)):
+        A.light(f'fill_{i}', 'AREA', (x, 2.5, WALL_H + 0.4), 140, '#f6f3ee', shape='RECTANGLE', size=3.0, size_y=6.0)
+    # soft downlights along the wall, the scallops above the pilasters in l2
+    for i, x in enumerate(PILASTERS):
+        spot = A.light(f'wallwash_{i}', 'SPOT', (x, WALL_Y - 0.5, WALL_H - 0.1), 70, '#ffc98f',
+                       spot_size=math.radians(90), spot_blend=1.0, shadow_soft_size=0.2)
+        A.aim(spot, (x, WALL_Y, 1.4))
 
 
 def props() -> dict:
     ph = lambda i: A.source('polyhaven', i, f'{i}_1k.gltf')  # noqa: E731
-    return {'anthurium': A.import_gltf(ph('anthurium_botany_01'), 'anthurium_botany_05_e', 'proto_anthurium'),
+    return {'anthurium': A.import_gltf(ph('anthurium_botany_01'), 'anthurium_botany_01_b', 'proto_anthurium', scale=0.8),
             'calathea': A.import_gltf(ph('calathea_orbifolia_01'), 'calathea_orbifolia_01_a', 'proto_calathea'),
+            'desk_plant': A.import_gltf(ph('anthurium_botany_01'), 'anthurium_botany_05_e', 'proto_desk_plant', scale=0.9),
             # stand the closed binder on its edge, thickness along the shelf
             'binder': A.import_gltf(ph('binder_notebook'), 'binder_notebook_closed', 'proto_binder',
                                     rot=(0, math.pi / 2, 0)),
@@ -264,16 +430,19 @@ def main() -> None:
     m = materials()
     p = props()
     shell(m)
+    lift(m)
+    question_desk(m, p)
     plan_wall(m)
-    for i in range(3):
-        desk(m, i, rng, p)
-    question_desk(m)
-    shelf(m, p, rng)
+    poster(m)
+    shelf(m, p)
+    bench(m, rng, p)
+    corner_desk(m, rng, p)
     planters(m, p)
+    footprints(m)
     for proto in p.values():
         bpy.data.objects.remove(proto)
     lights()
-    A.ortho_camera('camera_l2', (5.0, 4.2, 0.9), pitch_deg=30, yaw_deg=22, scale=8.5)
+    A.ortho_camera('camera_l2', (6.0, 3.4, 0.9), pitch_deg=30, yaw_deg=20, scale=9.0)
     info = A.lightmap_uvs(texel=0.015)
     info['warm_groups'] = sorted({o['warm'] for o in bpy.data.objects if 'warm' in o})
     info['seat_height'] = SEAT_H

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Fleet · workbench prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #dcebf8; font: 13px/1.4 system-ui, sans-serif; }
+  canvas { display: block; }
+  #hint { position: fixed; left: 12px; bottom: 10px; color: #56606e; background: rgba(255, 255, 255, .7);
+          padding: 6px 10px; border-radius: 8px; }
+  body.shot #hint { display: none; }
+</style>
+</head>
+<body>
+<div id="hint">Click a tile to flip it, a criteria light to switch it, a robot to start or stop work, the lantern to answer it.
+  <kbd>a</kbd> raises a question.</div>
+<script type="importmap">{"imports":{"three":"/vendor/three/three.module.js","three/addons/":"/vendor/three/addons/"}}</script>
+<script type="module" src="/prototype/bench.js"></script>
+</body>
+</html>

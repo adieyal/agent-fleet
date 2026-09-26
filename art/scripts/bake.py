@@ -152,6 +152,11 @@ def main() -> None:
     bpy.ops.wm.open_mainfile(filepath=str(p['blend']))
     scene = bpy.context.scene
     info = json.loads(scene['fleet_build'])
+    p['lightmaps'].mkdir(parents=True, exist_ok=True)
+    if not A.baked_objects():
+        print(f'bake {scene_name}: nothing baked in this scene')
+        (p['lightmaps'] / 'bake.json').write_text(json.dumps({'layers': [], 'blender': bpy.app.version_string}))
+        return
     print('bake device', gpu())
     setup(scene)
     scene.world['fleet_strength'] = scene.world.node_tree.nodes['Background'].inputs['Strength'].default_value
