@@ -52,34 +52,26 @@ function visibleHosts(doc) {
   if (changed) saveDismissed();
   return out;
 }
-// Finished jobs leave the deck on their own: each room keeps its few most recent for a while, the rest are counted
-// in a header chip that shows them again. Failed and stalled jobs stay until dismissed — they need you.
+// Finished jobs leave the deck: one that finishes while you watch walks out through the door (motion.js), one
+// already finished never shows. A header chip counts them and shows them again. Failed and stalled jobs stay until
+// dismissed — they need you.
 const FINISHED_STATUSES = new Set(['done', 'cancelled']);
-const FINISHED_LINGER_SECONDS = 10 * 60;
-const FINISHED_PER_ROOM = 3;
-const RETIRE_CHECK_MS = 30000;
+const LEAVE_WITHIN_SECONDS = 30;
 export let retiredCount = 0, showFinished = false;
 function retireFinished(hostList) {
   retiredCount = 0;
   if (showFinished) return;
-  const finished = [];
-  for (const h of hostList) for (const j of h.jobs) if (FINISHED_STATUSES.has(j.status)) finished.push(j);
-  finished.sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0));
-  const nowSeconds = Date.now() / 1000, keptPerRoom = new Map(), retired = new Set();
-  for (const j of finished) {
-    const kept = keptPerRoom.get(j.project) || 0;
-    if (nowSeconds - (j.updated_at || 0) > FINISHED_LINGER_SECONDS || kept >= FINISHED_PER_ROOM) retired.add(j);
-    else keptPerRoom.set(j.project, kept + 1);
-  }
-  for (const h of hostList) h.jobs = h.jobs.filter(j => !retired.has(j));
-  retiredCount = retired.size;
+  for (const h of hostList) h.jobs = h.jobs.filter(j => {
+    if (!FINISHED_STATUSES.has(j.status)) return true;
+    retiredCount++;
+    const e = ents.get(h.name + ':' + j.id);
+    return !REDUCED && !!e && (e.leaving || !FINISHED_STATUSES.has(e.lastStatus));
+  });
 }
 export function toggleFinished() {
   showFinished = !showFinished;
   if (lastDoc) applyState(lastDoc);
 }
-// jobs age out between state updates too
-setInterval(() => { if (lastDoc) applyState(lastDoc); }, RETIRE_CHECK_MS);
 export function dismiss(key) {
   const e = ents.get(key);
   if (!e || !lastDoc) return;
@@ -129,8 +121,12 @@ export function applyState(doc) {
       let e = ents.get(key);
       const known = !!e;
       if (!e) { e = createEnt(key, h.name, j); ents.set(key, e); }
-      // a job that just finished gives a thumbs-up before heading for the sofa
-      if (known && j.status === 'done' && e.lastStatus !== 'done' && !REDUCED) { e.holdClip = 'ThumbsUp'; e.holdUntil = now + ROBOT.clips.ThumbsUp.duration; }
+      // a job that just finished gives a thumbs-up (a cancelled one waves) before it leaves, or heads for the sofa
+      // while finished jobs are shown
+      if (known && FINISHED_STATUSES.has(j.status) && !FINISHED_STATUSES.has(e.lastStatus) && !REDUCED) {
+        e.holdClip = j.status === 'done' ? 'ThumbsUp' : 'Wave'; e.holdUntil = now + ROBOT.clips[e.holdClip].duration;
+        e.leaving = !showFinished; e.leaveBy = now + LEAVE_WITHIN_SECONDS;
+      }
       e.lastStatus = j.status;
       e.job = j; e.host = h.name;
       noteDocs(e, !known || !everLoaded);

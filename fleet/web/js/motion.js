@@ -1,7 +1,7 @@
 // Where each android goes and how it moves: targets, pacing, particles and the per-frame update.
 
 import * as THREE from 'three';
-import { PI, REDUCED, SPEED } from './env.js';
+import { PI, RD, REDUCED, SPEED } from './env.js';
 import { angleTo, clamp, mix } from './util.js';
 import {
   ACTS, AGENT_COLOR, AISLES, APART_ACROSS, APART_ALONG, CROSSINGS, FACE_VIEWER, FLOOR, OVERFLOW, SPOTS, apart,
@@ -11,13 +11,18 @@ import { activityFor, activityOf, isActive } from './activity.js';
 import { G, ROBOT, _m4, _m4b, _q, _sc, _v, cam, drawScreen, scene, softDot } from './scene.js';
 import { ents, selectedKey } from './model.js';
 import { PRESS, placer, roomByName, rooms } from './rooms.js';
-import { playClip } from './agents.js';
+import { dropEnt, playClip } from './agents.js';
+import { closePanel } from './panel.js';
 import { CALM } from './focus.js';
 
 export function assignTargets() {
   const now = performance.now() / 1000;
   for (const r of rooms) r.ents = [];
-  for (const e of ents.values()) { const r = roomByName.get(e.room); if (r) r.ents.push(e); }
+  for (const e of ents.values()) {
+    // a finished job heads for the door once its completion moment is over, and gives up its spot
+    if (e.leaving) { if (e.target !== EXIT) { e.target = EXIT; e.path = route(e.local, EXIT); } continue; }
+    const r = roomByName.get(e.room); if (r) r.ents.push(e);
+  }
   for (const r of rooms) {
     r.ents.sort((a, b) => a.key < b.key ? -1 : 1);
     for (const e of r.ents) {
@@ -35,6 +40,7 @@ export function assignTargets() {
   }
 }
 const DWELL = 3.5;   // seconds an android stays on an activity before walking off to another station
+const EXIT = { x: 5.5, y: RD + 0.7, prop: 'door' };   // just outside the door, where androids walk in
 
 // React to what happened since the last poll: a test run followed by anything but an error passed (a nod), an error gets
 // a head shake. Seated androids nod or shake just their head; standing ones play the full clip.
@@ -164,6 +170,7 @@ function route(a, b) {
 export function stepMotion(dt, now) {
   for (const e of ents.values()) {
     if (!e.path.length) {
+      if (e.leaving) { leave(e); continue; }
       if (e.target) e.facing = e.target.face ?? e.facing;
       e.walking = false;
       if (e.target) { e.fresh = false; if (e.arrivedAt == null) e.arrivedAt = now; }
@@ -171,6 +178,7 @@ export function stepMotion(dt, now) {
       pace(e, now);
       continue;
     }
+    if (e.leaving && now > e.leaveBy) { leave(e); continue; }   // a slow frame rate never keeps it on the deck
     if (now < e.holdUntil) continue;
     // get up before walking off
     if (!REDUCED && (e.bot.clip === 'Sitting' || e.bot.clip === 'Death')) {
@@ -201,6 +209,12 @@ export function stepMotion(dt, now) {
     e.nudge.x += (clamp(nx, -0.8, 0.8) - e.nudge.x) * k;
     e.nudge.y += (clamp(ny, -0.8, 0.8) - e.nudge.y) * k;
   }
+}
+
+function leave(e) {
+  dropEnt(e);
+  ents.delete(e.key);
+  if (selectedKey === e.key) closePanel();
 }
 
 // activities with more than one station move on once the android has spent a moment at the first (a book off the shelf)

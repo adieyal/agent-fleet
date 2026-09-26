@@ -413,7 +413,7 @@ export function demoSource() {
     docText.set(`${job.host}:${job.id}:${id}`, markdown);
   }
   function addReport(job, i, mtime) { addDoc(job, `report-${i}`, 'report', `Step ${i + 1}: ${job.steps[i].title}`, i, stepReport(job, i), mtime); }
-  const [suppliers, flaky, , shadow, luc, deck, , , article] = jobs;
+  const [suppliers, flaky, review, shadow, luc, deck, , , article] = jobs;
   addReport(suppliers, 0, t0 - 2400); addReport(suppliers, 1, t0 - 1300);
   addDoc(suppliers, 'file-0', 'file', 'docs/suppliers-v2-parity.md', 1, DEMO_DOCS.deckLayout.replace('Deck layout notes', 'Suppliers V2 parity notes'), t0 - 1250);
   addReport(flaky, 0, t0 - 900);
@@ -511,10 +511,15 @@ export function demoSource() {
     job.updated_at = now();
     if (e.kind === 'tool' || e.kind === 'text' || e.kind === 'error') job.activity = job.events[job.events.length - 1];
   }
+  function finish(job) { job.status = 'done'; job.ticks = 0; job.todos = []; push(job, { kind: 'job', status: 'done', summary: 'job done' }); }
   function tick() {
     tickCount++;
     if (tickCount === 3) { addDoc(deck, 'file-0', 'file', 'docs/deck-layout.md', 2, DEMO_DOCS.deckLayout); push(deck, { kind: 'tool', tool: 'edit', summary: 'docs/deck-layout.md' }); }
     if (tickCount === 7) addDoc(flaky, 'outbox-root-cause.md', 'outbox', 'root-cause.md', null, DEMO_DOCS.rootCause);
+    if (tickCount === 4 && review.status === 'running') {   // one job finishes soon after the page opens, so its android is seen walking out
+      for (const s of review.steps) if (s.status !== 'done') { s.status = 'done'; s.finished_at = now(); s.result = pick(RESULTS); }
+      finish(review);
+    }
     for (const job of jobs) {
       job.ticks++;
       if (job.status === 'queued' && job.ticks > 7) {
@@ -562,7 +567,7 @@ export function demoSource() {
         addReport(job, i);
         push(job, { kind: 'step', status: 'done', summary: job.steps[i].result });
         if (job.steps[i + 1]) { job.steps[i + 1].status = 'running'; job.steps[i + 1].started_at = now(); newTodos(job); push(job, { kind: 'step', status: 'running', summary: job.steps[i + 1].title }); }
-        else { job.status = 'done'; job.ticks = 0; job.todos = []; push(job, { kind: 'job', status: 'done', summary: 'job done' }); }
+        else finish(job);
       }
     }
     for (const s of sessions) {
