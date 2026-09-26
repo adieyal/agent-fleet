@@ -478,7 +478,7 @@ Test through the highest practical seam: run the Fleet web app against controlle
 | Milestone moments | Configurable: Quiet, Standard (default), Celebratory |
 | Concept images vs this spec | Where they disagree, the spec wins. L0 shows activity as light, never agent figures (unlike `no vacancies.png`). The diamond form is reserved for the attention lantern; decorative lights use other shapes (unlike the lobby pendants). A shuttered project's lantern moves to the front desk and storehouse door, never stays on the "To let" floor (unlike `shutter.png`). |
 | First L1 layout | A cluster of benches stands for an epic's room; walls between rooms are optional. |
-| Floor legibility | Ten floors must read on one desktop screen, so the L0 camera may be closer to a straight cross-section with shallower floors than the concept art. |
+| Floor legibility | Ten floors must read on one desktop screen, achieved by framing, slimmer slabs and the lift panel. The L0 camera keeps a three-quarter view as in the concept art; a flat front elevation loses the building's depth. |
 | Glossary | Project-level "parked" is now "shuttered (archived)"; "on hold" covers work set aside inside a live project; "focus" means priority or background only. Glossary, working design and ADR 0005 updated. |
 
 ## Open questions
