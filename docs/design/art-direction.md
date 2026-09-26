@@ -129,7 +129,7 @@ Lightmaps start as 8-bit sRGB WebP with a per-scene scale; if banding shows in t
 
 It renders in a standalone page beside the current deck, with the camera fitted to `l2.png`. Acceptance is a side-by-side screenshot of `l2.png` and the render, judged on the qualities above, with warmth toggled on and off for the bench.
 
-**Spike result (2026-09-26).** `/prototype/bench` renders the baked workbench with three robots from the l2 camera: orthographic, pitch 37°, yaw 23°. `art/scripts/shoot_bench.py` writes the side-by-side. What matches:
+**Spike result (2026-09-26).** `/prototype/bench` renders the baked workbench with three robots from the l2 camera: orthographic, pitch 44.5°, yaw 21.25°, fitted to l2 landmarks by `art/scripts/fit_camera.py`. l2 is not a consistent projection (its far and near horizontals slope differently), so no orthographic or perspective camera fits it better than about 50 px RMS. The fit weights the bench most. `art/scripts/shoot_bench.py` writes the side-by-side. What matches:
 - the layout: lift, question desk under the lantern, plan wall with criteria lights, poster, bench, near desk
 - mass and contact shadows
 - amber lit tiles with ticks
@@ -142,17 +142,35 @@ Iteration rounds, each committed as `style(art):`, with side-by-sides in the job
 2. **Round 2.** Cooler grey wall bays and paler oak; potted desk plants, plan sketches, full pen pots and tall planter plants; the lantern became an elongated six-sided diamond; sprites and the lantern were kept out of the floor reflection.
 3. **Round 3.** A light-grey bezel and whiter tiles on the plan wall, with larger criteria lamps; broad baked desk washes instead of hot spots; robots 12% larger and filled by a hemisphere light that reaches only live objects.
 4. **Round 4.** Legible pencil lines on the sketches; the olive robot's flask arm raised higher.
+5. **Round 5.** Framing fitted to l2, with 1.8 m desks and a larger plan wall to match its proportions; the corner desk cropped to a corner; near-capsule clear-coated robot heads with bigger eyes; oak from a desaturated copy of Wood095; tinted binder spines; darker footprints.
+6. **Round 6.** Tone calibrated by sampling l2:
+   - a baked short-range AO layer for contact shadows, and a contrast grade
+   - cool daylight, so warmth comes only from lamps and wall washers
+   - floor, pilasters and oak matched to l2's sampled colours
+   - a warm floor spill and a lamp halo at each working desk, both following activity
+   - the olive robot's test tube raised beside its face; the joint angles were found by search
 
-**Performance** at 1440 x 900 on this host's RTX 3090, measured by `art/scripts/perf_bench.py` in headless Chromium through ANGLE on Vulkan with vsync off (the GL paths fall back to llvmpipe):
+**Reviewer notes** (CLAUDE.local.md, judged at round 6):
+
+| Note | Status |
+|---|---|
+| 1. Lighting and tone | **Resolved.** Open floor, pilasters and plan tiles sample within about 10 levels of l2, and contact shadows sit under furniture and in corners. l2's lamp glow is still stronger and more saturated. |
+| 2. Framing | **Resolved.** The bench fills the frame as in l2, and the near desk shows only as a corner. |
+| 3. Robots | **Resolved.** Each robot sits in a far-side chair at the desk. They have round, glossy, clear-coated helmets, big eyes, dark joints and saturated host colours. One types on a laptop, one writes with a pencil, one holds up a test tube. |
+| 4. Materials | **Resolved.** Cool grey walls, bevelled pilasters with capping blocks, a thick top cap, and pale wood. |
+| 5. Lantern | **Resolved.** A faceted six-sided crystal with an emissive magenta core and a soft halo, on a thin cord. |
+| 6. Props | **Mostly resolved.** Desk plants, full pen pots, a stacked paper tray, coloured binder spines and darker footprints are in. The potted plant beside the lift and the shelf are at the frame's edges. |
+
+**Performance** at 1440 x 900 on this host's RTX 3090, measured by `art/scripts/perf_bench.py` in headless Chromium through ANGLE on Vulkan with vsync off (the GL paths fall back to llvmpipe). The scripts and tests launch Chromium without `DISPLAY`: an inherited, dead X forward stops ANGLE from creating a WebGL context.
 
 | Frame time (median / p95 / worst) | Frame rate | First frame | Page load (3D assets / code) |
 |---|---|---|---|
-| 3.9 / 4.3 / 7.8 ms | ~256 fps | 1.9 s | 8.5 MB (6.1 / 2.45) |
+| 4.0 / 4.4 / 7.0 ms | ~250 fps | 2.1 s | 8.7 MB (6.3 / 2.45) |
 
 The 60 fps target leaves about 4x headroom. The floor reflection roughly doubled frame cost (1.6 ms before round 1).
 
 Gaps still open, largest first:
-1. **Oak colour.** The Wood095 texture is orange, so the oak reads orange; l2's desks are pale and take their warmth from the lamps. The fix is a paler source texture or a desaturated copy made at build time.
-2. **Olive robot.** Its flask is still mostly hidden by the monitor, where l2 holds it up in clear view. It needs its own pose or a different monitor placement.
-3. **Floor tone.** l2's floor is a cooler lilac-grey with brighter warm reflections under the desks. The reflection strength and floor albedo need a pass together.
-4. **Right edge.** The shelf of binders and the lit box are only half in frame; l2 shows them fully.
+1. **Lamp glow.** l2's working lamps throw a strong, saturated amber glow and the shades glow from inside. Ours is a faint halo, because the bulbs face down under closed shades. An open, emissive shade interior would close it; about half a day.
+2. **Composition.** l2 is not a single projection, so the question desk and lantern sit about 50–100 px from where l2 draws them when the bench matches. Nudging those props per view is cheap, but it bends the layout away from real geometry.
+3. **Edges of frame.** The lift's potted plant and the binder shelf are cut by the frame, where l2 shows them in full. l2 compresses the room sideways; placing them nearer the centre fixes it.
+4. **Finish.** l2's surfaces have painterly gradients and crisp highlight edges. Closing that means more bevel detail, finer lightmaps (1 cm) and light-probe reflections on the live objects; several days.
