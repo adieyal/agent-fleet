@@ -12,6 +12,7 @@ import { positionTags } from './agents.js';
 import { stepMotion, stepParticles, updateEnt, updateRoom } from './motion.js';
 import { applyState, stream } from './state.js';
 import { positionSwitches, stepFocus } from './focus.js';
+import { positionLanterns, stepLanterns } from './attention.js';
 import { resize } from './camera.js';
 import { miniBot, panelScrollUntil, renderLive } from './panel.js';
 import './library.js';
@@ -60,6 +61,7 @@ function frame(ts) {
     }
   }
   for (const r of rooms) if (!r.closed) updateRoom(r, t, dt, now);
+  stepLanterns(rooms, now);
   stepDocFx(t);
   liftHovered();
   lineGeo.setDrawRange(0, nSeg * 2);
@@ -67,11 +69,11 @@ function frame(ts) {
   lineGeo.attributes.color.needsUpdate = true;
   if (!REDUCED) for (const tex of edgeStrips) tex.offset.x = -t * 0.35;
   M.beacon.color.set(REDUCED || Math.sin(t * 2.4) > 0.6 ? 0xf87171 : 0x5a1d1d);
-  M.failGlow.opacity = REDUCED ? 0.6 : 0.45 + Math.sin(t * 8) * 0.3;
   stepParticles(dt);
   renderer.render(scene, camera);
   positionTags();
   positionSwitches();
+  positionLanterns();
   if (fpsEl) {
     fpsN++;
     if (t - fpsT > 1) { fpsEl.textContent = `${Math.round(fpsN / (t - fpsT))} fps · ${renderer.info.render.calls} calls`; fpsN = 0; fpsT = t; }
@@ -119,7 +121,8 @@ loadAssets().then(() => {
   // read-only probe for browser tests: rooms live only in WebGL, so they have no DOM to query
   window.fleetDeck = Object.freeze({
     rooms: () => rooms.map(r => ({ name: r.name, label: r.label, x: r.ox, y: r.oy, project: r.project?.id ?? null,
-      focus: r.focus, closed: !!r.closed, open: !r.shellK })),
+      focus: r.focus, closed: !!r.closed, open: !r.shellK,
+      attention: r.attention ? { kind: r.attention.kind, count: r.attention.items.length } : null })),
     agents: () => [...ents.values()].map(e => ({ key: e.key, kind: e.kind, room: e.room, status: e.job.status })),
   });
   if (DEMO) {

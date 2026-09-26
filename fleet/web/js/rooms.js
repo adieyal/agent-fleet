@@ -12,6 +12,7 @@ import {
 import { setDocSig } from './docs3d.js';
 import { deckBounds, fit } from './camera.js';
 import { buildFront, carryFocus } from './focus.js';
+import { applyAttention } from './attention.js';
 
 // ------------------------------------------------------------------ the deck: plates, rooms, furniture
 export let placer = null;
@@ -231,5 +232,6 @@ export function layoutRooms(names) {
   for (const r of rooms) roomByName.set(r.name, r);
   buildDeck();
   carryFocus(before, rooms);
+  applyAttention(rooms);
   if (!cam.userMoved) fit(true);
 }

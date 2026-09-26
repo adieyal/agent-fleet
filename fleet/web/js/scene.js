@@ -189,7 +189,8 @@ export const M = {
   dark:new THREE.MeshStandardMaterial({ color: 0x1b2333, roughness: 0.6, metalness: 0.4 }),
   wallTint: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 }),
   beacon: new THREE.MeshBasicMaterial({ color: 0xf87171 }),
-  failGlow: new THREE.SpriteMaterial({ map: softDot('rgba(255,80,80,1)', 'rgba(255,60,60,0)'), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }),
+  // steady: the room's attention lantern is the one thing that calls for you
+  failGlow: new THREE.SpriteMaterial({ map: softDot('rgba(255,80,80,1)', 'rgba(255,60,60,0)'), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.6 }),
   doneRing: new THREE.MeshBasicMaterial({ color: 0x4ade80, transparent: true, opacity: 0.55, depthWrite: false }),
   doneDisc: new THREE.MeshBasicMaterial({ map: softDot('rgba(74,222,128,.55)', 'rgba(74,222,128,0)'), transparent: true, depthWrite: false }),
   hidden: new THREE.MeshBasicMaterial({ visible: false }),

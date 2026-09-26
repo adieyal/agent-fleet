@@ -13,6 +13,7 @@ import {
 } from './panel.js';
 import { openReader } from './reader.js';
 import { applyFocus } from './focus.js';
+import { applyAttention } from './attention.js';
 
 // Dismissed agents are hidden in this browser only (the deck stays view-only). Each is remembered with
 // the updated_at it had when dismissed, so any new activity brings it back.
@@ -126,6 +127,7 @@ export function applyState(doc) {
   }
   for (const [k, e] of ents) if (!seen.has(k)) { dropEnt(e); ents.delete(k); if (selectedKey === k) closePanel(); }
   setEverLoaded(true);
+  applyAttention(rooms);
   collectEvents();
   assignTargets();
   buildDocs();

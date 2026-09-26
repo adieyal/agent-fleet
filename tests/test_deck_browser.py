@@ -155,3 +155,25 @@ def test_the_switch_changes_focus_and_nothing_moves(deck: Deck, base_url: str) -
     assert tag_shown(page, "c90e11")
     assert {name: (room["x"], room["y"]) for name, room in rooms_by_name(page).items()} == places
     assert deck.errors == []
+
+
+def test_lanterns_hang_where_work_needs_you_until_dismissed(deck: Deck) -> None:
+    page = deck.page
+    rooms = rooms_by_name(page)
+    assert {name: room["attention"] for name, room in rooms.items()} == {
+        "restoke": {"kind": "alert", "count": 1},
+        "invoice-parser": {"kind": "blocker", "count": 1},   # in the background, and just as loud
+        "agent-fleet": None}
+    expect(page.locator(".lantern")).to_have_count(2)
+    expect(page.locator('.lantern[data-room="invoice-parser"] .lg')).to_have_text("✋")
+    expect(page.locator('.lantern[data-room="restoke"] .lg')).to_have_text("!")
+
+    page.locator('.lantern[data-room="restoke"]').dispatch_event("click")
+    expect(page.locator("#panel")).to_have_class("open")
+    expect(page.locator("#panelHead h2")).to_have_text("Upgrade Django to 5.2")
+    page.locator("#panel #dismiss").click()
+    expect(page.locator('.lantern[data-room="restoke"]')).to_have_count(0)
+    expect(page.locator('.lantern[data-room="invoice-parser"]')).to_have_count(1)
+    page.locator("#restoreDismissed").click()
+    expect(page.locator('.lantern[data-room="restoke"]')).to_have_count(1)
+    assert deck.errors == []

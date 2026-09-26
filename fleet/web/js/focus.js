@@ -41,14 +41,14 @@ export function buildFront(r) {
   // pennant on a short pole at the front-left corner: the backup cue for priority
   const pennant = new THREE.Group();
   const poleMat = new THREE.MeshStandardMaterial({ color: '#8b98ad', roughness: 0.5, metalness: 0.5 });
-  const flagGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, -0.36, 0), new THREE.Vector3(0.62, -0.18, 0)]);
+  const flagGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, -0.6, 0), new THREE.Vector3(1.05, -0.3, 0)]);
   flagGeo.setIndex([0, 1, 2]);
-  const flagMat = new THREE.MeshBasicMaterial({ color: look.accent, side: THREE.DoubleSide, toneMapped: false });
+  const flagMat = new THREE.MeshBasicMaterial({ color: mix(look.accent, '#ffffff', 0.35), side: THREE.DoubleSide, toneMapped: false });
   disposables.push(poleMat, flagGeo, flagMat);
   const pole = new THREE.Mesh(G.box, poleMat);
-  pole.scale.set(0.05, 1.6, 0.05); pole.position.y = 0.8;
+  pole.scale.set(0.06, 2.4, 0.06); pole.position.y = 1.2;
   const flag = new THREE.Mesh(flagGeo, flagMat);
-  flag.position.set(0, 1.58, 0); flag.rotation.y = Math.PI / 4;
+  flag.position.set(0, 2.38, 0); flag.rotation.y = Math.PI / 4;   // faces the camera
   pennant.add(pole, flag);
   pennant.position.set(ox + 0.25, 0, oy + RD + 0.25);
   pennant.visible = false;
