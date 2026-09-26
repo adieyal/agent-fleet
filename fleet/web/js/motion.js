@@ -31,7 +31,7 @@ export function assignTargets() {
       if (want === null) want = e.act === 'init' ? 'type' : e.act;
       if (want !== e.act) {
         // a change of station waits out a minimum dwell once there, so bursts of events don't send androids back and forth
-        const settled = ['dock', 'failed', 'stalled', 'idle', 'await'].includes(want) || e.act === 'init' || stationOf(want) === stationOf(e.act, e.stage);
+        const settled = ['dock', 'idle', 'await'].includes(want) || e.act === 'init' || stationOf(want) === stationOf(e.act, e.stage);
         const dwelt = now - e.actSince > DWELL && (e.slow || (e.arrivedAt != null && now - e.arrivedAt > 1.2));
         if (settled || dwelt) { e.act = want; e.actSince = now; e.anchor = null; e.stage = 0; e.dropped = false; }
       }
@@ -95,7 +95,7 @@ function allocate(r) {
     const p = propOf(e);
     let spot;
     if (p === 'stay') {
-      // stalled or failed: stop where they are if that's clear, keeping the seat they were in
+      // a session waiting on its human: stop where it is if that's clear, keeping the seat it was in
       const here = { x: e.local.x, y: e.local.y };
       spot = !e.fresh && e.target && free(here.x, here.y, e) && (e.target.sit != null || !blocked(here.x, here.y))
         ? { ...here, face: e.facing, sit: e.target.sit, prop: 'stay' }
@@ -181,7 +181,7 @@ export function stepMotion(dt, now) {
     if (e.leaving && now > e.leaveBy) { leave(e); continue; }   // a slow frame rate never keeps it on the deck
     if (now < e.holdUntil) continue;
     // get up before walking off
-    if (!REDUCED && (e.bot.clip === 'Sitting' || e.bot.clip === 'Death')) {
+    if (!REDUCED && e.bot.clip === 'Sitting') {
       e.holdClip = 'Standing'; e.holdUntil = now + ROBOT.clips.Standing.duration * 0.8;
       continue;
     }
@@ -230,14 +230,11 @@ function clipFor(e, now) {
   if (now < e.holdUntil && e.holdClip) return e.holdClip;
   if (e.walking) return 'Walking';
   if (!e.target) return 'Idle';
-  const st = e.job.status;
-  if (st === 'failed') return 'Death';
-  if (st === 'stalled') return 'Sitting';
-  if (isActive(st) && e.act === 'delegate') return 'Wave';
+  if (isActive(e.job.status) && e.act === 'delegate') return 'Wave';
   return e.target.sit != null ? 'Sitting' : 'Idle';
 }
 
-// ------------------------------------------------------------------ particles: smoke over failed androids, motes over finished ones
+// ------------------------------------------------------------------ particles: motes over finished androids, steam from the kitchen
 const PN = 320;
 const part = {
   pos: new Float32Array(PN * 3), col: new Float32Array(PN * 4), vel: new Float32Array(PN * 3),
@@ -254,11 +251,11 @@ function spawn(x, y, z, kind) {
   if (REDUCED) return;
   const i = part.next; part.next = (part.next + 1) % PN;
   part.pos[i * 3] = x; part.pos[i * 3 + 1] = y; part.pos[i * 3 + 2] = z;
-  const smoke = kind === 0, steam = kind === 2;   // 0 smoke, 1 motes, 2 steam
-  part.vel[i * 3] = (Math.random() - 0.5) * (smoke ? 0.25 : 0.1);
-  part.vel[i * 3 + 1] = smoke ? 0.5 + Math.random() * 0.3 : steam ? 0.3 + Math.random() * 0.15 : 0.35 + Math.random() * 0.2;
-  part.vel[i * 3 + 2] = (Math.random() - 0.5) * (smoke ? 0.25 : 0.1);
-  part.age[i] = 0; part.life[i] = smoke ? 1.8 + Math.random() : steam ? 1.4 + Math.random() * 0.5 : 1.3; part.kind[i] = kind;
+  const steam = kind === 2;   // 1 motes, 2 steam
+  part.vel[i * 3] = (Math.random() - 0.5) * 0.1;
+  part.vel[i * 3 + 1] = steam ? 0.3 + Math.random() * 0.15 : 0.35 + Math.random() * 0.2;
+  part.vel[i * 3 + 2] = (Math.random() - 0.5) * 0.1;
+  part.age[i] = 0; part.life[i] = steam ? 1.4 + Math.random() * 0.5 : 1.3; part.kind[i] = kind;
 }
 export function stepParticles(dt) {
   for (let i = 0; i < PN; i++) {
@@ -267,8 +264,7 @@ export function stepParticles(dt) {
     part.age[i] += dt;
     const k = 1 - Math.min(1, part.age[i] / part.life[i]);
     part.pos[i * 3] += part.vel[i * 3] * dt; part.pos[i * 3 + 1] += part.vel[i * 3 + 1] * dt; part.pos[i * 3 + 2] += part.vel[i * 3 + 2] * dt;
-    if (part.kind[i] === 0) { part.col[c] = 0.5; part.col[c + 1] = 0.52; part.col[c + 2] = 0.58; part.col[c + 3] = 0.35 * k; }
-    else if (part.kind[i] === 2) { part.col[c] = 0.9; part.col[c + 1] = 0.93; part.col[c + 2] = 0.97; part.col[c + 3] = 0.3 * k; }
+    if (part.kind[i] === 2) { part.col[c] = 0.9; part.col[c + 1] = 0.93; part.col[c + 2] = 0.97; part.col[c + 3] = 0.3 * k; }
     else { part.col[c] = 0.29; part.col[c + 1] = 0.87; part.col[c + 2] = 0.5; part.col[c + 3] = 0.9 * k; }
   }
   partGeo.attributes.position.needsUpdate = true;
@@ -279,13 +275,12 @@ export function stepParticles(dt) {
 // ------------------------------------------------------------------ per-frame update of androids and props
 
 function tone(e, t) {
-  // stalled androids dim; finished ones rest with their face light low
+  // finished androids rest with their face light low
   const st = e.job.status, arrived = !e.walking && !!e.target;
-  const key = st === 'stalled' ? 'dim' : ((st === 'done' || st === 'cancelled' || st === 'idle') && arrived ? 'rest' : '');
+  const key = (st === 'done' || st === 'cancelled' || st === 'idle') && arrived ? 'rest' : '';
   if (key === e.tone) return;
   e.tone = key;
-  e.bot.main.color.set(key === 'dim' ? mix(e.look.color, '#475163', 0.55) : e.look.color);
-  const lit = AGENT_COLOR[e.job.agent] || '#cbd5e1', low = mix(lit, '#1b2333', key === 'rest' ? 0.35 : 0.6);
+  const lit = AGENT_COLOR[e.job.agent] || '#cbd5e1', low = mix(lit, '#1b2333', 0.35);
   e.bot.face.color.set(key ? low : lit);
   if (e.bot.eyes) { e.bot.eyes.color.set(key ? low : lit); e.bot.eyes.emissiveIntensity = key ? 0.2 : 1.4; }
 }
@@ -319,7 +314,6 @@ export function updateEnt(e, r, dt, t, now) {
   if (bot.clip === 'Walking') bot.actions.Walking.timeScale = e.slow ? 0.6 : 1.25;   // pacing is a slow amble
   bot.mixer.update(REDUCED ? 0 : e.calm ? dt * CALM : dt);   // a background room's androids are near still
   const st = e.job.status, arrived = !e.walking && !!e.target;
-  if (st === 'stalled' && arrived) bot.head.rotation.x += 0.55;   // slumped over
   // on top of the clip: typing forearms, a nod or head shake, eyes down on a printout
   const A = ACTS[e.act] || {}, seated = arrived && bot.clip === 'Sitting' && isActive(st);
   if (!REDUCED && !e.calm && seated && A.hands) bot.arms.forEach((arm, i) => { arm.rotation.x += Math.sin(t * 15 + i * 2.1) * 0.14; });
@@ -343,8 +337,6 @@ export function updateEnt(e, r, dt, t, now) {
   if (e.ring.visible) e.ring.material.opacity = REDUCED ? 0.8 : 0.55 + Math.sin(t * 4) * 0.3;
   if (e.halo) e.halo.material.opacity = st === 'working' && !REDUCED && !e.calm ? 0.4 + Math.sin(t * 3) * 0.25 : 0.3;
   e.glow.visible = st === 'done' && arrived;
-  e.fail.visible = st === 'failed' && arrived;
-  if (e.fail.visible && !e.calm && Math.random() < 0.12) spawn(root.position.x + (Math.random() - 0.5) * 0.3, 0.5, root.position.z + (Math.random() - 0.5) * 0.3, 0);
   if (e.glow.visible && !e.calm && Math.random() < 0.03) spawn(root.position.x + (Math.random() - 0.5) * 0.8, 0.2, root.position.z + (Math.random() - 0.5) * 0.5, 1);
 }
 

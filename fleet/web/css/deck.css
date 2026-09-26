@@ -114,7 +114,6 @@ header{position:fixed;top:0;left:0;right:0;height:52px;display:flex;align-items:
 .bubble .ic{color:var(--hc);margin-right:5px;font-weight:600}
 .bubble.quiet{color:var(--muted);border-color:var(--line2);background:rgba(7,12,22,.78)}
 .bubble.bad{border-color:var(--bad);color:#fecaca}
-.bubble.stall{border-color:var(--stall);color:#e9d5ff}
 .bubble.done{border-color:rgba(74,222,128,.6);color:#bbf7d0}
 .stack{display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:999px;background:rgba(5,9,17,.88);border:1px solid var(--line2)}
 .stack .id{font:600 11px var(--mono);color:var(--hc);margin-right:4px}
@@ -142,7 +141,6 @@ header{position:fixed;top:0;left:0;right:0;height:52px;display:flex;align-items:
 .bubble.wait .glyph{color:var(--warn)}
 .bubble.bad .glyph{color:var(--bad)}
 .bubble.done .glyph{color:var(--ok)}
-.bubble.stall .glyph{color:var(--stall)}
 .bubble.quiet .glyph{color:var(--muted)}
 .bubble.pop .glyph{animation:glyphPop .35s ease-out}
 @keyframes glyphPop{from{transform:scale(.4);opacity:0}to{transform:none;opacity:1}}

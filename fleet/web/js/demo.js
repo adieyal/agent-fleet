@@ -511,6 +511,13 @@ export function demoSource() {
     job.updated_at = now();
     if (e.kind === 'tool' || e.kind === 'text' || e.kind === 'error') job.activity = job.events[job.events.length - 1];
   }
+  // failed and stalled jobs are blockers under their room's lantern, as fleet/attention.py derives them
+  function blocker(job) {
+    const step = job.steps.find(s => s.status === (job.status === 'failed' ? 'failed' : 'running'));
+    return { id: `job:${job.host}:${job.id}:${job.status}:${step.index}`, kind: 'blocker', state: 'open', project: job.project,
+      owner: { type: 'job', host: job.host, id: job.id, key: `${job.host}:${job.id}` },
+      summary: `step ${step.index + 1} ${job.status}: ${step.title}`, since: job.updated_at };
+  }
   function finish(job) { job.status = 'done'; job.ticks = 0; job.todos = []; push(job, { kind: 'job', status: 'done', summary: 'job done' }); }
   function tick() {
     tickCount++;
@@ -580,7 +587,7 @@ export function demoSource() {
       s.updated_at = now();
     }
     stepPipe();
-    const doc = { time: now(), pipelines: [pipeReport()], hosts: [
+    const doc = { time: now(), pipelines: [pipeReport()], attention: jobs.filter(j => j.status === 'failed' || j.status === 'stalled').map(blocker), hosts: [
       ...['node-a', 'node-b', 'node-c'].map(name => ({ name, ok: true, error: null, jobs: jobs.filter(j => j.host === name),
         sessions: sessions.filter(s => s.host === name) })),
       { name: 'node-d', ok: false, error: 'node-d: ssh: connect to host 192.0.2.10 port 22: Connection timed out', jobs: [] },

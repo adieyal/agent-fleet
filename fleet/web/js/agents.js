@@ -78,7 +78,7 @@ export function buildRobot(look, agent) {
   const arms = [bones.LowerArmL, bones.LowerArmR].filter(Boolean);   // (three strips the dots from "LowerArm.L")
   return { root, model, mixer, main, face, eyes, hostMat, head, arms, tagLift, actions: {} };
 }
-const ONCE = new Set(['Death', 'Sitting', 'Standing', 'ThumbsUp', 'Wave']);
+const ONCE = new Set(['Sitting', 'Standing', 'ThumbsUp', 'Wave']);
 export function action(bot, name) {
   let a = bot.actions[name];
   if (!a) {
@@ -130,10 +130,9 @@ export function createEnt(key, hostName, job, kind = 'job') {
   e.ring = new THREE.Mesh(G.ring, new THREE.MeshBasicMaterial({ color: look.color, transparent: true, opacity: 0.8, depthWrite: false }));
   e.ring.visible = false;
   e.glow = new THREE.Mesh(G.disc, M.doneDisc); e.glow.visible = false; e.glow.position.y = 0.01;
-  e.fail = new THREE.Sprite(M.failGlow); e.fail.scale.setScalar(1.3); e.fail.position.y = 0.45; e.fail.visible = false;
   e.proxy = new THREE.Mesh(G.proxy, M.hidden); e.proxy.userData.ent = e;
   const blob = new THREE.Mesh(G.disc, M.blob); blob.position.y = 0.008; blob.scale.setScalar(0.9 * BK);
-  e.bot.root.add(blob, e.ring, e.glow, e.fail, e.proxy);
+  e.bot.root.add(blob, e.ring, e.glow, e.proxy);
   if (isSession(e)) {   // a live session stands in a wide pink halo; it breathes while the agent works
     e.halo = new THREE.Mesh(G.ring, new THREE.MeshBasicMaterial({ color: '#f472b6', transparent: true, opacity: 0.5, depthWrite: false }));
     e.halo.scale.setScalar(1.45 * BK); e.halo.position.y = 0.012;
@@ -163,7 +162,7 @@ function sessionWords(s) {
   if (a) return [mumble(a), ''];
   return ['working…', ''];
 }
-function jobWords(j, done, total, cur) {
+function jobWords(j, done, total) {
   const a = j.activity;
   switch (j.status) {
     case 'running':
@@ -172,8 +171,6 @@ function jobWords(j, done, total, cur) {
       return [a ? mumble(a) : 'warming up…', ''];
     case 'queued': return ['queued · waiting at the door', 'quiet'];
     case 'done': return [`done · ${done}/${total}`, 'done'];
-    case 'failed': return [`step ${cur + 1} failed`, 'bad'];
-    case 'stalled': return ['runner stalled mid-step', 'stall'];
     case 'cancelled': return ['cancelled', 'quiet'];
   }
   return [j.status, 'quiet'];
@@ -202,7 +199,7 @@ export function updateTag(e) {
   const steps = j.steps || [];
   const done = steps.filter(s => s.status === 'done').length;
   const cur = steps.findIndex(s => s.status === 'running' || s.status === 'failed');
-  const [words, cls] = jobWords(j, done, steps.length, cur), action = actionOf(j);
+  const [words, cls] = jobWords(j, done, steps.length), action = actionOf(j);
   let window0 = 0;
   if (steps.length > 12) window0 = clamp((cur < 0 ? done : cur) - 5, 0, steps.length - 12);
   const pips = steps.slice(window0, window0 + 12).map(s => `<i class="pip ${esc(s.status)}"></i>`).join('');
