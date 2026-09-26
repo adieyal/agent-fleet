@@ -290,6 +290,8 @@ function setupRobots(robotGltf, robotManifest, root) {
       if (o.material.name === 'robot_liquid') o.material.emissiveIntensity = 0.6;
     });
     for (const name of ['prop_pencil', 'prop_flask']) robot.getObjectByName(name).visible = name === cast.prop;
+    // the robot carries both agent faces and every host accessory: show the eyes and no accessory
+    for (const name of ['robot_band', 'acc_backpack', 'acc_antenna', 'acc_halo', 'acc_crest']) robot.getObjectByName(name).visible = false;
     scene.add(robot);
     const mixer = new THREE.AnimationMixer(robot);
     const seated = mixer.clipAction(clips.body);

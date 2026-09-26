@@ -17,4 +17,4 @@ Written by `art/scripts/fetch_assets.py --resolve` from `art/assets.lock.json`, 
 
 | Asset | Path | Authors | Licence | Used for |
 |---|---|---|---|---|
-| [RobotExpressive](https://github.com/mrdoob/three.js/tree/r186/examples/models/gltf/RobotExpressive) | `fleet/web/assets/models/robot/RobotExpressive.glb` | Tomás Laulhé, Don McCurdy (modifications) | CC0-1.0 | the robots, restyled by art/scripts/build_robot.py |
+| [RobotExpressive](https://github.com/mrdoob/three.js/tree/r186/examples/models/gltf/RobotExpressive) | `fleet/web/assets/models/robot/RobotExpressive.glb` | Tomás Laulhé, Don McCurdy (modifications) | CC0-1.0 | the robots' rig and clips, under new meshes from art/scripts/build_robot.py |
