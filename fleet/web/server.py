@@ -18,7 +18,7 @@ from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from fleet import projects, transport
-from fleet.projects import Registry
+from fleet.projects import FOCUSES, Registry
 from fleet.transport import FleetError, Host
 from fleet.web.documents import fetch_document
 from fleet.web.fixture import FixtureLibrary, FixtureState
@@ -50,14 +50,20 @@ class FleetState:
     null. The registry is re-read for every document so CLI edits show without a
     restart. If a re-read fails, the last good registry is used and `projects_error`
     says why.
+
+    Focus is the one thing the deck writes: `set_focus` saves it to the registry and
+    pushes a new document to every browser.
     """
 
     def __init__(self, hosts: list[Host], project_labels: dict[str, str] | None = None,
-                 load_registry: Callable[[], Registry] | None = None) -> None:
+                 load_registry: Callable[[], Registry] | None = None,
+                 save_registry: Callable[[Registry], None] | None = None) -> None:
         self.hosts = hosts
         self.project_labels = project_labels or {}
         self.load_registry = load_registry or Registry
+        self.save_registry = save_registry
         self.registry = self.load_registry()
+        self.registry_write = threading.Lock()
         self.changed = threading.Condition()
         self.version = 0
         self.by_host: dict[str, dict[str, Any]] = {
@@ -77,22 +83,28 @@ class FleetState:
         except (FleetError, ValueError, KeyError, TypeError) as error:
             return f"project registry not reloaded: {error}"
 
+    def set_focus(self, project_id: str, focus: str) -> None:
+        if self.save_registry is None:
+            raise FleetError("this deck has no project registry to save focus to")
+        with self.registry_write:
+            registry = self.load_registry()
+            registry.set_focus(project_id, focus)
+            self.save_registry(registry)
+        with self.changed:
+            self.version += 1
+            self.changed.notify_all()
+
     def document(self) -> dict[str, Any]:
         projects_error = self.refresh_registry()
         registry = self.registry
-
-        def resolved(host_name: str, item: dict[str, Any]) -> dict[str, Any]:
-            project = registry.project_for(host_name, item["project"]) if item.get("project") else None
-            return {**item, "project_id": project.id if project else None}
-
         with self.changed:
             return {"time": time.time(), "project_labels": self.project_labels,
                     "projects": [{"id": project_id, **entry} for project_id, entry in registry.to_config().items()],
                     "projects_error": projects_error, "hosts": [
                 {**{key: value for key, value in self.by_host[host.name].items() if key not in ("jobs", "sessions")},
-                 "jobs": [resolved(host.name, job) for job in
+                 "jobs": [registry.resolve(host.name, job) for job in
                           sorted(self.by_host[host.name]["jobs"].values(), key=lambda job: job["created_at"])],
-                 "sessions": [resolved(host.name, session) for session in
+                 "sessions": [registry.resolve(host.name, session) for session in
                               sorted(self.by_host[host.name]["sessions"].values(),
                                      key=lambda session: session.get("started_at") or 0)]}
                 for host in self.hosts]}
@@ -208,6 +220,37 @@ def make_handler(state: FleetState | FixtureState,
             else:
                 self.respond(404, "text/plain", b"not found")
 
+        def do_POST(self) -> None:  # noqa: N802 — http.server naming
+            if self.path.split("?", 1)[0] != "/api/focus":
+                self.respond(404, "text/plain", b"not found")
+            elif not self.same_origin():
+                self.respond(403, "application/json", b'{"error": "cross-origin writes are refused"}')
+            elif self.headers.get("Content-Type", "").split(";")[0].strip() != "application/json":
+                self.respond(415, "application/json", b'{"error": "send JSON"}')
+            else:
+                self.focus()
+
+        def same_origin(self) -> bool:
+            """Browsers send Origin on every POST; a page from another site must not flip focus."""
+            origin = self.headers.get("Origin")
+            return origin is None or urlsplit(origin).netloc == self.headers.get("Host")
+
+        def focus(self) -> None:
+            """POST /api/focus {"project": id, "focus": "priority" | "background"}"""
+            try:
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)))
+            except ValueError:
+                body = None
+            if not isinstance(body, dict) or not isinstance(body.get("project"), str) or body.get("focus") not in FOCUSES:
+                self.respond(400, "application/json", b'{"error": "project and focus (priority or background) are required"}')
+                return
+            try:
+                state.set_focus(body["project"], body["focus"])
+            except FleetError as error:
+                self.respond(400, "application/json", json.dumps({"error": str(error)}).encode())
+                return
+            self.respond(200, "application/json", json.dumps({"project": body["project"], "focus": body["focus"]}).encode())
+
         def static_file(self, path: str) -> None:
             """Vendored libraries and 3D assets; anything resolving outside those folders is refused."""
             target = (WEB_ROOT / unquote(path).lstrip("/")).resolve()
@@ -280,7 +323,7 @@ def make_handler(state: FleetState | FixtureState,
 
 def serve(hosts: list[Host], *, port: int, bind: str, open_browser: bool = False,
           libraries: dict[str, str] | None = None, project_labels: dict[str, str] | None = None) -> None:
-    state = FleetState(hosts, project_labels, projects.load_registry)
+    state = FleetState(hosts, project_labels, projects.load_registry, projects.save_registry)
     for host in hosts:
         threading.Thread(target=follow_host, args=(state, host), daemon=True).start()
     run_server(make_handler(state, ProjectLibrary(libraries or {})), port=port, bind=bind, open_browser=open_browser)

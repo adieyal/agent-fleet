@@ -1,29 +1,36 @@
 """Serves a recorded fleet from a JSON file instead of following hosts, for browser tests and demos.
 
-A fixture holds the `/api/state` document verbatim plus the Markdown behind it:
+A fixture holds the hosts of an `/api/state` document, the project registry as it
+is stored in the Fleet config, and the Markdown behind them:
 
     {"time": …, "project_labels": {…}, "hosts": [{name, ok, error, jobs, sessions}, …],
+     "projects": {"p-…": {"name": …, "links": […], "focus": …}, …},
      "job_documents": {"<host>/<job>/<document id>": "markdown", …},
      "library": {"<project>": [{"id": "README.md", "mtime": …, "markdown": "…"}, …]}}
 
-Timestamps are served as recorded; a browser test pins its clock to `time`.
+Jobs and sessions gain `project_id` from the registry, as they do live. Timestamps
+are served as recorded; a browser test pins its clock to `time`. Focus can be set,
+in memory only, so the recorded file never changes.
 """
 from __future__ import annotations
 
 import json
-import time
+import threading
 from pathlib import Path
 from typing import Any
 
+from fleet.projects import Registry
 from fleet.transport import FleetError
 from fleet.web.documents import STATUS_LINE, render_markdown
 
 
 class FixtureState:
-    """Same surface the HTTP handler uses on FleetState, but the state never changes."""
+    """Same surface the HTTP handler uses on FleetState; only focus ever changes."""
 
     def __init__(self, fixture: dict[str, Any]) -> None:
         self.fixture = fixture
+        self.registry = Registry.from_config({"projects": fixture.get("projects", {})})
+        self.changed = threading.Condition()
         self.version = 0
 
     @classmethod
@@ -34,13 +41,24 @@ class FixtureState:
         return [host["name"] for host in self.fixture["hosts"]]
 
     def document(self) -> dict[str, Any]:
-        return {"time": self.fixture["time"], "project_labels": self.fixture.get("project_labels", {}),
-                "hosts": self.fixture["hosts"]}
+        with self.changed:
+            return {"time": self.fixture["time"], "project_labels": self.fixture.get("project_labels", {}),
+                    "projects": [{"id": project_id, **entry} for project_id, entry in self.registry.to_config().items()],
+                    "projects_error": None, "hosts": [
+                {**host, "jobs": [self.registry.resolve(host["name"], job) for job in host["jobs"]],
+                 "sessions": [self.registry.resolve(host["name"], session) for session in host["sessions"]]}
+                for host in self.fixture["hosts"]]}
+
+    def set_focus(self, project_id: str, focus: str) -> None:
+        with self.changed:
+            self.registry.set_focus(project_id, focus)
+            self.version += 1
+            self.changed.notify_all()
 
     def wait_for_change(self, seen_version: int, timeout: float) -> int:
-        if seen_version == self.version:
-            time.sleep(timeout)
-        return self.version
+        with self.changed:
+            self.changed.wait_for(lambda: self.version != seen_version, timeout=timeout)
+            return self.version
 
     def read_document(self, host_name: str, job_id: str, document_id: str) -> dict[str, Any]:
         """What /api/doc returns for a live host: the job's document entry plus rendered Markdown."""

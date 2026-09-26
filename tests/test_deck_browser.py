@@ -61,7 +61,7 @@ def test_every_job_and_session_is_an_agent(deck: Deck, fixture_data: dict[str, A
 
 def test_document_reader_opens_from_an_agent(deck: Deck) -> None:
     page = deck.page
-    page.locator("#tags .tag", has_text="step 1 failed").dispatch_event("click")
+    page.locator("#tags .tag", has_text="e1b5c8").dispatch_event("click")
     expect(page.locator("#panel")).to_have_class("open")
     expect(page.locator("#panelHead h2")).to_have_text("Upgrade Django to 5.2")
     page.locator('#panelBody [data-doc="report-0"]').click()

@@ -1,6 +1,12 @@
 {
  "time": 1790400000,
  "project_labels": {"invoice-parser": "Invoice parser"},
+ "projects": {
+  "p-5e1f0a01": {"name": "Restoke", "focus": "priority", "repositories": [],
+                 "links": [{"host": "home", "label": "restoke"}, {"host": "worker", "label": "restoke"}]},
+  "p-1c0ce5a2": {"name": "Invoice analysis", "focus": "background", "repositories": [],
+                 "links": [{"host": "worker", "label": "invoice-parser"}]}
+ },
  "hosts": [
   {
    "name": "home", "ok": true, "error": null,
@@ -160,6 +166,17 @@
      ],
      "todos": [], "activity": null, "events": [], "session_id": null,
      "tmux": "tmux -L fleet attach -t fleet-0a9e3b",
+     "documents": []
+    },
+    {
+     "id": "3c71d5", "host": "worker", "project": "invoice-parser", "description": "Collect credit-note samples",
+     "agent": "claude", "model": "claude-sonnet-5", "cwd": "/home/adi/Development/invoice-parser", "permission": "acceptEdits",
+     "status": "failed", "created_at": 1790396000, "updated_at": 1790397800,
+     "steps": [
+      {"index": 0, "title": "Gather credit notes from the supplier inbox", "status": "failed", "started_at": 1790396010, "finished_at": 1790397800, "result": "FLEET_STATUS: blocked — no access to the supplier inbox from this host"}
+     ],
+     "todos": [], "activity": null, "events": [], "session_id": null,
+     "tmux": "tmux -L fleet attach -t fleet-3c71d5",
      "documents": []
     }
    ],

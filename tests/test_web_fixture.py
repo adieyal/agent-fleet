@@ -26,12 +26,29 @@ def status_of(base_url: str, path: str, **query: str) -> int:
 
 def test_state_is_the_recorded_fleet(base_url: str, fixture_data: dict[str, Any]) -> None:
     state = get(base_url, "/api/state")
-    assert state == {key: fixture_data[key] for key in ("time", "project_labels", "hosts")}
+    assert {key: state[key] for key in ("time", "project_labels")} == {
+        key: fixture_data[key] for key in ("time", "project_labels")}
+    unresolved = [{**host, "jobs": [{key: value for key, value in job.items() if key != "project_id"}
+                                    for job in host["jobs"]],
+                   "sessions": [{key: value for key, value in session.items() if key != "project_id"}
+                                for session in host["sessions"]]} for host in state["hosts"]]
+    assert unresolved == fixture_data["hosts"]
     hosts = {host["name"]: host for host in state["hosts"]}
     assert hosts["gpu-box"]["ok"] is False and hosts["gpu-box"]["error"]
     restoke = [job for host in state["hosts"] for job in host["jobs"] if job["project"] == "restoke"]
     assert sorted(job["status"] for job in restoke) == ["done", "failed", "running", "running", "running"]
     assert {session["agent"] for host in state["hosts"] for session in host["sessions"]} == {"claude", "codex"}
+
+
+def test_project_ids_resolve_from_the_recorded_registry(base_url: str) -> None:
+    state = get(base_url, "/api/state")
+    assert {(project["id"], project["focus"]) for project in state["projects"]} == {
+        ("p-5e1f0a01", "priority"), ("p-1c0ce5a2", "background")}
+    by_label = {(host["name"], item["project"]): item["project_id"]
+                for host in state["hosts"] for item in host["jobs"] + host["sessions"]}
+    assert by_label[("home", "restoke")] == by_label[("worker", "restoke")] == "p-5e1f0a01"
+    assert by_label[("worker", "invoice-parser")] == "p-1c0ce5a2"
+    assert by_label[("worker", "agent-fleet")] is None
 
 
 def test_stream_pushes_the_recorded_state(base_url: str) -> None:
