@@ -111,14 +111,22 @@ The header's **deck | building** switch shows the same fleet as a building seen 
 cross-section, one floor per registered project; the deck stays the default and the
 choice is remembered. Priority floors are open, background floors are windowed and
 glow warm while runs are active, and free floors say "To let". The building has six
-floors unless the config sets `"capacity"` (1 to 10); raising it is a deliberate
-edit. A project keeps its floor, kept in `workspace.json`: the lowest free one when it
+floors unless you set another number with `fleet building capacity N` (1 to 10);
+the deck never offers to raise it. A project keeps its floor, kept in `workspace.json`: the lowest free one when it
 moves in. The lobby shows the host key and any visitors, labels with work that no
 project claims; **Move in** registers one as a project on the lowest free floor.
 A floor with attention items gets one lantern beside it (items on no floor hang theirs
 by the lobby). Each name plate has an open · windows switch for the project's focus.
 Click a floor to enter it: the deck shows just that project's work, with a lift panel
 on the right edge (a button per floor, L for the whole building); Esc steps back out.
+
+Pull a floor's shutter handle to shutter its project: it goes to the storehouse beside
+the lobby as a crate, its floor says "To let", and you have a few seconds to undo. It
+keeps its ID, links and focus; runs already going finish and show on its crate; its
+attention moves to the front desk and the storehouse door. Open a crate to look around
+the project read-only, or restore it to its old floor if that is free (the lowest free
+floor otherwise). When every floor is taken, moving in or restoring asks which floor to
+clear, or you can cancel.
 
 ## Read the work
 
@@ -184,7 +192,8 @@ working directories, session details, and Markdown documents. The library endpoi
 also expose Markdown under configured local project roots. Anyone who can reach
 the dashboard can read that data. Keep it on loopback or use an SSH tunnel. Add
 access control before binding it to a shared network. Its writes, `POST /api/focus`,
-`POST /api/attention/…` and `POST /api/move-in`, change `workspace.json` (and, for
+`POST /api/attention/…`, `POST /api/move-in`, `POST /api/shutter` and `POST /api/restore`,
+change `workspace.json` (and, for
 moving in, the project registry in the config); they refuse requests from pages on
 other origins, but anyone who can reach the dashboard directly can use them.
 

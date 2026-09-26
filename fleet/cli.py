@@ -20,7 +20,7 @@ from rich.markup import escape
 from rich.text import Text
 from rich.tree import Tree
 
-from fleet import projects, transport
+from fleet import building, projects, transport
 from fleet.transport import FleetError, Host, HostReport
 from fleet.web.server import serve, serve_fixture
 
@@ -593,6 +593,18 @@ def command_project_list(arguments: argparse.Namespace) -> None:
         console.print(f"[yellow]no suggestions from {escape(error)}[/]")
 
 
+def command_building_capacity(arguments: argparse.Namespace) -> None:
+    """The building's floors: a deliberate setting, never raised as a side effect of starting work (ADR 0005)."""
+    config = transport.load_config()
+    if arguments.floors is None:
+        console.print(f"{building.capacity_of(config)} floors")
+        return
+    config["capacity"] = arguments.floors
+    building.capacity_of(config)   # refuses anything but 1 to MAX_CAPACITY before writing
+    transport.save_config(config)
+    console.print(f"the building has {arguments.floors} floors")
+
+
 # Agents are often only on PATH in interactive login shells (nvm, pyenv), so ask those first.
 # Each shell may set up a different PATH (e.g. nvm only in .bashrc), so every one is asked.
 DETECT_SCRIPT = r"""
@@ -845,6 +857,13 @@ def build_parser() -> argparse.ArgumentParser:
     project_repo_remove.add_argument("id")
     project_repo_remove.add_argument("url")
     project_repo_remove.set_defaults(handler=command_project_repo_remove)
+
+    building_parser = commands.add_parser("building", help="the deck's building: how many floors").add_subparsers(
+        dest="building_command", required=True)
+    building_capacity = building_parser.add_parser(
+        "capacity", help=f"show or set how many projects can be live at once (1 to {building.MAX_CAPACITY})")
+    building_capacity.add_argument("floors", nargs="?", type=int)
+    building_capacity.set_defaults(handler=command_building_capacity)
 
     install = commands.add_parser("install", help="install/upgrade fleetd on a host")
     install.add_argument("name")

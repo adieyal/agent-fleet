@@ -8,6 +8,7 @@ behind them:
      "projects": {"p-…": {"name": …, "links": […]}, …},
      "focus": {"projects": {"p-…": "background"}, "labels": {"<label>": "background"}},
      "capacity": 10, "floors": {"p-…": 1},   # both optional: capacity 6, floors assigned as projects move in
+     "shuttered": {"p-…": {"at": …, "floor": 2}},   # optional: projects in the storehouse
      "job_documents": {"<host>/<job>/<document id>": "markdown", …},
      "library": {"<project>": [{"id": "README.md", "mtime": …, "markdown": "…"}, …]}}
 
@@ -39,7 +40,8 @@ class FixtureState(LiveWorkspace):
         self.project_labels = fixture.get("project_labels", {})
         self.registry = Registry.from_config({"projects": fixture.get("projects", {})})
         self.capacity = capacity_of(fixture)
-        self.workspace = WorkspaceStore(None, {"focus": fixture.get("focus"), "floors": fixture.get("floors")})
+        self.workspace = WorkspaceStore(None, {"focus": fixture.get("focus"), "floors": fixture.get("floors"),
+                                               "shuttered": fixture.get("shuttered")})
         self.board = AttentionBoard(self.workspace)
         self.changed = threading.Condition()
         self.version = 0
