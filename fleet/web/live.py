@@ -1,7 +1,9 @@
 """What the deck writes and derives on top of host state, shared by live and fixture decks.
 
 A state class using LiveWorkspace provides `changed` (a Condition), `version`,
-`workspace` (a WorkspaceStore), `board` (an AttentionBoard) and `known_projects()`.
+`workspace` (a WorkspaceStore), `board` (an AttentionBoard), `registry` (the project
+Registry in use), `project_labels`, `capacity`, `known_projects()`, `host_names()` and
+`register()`.
 """
 from __future__ import annotations
 
@@ -10,7 +12,16 @@ import time
 from typing import Any, Container
 
 from fleet.attention import AttentionBoard
+from fleet.building import NoVacancy
+from fleet.projects import Registry
+from fleet.transport import FleetError
 from fleet.workspace import WorkspaceStore
+
+MOVE_IN_LOCK = threading.Lock()
+
+
+class AlreadyHoused(FleetError):
+    """The host's label already belongs to a registered project."""
 
 
 class LiveWorkspace:
@@ -18,9 +29,44 @@ class LiveWorkspace:
     version: int
     workspace: WorkspaceStore
     board: AttentionBoard
+    registry: Registry
+    project_labels: dict[str, str]
+    capacity: int
 
     def known_projects(self) -> Container[str]:
         raise NotImplementedError
+
+    def host_names(self) -> list[str]:
+        raise NotImplementedError
+
+    def register(self, name: str, host: str, label: str) -> str:
+        """Register a project linked to host:label and return its ID."""
+        raise NotImplementedError
+
+    def move_in(self, host: str, label: str) -> dict[str, Any]:
+        """Register an unregistered label as a project on the lowest free floor, named as its room is."""
+        if host not in self.host_names() or not label:
+            raise FleetError("a known host and a label are required")
+        with MOVE_IN_LOCK:
+            self.known_projects()   # the registry as it is on disk now
+            if self.registry.project_for(host, label):
+                raise AlreadyHoused(f"{host}:{label} already belongs to {self.registry.project_for(host, label).id}")
+            self.workspace.settle(self.registry.projects, self.capacity)
+            if len(set(self.workspace.floors_snapshot().values()) & set(range(1, self.capacity + 1))) >= self.capacity:
+                raise NoVacancy("The building's full: every floor is taken")
+            project_id = self.register(self.project_labels.get(label) or label, host, label)
+            floor = self.workspace.move_in(project_id, self.capacity)
+        self.bump()
+        return {"project_id": project_id, "floor": floor}
+
+    def with_building(self, document: dict[str, Any], registry: Registry) -> dict[str, Any]:
+        """Add the floors registered projects occupy within capacity, and the projects that have none."""
+        self.workspace.settle(registry.projects, self.capacity)
+        floors = {project_id: floor for project_id, floor in self.workspace.floors_snapshot().items()
+                  if project_id in registry.projects and floor <= self.capacity}
+        return {**document, "building": {"capacity": self.capacity, "floors": floors,
+                                         "no_floor": [project_id for project_id in registry.projects
+                                                      if project_id not in floors]}}
 
     def bump(self) -> None:
         """Push a new document to every browser."""

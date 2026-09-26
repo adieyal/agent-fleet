@@ -7,6 +7,7 @@ behind them:
     {"time": …, "project_labels": {…}, "hosts": [{name, ok, error, jobs, sessions}, …],
      "projects": {"p-…": {"name": …, "links": […]}, …},
      "focus": {"projects": {"p-…": "background"}, "labels": {"<label>": "background"}},
+     "capacity": 10, "floors": {"p-…": 1},   # both optional: capacity 6, floors assigned as projects move in
      "job_documents": {"<host>/<job>/<document id>": "markdown", …},
      "library": {"<project>": [{"id": "README.md", "mtime": …, "markdown": "…"}, …]}}
 
@@ -22,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from fleet.attention import AttentionBoard
+from fleet.building import capacity_of
 from fleet.projects import Registry
 from fleet.transport import FleetError
 from fleet.web.documents import STATUS_LINE, render_markdown
@@ -34,8 +36,10 @@ class FixtureState(LiveWorkspace):
 
     def __init__(self, fixture: dict[str, Any]) -> None:
         self.fixture = fixture
+        self.project_labels = fixture.get("project_labels", {})
         self.registry = Registry.from_config({"projects": fixture.get("projects", {})})
-        self.workspace = WorkspaceStore(None, {"focus": fixture.get("focus")})
+        self.capacity = capacity_of(fixture)
+        self.workspace = WorkspaceStore(None, {"focus": fixture.get("focus"), "floors": fixture.get("floors")})
         self.board = AttentionBoard(self.workspace)
         self.changed = threading.Condition()
         self.version = 0
@@ -47,15 +51,23 @@ class FixtureState(LiveWorkspace):
     def host_names(self) -> list[str]:
         return [host["name"] for host in self.fixture["hosts"]]
 
+    def register(self, name: str, host: str, label: str) -> str:
+        project = self.registry.create(name)
+        self.registry.link(project.id, host, label)
+        return project.id
+
     def document(self) -> dict[str, Any]:
         with self.changed:
-            return self.with_attention({"time": self.fixture["time"], "project_labels": self.fixture.get("project_labels", {}),
+            document = self.with_attention({"time": self.fixture["time"], "project_labels": self.project_labels,
                     "projects": [{"id": project_id, **entry} for project_id, entry in self.registry.to_config().items()],
                     "projects_error": None, "hosts": [
                 {**host, "jobs": [self.workspace.annotate(self.registry.resolve(host["name"], job)) for job in host["jobs"]],
                  "sessions": [self.workspace.annotate(self.registry.resolve(host["name"], session))
                               for session in host["sessions"]]}
                 for host in self.fixture["hosts"]]})
+        document = self.with_building(document, self.registry)
+        document["building"]["capacity_error"] = None
+        return document
 
     def known_projects(self) -> dict[str, Any]:
         return self.registry.projects
