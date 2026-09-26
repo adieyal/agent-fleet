@@ -2,6 +2,8 @@
 
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -153,3 +155,24 @@ def test_a_rewritten_file_is_read_again(pipelines: Path) -> None:
 
 def test_no_pipelines_directory_means_no_messages(tmp_path: Path) -> None:
     assert fleetd.PipelineTracker(tmp_path / "missing").scan() == []
+
+
+def test_the_stream_sends_the_latest_run_on_connect(tmp_path: Path) -> None:
+    folder = tmp_path / "fleet" / "pipelines" / "invoice-training"
+    folder.mkdir(parents=True)
+    write(folder / "r1.jsonl", run_line("r1") + flow("1", "invoices", "decided"))
+    env = {**os.environ, "FLEET_HOME": str(tmp_path / "fleet"), "CLAUDE_CONFIG_DIR": str(tmp_path / "claude"),
+           "CODEX_HOME": str(tmp_path / "codex")}
+    process = subprocess.Popen([sys.executable, fleetd.__file__, "stream", "--interval", "0.05"], env=env,
+                               stdout=subprocess.PIPE, text=True)
+    try:
+        assert process.stdout is not None
+        kinds = []
+        while "pipeline" not in kinds and len(kinds) < 20:
+            message = json.loads(process.stdout.readline())
+            kinds.append(message["type"])
+        assert kinds[0] == "hello" and "pipeline" in kinds
+        assert message["pipeline"] == "invoice-training" and message["run"]["counts"]["decided"] == 1
+    finally:
+        process.kill()
+        process.wait(timeout=5)
