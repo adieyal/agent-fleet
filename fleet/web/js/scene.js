@@ -211,7 +211,7 @@ export class Placer {
     list.push({ m, tint });
     return { model, i: list.length - 1, base: m };
   }
-  build(group) {
+  build(group, sink = disposables) {   // sink: where merged geometry goes to be disposed with its owner
     const tmp = new THREE.Matrix4(), col = new THREE.Color();
     const merged = new Map();   // material signature → { material, geos, shadow }
     for (const [model, list] of this.byModel) {
@@ -238,7 +238,7 @@ export class Placer {
       const mesh = new THREE.Mesh(geo, material);
       mesh.castShadow = shadow; mesh.receiveShadow = true;
       group.add(mesh);
-      disposables.push(geo);
+      sink.push(geo);
     }
   }
   setColor(h, hex) {

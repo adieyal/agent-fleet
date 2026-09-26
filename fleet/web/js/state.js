@@ -15,6 +15,7 @@ import { openReader } from './reader.js';
 import { applyFocus } from './focus.js';
 import { applyAttention } from './attention.js';
 import { patchScene } from './dim.js';
+import { applyBuilding } from './building.js';
 
 // Dismissed agents are hidden in this browser only (the deck stays view-only). Each is remembered with
 // the updated_at it had when dismissed, so any new activity brings it back.
@@ -91,6 +92,7 @@ export function restoreDismissed() {
 
 export function applyState(doc) {
   lastDoc = doc;
+  applyBuilding(doc);   // from the whole document: dismissed and finished work still counts there
   setHosts(visibleHosts(doc));
   const projects = new Set();
   for (const h of hosts) for (const j of h.jobs || []) projects.add(j.project);

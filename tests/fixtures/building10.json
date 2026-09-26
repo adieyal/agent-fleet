@@ -1,0 +1,716 @@
+{
+ "time": 1790400000,
+ "capacity": 10,
+ "project_labels": {},
+ "projects": {
+  "p-0000a001": {
+   "name": "Restoke",
+   "repositories": [],
+   "links": [
+    {
+     "host": "home",
+     "label": "restoke"
+    }
+   ]
+  },
+  "p-0000a002": {
+   "name": "Invoice analysis",
+   "repositories": [],
+   "links": [
+    {
+     "host": "worker",
+     "label": "invoice-parser"
+    }
+   ]
+  },
+  "p-0000a003": {
+   "name": "Agent Fleet",
+   "repositories": [],
+   "links": [
+    {
+     "host": "home",
+     "label": "agent-fleet"
+    }
+   ]
+  },
+  "p-0000a004": {
+   "name": "Server room monitoring and alerts",
+   "repositories": [],
+   "links": [
+    {
+     "host": "worker",
+     "label": "servers"
+    }
+   ]
+  },
+  "p-0000a005": {
+   "name": "Supplier catalogue",
+   "repositories": [],
+   "links": [
+    {
+     "host": "home",
+     "label": "catalogue"
+    }
+   ]
+  },
+  "p-0000a006": {
+   "name": "Docs site",
+   "repositories": [],
+   "links": [
+    {
+     "host": "worker",
+     "label": "docs-site"
+    }
+   ]
+  },
+  "p-0000a007": {
+   "name": "Mobile app",
+   "repositories": [],
+   "links": [
+    {
+     "host": "home",
+     "label": "mobile"
+    }
+   ]
+  },
+  "p-0000a008": {
+   "name": "Data warehouse",
+   "repositories": [],
+   "links": [
+    {
+     "host": "worker",
+     "label": "warehouse"
+    }
+   ]
+  },
+  "p-0000a009": {
+   "name": "Billing",
+   "repositories": [],
+   "links": [
+    {
+     "host": "home",
+     "label": "billing"
+    }
+   ]
+  },
+  "p-0000a010": {
+   "name": "Research notes",
+   "repositories": [],
+   "links": [
+    {
+     "host": "worker",
+     "label": "research"
+    }
+   ]
+  }
+ },
+ "focus": {
+  "projects": {
+   "p-0000a002": "background",
+   "p-0000a004": "background",
+   "p-0000a006": "background",
+   "p-0000a008": "background",
+   "p-0000a010": "background"
+  },
+  "labels": {}
+ },
+ "hosts": [
+  {
+   "name": "home",
+   "ok": true,
+   "error": null,
+   "jobs": [
+    {
+     "id": "000001",
+     "host": "home",
+     "project": "restoke",
+     "description": "Restoke task 1",
+     "agent": "claude",
+     "model": "claude-sonnet-5",
+     "cwd": "/src/restoke",
+     "status": "running",
+     "created_at": 1790396410,
+     "updated_at": 1790399881,
+     "steps": [
+      {
+       "index": 0,
+       "title": "Do the work",
+       "status": "running",
+       "started_at": 1790397000
+      }
+     ],
+     "todos": [],
+     "events": [],
+     "documents": []
+    },
+    {
+     "id": "000004",
+     "host": "home",
+     "project": "agent-fleet",
+     "description": "Agent Fleet task 1",
+     "agent": "claude",
+     "model": "claude-sonnet-5",
+     "cwd": "/src/agent-fleet",
+     "status": "running",
+     "created_at": 1790396440,
+     "updated_at": 1790399884,
+     "steps": [
+      {
+       "index": 0,
+       "title": "Do the work",
+       "status": "running",
+       "started_at": 1790397000
+      }
+     ],
+     "todos": [],
+     "events": [],
+     "documents": []
+    },
+    {
+     "id": "000005",
+     "host": "home",
+     "project": "agent-fleet",
+     "description": "Agent Fleet task 2",
+     "agent": "claude",
+     "model": "claude-sonnet-5",
+     "cwd": "/src/agent-fleet",
+     "status": "queued",
+     "created_at": 1790396450,
+     "updated_at": 1790399885,
+     "steps": [
+      {
+       "index": 0,
+       "title": "Do the work",
+       "status": "done",
+       "started_at": 1790397000
+      }
+     ],
+     "todos": [],
+     "events": [],
+     "documents": []
+    },
+    {
+     "id": "000006",
+     "host": "home",
+     "project": "agent-fleet",
+     "description": "Agent Fleet task 3",
+     "agent": "codex",
+     "model": "claude-sonnet-5",
+     "cwd": "/src/agent-fleet",
+     "status": "done",
+     "created_at": 1790396460,
+     "updated_at": 1790399886,
+     "steps": [
+      {
+       "index": 0,
+       "title": "Do the work",
+       "status": "done",
+       "started_at": 1790397000
+      }
+     ],
+     "todos": [],
+     "events": [],
+     "documents": []
+    },
+    {
+     "id": "00000b",
+     "host": "home",
+     "project": "catalogue",
+     "description": "Supplier catalogue task 1",
+     "agent": "claude",
+     "model": "claude-sonnet-5",
+     "cwd": "/src/catalogue",
+     "status": "done",
+     "created_at": 1790396510,
+     "updated_at": 1790399891,
+     "steps": [
+      {
+       "index": 0,
+       "title": "Do the work",
+       "status": "done",
+       "started_at": 1790397000
+      }
+     ],
+     "todos": [],
+     "events": [],
+     "documents": []
+    },
+    {
+     "id": "00000e",
+     "host": "home",
+     "project": "mobile",
+     "description": "Mobile app task 1",
+     "agent": "claude",
+     "model": "claude-sonnet-5",
+     "cwd": "/src/mobile",
+     "status": "done",
+     "created_at": 1790396540,
+     "updated_at": 1790399894,
+     "steps": [
+      {
+       "index": 0,
+       "title": "Do the work",
+       "status": "done",
+       "started_at": 1790397000
+      }
+     ],
+     "todos": [],
+     "events": [],
+     "documents": []
+    },
+    {
+     "id": "00000f",
+     "host": "home",
+     "project": "mobile",
+     "description": "Mobile app task 2",
+     "agent": "codex",
+     "model": "claude-sonnet-5",
+     "cwd": "/src/mobile",
+     "status": "queued",
+     "created_at": 1790396550,
+     "updated_at": 1790399895,
+     "steps": [
+      {
+       "index": 0,
+       "title": "Do the work",
+       "status": "done",
+       "started_at": 1790397000
+      }
+     ],
+     "todos": [],
+     "events": [],
+     "documents": []
+    },
+    {
+     "id": "000010",
+     "host": "home",
+     "project": "mobile",
+     "description": "Mobile app task 3",
+     "agent": "claude",
+     "model": "claude-sonnet-5",
+     "cwd": "/src/mobile",
+     "status": "done",
+     "created_at": 1790396560,
+     "updated_at": 1790399896,
+     "steps": [
+      {
+       "index": 0,
+       "title": "Do the work",
+       "status": "done",
+       "started_at": 1790397000
+      }
+     ],
+     "todos": [],
+     "events": [],
+     "documents": []
+    },
+    {
+     "id": "000015",
+     "host": "home",
+     "project": "billing",
+     "description": "Billing task 1",
+     "agent": "codex",
+     "model": "claude-sonnet-5",
+     "cwd": "/src/billing",
+     "status": "running",
+     "created_at": 1790396610,
+     "updated_at": 1790399901,
+     "steps": [
+      {
+       "index": 0,
+       "title": "Do the work",
+       "status": "running",
+       "started_at": 1790397000
+      }
+     ],
+     "todos": [],
+     "events": [],
+     "documents": []
+    },
+    {
+     "id": "5c7a7c",
+     "host": "home",
+     "project": "scratch",
+     "description": "Try a thing",
+     "agent": "claude",
+     "model": "claude-sonnet-5",
+     "cwd": "/tmp/scratch",
+     "status": "running",
+     "created_at": 1790399400,
+     "updated_at": 1790399980,
+     "steps": [],
+     "todos": [],
+     "events": [],
+     "documents": []
+    }
+   ],
+   "sessions": []
+  },
+  {
+   "name": "worker",
+   "ok": true,
+   "error": null,
+   "jobs": [
+    {
+     "id": "000002",
+     "host": "worker",
+     "project": "invoice-parser",
+     "description": "Invoice analysis task 1",
+     "agent": "claude",
+     "model": "claude-sonnet-5",
+     "cwd": "/src/invoice-parser",
+     "status": "done",
+     "created_at": 1790396420,
+     "updated_at": 1790399882,
+     "steps": [
+      {
+       "index": 0,
+       "title": "Do the work",
+       "status": "done",
+       "started_at": 1790397000
+      }
+     ],
+     "todos": [],
+     "events": [],
+     "documents": []
+    },
+    {
+     "id": "000003",
+     "host": "worker",
+     "project": "invoice-parser",
+     "description": "Invoice analysis task 2",
+     "agent": "codex",
+     "model": "claude-sonnet-5",
+     "cwd": "/src/invoice-parser",
+     "status": "queued",
+     "created_at": 1790396430,
+     "updated_at": 1790399883,
+     "steps": [
+      {
+       "index": 0,
+       "title": "Do the work",
+       "status": "done",
+       "started_at": 1790397000
+      }
+     ],
+     "todos": [],
+     "events": [],
+     "documents": []
+    },
+    {
+     "id": "000007",
+     "host": "worker",
+     "project": "servers",
+     "description": "Server room monitoring and alerts task 1",
+     "agent": "claude",
+     "model": "claude-sonnet-5",
+     "cwd": "/src/servers",
+     "status": "running",
+     "created_at": 1790396470,
+     "updated_at": 1790399887,
+     "steps": [
+      {
+       "index": 0,
+       "title": "Do the work",
+       "status": "running",
+       "started_at": 1790397000
+      }
+     ],
+     "todos": [],
+     "events": [],
+     "documents": []
+    },
+    {
+     "id": "000008",
+     "host": "worker",
+     "project": "servers",
+     "description": "Server room monitoring and alerts task 2",
+     "agent": "claude",
+     "model": "claude-sonnet-5",
+     "cwd": "/src/servers",
+     "status": "queued",
+     "created_at": 1790396480,
+     "updated_at": 1790399888,
+     "steps": [
+      {
+       "index": 0,
+       "title": "Do the work",
+       "status": "done",
+       "started_at": 1790397000
+      }
+     ],
+     "todos": [],
+     "events": [],
+     "documents": []
+    },
+    {
+     "id": "000009",
+     "host": "worker",
+     "project": "servers",
+     "description": "Server room monitoring and alerts task 3",
+     "agent": "codex",
+     "model": "claude-sonnet-5",
+     "cwd": "/src/servers",
+     "status": "done",
+     "created_at": 1790396490,
+     "updated_at": 1790399889,
+     "steps": [
+      {
+       "index": 0,
+       "title": "Do the work",
+       "status": "done",
+       "started_at": 1790397000
+      }
+     ],
+     "todos": [],
+     "events": [],
+     "documents": []
+    },
+    {
+     "id": "00000a",
+     "host": "worker",
+     "project": "servers",
+     "description": "Server room monitoring and alerts task 4",
+     "agent": "claude",
+     "model": "claude-sonnet-5",
+     "cwd": "/src/servers",
+     "status": "cancelled",
+     "created_at": 1790396500,
+     "updated_at": 1790399890,
+     "steps": [
+      {
+       "index": 0,
+       "title": "Do the work",
+       "status": "done",
+       "started_at": 1790397000
+      }
+     ],
+     "todos": [],
+     "events": [],
+     "documents": []
+    },
+    {
+     "id": "00000c",
+     "host": "worker",
+     "project": "docs-site",
+     "description": "Docs site task 1",
+     "agent": "codex",
+     "model": "claude-sonnet-5",
+     "cwd": "/src/docs-site",
+     "status": "running",
+     "created_at": 1790396520,
+     "updated_at": 1790399892,
+     "steps": [
+      {
+       "index": 0,
+       "title": "Do the work",
+       "status": "running",
+       "started_at": 1790397000
+      }
+     ],
+     "todos": [],
+     "events": [],
+     "documents": []
+    },
+    {
+     "id": "00000d",
+     "host": "worker",
+     "project": "docs-site",
+     "description": "Docs site task 2",
+     "agent": "claude",
+     "model": "claude-sonnet-5",
+     "cwd": "/src/docs-site",
+     "status": "queued",
+     "created_at": 1790396530,
+     "updated_at": 1790399893,
+     "steps": [
+      {
+       "index": 0,
+       "title": "Do the work",
+       "status": "done",
+       "started_at": 1790397000
+      }
+     ],
+     "todos": [],
+     "events": [],
+     "documents": []
+    },
+    {
+     "id": "000011",
+     "host": "worker",
+     "project": "warehouse",
+     "description": "Data warehouse task 1",
+     "agent": "claude",
+     "model": "claude-sonnet-5",
+     "cwd": "/src/warehouse",
+     "status": "done",
+     "created_at": 1790396570,
+     "updated_at": 1790399897,
+     "steps": [
+      {
+       "index": 0,
+       "title": "Do the work",
+       "status": "done",
+       "started_at": 1790397000
+      }
+     ],
+     "todos": [],
+     "events": [],
+     "documents": []
+    },
+    {
+     "id": "000012",
+     "host": "worker",
+     "project": "warehouse",
+     "description": "Data warehouse task 2",
+     "agent": "codex",
+     "model": "claude-sonnet-5",
+     "cwd": "/src/warehouse",
+     "status": "queued",
+     "created_at": 1790396580,
+     "updated_at": 1790399898,
+     "steps": [
+      {
+       "index": 0,
+       "title": "Do the work",
+       "status": "done",
+       "started_at": 1790397000
+      }
+     ],
+     "todos": [],
+     "events": [],
+     "documents": []
+    },
+    {
+     "id": "000013",
+     "host": "worker",
+     "project": "warehouse",
+     "description": "Data warehouse task 3",
+     "agent": "claude",
+     "model": "claude-sonnet-5",
+     "cwd": "/src/warehouse",
+     "status": "done",
+     "created_at": 1790396590,
+     "updated_at": 1790399899,
+     "steps": [
+      {
+       "index": 0,
+       "title": "Do the work",
+       "status": "done",
+       "started_at": 1790397000
+      }
+     ],
+     "todos": [],
+     "events": [],
+     "documents": []
+    },
+    {
+     "id": "000014",
+     "host": "worker",
+     "project": "warehouse",
+     "description": "Data warehouse task 4",
+     "agent": "claude",
+     "model": "claude-sonnet-5",
+     "cwd": "/src/warehouse",
+     "status": "cancelled",
+     "created_at": 1790396600,
+     "updated_at": 1790399900,
+     "steps": [
+      {
+       "index": 0,
+       "title": "Do the work",
+       "status": "done",
+       "started_at": 1790397000
+      }
+     ],
+     "todos": [],
+     "events": [],
+     "documents": []
+    },
+    {
+     "id": "000016",
+     "host": "worker",
+     "project": "research",
+     "description": "Research notes task 1",
+     "agent": "claude",
+     "model": "claude-sonnet-5",
+     "cwd": "/src/research",
+     "status": "done",
+     "created_at": 1790396620,
+     "updated_at": 1790399902,
+     "steps": [
+      {
+       "index": 0,
+       "title": "Do the work",
+       "status": "done",
+       "started_at": 1790397000
+      }
+     ],
+     "todos": [],
+     "events": [],
+     "documents": []
+    },
+    {
+     "id": "000017",
+     "host": "worker",
+     "project": "research",
+     "description": "Research notes task 2",
+     "agent": "claude",
+     "model": "claude-sonnet-5",
+     "cwd": "/src/research",
+     "status": "queued",
+     "created_at": 1790396630,
+     "updated_at": 1790399903,
+     "steps": [
+      {
+       "index": 0,
+       "title": "Do the work",
+       "status": "done",
+       "started_at": 1790397000
+      }
+     ],
+     "todos": [],
+     "events": [],
+     "documents": []
+    }
+   ],
+   "sessions": [
+    {
+     "id": "0b1c2d3e-0000-4000-8000-000000000001",
+     "host": "worker",
+     "agent": "claude",
+     "cwd": "/src/warehouse",
+     "project": "warehouse",
+     "title": "tidy the loaders",
+     "status": "working",
+     "started_at": 1790399100,
+     "updated_at": 1790399970,
+     "todos": [],
+     "events": []
+    },
+    {
+     "id": "0b1c2d3e-0000-4000-8000-000000000002",
+     "host": "worker",
+     "agent": "codex",
+     "cwd": "/src/notes",
+     "project": "notes",
+     "title": "sort the notes",
+     "status": "idle",
+     "started_at": 1790399100,
+     "updated_at": 1790399700,
+     "todos": [],
+     "events": []
+    }
+   ]
+  },
+  {
+   "name": "gpu-box",
+   "ok": false,
+   "error": "ssh: connect to host gpu-box port 22: No route to host",
+   "jobs": [],
+   "sessions": []
+  }
+ ],
+ "job_documents": {},
+ "library": {}
+}

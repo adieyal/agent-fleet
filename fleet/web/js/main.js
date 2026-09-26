@@ -18,12 +18,14 @@ import { miniBot, panelScrollUntil, renderLive } from './panel.js';
 import './library.js';
 import { reader } from './reader.js';
 import { demoSource } from './demo.js';
+import { buildingReady, buildingShown } from './building.js';
 
 // ------------------------------------------------------------------ frame loop
 let lastT = 0;
 function frame(ts) {
   requestAnimationFrame(frame);
   if (document.hidden || !reader.hidden) { lastT = 0; return; }   // the reader covers the deck; don't render under it
+  if (buildingShown) { lastT = 0; return; }                      // the building has the screen and draws itself
   if (ts < panelScrollUntil) { lastT = 0; return; }             // hold the deck still while the panel scrolls, so the scroll gets the frame
   const t = ts / 1000, now = performance.now() / 1000;
   const dt = Math.min(0.1, lastT ? t - lastT : 0.016) * WARP;
@@ -85,6 +87,7 @@ resize();
 loadAssets().then(() => {
   resize();
   layoutRooms([]);
+  buildingReady();
   if (DEBUG && QS.get('cam')) {   // ?debug&cam=x,z,zoom: look at one spot, for close-up screenshots
     const [x, z, zoom] = QS.get('cam').split(',').map(Number);
     cam.z = zoom || 60; cam.c.set(x, 0.7, z); cam.userMoved = true;

@@ -15,11 +15,18 @@
 <canvas id="world" tabindex="0" aria-label="Isometric deck: projects are rooms, each android is a job; its colour and kit show the host"></canvas>
 <div id="tags"></div>
 <div id="floorUi"></div>
+<div id="building" aria-label="The building: a floor per project, the lobby on the ground floor">
+  <canvas id="buildingCanvas" aria-hidden="true"></canvas>
+  <div id="buildingUi"></div>
+</div>
 
 <header>
   <div class="brand">
     <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><path d="M11 2 20 7v8l-9 5-9-5V7z" fill="none" stroke="#38bdf8" stroke-width="1.6"/><path d="M11 2v9m0 0 9-4m-9 4-9-4m9 4v9" stroke="#38bdf8" stroke-opacity=".45" stroke-width="1.2"/></svg>
-    <span>FLEET</span><em>deck</em>
+    <span>FLEET</span>
+  </div>
+  <div class="view-toggle" id="viewToggle" role="group" aria-label="View">
+    <button data-view="deck" aria-pressed="true">deck</button><button data-view="building" aria-pressed="false">building</button>
   </div>
   <button id="libraryOpen" title="Browse project documents">Library</button>
   <div class="stats" id="stats"></div>

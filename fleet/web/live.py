@@ -60,11 +60,13 @@ class LiveWorkspace:
         return {"project_id": project_id, "floor": floor}
 
     def with_building(self, document: dict[str, Any], registry: Registry) -> dict[str, Any]:
-        """Add the floors registered projects occupy within capacity, and the projects that have none."""
+        """Add the floors registered projects occupy within capacity with each one's focus, and the projects that
+        have no floor."""
         self.workspace.settle(registry.projects, self.capacity)
         floors = {project_id: floor for project_id, floor in self.workspace.floors_snapshot().items()
                   if project_id in registry.projects and floor <= self.capacity}
-        return {**document, "building": {"capacity": self.capacity, "floors": floors,
+        focus = {project_id: self.workspace.focus_of({"project_id": project_id}) for project_id in floors}
+        return {**document, "building": {"capacity": self.capacity, "floors": floors, "focus": focus,
                                          "no_floor": [project_id for project_id in registry.projects
                                                       if project_id not in floors]}}
 

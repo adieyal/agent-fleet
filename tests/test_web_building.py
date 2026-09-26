@@ -93,7 +93,7 @@ def stored_floors():
 
 # ------------------------------------------------------------------ capacity
 def test_capacity_is_six_unless_the_config_says_otherwise(deck, config_path):
-    assert fetch_state(deck)["building"] == {"capacity": 6, "floors": {}, "no_floor": [], "capacity_error": None}
+    assert fetch_state(deck)["building"] == {"capacity": 6, "floors": {}, "focus": {}, "no_floor": [], "capacity_error": None}
     set_config(config_path, capacity=10)
     assert fetch_state(deck)["building"]["capacity"] == 10
 
@@ -124,7 +124,9 @@ def test_registered_projects_take_the_lowest_free_floors_and_keep_them(deck, con
 
     # focus never moves a floor
     assert post(deck, "/api/focus", {"focus": "background", "projects": [first]})[0] == 200
-    assert fetch_state(deck)["building"]["floors"] == {first: 1, second: 2}
+    building_state = fetch_state(deck)["building"]
+    assert building_state["floors"] == {first: 1, second: 2}
+    assert building_state["focus"] == {first: "background", second: "priority"}
 
     # a project that leaves the registry frees its floor; the next one moves into the gap, others stay
     unregister(first)
@@ -164,6 +166,7 @@ def test_projects_without_a_floor_are_listed_and_keep_their_place(deck, config_p
 # ------------------------------------------------------------------ moving in
 def test_moving_in_registers_links_and_takes_the_lowest_free_floor(deck, config_path):
     restoke = register("Restoke", ("home", "restoke"))
+    fetch_state(deck)
     invoices = register("Invoice analysis", ("home", "invoices"))
     fetch_state(deck)
     unregister(restoke)                        # floor 1 is free again, floor 2 taken
