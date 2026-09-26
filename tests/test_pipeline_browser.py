@@ -192,6 +192,41 @@ def test_bands_outlines_and_labels_stay_inside_the_chart(deck: Deck) -> None:
     assert outside == []
 
 
+LABELS_ON_BANDS = """(() => {
+  const svg = document.getElementById('skSvg'), hits = [];
+  const bands = [...svg.querySelectorAll('.sk-band')], stubs = [...svg.querySelectorAll('.sk-wait')];
+  for (const g of svg.querySelectorAll('.sk-node')) {
+    const r = g.querySelector('text').getBoundingClientRect(), chip = g.classList.contains('chip');
+    for (const b of bands) {   // every 2 px of the label's box, tested against the band's own shape
+      const inv = b.getScreenCTM().inverse();
+      let hit = false;
+      for (let x = r.left; x <= r.right && !hit; x += 2) for (let y = r.top; y <= r.bottom && !hit; y += 2)
+        hit = b.isPointInFill(new DOMPoint(x, y).matrixTransform(inv));
+      if (hit) hits.push([g.dataset.node, b.dataset.band, chip]);
+    }
+    for (const s of stubs) {
+      const q = s.getBoundingClientRect();
+      if (r.left < q.right && q.left < r.right && r.top < q.bottom && q.top < r.bottom) hits.push([g.dataset.node, 'stub', chip]);
+    }
+  }
+  const boxes = [...svg.querySelectorAll('.sk-node text, .sk-cap')].map(t => t.getBoundingClientRect());
+  const crowded = boxes.some((p, i) => boxes.some((q, j) => i < j && p.left < q.right && q.left < p.right && p.top < q.bottom && q.top < p.bottom));
+  return { hits, crowded, chips: [...svg.querySelectorAll('.sk-node.chip')].map(g => g.dataset.node) };
+})()"""
+
+
+def test_no_label_lies_on_a_band(deck: Deck, fixture_pipelines: dict[str, Any]) -> None:
+    """Each label is in a free gap near its node. Only a middle node with no gap left puts its label on a chip level
+    with the node, never over a waiting stub; no two labels overlap."""
+    open_screen(deck, "home:sample-training")
+    got = deck.page.evaluate(LABELS_ON_BANDS)
+    close(deck)
+    assert [hit for hit in got["hits"] if not hit[2] or hit[1] == "stub"] == []
+    assert not got["crowded"]
+    nodes = fixture_pipelines["pipeline_reports"][0]["run"]["nodes"]
+    assert set(got["chips"]) <= {n for column in nodes[1:-1] for n in column}
+
+
 def test_on_a_phone_the_chart_scrolls_to_every_column(deck: Deck) -> None:
     """A phone keeps the columns apart and scrolls sideways: a button says how many columns are out of view and takes
     the reader there, and at the end every label is in view."""

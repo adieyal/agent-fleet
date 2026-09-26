@@ -154,7 +154,7 @@ const chart = document.getElementById('skChart'), svg = document.getElementById(
 const side = document.getElementById('skSide');
 const TWEEN_MS = 400, DOT_MS = 1400, DOTS_PER_UPDATE = 80, PAD = 18, WAIT_W = 16;
 const LABEL_GAP = 36, LABEL_TOP = 36;   // room above each node, and above the top ones, for a two-line label
-const CAPTION_H = 38, LABEL_W = 250, MIN_WIDTH = 760, NARROW = 700, LABEL_W_NARROW = 190, COL_W_NARROW = 150;
+const CAPTION_H = 38, MORE_H = 44, LABEL_W = 210, MIN_WIDTH = 760, NARROW = 700, LABEL_W_NARROW = 190, COL_W_NARROW = 150;
 const sk = { key: null, p: null, from: null, to: null, t0: 0, dots: [], carry: {}, raf: 0, selected: null, lastFocus: null, geo: null };
 
 const keyOf = p => `${p.host}:${p.pipeline}`;
@@ -225,7 +225,8 @@ function geometry(columns) {
   const least = narrow ? PAD * 2 + labelW + 12 + COL_W_NARROW * Math.max(0, columns - 1) : MIN_WIDTH;
   const width = Math.max(chart.clientWidth, least), height = chart.clientHeight;
   for (const el of [svg, dotsCanvas]) el.style.width = width + 'px';
-  return { W: width - PAD * 2 - labelW, H: Math.max(160, height - PAD * 2), width, height, narrow };
+  const clear = narrow ? MORE_H : 0;   // the strip the "more columns" button floats over
+  return { W: width - PAD * 2 - labelW, H: Math.max(160, height - PAD * 2 - clear), width, height, clear };
 }
 const more = document.getElementById('skMore');
 function edgeFade() {
@@ -247,21 +248,20 @@ function drawFrame() {
   sk.raf = 0;
   if (!sk.key || !sk.p?.run) return;
   const values = current(), run = sk.p.run, base = sk.p.baseline;
-  const { W, H, width, height, narrow } = geometry(run.nodes.length), firsts = firstOfColumns(run);
+  const { W, H, width, height, clear } = geometry(run.nodes.length), firsts = firstOfColumns(run);
   const edges = Object.entries(values.edges).map(([key, c]) => [...key.split('→'), c]);
   const L = layout(run.nodes, values.counts, edges, W, H - LABEL_TOP - (firsts.size ? CAPTION_H : 0),
     { baseline: base?.counts, baseEdges: base?.edges, gap: LABEL_GAP });
   sk.geo = L;
-  renderChart(L, run, base, width, height, narrow, firsts, { ...run, counts: values.counts, edges });
+  renderChart(L, run, base, width, height, clear, firsts, { ...run, counts: values.counts, edges });
   edgeFade();
   drawDots(L, width, height);
   const tweening = performance.now() - sk.t0 < TWEEN_MS;
   if (tweening || sk.dots.length) sk.raf = requestAnimationFrame(drawFrame);
 }
-// Labels keep off the bands and outlines: the last column's sit right of their node, where nothing flows; every other
-// node's sits in the gap above it (name and count, then share and prev for an end node, or what waits in it). Baseline
-// outlines go under the bands; what a node holds that has not gone on yet is a hatched stub at its right edge.
-function renderChart(L, run, base, width, height, narrow, firsts, now) {
+// A label is its node's name and count, then share and prev for an end node, or what waits in it. Baseline outlines go
+// under the bands; what a node holds that has not gone on yet is a hatched stub at its right edge.
+function renderChart(L, run, base, width, height, clear, firsts, now) {
   const ends = terminals(run, base), values = now.counts, waits = waiting(now, ends);
   const lastCol = run.nodes.length - 1;
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
@@ -273,27 +273,21 @@ function renderChart(L, run, base, width, height, narrow, firsts, now) {
     const tip = `${b.s.name} → ${b.t.name}: ${fmt(b.count)}${was !== undefined ? ` (baseline ${fmt(was)})` : ''}`;
     return `<path class="sk-band${tone ? ' t-' + tone : ''}${sk.selected && b.t.name === sk.selected ? ' on' : ''}" data-band="${esc(b.key)}" d="${bandPath(b)}"><title>${esc(tip)}</title></path>`;
   }).join('');
-  const stubs = [...waits].map(([name, w]) => {
-    const n = L.nodes.get(name), y = n.y + n.out.reduce((s, b) => s + b.w, 0);
-    return `<rect class="sk-wait" x="${n.x + L.nodeW}" y="${y}" width="${WAIT_W}" height="${Math.max(MIN_BAND, w * L.k)}"><title>${
-      esc(`${name}: ${fmt(w)} ${waitWord(run)}`)}</title></rect>`;
-  }).join('');
+  const stubRects = [...waits].map(([name, w]) => {
+    const n = L.nodes.get(name);
+    return { name, w, x: n.x + L.nodeW, y: n.y + n.out.reduce((s, b) => s + b.w, 0), width: WAIT_W, height: Math.max(MIN_BAND, w * L.k) };
+  });
+  const stubs = stubRects.map(r => `<rect class="sk-wait" x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}"><title>${
+    esc(`${r.name}: ${fmt(r.w)} ${waitWord(run)}`)}</title></rect>`).join('');
   const nodes = [...L.nodes.values()].map(n => {
     const end = ends.has(n.name), kept = end ? held(now, n.name) : 0, share = end ? pct(shareOf(run.nodes, values, n.name, kept)) : '';
     const vs = end ? versus(run, base, n.name, kept) : null;
     const rest = end ? [Math.round(kept) < Math.round(n.value) ? `${fmt(kept)} end here` : '', share, vs?.text].filter(Boolean).join(' · ')
       : waits.has(n.name) ? `${fmt(waits.get(n.name))} ${waitWord(run)}` : '';
-    let label;
-    if (n.col === lastCol) {
-      const x = n.x + L.nodeW + 7, y = n.y + n.hc / 2;
-      label = narrow
-        ? `<text x="${x}" y="${y - 2}"><tspan class="nm">${esc(n.name)}</tspan><tspan class="ct" x="${x}" dy="14">${fmt(n.value)}${rest ? ' · ' + esc(rest) : ''}</tspan></text>`
-        : `<text x="${x}" y="${y + 4}"><tspan class="nm">${esc(n.name)}</tspan><tspan class="ct" dx="7">${fmt(n.value)}${rest ? ' · ' + esc(rest) : ''}</tspan></text>`;
-    } else {
-      const y = n.y - (rest ? 20 : 6);
-      label = `<text x="${n.x}" y="${y}"><tspan class="nm">${esc(n.name)}</tspan><tspan class="ct" dx="6">${fmt(n.value)}</tspan>${
-        rest ? `<tspan class="ct" x="${n.x}" dy="14">${esc(rest)}</tspan>` : ''}</text>`;
-    }
+    // drawn at the origin; placeLabels moves each where it keeps off the bands
+    const label = `<text><tspan class="nm">${esc(n.name)}</tspan>${n.col === lastCol
+        ? `<tspan class="ct" x="0" dy="14">${fmt(n.value)}${rest ? ' · ' + esc(rest) : ''}</tspan>`
+        : `<tspan class="ct" dx="6">${fmt(n.value)}</tspan>${rest ? `<tspan class="ct" x="0" dy="14">${esc(rest)}</tspan>` : ''}`}</text>`;
     return `<g class="sk-node${end ? ' end' : ''}${sk.selected === n.name ? ' on' : ''}" data-node="${esc(n.name)}" tabindex="${end ? 0 : -1}"
       ${end ? `role="button" aria-label="${esc(`${n.name}: ${fmt(n.value)}, show its latest items`)}"` : ''}>
       <rect x="${n.x}" y="${n.y}" width="${L.nodeW}" height="${n.hc}" rx="2"/>${label}</g>`;
@@ -307,10 +301,88 @@ function renderChart(L, run, base, width, height, narrow, firsts, now) {
   svg.innerHTML = `<defs><pattern id="skHatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
     <rect class="sk-hatch" width="2" height="5"/></pattern></defs>
     <g transform="translate(${PAD},${PAD + LABEL_TOP})">${ghosts}${bands}${stubs}${nodes}${captions}</g>`;
+  placeLabels(L, lastCol, width, height - clear, stubRects);
   chart.querySelector('.sk-empty')?.remove();
   const off = !sk.p.host_ok ? `<div class="sk-note" role="status">${esc(sk.p.host)} is offline (${esc(sk.p.host_error || 'no connection')}): this is its last report, written ${age(run.updated_at)} ago</div>` : '';
   const note = chart.querySelector('.sk-note');
   if (off && !note) chart.insertAdjacentHTML('afterbegin', off); else if (!off && note) note.remove();
+}
+// Which parts of the plot are taken: a grid of CELL-sized cells over the SVG, filled where bands (swept along their
+// centre lines), nodes and stubs lie, summed so any box is tested at once. Returns (box) → whether it touches any.
+const CELL = 2, BAND_STEPS = 48;
+function occupancy(bands, rects, x0, y0, width, height) {
+  const cols = Math.ceil(width / CELL), rows = Math.ceil(height / CELL), grid = new Uint8Array(cols * rows);
+  const cell = (v, o, n) => Math.min(n - 1, Math.max(0, Math.floor((v - o) / CELL)));
+  const fill = (xa, xb, ya, yb) => {
+    const c0 = cell(xa, x0, cols), c1 = cell(xb, x0, cols), r1 = cell(yb, y0, rows);
+    for (let r = cell(ya, y0, rows); r <= r1; r++) grid.fill(1, r * cols + c0, r * cols + c1 + 1);
+  };
+  for (const [b, half] of bands) {
+    let p = bandPoint(b, 0, 0);
+    for (let i = 1; i <= BAND_STEPS; i++) {
+      const q = bandPoint(b, i / BAND_STEPS, 0);
+      fill(p.x, q.x, Math.min(p.y, q.y) - half, Math.max(p.y, q.y) + half);
+      p = q;
+    }
+  }
+  for (const r of rects) fill(r.x, r.x + r.width, r.y, r.y + r.height);
+  const W = cols + 1, sum = new Uint32Array(W * (rows + 1));
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++)
+    sum[(r + 1) * W + c + 1] = grid[r * cols + c] + sum[r * W + c + 1] + sum[(r + 1) * W + c] - sum[r * W + c];
+  return b => {
+    const c0 = cell(b.x, x0, cols), c1 = cell(b.x + b.width, x0, cols) + 1, r0 = cell(b.y, y0, rows), r1 = cell(b.y + b.height, y0, rows) + 1;
+    return sum[r1 * W + c1] - sum[r0 * W + c1] - sum[r1 * W + c0] + sum[r0 * W + c0] > 0;
+  };
+}
+const overlaps = (p, q, m = 0) => p.x < q.x + q.width + m && q.x < p.x + p.width + m && p.y < q.y + q.height + m && q.y < p.y + p.height + m;
+const grow = (b, m) => ({ x: b.x - m, y: b.y - m, width: b.width + 2 * m, height: b.height + 2 * m });
+// Labels never lie on a band. The last column's sit right of their node, where nothing flows. Every other label goes
+// in the nearest free spot of the gaps above or below its node, from wholly left of it to wholly right: clear of
+// outlines too if it can be, else of the bands only. With no free spot it sits on a chip level with its node, left of
+// it (its stub is on the right), covering the bands there.
+const LABEL_REACH = 60, LABEL_M = 2;
+function placeLabels(L, lastCol, width, height, stubs) {
+  const x0 = -PAD, y0 = -PAD - LABEL_TOP, nodeRects = [...L.nodes.values()].map(n => ({ x: n.x, y: n.y, width: L.nodeW, height: n.hc }));
+  const strict = occupancy([...L.bands.map(b => [b, b.w / 2 + 0.5]), ...L.bands.filter(b => b.ghost).map(b => [b.ghost, b.ghost.w / 2 + 1])],
+    [...nodeRects, ...stubs], x0, y0, width, height);
+  const loose = occupancy(L.bands.map(b => [b, b.w / 2 + 0.5]), [...nodeRects, ...stubs], x0, y0, width, height);
+  const placed = [...svg.querySelectorAll('.sk-cap')].map(el => el.getBBox());
+  const inView = b => b.x >= x0 + 1 && b.y >= y0 + 1 && b.x + b.width <= x0 + width - 1 && b.y + b.height <= y0 + height - 1;
+  const free = (taken, b) => inView(b) && !taken(grow(b, LABEL_M)) && !placed.some(p => overlaps(p, b, LABEL_M));
+  const labels = [...svg.querySelectorAll('.sk-node')].map(g => ({ g, n: L.nodes.get(g.dataset.node), text: g.querySelector('text') }))
+    .map(l => ({ ...l, box: l.text.getBBox() }))   // the last column's first: their spots are fixed
+    .sort((p, q) => (q.n.col === lastCol) - (p.n.col === lastCol) || p.n.col - q.n.col || p.n.y - q.n.y);
+  for (const { g, n, text, box } of labels) {
+    const at = (x, y) => ({ x, y, width: box.width, height: box.height });
+    let spot = null;
+    if (n.col === lastCol) spot = at(n.x + L.nodeW + 7, n.y + n.hc / 2 - box.height / 2);
+    else {
+      for (const taken of [strict, loose]) {
+        let best = null;
+        for (const below of [false, true]) for (let dy = 0; dy <= LABEL_REACH; dy += CELL) {
+          const y = below ? n.y + n.hc + 4 + dy : n.y - 4 - box.height - dy;
+          for (let dx = 0; dx <= box.width + L.nodeW; dx += CELL) {   // left-aligned first, then either way
+            const cost = dy * 2 + dx + (below ? 12 : 0);
+            if (best && cost >= best.cost) break;
+            const b = [at(n.x - dx, y), at(n.x + dx, y)].find(b => free(taken, b));
+            if (b) { best = { cost, b }; break; }
+          }
+        }
+        if (best) { spot = best.b; break; }
+      }
+      if (!spot) {
+        const y = n.y + n.hc / 2 - box.height / 2;
+        spot = [at(n.x - 4 - box.width, y), at(n.x + L.nodeW + WAIT_W + 4, y)].find(inView) || at(n.x, y);
+        const chip = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        for (const [k, v] of Object.entries({ class: 'sk-chip', x: spot.x - 4, y: spot.y - 2, width: spot.width + 8, height: spot.height + 4, rx: 4 }))
+          chip.setAttribute(k, v);
+        g.insertBefore(chip, text);
+        g.classList.add('chip');
+      }
+    }
+    text.setAttribute('transform', `translate(${spot.x - box.x},${spot.y - box.y})`);
+    placed.push(spot);
+  }
 }
 function drawDots(L, width, height) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
