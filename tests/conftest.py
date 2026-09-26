@@ -4,6 +4,7 @@ Tests that change a fleet (moving a project in) start their own with serve_fixtu
 """
 
 import json
+import os
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -44,3 +45,11 @@ def serve_fixture(path: Path) -> Iterator[str]:
 def base_url() -> Iterator[str]:
     with serve_fixture(FIXTURE) as url:
         yield url
+
+
+@pytest.fixture(scope="session")
+def browser_type_launch_args(browser_type_launch_args: dict[str, Any]) -> dict[str, Any]:
+    """Headless Chromium without a display: an inherited DISPLAY (say a dead SSH X forward) makes WebGL
+    fail to start, and the 3D views then never become ready."""
+    env = {k: v for k, v in os.environ.items() if k not in ("DISPLAY", "WAYLAND_DISPLAY")}
+    return {**browser_type_launch_args, "env": env}
