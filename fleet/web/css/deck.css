@@ -700,9 +700,17 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 .sk-items .at li.first b{color:var(--rd-strong)}
 .sk-items .at li.first small{font:500 10.5px var(--sans);color:var(--warn);letter-spacing:.04em}
 .sk-cap{font:italic 11.5px var(--sans);fill:var(--rd-muted)}
+.sk-chartwrap{position:relative;flex:1;min-width:0;display:flex}
+.sk-chart{scrollbar-color:var(--rd-muted) transparent}
+.sk-chart::-webkit-scrollbar{height:8px}
+.sk-chart::-webkit-scrollbar-thumb{background:var(--rd-muted);border-radius:4px}
+.sk-more{position:absolute;right:10px;bottom:18px;z-index:2;border:1px solid var(--rd-link);background:var(--rd-bg2);color:var(--rd-strong);
+  border-radius:999px;height:30px;padding:0 12px;font:600 12.5px var(--sans);cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.45)}
+.sk-more[hidden]{display:none}
 @media (max-width:760px){
   .sk-body{flex-direction:column;overflow:auto}
-  .sk-chart{flex:none;height:62vh;overflow-x:auto}
+  .sk-chartwrap{flex:none;height:62vh}
+  .sk-chart{overflow-x:auto}
   .sk-side{width:auto;border-left:0;border-top:1px solid var(--rd-rule);overflow:visible}
 }
 @media (prefers-reduced-motion:reduce){

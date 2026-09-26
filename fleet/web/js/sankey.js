@@ -142,7 +142,7 @@ const chart = document.getElementById('skChart'), svg = document.getElementById(
 const side = document.getElementById('skSide');
 const TWEEN_MS = 400, DOT_MS = 1400, DOTS_PER_UPDATE = 80, PAD = 18;
 const LABEL_GAP = 36, LABEL_TOP = 36;   // room above each node, and above the top ones, for a two-line label
-const CAPTION_H = 38, LABEL_W = 250, MIN_WIDTH = 760, NARROW = 700, LABEL_W_NARROW = 130, MIN_WIDTH_NARROW = 620;
+const CAPTION_H = 38, LABEL_W = 250, MIN_WIDTH = 760, NARROW = 700, LABEL_W_NARROW = 190, COL_W_NARROW = 150;
 const sk = { key: null, p: null, from: null, to: null, t0: 0, dots: [], carry: {}, raf: 0, selected: null, lastFocus: null, geo: null };
 
 const keyOf = p => `${p.host}:${p.pipeline}`;
@@ -152,6 +152,7 @@ export function openSankey(p) {
   if (sankeyPane.hidden) sk.lastFocus = document.activeElement;
   sk.key = keyOf(p); sk.p = null; sk.from = sk.to = null; sk.dots = []; sk.carry = {}; sk.selected = null;
   sankeyPane.hidden = false;
+  chart.scrollLeft = 0;
   sheet.focus();
   updateSankey(p);
 }
@@ -205,25 +206,36 @@ function emitDots(before, run) {
   }
 }
 
-// A phone gets a narrower label margin (end labels wrap to two lines) and scrolls the rest sideways.
-function geometry() {
-  const narrow = chart.clientWidth < NARROW;
-  const width = Math.max(chart.clientWidth, narrow ? MIN_WIDTH_NARROW : MIN_WIDTH), height = chart.clientHeight;
+// A phone keeps the chart's left-to-right reading: columns stay COL_W_NARROW apart, wide enough for a label above each
+// node, end labels wrap to two lines, and the chart scrolls sideways with a visible bar and a "more columns" button.
+function geometry(columns) {
+  const narrow = chart.clientWidth < NARROW, labelW = narrow ? LABEL_W_NARROW : LABEL_W;
+  const least = narrow ? PAD * 2 + labelW + 12 + COL_W_NARROW * Math.max(0, columns - 1) : MIN_WIDTH;
+  const width = Math.max(chart.clientWidth, least), height = chart.clientHeight;
   for (const el of [svg, dotsCanvas]) el.style.width = width + 'px';
-  const labelW = narrow ? LABEL_W_NARROW : LABEL_W;
   return { W: width - PAD * 2 - labelW, H: Math.max(160, height - PAD * 2), width, height, narrow };
 }
+const more = document.getElementById('skMore');
 function edgeFade() {
   const max = chart.scrollWidth - chart.clientWidth;
   chart.classList.toggle('more-r', chart.scrollLeft < max - 1);
   chart.classList.toggle('more-l', chart.scrollLeft > 1);
+  // columns whose node is still out of view to the right
+  const xs = sk.geo ? [...new Set([...sk.geo.nodes.values()].map(n => n.x))] : [];
+  const hidden = xs.filter(x => PAD + x + sk.geo.nodeW > chart.scrollLeft + chart.clientWidth).length;
+  more.hidden = !(chart.scrollLeft < max - 1 && sk.p?.run);
+  if (more.hidden && document.activeElement === more) sheet.focus();   // keep Esc and Tab in the sheet
+  more.textContent = hidden ? `${hidden} more column${hidden === 1 ? '' : 's'} →` : 'more →';
+  more.setAttribute('aria-label', 'Scroll the chart right');
 }
 chart.addEventListener('scroll', edgeFade, { passive: true });
+more.addEventListener('mousedown', ev => ev.preventDefault());   // a click leaves focus in the sheet
+more.addEventListener('click', () => chart.scrollBy({ left: chart.clientWidth * 0.8, behavior: REDUCED ? 'auto' : 'smooth' }));
 function drawFrame() {
   sk.raf = 0;
   if (!sk.key || !sk.p?.run) return;
   const values = current(), run = sk.p.run, base = sk.p.baseline;
-  const { W, H, width, height, narrow } = geometry(), firsts = firstOfColumns(run);
+  const { W, H, width, height, narrow } = geometry(run.nodes.length), firsts = firstOfColumns(run);
   const edges = Object.entries(values.edges).map(([key, c]) => [...key.split('→'), c]);
   const L = layout(run.nodes, values.counts, edges, W, H - LABEL_TOP - (firsts.size ? CAPTION_H : 0),
     { baseline: base?.counts, baseEdges: base?.edges, gap: LABEL_GAP });
@@ -318,6 +330,7 @@ function renderHead() {
 function renderEmpty() {
   const p = sk.p;
   svg.innerHTML = '';
+  more.hidden = true;
   drawDots({ bands: [] }, chart.clientWidth, chart.clientHeight);
   chart.querySelector('.sk-note')?.remove();
   const text = !p.host_ok

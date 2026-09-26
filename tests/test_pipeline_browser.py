@@ -173,12 +173,34 @@ INSIDE_SVG = """[...document.querySelectorAll('#skSvg .sk-ghost, #skSvg .sk-band
 
 
 def test_bands_outlines_and_labels_stay_inside_the_chart(deck: Deck) -> None:
-    if deck.name == "narrow":
-        pytest.skip("phone width still clips end labels")
     open_screen(deck, "home:sample-training")
     outside = deck.page.evaluate(INSIDE_SVG)
     close(deck)
     assert outside == []
+
+
+def test_on_a_phone_the_chart_scrolls_to_every_column(deck: Deck) -> None:
+    """A phone keeps the columns apart and scrolls sideways: a button says how many columns are out of view and takes
+    the reader there, and at the end every label is in view."""
+    page = deck.page
+    open_screen(deck, "home:sample-training")
+    more = page.locator("#skMore")
+    if deck.name != "narrow":
+        expect(more).to_be_hidden()
+        close(deck)
+        return
+    expect(more).to_be_visible()
+    expect(more).to_contain_text("more column")
+    while more.is_visible():
+        more.click()
+        page.wait_for_timeout(500)
+    deck.shot("sankey-end")
+    in_view = page.evaluate("""(() => { const c = document.getElementById('skChart').getBoundingClientRect();
+      return [...document.querySelectorAll('#skSvg .sk-node')].filter(g => g.getBoundingClientRect().left >= c.left)
+        .map(g => [g.dataset.node, g.getBoundingClientRect().right <= c.right + 0.5]); })()""")
+    close(deck)
+    assert {node for node, _ in in_view} >= {"null cell", "sum mismatch", "profile disagree", "low support"}
+    assert all(inside for _, inside in in_view), in_view
 
 
 def test_a_finished_run_shows_its_change_on_the_baseline(deck: Deck) -> None:

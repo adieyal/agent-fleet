@@ -104,7 +104,10 @@
       <div class="rd-actions"><button class="rd-x" data-sk-close title="Close (Esc)" aria-label="Close pipeline">✕</button></div>
     </div>
     <div class="sk-body">
-      <div class="sk-chart" id="skChart"><svg id="skSvg" role="img" aria-label="Sankey diagram of the run: items flowing between nodes"></svg><canvas id="skDots" aria-hidden="true"></canvas></div>
+      <div class="sk-chartwrap">
+        <div class="sk-chart" id="skChart"><svg id="skSvg" role="img" aria-label="Sankey diagram of the run: items flowing between nodes"></svg><canvas id="skDots" aria-hidden="true"></canvas></div>
+        <button class="sk-more" id="skMore" hidden></button>
+      </div>
       <aside class="sk-side" id="skSide" aria-label="End nodes"></aside>
     </div>
   </div>
