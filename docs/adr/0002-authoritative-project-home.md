@@ -1,0 +1,3 @@
+# Give each project one authoritative home
+
+Each project has one logical home for accepted workspace knowledge and links to canonical records. A per-project Git management repository holds plans it owns, summaries, decisions, dossiers, and retained space definitions; product documents and externally managed plans stay in their canonical locations, and live state stays outside Git. Server-local `.fleet` records hold memberships, run data, and copies rather than equal-write accepted state. This preserves project knowledge when workers come and go without requiring automatic peer-to-peer merges or Git commits for every activity update.

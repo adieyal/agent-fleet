@@ -1,0 +1,3 @@
+# Limit live projects and archive by shuttering
+
+Fleet will hold a fixed number of live projects, six by default and at most ten, as a work-in-progress limit made visible as the floors of the workspace building. Starting a project at capacity asks the user which project to shutter; raising capacity is a deliberate setting rather than an option offered at that moment. Shuttering archives a project without changing its identity or discarding records: nothing new is dispatched, in-flight runs finish, documents remain searchable as historical, and restoring the project returns it exactly as it was. This makes overcommitment a visible choice instead of a slowly growing overview, while keeping the cost of setting work aside low.

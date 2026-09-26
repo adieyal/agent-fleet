@@ -1,0 +1,3 @@
+# Separate working updates from accepted project decisions
+
+Task orchestrators may update task progress and attributed working summaries, publish routine progress, and accept milestone completion when stated criteria have evidence within a versioned mandate. The mandate guides decisions by risk and cost; changes to goals, priorities, and major decisions require user acceptance. A librarian may directly make reversible documentation improvements in Git, escalating changes to goals, accepted decisions, or disputed facts. Durable accepted records are versioned in the project management repository, with routine commits serialized and reviewable proposals for changes requiring acceptance.

@@ -1,0 +1,3 @@
+# Define spaces at runtime over shared records
+
+Fleet supplies stable semantics for identity, status, evidence, observations, attention, and relationships while projects define domain labels and fields at runtime. Spaces are views over shared records, not containers of copied data; agents can create draft spaces and retain useful definitions in the management repository. Work may nest to any useful depth, and additive vocabulary changes may be proposed routinely while reinterpretations require review and migration. This lets the same core present a supplier workarea, invoice lab, or server room without baking each domain into Fleet; collectors and specialized displays can be plugins.
