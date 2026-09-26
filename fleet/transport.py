@@ -148,6 +148,26 @@ def gather_sessions(hosts: list[Host]) -> dict[str, list[dict[str, Any]]]:
         return dict(zip((host.name for host in hosts), pool.map(one, hosts)))
 
 
+def repository_remotes(host: Host, directories: list[str]) -> dict[str, list[str]]:
+    """Git remote URLs of each directory on the host; a directory outside git has none."""
+    script = "".join(f"git -C {shlex.quote(directory)} config --get-regexp '^remote\\..*\\.url$' 2>/dev/null"
+                     f" | while read -r _ url; do printf '%s\\t%s\\n' {shlex.quote(directory)} \"$url\"; done\n"
+                     for directory in directories)
+    ensure_master(host)
+    try:
+        completed = subprocess.run(host.shell_command(script), capture_output=True, text=True, timeout=20)
+    except subprocess.TimeoutExpired as error:
+        raise FleetError(f"{host.name}: timed out reading repository remotes") from error
+    if completed.returncode != 0:
+        raise FleetError(f"{host.name}: could not read repository remotes: {completed.stderr.strip()}")
+    remotes: dict[str, list[str]] = {directory: [] for directory in directories}
+    for line in completed.stdout.splitlines():
+        directory, _, url = line.partition("\t")
+        if directory in remotes and url:
+            remotes[directory].append(url)
+    return remotes
+
+
 def rsync(sources: list[str], destination: str, host: Host) -> None:
     ensure_master(host)
     command = ["rsync", "-a", *sources, destination]

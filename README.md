@@ -70,6 +70,17 @@ jobs. Add `"project_labels": {"restoke-analytics": "Bang bang!"}` to
 `~/.config/fleet/config.json` (or the file selected by `FLEET_CONFIG`), then
 restart `fleet web`.
 
+To give a project a stable identity across hosts, register it and link each host's
+label explicitly. Same-named labels on other hosts stay separate until you link them.
+
+```bash
+fleet project add "Agent Fleet" --link home:agent-fleet --repo git@github.com:adieyal/agent-fleet.git
+fleet project ls                      # IDs, links, and links suggested by matching repositories
+fleet project link p-1a2b3c4d gpu:fleet
+fleet project unlink gpu:fleet
+fleet project rename p-1a2b3c4d "Fleet"   # the ID never changes
+```
+
 ## Read the work
 
 The deck collects step reports, Markdown files the agent wrote, and Markdown in its

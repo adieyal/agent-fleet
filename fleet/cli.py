@@ -16,10 +16,11 @@ from typing import Any
 
 from rich.console import Console, Group
 from rich.live import Live
+from rich.markup import escape
 from rich.text import Text
 from rich.tree import Tree
 
-from fleet import transport
+from fleet import projects, transport
 from fleet.transport import FleetError, Host, HostReport
 from fleet.web.server import serve
 
@@ -487,6 +488,111 @@ def command_libraries(arguments: argparse.Namespace) -> None:
         console.print(f"[bold]{project}[/] {path}")
 
 
+def parse_link(text: str) -> tuple[str, str]:
+    """`host:label` → (host, label) for a configured host."""
+    host, _, label = text.partition(":")
+    if not host or not label:
+        raise FleetError(f"expected host:label, got '{text}'")
+    return transport.host_by_name(host).name, label
+
+
+def command_project_add(arguments: argparse.Namespace) -> None:
+    registry = projects.load_registry()
+    project = registry.create(arguments.name, arguments.repo or [])
+    for text in arguments.link or []:
+        registry.link(project.id, *parse_link(text))
+    projects.save_registry(registry)
+    console.print(f"added project [bold]{project.id}[/] {escape(project.name)}")
+
+
+def command_project_rename(arguments: argparse.Namespace) -> None:
+    registry = projects.load_registry()
+    registry.rename(arguments.id, arguments.name)
+    projects.save_registry(registry)
+    console.print(f"{arguments.id} → {escape(registry.get(arguments.id).name)}")
+
+
+def command_project_link(arguments: argparse.Namespace) -> None:
+    registry = projects.load_registry()
+    link = registry.link(arguments.id, *parse_link(arguments.link))
+    projects.save_registry(registry)
+    console.print(f"linked {escape(link.host)}:{escape(link.label)} → {arguments.id}")
+
+
+def command_project_unlink(arguments: argparse.Namespace) -> None:
+    host, _, label = arguments.link.partition(":")
+    registry = projects.load_registry()
+    project_id = registry.unlink(host, label)
+    projects.save_registry(registry)
+    console.print(f"unlinked {escape(host)}:{escape(label)} from {project_id}")
+
+
+def command_project_repo_add(arguments: argparse.Namespace) -> None:
+    registry = projects.load_registry()
+    registry.add_repository(arguments.id, arguments.url)
+    projects.save_registry(registry)
+
+
+def command_project_repo_remove(arguments: argparse.Namespace) -> None:
+    registry = projects.load_registry()
+    registry.remove_repository(arguments.id, arguments.url)
+    projects.save_registry(registry)
+
+
+def observed_labels(registry: projects.Registry, hosts: list[Host]) -> tuple[list[tuple[str, str, str]], list[str]]:
+    """(host, label, remote) for unlinked labels in jobs and sessions, plus per-host errors."""
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        jobs = pool.submit(transport.gather, hosts, ["ls", "--all"])
+        sessions = pool.submit(transport.gather_sessions, hosts)
+        reports, by_host = jobs.result(), sessions.result()
+    errors = [report.error for report in reports if report.error]
+    directories: dict[str, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))
+    for report in reports:
+        for item in report.jobs + by_host.get(report.host.name, []):
+            label, directory = item.get("project"), item.get("cwd")
+            if label and directory and registry.project_for(report.host.name, label) is None:
+                directories[report.host.name][directory].add(label)
+
+    def remotes(host: Host) -> list[tuple[str, str, str]]:
+        found = transport.repository_remotes(host, sorted(directories[host.name]))
+        return [(host.name, label, url) for directory, urls in found.items()
+                for label in sorted(directories[host.name][directory]) for url in urls]
+
+    observed = []
+    for host in hosts:
+        if directories.get(host.name):
+            try:
+                observed += remotes(host)
+            except FleetError as error:
+                errors.append(str(error))
+    return observed, errors
+
+
+def command_project_list(arguments: argparse.Namespace) -> None:
+    registry = projects.load_registry()
+    if not registry.projects:
+        console.print("no registered projects — add one with: fleet project add <name> --link host:label")
+    for project in sorted(registry.projects.values(), key=lambda project: (project.name.lower(), project.id)):
+        console.print(f"[bold]{project.id}[/] {escape(project.name)}")
+        for link in sorted(project.links):
+            console.print(f"  {escape(link.host)}:{escape(link.label)}")
+        for repository in project.repositories:
+            console.print(f"  [dim]repo[/] {escape(repository)}")
+    if not arguments.suggest or not any(project.repositories for project in registry.projects.values()):
+        return
+    observed, errors = observed_labels(registry, transport.configured_hosts())
+    suggestions = list(dict.fromkeys((suggestion.link, suggestion.project_id)
+                                     for suggestion in registry.suggest_links(observed)))
+    if suggestions:
+        console.print("\n[bold]suggested links[/] (repository matches)")
+    for link, project_id in suggestions:
+        target = f"{link.host}:{link.label}"
+        console.print(f"  {escape(target)} → {project_id} {escape(registry.get(project_id).name)}"
+                      f"  [dim]fleet project link {project_id} {escape(shlex.quote(target))}[/]")
+    for error in errors:
+        console.print(f"[yellow]no suggestions from {escape(error)}[/]")
+
+
 # Agents are often only on PATH in interactive login shells (nvm, pyenv), so ask those first.
 # Each shell may set up a different PATH (e.g. nvm only in .bashrc), so every one is asked.
 DETECT_SCRIPT = r"""
@@ -704,6 +810,39 @@ def build_parser() -> argparse.ArgumentParser:
     library_remove.add_argument("project")
     library_remove.set_defaults(handler=command_library_remove)
 
+    project = commands.add_parser("project", help="registered projects: stable IDs linked to host:label").add_subparsers(
+        dest="project_command", required=True)
+    project_add = project.add_parser("add", help="register a project with a new stable ID")
+    project_add.add_argument("name")
+    project_add.add_argument("--link", action="append", metavar="HOST:LABEL", help="link a host's label (repeatable)")
+    project_add.add_argument("--repo", action="append", metavar="URL", help="repository remote, used to suggest links")
+    project_add.set_defaults(handler=command_project_add)
+    project_list = project.add_parser("ls", help="projects, their links, and suggested links")
+    project_list.add_argument("--no-suggest", dest="suggest", action="store_false",
+                              help="do not ask hosts for labels to suggest")
+    project_list.set_defaults(handler=command_project_list)
+    project_rename = project.add_parser("rename", help="change a project's name (its ID stays)")
+    project_rename.add_argument("id")
+    project_rename.add_argument("name")
+    project_rename.set_defaults(handler=command_project_rename)
+    project_link = project.add_parser("link", help="attach a host's label to a project")
+    project_link.add_argument("id")
+    project_link.add_argument("link", metavar="HOST:LABEL")
+    project_link.set_defaults(handler=command_project_link)
+    project_unlink = project.add_parser("unlink", help="detach a host's label from its project")
+    project_unlink.add_argument("link", metavar="HOST:LABEL")
+    project_unlink.set_defaults(handler=command_project_unlink)
+    project_repo = project.add_parser("repo", help="repository remotes used to suggest links").add_subparsers(
+        dest="project_repo_command", required=True)
+    project_repo_add = project_repo.add_parser("add")
+    project_repo_add.add_argument("id")
+    project_repo_add.add_argument("url")
+    project_repo_add.set_defaults(handler=command_project_repo_add)
+    project_repo_remove = project_repo.add_parser("rm")
+    project_repo_remove.add_argument("id")
+    project_repo_remove.add_argument("url")
+    project_repo_remove.set_defaults(handler=command_project_repo_remove)
+
     install = commands.add_parser("install", help="install/upgrade fleetd on a host")
     install.add_argument("name")
     install.set_defaults(handler=command_install)
@@ -722,8 +861,8 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> None:
-    arguments = build_parser().parse_args()
+def main(argv: list[str] | None = None) -> None:
+    arguments = build_parser().parse_args(argv)
     try:
         arguments.handler(arguments)
     except FleetError as error:
