@@ -79,7 +79,7 @@ def build_prompt(description: str, style: str = STYLE) -> str:
 
 
 def build_request(description: str, refs: list[tuple[Ref, bytes]], *, model: str = DEFAULT_MODEL,
-                  quality: str = 'high', style: str = STYLE) -> dict:
+                  quality: str = 'high', style: str = STYLE, background: str = 'transparent') -> dict:
     """The /v1/responses body: prompt text, then each reference as an input image."""
     content: list[dict] = [{'type': 'input_text', 'text': build_prompt(description, style)}]
     for _, data in refs:
@@ -90,7 +90,7 @@ def build_request(description: str, refs: list[tuple[Ref, bytes]], *, model: str
         'stream': True,
         'instructions': INSTRUCTIONS,
         'input': [{'type': 'message', 'role': 'user', 'content': content}],
-        'tools': [{'type': 'image_generation', 'background': 'transparent',
+        'tools': [{'type': 'image_generation', 'background': background,
                    'output_format': 'png', 'quality': quality}],
         'tool_choice': {'type': 'image_generation'},
     }
@@ -167,11 +167,11 @@ def sidecar_path(out: Path) -> Path:
 
 
 def generate(description: str, refs: list[Ref], out: Path, *, url: str = DEFAULT_URL,
-             model: str = DEFAULT_MODEL, quality: str = 'high', style: str = STYLE,
+             model: str = DEFAULT_MODEL, quality: str = 'high', style: str = STYLE, background: str = 'transparent',
              force: bool = False, transport=post_stream) -> dict | None:
     """Write out and its sidecar; return the sidecar, or None when a cached output was kept."""
     loaded = [(r, r.png()) for r in refs]
-    body = build_request(description, loaded, model=model, quality=quality, style=style)
+    body = build_request(description, loaded, model=model, quality=quality, style=style, background=background)
     digest = request_digest(body)
     if out.exists() and not force:
         meta = sidecar_path(out)
@@ -213,13 +213,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument('--style', help='replace the built-in style text')
     ap.add_argument('--model', default=DEFAULT_MODEL)
     ap.add_argument('--quality', default='high', choices=['low', 'medium', 'high', 'auto'])
+    ap.add_argument('--background', default='transparent', choices=['transparent', 'opaque'],
+                    help='opaque for textures')
     ap.add_argument('--url', default=DEFAULT_URL, help='ChatMock base URL')
     ap.add_argument('--force', action='store_true', help='regenerate even if the output exists')
     args = ap.parse_args(argv)
     try:
         refs = [Ref.parse(s) for s in args.ref]
         meta = generate(args.description, refs, args.out, url=args.url, model=args.model,
-                        quality=args.quality, style=args.style or STYLE, force=args.force)
+                        quality=args.quality, style=args.style or STYLE, background=args.background,
+                        force=args.force)
     except (GenError, OSError, ValueError) as e:
         print(f'gen_sprite: {e}', file=sys.stderr)
         return 1

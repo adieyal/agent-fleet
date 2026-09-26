@@ -68,4 +68,48 @@ gen robot-tube-grey-v2 "$(robot "$GREY" "$TUBE")" "$L2_GREEN" "$L1_ROBOTS"
 gen robot-typing-teal-v2 "$(robot "$TEAL" "$TYPING")" "$L2_TEAL" "$L1_ROBOTS"
 gen robot-pencil-teal-v2 "$(robot "$TEAL" "$PENCIL")" "$L2_BLUE" "$L1_ROBOTS"
 gen robot-tube-teal-v2 "$(robot "$TEAL" "$TUBE")" "$L2_GREEN" "$L1_ROBOTS"
+
+# Round 3, for the comparison page: the lantern, animation, and architecture.
+L2_LANTERN="$L2@450,0,130,210"
+L2_FLOOR="$L2@60,640,360,260"
+L2_WALL="$L2@700,40,640,200"
+L2_PILASTER="$L2@1320,130,210,600"
+B2=art/bakeoff/B2
+gen lantern-v1 'a hanging attention lantern: a diamond (octahedron) of glowing magenta glass in a thin \
+dark metal frame, hanging from a thin cable that runs straight up out of the image, exactly like the \
+lantern in the reference' "$L2_LANTERN"
+SHEET='An animation sprite sheet: exactly four frames side by side in one row of four equal cells, no \
+gaps, no borders, no numbers. Every frame shows exactly the robot in the attached sprite, same size, same \
+position in its cell, same chair, same camera angle and light; only its'
+gen anim-typing-v1 "$SHEET hands and fingers move, as a looping typing cycle on the laptop keyboard." \
+  "$B2/robot-typing.webp"
+gen anim-pencil-v1 "$SHEET writing hand and pencil move, as a looping writing cycle, and its head nods \
+slightly." "$B2/robot-pencil.webp"
+FLAT='Style: a flat texture seen straight on, with no perspective and no objects. Soft, even, slightly warm \
+light; pale, desaturated colours matching the attached reference crop. It must tile seamlessly: the left \
+edge continues into the right edge and the top into the bottom. Fill the whole square image edge to edge.'
+uv run -q python art/scripts/gen_sprite.py 'a seamless floor texture seen from straight above: exactly \
+two by two large square pale grey polished stone floor tiles with thin light grout lines, subtle marbling' \
+  -o $OUT/floor-v1.png --ref "$L2_FLOOR" --style "$FLAT" ${FORCE:-} &
+uv run -q python art/scripts/gen_sprite.py 'a seamless wall texture seen straight on: a pale warm grey \
+painted plaster wall, smooth, very faint texture, no joints, no skirting' \
+  -o $OUT/wall-v1.png --ref "$L2_WALL" --style "$FLAT" ${FORCE:-} &
+gen pilaster-v1 'one tall square wall pilaster (a pale grey rectangular column that projects from a wall \
+face) running from the floor to a top cap, with the wall face to either side cut off at the column; \
+seen at the same angle as the reference' "$L2_PILASTER"
+wait
+
+# Round 3b: v1 textures came back vignetted (transparent background forced), so opaque; the v1
+# pilaster had the wrong shape.
+uv run -q python art/scripts/gen_sprite.py 'a seamless floor texture seen from straight above: exactly \
+two by two large square pale grey polished stone floor tiles with thin light grout lines, subtle marbling. \
+Perfectly even brightness everywhere, no vignette, no darker corners.' \
+  -o $OUT/floor-v2.png --ref "$L2_FLOOR" --style "$FLAT" --background opaque ${FORCE:-} &
+uv run -q python art/scripts/gen_sprite.py 'a seamless wall texture seen straight on: a pale warm grey \
+painted plaster wall, smooth, very faint texture, no joints, no skirting. Perfectly even brightness \
+everywhere, no vignette.' -o $OUT/wall-v2.png --ref "$L2_WALL" --style "$FLAT" --background opaque ${FORCE:-} &
+gen pilaster-v2 'a single rectangular pilaster: one plain box, 40 cm wide, 30 cm deep and 3 m tall, pale \
+warm grey, standing upright; its left side face and its front face are visible, the front face lit, the \
+side face in soft shade; a slightly wider box-shaped cap on top. Nothing else: no wall, no second column.' \
+  "$L2_PILASTER"
 wait

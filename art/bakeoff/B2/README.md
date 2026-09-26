@@ -8,8 +8,8 @@ references. Rendering needs no lighting at runtime: draw the WebP images in orde
   `FORCE=--force` to redo). The image model has no seed, so reruns give different pictures.
 - `finish.py` trims the kept generations, scales them, writes the sprites, the tint masks,
   `sprites.json`, `contact.jpg` (every generation) and `tint.jpg` (tinting vs generating teal).
-- `raw/*.json` are the sidecars for all 14 generations: prompt, reference crops with sha256,
-  model, revised prompt, size, time. The raw PNGs (14 MB) are not committed; they are in the
+- `raw/*.json` are the sidecars for all 23 generations: prompt, reference crops with sha256,
+  model, revised prompt, size, time. The raw PNGs (28 MB) are not committed; they are in the
   job outbox (`B2-raw/`).
 
 ## Sprites
@@ -88,6 +88,49 @@ full in `generate.sh`:
 
 Upstream ignores the requested size and quality: images come back at about 1.2–1.7 MP in the
 model's own aspect ratio, always at "medium" quality.
+
+## Round 3: the comparison page's needs
+
+Generated for `/prototype/bakeoff` (see `generate.sh`). `sprites.json` now also records the sprite
+density (`px_per_m` 257.3, that is 1.5 × the l2 framing's 171.5 px/m). For each sprite it records
+`ref_px`, the point that lands on the object's world position, so B2 is placed in the same world as
+A and B1:
+
+- **Bench:** the middle of the desktop's far edge. It is fitted from the topmost oak pixel in each
+  column, because B2's desk is deeper than the modelled 0.8 m and robots sit behind the far edge.
+- **Plant and pilaster:** the footprint centre.
+- **Lantern:** the diamond's centre.
+- **Robot:** the chair seat, read off a grid for the kept grey robots. Other robots use the
+  average seat position within the sprite box (±7 px).
+
+| Asset | From | Size | Bytes | Notes |
+|---|---|---|---|---|
+| `lantern.webp` | `lantern-v1` | 108×233 | 6,322 | Good diamond and glow; the cable is cut where the image ends |
+| `robot-typing.anim.webp` + mask | `anim-typing-v1` | 4 × 264×308 | 85,318 + 47,537 | Silhouette IoU with frame 1: 0.99, 0.99, 0.98 |
+| `robot-pencil.anim.webp` + mask | `anim-pencil-v1` | 4 × 214×308 | 85,330 + 49,702 | IoU 0.96, 0.90, 0.97; one frame has a blue smudge on the hand |
+| `floor-tile.webp` | a quadrant of `floor-v2` | 256² = 0.6 m | 2,342 | Grout on two edges, so the repeat is a full grid |
+| `wall-tile.webp` | `wall-v2` | 512² = 2 m | 3,100 | Wrap step is 1.7× (x) and 2.2× (y) the step inside; invisible on plaster this plain |
+| `pilaster.webp` | `pilaster-v2` | 176×660 | 13,274 | Right faces and light; its height needed fitting by hand |
+| `mixed/*` | `bench-v3`, `plant-v2`, `robot-*-grey-v1` | | | The consistency test (`?variant=B2mix`) |
+
+- **Animation:** both loops are one generation of a 4-cell sheet, with the kept still as the
+  reference. Cells are trimmed, scaled to the still's height and pinned by their castors.
+  Asking for "only the hands move" works for typing. The writing loop also nods and wobbles.
+  Four frames at 6 fps reads as busy typing, not as smooth motion. The cells aren't the still
+  either, so a robot switching from idle to typing would visibly change.
+- **Tiles:** the v1 floor and wall came back vignetted: the forced transparent background turned
+  the wall into a disc. `gen_sprite.py --background opaque` fixes that. The floor and wall are
+  drawn top-down and front-on and mapped onto their planes by an affine transform, which is
+  exact for an orthographic camera. So walls and floors of any length have no seams beyond the
+  texture's own wrap.
+- **Occlusion:** a seated robot is split along a line at desktop height with the desk's
+  screen slope (`cut` in `sprites.json`, set per pose). The part below the line (legs, seat) is
+  drawn just before the bench, and the part above it (arms, laptop, paper) just after. It works
+  for these poses, but desk props under a robot's upper half get covered. A hand-painted
+  "over the desk" mask would be the real fix. Footprint-centre depth sorting fails against a
+  long bench, so robots are ordered against the bench explicitly.
+- **Lamps:** the lamps and their glow are baked into the bench wherever the model put them, so
+  they can't follow activity. A bench generated without lamps, plus glow sprites, would fix that.
 
 ## Consistency
 

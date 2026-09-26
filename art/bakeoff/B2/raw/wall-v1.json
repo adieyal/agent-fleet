@@ -1,0 +1,22 @@
+{
+  "description": "a seamless wall texture seen straight on: a pale warm grey \\\npainted plaster wall, smooth, very faint texture, no joints, no skirting",
+  "prompt": "Generate a single game sprite: a seamless wall texture seen straight on: a pale warm grey \\\npainted plaster wall, smooth, very faint texture, no joints, no skirting\n\nStyle: a flat texture seen straight on, with no perspective and no objects. Soft, even, slightly warm \\\nlight; pale, desaturated colours matching the attached reference crop. It must tile seamlessly: the left \\\nedge continues into the right edge and the top into the bottom. Fill the whole square image edge to edge.",
+  "instructions": "You are a sprite generator. Always answer by calling the image_generation tool exactly once. Do not reply with text.",
+  "references": [
+    {
+      "path": "docs/images/concept/l2.png@700,40,640,200",
+      "sha256": "4ed4c1c4c6901f84d7caf195dd4ffc099d1fe99b1dab523396b17731c97bdcab"
+    }
+  ],
+  "model": "gpt-5.5",
+  "image_model": "gpt-image-2-codex",
+  "quality_requested": "high",
+  "quality": "medium",
+  "size": "1254x1254",
+  "revised_prompt": "Single square game sprite texture, seamless tile: pale warm grey painted plaster wall, smooth with very faint fine plaster grain and subtle mottling, no seams, no joints, no skirting, no objects, no perspective. Straight-on flat orthographic view, fills entire square edge to edge. Soft even slightly warm lighting, pale desaturated colors matching a warm light grey/beige reference crop. Must tile seamlessly horizontally and vertically: left edge continues into right edge, top edge into bottom edge. Minimal texture variation, clean painted plaster surface.",
+  "response_id": "resp_03393c85b3585010016ab8243e5e3087d2b98a0e8d932db577",
+  "request_sha256": "8b829499dd1df60b87c614e550f8edd051bce2896b2ca5b97e68e4cf3a8274b4",
+  "output_sha256": "b953d632a446101c816c068007e92465e9c0c4bef6bb03de48646e121f7ca20b",
+  "timestamp": "2026-09-26T20:00:41Z",
+  "seconds": 43.3
+}

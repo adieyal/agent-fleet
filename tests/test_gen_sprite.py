@@ -60,6 +60,10 @@ def test_request_carries_prompt_refs_in_order_and_the_transparent_tool(ref_png: 
     assert sizes == [(10, 10), (40, 30)]
 
 
+def test_textures_can_ask_for_an_opaque_background() -> None:
+    assert gs.build_request('floor', [], background='opaque')['tools'][0]['background'] == 'opaque'
+
+
 def test_same_arguments_build_the_same_request(ref_png: Path) -> None:
     r = gs.Ref.parse(f'{ref_png}@5,6,10,10')
     a = gs.build_request('x', [(r, r.png())])

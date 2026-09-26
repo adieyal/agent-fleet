@@ -31,8 +31,13 @@ from fleet.web.live import AlreadyHoused, LiveWorkspace
 WEB_ROOT = Path(__file__).parent.resolve()
 INDEX_PATH = WEB_ROOT / "index.html"
 APP_DIRECTORIES = ("css", "js")  # the deck's own code, read at startup together with the page
-STATIC_PREFIXES = ("/vendor/", "/assets/")
+STATIC_PREFIXES = ("/vendor/", "/assets/", "/prototype/")
+PROTOTYPES = {"/prototype/bakeoff": "/prototype/bakeoff.html"}  # art prototypes; not linked from the deck
+REPO_ROOT = WEB_ROOT.parent.parent
+# Source-checkout folders the art prototypes read; absent from an installed package, so they 404 there.
+CHECKOUT_FOLDERS = {"/art/bakeoff/": REPO_ROOT / "art" / "bakeoff", "/concept/": REPO_ROOT / "docs" / "images" / "concept"}
 STATIC_TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
+                ".html": "text/html; charset=utf-8",
                 ".glb": "model/gltf-binary", ".gltf": "model/gltf+json",
                 ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".json": "application/json",
                 ".md": "text/markdown; charset=utf-8", ".txt": "text/plain; charset=utf-8"}
@@ -235,10 +240,14 @@ def make_handler(state: FleetState | FixtureState,
                 self.respond(200, "application/json", json.dumps(state.document()).encode())
             elif path in ("/", "/index.html"):
                 self.respond(200, "text/html; charset=utf-8", index_page)
+            elif path in PROTOTYPES:
+                self.static_file(PROTOTYPES[path])
             elif path in app_files:
                 self.respond(200, STATIC_TYPES.get(Path(path).suffix, "application/octet-stream"), app_files[path])
             elif path.startswith(STATIC_PREFIXES):
                 self.static_file(path)
+            elif path.startswith(tuple(CHECKOUT_FOLDERS)):
+                self.checkout_file(path)
             else:
                 self.respond(404, "text/plain", b"not found")
 
@@ -375,6 +384,17 @@ def make_handler(state: FleetState | FixtureState,
             target = (WEB_ROOT / unquote(path).lstrip("/")).resolve()
             allowed = any(target.is_relative_to(WEB_ROOT / prefix.strip("/")) for prefix in STATIC_PREFIXES)
             if not allowed or not target.is_file():
+                self.respond(404, "text/plain", b"not found")
+                return
+            content_type = STATIC_TYPES.get(target.suffix.lower(), "application/octet-stream")
+            self.respond(200, content_type, target.read_bytes(), cache_seconds=3600)
+
+        def checkout_file(self, path: str) -> None:
+            """Art and concept files from a source checkout, for the prototypes; nothing outside those folders."""
+            prefix = next(p for p in CHECKOUT_FOLDERS if path.startswith(p))
+            folder = CHECKOUT_FOLDERS[prefix].resolve()
+            target = (folder / unquote(path.removeprefix(prefix))).resolve()
+            if not target.is_relative_to(folder) or not target.is_file():
                 self.respond(404, "text/plain", b"not found")
                 return
             content_type = STATIC_TYPES.get(target.suffix.lower(), "application/octet-stream")
