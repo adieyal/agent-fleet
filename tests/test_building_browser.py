@@ -54,6 +54,31 @@ def visitor_asks_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
 
 
 @pytest.fixture(scope="module")
+def linking_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
+    """The Restoke fleet where some visitors belong to projects already: agent-fleet runs on home and worker and an
+    "Agent Fleet" project (floor 3) links neither; fleet-docs on worker is a clone of Restoke's repository. And
+    "invoice-parser" on home was moved in as a second project (floor 4) for the work "Invoice analysis" holds."""
+    fixture = json.loads(FIXTURE.read_text())
+    worker = next(host for host in fixture["hosts"] if host["name"] == "worker")
+    home = next(host for host in fixture["hosts"] if host["name"] == "home")
+    session = next(session for session in worker["sessions"] if session["project"] == "agent-fleet")
+    home["sessions"].append({**session, "id": "home-fleet", "host": "home"})
+    worker["sessions"].append({**session, "id": "docs", "project": "fleet-docs", "cwd": "/src/fleet-docs"})
+    home["sessions"].append({**session, "id": "home-invoices", "host": "home", "project": "invoice-parser"})
+    fixture["remotes"] = {"worker": {"/src/fleet-docs": ["https://github.com/restoke/restoke"]}}
+    fixture["projects"]["p-5e1f0a01"]["repositories"] = ["git@github.com:restoke/restoke.git"]
+    fixture["projects"]["p-1c0ce5a2"]["created_at"] = 1790000000.0
+    fixture["projects"]["p-0000fa01"] = {"name": "Agent Fleet", "links": [], "repositories": []}
+    fixture["projects"]["p-00001c02"] = {"name": "Invoice parser", "links": [{"host": "home", "label": "invoice-parser"}],
+                                         "repositories": [], "created_at": 1790300000.0}
+    fixture["floors"] = {"p-5e1f0a01": 1, "p-1c0ce5a2": 2, "p-0000fa01": 3, "p-00001c02": 4}
+    path = tmp_path_factory.mktemp("linking") / "linking.json"
+    path.write_text(json.dumps(fixture))
+    with serve_fixture(path) as url:
+        yield url
+
+
+@pytest.fixture(scope="module")
 def still(browser: Browser) -> Iterator[BrowserContext]:
     context = browser.new_context(viewport=DESKTOP, reduced_motion="reduce")
     yield context
@@ -271,7 +296,7 @@ def test_work_without_a_floor_waits_in_the_lobby(page: Page, ten_floors_url: str
     open_building(page, ten_floors_url)
     visitors = page.locator(".lobby .visitor")
     expect(visitors).to_have_count(2)
-    assert {(row.get_attribute("data-host"), row.get_attribute("data-label")) for row in visitors.all()} == {
+    assert {(row.get_attribute("data-hosts"), row.get_attribute("data-label")) for row in visitors.all()} == {
         ("home", "scratch"), ("worker", "notes")}
     expect(page.locator(".lobby .novacancy")).to_be_visible()
     expect(page.locator("#building").get_by_text("No vacancies")).to_have_count(1)   # one sign in the lobby is enough
@@ -484,7 +509,7 @@ def test_a_crate_opens_read_only_and_moves_back_to_its_floor(page: Page, restoke
 def test_a_visitor_moves_in_to_the_lowest_free_floor(page: Page, restoke_url: str) -> None:
     open_building(page, restoke_url)
     visitor = page.locator('.lobby .visitor[data-label="agent-fleet"]')
-    expect(visitor).to_have_attribute("data-host", "worker")
+    expect(visitor).to_have_attribute("data-hosts", "worker")
     visitor.locator("[data-move-in]").click()
     expect(page.locator('.plate[data-floor="3"]')).not_to_have_attribute("data-mode", "to-let")
     expect(page.locator('.plate[data-floor="3"] b')).to_have_text("agent-fleet")
@@ -516,3 +541,61 @@ def test_a_full_building_offers_only_clearing_a_floor_or_cancelling(page: Page, 
     building = state(url)["building"]
     assert building["capacity"] == 10 and list(building["shuttered"]) == [top]
     assert [crate["name"] for crate in page.evaluate("fleetBuilding.crates()")] == ["Research notes"]
+
+
+# ------------------------------------------------------------------ linking and merging: these change their fleet too
+def test_visitors_are_grouped_by_label_with_their_hosts(page: Page, linking_url: str) -> None:
+    open_building(page, linking_url)
+    row = page.locator('.lobby .visitor[data-label="agent-fleet"]')
+    expect(row).to_have_count(1)
+    expect(row).to_have_attribute("data-hosts", "home worker")
+    expect(row.locator(".vhosts i")).to_have_text(["home", "worker"])
+
+
+def test_moving_in_offers_linking_first_and_linking_takes_no_floor(page: Page, linking_url: str) -> None:
+    open_building(page, linking_url)
+    before = state(linking_url)["building"]["floors"]
+    page.locator('.lobby .visitor[data-label="agent-fleet"] [data-move-in]').click()
+    prompt = page.locator(".movein")
+    expect(prompt).to_be_visible()
+    expect(prompt.locator("[data-host-pick]:checked")).to_have_count(2)   # both hosts, and the user can drop one
+    first = prompt.locator("button").first
+    expect(first).to_have_attribute("data-link", "p-0000fa01")
+    expect(first).to_contain_text("Link to Agent Fleet (floor 3)")
+    expect(prompt.locator("[data-new-project]")).to_have_text("New project")
+    first.click()
+    expect(prompt).to_have_count(0)
+    expect(page.locator('.lobby .visitor[data-label="agent-fleet"]')).to_have_count(0)
+    document = state(linking_url)
+    project = next(project for project in document["projects"] if project["id"] == "p-0000fa01")
+    assert project["links"] == [{"host": "home", "label": "agent-fleet"}, {"host": "worker", "label": "agent-fleet"}]
+    assert document["building"]["floors"] == before and len(document["projects"]) == 4
+
+
+def test_a_matching_repository_is_offered_and_a_new_project_stays_possible(page: Page, linking_url: str) -> None:
+    open_building(page, linking_url)
+    page.locator('.lobby .visitor[data-label="fleet-docs"] [data-move-in]').click()
+    prompt = page.locator(".movein")
+    link = prompt.locator('[data-link="p-5e1f0a01"]')
+    expect(link).to_contain_text("Link to Restoke (floor 1)")
+    expect(link).to_contain_text("same repository")
+    prompt.locator("[data-new-project]").click()
+    expect(page.locator('.plate[data-floor="5"] b')).to_have_text("fleet-docs")
+    restoke = next(project for project in state(linking_url)["projects"] if project["id"] == "p-5e1f0a01")
+    assert {"host": "worker", "label": "fleet-docs"} not in restoke["links"]
+
+
+def test_merging_from_a_floor_keeps_the_older_project_and_frees_the_floor(page: Page, linking_url: str) -> None:
+    open_building(page, linking_url)
+    page.locator('.plate[data-floor="4"] [data-merge]').click()
+    dialog = page.locator(".merge")
+    dialog.locator('[data-merge-with="p-1c0ce5a2"]').click()
+    expect(dialog).to_contain_text("Invoice analysis is older, so it stays")
+    dialog.locator('[data-merge-keep="p-1c0ce5a2"]').click()
+    expect(page.locator('.plate[data-floor="4"]')).to_have_attribute("data-mode", "to-let")
+    expect(page.locator("#toast")).to_contain_text("Floor 4 is free")
+    document = state(linking_url)
+    assert "p-00001c02" not in {project["id"] for project in document["projects"]}
+    invoices = next(project for project in document["projects"] if project["id"] == "p-1c0ce5a2")
+    assert invoices["links"] == [{"host": "home", "label": "invoice-parser"}, {"host": "worker", "label": "invoice-parser"}]
+    assert document["building"]["floors"]["p-1c0ce5a2"] == 2

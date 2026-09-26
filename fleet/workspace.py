@@ -210,6 +210,15 @@ class WorkspaceStore:
             self.save()
             return floor
 
+    def forget_project(self, project_id: str) -> int | None:
+        """Drop a project merged into another: its focus, its floor or crate. Return the floor it freed."""
+        with self.lock:
+            self.focus["projects"].pop(project_id, None)
+            self.shuttered.pop(project_id, None)
+            floor = self.floors.pop(project_id, None)
+            self.save()
+            return floor
+
     def free_floor(self, capacity: int) -> int:
         """The lowest free floor; call with the lock held."""
         taken = set(self.floors.values())

@@ -9,6 +9,7 @@ behind them:
      "focus": {"projects": {"p-…": "background"}, "labels": {"<label>": "background"}},
      "capacity": 10, "floors": {"p-…": 1},   # both optional: capacity 6, floors assigned as projects move in
      "shuttered": {"p-…": {"at": …, "floor": 2}},   # optional: projects in the storehouse
+     "remotes": {"<host>": {"<cwd>": ["git@…"]}},   # optional: repository remotes, for move-in offers
      "job_documents": {"<host>/<job>/<document id>": "markdown", …},
      "library": {"<project>": [{"id": "README.md", "mtime": …, "markdown": "…"}, …]}}
 
@@ -21,7 +22,7 @@ from __future__ import annotations
 import json
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from fleet.attention import AttentionBoard
 from fleet.building import capacity_of
@@ -53,10 +54,12 @@ class FixtureState(LiveWorkspace):
     def host_names(self) -> list[str]:
         return [host["name"] for host in self.fixture["hosts"]]
 
-    def register(self, name: str, host: str, label: str) -> str:
-        project = self.registry.create(name)
-        self.registry.link(project.id, host, label)
-        return project.id
+    def edit_registry(self, change: Callable[[Registry], Any]) -> Any:
+        return change(self.registry)
+
+    def repository_remotes(self, host: str, directories: list[str]) -> dict[str, list[str]]:
+        recorded = self.fixture.get("remotes", {}).get(host, {})
+        return {directory: list(recorded.get(directory, [])) for directory in directories}
 
     def document(self) -> dict[str, Any]:
         with self.changed:

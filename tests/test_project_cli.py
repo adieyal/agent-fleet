@@ -43,6 +43,7 @@ def test_add_with_links_keeps_other_config(config_path, fleet):
     assert project_id in output
     stored = json.loads(config_path.read_text())
     assert stored["project_labels"] == {"old": "Old sign"} and set(stored["hosts"]) == {"home", "gpu"}
+    assert isinstance(stored["projects"][project_id].pop("created_at"), float)
     assert stored["projects"][project_id] == {
         "name": "Agent Fleet", "repositories": [],
         "links": [{"host": "gpu", "label": "fleet"}, {"host": "home", "label": "agent-fleet"}]}
@@ -51,9 +52,10 @@ def test_add_with_links_keeps_other_config(config_path, fleet):
 def test_rename_keeps_the_id(config_path, fleet):
     fleet("project", "add", "Agent Fleet", "--link", "home:agent-fleet")
     project_id = only_id(config_path)
+    created = stored_projects(config_path)[project_id]["created_at"]
     fleet("project", "rename", project_id, "Fleet")
     assert stored_projects(config_path) == {project_id: {
-        "name": "Fleet", "links": [{"host": "home", "label": "agent-fleet"}], "repositories": []}}
+        "name": "Fleet", "links": [{"host": "home", "label": "agent-fleet"}], "repositories": [], "created_at": created}}
 
 
 def test_link_and_unlink(config_path, fleet):
@@ -85,6 +87,47 @@ def test_a_linked_label_cannot_be_taken_by_another_project(config_path, fleet):
     with pytest.raises(SystemExit):
         fleet("project", "add", "Two", "--link", "home:shared")
     assert [entry["name"] for entry in stored_projects(config_path).values()] == ["One"]
+
+
+def test_merge_keeps_the_older_id_and_takes_the_others_links_and_repositories(config_path, fleet):
+    fleet("project", "add", "Agent Fleet", "--link", "home:agent-fleet", "--repo", "git@github.com:adieyal/agent-fleet.git")
+    (older,) = stored_projects(config_path)
+    fleet("project", "add", "agent-fleet", "--link", "gpu:agent-fleet", "--link", "gpu:fleet-docs",
+          "--repo", "https://github.com/adieyal/agent-fleet", "--repo", "git@github.com:adieyal/fleet-docs.git")
+    (newer,) = set(stored_projects(config_path)) - {older}
+
+    with pytest.raises(SystemExit):   # the newer one can't be kept
+        fleet("project", "merge", newer, older)
+    assert set(stored_projects(config_path)) == {older, newer}
+
+    output = fleet("project", "merge", older, newer)
+    assert f"merged {newer} agent-fleet into {older} Agent Fleet" in output
+    stored = stored_projects(config_path)
+    assert list(stored) == [older] and stored[older]["name"] == "Agent Fleet"
+    assert stored[older]["links"] == [{"host": "gpu", "label": "agent-fleet"}, {"host": "gpu", "label": "fleet-docs"},
+                                      {"host": "home", "label": "agent-fleet"}]
+    assert stored[older]["repositories"] == ["git@github.com:adieyal/agent-fleet.git", "git@github.com:adieyal/fleet-docs.git"]
+
+
+def test_merging_projects_of_unknown_age_keeps_the_one_named_first(config_path, fleet):
+    config = json.loads(config_path.read_text())
+    config["projects"] = {"p-0000000a": {"name": "A", "links": [{"host": "home", "label": "a"}], "repositories": []},
+                          "p-0000000b": {"name": "B", "links": [{"host": "gpu", "label": "a"}], "repositories": []}}
+    config_path.write_text(json.dumps(config))
+    fleet("project", "merge", "p-0000000b", "p-0000000a")
+    assert stored_projects(config_path) == {"p-0000000b": {
+        "name": "B", "links": [{"host": "gpu", "label": "a"}, {"host": "home", "label": "a"}], "repositories": []}}
+
+
+@pytest.mark.parametrize("arguments", [("p-0000000a", "p-0000000a"), ("p-0000000a", "p-00000000")])
+def test_merge_refuses_itself_and_unknown_projects(config_path, fleet, arguments):
+    config = json.loads(config_path.read_text())
+    config["projects"] = {"p-0000000a": {"name": "A", "links": [], "repositories": []}}
+    config_path.write_text(json.dumps(config))
+    before = config_path.read_text()
+    with pytest.raises(SystemExit):
+        fleet("project", "merge", *arguments)
+    assert config_path.read_text() == before
 
 
 def git_repository(path, remote):
