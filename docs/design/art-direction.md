@@ -169,6 +169,26 @@ Iteration rounds, each committed as `style(art):`, with side-by-sides in the job
 
 The 60 fps target leaves about 4x headroom. The floor reflection roughly doubled frame cost (1.6 ms before round 1).
 
+**Camera controls.** The prototype zooms (wheel or pinch, about the pointer), pans (drag) and turns (right-drag or shift-drag). The turn is clamped to ±15° azimuth and ±4° tilt, so cut-away walls never show their backs. Movement is damped, and instant under reduced motion. The controller is `fleet/web/prototype/camera.js`.
+
+Zoom runs from 0.6× (the whole room) to 1.8×, where the baked lighting stops looking sharp:
+- The lightmaps bake 1.5 cm per texel, so at zoom z a texel spans 2.57 z CSS px on a 941 px tall view.
+- `art/scripts/zoom_sharpness.py` renders the same spot on the bench at 1–2.5×. Baked contact shadows (under mugs, pen pots and plant pots) stay crisp to about 4.6 px per texel, which is 1.8×. They smear visibly beyond 5 px (2×).
+- Albedo textures (0.6–2 mm per texel) stay sharp well past that, so the lightmap sets the limit.
+
+Sharp close-ups need finer lightmaps. Estimates below scale texel count from the current bake: 10 layers (base, 9 warm, AO), 0.94 MB of WebP, about 120 MB of GPU memory with mipmaps.
+
+| Sharp to zoom | Texel | Base atlas | Lightmap files | GPU memory |
+|---|---|---|---|---|
+| 1.8× (now) | 15 mm | 2304² | 0.94 MB | ~120 MB |
+| 2.5× | 11 mm | 3200² | ~1.8 MB | ~230 MB |
+| 3× | 9 mm | 3840² | ~2.6 MB | ~335 MB |
+| 4× | 7 mm | 5120² (over the 4096 cap: two atlases) | ~4.7 MB | ~590 MB |
+
+Download size stays modest; GPU memory is the real cost. Two cheaper routes:
+- **A detail atlas.** Bake a second, fine atlas for just the desk tops and props (about 15 of 357 m²) at 3–5 mm. That adds roughly 0.5 MB and 6 MB of GPU memory.
+- **Packed warm layers.** Pack the nine warm layers into the RGB channels of three textures (each warm group has a fixed colour), cutting their memory by two thirds.
+
 Gaps still open, largest first:
 1. **Lamp glow.** l2's working lamps throw a strong, saturated amber glow and the shades glow from inside. Ours is a faint halo, because the bulbs face down under closed shades. An open, emissive shade interior would close it; about half a day.
 2. **Composition.** l2 is not a single projection, so the question desk and lantern sit about 50–100 px from where l2 draws them when the bench matches. Nudging those props per view is cheap, but it bends the layout away from real geometry.

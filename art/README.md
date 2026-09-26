@@ -36,6 +36,9 @@ The prototype page `/prototype/bench` combines them in three.js. It is served by
 | `scripts/export.py` | Writes the glb (WebP textures), the lightmaps (WebP) and `manifest.json` | yes |
 | `scripts/preview.py` | Renders a reference image from the scene camera for comparison with the concept art | yes |
 | `scripts/shoot_bench.py` | Screenshots the prototype page at 1672 x 941 and composes it beside `l2.png` | yes |
+| `scripts/perf_bench.py` | Frame times and load size of the prototype page on the GPU | yes |
+| `scripts/fit_camera.py` | Fits the prototype's camera to landmarks in `l2.png` | yes |
+| `scripts/zoom_sharpness.py` | Renders a bench detail at several zooms to find the closest sharp zoom for the lightmaps | yes |
 | `sources/` | Downloaded assets | **no** |
 | `build/` | `.blend` files, raw EXR lightmaps, logs, previews | **no** |
 

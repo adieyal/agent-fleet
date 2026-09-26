@@ -14,6 +14,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { Reflector } from 'three/addons/objects/Reflector.js';
 import * as glyph from './glyphs.js';
+import { ViewController, ZOOM } from './camera.js';
 
 const WORLD = '/assets/world/workbench/';
 const ROBOT = '/assets/world/robot/';
@@ -70,19 +71,13 @@ const clock = new THREE.Clock();
 const mixers = [];
 const tweens = [];
 
-function placeCamera() {
-  const p = THREE.MathUtils.degToRad(VIEW.pitch), y = THREE.MathUtils.degToRad(VIEW.yaw);
-  const target = bl(...VIEW.target);
-  const dir = bl(Math.sin(y) * Math.cos(p), -Math.cos(y) * Math.cos(p), Math.sin(p));
-  camera.position.copy(target).addScaledVector(dir, 60);
-  camera.lookAt(target);
-  const aspect = innerWidth / innerHeight;
-  camera.top = VIEW.height / 2;
-  camera.bottom = -VIEW.height / 2;
-  camera.left = -VIEW.height * aspect / 2;
-  camera.right = VIEW.height * aspect / 2;
-  camera.updateProjectionMatrix();
-}
+// The view starts on l2's framing; the controller zooms, pans and turns it within limits.
+const REDUCED_MOTION = STILL || matchMedia('(prefers-reduced-motion: reduce)').matches;
+if (params.has('maxzoom')) ZOOM.max = Number(params.get('maxzoom'));  // for art/scripts/zoom_sharpness.py
+const view = new ViewController(camera, renderer.domElement,
+  { target: bl(...VIEW.target), pitch: VIEW.pitch, yaw: VIEW.yaw, height: VIEW.height },
+  { min: new THREE.Vector3(-1, 0, -6), max: new THREE.Vector3(12.5, 2.5, 3.5) },  // over the room (x, height, -y)
+  REDUCED_MOTION);
 
 // --- baked materials -----------------------------------------------------------
 
@@ -524,7 +519,6 @@ async function main() {
   // soft sky/floor fill for the live objects (baked surfaces ignore lights), so they sit in the room's brightness
   scene.add(new THREE.HemisphereLight('#eef2ff', '#b8a898', 0.9));
 
-  placeCamera();
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
   // a high threshold: only emissive light (bulbs, lit tiles, the lantern) blooms, not white paper
@@ -535,8 +529,9 @@ async function main() {
   addEventListener('resize', () => {
     renderer.setSize(innerWidth, innerHeight);
     composer.setSize(innerWidth, innerHeight);
-    placeCamera();
+    view.apply();
   });
+  document.getElementById('resetView').addEventListener('click', () => view.reset());
 
   raiseAttention();
   interact();
@@ -546,6 +541,7 @@ async function main() {
     if (!STILL) mixers.forEach(m => m.update(dt));
     runTweens(STILL ? 1 : dt);
     updateWarmth(STILL ? 1 : dt);
+    view.update(dt);
     composer.render();
     if (++frames === 3) Object.assign(window.bench, { ready: true, readyAt: performance.now() });
   });
@@ -554,7 +550,9 @@ async function main() {
 function interact() {
   const ray = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
-  renderer.domElement.addEventListener('pointerdown', e => {
+  // on release, and only if the press wasn't a drag: dragging pans or turns the view instead
+  renderer.domElement.addEventListener('pointerup', e => {
+    if (view.dragged || e.button !== 0) return;
     pointer.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
     ray.setFromCamera(pointer, camera);
     for (const hit of ray.intersectObjects(scene.children, true)) {
@@ -568,7 +566,10 @@ function interact() {
       if (o.userData.fleet === 'baked') return;
     }
   });
-  addEventListener('keydown', e => { if (e.key === 'a') raiseAttention(); });
+  addEventListener('keydown', e => {
+    if (e.key === 'a') raiseAttention();
+    if (e.key === 'r') view.reset();
+  });
 }
 
 // A small handle for tests and for driving the prototype from the console.
@@ -579,6 +580,9 @@ window.bench = {
   setBusy: (desk, busy) => setBusy(robots.find(r => r.desk === desk), busy),
   raiseAttention,
   answerAttention,
+  view: () => view.state(),
+  resetView: () => view.reset(),
+  setView: v => view.set(v),
   state: () => ({
     tiles: Object.fromEntries(Object.entries(tiles).map(([k, t]) => [k, t.state])),
     warmth: Object.fromEntries(Object.entries(warmth).map(([k, w]) => [k, w.target])),
