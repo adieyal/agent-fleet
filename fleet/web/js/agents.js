@@ -275,7 +275,8 @@ export function positionTags() {
   for (const e of tagList) {
     const z = ++order + (e.key === selectedKey ? 1000 : 0);
     if (z !== e.qz) { e.qz = z; e.el.style.zIndex = String(z); }
-    const cls = e.tagBase + (e.calm ? ' calm' : '') + (tiny ? ' tiny' : e.key === selectedKey ? ' sel' : e.far ? ' far' : '');
+    // an idle session rests without a word
+    const cls = e.tagBase + (e.calm || e.job.status === 'idle' ? ' calm' : '') + (tiny ? ' tiny' : e.key === selectedKey ? ' sel' : e.far ? ' far' : '');
     if (e.el.className !== cls) { e.el.className = cls; e.sizeDirty = true; }
   }
 }

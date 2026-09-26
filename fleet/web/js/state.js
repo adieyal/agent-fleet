@@ -68,6 +68,16 @@ function retireFinished(hostList) {
     return !REDUCED && !!e && (e.leaving || !FINISHED_STATUSES.has(e.lastStatus));
   });
 }
+// An idle live session leaves the deck after half an hour quiet and comes back with its next activity; one waiting
+// on a decision keeps its android. The header still counts it.
+const IDLE_LEAVE_SECONDS = 30 * 60;
+function departed(h, s, doc) {
+  return s.status === 'idle' && Date.now() / 1000 - s.updated_at > IDLE_LEAVE_SECONDS
+    && !(doc.attention || []).some(i => i.kind === 'decision' && i.state !== 'resolved' && i.owner.key === h.name + ':' + s.id);
+}
+export function departIdle() {
+  if (lastDoc && hosts.some(h => h.sessions.some(s => ents.has(h.name + ':' + s.id) && departed(h, s, lastDoc)))) applyState(lastDoc);
+}
 export function toggleFinished() {
   showFinished = !showFinished;
   if (lastDoc) applyState(lastDoc);
@@ -133,7 +143,7 @@ export function applyState(doc) {
       if (e.room !== j.project) { e.room = j.project; e.local = { x: 5.5, y: RD + 0.7 }; e.path = []; e.target = null; e.fresh = true; }
     }
     for (const s of h.sessions || []) {
-      if (!s.project) continue;
+      if (!s.project || departed(h, s, doc)) continue;
       const key = h.name + ':' + s.id;
       seen.add(key);
       let e = ents.get(key);
