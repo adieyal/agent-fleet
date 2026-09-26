@@ -128,7 +128,7 @@ export function applyState(doc) {
   }
   for (const [k, e] of ents) if (!seen.has(k)) { dropEnt(e); ents.delete(k); if (selectedKey === k) closePanel(); }
   setEverLoaded(true);
-  applyAttention(rooms);
+  applyAttention(rooms, doc);
   patchScene();
   collectEvents();
   assignTargets();

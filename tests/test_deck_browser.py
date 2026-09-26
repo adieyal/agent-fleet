@@ -197,23 +197,60 @@ def test_focus_of_an_unregistered_room_survives_reload(deck: Deck, base_url: str
     assert deck.errors == []
 
 
-def test_lanterns_hang_where_work_needs_you_until_dismissed(deck: Deck) -> None:
-    page = deck.page
-    rooms = rooms_by_name(page)
-    assert {name: room["attention"] for name, room in rooms.items()} == {
-        "restoke": {"kind": "alert", "count": 1},
-        "invoice-parser": {"kind": "blocker", "count": 1},   # in the background, and just as loud
-        "agent-fleet": None}
-    expect(page.locator(".lantern")).to_have_count(2)
-    expect(page.locator('.lantern[data-room="invoice-parser"] .lg')).to_have_text("✋")
-    expect(page.locator('.lantern[data-room="restoke"] .lg')).to_have_text("!")
+def attention_on_server(base_url: str) -> dict[str, str]:
+    with urlopen(base_url + "/api/state", timeout=5) as response:
+        return {item["owner"]["key"]: item["state"] for item in json.load(response)["attention"]}
 
-    page.locator('.lantern[data-room="restoke"]').dispatch_event("click")
-    expect(page.locator("#panel")).to_have_class("open")
+
+def act_on_every_item(page: Page, action: str, state: str) -> None:
+    """Press an action on each listed item in turn, waiting for the pushed state each time."""
+    for row in page.locator("#attnPanel .attn-item").all():
+        row.locator(f'[data-act="{action}"]').click()
+        expect(row).to_have_attribute("data-state", state)
+
+
+def test_a_room_with_open_items_gets_one_lantern_with_a_count(deck: Deck, base_url: str) -> None:
+    page = deck.page
+    expect(page.locator(".lantern")).to_have_count(2)
+    lantern = page.locator('.lantern[data-room="restoke"]')
+    expect(lantern).to_have_count(1)
+    expect(lantern).to_have_attribute("data-count", "2")   # the failed job and the session asking a question
+    expect(lantern.locator("b")).to_have_text("2")
+    expect(lantern).to_have_attribute("data-state", "open")
+    expect(page.locator('.lantern[data-room="invoice-parser"] b')).to_have_text("")   # one item: no count
+    expect(page.locator('.lantern[data-room="agent-fleet"]')).to_have_count(0)      # a running job and an idle session: nothing needs you
+    assert rooms_by_name(page)["agent-fleet"]["attention"] is None
+
+    before = attention_on_server(base_url)
+    lantern.dispatch_event("click")
+    expect(page.locator("#attnPanel")).to_be_visible()
+    expect(page.locator("#attnPanel .attn-item")).to_have_count(2)
+    expect(page.locator('#attnPanel .attn-item[data-kind="decision"] b')).to_contain_text("Keep the double fetch")
+    page.locator('#attnPanel [data-owner="home:e1b5c8"]').click()
     expect(page.locator("#panelHead h2")).to_have_text("Upgrade Django to 5.2")
-    page.locator("#panel #dismiss").click()
-    expect(page.locator('.lantern[data-room="restoke"]')).to_have_count(0)
-    expect(page.locator('.lantern[data-room="invoice-parser"]')).to_have_count(1)
-    page.locator("#restoreDismissed").click()
-    expect(page.locator('.lantern[data-room="restoke"]')).to_have_count(1)
+    assert attention_on_server(base_url) == before   # reading and opening change nothing
+    page.locator("#panel #close").click()
+    page.keyboard.press("Escape")
+    expect(page.locator("#attnPanel")).to_be_hidden()
+    assert deck.errors == []
+
+
+def test_acknowledging_dims_the_lantern_and_snoozing_hides_it(deck: Deck, base_url: str) -> None:
+    page = deck.page
+    lantern = page.locator('.lantern[data-room="restoke"]')
+    lantern.dispatch_event("click")
+    act_on_every_item(page, "acknowledge", "acknowledged")
+    expect(lantern).to_have_class("lantern ack")
+    expect(lantern).to_have_attribute("data-state", "acknowledged")
+    expect(lantern).to_have_attribute("data-count", "2")
+    assert set(attention_on_server(base_url).values()) == {"acknowledged", "open"}   # invoice-parser untouched
+
+    act_on_every_item(page, "snooze", "snoozed")
+    expect(lantern).to_have_count(0)
+    assert rooms_by_name(page)["restoke"]["attention"] is None
+    act_on_every_item(page, "reopen", "open")
+    expect(lantern).to_have_attribute("data-state", "open")
+    expect(lantern).not_to_have_class("lantern ack")
+    page.keyboard.press("Escape")
+    assert set(attention_on_server(base_url).values()) == {"open"}
     assert deck.errors == []

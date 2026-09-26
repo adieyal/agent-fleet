@@ -94,13 +94,18 @@ stay nearly still however busy they are, and its props rest. Rooms never move wh
 focus changes. Work is focused through its registered project when its label is
 linked, otherwise through the label itself, so unregistered rooms can be focused too.
 Anything you have never set is in priority. Choices are live workspace state, kept in
-`focus.json` beside the config file (not in the registry, not in Git), and every open
+`workspace.json` beside the config file (not in the registry, not in Git), and every open
 deck updates as soon as one changes.
 
-A room with a failed or stalled job gets a lantern: a diamond with ✋ when the agent
-reported itself blocked and ! otherwise, plus a count when there is more than one.
-It hangs outside the room, so background rooms show it too. Click it to open the job;
-dismiss the job to put the lantern out.
+Things that need you are attention items, derived only from what the hosts report:
+a failed or stalled job is a blocker, and a session whose latest step is a question
+for you (`AskUserQuestion`) or a plan to approve (`ExitPlanMode`) is a decision. A
+room with an open item gets a lantern outside its front corner: a diamond with ✋ or
+?, and a count when there is more than one. It swings once when an item arrives and
+then stays still. Click it to list the room's items, open the job or session, and
+acknowledge (the lantern stays, dimmer) or snooze one for an hour (it hides until
+then). Items resolve by themselves when the job is retried or removed or the session
+moves on; looking at one never changes it. `/api/state` lists them under `attention`.
 
 ## Read the work
 
@@ -165,9 +170,9 @@ Claude jobs default to `acceptEdits`; Codex jobs default to `workspace-write`. U
 working directories, session details, and Markdown documents. The library endpoints
 also expose Markdown under configured local project roots. Anyone who can reach
 the dashboard can read that data. Keep it on loopback or use an SSH tunnel. Add
-access control before binding it to a shared network. Its one write, `POST /api/focus`,
-changes focus in `focus.json`; it refuses requests from pages on
-other origins, but anyone who can reach the dashboard directly can use it.
+access control before binding it to a shared network. Its writes, `POST /api/focus` and
+`POST /api/attention/…`, change `workspace.json`; they refuse requests from pages on
+other origins, but anyone who can reach the dashboard directly can use them.
 
 Agents can place Markdown outside the job directory in the document list, so review
 the dashboard's reachability before running jobs with sensitive files.

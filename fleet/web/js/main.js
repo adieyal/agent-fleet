@@ -120,7 +120,7 @@ loadAssets().then(() => {
   window.fleetDeck = Object.freeze({
     rooms: () => rooms.map(r => ({ name: r.name, label: r.label, x: r.ox, y: r.oy,
       screen: toScreen(_w.set(r.ox + RW / 2, 0, r.oy + RD / 2), { x: 0, y: 0 }), focus: r.focus, dim: r.dimK ?? null,
-      attention: r.attention ? { kind: r.attention.kind, count: r.attention.items.length } : null })),
+      attention: r.attention?.level ? { kind: r.attention.kind, state: r.attention.level, count: r.attention.shown.length } : null })),
     agents: () => [...ents.values()].map(e => ({ key: e.key, kind: e.kind, room: e.room, status: e.job.status })),
   });
   if (DEMO) {

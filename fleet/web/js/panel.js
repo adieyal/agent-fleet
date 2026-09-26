@@ -215,7 +215,8 @@ export function fallbackCopy(text, done) {
 }
 function eventIcon(ev) {
   if (ev.kind === 'tool') return TOOL_ICON[ev.tool] || '•';
-  return { text: '“', error: '!', step: '▸', job: '◆', result: '✓', log: '·' }[ev.kind] || '·';
+  // not a diamond for jobs: that form belongs to the attention lantern alone
+  return { text: '“', error: '!', step: '▸', job: '▪', result: '✓', log: '·' }[ev.kind] || '·';
 }
 
 // ------------------------------------------------------------------ legend, stats, feed
