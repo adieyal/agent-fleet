@@ -232,7 +232,7 @@ function clipFor(e, now) {
   if (!e.target) return 'Idle';
   const st = e.job.status;
   if (st === 'failed') return 'Death';
-  if (st === 'stalled') return 'Sitting';
+  if (st === 'stalled' || st === 'idle') return 'Sitting';   // an idle session sits and rests
   if (isActive(st) && e.act === 'delegate') return 'Wave';
   return e.target.sit != null ? 'Sitting' : 'Idle';
 }

@@ -382,17 +382,20 @@ export function demoSource() {
     return job;
   });
 
-  // interactive CLI sessions, shaped like `fleetd sessions` output: a working Claude, an idle one, a working Codex
+  // interactive CLI sessions, shaped like `fleetd sessions` output: a working Claude, an idle one, a working Codex, and
+  // a Claude idle for an hour (off the deck) that gets back to work soon after the page opens
   const sessionSpecs = [
-    ['node-a', 'agent-fleet', 'claude', 'claude-opus-5-5', '00000000-0000-4000-8000-000000000001', 'Show live CLI sessions on the deck', 'working', 1900],
-    ['node-b', 'demo-store', 'claude', 'claude-opus-5-5', '00000000-0000-4000-8000-000000000002', 'Why does the stocktake import modal re-render twice?', 'idle', 2600],
-    ['node-c', 'demo-parser', 'codex', 'gpt-6-sol', '00000000-0000-4000-8000-000000000003', 'review the unstaged changes are they correct and safe?', 'working', 900],
+    ['node-a', 'agent-fleet', 'claude', 'claude-opus-5-5', '00000000-0000-4000-8000-000000000001', 'Show live CLI sessions on the deck', 'working', 1900, 4],
+    ['node-b', 'demo-store', 'claude', 'claude-opus-5-5', '00000000-0000-4000-8000-000000000002', 'Why does the stocktake import modal re-render twice?', 'idle', 2600, 380],
+    ['node-c', 'demo-parser', 'codex', 'gpt-6-sol', '00000000-0000-4000-8000-000000000003', 'review the unstaged changes are they correct and safe?', 'working', 900, 4],
+    ['node-b', 'demo-store', 'claude', 'claude-opus-5-5', '00000000-0000-4000-8000-000000000004', 'Tidy the supplier import logs', 'idle', 5400, 3600],
   ];
-  const sessions = sessionSpecs.map(([host, project, agent, model, id, title, status, startedAgo], i) => {
+  const dormant = sessionSpecs.length - 1;
+  const sessions = sessionSpecs.map(([host, project, agent, model, id, title, status, startedAgo, quietFor], i) => {
     const cwd = `~/src/${project}`;
     const session = {
       id, host, agent, cwd, project, title, status, model, started_at: t0 - startedAgo,
-      updated_at: t0 - (status === 'idle' ? 380 : 4), todos: [], events: [], activity: null,
+      updated_at: t0 - quietFor, todos: [], events: [], activity: null,
       resume: `cd ${cwd} && ${agent === 'codex' ? 'codex resume' : 'claude --resume'} ${id}`,
     };
     for (let k = 0; k < 6; k++) session.events.push({ ...demoTool(pickTool()), ts: t0 - 700 + k * 50 + i });
@@ -570,6 +573,7 @@ export function demoSource() {
         else finish(job);
       }
     }
+    if (tickCount === 6) { sessions[dormant].status = 'working'; sessions[dormant].updated_at = now(); }
     for (const s of sessions) {
       if (s.status !== 'working' || rand() > 0.5) continue;
       const tool = pickTool();

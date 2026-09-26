@@ -15,11 +15,14 @@ from playwright.sync_api import Browser, Page, expect
 VIEWPORTS = {"desktop": {"width": 1440, "height": 900}, "narrow": {"width": 390, "height": 844}}
 # The deck ages jobs against the browser clock; pin it to the moment the fixture was recorded.
 PIN_CLOCK = """
-const offset = %d * 1000 - Date.now();
+let offset = %d * 1000 - Date.now();
 const realNow = Date.now.bind(Date);
 Date.now = () => realNow() + offset;
+window.advanceClock = seconds => { offset += seconds * 1000; };
 """
 FINISHED = {"done", "cancelled"}
+ASKING = "home:8e1f0c42-2b7d-4a55-9c1e-7f3a2d6b9e10"     # idle two minutes, with a decision waiting
+REVIEWING = "worker:019a7c3e-55d1-7b20-a8f4-3c9e0d1b2a67"  # idle about eighteen minutes
 
 
 def on_the_floor(fixture_data: dict[str, Any]) -> set[str]:
@@ -123,6 +126,61 @@ def test_a_job_that_finishes_walks_out(browser: Browser, base_url: str, fixture_
         page.wait_for_function(gone, timeout=60_000)
     expect(page.locator("#tags .tag", has_text="c90e11")).to_have_count(0)
     expect(page.locator("#toggleFinished")).to_have_text("3 finished · show")
+    context.close()
+    assert errors == []
+
+
+def test_idle_sessions_rest_without_a_bubble(deck: Deck) -> None:
+    page = deck.page
+    page.wait_for_function(f"fleetDeck.agents().filter(agent => [{json.dumps(ASKING)}, {json.dumps(REVIEWING)}]"
+                           ".includes(agent.key) && agent.clip === 'Sitting').length === 2")
+    for room, session, job in [("restoke", "Why does the st", "a1c3e9"), ("agent-fleet", "review the unstaged", "f20a6d")]:
+        rooms_on_screen(page, room)
+        expect(page.locator("#tags .tag", has_text=job).locator(".bubble")).to_be_visible()
+        expect(page.locator("#tags .tag", has_text=session).locator(".bubble")).to_be_hidden()
+    page.evaluate("fleetDeck.lookAtRoom(null)")
+    assert deck.errors == []
+
+
+def session_state(base_url: str, seconds_later: int, drop_decisions: bool = False,
+                  working: str | None = None) -> dict[str, Any]:
+    """The server's state document, optionally without its decision items or with one session back at work."""
+    with urlopen(base_url + "/api/state", timeout=5) as response:
+        doc = json.load(response)
+    if drop_decisions:
+        doc["attention"] = [item for item in doc["attention"] if item["kind"] != "decision"]
+    for host in doc["hosts"]:
+        for session in host["sessions"]:
+            if f"{host['name']}:{session['id']}" == working:
+                session.update(status="working", updated_at=doc["time"] + seconds_later)
+    return doc
+
+
+def test_sessions_idle_for_half_an_hour_leave_unless_a_decision_waits(browser: Browser, base_url: str,
+                                                                      fixture_data: dict[str, Any]) -> None:
+    context = browser.new_context(viewport=VIEWPORTS["desktop"], reduced_motion="reduce")
+    context.add_init_script(PIN_CLOCK % fixture_data["time"])
+    page = context.new_page()
+    errors: list[str] = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.goto(base_url + "/")
+    page.wait_for_function(f"window.fleetDeck && fleetDeck.agents().length === {len(on_the_floor(fixture_data))}")
+    live = page.locator("#stats .chip.sess")
+    expect(live).to_have_text("2 live · 2 waiting")
+
+    later = 40 * 60                                                     # both now idle for over half an hour
+    page.evaluate(f"advanceClock({later})")
+    page.wait_for_function(f"!fleetDeck.agents().some(agent => agent.key === {json.dumps(REVIEWING)})")
+    assert ASKING in {agent["key"] for agent in page.evaluate("fleetDeck.agents()")}
+    expect(live).to_have_text("2 live · 2 waiting")
+
+    page.evaluate("doc => fleetDeck.apply(doc)", session_state(base_url, later, drop_decisions=True))
+    assert not {ASKING, REVIEWING} & {agent["key"] for agent in page.evaluate("fleetDeck.agents()")}
+    expect(live).to_have_text("2 live · 2 waiting")
+
+    page.evaluate("doc => fleetDeck.apply(doc)", session_state(base_url, later, drop_decisions=True, working=REVIEWING))
+    assert REVIEWING in {agent["key"] for agent in page.evaluate("fleetDeck.agents()")}
+    expect(live).to_have_text("2 live · 1 waiting")
     context.close()
     assert errors == []
 
@@ -235,6 +293,23 @@ def test_demo_androids_finish_and_walk_out(browser: Browser, base_url: str) -> N
     leaving = page.wait_for_function("fleetDeck.agents().find(agent => agent.leaving)", timeout=60_000).json_value()
     assert leaving["status"] == "done"
     page.wait_for_function(f"!fleetDeck.agents().some(agent => agent.key === '{leaving['key']}')", timeout=60_000)
+    context.close()
+    assert errors == []
+
+
+def test_demo_session_idle_for_an_hour_comes_back_to_work(browser: Browser, base_url: str) -> None:
+    context = browser.new_context(viewport=VIEWPORTS["desktop"], reduced_motion="reduce")
+    page = context.new_page()
+    errors: list[str] = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.goto(base_url + "/?demo")
+    page.wait_for_function("window.fleetDeck && fleetDeck.agents().length > 0")
+    sessions = page.evaluate("fleetDeck.agents().filter(agent => agent.kind === 'session')")
+    assert {agent["status"] for agent in sessions} == {"working", "idle"}
+    expect(page.locator("#stats .chip.sess")).to_have_text(f"{len(sessions) + 1} live · 2 waiting")
+    page.wait_for_function(f"fleetDeck.agents().filter(agent => agent.kind === 'session').length === {len(sessions) + 1}",
+                           timeout=60_000)
+    expect(page.locator("#stats .chip.sess")).to_have_text(f"{len(sessions) + 1} live · 1 waiting")
     context.close()
     assert errors == []
 
