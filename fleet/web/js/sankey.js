@@ -415,7 +415,7 @@ function renderHead() {
     `<span class="sk-status ${st.kind}">${esc(st.text)}</span>`,
     r?.started_at ? `<span>started ${age(r.started_at)} ago</span>` : '',
     r ? `<span title="items that entered ${esc(r.nodes[0]?.join(', ') || 'the run')}${r.total ? ', of the run\'s declared total' : ''}">${fmt(processed(r))}${r.total ? ' / ' + fmt(r.total) : ''} processed</span>` : '',
-    r && r.status === 'running' ? `<span title="items entering ${esc(r.nodes[0]?.join(', ') || 'the first column')}, over the last 10 s">${r.item_rate ?? 0} items/s</span>` : '',
+    r && r.status === 'running' ? `<span title="items entering ${esc(r.nodes[0]?.join(', ') || 'the first column')}, over the last 10 s">${r.item_rate ?? 0} item${(r.item_rate ?? 0) === 1 ? '' : 's'}/s</span>` : '',
     p.baseline ? `<span title="${esc(p.baseline.run_id)}">outlines: ${esc(p.baseline.label || p.baseline.run_id)}</span>` : '',
   ].join('');
 }

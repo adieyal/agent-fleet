@@ -126,7 +126,8 @@ def test_the_screen_opens_the_run_as_a_sankey(deck: Deck, fixture_pipelines: dic
     expect(page.locator("#skMeta")).to_contain_text("synthetic run")
     expect(page.locator("#skMeta")).to_contain_text("running")
     expect(page.locator("#skMeta")).to_contain_text(f"{run['counts']['items']:,} / 3,000 processed")
-    expect(page.locator("#skMeta")).to_contain_text("items/s")
+    rate = run["item_rate"]
+    expect(page.locator("#skMeta")).to_contain_text(f"{rate:g} item{'' if rate == 1 else 's'}/s")
     nodes = [node for column in run["nodes"] for node in column]
     expect(page.locator("#skSvg .sk-node")).to_have_count(len(nodes))
     expect(page.locator("#skSvg .sk-band")).to_have_count(len(run["edges"]))
