@@ -134,12 +134,14 @@ def test_the_screen_opens_the_run_as_a_sankey(deck: Deck, fixture_pipelines: dic
     for node in nodes:
         label = page.locator(f'#skSvg .sk-node[data-node="{node}"] text')
         expect(label).to_contain_text(f"{run['counts'][node]:,}")
-    # a share is of the items that reached the node's column; a running run shows the baseline's figure, no change
+    # a share is of the items that reached the node's column; a running run shows the baseline's share, no change
     counts, base = run["counts"], fixture_pipelines["pipeline_reports"][0]["baseline"]["counts"]
     confident = page.locator('#skSvg .sk-node[data-node="confident"] text')
     expect(confident).to_contain_text(f"{100 * counts['confident'] / (counts['confident'] + counts['review']):.1f}%")
-    expect(confident).to_contain_text(f"prev {base['confident']:,}")
+    was = f"{100 * base['confident'] / (base['confident'] + base['review']):.1f}%"
+    expect(confident).to_contain_text(f"prev {was}")
     expect(page.locator("#skSide thead")).to_contain_text("Prev")
+    expect(page.locator('#skSide tr[data-node="confident"] td').last).to_have_text(was)
     assert not any(ch in page.locator("#skSvg").text_content() for ch in "+−±")
     # bands take the tone the run line gives their target; reasons after a warning are bad; the rest stay neutral
     tone = lambda key: page.locator(f'#skSvg .sk-band[data-band="{key}"]').get_attribute("class")
@@ -249,11 +251,12 @@ def test_once_a_run_is_done_what_a_node_holds_ended_there(deck: Deck) -> None:
 
 def test_a_finished_run_shows_its_change_on_the_baseline(deck: Deck) -> None:
     got = deck.page.evaluate("""import('/js/sankey.js').then(({ versus }) => {
-      const base = { counts: { confident: 100 } };
-      return [versus({ status: 'running' }, base, 'confident', 90), versus({ status: 'done' }, base, 'confident', 90),
-              versus({ status: 'done' }, base, 'confident', 112), versus({ status: 'done' }, null, 'confident', 1)];
+      const base = { counts: { confident: 100, review: 60 } }, nodes = [['confident', 'review']];
+      return [versus({ status: 'running', nodes }, base, 'confident', 90), versus({ status: 'done', nodes }, base, 'confident', 90),
+              versus({ status: 'done', nodes }, base, 'confident', 112), versus({ status: 'done', nodes }, null, 'confident', 1)]
+        .map(v => v && v.text);
     })""")
-    assert got == [{"text": "prev 100"}, {"text": "−10"}, {"text": "+12"}, None]
+    assert got == ["prev 62.5%", "−10", "+12", None]
 
 
 DOT_PIXELS ="""(() => { const c = document.getElementById('skDots'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;

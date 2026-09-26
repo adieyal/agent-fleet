@@ -93,14 +93,17 @@ export function shareOf(columns, counts, node, value = counts[node] || 0) {
   return reached ? value / reached : null;
 }
 export const processed = run => run.nodes[0]?.reduce((s, n) => s + (run.counts[n] || 0), 0) || 0;
-// Against a finished baseline a run is comparable only once it has finished too; until then the baseline's figure is
-// shown beside it ("prev"), not a difference.
+// A run part-way has fewer items than its finished baseline, so until it finishes too the two compare by share: the
+// baseline's share is shown beside the run's ("prev 27.4%"). Once done, the change in count.
 export function versus(run, base, node, value) {
   if (!base) return null;
   const was = held(base, node);
-  if (run.status !== 'done') return { text: `prev ${fmt(was)}` };
-  const d = Math.round(value) - was;
-  return { text: `${d > 0 ? '+' : d < 0 ? '−' : '±'}${fmt(Math.abs(d))}` };
+  if (run.status !== 'done') {
+    const figure = pct(shareOf(run.nodes, base.counts || {}, node, was)) || '–';
+    return { text: `prev ${figure}`, figure };
+  }
+  const d = Math.round(value) - was, figure = `${d > 0 ? '+' : d < 0 ? '−' : '±'}${fmt(Math.abs(d))}`;
+  return { text: figure, figure };
 }
 // A column whose items each carry a list (their reasons) and are counted under its first entry: every recorded item in
 // it names its node first in the same attr. Returns column index → attr key.
@@ -382,13 +385,13 @@ function renderSide() {
     return;
   }
   const ends = [...terminals(run, sk.p.baseline)], base = sk.p.baseline, done = run.status === 'done';
-  const sub = !base ? '' : done ? '; change is on the outlined run' : '; prev is the outlined run, until this one finishes';
+  const sub = !base ? '' : done ? '; change is on the outlined run' : '; prev is the outlined run\'s share, until this one finishes';
   side.innerHTML = `<h3>End nodes</h3><p class="sk-sub">Choose one for its latest items. Share is of the items that reached its column${sub}.</p>
     <table class="sk-table"><thead><tr><th scope="col">Node</th><th scope="col">Items</th><th scope="col">Share</th>${base ? `<th scope="col">${done ? 'Change' : 'Prev'}</th>` : ''}</tr></thead>
     <tbody>${ends.map(n => {
       const c = held(run, n), vs = versus(run, base, n, c);
       return `<tr data-node="${esc(n)}" tabindex="0"><th scope="row">${esc(n)}</th><td>${fmt(c)}</td><td>${pct(shareOf(run.nodes, run.counts, n, c))}</td>${
-        vs ? `<td>${esc(done ? vs.text : fmt(held(base, n)))}</td>` : ''}</tr>`;
+        vs ? `<td>${esc(vs.figure)}</td>` : ''}</tr>`;
     }).join('')}</tbody></table>`;
 }
 function choose(node) {
