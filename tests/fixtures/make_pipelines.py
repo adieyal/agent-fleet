@@ -79,14 +79,14 @@ def reports() -> list[dict]:
             for message in messages]
 
 
-def gate_burst(ends: list[str] | None, end: str | None = None) -> dict:
+def gate_burst(ends: list[str] | None, end: str | None = None, burst: tuple[str, ...] = BURST) -> dict:
     """The report of a run with no finished run before it, whose gate stage runs as a burst at the end. Part-way,
-    alone and unsettled have passed items on and agree, disagree and profile hold theirs for the gates."""
+    alone and unsettled have passed items on and agree, disagree and profile (`burst`) hold theirs for the gates."""
     with tempfile.TemporaryDirectory() as directory:
         folder = Path(directory) / "sample-training"
         folder.mkdir()
         (folder / "20260926T120000-g1.jsonl").write_text(run_events(
-            "20260926T120000-g1", "gates at the end", TIME - 1200, TIME - 4, 2400, 3000, 0.04, 3, end, ends, BURST))
+            "20260926T120000-g1", "gates at the end", TIME - 1200, TIME - 4, 2400, 3000, 0.04, 3, end, ends, burst))
         [message] = PipelineTracker(Path(directory)).scan(clock=TIME)
     return {"host": "home", "pipeline": "sample-training", "run": message["run"], "baseline": None}
 

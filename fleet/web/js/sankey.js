@@ -417,6 +417,13 @@ function placeLabels(L, lastCol, width, height, stubs) {
   }
   // a node nothing leaves: touching it (and its stub) above, right, below or left
   const stubEnd = new Map(stubs.map(s => [s.name, s.x + s.width]));
+  // …first right of its stub, in the column gap where only its neighbours' bands pass: level with it, then up or down
+  // as far as the label still sits beside it
+  const rightSpots = (n, w, h) => {
+    const x = (stubEnd.get(n.name) ?? n.x + L.nodeW) + 4, mid = n.y + n.hc / 2 - h / 2, spots = [];
+    for (let d = 0; d <= Math.max(0, n.hc / 2 + h / 2 - 4); d += LABEL_STEP) for (const dy of d ? [-d, d] : [0]) spots.push({ x, y: mid + dy });
+    return spots;
+  };
   const besideSpots = (n, w, h) => {
     const right = stubEnd.get(n.name) ?? n.x + L.nodeW, mid = n.y + n.hc / 2 - h / 2, spots = [];
     for (let d = 0; d <= Math.max(w, n.hc / 2 + h / 2); d += LABEL_STEP) {
@@ -433,8 +440,11 @@ function placeLabels(L, lastCol, width, height, stubs) {
     const w = box.width, h = box.height;
     let spot = null;
     if (n.col === lastCol) spot = { x: n.x + L.nodeW + 7, y: n.y + n.hc / 2 - h / 2 };
-    else for (const taken of [strict, loose]) {
-      for (const c of n.out.length ? gapSpots(n, w, h) : besideSpots(n, w, h)) if (free(taken, c.x, c.y, w, h)) { spot = c; break; }
+    else for (const spots of n.out.length ? (stubEnd.has(n.name) ? [rightSpots, gapSpots] : [gapSpots]) : [rightSpots, besideSpots]) {
+      for (const taken of [strict, loose]) {
+        for (const c of spots(n, w, h)) if (free(taken, c.x, c.y, w, h)) { spot = c; break; }
+        if (spot) break;
+      }
       if (spot) break;
     }
     if (!spot) {   // on a chip level with its node, left of it if it fits, shifted up or down off other labels
