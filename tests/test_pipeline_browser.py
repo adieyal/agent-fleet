@@ -404,6 +404,33 @@ LABEL_NEAR = """(() => {   // node with no band leaving it → pixels between it
 })()"""
 
 
+BAND_COVER = """(names => {   // node → [band area under its label, under a label level with it left of the node], in px²
+  const svg = document.getElementById('skSvg'), bands = [...svg.querySelectorAll('.sk-band')], out = {};
+  const area = r => bands.reduce((sum, b) => {   // each band's own shape, sampled every px: overlapping bands add up
+    const inv = b.getScreenCTM().inverse();
+    let n = 0;
+    for (let x = r.left + 0.5; x < r.right; x++) for (let y = r.top + 0.5; y < r.bottom; y++)
+      n += b.isPointInFill(new DOMPoint(x, y).matrixTransform(inv));
+    return sum + n;
+  }, 0);
+  for (const g of svg.querySelectorAll('.sk-node')) {
+    if (!names.includes(g.dataset.node)) continue;
+    const t = g.querySelector('text').getBoundingClientRect(), r = g.querySelector('rect:not(.sk-chip)').getBoundingClientRect();
+    const top = r.top + r.height / 2 - t.height / 2, left = r.left - 4 - t.width;
+    out[g.dataset.node] = [area(t), area({ left, right: left + t.width, top, bottom: top + t.height })];
+  }
+  return out;
+})(%s)"""
+
+
+RIGHT_OF_STUB = """[...document.querySelectorAll('#skSvg .sk-node')].filter(g => {   // nodes whose label starts past their stub
+  const r = g.querySelector('rect:not(.sk-chip)').getBoundingClientRect(), t = g.querySelector('text').getBoundingClientRect();
+  const stub = [...document.querySelectorAll('#skSvg .sk-wait')].map(s => s.getBoundingClientRect())
+    .find(s => Math.abs(s.left - r.right) < 1 && s.top >= r.top - 1 && s.bottom <= r.bottom + 1);
+  return stub && t.left >= stub.right;
+}).map(g => g.dataset.node)"""
+
+
 def test_mid_run_nodes_waiting_for_a_gate_burst_are_not_ends(deck: Deck, fixture_pipelines: dict[str, Any]) -> None:
     """A run with no finished run before it, part-way, whose gates run as a burst at the end: nothing has left agree,
     disagree or profile yet, but alone and unsettled beside them pass items on. The run line's `ends` says they are
@@ -426,6 +453,10 @@ def test_mid_run_nodes_waiting_for_a_gate_burst_are_not_ends(deck: Deck, fixture
         near, placed = page.evaluate(LABEL_NEAR), page.evaluate(LABELS_ON_BANDS)
         assert [hit for hit in placed["hits"] if not hit[2] or hit[1] == "stub"] == [] and not placed["crowded"], placed
         assert burst <= set(near) and all(gap <= 8 for gap in near.values()), near
+        if deck.name == "desktop":   # no free spot beside them: they cover less band than the chip left of the node did
+            cover = page.evaluate(BAND_COVER % json.dumps(sorted(burst)))
+            assert all(now < old for now, old in cover.values()), cover
+            assert set(page.evaluate(RIGHT_OF_STUB)) >= burst, cover
         ends, waits = got[True]
         last = run["nodes"][-1]
         assert set(ends) == {n for n in [*generator["ENDS"], *last] if run["counts"].get(n)}
@@ -439,6 +470,32 @@ def test_mid_run_nodes_waiting_for_a_gate_burst_are_not_ends(deck: Deck, fixture
     finally:
         page.evaluate(f"{SHOW_REPORT}({json.dumps(fixture_pipelines['pipeline_reports'][0])})")
         close(deck)
+    assert deck.errors == []
+
+
+def test_a_waiting_nodes_label_goes_right_of_its_stub_where_the_gap_is_empty(
+        deck: Deck, fixture_pipelines: dict[str, Any]) -> None:
+    """Before a gate burst that takes a whole column, nothing crosses the gap after it: each of that column's labels
+    sits right of its node's waiting stub, on no band at all (not even the incoming ones), overlapping no label."""
+    generator = runpy.run_path(str(FIXTURE.parent / "make_pipelines.py"))
+    page = deck.page
+    report = generator["gate_burst"](generator["ENDS"], burst=tuple(generator["NODES"][2]))
+    column = set(report["run"]["nodes"][2])
+    assert not any(source in column for source, _, _ in report["run"]["edges"])
+    open_screen(deck, "home:sample-training")
+    try:
+        page.evaluate(f"{SHOW_REPORT}({json.dumps(report)})")
+        expect(page.locator("#skMeta")).to_contain_text("gates at the end")
+        page.evaluate("(c => { c.scrollLeft = 0; })(document.getElementById('skChart'))")
+        deck.shot("gate-burst-whole-column")
+        placed, right, near = page.evaluate(LABELS_ON_BANDS), set(page.evaluate(RIGHT_OF_STUB)), page.evaluate(LABEL_NEAR)
+    finally:
+        page.evaluate(f"{SHOW_REPORT}({json.dumps(fixture_pipelines['pipeline_reports'][0])})")
+        close(deck)
+    assert placed["crowded"] == [] and all(near[n] <= 8 for n in column), (placed, near)
+    if deck.name == "desktop":   # a phone's narrow gap may have no room: then the labels fall back as elsewhere
+        assert [hit for hit in placed["hits"] if hit[0] in column] == [], placed
+        assert right >= column - set(generator["ENDS"]), right   # a declared end has no stub: nothing waits in it
     assert deck.errors == []
 
 

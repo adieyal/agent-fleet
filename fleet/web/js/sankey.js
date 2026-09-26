@@ -357,7 +357,7 @@ function renderChart(L, run, base, width, height, clear, nameW, firsts, now) {
 // Which parts of the plot are taken: a grid of CELL-sized cells over the SVG (column by column, so a band's slice is
 // one fill), filled where bands (swept along their centre lines), nodes and stubs lie, and a copy with the baseline
 // outlines added; each summed so a box is tested at once. Returns [with outlines, without], each (x, y, w, h) →
-// whether that box touches anything.
+// whether that box touches anything, and (x, y, w, h) → the band area in the box (its cells the bands cover, in px²).
 const CELL = 2, BAND_STEPS = 48;
 function occupancy(L, rects, x0, y0, width, height) {
   const cols = Math.ceil(width / CELL), rows = Math.ceil(height / CELL);
@@ -379,8 +379,10 @@ function occupancy(L, rects, x0, y0, width, height) {
   for (const r of rects) fill(loose, r.x, r.x + r.width, r.y, r.y + r.height);
   const strict = loose.slice();
   for (const b of L.bands) if (b.ghost) sweep(strict, b.ghost, b.ghost.w / 2 + 1);
+  const banded = new Uint8Array(cols * rows);   // the bands alone, as drawn
+  for (const b of L.bands) sweep(banded, b, b.w / 2);
   const H = rows + 1;
-  return [strict, loose].map(grid => {
+  const [s, l, area] = [strict, loose, banded].map(grid => {
     const sum = new Uint32Array((cols + 1) * H);
     for (let c = 0, o = 0, s = H; c < cols; c++, o += rows, s += H) {
       let run = 0;
@@ -388,15 +390,18 @@ function occupancy(L, rects, x0, y0, width, height) {
     }
     return (x, y, w, h) => {
       const c0 = cell(x, x0, cols), c1 = cell(x + w, x0, cols) + 1, r0 = cell(y, y0, rows), r1 = cell(y + h, y0, rows) + 1;
-      return sum[c1 * H + r1] - sum[c0 * H + r1] - sum[c1 * H + r0] + sum[c0 * H + r0] > 0;
+      return sum[c1 * H + r1] - sum[c0 * H + r1] - sum[c1 * H + r0] + sum[c0 * H + r0];
     };
   });
+  return [(...box) => s(...box) > 0, (...box) => l(...box) > 0, (...box) => area(...box) * CELL * CELL];
 }
 // Labels never lie on a band. The last column's sit right of their node, where nothing flows. A node bands leave has
 // its label in the nearest free spot of the gaps above or below it, from wholly left of it to wholly right; a node
 // nothing leaves (yet), touching it, so it never drifts off towards the next column. Clear of outlines too if it can
-// be, else of the bands only. With no free spot it sits on a chip level with its node, left of it if it fits (its stub
-// is on the right), moved up or down off other labels, covering the bands there.
+// be, else of the bands only. A waiting node, or one nothing leaves, tries right of its stub first, and with no free
+// spot beside it takes the spot touching it whose label covers the least band area, on a chip. Any other label with no
+// free spot sits on a chip level with its node, left of it if it fits (its stub is on the right), moved up or down off
+// other labels, covering the bands there.
 const LABEL_REACH = 60, LABEL_STEP = 4, LABEL_M = 2, LABEL_DX = 400;
 // the gap search's offsets once, cheapest first: level with the node's left edge, then either way, then further off
 const GAP_OFFSETS = [false, true].flatMap(below => Array.from({ length: LABEL_REACH / LABEL_STEP + 1 }, (_, i) => i * LABEL_STEP)
@@ -406,7 +411,8 @@ const GAP_OFFSETS = [false, true].flatMap(below => Array.from({ length: LABEL_RE
 function placeLabels(L, lastCol, width, height, stubs) {
   const x0 = -PAD, y0 = -PAD - LABEL_TOP, M = LABEL_M;
   const nodeRects = [...L.nodes.values()].map(n => ({ x: n.x, y: n.y, width: L.nodeW, height: n.hc }));
-  const [strict, loose] = occupancy(L, [...nodeRects, ...stubs], x0, y0, width, height);
+  const [strict, loose, bandArea] = occupancy(L, [...nodeRects, ...stubs], x0, y0, width, height);
+  const onRect = (x, y, w, h) => [...nodeRects, ...stubs].some(r => x < r.x + r.width + M && r.x < x + w + M && y < r.y + r.height + M && r.y < y + h + M);
   const placed = [...svg.querySelectorAll('.sk-cap')].map(el => el.getBBox());
   const inView = (x, y, w, h) => x >= x0 + 1 && y >= y0 + 1 && x + w <= x0 + width - 1 && y + h <= y0 + height - 1;
   const clash = (x, y, w, h) => placed.some(p => x < p.x + p.width + M && p.x < x + w + M && y < p.y + p.height + M && p.y < y + h + M);
@@ -417,6 +423,13 @@ function placeLabels(L, lastCol, width, height, stubs) {
   }
   // a node nothing leaves: touching it (and its stub) above, right, below or left
   const stubEnd = new Map(stubs.map(s => [s.name, s.x + s.width]));
+  // …first right of its stub, in the column gap where only its neighbours' bands pass: level with it, then up or down
+  // as far as the label still sits beside it
+  const rightSpots = (n, w, h) => {
+    const x = (stubEnd.get(n.name) ?? n.x + L.nodeW) + 4, mid = n.y + n.hc / 2 - h / 2, spots = [];
+    for (let d = 0; d <= Math.max(0, n.hc / 2 + h / 2 - 4); d += LABEL_STEP) for (const dy of d ? [-d, d] : [0]) spots.push({ x, y: mid + dy });
+    return spots;
+  };
   const besideSpots = (n, w, h) => {
     const right = stubEnd.get(n.name) ?? n.x + L.nodeW, mid = n.y + n.hc / 2 - h / 2, spots = [];
     for (let d = 0; d <= Math.max(w, n.hc / 2 + h / 2); d += LABEL_STEP) {
@@ -433,24 +446,43 @@ function placeLabels(L, lastCol, width, height, stubs) {
     const w = box.width, h = box.height;
     let spot = null;
     if (n.col === lastCol) spot = { x: n.x + L.nodeW + 7, y: n.y + n.hc / 2 - h / 2 };
-    else for (const taken of [strict, loose]) {
-      for (const c of n.out.length ? gapSpots(n, w, h) : besideSpots(n, w, h)) if (free(taken, c.x, c.y, w, h)) { spot = c; break; }
+    else for (const spots of n.out.length ? (stubEnd.has(n.name) ? [rightSpots, gapSpots] : [gapSpots]) : [rightSpots, besideSpots]) {
+      for (const taken of [strict, loose]) {
+        for (const c of spots(n, w, h)) if (free(taken, c.x, c.y, w, h)) { spot = c; break; }
+        if (spot) break;
+      }
       if (spot) break;
+    }
+    // a waiting node or one nothing leaves, with no free spot beside it: of the spots level with it, right of its stub
+    // or left of it, the one whose label covers the least band area (plus a little for each px it sits off level, so a
+    // near tie stays level with the node), on a chip; ties go right of the stub. (Not above
+    // or below: a label squeezed between two nodes reads as the next one's.)
+    if (!spot && n.col !== lastCol && (!n.out.length || stubEnd.has(n.name))) {
+      let least = Infinity;
+      for (const c of [...rightSpots(n, w, h), ...rightSpots(n, w, h).map(c => ({ ...c, x: n.x - 4 - w }))]) {
+        if (!inView(c.x - 4, c.y - 2, w + 8, h + 4) || clash(c.x - 4, c.y - 2, w + 8, h + 4) || onRect(c.x, c.y, w, h)) continue;
+        const a = bandArea(c.x, c.y, w, h) + Math.abs(c.y - (n.y + n.hc / 2 - h / 2));   // px² of band, 1 per px off level
+        if (a < least) { least = a; spot = c; }
+      }
+      if (spot) addChip(g, text, spot, w, h);
     }
     if (!spot) {   // on a chip level with its node, left of it if it fits, shifted up or down off other labels
       const right = n.x + L.nodeW + WAIT_W + 4, mid = n.y + n.hc / 2 - h / 2;
       const chips = [0, ...Array.from({ length: 2 * LABEL_REACH / LABEL_STEP }, (_, i) => (i % 2 ? 1 : -1) * LABEL_STEP * (1 + (i >> 1)))]
         .flatMap(dy => [{ x: n.x - 4 - w, y: mid + dy }, { x: right, y: mid + dy }]).filter(c => inView(c.x, c.y, w, h));
       spot = chips.find(c => !clash(c.x - 4, c.y - 2, w + 8, h + 4)) || chips[0] || { x: n.x, y: mid };
-      const chip = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-      for (const [k, v] of Object.entries({ class: 'sk-chip', x: spot.x - 4, y: spot.y - 2, width: w + 8, height: h + 4, rx: 4 }))
-        chip.setAttribute(k, v);
-      g.insertBefore(chip, text);
-      g.classList.add('chip');
+      addChip(g, text, spot, w, h);
     }
     text.setAttribute('transform', `translate(${spot.x - box.x},${spot.y - box.y})`);
     placed.push({ x: spot.x, y: spot.y, width: w, height: h });
   }
+}
+function addChip(g, text, spot, w, h) {
+  const chip = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  for (const [k, v] of Object.entries({ class: 'sk-chip', x: spot.x - 4, y: spot.y - 2, width: w + 8, height: h + 4, rx: 4 }))
+    chip.setAttribute(k, v);
+  g.insertBefore(chip, text);
+  g.classList.add('chip');
 }
 function drawDots(L, width, height) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
