@@ -8,24 +8,43 @@
 // as unknown until projects have plans. No androids and no speech here: activity is light. The lobby holds the host
 // colour key and the visitors: labels with work that no project claims, each of which can move in.
 //
-// The building has its own canvas and renderer, drawn on demand (it is still unless the state changes), so the deck's
-// frame loop and input stay as they were; it reuses the deck's furniture, lighting and palette.
+// Attention rolls up to floors: a floor with open or acknowledged items gets one marked lantern beside it, the diamond
+// with the attention glyph and a count when it stands for more than one item. It swings once when an open item arrives,
+// then hangs still. Items that belong to no floor light a lantern by the lobby. Each floor's plate carries its focus
+// switch (open · windows), which sets the project's focus with one click and moves nothing.
+//
+// Clicking a floor enters it. Until floors have their own view, entering shows the deck with only that project's work
+// (a stand-in for L1), with the lift panel on the screen's edge: a button per floor, L for the whole building and S for
+// the storehouse. Esc steps out a level.
+//
+// The building has its own canvas and renderer, drawn on demand (it is still unless the state changes or a lantern
+// swings), so the deck's frame loop and input stay as they were; it reuses the deck's furniture, lighting and palette.
 
 import * as THREE from 'three';
-import { DESK_TOP, HALF, PI, QS, vh, vw } from './env.js';
-import { esc, hsl, mix, store } from './util.js';
+import { DESK_TOP, HALF, PI, QS, REDUCED, vh, vw } from './env.js';
+import { esc, store } from './util.js';
 import { hostLook, projectLook } from './looks.js';
 import { working } from './activity.js';
 import { G, KIT, Placer, canvasTex, softDot } from './scene.js';
+import { enterProject } from './state.js';
 
-// ------------------------------------------------------------------ the view switch
+// ------------------------------------------------------------------ views: the deck, the building (L0), a floor (L1)
 const VIEW_KEY = 'fleet.view';
 export let buildingShown = false;
+let current = null;   // the floor entered, or null
 const toggle = document.getElementById('viewToggle');
-function showView(view) {
+const lift = document.getElementById('lift');
+function showView(view, floor = null) {
+  const leaving = current !== null;
+  current = view === 'floor' ? floor : null;
   buildingShown = view === 'building';
   document.body.dataset.view = view;
-  for (const b of toggle.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.view === view));
+  for (const b of toggle.querySelectorAll('button')) {
+    b.setAttribute('aria-pressed', String(b.dataset.view === (view === 'floor' ? 'building' : view)));
+  }
+  if (current !== null) enterProject(floors.find(f => f.floor === current).projectId);
+  else if (leaving) enterProject(null);
+  renderLift();
   draw();
 }
 toggle.addEventListener('click', ev => {
@@ -34,6 +53,17 @@ toggle.addEventListener('click', ev => {
   store('localStorage', VIEW_KEY, b.dataset.view);
   showView(b.dataset.view);
 });
+function enter(floor) {
+  const f = floors.find(x => x.floor === floor);
+  if (f && f.projectId) showView('floor', floor);
+}
+// Esc steps out one level, once nothing is open over the deck (a reader, the library, a panel or a list closes first)
+document.addEventListener('keydown', ev => {
+  if (ev.key !== 'Escape' || current === null) return;
+  const open = !document.getElementById('reader').hidden || !document.getElementById('libraryPane').hidden
+    || document.getElementById('panel').classList.contains('open') || !document.getElementById('attnPanel').hidden;
+  if (!open) showView('building');
+}, { capture: true });
 
 // ------------------------------------------------------------------ dimensions (tiles, as on the deck)
 const FW = 26, FD = 6, FH = 3, SLAB = 0.3;   // floor width, depth and storey height: shallow, so ten fit a laptop screen
@@ -44,7 +74,6 @@ const WARM = '#ffc47a';
 const baseOf = floor => LH + (floor - 1) * FH;
 
 // ------------------------------------------------------------------ renderer, camera, lights
-const root = document.getElementById('building');
 const canvas = document.getElementById('buildingCanvas');
 const ui = document.getElementById('buildingUi');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -78,11 +107,16 @@ let zoom = 20;
 let doc = null, floors = [], lobby = null, buildKey = '';
 export function applyBuilding(state) {
   doc = state;
+  for (const [id, focus] of pending) if (state.building?.focus[id] === focus) pending.delete(id);
   floors = floorsOf(state);
   lobby = lobbyOf(state);
-  const key = JSON.stringify([floors.map(f => [f.floor, f.projectId, f.name, f.mode, f.active]), lobby.hosts]);
+  applyLanterns(state);
+  const key = JSON.stringify([floors.map(f => [f.floor, f.projectId, f.name, f.mode, f.active]), lobby.hosts,
+    [...lanterns.keys()]]);
   if (key !== buildKey && KIT.desk) { buildKey = key; build(); }
   renderUi();
+  if (current !== null && !floors.find(f => f.floor === current)?.projectId) showView('building');   // it moved out
+  else renderLift();
   draw();
 }
 export function buildingReady() {   // the deck's models have loaded
@@ -103,9 +137,61 @@ function floorsOf(state) {
     const floor = i + 1, projectId = byFloor.get(floor);
     if (!projectId) return { floor, projectId: null, mode: 'to-let', active: false };
     const project = projects.get(projectId);
-    return { floor, projectId, name: project.name, look: projectLook(projectId, taken),
-      mode: b.focus[projectId] === 'background' ? 'windowed' : 'open', active: busy.has(projectId) };
+    const focus = pending.get(projectId) || b.focus[projectId];
+    return { floor, projectId, name: project.name, look: projectLook(projectId, taken), focus,
+      mode: focus === 'background' ? 'windowed' : 'open', active: busy.has(projectId) };
   });
+}
+
+// ------------------------------------------------------------------ focus: the switch on each plate
+// A switch flipped here holds until the server's document agrees, so an older document doesn't flick it back.
+const pending = new Map();   // project ID → focus asked for
+const focusErrors = new Map();   // project ID → why the last change failed
+async function setFocus(projectId, focus) {
+  const f = floors.find(x => x.projectId === projectId);
+  if (!f || f.focus === focus) return;
+  pending.set(projectId, focus);
+  focusErrors.delete(projectId);
+  applyBuilding(doc);
+  try {
+    const res = await fetch('/api/focus', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ focus, projects: [projectId], labels: [] }) });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
+  } catch (err) {
+    pending.delete(projectId);
+    focusErrors.set(projectId, err.message);
+    applyBuilding(doc);
+  }
+}
+
+// ------------------------------------------------------------------ attention: one lantern per floor, and one by the lobby
+// Only open and acknowledged items show; an acknowledged-only lantern is dimmer. Items on no floor (visitors' work,
+// projects without a floor) hang theirs by the lobby, so none is ever out of sight.
+const GLYPH = '✱';   // the attention glyph at L0; the kind (✋ a blocker, ? a decision) shows once you're inside
+const SWING_S = 2.6;
+const seen = new Set();                 // open item IDs already announced: each swings its lantern once
+const lanterns = new Map();             // floor number or 'lobby' → { level, count, kind, swingFrom }
+const swings = new Map();               // floor number or 'lobby' → how many times its lantern has swung
+function applyLanterns(state) {
+  const onFloor = new Map(floors.filter(f => f.projectId).map(f => [f.projectId, f.floor]));
+  const byPlace = new Map();
+  for (const item of state.attention || []) {
+    if (item.state !== 'open' && item.state !== 'acknowledged') continue;
+    const place = onFloor.get(item.project_id) ?? 'lobby';
+    if (!byPlace.has(place)) byPlace.set(place, []);
+    byPlace.get(place).push(item);
+  }
+  const now = performance.now() / 1000;
+  for (const place of lanterns.keys()) if (!byPlace.has(place)) lanterns.delete(place);
+  for (const [place, items] of byPlace) {
+    const l = lanterns.get(place) || { swingFrom: null };
+    Object.assign(l, { count: items.length, level: items.some(i => i.state === 'open') ? 'open' : 'acknowledged',
+      kind: items.some(i => i.kind === 'blocker') ? 'blocker' : 'decision' });
+    const arrived = items.filter(i => i.state === 'open' && !seen.has(i.id));
+    for (const i of arrived) seen.add(i.id);
+    if (arrived.length && !REDUCED) { l.swingFrom = now; swings.set(place, (swings.get(place) || 0) + 1); }
+    lanterns.set(place, l);
+  }
 }
 
 // Visitors: host:label pairs with jobs or sessions that no project claims. Registered projects without a floor, and
@@ -168,6 +254,15 @@ function build() {
   buildLobby(placer);
   for (const f of floors) buildFloor(f, placer);
   placer.build(group, disposables);
+  lanternObjs.clear();
+  for (const place of lanterns.keys()) lanternObjs.set(place, buildLantern(place === 'lobby' ? LH : baseOf(place) + FH));
+  hits.length = 0;
+  for (const f of floors) if (f.projectId) {   // what a click on the floor lands on
+    const m = box(FW + SPINE, FH, FD, (FW - SPINE) / 2, baseOf(f.floor) + FH / 2, FD / 2, HIT, false);
+    m.receiveShadow = false;
+    m.userData.floor = f.floor;
+    hits.push(m);
+  }
   const mid = new THREE.Vector3((FW - SPINE) / 2, top / 2, FD / 2);
   sun.target.position.copy(mid);
   sun.position.copy(mid).add(new THREE.Vector3(-14, 30, 26));
@@ -209,6 +304,30 @@ function buildFloor(f, place) {
     record.glow = f.mode === 'windowed' && f.active;
   }
 }
+// The lantern: an arm out from the end wall below the ceiling and a cord; the marked diamond itself is drawn over the
+// cord's end (see placeUi) so it stays legible at every size. The pennant flies nearer the wall.
+const ARM_X0 = FW + 0.3, ARM_X1 = FW + 3.3, CORD = 0.4;
+const lanternObjs = new Map();   // place → { pivot, lamp }
+const lanternGlow = softDot('rgba(255,79,176,.6)', 'rgba(255,79,176,0)');
+function buildLantern(ceiling) {
+  const y = ceiling - 0.2, z = FD - 0.3;
+  box(ARM_X1 - ARM_X0, 0.06, 0.06, (ARM_X0 + ARM_X1) / 2, y, z, mat.spine);
+  const pivot = new THREE.Group();
+  pivot.position.set(ARM_X1, y, z);
+  const cord = new THREE.Mesh(G.box, mat.spine);
+  cord.scale.set(0.03, CORD, 0.03); cord.position.y = -CORD / 2;
+  const lamp = new THREE.Object3D();
+  lamp.position.y = -CORD - 0.55;
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: lanternGlow, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+  disposables.push(glow.material);
+  glow.scale.setScalar(2.2);
+  lamp.add(glow);
+  pivot.add(cord, lamp);
+  group.add(pivot);
+  return { pivot, lamp, glow };
+}
+const hits = [];
+const HIT = new THREE.MeshBasicMaterial({ visible: false });
 const LAMP_ON = new THREE.MeshBasicMaterial({ color: WARM, toneMapped: false });
 const LAMP_OFF = new THREE.MeshStandardMaterial({ color: 0x3a4458, roughness: 0.6 });
 const PENNANT = (() => {
@@ -286,7 +405,7 @@ function buildLobby(place) {
 }
 
 // ------------------------------------------------------------------ camera fit: the whole building on one screen
-const TOP_UI = 52, MARGIN = 14, NARROW_LOBBY_H = 150;
+const TOP_UI = 52, MARGIN = 14, NARROW_LOBBY_H = 150, PLATE_ROOM = 280;
 function fit() {
   if (!vw || !floors.length) return;
   const top = baseOf(floors.length + 1) + 0.6;
@@ -297,13 +416,14 @@ function fit() {
   camera.updateMatrixWorld();
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
   const v = new THREE.Vector3();
-  for (const x of [-SPINE, FW + 2.2]) for (const y of [-0.5, top]) for (const z of [0, FD + 0.5]) {
+  for (const x of [-SPINE, ARM_X1 + 0.9]) for (const y of [-0.5, top]) for (const z of [0, FD + 0.5]) {
     v.set(x, y, z).applyMatrix4(camera.matrixWorldInverse);
     x0 = Math.min(x0, v.x); x1 = Math.max(x1, v.x); y0 = Math.min(y0, v.y); y1 = Math.max(y1, v.y);
   }
-  // on a phone, room on the left for the name plates and below for the lobby's list, which can't fit over the lobby
+  // room on the left for the name plates, which reach out from the spine; on a phone, room below for the lobby's
+  // list too, which can't fit over the lobby
   const narrow = vw < 760;
-  const l = MARGIN + (narrow ? 64 : 0), r = vw - MARGIN, t = TOP_UI + MARGIN, b = vh - MARGIN - (narrow ? NARROW_LOBBY_H : 0);
+  const l = MARGIN + (narrow ? 100 : PLATE_ROOM), r = vw - MARGIN, t = TOP_UI + MARGIN, b = vh - MARGIN - (narrow ? NARROW_LOBBY_H : 0);
   zoom = Math.min(MAX_Z, (r - l) / (x1 - x0), (b - t) / (y1 - y0));
   const ax = (l + r) / 2, ay = (t + b) / 2, mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
   camera.left = mx - ax / zoom; camera.right = mx + (vw - ax) / zoom;
@@ -326,27 +446,54 @@ function draw() {
   requestAnimationFrame(() => {
     drawPending = false;
     if (sized !== `${vw}x${vh}`) resize();
+    const swinging = stepLanterns(performance.now() / 1000);
     renderer.render(scene, camera);
     placeUi();
+    if (swinging) draw();
   });
+}
+// one swing on arrival, then still; true while any lantern is still swinging
+function stepLanterns(now) {
+  let swinging = false;
+  for (const [place, l] of lanterns) {
+    const o = lanternObjs.get(place);
+    if (!o) continue;
+    const age = l.swingFrom == null ? SWING_S : now - l.swingFrom;
+    o.pivot.rotation.z = age < SWING_S ? 0.45 * Math.exp(-age * 1.7) * Math.sin(age * 5.5) : 0;
+    o.glow.material.opacity = l.level === 'open' ? 1 : 0.3;
+    swinging ||= age < SWING_S;
+  }
+  return swinging;
 }
 
 // ------------------------------------------------------------------ name plates, progress rings and the lobby, over the scene
 const WORDS = 3, LOBBY_MIN_W = 440;
 const plateName = name => { const w = name.trim().split(/\s+/); return w.length > WORDS ? w.slice(0, WORDS).join(' ') + '…' : w.join(' '); };
 const RING = `<svg class="ring" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/></svg><i aria-hidden="true">?</i>`;
+const SWITCH = { priority: 'open', background: 'windows' };   // the switch's two positions, as the floor shows them
 function renderUi() {
-  const plates = floors.map(f => `<div class="plate" data-floor="${f.floor}" data-mode="${f.mode}"${f.projectId ? ` data-project="${esc(f.projectId)}"` : ''}
-      ${f.name ? `title="${esc(f.name)}"` : ''} style="${f.look ? `--accent:${f.look.accent}` : ''}">
-      <span class="fn">${f.floor}</span><b>${f.projectId ? esc(plateName(f.name)) : 'To let'}</b>
-      ${f.projectId ? `<span class="progress" data-progress="unknown" title="Progress unknown: no plan yet" aria-label="progress unknown">${RING}</span>` : ''}
-    </div>`).join('');
+  const plates = floors.map(f => {
+    if (!f.projectId) return `<div class="plate" data-floor="${f.floor}" data-mode="to-let"><span class="fn">${f.floor}</span><b>To let</b></div>`;
+    const error = focusErrors.get(f.projectId);
+    return `<div class="plate" data-floor="${f.floor}" data-mode="${f.mode}" data-project="${esc(f.projectId)}" style="--accent:${f.look.accent}">
+      <button class="enter" data-enter="${f.floor}" title="Enter ${esc(f.name)}"><span class="fn">${f.floor}</span><b>${esc(plateName(f.name))}</b></button>
+      <span class="progress" data-progress="unknown" title="Progress unknown: no plan yet" aria-label="progress unknown">${RING}</span>
+      <span class="fswitch" role="group" aria-label="Focus for ${esc(f.name)}" data-focus="${f.focus}"${error ? ` data-error title="Couldn’t change focus: ${esc(error)}"` : ''}>${
+        Object.entries(SWITCH).map(([focus, label]) => `<button data-focus="${focus}" aria-pressed="${f.focus === focus}" title="${focus}">${label}</button>`).join('')}</span>
+    </div>`;
+  }).join('');
+  const lamps = [...lanterns].map(([place, l]) => {
+    const where = place === 'lobby' ? 'the lobby' : floors.find(f => f.floor === place)?.name;
+    const label = `${where}: ${l.count > 1 ? `${l.count} things need you` : 'something needs you'}${l.level === 'acknowledged' ? ' (acknowledged)' : ''}`;
+    return `<button class="floor-lantern${l.level === 'acknowledged' ? ' ack' : ''}" data-place="${place}" data-state="${l.level}"
+      data-count="${l.count}" data-kind="${l.kind}" aria-label="${esc(label)}" title="${esc(label)}"><span class="lg">${GLYPH}</span><b>${l.count > 1 ? l.count : ''}</b></button>`;
+  }).join('');
   const L = lobby;
   const visitor = v => `<li class="visitor" data-host="${esc(v.host)}" data-label="${esc(v.label ?? '')}" title="${esc(`${v.host}:${v.label ?? 'no label'} · ${v.count}`)}">
       <i style="background:${hostLook(v.host).color}"></i><span>${esc(v.label === null ? 'no label' : L.labels[v.label] || v.label)}</span>${v.active ? '<em class="busy" aria-label="active"></em>' : ''}
       ${v.label === null ? '' : L.full ? '<button disabled title="Every floor is taken">No vacancies</button>' : '<button data-move-in>Move in</button>'}
       <small class="err"></small></li>`;
-  ui.innerHTML = `${plates}
+  ui.innerHTML = `${plates}${lamps}
     <div class="lobby" role="region" aria-label="Lobby">
       <div class="hostkey" aria-label="Hosts">${L.hosts.map(h => `<span class="host${h.ok ? '' : ' off'}" data-host="${esc(h.name)}" title="${esc(h.name)}${h.ok ? '' : ': offline'}"><i style="background:${h.ok ? h.color : 'var(--dim)'}"></i>${esc(h.name)}</span>`).join('')}</div>
       ${L.full ? '<div class="novacancy">No vacancies</div>' : ''}
@@ -356,6 +503,12 @@ function renderUi() {
   placeUi();
 }
 ui.addEventListener('click', async ev => {
+  const focus = ev.target.closest('.fswitch button');
+  if (focus) { setFocus(focus.closest('.plate').dataset.project, focus.dataset.focus); return; }
+  const entry = ev.target.closest('[data-enter]');
+  if (entry) { enter(Number(entry.dataset.enter)); return; }
+  const lamp = ev.target.closest('.floor-lantern');
+  if (lamp) { if (lamp.dataset.place === 'lobby') showView('deck'); else enter(Number(lamp.dataset.place)); return; }
   const b = ev.target.closest('[data-move-in]');
   if (!b) return;
   const row = b.closest('.visitor');
@@ -386,12 +539,20 @@ function floorRect(base, height) {
   }
   return r;
 }
+const _w = new THREE.Vector3();
 function placeUi() {
-  for (const el of ui.querySelectorAll('.plate')) {
+  for (const el of ui.querySelectorAll('.plate')) {   // right-aligned to the spine's front edge, reaching out to the left
     const r = floorRect(baseOf(Number(el.dataset.floor)), FH);
-    const p = screenOf(-SPINE / 2, baseOf(Number(el.dataset.floor)) + FH / 2, FD);
-    el.style.transform = `translate(${Math.round(p.x)}px,${Math.round(p.y)}px) translate(-50%,-50%)`;
+    const p = screenOf(-0.15, baseOf(Number(el.dataset.floor)) + FH / 2, FD);
+    el.style.transform = `translate(${Math.round(p.x)}px,${Math.round(p.y)}px) translate(-100%,-50%)`;
     el.style.setProperty('--h', `${Math.round(r.bottom - r.top)}px`);
+  }
+  for (const el of ui.querySelectorAll('.floor-lantern')) {
+    const o = lanternObjs.get(el.dataset.place === 'lobby' ? 'lobby' : Number(el.dataset.place));
+    if (!o) continue;
+    o.lamp.getWorldPosition(_w);
+    const p = screenOf(_w.x, _w.y, _w.z);
+    el.style.transform = `translate(${Math.round(p.x)}px,${Math.round(p.y)}px) translate(-50%,-50%)`;
   }
   const lob = ui.querySelector('.lobby');
   if (lob) {
@@ -408,11 +569,50 @@ function placeUi() {
   }
 }
 
+// ------------------------------------------------------------------ the lift panel: the way around once inside
+// One button per floor, top floor first, then L (the whole building) and S (the storehouse, not open yet). The current
+// floor is lit; a floor with attention shows the lantern's diamond on its button.
+function renderLift() {
+  if (current === null) { lift.innerHTML = ''; return; }
+  const button = f => {
+    const l = lanterns.get(f.floor);
+    const label = f.projectId ? `${f.floor}: ${f.name}${l ? ` · ${l.count > 1 ? `${l.count} things need you` : 'something needs you'}` : ''}` : `${f.floor}: to let`;
+    return `<button data-lift="${f.floor}"${f.floor === current ? ' aria-current="true"' : ''}${f.projectId ? '' : ' disabled'}
+      aria-label="${esc(label)}" title="${esc(label)}">${f.floor}${l ? `<i class="lift-lantern" data-state="${l.level}" aria-hidden="true"></i>` : ''}</button>`;
+  };
+  lift.innerHTML = [...floors].reverse().map(button).join('')
+    + '<button data-lift="L" aria-label="Lobby: the whole building" title="Lobby: the whole building">L</button>'
+    + '<button data-lift="S" disabled aria-label="Storehouse (opens in a later step)" title="Storehouse (opens in a later step)">S</button>';
+}
+lift.addEventListener('click', ev => {
+  const b = ev.target.closest('button[data-lift]');
+  if (!b || b.disabled) return;
+  if (b.dataset.lift === 'L') showView('building');
+  else enter(Number(b.dataset.lift));
+});
+
+// ------------------------------------------------------------------ a click on a floor goes in; clicks never set focus
+const raycaster = new THREE.Raycaster(), _ndc = new THREE.Vector2();
+function floorAt(ev) {
+  _ndc.set(ev.clientX / vw * 2 - 1, -(ev.clientY / vh) * 2 + 1);
+  raycaster.setFromCamera(_ndc, camera);
+  return raycaster.intersectObjects(hits, false)[0]?.object.userData.floor ?? null;
+}
+let downAt = null;
+canvas.addEventListener('pointerdown', ev => { downAt = { x: ev.clientX, y: ev.clientY }; });
+canvas.addEventListener('pointerup', ev => {
+  if (downAt && Math.hypot(ev.clientX - downAt.x, ev.clientY - downAt.y) < 5) { const floor = floorAt(ev); if (floor) enter(floor); }
+  downAt = null;
+});
+canvas.addEventListener('pointermove', ev => { canvas.style.cursor = floorAt(ev) ? 'pointer' : ''; });
+
 // read-only probe for browser tests: the building lives in WebGL, so the tests ask it what it drew and where
 window.fleetBuilding = Object.freeze({
   floors: () => floors.map(f => ({ floor: f.floor, project: f.projectId, name: f.name ?? null, mode: f.mode, active: f.active,
     built: built.get(f.floor) ? { ...built.get(f.floor) } : null, screen: floorRect(baseOf(f.floor), FH) })),
   lobby: () => ({ screen: floorRect(0, LH), hosts: lobby?.hosts ?? [], visitors: lobby?.visitors ?? [] }),
+  lanterns: () => [...lanterns].map(([place, l]) => ({ place, level: l.level, count: l.count, kind: l.kind, swings: swings.get(place) || 0 })),
+  current: () => current,
   zoom: () => zoom,
 });
 

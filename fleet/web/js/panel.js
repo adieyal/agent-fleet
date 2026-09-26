@@ -11,7 +11,7 @@ import {
 } from './model.js';
 import { DOC_KIND, docMeta, docsOf, kindOf } from './docs3d.js';
 import { action, buildRobot } from './agents.js';
-import { dismiss, hiddenCount, restoreDismissed, retiredCount, showFinished, toggleFinished } from './state.js';
+import { dismiss, entered, hiddenCount, restoreDismissed, retiredCount, showFinished, toggleFinished } from './state.js';
 import { focusOn } from './camera.js';
 import { openCount } from './attention.js';
 import { openReader } from './reader.js';
@@ -308,7 +308,9 @@ export function updateHint() {
   const hint = document.getElementById('hint');
   if (ents.size) { hint.hidden = true; return; }
   hint.hidden = false;
-  hint.innerHTML = everLoaded
+  hint.innerHTML = entered && everLoaded
+    ? '<h2>Nobody’s working here right now</h2><p>Work for this project shows up here when it starts.</p>'
+    : everLoaded
     ? `<h2>The deck is quiet</h2><p>No jobs on any host in the last day. Send one with</p><p><code>fleet send -H worker -p myrepo -d "…" -C ~/src/myrepo -s "…"</code></p><p><a href="?demo">See the demo crew</a></p>`
     : `<h2>Waiting for the fleet server</h2><p>This page is served by <code>fleet web</code>. It couldn&apos;t reach <code>/api/stream</code> yet.</p><p><a href="?demo">Open the demo instead</a></p>`;
 }

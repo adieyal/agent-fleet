@@ -7,7 +7,7 @@ import re
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 import pytest
 from PIL import Image, ImageStat
@@ -35,7 +35,17 @@ def restoke_url() -> Iterator[str]:
 
 @pytest.fixture
 def page(browser: Browser) -> Iterator[Page]:
-    context = browser.new_context(viewport=DESKTOP, reduced_motion="reduce")
+    yield from new_page(browser, "reduce")
+
+
+@pytest.fixture
+def moving_page(browser: Browser) -> Iterator[Page]:
+    """Motion allowed, so lanterns swing."""
+    yield from new_page(browser, "no-preference")
+
+
+def new_page(browser: Browser, reduced_motion: str) -> Iterator[Page]:
+    context = browser.new_context(viewport=DESKTOP, reduced_motion=reduced_motion)
     page = context.new_page()
     errors: list[str] = []
     page.on("console", lambda message: message.type == "error" and errors.append(message.text))
@@ -90,6 +100,8 @@ def test_ten_floors_and_the_lobby_fit_one_desktop_screen(page: Page, ten_floors_
     assert page.evaluate("[document.documentElement.scrollWidth, document.documentElement.scrollHeight]") == [1440, 900]
     # legible: every storey gets a good share of the screen, and each name plate sits clear of its neighbours
     plates = [page.locator(f'.plate[data-floor="{floor}"]').bounding_box() for floor in range(1, 11)]
+    for plate in plates:
+        assert plate["x"] >= 0 and plate["x"] + plate["width"] <= DESKTOP["width"]
     for lower, upper in zip(plates, plates[1:]):
         assert lower["y"] - upper["y"] >= 50
         assert upper["y"] + upper["height"] <= lower["y"]
@@ -210,3 +222,153 @@ def test_a_visitor_moves_in_to_the_lowest_free_floor(page: Page, restoke_url: st
     project = next(project for project in document["projects"] if project["name"] == "agent-fleet")
     assert project["links"] == [{"host": "worker", "label": "agent-fleet"}]
     assert document["building"]["floors"][project["id"]] == 3
+
+
+# ------------------------------------------------------------------ attention and wayfinding
+def post(url: str, path: str, body: dict[str, Any]) -> int:
+    request = Request(url + path, data=json.dumps(body).encode(), method="POST", headers={"Content-Type": "application/json"})
+    with urlopen(request, timeout=5) as response:
+        return response.status
+
+
+def lanterns(page: Page) -> dict[Any, dict[str, Any]]:
+    return {lantern["place"]: lantern for lantern in page.evaluate("fleetBuilding.lanterns()")}
+
+
+def test_attention_rolls_up_to_one_lantern_per_floor(moving_page: Page) -> None:
+    page = moving_page
+    with serve_fixture(FIXTURE) as url:
+        open_building(page, url)
+        # restoke (floor 1): a failed job and a session asking a question; invoice analysis (floor 2): a failed job
+        page.wait_for_function("fleetBuilding.lanterns().length === 2")
+        assert {place: (lantern["level"], lantern["count"], lantern["swings"]) for place, lantern in lanterns(page).items()} == {
+            1: ("open", 2, 1), 2: ("open", 1, 1)}
+        expect(page.locator(".floor-lantern")).to_have_count(2)
+        restoke = page.locator('.floor-lantern[data-place="1"]')
+        expect(restoke.locator(".lg")).to_have_text("✱")
+        expect(restoke.locator("b")).to_have_text("2")
+        expect(page.locator('.floor-lantern[data-place="2"] b')).to_have_text("")   # one item: no count
+        expect(page.locator('.floor-lantern[data-place="lobby"]')).to_have_count(0)
+
+        items = [item for item in state(url)["attention"] if item["project"] == "restoke"]
+        for item in items:
+            post(url, "/api/attention/acknowledge", {"id": item["id"]})
+        expect(restoke).to_have_attribute("data-state", "acknowledged")
+        expect(restoke).to_have_class("floor-lantern ack")
+        for item in items:
+            post(url, "/api/attention/snooze", {"id": item["id"], "seconds": 3600})
+        expect(restoke).to_have_count(0)
+        for item in items:
+            post(url, "/api/attention/reopen", {"id": item["id"]})
+        expect(restoke).to_have_attribute("data-state", "open")
+        # it swung once when the items arrived; coming back from a snooze is not an arrival
+        assert lanterns(page)[1]["swings"] == 1
+
+
+def test_attention_with_no_floor_hangs_by_the_lobby(page: Page, tmp_path: Path) -> None:
+    fixture = json.loads(FIXTURE.read_text())
+    worker = next(host for host in fixture["hosts"] if host["name"] == "worker")
+    session = next(session for session in worker["sessions"] if session["project"] == "agent-fleet")   # a visitor
+    session["activity"] = {"kind": "tool", "name": "AskUserQuestion", "summary": "Ship it?", "ts": fixture["time"] - 60}
+    path = tmp_path / "visitor.json"
+    path.write_text(json.dumps(fixture))
+    with serve_fixture(path) as url:
+        open_building(page, url)
+        lobby = page.locator('.floor-lantern[data-place="lobby"]')
+        expect(lobby).to_have_count(1)
+        expect(lobby).to_have_attribute("data-state", "open")
+        assert lanterns(page)["lobby"]["count"] == 1
+
+
+def enter_by_click(page: Page, floor: int) -> None:
+    """Click the middle of a floor's front, clear of the lobby's list."""
+    screen = next(f for f in page.evaluate("fleetBuilding.floors()") if f["floor"] == floor)["screen"]
+    page.mouse.click((screen["left"] + screen["right"]) / 2, screen["top"] + (screen["bottom"] - screen["top"]) * 0.4)
+
+
+def deck_rooms(page: Page) -> list[str]:
+    page.wait_for_function("fleetDeck.rooms().length > 0")
+    return sorted(room["name"] for room in page.evaluate("fleetDeck.rooms()"))
+
+
+@pytest.fixture
+def fresh_restoke_url() -> Iterator[str]:
+    """The Restoke fleet as recorded: no one has moved in yet."""
+    with serve_fixture(FIXTURE) as url:
+        yield url
+
+
+def test_clicking_a_floor_enters_it(page: Page, fresh_restoke_url: str) -> None:
+    open_building(page, fresh_restoke_url)
+    enter_by_click(page, 1)
+    expect(page.locator("body")).to_have_attribute("data-view", "floor")
+    expect(page.locator("#world")).to_be_visible()
+    page.wait_for_function("fleetDeck.rooms().map(room => room.name).join() === 'restoke'")
+    agents = page.evaluate("fleetDeck.agents()")
+    assert agents and {agent["room"] for agent in agents} == {"restoke"}
+    expect(page.locator("#lift")).to_be_visible()
+    expect(page.locator('#lift [aria-current="true"]')).to_have_attribute("data-lift", "1")
+    # the deck's own lantern for the room is still there to open
+    expect(page.locator('.lantern[data-room="restoke"]')).to_have_count(1)
+
+
+def test_the_lift_goes_between_floors_and_back_to_the_building(page: Page, fresh_restoke_url: str) -> None:
+    open_building(page, fresh_restoke_url)
+    page.locator('.plate[data-floor="1"] .enter').click()
+    lift = page.locator("#lift")
+    expect(lift.locator("button")).to_have_count(8)   # six floors, L and S
+    assert lift.locator("button").all_inner_texts() == ["6", "5", "4", "3", "2", "1", "L", "S"]
+    expect(lift.locator('[data-lift="S"]')).to_be_disabled()
+    for free in ("3", "4", "5", "6"):
+        expect(lift.locator(f'[data-lift="{free}"]')).to_be_disabled()
+    expect(lift.locator(".lift-lantern")).to_have_count(2)   # floors 1 and 2 need you
+    expect(lift.locator('[data-lift="2"] .lift-lantern')).to_have_count(1)
+
+    lift.locator('[data-lift="2"]').click()
+    expect(lift.locator('[aria-current="true"]')).to_have_attribute("data-lift", "2")
+    page.wait_for_function("fleetDeck.rooms().map(room => room.name).join() === 'invoice-parser'")
+
+    lift.locator('[data-lift="L"]').click()
+    expect(page.locator("body")).to_have_attribute("data-view", "building")
+    expect(lift).to_be_hidden()
+    page.wait_for_function("fleetDeck.rooms().length === 3")   # the deck behind has everything again
+
+    # Esc steps out one level, but only once whatever is open over the deck has closed
+    page.locator('.plate[data-floor="1"] .enter').click()
+    expect(page.locator("body")).to_have_attribute("data-view", "floor")
+    page.locator("#tags .tag", has_text="e1b5c8").dispatch_event("click")
+    expect(page.locator("#panel")).to_have_class("open")
+    page.keyboard.press("Escape")
+    expect(page.locator("#panel")).not_to_have_class("open")
+    expect(page.locator("body")).to_have_attribute("data-view", "floor")
+    page.keyboard.press("Escape")
+    expect(page.locator("body")).to_have_attribute("data-view", "building")
+
+
+def layout(page: Page) -> dict[str, Any]:
+    """Where every floor, plate and lantern is on screen."""
+    return {"floors": [floor["screen"] for floor in page.evaluate("fleetBuilding.floors()")],
+            "plates": [box for box in (plate.bounding_box() for plate in page.locator(".plate").all())],
+            "lanterns": [lantern.bounding_box() for lantern in page.locator(".floor-lantern").all()]}
+
+
+def test_the_focus_switch_changes_a_floor_and_moves_nothing(page: Page) -> None:
+    with serve_fixture(TEN_FLOORS) as url:
+        open_building(page, url)
+        page.wait_for_timeout(300)
+        before = layout(page)
+        plate = page.locator('.plate[data-floor="1"]')
+        project = plate.get_attribute("data-project")
+        plate.locator('.fswitch [data-focus="background"]').click()
+        expect(plate).to_have_attribute("data-mode", "windowed")
+        page.wait_for_function("fleetBuilding.floors()[0].built.mode === 'windowed'")
+        assert state(url)["building"]["focus"][project] == "background"
+        expect(page.locator("body")).to_have_attribute("data-view", "building")   # a switch is not a way in
+        page.wait_for_timeout(300)
+        assert layout(page) == before
+
+        plate.locator('.fswitch [data-focus="priority"]').click()
+        page.wait_for_function("fleetBuilding.floors()[0].built.mode === 'open'")
+        assert state(url)["building"]["focus"][project] == "priority"
+        page.wait_for_timeout(300)
+        assert layout(page) == before

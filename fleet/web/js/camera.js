@@ -33,7 +33,8 @@ export function fit(silent) {
   const mobile = vw < 760;
   const legendOpen = !document.getElementById('legend').classList.contains('closed');
   const left = (!mobile && vw > 1100 && legendOpen) ? 270 : 8;
-  const top = mobile ? 100 : 60, bottom = mobile ? 70 : 24, right = 8;
+  const top = mobile ? 100 : 60, bottom = mobile ? 70 : 24;
+  const right = document.body.dataset.view === 'floor' ? 64 : 8;   // clear of the lift panel inside the building
   const aw = vw - left - right, ah = vh - top - bottom;
   const W = b.maxR - b.minR, H = b.maxU - b.minU;
   let z, cy;
