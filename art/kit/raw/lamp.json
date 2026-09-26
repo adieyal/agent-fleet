@@ -1,0 +1,22 @@
+{
+  "description": "one black adjustable desk lamp, exactly like the lamps in the reference: a round weighted base, \\\na thin two-part arm and a dome shade angled down towards the lower left. The lamp is switched off: no \\\nlight, no glow.",
+  "prompt": "Generate a single game sprite: one black adjustable desk lamp, exactly like the lamps in the reference: a round weighted base, \\\na thin two-part arm and a dome shade angled down towards the lower left. The lamp is switched off: no \\\nlight, no glow.\n\nStyle: match the attached reference crops from the concept art exactly. Soft, clean, slightly stylised 3D render of an isometric office, three-quarter view from above at the same camera angle as the references (about 30 degrees down). Warm soft key light from the upper left, gentle ambient occlusion, no harsh shadows. Pale, desaturated palette. Render only the object, centred, whole and uncropped, on a fully transparent background: no floor, no ground shadow, no backdrop, no text, no border.",
+  "instructions": "You are a sprite generator. Always answer by calling the image_generation tool exactly once. Do not reply with text.",
+  "references": [
+    {
+      "path": "docs/images/concept/l2.png@430,410,120,140",
+      "sha256": "1f027bba2f35395c11e4b6513e756c34184d3fbc24e9489046eb8c47cdf983f9"
+    }
+  ],
+  "model": "gpt-5.5",
+  "image_model": "gpt-image-2-codex",
+  "quality_requested": "high",
+  "quality": "medium",
+  "size": "1230x1278",
+  "revised_prompt": "Create a single game sprite of one black adjustable desk lamp, matching the provided concept art style: soft, clean, slightly stylized 3D render for an isometric office scene, three-quarter view from above at about 30 degrees down. The lamp has a round weighted base, a thin two-part articulated arm with small hinge joints, and a black dome shade angled downward toward the lower left. The lamp is switched off: absolutely no light beam, no glow, no illuminated bulb. Pale desaturated palette, warm soft key light from upper left, gentle ambient occlusion, no harsh shadows. Render only the lamp object, centered, whole and uncropped, on a fully transparent background with no floor, no ground shadow, no backdrop, no text, no border. High-quality isolated sprite, PNG alpha transparency.",
+  "response_id": "resp_087fdfe36ff286c1016ab84762724887d28fff1aee745499d6",
+  "request_sha256": "044f034a743e49dc3d2d4bd53920285e25599279b8e9603716130061b506b8ad",
+  "output_sha256": "aef9f565f9c4520d06ab76ee4379aaa6b46d077cd2f82b2c35993b457879d382",
+  "timestamp": "2026-09-26T22:30:26Z",
+  "seconds": 33.5
+}

@@ -45,8 +45,9 @@ export class Camera {
   }
 
   jump(s) { this.goal = this.clamp(s); this.cur = { ...this.goal }; }
-  setGoal(s) { this.goal = this.clamp(s); if (this.reduced) this.cur = { ...this.goal }; }
-  frame(f) { this.setGoal(fit(f, this.W, this.H)); }
+  setGoal(s, rate = RATE) { this.goal = this.clamp(s); this.rate = rate; if (this.reduced) this.cur = { ...this.goal }; }
+  // ease to a framing; a lower rate for a deliberate move (entering a place) than for following the pointer
+  frame(f, rate = RATE) { this.setGoal(fit(f, this.W, this.H), rate); }
 
   panBy(dx, dy) {   // screen pixels; the content follows the pointer
     const g = this.goal;
@@ -62,7 +63,7 @@ export class Camera {
   // advance towards the goal; true while still moving
   step(dt) {
     if (!this.moving) { this.cur = { ...this.goal }; return false; }
-    const k = this.reduced ? 1 : 1 - Math.exp(-RATE * dt);
+    const k = this.reduced ? 1 : 1 - Math.exp(-(this.rate || RATE) * dt);
     const c = this.cur, g = this.goal;
     this.cur = { u: c.u + (g.u - c.u) * k, v: c.v + (g.v - c.v) * k, ppm: c.ppm * Math.exp(Math.log(g.ppm / c.ppm) * k) };
     if (!this.moving) this.cur = { ...g };

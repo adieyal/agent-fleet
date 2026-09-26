@@ -51,7 +51,8 @@ export class World {
 
   // manifest: { camera: {pitch, yaw}, sprites: { id: { footprint, hit, tiers: [{ ppm, file, size, anchor_px, mask?,
   // frames?, fps?, cut? }] } }, textures: { id: { file, metres } } }. Files are relative to the manifest.
-  async load(url) {
+  // A prefix namespaces the manifest's sprite and texture ids, so two manifests can both have a 'bench'.
+  async load(url, { prefix = '' } = {}) {
     const m = await fetch(url).then(r => (r.ok ? r.json() : Promise.reject(new Error('missing ' + url))));
     if (Math.abs(m.camera.pitch - PITCH) > 0.01 || Math.abs(m.camera.yaw - YAW) > 0.01) {
       throw new Error(`${url} was made for pitch ${m.camera.pitch}°, yaw ${m.camera.yaw}°; the world is ${PITCH}°, ${YAW}°`);
@@ -60,11 +61,11 @@ export class World {
     for (const [id, s] of Object.entries(m.sprites || {})) {
       const tiers = s.tiers.map(t => ({ ...t, url: new URL(t.file, base).href, maskUrl: t.mask && new URL(t.mask, base).href, frames: t.frames || 1 }))
         .sort((a, b) => a.ppm - b.ppm);
-      this.sprites.set(id, { id, ...s, tiers, img: [], alpha: [], tints: new Map(), loading: new Set(), loaded: new Set(), failed: new Set(),
+      this.sprites.set(prefix + id, { ...s, id: prefix + id, tiers, img: [], alpha: [], tints: new Map(), loading: new Set(), loaded: new Set(), failed: new Set(),
         want: -1, shown: -1, prev: -1, since: 0, mask: null, used: false });
     }
     await Promise.all(Object.entries(m.textures || {}).map(async ([id, t]) => {
-      this.textures.set(id, { ...t, img: await loadImage(new URL(t.file, base).href) });
+      this.textures.set(prefix + id, { ...t, img: await loadImage(new URL(t.file, base).href) });
     }));
     return m;
   }
@@ -73,14 +74,15 @@ export class World {
   // `u` and `v`, or `color` fills it
   addPlane(p) { this.planes.push(p); this.dirty.ground = true; this.request(); }
 
-  // item: { id, sprite, at: [x, y, z], layer: 'standing' | 'ground', tint?, ambient?, still?, attach?: { to, order },
-  // cut?: 'under' | 'over', hit?: false, place? }. A seated robot is two items cut along the desk top, attached
-  // before and after its desk (see seat()).
+  // item: { id, sprite, at: [x, y, z], layer?: 'standing' | 'ground' | 'light' (default: the sprite's layer, else
+  // standing), tint?, ambient?, still?, cell? (the frame of a sheet without fps), intensity? (0..1, light items),
+  // attach?: { to, order }, cut?: 'under' | 'over', hit?: false, place? }. A seated robot is two items cut along
+  // the desk top, attached before and after its desk (see seat()).
   add(item) {
     const s = this.sprites.get(item.sprite);
     if (!s) throw new Error('no sprite ' + item.sprite);
     s.used = true;
-    this.items.set(item.id, { layer: 'standing', visible: true, ...item });
+    this.items.set(item.id, { layer: s.layer || 'standing', visible: true, ...item });   // the manifest's layer hint by default
     this.changed(item.id, true);
     return item.id;
   }
@@ -149,6 +151,7 @@ export class World {
     }
     return this.order;
   }
+  lights() { return [...this.items.values()].filter(it => it.layer === 'light' && it.visible && (it.intensity ?? 1) > 0); }
 
   // --- level of detail ----------------------------------------------------------------------------------------------
 
@@ -218,6 +221,7 @@ export class World {
 
   frameOf(it, s, now) {
     const t = s.tiers[Math.max(0, s.shown)];
+    if (t.frames > 1 && !t.fps) return Math.min(t.frames - 1, it.cell || 0);   // a sheet of states (the lift's doors)
     if (t.frames < 2 || !t.fps || this.reduced || it.still) return 0;
     const k = it.ambient ? this.throttle : 1, step = Math.floor((now - this.t0) * t.fps / k) * k;
     return step % t.frames;
@@ -266,9 +270,10 @@ export class World {
       this.paint(view, now, null);
       this.stats.full++; drew = true;
     } else if (this.dirty.rects.length) {
-      this.paint(view, now, union(this.dirty.rects));
+      for (const r of merged(this.dirty.rects)) this.paint(view, now, r);   // robots far apart repaint apart
       this.stats.partial++; drew = true;
     }
+    if (viewChanged && this.onView) this.onView(view);   // (a DOM overlay follows the view)
     this.lastView = view;
     this.dirty = { all: false, ground: false, rects: [] };
     // a canvas may rasterise after this returns, so the gap between back-to-back frames counts as well as the work
@@ -338,6 +343,10 @@ export class World {
       this.drawItem(g, it, view, now);
     }
     g.globalCompositeOperation = 'lighter';
+    for (const it of this.lights()) {   // glow sprites (layer 'light'), at their intensity
+      if (clip && !meets(this.screenRect(this.planeRect(it), view), clip)) continue;
+      this.drawItem(g, it, view, now);
+    }
     for (const gl of this.glows.values()) {
       if (gl.intensity <= 0) continue;
       const r = this.glowRect(gl);
@@ -364,7 +373,7 @@ export class World {
     const pre = this.steady ? this.prescaled(s, i, it.tint, frame, k) : null;
     if (pre) { dx = Math.round(dx * this.dpr) / this.dpr; dy = Math.round(dy * this.dpr) / this.dpr; }
     g.save();
-    g.globalAlpha = alpha;
+    g.globalAlpha = alpha * (it.intensity ?? 1);
     if (it.cut && t.cut) {   // keep one side of the desk-top line through (cut.x, cut.y) in tier pixels
       const c = t.cut, line = sx => dy + k * (c.y + c.slope * ((sx - dx) / k - c.x));
       const edge = it.cut === 'over' ? dy - 1 : dy + h + 1;
@@ -395,7 +404,7 @@ export class World {
   // the item under a screen point (CSS px), as { id, place }, or the floor point under it as { floor: [x, y] }
   pick(x, y) {
     const view = this.camera.view;
-    const entries = this.sorted().filter(it => it.hit !== false).map(it => {
+    const entries = this.sorted().filter(it => it.hit !== false && this.sprites.get(it.sprite).hit !== 'none').map(it => {
       const s = this.sprites.get(it.sprite), r = this.screenRect(this.planeRect(it), view), t = s.tiers[Math.max(0, s.shown)];
       let keep = null;
       if (it.cut && t.cut && t.fw) {
@@ -414,6 +423,20 @@ export class World {
 }
 
 const meets = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+// rectangles merged wherever they overlap (or nearly), so each patch of screen is repainted once; many small
+// patches collapse into their union
+export function merged(rs) {
+  const out = rs.filter(r => r.w > 0 && r.h > 0).map(r => ({ ...r }));
+  const near = (a, b) => a.x < b.x + b.w + 8 && b.x < a.x + a.w + 8 && a.y < b.y + b.h + 8 && b.y < a.y + a.h + 8;
+  for (let joined = true; joined;) {
+    joined = false;
+    for (let i = 0; i < out.length && !joined; i++) for (let j = i + 1; j < out.length; j++) {
+      if (!near(out[i], out[j])) continue;
+      out[i] = union([out[i], out[j]]); out.splice(j, 1); joined = true; break;
+    }
+  }
+  return out.length > 8 ? [union(out)] : out;
+}
 function union(rs) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const r of rs) { x0 = Math.min(x0, r.x); y0 = Math.min(y0, r.y); x1 = Math.max(x1, r.x + r.w); y1 = Math.max(y1, r.y + r.h); }

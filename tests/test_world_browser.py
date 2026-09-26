@@ -136,6 +136,19 @@ def test_finer_tiers_load_only_when_the_zoom_needs_them_and_fade_in(browser: Bro
     assert errors == []
 
 
+def test_ground_added_after_the_first_frame_shows_up(world: Page) -> None:
+    # regression: a change started a new snapshot, but the old one then counted as current and the new was dropped
+    settle(world)
+    colour = world.evaluate("""(async () => {
+      const e = world.engine, m = await import('/js/world/projection.js');
+      e.addPlane({ quad: [[1, -3, 0], [3, -3, 0], [3, -1, 0], [1, -1, 0]], color: '#ff00ff' });
+      await new Promise(r => { const t = () => (e.ground.building || e.raf ? setTimeout(t, 30) : r()); setTimeout(t, 30); });
+      const [x, y] = m.toScreen(e.camera.view, [2, -2, 0]);
+      return [...e.g.getImageData(x * e.dpr, y * e.dpr, 1, 1).data].slice(0, 3);
+    })()""")
+    assert colour == [255, 0, 255]
+
+
 def test_a_still_scene_draws_nothing(browser: Browser, base_url: str) -> None:
     page, errors = open_world(browser, base_url, "anim=0")
     try:

@@ -12,7 +12,9 @@ from playwright.sync_api import Browser
 from conftest import FIXTURE, serve_fixture
 
 WORLD = Path(__file__).parent.parent / "fleet" / "web" / "assets" / "world"
-SCENES = sorted(p.name for p in WORLD.iterdir() if (p / "manifest.json").exists())
+# baked 3D scenes; sprite kits (a manifest with "sprites") are tested in test_world_kit.py
+SCENES = sorted(p.name for p in WORLD.iterdir()
+                if (p / "manifest.json").exists() and "glb" in json.loads((p / "manifest.json").read_text()))
 BUDGET = 15 * 1000 * 1000
 
 

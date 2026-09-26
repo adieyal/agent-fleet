@@ -13,27 +13,25 @@ export class GroundCache {
   // paint(g, view): paints the ground for a view into g, whose transform maps CSS pixels
   constructor(paint) {
     this.paint = paint;
-    this.snap = null; this.next = null; this.stale = true;
+    this.snap = null; this.next = null;
+    this.version = 0;   // bumped by every change to the ground; a snapshot is current only at the latest version
   }
-  invalidate() { this.stale = true; this.baseStale = true; }
+  invalidate() { this.version++; this.baseStale = true; }
   get building() { return !!this.next; }
 
-  // does the snapshot serve this view exactly (same zoom, view inside it)?
+  // does the snapshot serve this view exactly (current, same zoom, view inside it)?
   serves(view) {
     const s = this.snap;
-    if (!s || this.stale || s.ppm !== view.ppm) return false;
-    const du = Math.abs(view.u - s.u) * view.ppm, dv = Math.abs(view.v - s.v) * view.ppm;
-    return du <= (s.W - view.W) / 2 && dv <= (s.H - view.H) / 2;
+    return !!s && s.version === this.version && s.ppm === view.ppm && covers(s, view);
   }
 
   // start a snapshot for a view if needed; `now` paints it whole at once (the first frame, or after a change)
   update(view, dpr, { now = false } = {}) {
     if (this.serves(view)) { this.next = null; return false; }
     const target = this.next;
-    if (!target || target.ppm !== view.ppm || this.stale || !covers(target, view)) {
+    if (!target || target.version !== this.version || target.ppm !== view.ppm || !covers(target, view)) {
       const W = Math.ceil(view.W * (1 + 2 * MARGIN)), H = Math.ceil(view.H * (1 + 2 * MARGIN));
-      this.next = { u: view.u, v: view.v, ppm: view.ppm, W, H, dpr, c: canvas(Math.ceil(W * dpr), Math.ceil(H * dpr)), row: 0 };
-      this.stale = false;
+      this.next = { u: view.u, v: view.v, ppm: view.ppm, W, H, dpr, c: canvas(Math.ceil(W * dpr), Math.ceil(H * dpr)), row: 0, version: this.version };
     }
     return this.step(now ? Infinity : 6);
   }
@@ -70,8 +68,10 @@ export class GroundCache {
 
   // blit the snapshots for a view (clipped by the caller): the overview beneath, the current one over it
   draw(g, view) {
-    if (this.overview && (!this.snap || this.snap.ppm !== view.ppm || !covers(this.snap, view))) this.blit(g, this.overview, view);
-    if (this.snap) this.blit(g, this.snap, view);
+    // an out-of-date snapshot is left out while the overview (repainted at once on every change) is current
+    const old = this.snap && this.snap.version !== this.version && this.overview && !this.baseStale;
+    if (this.overview && (!this.snap || old || this.snap.ppm !== view.ppm || !covers(this.snap, view))) this.blit(g, this.overview, view);
+    if (this.snap && !old) this.blit(g, this.snap, view);
   }
   blit(g, s, view) {
     const k = view.ppm / s.ppm, dpr = s.dpr;

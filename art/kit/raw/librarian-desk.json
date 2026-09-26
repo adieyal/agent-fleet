@@ -1,0 +1,26 @@
+{
+  "description": "a small library reference desk: a light-oak desk top on a grey cabinet body with a \\\nbank of small card-catalogue drawers on the front, two stacks of books and an open ledger on top. The desk \\\nruns from the upper left to the lower right. No lamp, no chair, no person.",
+  "prompt": "Generate a single game sprite: a small library reference desk: a light-oak desk top on a grey cabinet body with a \\\nbank of small card-catalogue drawers on the front, two stacks of books and an open ledger on top. The desk \\\nruns from the upper left to the lower right. No lamp, no chair, no person.\n\nStyle: match the attached reference crops from the concept art exactly. Soft, clean, slightly stylised 3D render of an isometric office, three-quarter view from above at the same camera angle as the references (about 30 degrees down). Warm soft key light from the upper left, gentle ambient occlusion, no harsh shadows. Pale, desaturated palette. Render only the object, centred, whole and uncropped, on a fully transparent background: no floor, no ground shadow, no backdrop, no text, no border.",
+  "instructions": "You are a sprite generator. Always answer by calling the image_generation tool exactly once. Do not reply with text.",
+  "references": [
+    {
+      "path": "docs/images/concept/l1.png@530,150,115,130",
+      "sha256": "905e57546a86803ca7c89a1706aa5d511224ddc217bda7ce6a7625d40baf077b"
+    },
+    {
+      "path": "docs/images/concept/l1.png@640,205,140,105",
+      "sha256": "fa2110afe4117b5447c27c042832593b508a629ea429576db2b30d99425e828f"
+    }
+  ],
+  "model": "gpt-5.5",
+  "image_model": "gpt-image-2-codex",
+  "quality_requested": "high",
+  "quality": "medium",
+  "size": "1536x1024",
+  "revised_prompt": "Generate a single game sprite of a small library reference desk, matching the attached concept-art reference style: soft, clean, slightly stylised 3D render, isometric office object, three-quarter view from above at about 30 degrees down. The desk runs diagonally from upper left to lower right. It has a light-oak wooden desktop on a grey cabinet body. The front face contains a bank of many small card-catalogue drawers with tiny pulls/label plates. On top are two neat stacks of books and one open ledger/book. No lamp, no chair, no person. Warm soft key light from upper left, gentle ambient occlusion, no harsh shadows. Pale desaturated palette, tidy beveled forms, charming miniature game asset look. Render only the object, centered, whole and uncropped, isolated on a fully transparent background with no floor, no ground shadow, no backdrop, no text, no border.",
+  "response_id": "resp_0c12f9c0edc58d90016ab847b1224487d2bf64917b29b3acec",
+  "request_sha256": "e52c4b9a43dd4d067d5dac9fa554f4bc588ddafea9e2e4f310292cbab9a7c5e5",
+  "output_sha256": "af65a6b51dec27876044038d2b12014863bd51bc3ca8726c881f5a1611030cbd",
+  "timestamp": "2026-09-26T22:31:52Z",
+  "seconds": 40.8
+}

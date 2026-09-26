@@ -1,0 +1,3482 @@
+{
+ "version": 1,
+ "about": "The floor kit: see art/kit/README.md. Sprites are anchored at their base centre unless their doc says otherwise; footprints and slots are metres from the anchor (x along the back wall, y towards it, z up). layer is a hint: ground (in the ground snapshot), standing (sorted), light (additive).",
+ "camera": {
+  "pitch": 44.5,
+  "yaw": 21.25
+ },
+ "scale": {
+  "px_per_m_1x": 171.528,
+  "tiers_px_per_m": [
+   85.764,
+   171.528,
+   343.055
+  ],
+  "basis": "l2.png's framing as fitted by art/scripts/fit_camera.py: 941 px over 5.486 m (171.528 px/m). Every object is modelled or scaled from its real size in metres; the tiers are 0.5x, 1x and 2x that density, plus an AI prop's own density when it is finer.",
+  "measured": {
+   "l2": {
+    "bench_width_px": 930,
+    "bench_m": "3 desks of 1.8 m (5.4 m x 0.8 m)",
+    "px_per_m": 171.5,
+    "note": "the bench, desks and robots agree with the fitted camera within a few percent"
+   },
+   "l1": {
+    "active_bench_width_px": 380,
+    "bench_m": "assumed 4 desks of 1.8 m (7.2 m)",
+    "px_per_m": 54,
+    "lift_door_height_px": 170,
+    "lift_door_m": 2.3,
+    "lift_px_per_m": 104,
+    "note": "l1 is not drawn to one scale: measured against its benches, its lift is about twice the size real proportions give. The kit keeps real sizes; the floor framing of l1 is about 45-55 px/m on a 1672 px screen."
+   }
+  }
+ },
+ "sprites": {
+  "bench": {
+   "source": "ai",
+   "from": "art/kit/raw/bench-v2.png",
+   "size_m": [
+    5.4,
+    0.8,
+    0.74
+   ],
+   "scale": {
+    "fit": "w",
+    "source_px_per_m": 280.7
+   },
+   "footprint": [
+    -2.7,
+    -0.4,
+    0.0,
+    2.7,
+    0.4,
+    0.74
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "bench@86.webp",
+     "size": [
+      513,
+      274
+     ],
+     "anchor_px": [
+      256.25,
+      165.96
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "bench@172.webp",
+     "size": [
+      1025,
+      546
+     ],
+     "anchor_px": [
+      512.5,
+      331.92
+     ]
+    },
+    {
+     "ppm": 280.68,
+     "file": "bench@281.webp",
+     "size": [
+      1678,
+      895
+     ],
+     "anchor_px": [
+      839.0,
+      543.14
+     ]
+    }
+   ],
+   "slots": {
+    "seats": [
+     [
+      -1.8,
+      0.54,
+      0.47
+     ],
+     [
+      0.0,
+      0.54,
+      0.47
+     ],
+     [
+      1.8,
+      0.54,
+      0.47
+     ]
+    ],
+    "lamps": [
+     [
+      -2.52,
+      0.28,
+      0.74
+     ],
+     [
+      -0.72,
+      0.28,
+      0.74
+     ],
+     [
+      1.08,
+      0.28,
+      0.74
+     ]
+    ],
+    "desk_top": [
+     [
+      -1.8,
+      0,
+      0.74
+     ],
+     [
+      0.0,
+      0,
+      0.74
+     ],
+     [
+      1.8,
+      0,
+      0.74
+     ]
+    ]
+   },
+   "doc": "three desks end to end; top empty; no lamps, no chairs"
+  },
+  "terminal-desk": {
+   "source": "ai",
+   "from": "art/kit/raw/terminal-desk.png",
+   "size_m": [
+    1.6,
+    0.8,
+    0.74
+   ],
+   "scale": {
+    "fit": "w",
+    "source_px_per_m": 644.5
+   },
+   "footprint": [
+    -0.8,
+    -0.4,
+    0.0,
+    0.8,
+    0.4,
+    0.74
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "terminal-desk@86.webp",
+     "size": [
+      209,
+      149
+     ],
+     "anchor_px": [
+      104.38,
+      82.58
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "terminal-desk@172.webp",
+     "size": [
+      418,
+      297
+     ],
+     "anchor_px": [
+      208.76,
+      165.16
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "terminal-desk@343.webp",
+     "size": [
+      836,
+      595
+     ],
+     "anchor_px": [
+      417.52,
+      330.32
+     ]
+    },
+    {
+     "ppm": 644.523,
+     "file": "terminal-desk@645.webp",
+     "size": [
+      1570,
+      1116
+     ],
+     "anchor_px": [
+      785.0,
+      620.6
+     ]
+    }
+   ],
+   "slots": {
+    "seat": [
+     0,
+     -0.55,
+     0.47
+    ],
+    "screen": [
+     0,
+     0.2,
+     1.05
+    ]
+   },
+   "doc": "one desk with monitor and keyboard"
+  },
+  "chair-back": {
+   "source": "ai",
+   "from": "art/kit/raw/chairs.png (object 1 of 2)",
+   "size_m": [
+    0.64,
+    0.64,
+    1.0
+   ],
+   "scale": {
+    "fit": "h",
+    "source_px_per_m": 541.0
+   },
+   "footprint": [
+    -0.32,
+    -0.32,
+    0.0,
+    0.32,
+    0.32,
+    1.0
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "chair-back@86.webp",
+     "size": [
+      127,
+      137
+     ],
+     "anchor_px": [
+      64.06,
+      86.07
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "chair-back@172.webp",
+     "size": [
+      255,
+      274
+     ],
+     "anchor_px": [
+      127.12,
+      172.14
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "chair-back@343.webp",
+     "size": [
+      509,
+      548
+     ],
+     "anchor_px": [
+      254.24,
+      344.28
+     ]
+    },
+    {
+     "ppm": 540.994,
+     "file": "chair-back@541.webp",
+     "size": [
+      803,
+      865
+     ],
+     "anchor_px": [
+      401.0,
+      542.93
+     ]
+    }
+   ],
+   "doc": "office chair, near side of a desk, seen from behind"
+  },
+  "chair-front": {
+   "source": "ai",
+   "from": "art/kit/raw/chairs.png (object 2 of 2)",
+   "size_m": [
+    0.64,
+    0.64,
+    1.0
+   ],
+   "scale": {
+    "fit": "h",
+    "source_px_per_m": 585.0
+   },
+   "footprint": [
+    -0.32,
+    -0.32,
+    0.0,
+    0.32,
+    0.32,
+    1.0
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "chair-front@86.webp",
+     "size": [
+      127,
+      137
+     ],
+     "anchor_px": [
+      64.11,
+      86.07
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "chair-front@172.webp",
+     "size": [
+      255,
+      274
+     ],
+     "anchor_px": [
+      127.22,
+      172.14
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "chair-front@343.webp",
+     "size": [
+      509,
+      548
+     ],
+     "anchor_px": [
+      254.44,
+      344.28
+     ]
+    },
+    {
+     "ppm": 585.046,
+     "file": "chair-front@585.webp",
+     "size": [
+      868,
+      935
+     ],
+     "anchor_px": [
+      434.5,
+      587.14
+     ]
+    }
+   ],
+   "doc": "office chair, far side of a desk, facing the viewer"
+  },
+  "lamp": {
+   "source": "ai",
+   "from": "art/kit/raw/lamp.png",
+   "size_m": [
+    0.2,
+    0.2,
+    0.46
+   ],
+   "scale": {
+    "fit": "h",
+    "source_px_per_m": 2154.8
+   },
+   "footprint": [
+    -0.1,
+    -0.1,
+    0.0,
+    0.1,
+    0.1,
+    0.46
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "lamp@86.webp",
+     "size": [
+      78,
+      70
+     ],
+     "anchor_px": [
+      39.04,
+      35.92
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "lamp@172.webp",
+     "size": [
+      157,
+      140
+     ],
+     "anchor_px": [
+      78.08,
+      71.84
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "lamp@343.webp",
+     "size": [
+      314,
+      279
+     ],
+     "anchor_px": [
+      157.16,
+      143.68
+     ]
+    },
+    {
+     "ppm": 686.11,
+     "file": "lamp@686.webp",
+     "size": [
+      627,
+      558
+     ],
+     "anchor_px": [
+      313.32,
+      287.36
+     ]
+    }
+   ],
+   "slots": {
+    "shade": [
+     -0.16,
+     -0.08,
+     0.36
+    ]
+   },
+   "doc": "desk lamp, switched off (its light is glow-* sprites)"
+  },
+  "laptop": {
+   "source": "ai",
+   "from": "art/kit/raw/desk-props.png (object 1 of 8)",
+   "size_m": [
+    0.33,
+    0.24,
+    0.22
+   ],
+   "scale": {
+    "fit": "w",
+    "source_px_per_m": 1008.7
+   },
+   "footprint": [
+    -0.165,
+    -0.12,
+    0.0,
+    0.165,
+    0.12,
+    0.22
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "laptop@86.webp",
+     "size": [
+      90,
+      73
+     ],
+     "anchor_px": [
+      44.92,
+      36.24
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "laptop@172.webp",
+     "size": [
+      180,
+      146
+     ],
+     "anchor_px": [
+      89.84,
+      72.49
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "laptop@343.webp",
+     "size": [
+      360,
+      291
+     ],
+     "anchor_px": [
+      179.68,
+      145.98
+     ]
+    },
+    {
+     "ppm": 686.11,
+     "file": "laptop@686.webp",
+     "size": [
+      720,
+      583
+     ],
+     "anchor_px": [
+      360.35,
+      290.96
+     ]
+    }
+   ]
+  },
+  "pen-pot": {
+   "source": "ai",
+   "from": "art/kit/raw/desk-props.png (object 2 of 8)",
+   "size_m": [
+    0.09,
+    0.09,
+    0.2
+   ],
+   "scale": {
+    "fit": "h",
+    "source_px_per_m": 1373.1
+   },
+   "footprint": [
+    -0.045,
+    -0.045,
+    0.0,
+    0.045,
+    0.045,
+    0.2
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "pen-pot@86.webp",
+     "size": [
+      66,
+      59
+     ],
+     "anchor_px": [
+      33.34,
+      29.74
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "pen-pot@172.webp",
+     "size": [
+      132,
+      118
+     ],
+     "anchor_px": [
+      66.68,
+      59.47
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "pen-pot@343.webp",
+     "size": [
+      265,
+      237
+     ],
+     "anchor_px": [
+      132.36,
+      118.94
+     ]
+    },
+    {
+     "ppm": 686.11,
+     "file": "pen-pot@686.webp",
+     "size": [
+      530,
+      474
+     ],
+     "anchor_px": [
+      264.72,
+      236.89
+     ]
+    }
+   ]
+  },
+  "paper-stack": {
+   "source": "ai",
+   "from": "art/kit/raw/desk-props.png (object 3 of 8)",
+   "size_m": [
+    0.3,
+    0.21,
+    0.05
+   ],
+   "scale": {
+    "fit": "w",
+    "source_px_per_m": 899.6
+   },
+   "footprint": [
+    -0.15,
+    -0.105,
+    0.0,
+    0.15,
+    0.105,
+    0.05
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "paper-stack@86.webp",
+     "size": [
+      87,
+      71
+     ],
+     "anchor_px": [
+      43.25,
+      34.92
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "paper-stack@172.webp",
+     "size": [
+      173,
+      141
+     ],
+     "anchor_px": [
+      86.51,
+      70.84
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "paper-stack@343.webp",
+     "size": [
+      347,
+      282
+     ],
+     "anchor_px": [
+      173.01,
+      140.68
+     ]
+    },
+    {
+     "ppm": 686.11,
+     "file": "paper-stack@686.webp",
+     "size": [
+      694,
+      564
+     ],
+     "anchor_px": [
+      347.03,
+      282.36
+     ]
+    }
+   ]
+  },
+  "sketch": {
+   "source": "ai",
+   "from": "art/kit/raw/desk-props.png (object 4 of 8)",
+   "size_m": [
+    0.32,
+    0.22,
+    0.01
+   ],
+   "scale": {
+    "fit": "w",
+    "source_px_per_m": 912.7
+   },
+   "footprint": [
+    -0.16,
+    -0.11,
+    0.0,
+    0.16,
+    0.11,
+    0.01
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "sketch@86.webp",
+     "size": [
+      89,
+      72
+     ],
+     "anchor_px": [
+      44.21,
+      35.71
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "sketch@172.webp",
+     "size": [
+      177,
+      143
+     ],
+     "anchor_px": [
+      88.42,
+      71.43
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "sketch@343.webp",
+     "size": [
+      354,
+      286
+     ],
+     "anchor_px": [
+      176.83,
+      142.86
+     ]
+    },
+    {
+     "ppm": 686.11,
+     "file": "sketch@686.webp",
+     "size": [
+      709,
+      572
+     ],
+     "anchor_px": [
+      354.67,
+      285.71
+     ]
+    }
+   ]
+  },
+  "mug": {
+   "source": "ai",
+   "from": "art/kit/raw/desk-props.png (object 5 of 8)",
+   "size_m": [
+    0.11,
+    0.08,
+    0.1
+   ],
+   "scale": {
+    "fit": "w",
+    "source_px_per_m": 1802.1
+   },
+   "footprint": [
+    -0.055,
+    -0.04,
+    0.0,
+    0.055,
+    0.04,
+    0.1
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "mug@86.webp",
+     "size": [
+      67,
+      59
+     ],
+     "anchor_px": [
+      33.64,
+      29.74
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "mug@172.webp",
+     "size": [
+      135,
+      118
+     ],
+     "anchor_px": [
+      67.28,
+      59.49
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "mug@343.webp",
+     "size": [
+      270,
+      236
+     ],
+     "anchor_px": [
+      134.56,
+      117.98
+     ]
+    },
+    {
+     "ppm": 686.11,
+     "file": "mug@686.webp",
+     "size": [
+      540,
+      473
+     ],
+     "anchor_px": [
+      270.12,
+      235.96
+     ]
+    }
+   ]
+  },
+  "desk-plant": {
+   "source": "ai",
+   "from": "art/kit/raw/desk-props.png (object 6 of 8)",
+   "size_m": [
+    0.1,
+    0.1,
+    0.16
+   ],
+   "scale": {
+    "fit": "w",
+    "source_px_per_m": 1707.3
+   },
+   "footprint": [
+    -0.05,
+    -0.05,
+    0.0,
+    0.05,
+    0.05,
+    0.16
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "desk-plant@86.webp",
+     "size": [
+      67,
+      60
+     ],
+     "anchor_px": [
+      33.55,
+      29.98
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "desk-plant@172.webp",
+     "size": [
+      135,
+      120
+     ],
+     "anchor_px": [
+      67.1,
+      59.96
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "desk-plant@343.webp",
+     "size": [
+      269,
+      240
+     ],
+     "anchor_px": [
+      134.2,
+      119.91
+     ]
+    },
+    {
+     "ppm": 686.11,
+     "file": "desk-plant@686.webp",
+     "size": [
+      538,
+      480
+     ],
+     "anchor_px": [
+      269.41,
+      239.83
+     ]
+    }
+   ]
+  },
+  "books": {
+   "source": "ai",
+   "from": "art/kit/raw/desk-props.png (object 7 of 8)",
+   "size_m": [
+    0.25,
+    0.17,
+    0.08
+   ],
+   "scale": {
+    "fit": "w",
+    "source_px_per_m": 1126.9
+   },
+   "footprint": [
+    -0.125,
+    -0.085,
+    0.0,
+    0.125,
+    0.085,
+    0.08
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "books@86.webp",
+     "size": [
+      81,
+      67
+     ],
+     "anchor_px": [
+      40.63,
+      33.3
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "books@172.webp",
+     "size": [
+      163,
+      134
+     ],
+     "anchor_px": [
+      81.27,
+      67.6
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "books@343.webp",
+     "size": [
+      326,
+      269
+     ],
+     "anchor_px": [
+      162.53,
+      134.21
+     ]
+    },
+    {
+     "ppm": 686.11,
+     "file": "books@686.webp",
+     "size": [
+      652,
+      538
+     ],
+     "anchor_px": [
+      326.07,
+      268.42
+     ]
+    }
+   ]
+  },
+  "paper-tray": {
+   "source": "ai",
+   "from": "art/kit/raw/desk-props.png (object 8 of 8)",
+   "size_m": [
+    0.34,
+    0.26,
+    0.13
+   ],
+   "scale": {
+    "fit": "w",
+    "source_px_per_m": 827.0
+   },
+   "footprint": [
+    -0.17,
+    -0.13,
+    0.0,
+    0.17,
+    0.13,
+    0.13
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "paper-tray@86.webp",
+     "size": [
+      91,
+      74
+     ],
+     "anchor_px": [
+      45.63,
+      37.2
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "paper-tray@172.webp",
+     "size": [
+      183,
+      148
+     ],
+     "anchor_px": [
+      91.26,
+      74.4
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "paper-tray@343.webp",
+     "size": [
+      366,
+      297
+     ],
+     "anchor_px": [
+      182.52,
+      148.79
+     ]
+    },
+    {
+     "ppm": 686.11,
+     "file": "paper-tray@686.webp",
+     "size": [
+      732,
+      594
+     ],
+     "anchor_px": [
+      366.04,
+      296.58
+     ]
+    }
+   ]
+  },
+  "plant-tall": {
+   "source": "ai",
+   "from": "art/kit/raw/plants.png (object 1 of 3)",
+   "size_m": [
+    0.45,
+    0.45,
+    1.4
+   ],
+   "scale": {
+    "fit": "h",
+    "source_px_per_m": 597.1
+   },
+   "footprint": [
+    -0.225,
+    -0.225,
+    0.0,
+    0.225,
+    0.225,
+    1.4
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "plant-tall@86.webp",
+     "size": [
+      106,
+      147
+     ],
+     "anchor_px": [
+      52.97,
+      103.15
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "plant-tall@172.webp",
+     "size": [
+      212,
+      293
+     ],
+     "anchor_px": [
+      105.94,
+      206.29
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "plant-tall@343.webp",
+     "size": [
+      425,
+      587
+     ],
+     "anchor_px": [
+      211.88,
+      412.59
+     ]
+    },
+    {
+     "ppm": 597.087,
+     "file": "plant-tall@597.webp",
+     "size": [
+      739,
+      1021
+     ],
+     "anchor_px": [
+      369.5,
+      718.11
+     ]
+    }
+   ],
+   "doc": "square concrete planter, as l2"
+  },
+  "plant-bush": {
+   "source": "ai",
+   "from": "art/kit/raw/plants.png (object 2 of 3)",
+   "size_m": [
+    0.42,
+    0.42,
+    0.95
+   ],
+   "scale": {
+    "fit": "h",
+    "source_px_per_m": 586.6
+   },
+   "footprint": [
+    -0.21,
+    -0.21,
+    0.0,
+    0.21,
+    0.21,
+    0.95
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "plant-bush@86.webp",
+     "size": [
+      103,
+      117
+     ],
+     "anchor_px": [
+      51.29,
+      74.45
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "plant-bush@172.webp",
+     "size": [
+      206,
+      234
+     ],
+     "anchor_px": [
+      102.58,
+      148.91
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "plant-bush@343.webp",
+     "size": [
+      411,
+      468
+     ],
+     "anchor_px": [
+      206.15,
+      297.81
+     ]
+    },
+    {
+     "ppm": 586.596,
+     "file": "plant-bush@587.webp",
+     "size": [
+      703,
+      800
+     ],
+     "anchor_px": [
+      352.0,
+      509.24
+     ]
+    }
+   ]
+  },
+  "plant-small": {
+   "source": "ai",
+   "from": "art/kit/raw/plants.png (object 3 of 3)",
+   "size_m": [
+    0.2,
+    0.2,
+    0.42
+   ],
+   "scale": {
+    "fit": "h",
+    "source_px_per_m": 889.8
+   },
+   "footprint": [
+    -0.1,
+    -0.1,
+    0.0,
+    0.1,
+    0.1,
+    0.42
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "plant-small@86.webp",
+     "size": [
+      78,
+      68
+     ],
+     "anchor_px": [
+      38.92,
+      33.47
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "plant-small@172.webp",
+     "size": [
+      157,
+      136
+     ],
+     "anchor_px": [
+      78.83,
+      67.95
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "plant-small@343.webp",
+     "size": [
+      314,
+      271
+     ],
+     "anchor_px": [
+      156.66,
+      135.89
+     ]
+    },
+    {
+     "ppm": 686.11,
+     "file": "plant-small@686.webp",
+     "size": [
+      627,
+      542
+     ],
+     "anchor_px": [
+      313.33,
+      270.78
+     ]
+    }
+   ]
+  },
+  "shelf": {
+   "source": "ai",
+   "from": "art/kit/raw/shelf-v2.png",
+   "size_m": [
+    1.2,
+    0.4,
+    1.8
+   ],
+   "scale": {
+    "fit": "h",
+    "source_px_per_m": 783.2
+   },
+   "footprint": [
+    -0.6,
+    -0.2,
+    0.0,
+    0.6,
+    0.2,
+    1.8
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "shelf@86.webp",
+     "size": [
+      165,
+      185
+     ],
+     "anchor_px": [
+      82.72,
+      134.39
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "shelf@172.webp",
+     "size": [
+      329,
+      370
+     ],
+     "anchor_px": [
+      164.43,
+      268.77
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "shelf@343.webp",
+     "size": [
+      658,
+      739
+     ],
+     "anchor_px": [
+      328.86,
+      537.54
+     ]
+    },
+    {
+     "ppm": 686.11,
+     "file": "shelf@686.webp",
+     "size": [
+      1316,
+      1478
+     ],
+     "anchor_px": [
+      658.72,
+      1075.08
+     ]
+    }
+   ],
+   "doc": "against the back wall; binders"
+  },
+  "book-cart": {
+   "source": "ai",
+   "from": "art/kit/raw/book-cart.png",
+   "size_m": [
+    0.9,
+    0.45,
+    1.05
+   ],
+   "scale": {
+    "fit": "h",
+    "source_px_per_m": 837.6
+   },
+   "footprint": [
+    -0.45,
+    -0.225,
+    0.0,
+    0.45,
+    0.225,
+    1.05
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "book-cart@86.webp",
+     "size": [
+      142,
+      135
+     ],
+     "anchor_px": [
+      70.62,
+      86.64
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "book-cart@172.webp",
+     "size": [
+      284,
+      270
+     ],
+     "anchor_px": [
+      142.24,
+      173.28
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "book-cart@343.webp",
+     "size": [
+      569,
+      540
+     ],
+     "anchor_px": [
+      284.48,
+      346.56
+     ]
+    },
+    {
+     "ppm": 686.11,
+     "file": "book-cart@686.webp",
+     "size": [
+      1137,
+      1081
+     ],
+     "anchor_px": [
+      568.96,
+      693.12
+     ]
+    }
+   ],
+   "doc": "the librarian's cart"
+  },
+  "librarian-desk": {
+   "source": "ai",
+   "from": "art/kit/raw/librarian-desk.png",
+   "size_m": [
+    1.5,
+    0.7,
+    0.95
+   ],
+   "scale": {
+    "fit": "w",
+    "source_px_per_m": 659.3
+   },
+   "footprint": [
+    -0.75,
+    -0.35,
+    0.0,
+    0.75,
+    0.35,
+    0.95
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "librarian-desk@86.webp",
+     "size": [
+      198,
+      141
+     ],
+     "anchor_px": [
+      98.83,
+      78.91
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "librarian-desk@172.webp",
+     "size": [
+      396,
+      282
+     ],
+     "anchor_px": [
+      197.66,
+      157.82
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "librarian-desk@343.webp",
+     "size": [
+      791,
+      563
+     ],
+     "anchor_px": [
+      395.32,
+      315.65
+     ]
+    },
+    {
+     "ppm": 659.313,
+     "file": "librarian-desk@659.webp",
+     "size": [
+      1521,
+      1084
+     ],
+     "anchor_px": [
+      760.5,
+      606.64
+     ]
+    }
+   ],
+   "doc": "the librarian's desk with card drawers"
+  },
+  "podium": {
+   "source": "ai",
+   "from": "art/kit/raw/podium.png",
+   "size_m": [
+    0.9,
+    0.65,
+    1.1
+   ],
+   "scale": {
+    "fit": "w",
+    "source_px_per_m": 855.4
+   },
+   "footprint": [
+    -0.45,
+    -0.325,
+    0.0,
+    0.45,
+    0.325,
+    1.1
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "podium@86.webp",
+     "size": [
+      148,
+      128
+     ],
+     "anchor_px": [
+      74.07,
+      73.76
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "podium@172.webp",
+     "size": [
+      297,
+      255
+     ],
+     "anchor_px": [
+      148.14,
+      147.51
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "podium@343.webp",
+     "size": [
+      593,
+      512
+     ],
+     "anchor_px": [
+      296.29,
+      295.03
+     ]
+    },
+    {
+     "ppm": 686.11,
+     "file": "podium@686.webp",
+     "size": [
+      1187,
+      1023
+     ],
+     "anchor_px": [
+      593.58,
+      590.06
+     ]
+    }
+   ],
+   "doc": "the orchestrator's podium"
+  },
+  "whiteboard": {
+   "source": "ai",
+   "from": "art/kit/raw/whiteboard.png",
+   "size_m": [
+    1.5,
+    0.5,
+    1.9
+   ],
+   "scale": {
+    "fit": "h",
+    "source_px_per_m": 441.1
+   },
+   "footprint": [
+    -0.75,
+    -0.25,
+    0.0,
+    0.75,
+    0.25,
+    1.9
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "whiteboard@86.webp",
+     "size": [
+      192,
+      203
+     ],
+     "anchor_px": [
+      95.95,
+      146.57
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "whiteboard@172.webp",
+     "size": [
+      383,
+      406
+     ],
+     "anchor_px": [
+      191.89,
+      293.14
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "whiteboard@343.webp",
+     "size": [
+      767,
+      812
+     ],
+     "anchor_px": [
+      383.78,
+      586.29
+     ]
+    },
+    {
+     "ppm": 441.136,
+     "file": "whiteboard@441.webp",
+     "size": [
+      986,
+      1045
+     ],
+     "anchor_px": [
+      492.5,
+      753.91
+     ]
+    }
+   ],
+   "doc": "the briefing board, on castors"
+  },
+  "question-desk": {
+   "source": "ai",
+   "from": "art/kit/raw/question-desk.png",
+   "size_m": [
+    1.2,
+    0.7,
+    0.9
+   ],
+   "scale": {
+    "fit": "w",
+    "source_px_per_m": 752.1
+   },
+   "footprint": [
+    -0.6,
+    -0.35,
+    0.0,
+    0.6,
+    0.35,
+    0.9
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "question-desk@86.webp",
+     "size": [
+      174,
+      141
+     ],
+     "anchor_px": [
+      86.84,
+      81.92
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "question-desk@172.webp",
+     "size": [
+      348,
+      281
+     ],
+     "anchor_px": [
+      173.68,
+      163.84
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "question-desk@343.webp",
+     "size": [
+      696,
+      563
+     ],
+     "anchor_px": [
+      347.36,
+      327.67
+     ]
+    },
+    {
+     "ppm": 686.11,
+     "file": "question-desk@686.webp",
+     "size": [
+      1391,
+      1126
+     ],
+     "anchor_px": [
+      695.71,
+      655.34
+     ]
+    }
+   ],
+   "slots": {
+    "lantern": [
+     0,
+     0.1,
+     2.25
+    ],
+    "card": [
+     0.1,
+     0.05,
+     0.85
+    ]
+   },
+   "doc": "with its \"?\" tent card; the lantern hangs over it"
+  },
+  "crate": {
+   "source": "ai",
+   "from": "art/kit/raw/crate.png",
+   "size_m": [
+    0.7,
+    0.7,
+    0.7
+   ],
+   "scale": {
+    "fit": "w",
+    "source_px_per_m": 1003.2
+   },
+   "footprint": [
+    -0.35,
+    -0.35,
+    0.0,
+    0.35,
+    0.35,
+    0.7
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "crate@86.webp",
+     "size": [
+      134,
+      114
+     ],
+     "anchor_px": [
+      66.86,
+      60.31
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "crate@172.webp",
+     "size": [
+      268,
+      227
+     ],
+     "anchor_px": [
+      133.71,
+      120.62
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "crate@343.webp",
+     "size": [
+      536,
+      455
+     ],
+     "anchor_px": [
+      267.42,
+      241.23
+     ]
+    },
+    {
+     "ppm": 686.11,
+     "file": "crate@686.webp",
+     "size": [
+      1071,
+      910
+     ],
+     "anchor_px": [
+      535.85,
+      482.47
+     ]
+    }
+   ],
+   "doc": "the waiting crate, hourglass on its front"
+  },
+  "lantern": {
+   "source": "ai",
+   "from": "art/kit/raw/lantern.png",
+   "size_m": [
+    0.24,
+    0.24,
+    0.44
+   ],
+   "scale": {
+    "fit": "w",
+    "source_px_per_m": 1979.6
+   },
+   "footprint": [
+    -0.12,
+    -0.12,
+    -0.22,
+    0.12,
+    0.12,
+    0.22
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "lantern@86.webp",
+     "size": [
+      27,
+      56
+     ],
+     "anchor_px": [
+      13.32,
+      33.09
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "lantern@172.webp",
+     "size": [
+      53,
+      112
+     ],
+     "anchor_px": [
+      26.64,
+      66.18
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "lantern@343.webp",
+     "size": [
+      107,
+      224
+     ],
+     "anchor_px": [
+      53.29,
+      132.37
+     ]
+    },
+    {
+     "ppm": 686.11,
+     "file": "lantern@686.webp",
+     "size": [
+      213,
+      447
+     ],
+     "anchor_px": [
+      106.58,
+      264.74
+     ]
+    }
+   ],
+   "slots": {
+    "glyph": [
+     0,
+     -0.1,
+     0.0
+    ],
+    "cable_top": [
+     0,
+     0,
+     1.2
+    ]
+   },
+   "doc": "the attention lantern: magenta only here; anchor at the diamond centre, cable above; the front facet is blank for the glyph"
+  },
+  "pilaster": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -0.27,
+    -0.24,
+    0,
+    0.27,
+    0,
+    3.2
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "pilaster@86.webp",
+     "size": [
+      110,
+      276
+     ],
+     "anchor_px": [
+      58.35,
+      230.98
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "pilaster@172.webp",
+     "size": [
+      219,
+      551
+     ],
+     "anchor_px": [
+      116.7,
+      461.95
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "pilaster@343.webp",
+     "size": [
+      437,
+      1102
+     ],
+     "anchor_px": [
+      233.4,
+      923.91
+     ]
+    }
+   ],
+   "layer": "ground",
+   "doc": "A pilaster on the back wall's face, with its capping block; anchor: base centre on the wall face."
+  },
+  "wall-cap-x": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    0,
+    -0.02,
+    3.18,
+    3.6,
+    0.27,
+    3.28
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "wall-cap-x@86.webp",
+     "size": [
+      301,
+      105
+     ],
+     "anchor_px": [
+      2.96,
+      216.36
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "wall-cap-x@172.webp",
+     "size": [
+      601,
+      209
+     ],
+     "anchor_px": [
+      5.92,
+      432.73
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "wall-cap-x@343.webp",
+     "size": [
+      1201,
+      417
+     ],
+     "anchor_px": [
+      11.83,
+      865.45
+     ]
+    }
+   ],
+   "layer": "ground",
+   "doc": "The back wall's top for one bay: cap face and its front lip, repeatable along x; anchor: the bay's"
+  },
+  "wall-cap-y": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -0.27,
+    0,
+    3.18,
+    0.02,
+    3.6,
+    3.28
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "wall-cap-y@86.webp",
+     "size": [
+      139,
+      218
+     ],
+     "anchor_px": [
+      21.7,
+      409.49
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "wall-cap-y@172.webp",
+     "size": [
+      278,
+      436
+     ],
+     "anchor_px": [
+      43.4,
+      818.99
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "wall-cap-y@343.webp",
+     "size": [
+      555,
+      871
+     ],
+     "anchor_px": [
+      86.79,
+      1637.98
+     ]
+    }
+   ],
+   "layer": "ground",
+   "doc": "The left wall's top for one bay along y (the wall's room face is x = 0); anchor: its front end at the"
+  },
+  "wall-corner": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -0.25,
+    -0.2,
+    0,
+    0.2,
+    0.25,
+    3.28
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "wall-corner@86.webp",
+     "size": [
+      89,
+      287
+     ],
+     "anchor_px": [
+      46.96,
+      245.82
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "wall-corner@172.webp",
+     "size": [
+      177,
+      574
+     ],
+     "anchor_px": [
+      93.91,
+      491.65
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "wall-corner@343.webp",
+     "size": [
+      354,
+      1147
+     ],
+     "anchor_px": [
+      187.82,
+      983.29
+     ]
+    }
+   ],
+   "layer": "ground",
+   "doc": "Where the back and left walls meet: the corner post of the cap and a corner pilaster; anchor: the inner"
+  },
+  "wall-end-back": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -0.3,
+    0,
+    -0.35,
+    0,
+    0.25,
+    3.28
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "wall-end-back@86.webp",
+     "size": [
+      42,
+      251
+     ],
+     "anchor_px": [
+      29.51,
+      225.47
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "wall-end-back@172.webp",
+     "size": [
+      84,
+      502
+     ],
+     "anchor_px": [
+      59.02,
+      450.94
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "wall-end-back@343.webp",
+     "size": [
+      167,
+      1004
+     ],
+     "anchor_px": [
+      118.05,
+      901.89
+     ]
+    }
+   ],
+   "layer": "ground",
+   "doc": "The back wall's cut-away right end: the last 30 cm of wall, its cut face and cap; anchor: the end of the"
+  },
+  "wall-end-left": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -0.25,
+    0,
+    -0.35,
+    0,
+    0.3,
+    3.28
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "wall-end-left@86.webp",
+     "size": [
+      42,
+      253
+     ],
+     "anchor_px": [
+      24.27,
+      227.18
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "wall-end-left@172.webp",
+     "size": [
+      83,
+      506
+     ],
+     "anchor_px": [
+      48.54,
+      454.37
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "wall-end-left@343.webp",
+     "size": [
+      165,
+      1011
+     ],
+     "anchor_px": [
+      97.09,
+      908.73
+     ]
+    }
+   ],
+   "layer": "ground",
+   "doc": "The left wall's cut-away front end, as wall_end_back; anchor: its front end on the room face."
+  },
+  "slab-front": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    0,
+    0,
+    -0.35,
+    3.6,
+    0.01,
+    0
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "slab-front@86.webp",
+     "size": [
+      292,
+      104
+     ],
+     "anchor_px": [
+      1.72,
+      2.28
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "slab-front@172.webp",
+     "size": [
+      583,
+      208
+     ],
+     "anchor_px": [
+      3.43,
+      4.55
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "slab-front@343.webp",
+     "size": [
+      1166,
+      416
+     ],
+     "anchor_px": [
+      6.86,
+      9.1
+     ]
+    }
+   ],
+   "layer": "ground",
+   "doc": "The floor slab's cut edge along the front for one bay; anchor: the bay's left end at the floor's edge."
+  },
+  "slab-side": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -0.01,
+    0,
+    -0.35,
+    0,
+    3.6,
+    0
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "slab-side@86.webp",
+     "size": [
+      117,
+      227
+     ],
+     "anchor_px": [
+      2.51,
+      203.62
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "slab-side@172.webp",
+     "size": [
+      233,
+      454
+     ],
+     "anchor_px": [
+      5.03,
+      407.25
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "slab-side@343.webp",
+     "size": [
+      465,
+      907
+     ],
+     "anchor_px": [
+      10.06,
+      814.5
+     ]
+    }
+   ],
+   "layer": "ground",
+   "doc": "The slab's cut edge along the right side for one bay (the floor ends at x = 0 here); anchor: the bay's"
+  },
+  "lift": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -1.1,
+    -0.2,
+    0,
+    1.1,
+    0.05,
+    3.05
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "lift@86.webp",
+     "size": [
+      209,
+      281
+     ],
+     "anchor_px": [
+      99.61,
+      231.14
+     ],
+     "frames": 5
+    },
+    {
+     "ppm": 171.528,
+     "file": "lift@172.webp",
+     "size": [
+      417,
+      561
+     ],
+     "anchor_px": [
+      199.23,
+      462.27
+     ],
+     "frames": 5
+    },
+    {
+     "ppm": 343.055,
+     "file": "lift@343.webp",
+     "size": [
+      834,
+      1121
+     ],
+     "anchor_px": [
+      398.45,
+      924.55
+     ],
+     "frames": 5
+    }
+   ],
+   "layer": "standing",
+   "slots": {
+    "indicator": [
+     0,
+     -0.17,
+     2.93
+    ],
+    "threshold": [
+     0,
+     -0.4,
+     0
+    ]
+   },
+   "doc": "The lift bay on the back wall: surround, two sliding steel leaves over a dark car, a floor indicator",
+   "cells": [
+    "shut",
+    "quarter",
+    "half",
+    "three-quarters",
+    "open"
+   ]
+  },
+  "plan-wall": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -2.01,
+    -0.07,
+    0.55,
+    2.01,
+    0,
+    3.01
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "plan-wall@86.webp",
+     "size": [
+      366,
+      263
+     ],
+     "anchor_px": [
+      183.6,
+      227.89
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "plan-wall@172.webp",
+     "size": [
+      731,
+      525
+     ],
+     "anchor_px": [
+      367.19,
+      455.77
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "plan-wall@343.webp",
+     "size": [
+      1462,
+      1049
+     ],
+     "anchor_px": [
+      734.39,
+      911.55
+     ]
+    }
+   ],
+   "layer": "ground",
+   "slots": {
+    "tiles": {
+     "first": [
+      -1.71,
+      -0.075,
+      0.85
+     ],
+     "col": [
+      0.38,
+      0,
+      0
+     ],
+     "row": [
+      0,
+      0,
+      0.38
+     ],
+     "cols": 10,
+     "rows": 5
+    },
+    "lights": [
+     [
+      -0.48,
+      -0.05,
+      2.89
+     ],
+     [
+      -0.24,
+      -0.05,
+      2.89
+     ],
+     [
+      0.0,
+      -0.05,
+      2.89
+     ],
+     [
+      0.24,
+      -0.05,
+      2.89
+     ],
+     [
+      0.48,
+      -0.05,
+      2.89
+     ]
+    ]
+   },
+   "doc": "The plan wall's board: a light bezel around a recessed grey backing for COLS x ROWS tiles, and a strip"
+  },
+  "tile-blank": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -0.17,
+    -0.04,
+    -0.17,
+    0.17,
+    0,
+    0.17
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "tile-blank@86.webp",
+     "size": [
+      37,
+      38
+     ],
+     "anchor_px": [
+      18.5,
+      17.83
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "tile-blank@172.webp",
+     "size": [
+      73,
+      75
+     ],
+     "anchor_px": [
+      37.0,
+      35.66
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "tile-blank@343.webp",
+     "size": [
+      145,
+      150
+     ],
+     "anchor_px": [
+      73.99,
+      71.32
+     ]
+    }
+   ],
+   "layer": "standing"
+  },
+  "tile-done": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -0.17,
+    -0.04,
+    -0.17,
+    0.17,
+    0,
+    0.17
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "tile-done@86.webp",
+     "size": [
+      37,
+      38
+     ],
+     "anchor_px": [
+      18.5,
+      17.83
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "tile-done@172.webp",
+     "size": [
+      73,
+      75
+     ],
+     "anchor_px": [
+      37.0,
+      35.66
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "tile-done@343.webp",
+     "size": [
+      145,
+      150
+     ],
+     "anchor_px": [
+      73.99,
+      71.32
+     ]
+    }
+   ],
+   "layer": "standing"
+  },
+  "tile-running": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -0.17,
+    -0.04,
+    -0.17,
+    0.17,
+    0,
+    0.17
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "tile-running@86.webp",
+     "size": [
+      37,
+      38
+     ],
+     "anchor_px": [
+      18.5,
+      17.83
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "tile-running@172.webp",
+     "size": [
+      73,
+      75
+     ],
+     "anchor_px": [
+      37.0,
+      35.66
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "tile-running@343.webp",
+     "size": [
+      145,
+      150
+     ],
+     "anchor_px": [
+      73.99,
+      71.32
+     ]
+    }
+   ],
+   "layer": "standing"
+  },
+  "tile-failed": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -0.17,
+    -0.04,
+    -0.17,
+    0.17,
+    0,
+    0.17
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "tile-failed@86.webp",
+     "size": [
+      37,
+      38
+     ],
+     "anchor_px": [
+      18.5,
+      17.83
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "tile-failed@172.webp",
+     "size": [
+      73,
+      75
+     ],
+     "anchor_px": [
+      37.0,
+      35.66
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "tile-failed@343.webp",
+     "size": [
+      145,
+      150
+     ],
+     "anchor_px": [
+      73.99,
+      71.32
+     ]
+    }
+   ],
+   "layer": "standing"
+  },
+  "criteria-off": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -0.09,
+    -0.045,
+    -0.09,
+    0.09,
+    0,
+    0.09
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "criteria-off@86.webp",
+     "size": [
+      26,
+      24
+     ],
+     "anchor_px": [
+      13.27,
+      10.98
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "criteria-off@172.webp",
+     "size": [
+      52,
+      48
+     ],
+     "anchor_px": [
+      26.54,
+      21.97
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "criteria-off@343.webp",
+     "size": [
+      103,
+      95
+     ],
+     "anchor_px": [
+      53.09,
+      43.93
+     ]
+    }
+   ],
+   "layer": "standing"
+  },
+  "criteria-on": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -0.09,
+    -0.045,
+    -0.09,
+    0.09,
+    0,
+    0.09
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "criteria-on@86.webp",
+     "size": [
+      26,
+      24
+     ],
+     "anchor_px": [
+      13.27,
+      10.98
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "criteria-on@172.webp",
+     "size": [
+      52,
+      48
+     ],
+     "anchor_px": [
+      26.54,
+      21.97
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "criteria-on@343.webp",
+     "size": [
+      103,
+      95
+     ],
+     "anchor_px": [
+      53.09,
+      43.93
+     ]
+    }
+   ],
+   "layer": "standing"
+  },
+  "footprints-000": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "box",
+   "footprint": [
+    -0.3,
+    -0.3,
+    0,
+    0.3,
+    0.3,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "footprints-000@86.webp",
+     "size": [
+      67,
+      47
+     ],
+     "anchor_px": [
+      33.65,
+      23.34
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "footprints-000@172.webp",
+     "size": [
+      134,
+      94
+     ],
+     "anchor_px": [
+      67.31,
+      46.69
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "footprints-000@343.webp",
+     "size": [
+      267,
+      187
+     ],
+     "anchor_px": [
+      133.62,
+      93.38
+     ]
+    }
+   ],
+   "doc": "a pair of prints walking 0\u00b0 from +x (anticlockwise from above)"
+  },
+  "footprints-045": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "box",
+   "footprint": [
+    -0.3,
+    -0.3,
+    0,
+    0.3,
+    0.3,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "footprints-045@86.webp",
+     "size": [
+      67,
+      47
+     ],
+     "anchor_px": [
+      33.65,
+      23.34
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "footprints-045@172.webp",
+     "size": [
+      134,
+      94
+     ],
+     "anchor_px": [
+      67.31,
+      46.69
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "footprints-045@343.webp",
+     "size": [
+      267,
+      187
+     ],
+     "anchor_px": [
+      133.62,
+      93.38
+     ]
+    }
+   ],
+   "doc": "a pair of prints walking 45\u00b0 from +x (anticlockwise from above)"
+  },
+  "footprints-090": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "box",
+   "footprint": [
+    -0.3,
+    -0.3,
+    0,
+    0.3,
+    0.3,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "footprints-090@86.webp",
+     "size": [
+      67,
+      47
+     ],
+     "anchor_px": [
+      33.65,
+      23.34
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "footprints-090@172.webp",
+     "size": [
+      134,
+      94
+     ],
+     "anchor_px": [
+      67.31,
+      46.69
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "footprints-090@343.webp",
+     "size": [
+      267,
+      187
+     ],
+     "anchor_px": [
+      133.62,
+      93.38
+     ]
+    }
+   ],
+   "doc": "a pair of prints walking 90\u00b0 from +x (anticlockwise from above)"
+  },
+  "footprints-135": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "box",
+   "footprint": [
+    -0.3,
+    -0.3,
+    0,
+    0.3,
+    0.3,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "footprints-135@86.webp",
+     "size": [
+      67,
+      47
+     ],
+     "anchor_px": [
+      33.65,
+      23.34
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "footprints-135@172.webp",
+     "size": [
+      134,
+      94
+     ],
+     "anchor_px": [
+      67.31,
+      46.69
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "footprints-135@343.webp",
+     "size": [
+      267,
+      187
+     ],
+     "anchor_px": [
+      133.62,
+      93.38
+     ]
+    }
+   ],
+   "doc": "a pair of prints walking 135\u00b0 from +x (anticlockwise from above)"
+  },
+  "footprints-180": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "box",
+   "footprint": [
+    -0.3,
+    -0.3,
+    0,
+    0.3,
+    0.3,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "footprints-180@86.webp",
+     "size": [
+      67,
+      47
+     ],
+     "anchor_px": [
+      33.65,
+      23.34
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "footprints-180@172.webp",
+     "size": [
+      134,
+      94
+     ],
+     "anchor_px": [
+      67.31,
+      46.69
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "footprints-180@343.webp",
+     "size": [
+      267,
+      187
+     ],
+     "anchor_px": [
+      133.62,
+      93.38
+     ]
+    }
+   ],
+   "doc": "a pair of prints walking 180\u00b0 from +x (anticlockwise from above)"
+  },
+  "footprints-225": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "box",
+   "footprint": [
+    -0.3,
+    -0.3,
+    0,
+    0.3,
+    0.3,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "footprints-225@86.webp",
+     "size": [
+      67,
+      47
+     ],
+     "anchor_px": [
+      33.65,
+      23.34
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "footprints-225@172.webp",
+     "size": [
+      134,
+      94
+     ],
+     "anchor_px": [
+      67.31,
+      46.69
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "footprints-225@343.webp",
+     "size": [
+      267,
+      187
+     ],
+     "anchor_px": [
+      133.62,
+      93.38
+     ]
+    }
+   ],
+   "doc": "a pair of prints walking 225\u00b0 from +x (anticlockwise from above)"
+  },
+  "footprints-270": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "box",
+   "footprint": [
+    -0.3,
+    -0.3,
+    0,
+    0.3,
+    0.3,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "footprints-270@86.webp",
+     "size": [
+      67,
+      47
+     ],
+     "anchor_px": [
+      33.65,
+      23.34
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "footprints-270@172.webp",
+     "size": [
+      134,
+      94
+     ],
+     "anchor_px": [
+      67.31,
+      46.69
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "footprints-270@343.webp",
+     "size": [
+      267,
+      187
+     ],
+     "anchor_px": [
+      133.62,
+      93.38
+     ]
+    }
+   ],
+   "doc": "a pair of prints walking 270\u00b0 from +x (anticlockwise from above)"
+  },
+  "footprints-315": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "box",
+   "footprint": [
+    -0.3,
+    -0.3,
+    0,
+    0.3,
+    0.3,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "footprints-315@86.webp",
+     "size": [
+      67,
+      47
+     ],
+     "anchor_px": [
+      33.65,
+      23.34
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "footprints-315@172.webp",
+     "size": [
+      134,
+      94
+     ],
+     "anchor_px": [
+      67.31,
+      46.69
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "footprints-315@343.webp",
+     "size": [
+      267,
+      187
+     ],
+     "anchor_px": [
+      133.62,
+      93.38
+     ]
+    }
+   ],
+   "doc": "a pair of prints walking 315\u00b0 from +x (anticlockwise from above)"
+  },
+  "glow-desk-pool": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "light",
+   "hit": "none",
+   "footprint": [
+    -0.45,
+    -0.45,
+    0,
+    0.45,
+    0.45,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "glow-desk-pool@86.webp",
+     "size": [
+      100,
+      71
+     ],
+     "anchor_px": [
+      49.98,
+      35.02
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "glow-desk-pool@172.webp",
+     "size": [
+      200,
+      141
+     ],
+     "anchor_px": [
+      99.96,
+      70.03
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "glow-desk-pool@343.webp",
+     "size": [
+      400,
+      281
+     ],
+     "anchor_px": [
+      199.93,
+      140.06
+     ]
+    }
+   ],
+   "doc": "warm pool under a desk lamp, on the desk top (place at desk height)",
+   "blend": "lighter"
+  },
+  "glow-floor-spill": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "light",
+   "hit": "none",
+   "footprint": [
+    -1.6,
+    -1.6,
+    0,
+    1.6,
+    1.6,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "glow-floor-spill@86.webp",
+     "size": [
+      356,
+      250
+     ],
+     "anchor_px": [
+      178.16,
+      124.5
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "glow-floor-spill@172.webp",
+     "size": [
+      711,
+      499
+     ],
+     "anchor_px": [
+      355.32,
+      249.0
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "glow-floor-spill@343.webp",
+     "size": [
+      1422,
+      997
+     ],
+     "anchor_px": [
+      710.63,
+      498.0
+     ]
+    }
+   ],
+   "doc": "low warm spill on the floor in front of an active bench",
+   "blend": "lighter"
+  },
+  "glow-wall-wash": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "light",
+   "hit": "none",
+   "footprint": [
+    -0.65,
+    -0.01,
+    -1.8,
+    0.65,
+    0,
+    0.0
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "glow-wall-wash@86.webp",
+     "size": [
+      104,
+      139
+     ],
+     "anchor_px": [
+      51.96,
+      14.16
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "glow-wall-wash@172.webp",
+     "size": [
+      208,
+      277
+     ],
+     "anchor_px": [
+      103.91,
+      28.32
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "glow-wall-wash@343.webp",
+     "size": [
+      416,
+      554
+     ],
+     "anchor_px": [
+      207.82,
+      56.65
+     ]
+    }
+   ],
+   "doc": "a wall washer's scallop on the plan-wall bay; anchor at the fitting",
+   "blend": "lighter"
+  },
+  "glow-lantern-halo": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "light",
+   "hit": "none",
+   "footprint": [
+    -0.5,
+    -0.01,
+    -0.5,
+    0.5,
+    0,
+    0.5
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "glow-lantern-halo@86.webp",
+     "size": [
+      80,
+      83
+     ],
+     "anchor_px": [
+      39.97,
+      41.48
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "glow-lantern-halo@172.webp",
+     "size": [
+      160,
+      166
+     ],
+     "anchor_px": [
+      79.93,
+      82.96
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "glow-lantern-halo@343.webp",
+     "size": [
+      320,
+      332
+     ],
+     "anchor_px": [
+      159.87,
+      165.92
+     ]
+    }
+   ],
+   "doc": "the lantern's magenta halo on the wall behind it (attention only); anchor at its centre",
+   "blend": "lighter"
+  },
+  "glow-shade": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "light",
+   "hit": "none",
+   "footprint": [
+    -0.15,
+    -0.01,
+    -0.15,
+    0.15,
+    0,
+    0.15
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "glow-shade@86.webp",
+     "size": [
+      24,
+      25
+     ],
+     "anchor_px": [
+      11.99,
+      12.44
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "glow-shade@172.webp",
+     "size": [
+      48,
+      50
+     ],
+     "anchor_px": [
+      23.98,
+      24.89
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "glow-shade@343.webp",
+     "size": [
+      96,
+      100
+     ],
+     "anchor_px": [
+      47.96,
+      49.77
+     ]
+    }
+   ],
+   "doc": "a lit lamp shade's mouth; anchor at the lamp's shade slot",
+   "blend": "lighter"
+  }
+ },
+ "textures": {
+  "floor-tile": {
+   "file": "floor-tile.webp",
+   "metres": 0.6,
+   "source": "ai",
+   "from": "art/bakeoff/B2/floor-tile.webp (bake-off generation, reused)"
+  },
+  "wall-tile": {
+   "file": "wall-tile.webp",
+   "metres": 2.0,
+   "source": "ai",
+   "from": "art/bakeoff/B2/wall-tile.webp (bake-off generation, reused)"
+  }
+ }
+}
