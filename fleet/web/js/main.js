@@ -128,6 +128,11 @@ loadAssets().then(() => {
     const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
     return { left: Math.min(...xs), right: Math.max(...xs), top: Math.min(...ys), bottom: Math.max(...ys) };
   };
+  const quadOf = mesh => [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]]   // a unit plane's (or box face's) corners on screen
+    .map(([x, y]) => toScreen(mesh.localToWorld(_w.set(x, y, 0)), { x: 0, y: 0 }));
+  const wallQuad = (r, t) => [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => toScreen(t.wall === 'back'
+    ? _w.set(r.ox + t.along + a * t.w / 2, t.up + b * t.h / 2, r.oy + t.out)
+    : _w.set(r.ox + t.out, t.up + b * t.h / 2, r.oy + t.along - a * t.w / 2), { x: 0, y: 0 }));
   window.fleetDeck = Object.freeze({
     rooms: () => rooms.map(r => ({ name: r.name, label: r.label, x: r.ox, y: r.oy,
       screen: toScreen(_w.set(r.ox + RW / 2, 0, r.oy + RD / 2), { x: 0, y: 0 }), focus: r.focus, dim: r.dimK ?? null,
@@ -137,7 +142,8 @@ loadAssets().then(() => {
       const s = screenOf(keyOf(p));
       return { key: keyOf(p), room: p.project, run: p.run?.run_id ?? null,
         screen: s ? toScreen(s.mesh.getWorldPosition(_w), { x: 0, y: 0 }) : null,
-        rect: s ? onScreen(s.mesh) : null, sign: s ? onScreen(s.room.signMesh) : null, glow: glowOf(keyOf(p)) };
+        rect: s ? onScreen(s.mesh) : null, sign: s ? onScreen(s.room.signMesh) : null, glow: glowOf(keyOf(p)),
+        quad: s ? quadOf(s.frame) : null, wall: s ? s.room.onWalls.map(t => ({ kind: t.kind, wall: t.wall, quad: wallQuad(s.room, t) })) : [] };
     }),
     lookAt: (key, zoom) => {   // bring a pipeline's screen to the middle of the view (a phone shows one room at a time)
       const s = screenOf(key);

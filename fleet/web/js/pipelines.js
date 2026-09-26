@@ -31,11 +31,13 @@ export function applyPipeline(p) {
   updateSankey(p);
 }
 
-// Screens stand on top of the walls like the room sign, big enough to read without zooming in: the back wall's free
-// end first (the sign takes 0.2–6.2 of its 12 tiles), then along the left wall.
+// Screens stand on brackets above the walls like the room sign, big enough to read without zooming in: the back wall's
+// free end first (the sign takes 0.2–6.2 of its 12 tiles), then along the left wall. The brackets lift a screen clear
+// of the whiteboard and wall art that reach up to the wall's top, so a strip of wall shows between them.
 const SPOTS = [['back', 8.95], ['left', 2.6], ['left', 7.4]];
-const SCREEN_W = 4.6, SCREEN_H = 2.875, SCREEN_Y = WALL_H + 0.12 + SCREEN_H / 2;
+const SCREEN_W = 4.6, SCREEN_H = 2.875, LIFT = 0.5, SCREEN_Y = WALL_H + LIFT + SCREEN_H / 2;
 const GLOW = 0x38bdf8;
+const bracketMat = new THREE.MeshStandardMaterial({ color: 0x1b2333, roughness: 0.5, metalness: 0.4 });
 export function buildScreens() {
   const placed = [];
   const perRoom = new Map();
@@ -67,6 +69,12 @@ export function buildScreens() {
       }
       frame.castShadow = true;
       group.add(frame, mesh);
+      for (const side of [-1, 1]) {   // brackets from the wall's top to the frame
+        const post = new THREE.Mesh(G.box, bracketMat), u = along + side * SCREEN_W * 0.3, y = WALL_H + LIFT / 2;
+        post.scale.set(0.12, LIFT, 0.12);
+        if (wall === 'back') post.position.set(room.ox + u, y, room.oy - 0.02); else post.position.set(room.ox - 0.02, y, room.oy + u);
+        group.add(post);
+      }
       const s = { ...t, mat, frameMat, mesh, frame, p, room, key: keyOf(p) };
       mesh.userData.pipeline = s.key; frame.userData.pipeline = s.key;
       screens.set(s.key, s);

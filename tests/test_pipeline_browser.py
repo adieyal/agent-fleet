@@ -94,11 +94,41 @@ def test_declared_pipelines_get_rooms_even_without_work(deck: Deck) -> None:
     assert deck.errors == []
 
 
+Point = dict[str, float]
+
+
+def _separated(p: list[Point], q: list[Point]) -> bool:
+    """Two convex outlines on screen do not overlap: some edge's normal separates them."""
+    for poly in (p, q):
+        for a, b in zip(poly, poly[1:] + poly[:1]):
+            nx, ny = b["y"] - a["y"], a["x"] - b["x"]
+            pa, qa = [pt["x"] * nx + pt["y"] * ny for pt in p], [pt["x"] * nx + pt["y"] * ny for pt in q]
+            if max(pa) < min(qa) or max(qa) < min(pa):
+                return True
+    return False
+
+
+def _gap(p: list[Point], q: list[Point]) -> float:
+    """Screen pixels between two convex outlines, 0 if they overlap."""
+    if not _separated(p, q):
+        return 0.0
+    def to_segment(pt: Point, a: Point, b: Point) -> float:
+        dx, dy = b["x"] - a["x"], b["y"] - a["y"]
+        t = max(0.0, min(1.0, ((pt["x"] - a["x"]) * dx + (pt["y"] - a["y"]) * dy) / (dx * dx + dy * dy or 1)))
+        return ((pt["x"] - a["x"] - t * dx) ** 2 + (pt["y"] - a["y"] - t * dy) ** 2) ** 0.5
+    return min(to_segment(pt, a, b) for one, other in ((p, q), (q, p))
+               for pt in one for a, b in zip(other, other[1:] + other[:1]))
+
+
 def test_screens_are_readable_glow_and_leave_the_room_sign_clear(deck: Deck) -> None:
     screens = {p["key"]: p for p in deck.page.evaluate("fleetDeck.pipelines()")}
     for p in screens.values():
         rect, sign = p["rect"], p["sign"]
         assert rect["left"] > sign["right"] or rect["right"] < sign["left"], p   # beside the sign on the wall, not over it
+        # and clear of the whiteboard and wall art below it, with wall showing between
+        gaps = {thing["kind"] + "@" + thing["wall"]: round(_gap(p["quad"], thing["quad"]), 1) for thing in p["wall"]}
+        assert "whiteboard@back" in gaps
+        assert min(gaps.values()) >= 8, (p["key"], gaps)
     # a live run's frame glows steadily under reduced motion; the others keep a low glow
     assert screens["home:sample-training"]["glow"] == pytest.approx(0.6)
     assert screens["home:embeddings"]["glow"] == pytest.approx(0.25)
