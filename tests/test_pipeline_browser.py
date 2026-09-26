@@ -205,10 +205,29 @@ def test_an_end_node_lists_its_latest_items(deck: Deck, fixture_pipelines: dict[
     expect(page.locator("#skSvg .sk-cap")).to_have_count(1)
     expect(page.locator("#skSvg .sk-cap")).to_contain_text("by first of its reasons")
     deck.shot("drilldown")
+    assert page.evaluate(DRILL_FITS % json.dumps("null cell")) == {"label": True, "wide": []}
     page.locator("#skSide [data-back]").click()
     expect(page.locator("#skSide tbody tr")).to_have_count(7)
+    # chosen from the table, a node off to the side of a phone's chart is brought into view with its whole label
+    long = next(n for n in run["nodes"][-1] if len(n) >= 45)
+    page.evaluate("(c => { c.scrollLeft = 0; })(document.getElementById('skChart'))")
+    page.locator(f'#skSide tr[data-node="{long}"]').click()
+    expect(page.locator("#skSide h3")).to_contain_text(long)
+    deck.shot("drilldown-long")
+    assert page.evaluate(DRILL_FITS % json.dumps(long)) == {"label": True, "wide": []}
     close(deck)
     assert deck.errors == []
+
+
+DRILL_FITS = """(name => {   // the chosen node's column's labels in the chart's view; nothing in the side list wider than it
+  const c = document.getElementById('skChart').getBoundingClientRect(), side = document.getElementById('skSide');
+  const nodes = [...document.querySelectorAll('#skSvg .sk-node')], g = nodes.find(g => g.dataset.node === name);
+  const x = g.querySelector('rect').getBoundingClientRect().left, s = side.getBoundingClientRect();
+  const column = nodes.filter(n => Math.abs(n.querySelector('rect').getBoundingClientRect().left - x) < 1)
+    .map(n => n.querySelector('text').getBoundingClientRect());
+  return { label: column.every(t => t.left >= c.left && t.right <= c.right),
+    wide: [...side.querySelectorAll('*')].filter(el => el.getBoundingClientRect().right > s.right + 0.5).map(el => el.textContent.slice(0, 40)) };
+})(%s)"""
 
 
 INSIDE_SVG = """[...document.querySelectorAll('#skSvg .sk-ghost, #skSvg .sk-band, #skSvg text')].filter(el => {

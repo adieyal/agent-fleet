@@ -535,12 +535,23 @@ function renderSide() {
         vs ? `<td>${esc(vs.figure)}</td>` : ''}</tr>`;
     }).join('')}</tbody></table>`;
 }
+// On a phone the chosen node may be off to the side of the chart: scroll it and its whole label into view; for one in
+// the last column, to the chart's end, where all that column's labels are whole.
+function reveal(node) {
+  const g = [...svg.querySelectorAll('.sk-node')].find(el => el.dataset.node === node);
+  if (!g) return;
+  const r = g.getBoundingClientRect(), c = chart.getBoundingClientRect(), M = 12;
+  const last = sk.p?.run?.nodes.at(-1)?.includes(node), end = chart.scrollWidth - chart.clientWidth;
+  const left = last ? end : chart.scrollLeft + (r.right + M > c.right ? r.right + M - c.right : r.left - M < c.left ? r.left - M - c.left : 0);
+  if (Math.abs(left - chart.scrollLeft) > 0.5) chart.scrollTo({ left, behavior: REDUCED ? 'auto' : 'smooth' });
+}
 function choose(node) {
   const run = sk.p?.run;
   if (!run || (node && !terminals(run, sk.p.baseline).has(node))) return;
   sk.selected = node;
   renderSide();
   drawFrame();
+  if (node) reveal(node);
   side.scrollTop = 0;
   side.querySelector(node ? '[data-back]' : `tr[data-node]`)?.focus();
 }
