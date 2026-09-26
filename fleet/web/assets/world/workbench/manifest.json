@@ -10,52 +10,52 @@
       "base": {
         "file": "lightmap-base.webp",
         "size": 2304,
-        "scale": 2.10102
+        "scale": 2.14505
       },
       "corner": {
         "file": "lightmap-corner.webp",
         "size": 1152,
-        "scale": 1.22586
+        "scale": 1.23175
       },
       "criteria0": {
         "file": "lightmap-criteria0.webp",
         "size": 1152,
-        "scale": 1.19361
+        "scale": 1.22165
       },
       "criteria1": {
         "file": "lightmap-criteria1.webp",
         "size": 1152,
-        "scale": 1.1944
+        "scale": 1.22484
       },
       "criteria2": {
         "file": "lightmap-criteria2.webp",
         "size": 1152,
-        "scale": 1.1927
+        "scale": 1.22363
       },
       "criteria3": {
         "file": "lightmap-criteria3.webp",
         "size": 1152,
-        "scale": 1.2103
+        "scale": 1.23953
       },
       "criteria4": {
         "file": "lightmap-criteria4.webp",
         "size": 1152,
-        "scale": 1.23336
+        "scale": 1.25981
       },
       "desk1": {
         "file": "lightmap-desk1.webp",
         "size": 1152,
-        "scale": 1.16743
+        "scale": 1.16675
       },
       "desk2": {
         "file": "lightmap-desk2.webp",
         "size": 1152,
-        "scale": 1.21914
+        "scale": 1.20119
       },
       "desk3": {
         "file": "lightmap-desk3.webp",
         "size": 1152,
-        "scale": 1.18076
+        "scale": 1.16104
       }
     }
   },
@@ -101,6 +101,7 @@
     "desk2_lamp_bulb",
     "desk2_plant",
     "desk3_lamp_bulb",
+    "desk3_plant",
     "lantern",
     "lantern_cord",
     "lift_indicator_0",
@@ -165,6 +166,7 @@
     "planter_2_plant",
     "planter_3_plant",
     "planter_4_plant",
+    "planter_5_plant",
     "qdesk_plant",
     "shelf_binder_0",
     "shelf_binder_1",
@@ -216,54 +218,54 @@
       "sha256": "557f348b3a48b147afe9b780d205da5ee68a5a5bba45452f4dfffeb4c95f012a"
     },
     "lightmap-base.webp": {
-      "bytes": 181786,
-      "sha256": "0b4778e01668d567f19b03d460fb35881c442f80372634ca841813bdc9f105d9"
+      "bytes": 183716,
+      "sha256": "3eed90c04cc81970e30770e043bdafc4abbb4acb2b179116608f6250ef38730a"
     },
     "lightmap-corner.webp": {
-      "bytes": 65686,
-      "sha256": "89b9e488dc1218961ff9b35e85b0974252eaffc0792ee6eb459e2778af8ce11a"
+      "bytes": 65788,
+      "sha256": "6b4f3fbac581a1756cac6b3c22b36fe10ca74fae62827b0fde8ce04b8c06f153"
     },
     "lightmap-criteria0.webp": {
-      "bytes": 49962,
-      "sha256": "66dc0db8751afb56dee45e703108d6b26159ddc16fd51c3080eda59a857cd0b1"
+      "bytes": 50246,
+      "sha256": "a76de22405b19927496fdb2285c2d422708c090791de5a449dd500c8de680f64"
     },
     "lightmap-criteria1.webp": {
-      "bytes": 50494,
-      "sha256": "a65357af1ba2cc0a93c3a0a996f9f0ab9b748554bcc24020535dd87860f02eae"
+      "bytes": 50318,
+      "sha256": "68f4029fa1faf98af00187c4a542741834c20d897a52603e69a100fe2289a37f"
     },
     "lightmap-criteria2.webp": {
-      "bytes": 50480,
-      "sha256": "3c4564be0f7c339fa3f12a695fb2235c80f9c902ac21af81d97ba3e002757546"
+      "bytes": 50840,
+      "sha256": "315e33b8b01663e3976f2b24d7e43671924de852434e2efd34335dbcf9c645a9"
     },
     "lightmap-criteria3.webp": {
-      "bytes": 50336,
-      "sha256": "b403aac722e1390b96419632439e0725cab16afcc6d5d1b323da12d33e5d9892"
+      "bytes": 50858,
+      "sha256": "c29645ee32359c62d78b66360589c6a5cc070f5251aa32c65cc488b02338b1f2"
     },
     "lightmap-criteria4.webp": {
-      "bytes": 49440,
-      "sha256": "04fd702914615ca258bbd357d5a6d3e3a589fa9113832eba8e5300e7298a0927"
+      "bytes": 52960,
+      "sha256": "da19c9387865fe49a417da1d8e03e8f09108a44f026a3603890004ab9b9404af"
     },
     "lightmap-desk1.webp": {
-      "bytes": 75820,
-      "sha256": "56f0a4ad0a04183ca4063b341da01bd60cde24517c93d1f4d0cfeab1f525e9c4"
+      "bytes": 77270,
+      "sha256": "e2b8d5e43a04b7f1c58abe612bd3523c46bfff655f77f604455d0957690215b0"
     },
     "lightmap-desk2.webp": {
-      "bytes": 78140,
-      "sha256": "a2866f958758ee4a509d7365c5cbcb7b4149e79473c33491ed053a3e99d56c74"
+      "bytes": 81190,
+      "sha256": "d4fc83e7866977370875fb0f5d6610022c9e81cbecd6181560a751407cd07d0f"
     },
     "lightmap-desk3.webp": {
-      "bytes": 75784,
-      "sha256": "503ec640c83a6c5b6e0db09ebf8cbf85473d863cce8a22db51a12b9cfcb0aa97"
+      "bytes": 82150,
+      "sha256": "b74eed70292aef6a0046c01822e324975e36988b2a3e46f71284e59625c61eb7"
     },
     "workbench.glb": {
-      "bytes": 3960204,
-      "sha256": "342ad52040c6473e5523d0337ea7d5f0d68e525507f444d3709503d8a743b4b1"
+      "bytes": 4054388,
+      "sha256": "e40a6f8cffc36f8854ff797f59bdcc79a11b8d1b819516641baa69cbb4ae60dd"
     }
   },
   "glb_summary": {
-    "nodes": 374,
-    "meshes": 345,
-    "images": 16,
+    "nodes": 402,
+    "meshes": 371,
+    "images": 17,
     "extensions": [
       "KHR_materials_specular",
       "KHR_materials_ior",

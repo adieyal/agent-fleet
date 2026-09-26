@@ -221,16 +221,18 @@ def empty(name, loc, rot=(0, 0, 0), **props) -> bpy.types.Object:
     return ob
 
 
-def octahedron(name, radius, height, loc, mat, kind='dynamic'):
+def octahedron(name, radius, height, loc, mat, kind='dynamic', sides=4, waist=0.0):
+    """A faceted bipyramid (a diamond): `sides` around, the widest ring `waist` x height above centre."""
     bm = bmesh.new()
-    ring = [bm.verts.new((radius * math.cos(a), radius * math.sin(a), 0))
-            for a in (i * math.pi / 2 for i in range(4))]
+    zw = waist * height
+    ring = [bm.verts.new((radius * math.cos(a), radius * math.sin(a), zw))
+            for a in (i * 2 * math.pi / sides for i in range(sides))]
     top, bottom = bm.verts.new((0, 0, height / 2)), bm.verts.new((0, 0, -height / 2))
-    for i in range(4):
-        a, b = ring[i], ring[(i + 1) % 4]
+    for i in range(sides):
+        a, b = ring[i], ring[(i + 1) % sides]
         bm.faces.new((a, b, top))
         bm.faces.new((b, a, bottom))
-    ob = _finish(name, bm, mat, kind, loc, (0, 0, math.pi / 4), 1.0)
+    ob = _finish(name, bm, mat, kind, loc, (0, 0, math.pi / sides), 1.0)
     for p in ob.data.polygons:
         p.use_smooth = False
     return ob

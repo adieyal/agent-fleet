@@ -348,6 +348,17 @@ function floorGloss(root) {
   mirror.rotation.x = -Math.PI / 2;
   mirror.position.set((box.min.x + box.max.x) / 2, box.max.y + 0.001, (box.min.z + box.max.z) / 2);
   mirror.renderOrder = -1;
+  // sprites (bubbles, the lantern's glyph and halo) face the camera and would reflect as floating blobs;
+  // the lantern's reflection lands far from it in this view and reads as a second, stray attention light
+  const render = mirror.onBeforeRender;
+  mirror.onBeforeRender = (...args) => {
+    const hidden = [];
+    scene.traverse(o => {
+      if ((o.isSprite || lantern.parts.includes(o)) && o.visible) { o.visible = false; hidden.push(o); }
+    });
+    render.apply(mirror, args);
+    hidden.forEach(o => { o.visible = true; });
+  };
   scene.add(mirror);
   return mirror;
 }

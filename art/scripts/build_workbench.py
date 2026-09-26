@@ -38,11 +38,11 @@ def materials() -> dict:
     p = A.paths(SCENE)
     return {
         'floor': A.material('floor_tile', '#cbc5d0', rough=0.3, texture=floor_tile_texture(p['textures'])),
-        'wall': A.material('wall_plaster', '#b3a69f', rough=0.9,
+        'wall': A.material('wall_plaster', '#aaa3a5', rough=0.9,
                            texture=A.source('ambientcg', 'PaintedPlaster017', 'PaintedPlaster017_1K-JPG_Color.jpg')),
         'cap': A.material('wall_cap', '#d2cfd6', rough=0.8),
         'pilaster': A.material('pilaster', '#b4afb4', rough=0.8),
-        'oak': A.material('oak', '#f2d6b4', rough=0.45,
+        'oak': A.material('oak', '#ecdcc8', rough=0.45,
                           texture=A.source('ambientcg', 'Wood095', 'Wood095_1K-JPG_Color.jpg')),
         'steel': A.material('steel_grey', '#6f6f77', rough=0.45, metal=0.3),
         'frame': A.material('frame_dark', '#4a474e', rough=0.4, metal=0.4),
@@ -60,6 +60,7 @@ def materials() -> dict:
         'indicator': A.material('indicator', '#fff6e0', rough=0.3, emission='#ffe6b0'),
         'lantern': A.material('lantern', '#b0189f', rough=0.25, emission='#f25cf0'),
         'poster': A.material('poster', '#ffffff', rough=0.85, texture=poster_texture(p['textures'])),
+        'sketch': A.material('sketch', '#e8e3da', rough=0.9, texture=sketch_texture(p['textures'])),
     }
 
 
@@ -107,6 +108,23 @@ def poster_texture(out: Path) -> Path:
     for i, ln in enumerate((40, 26, 34)):
         stroke((abs(yy - (90 - i * 16)) < 3) & (xx > 170) & (xx < 170 + ln))
     return save_png(out, 'poster', img)
+
+
+def sketch_texture(out: Path) -> Path:
+    """A plan sheet: four framed panels with a few pencil lines, like the drawings on l2's desks."""
+    w, h = 256, 362
+    img = np.ones((h, w, 4), dtype=np.float32)
+    img[..., :3] = (0.93, 0.91, 0.87)
+    yy, xx = np.mgrid[0:h, 0:w]
+    ink = (0.45, 0.45, 0.48)
+    for (x0, y0) in ((24, 30), (134, 30), (24, 196), (134, 196)):
+        x1, y1 = x0 + 98, y0 + 136
+        frame = ((xx >= x0) & (xx <= x1) & (yy >= y0) & (yy <= y1)) & \
+            ~((xx > x0 + 3) & (xx < x1 - 3) & (yy > y0 + 3) & (yy < y1 - 3))
+        img[frame, :3] = ink
+        img[(abs((yy - y0) - (xx - x0) * 1.2) < 2) & (xx > x0 + 10) & (xx < x1 - 30), :3] = ink
+        img[(abs(yy - (y0 + 100)) < 2) & (xx > x0 + 14) & (xx < x1 - 14), :3] = ink
+    return save_png(out, 'sketch', img)
 
 
 def save_png(out: Path, name: str, px: np.ndarray) -> Path:
@@ -199,7 +217,7 @@ def shelf(m, props: dict) -> None:
     for k in range(4):
         A.duplicate(props['binder'], f'shelf_binder_hi_{k}', (x0 + 0.9 + k * 0.045, y, 1.285))
     A.duplicate(props['box'], 'shelf_box', (x0 + 0.95, y, 0.685))
-    A.duplicate(props['desk_plant'], 'shelf_plant', (x0 + 0.35, y, 1.885), 0.7)
+    potted(m, props, 'shelf_plant', x0 + 0.35, y, 1.885, 0.7, pot=0.16)
 
 
 # --- furniture -------------------------------------------------------------------
@@ -248,10 +266,23 @@ def desk_lamp(m, name, group, x, y, flip: int) -> None:
 
 
 def pen_pot(m, name, x, y, rng) -> None:
-    A.cylinder(f'{name}', 0.035, 0.1, (x, y, DESK_H), m['mug'], bevel=0.004)
-    for k in range(3):
-        A.cylinder(f'{name}_pencil_{k}', 0.004, 0.16, (x + 0.01 * (k - 1), y + 0.008 * k, DESK_H + 0.02),
-                   m['pencil'] if k != 1 else m['ink'], segments=6, rot=(rng.uniform(-0.25, 0.25), rng.uniform(-0.25, 0.25), 0))
+    A.cylinder(f'{name}', 0.038, 0.1, (x, y, DESK_H), m['mug'], bevel=0.004)
+    for k in range(6):
+        a = k * 2 * math.pi / 6
+        A.cylinder(f'{name}_pencil_{k}', 0.004, 0.16, (x + 0.018 * math.cos(a), y + 0.018 * math.sin(a), DESK_H + 0.02),
+                   (m['pencil'], m['ink'], m['brass'])[k % 3], segments=6,
+                   rot=(rng.uniform(-0.3, 0.3), rng.uniform(-0.3, 0.3), 0))
+
+
+def potted(m, props, name, x, y, z, rz, plant='desk_plant', pot=0.13) -> None:
+    """A small plant in its own square pot."""
+    A.box(f'{name}_pot', (pot, pot, pot * 0.8), (x, y, z), m['pot'], bevel=0.008)
+    A.duplicate(props[plant], name, (x, y, z + pot * 0.72), rz)
+
+
+def sketch(m, name, x, y, rz) -> None:
+    """A sheet with a drawn plan, lying on the desk."""
+    A.panel(name, 0.21, 0.297, (x, y, DESK_H + 0.0015), m['sketch'], rot=(-math.pi / 2, 0, rz))
 
 
 def papers(m, name, x, y, rng, n) -> None:
@@ -332,23 +363,26 @@ def bench(m, rng: random.Random, props: dict) -> None:
         chair(m, f'{name}_chair_near', cx - 0.3, BENCH_Y - DESK_D / 2 - 0.42, math.pi)
         desk_lamp(m, f'{name}_lamp', name, x0 + 0.18, far + 0.1, 1)
         pen_pot(m, f'{name}_penpot', cx + 0.38, far - 0.02, rng)
-    # desk 1 (teal, searching): open laptop and a plant
+    # desk 1 (teal, searching): open laptop, a potted plant, books, a sheet of notes
     laptop(m, 'desk1_laptop', BENCH_X0 + 0.85, far - 0.02, math.pi)
-    papers(m, 'desk1_papers', BENCH_X0 + 0.6, near - 0.05, rng, 2)
-    A.duplicate(props['desk_plant'], 'desk1_plant', (BENCH_X0 + 0.45, far - 0.05, DESK_H), 1.1)
-    book_stack(m, 'desk1_books', BENCH_X0 + 1.25, near - 0.02, rng)
-    # desk 2 (blue, writing): sketches spread out, a mug
-    papers(m, 'desk2_papers', BENCH_X0 + DESK_W + 0.75, BENCH_Y + 0.02, rng, 3)
-    papers(m, 'desk2_notes', BENCH_X0 + DESK_W + 0.35, near - 0.08, rng, 2)
-    A.cylinder('desk2_mug', 0.04, 0.095, (BENCH_X0 + DESK_W + 1.25, near, DESK_H), m['mug'], bevel=0.004)
-    A.duplicate(props['desk_plant'], 'desk2_plant', (BENCH_X0 + DESK_W + 1.05, far - 0.1, DESK_H), 2.3)
-    # desk 3 (olive, testing): monitor facing the robot, closed laptop, report tray
-    # to the robot's right (screen left), so the robot and its flask stay in view as in l2
+    papers(m, 'desk1_papers', BENCH_X0 + 0.55, near - 0.05, rng, 2)
+    potted(m, props, 'desk1_plant', BENCH_X0 + 0.42, far - 0.12, DESK_H, 1.1)
+    book_stack(m, 'desk1_books', BENCH_X0 + 1.25, near - 0.02, rng, 3)
+    sketch(m, 'desk1_sketch', BENCH_X0 + 1.05, near - 0.12, 0.2)
+    # desk 2 (blue, writing): plan sheets spread out in front of it, notes, a mug, a plant
+    for k, (dx, rz) in enumerate(((0.45, -0.1), (0.72, 0.15), (1.0, -0.25))):
+        sketch(m, f'desk2_sketch_{k}', BENCH_X0 + DESK_W + dx, BENCH_Y + 0.02 - 0.05 * k, rz)
+    papers(m, 'desk2_notes', BENCH_X0 + DESK_W + 0.35, near - 0.1, rng, 2)
+    A.cylinder('desk2_mug', 0.04, 0.095, (BENCH_X0 + DESK_W + 1.3, near, DESK_H), m['mug'], bevel=0.004)
+    potted(m, props, 'desk2_plant', BENCH_X0 + DESK_W + 1.1, far - 0.08, DESK_H, 2.3)
+    # desk 3 (olive, testing): monitor to the robot's right (screen left) so the robot and its flask
+    # stay in view as in l2, closed laptop, report tray, a sketch
     monitor(m, 'desk3_monitor', BENCH_X0 + 2 * DESK_W + 0.2, far - 0.1, math.radians(-25))
     laptop(m, 'desk3_laptop_closed', BENCH_X0 + 2 * DESK_W + 0.55, near - 0.05, 0.3, closed=True)
     report_tray(m, 'desk3_tray', BENCH_X0 + 3 * DESK_W - 0.2, near - 0.02)
-    papers(m, 'desk3_papers', BENCH_X0 + 2 * DESK_W + 1.0, near - 0.1, rng, 1)
+    sketch(m, 'desk3_sketch', BENCH_X0 + 2 * DESK_W + 1.0, near - 0.1, -0.2)
     A.cylinder('desk3_mug', 0.04, 0.095, (BENCH_X0 + 2 * DESK_W + 0.3, near - 0.05, DESK_H), m['mug'], bevel=0.004)
+    potted(m, props, 'desk3_plant', BENCH_X0 + 2 * DESK_W + 0.75, far - 0.05, DESK_H, 0.6)
 
 
 def corner_desk(m, rng: random.Random, props: dict) -> None:
@@ -360,7 +394,9 @@ def corner_desk(m, rng: random.Random, props: dict) -> None:
     A.box('corner_keyboard', (0.44, 0.14, 0.018), (x0 + 0.9, y - 0.15, DESK_H), m['frame'], bevel=0.004)
     desk_lamp(m, 'corner_lamp', 'corner', x0 + 0.25, y + 0.2, 1)
     papers(m, 'corner_papers', x0 + 0.35, y - 0.12, rng, 2)
-    A.duplicate(props['desk_plant'], 'corner_plant', (x0 + DESK_W + 0.4, y + 0.1, DESK_H), 0.4)
+    sketch(m, 'corner_sketch', x0 + 1.35, y - 0.1, 0.3)
+    potted(m, props, 'corner_plant', x0 + DESK_W + 0.4, y + 0.1, DESK_H, 0.4)
+    pen_pot(m, 'corner_penpot', x0 + 1.4, y + 0.2, rng)
     A.box('corner_box', (0.3, 0.22, 0.12), (x0 + DESK_W + 0.9, y + 0.05, DESK_H), m['cap'], bevel=0.01)
 
 
@@ -377,19 +413,21 @@ def question_desk(m, props: dict) -> None:
     A.box('qdesk_card', (0.22, 0.004, 0.17), (cx, cy, top), m['paper'], bevel=0, rot=(-lean, 0, 0), tile=None)
     A.text_mesh('qdesk_card_glyph', '?', 0.13, (cx, cy + 0.085 * math.sin(lean) - 0.004, top + 0.085 * math.cos(lean)),
                 m['ink'], rot=(math.pi / 2 - lean, 0, 0))
-    A.duplicate(props['desk_plant'], 'qdesk_plant', (x + 0.38, y + 0.08, 0.755), 0.3)
+    potted(m, props, 'qdesk_plant', x + 0.38, y + 0.08, 0.755, 0.3, pot=0.15)
     # the lantern hangs over the desk from the cap; it is dynamic and driven by attention state
     A.cylinder('lantern_cord', 0.005, 0.95, (cx, y, WALL_H - 0.95), m['frame'], kind='dynamic', segments=6)
-    A.octahedron('lantern', 0.19, 0.5, (cx, y, WALL_H - 1.2), m['lantern'])
+    # an elongated six-sided diamond, widest a little above its middle, like l2's lantern
+    A.octahedron('lantern', 0.17, 0.6, (cx, y, WALL_H - 1.25), m['lantern'], sides=6, waist=0.12)
     A.empty('lantern_anchor', (cx, y, WALL_H), attention='question')
 
 
 def planters(m, props: dict) -> None:
+    """Square concrete planters with tall leafy plants, as l2 has by each pilaster and at the bench's end."""
     spots = ((-0.55, WALL_Y - 0.45, 0.0), (7.3, WALL_Y - 0.45, 1.3), (9.7, WALL_Y - 0.75, 2.6),
-             (12.1, 3.9, 3.9), (-0.5, 2.6, 5.2))
+             (12.1, 3.9, 3.9), (-0.5, 2.6, 5.2), (9.35, 3.8, 0.8))
     for i, (x, y, rz) in enumerate(spots):
         A.box(f'planter_{i}', (0.42, 0.42, 0.5), (x, y, 0), m['pot'], bevel=0.02)
-        plant = props['calathea'] if i % 2 == 0 else props['anthurium']
+        plant = props['calathea'] if i == 4 else props['tall']
         A.duplicate(plant, f'planter_{i}_plant', (x, y, 0.48), rz)
 
 
@@ -416,7 +454,7 @@ def lights() -> None:
 
 def props() -> dict:
     ph = lambda i: A.source('polyhaven', i, f'{i}_1k.gltf')  # noqa: E731
-    return {'anthurium': A.import_gltf(ph('anthurium_botany_01'), 'anthurium_botany_01_b', 'proto_anthurium', scale=0.8),
+    return {'tall': A.import_gltf(ph('anthurium_botany_01'), 'anthurium_botany_01_a', 'proto_tall', scale=0.75),
             'calathea': A.import_gltf(ph('calathea_orbifolia_01'), 'calathea_orbifolia_01_a', 'proto_calathea'),
             'desk_plant': A.import_gltf(ph('anthurium_botany_01'), 'anthurium_botany_05_e', 'proto_desk_plant', scale=0.9),
             # stand the closed binder on its edge, thickness along the shelf
