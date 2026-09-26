@@ -1,0 +1,702 @@
+"""fleet — send tasks to Claude Code / Codex agents on other machines and watch them work."""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shlex
+import subprocess
+import sys
+import time
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from typing import Any
+
+from rich.console import Console, Group
+from rich.live import Live
+from rich.text import Text
+from rich.tree import Tree
+
+from fleet import transport
+from fleet.transport import FleetError, Host, HostReport
+from fleet.web.server import serve
+
+console = Console()
+error_console = Console(stderr=True)
+
+STATUS_STYLE = {
+    "running": ("●", "bold green"), "queued": ("◌", "yellow"), "stalled": ("◍", "magenta"),
+    "failed": ("✗", "bold red"), "done": ("✓", "dim green"), "cancelled": ("⊘", "dim"),
+}
+STEP_STYLE = {
+    "running": ("▶", "bold green"), "pending": ("○", "dim"), "done": ("✓", "green"),
+    "failed": ("✗", "red"), "cancelled": ("⊘", "dim"),
+}
+TODO_STYLE = {"in_progress": ("▸", "cyan"), "pending": ("·", "dim"), "completed": ("✓", "dim green")}
+TOOL_ICON = {"bash": "$", "edit": "✎", "read": "📖", "search": "🔍", "web": "🌐", "think": "💭",
+             "delegate": "👥", "plan": "📝", "other": "⚙"}
+DEFAULT_PERMISSION = {"claude": "acceptEdits", "codex": "workspace-write"}
+LIST_ITEM = re.compile(r"^\s*(?:[-*]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+)(.+)$")
+
+
+# ------------------------------------------------------------- job refs
+
+
+def resolve(reference: str) -> tuple[Host, str]:
+    """Accept `host:id` or a bare id (searched on every host)."""
+    if ":" in reference:
+        host_name, job_id = reference.split(":", 1)
+        host = transport.host_by_name(host_name)
+        transport.ensure_master(host)
+        return host, job_id
+    matches = [(report.host, job["id"]) for report in transport.gather(transport.configured_hosts(), ["ls", "--all"])
+               for job in report.jobs if job["id"].startswith(reference)]
+    if len(matches) != 1:
+        raise FleetError(f"'{reference}' matches {len(matches)} jobs; use host:id")
+    return matches[0]
+
+
+def age(timestamp: float | None) -> str:
+    if not timestamp:
+        return ""
+    seconds = int(time.time() - timestamp)
+    for unit, size in (("d", 86400), ("h", 3600), ("m", 60)):
+        if seconds >= size:
+            return f"{seconds // size}{unit}"
+    return f"{seconds}s"
+
+
+# ------------------------------------------------------------ rendering
+
+
+def job_label(host_name: str, job: dict[str, Any]) -> Text:
+    icon, style = STATUS_STYLE.get(job["status"], ("?", ""))
+    steps = job["steps"]
+    completed = sum(step["status"] == "done" for step in steps)
+    label = Text()
+    label.append(f"{icon} ", style)
+    label.append(f"{host_name}:{job['id']}", "bold")
+    label.append(f"  {job['agent']}", "cyan" if job["agent"] == "claude" else "blue")
+    label.append(f"  {completed}/{len(steps)}", "bold" if completed < len(steps) else "dim")
+    label.append(f"  {job['status']}", style)
+    label.append(f"  {age(job.get('updated_at'))}", "dim")
+    label.append(f"\n  {job['description']}")
+    activity = job.get("activity")
+    if activity and job["status"] == "running":
+        tool_icon = TOOL_ICON.get(activity.get("tool", ""), "💬" if activity["kind"] == "text" else "!")
+        label.append(f"\n  {tool_icon} {activity.get('summary', '')}", "italic dim" if activity["kind"] != "error" else "red")
+    return label
+
+
+def add_steps(node: Tree, job: dict[str, Any], *, brief: bool) -> None:
+    steps = job["steps"]
+    if brief and len(steps) <= 1:
+        return
+    for step in steps:
+        icon, style = STEP_STYLE.get(step["status"], ("?", ""))
+        line = Text(f"{icon} {step['index'] + 1}. {step['title']}", style)
+        if step["status"] in ("done", "failed") and step.get("result") and not brief:
+            line.append(f"  — {step['result'][:100]}", "dim")
+        step_node = node.add(line)
+        if step["status"] == "running" and job.get("todos"):
+            for todo in job["todos"]:
+                todo_icon, todo_style = TODO_STYLE.get(todo["status"], ("·", "dim"))
+                step_node.add(Text(f"{todo_icon} {todo['text']}", todo_style))
+
+
+SESSION_STYLE = {"working": ("●", "bold green"), "idle": ("◌", "yellow")}
+
+
+def session_label(session: dict[str, Any]) -> Text:
+    icon, style = SESSION_STYLE.get(session["status"], ("?", ""))
+    label = Text()
+    label.append(f"{icon} ", style)
+    label.append(session["agent"], "cyan" if session["agent"] == "claude" else "blue")
+    label.append(f"  {session.get('project') or '?'}", "bold")
+    label.append(f"  {session['status']}", style)
+    label.append(f"  {age(session.get('updated_at'))}", "dim")
+    label.append(f"  {session.get('title') or session['id'][:8]}")
+    activity = session.get("activity")
+    if activity and session["status"] == "working":
+        tool_icon = TOOL_ICON.get(activity.get("tool", ""), "💬" if activity["kind"] == "text" else "!")
+        label.append(f"\n  {tool_icon} {activity.get('summary', '')}", "italic dim" if activity["kind"] != "error" else "red")
+    return label
+
+
+def render_sessions(sessions: dict[str, list[dict[str, Any]]]) -> list[Tree]:
+    trees = []
+    for host_name in sorted(sessions):
+        if sessions[host_name]:
+            tree = Tree(Text(f"live sessions · {host_name}", "bold underline"))
+            for session in sorted(sessions[host_name], key=lambda session: -(session.get("updated_at") or 0)):
+                tree.add(session_label(session))
+            trees.append(tree)
+    return trees
+
+
+def render(reports: list[HostReport], *, group_by: str, brief: bool,
+           sessions: dict[str, list[dict[str, Any]]] | None = None) -> Group:
+    parts: list[Any] = []
+    for report in reports:
+        if report.error:
+            parts.append(Text(f"⚠ {report.host.name}: {report.error}", "red"))
+    groups: dict[str, list[tuple[str, dict[str, Any]]]] = defaultdict(list)
+    for report in reports:
+        for job in report.jobs:
+            key = job["project"] if group_by == "project" else report.host.name
+            groups[key].append((report.host.name, job))
+    if not groups:
+        parts.append(Text("no jobs", "dim"))
+    for key in sorted(groups):
+        jobs = groups[key]
+        running = sum(job["status"] == "running" for _, job in jobs)
+        tree = Tree(Text(f"{key}", "bold underline").append(f"  {running} running · {len(jobs)} jobs", "dim"))
+        for host_name, job in sorted(jobs, key=lambda pair: (pair[1]["status"] != "running", -pair[1]["created_at"])):
+            add_steps(tree.add(job_label(host_name, job)), job, brief=brief)
+        parts.append(tree)
+    parts.extend(render_sessions(sessions or {}))
+    return Group(*parts)
+
+
+def list_arguments(arguments: argparse.Namespace) -> list[str]:
+    fleetd_arguments = ["ls", "--since-hours", str(arguments.since)]
+    return fleetd_arguments + (["--all"] if arguments.all else [])
+
+
+def selected_hosts(arguments: argparse.Namespace) -> list[Host]:
+    hosts = transport.configured_hosts()
+    if getattr(arguments, "host", None):
+        hosts = [host for host in hosts if host.name in arguments.host]
+    if not hosts:
+        raise FleetError("no hosts configured — fleet host add <name> --ssh <target>")
+    return hosts
+
+
+def filter_reports(reports: list[HostReport], project: str | None) -> list[HostReport]:
+    if project:
+        for report in reports:
+            report.jobs = [job for job in report.jobs if job["project"] == project]
+    return reports
+
+
+def gather_listing(hosts: list[Host], arguments: argparse.Namespace) -> tuple[list[HostReport], dict[str, list[dict[str, Any]]]]:
+    """Jobs and live interactive sessions from every host, fetched side by side."""
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        jobs = pool.submit(transport.gather, hosts, list_arguments(arguments))
+        sessions = pool.submit(transport.gather_sessions, hosts) if arguments.sessions else None
+        reports = filter_reports(jobs.result(), arguments.project)
+        by_host = sessions.result() if sessions else {}
+    if arguments.project:
+        by_host = {name: [session for session in host_sessions if session.get("project") == arguments.project]
+                   for name, host_sessions in by_host.items()}
+    return reports, by_host
+
+
+# ------------------------------------------------------------- commands
+
+
+def command_list(arguments: argparse.Namespace) -> None:
+    reports, sessions = gather_listing(selected_hosts(arguments), arguments)
+    if arguments.json:
+        print(json.dumps([{"host": report.host.name, "error": report.error, "jobs": report.jobs,
+                           "sessions": sessions.get(report.host.name, [])} for report in reports]))
+        return
+    console.print(render(reports, group_by=arguments.group_by, brief=arguments.brief, sessions=sessions))
+
+
+def command_watch(arguments: argparse.Namespace) -> None:
+    hosts = selected_hosts(arguments)
+    with Live(console=console, screen=True, auto_refresh=False) as live:
+        while True:
+            reports, sessions = gather_listing(hosts, arguments)
+            header = Text(f"fleet · {time.strftime('%H:%M:%S')} · every {arguments.interval}s · ctrl-c to quit\n", "dim")
+            live.update(Group(header, render(reports, group_by=arguments.group_by, brief=arguments.brief,
+                                             sessions=sessions)), refresh=True)
+            time.sleep(arguments.interval)
+
+
+def read_steps(arguments: argparse.Namespace) -> list[dict[str, Any]]:
+    steps: list[dict[str, Any]] = [{"prompt": step} for step in arguments.step or []]
+    if arguments.steps_file:
+        content = Path(arguments.steps_file).read_text()
+        if arguments.steps_file.endswith(".json"):
+            steps += [{"prompt": item} if isinstance(item, str) else item for item in json.loads(content)]
+        else:
+            items = [match.group(1).strip() for match in map(LIST_ITEM.match, content.splitlines()) if match]
+            steps += [{"prompt": item} for item in items] or [{"prompt": content}]
+    return steps
+
+
+def push_context(host: Host, job_id: str, paths: list[str]) -> None:
+    missing = [path for path in paths if not os.path.exists(path)]
+    if missing:
+        raise FleetError(f"context not found: {', '.join(missing)}")
+    remote_directory = f"~/.fleet/jobs/{job_id}/context/" if not host.is_local else os.path.expanduser(
+        f"~/.fleet/jobs/{job_id}/context/")
+    transport.rsync([os.path.abspath(path) for path in paths], host.rsync_target(remote_directory), host)
+
+
+def command_send(arguments: argparse.Namespace) -> None:
+    host = transport.host_by_name(arguments.host)
+    steps = read_steps(arguments)
+    if not steps:
+        raise FleetError("give at least one --step or a --steps-file")
+    permission = arguments.permission or DEFAULT_PERMISSION[arguments.agent]
+    fleetd_arguments = ["create", "--project", arguments.project, "--description", arguments.description,
+                        "--agent", arguments.agent, "--cwd", arguments.cwd, "--permission", permission,
+                        "--steps-file", "/dev/stdin", "--hold"]
+    for flag, value in (("--model", arguments.model), ("--id", arguments.id)):
+        if value:
+            fleetd_arguments += [flag, value]
+    if arguments.allow:
+        if arguments.agent != "claude":
+            raise FleetError("--allow applies to claude jobs only (codex uses its sandbox)")
+        fleetd_arguments += ["--allowed-tools", json.dumps(arguments.allow)]
+    if arguments.add_dir and arguments.agent != "claude":
+        raise FleetError("--add-dir applies to claude jobs only")
+    for directory in arguments.add_dir or []:
+        fleetd_arguments += ["--add-dir", directory]
+    for pair in arguments.env or []:
+        if "=" not in pair:
+            raise FleetError(f"--env takes NAME=value, not {pair}")
+        fleetd_arguments += ["--env", pair]
+    if arguments.keep_going:
+        fleetd_arguments.append("--keep-going")
+    job = transport.call(host, fleetd_arguments, stdin_text=json.dumps(steps))
+    if arguments.context:
+        push_context(host, job["id"], arguments.context)
+    if not arguments.hold:
+        job = transport.call(host, ["start", job["id"]])
+    reference = f"{host.name}:{job['id']}"
+    if arguments.json:
+        print(json.dumps({"job": reference, "status": job["status"], "steps": len(job["steps"])}))
+    else:
+        console.print(f"[bold]{reference}[/] {job['status']} · {len(job['steps'])} step(s) · {job['description']}")
+    if arguments.wait:
+        wait_for([reference], step=None, timeout=None, as_json=arguments.json)
+
+
+def command_add(arguments: argparse.Namespace) -> None:
+    host, job_id = resolve(arguments.job)
+    steps = read_steps(arguments)
+    if arguments.context:
+        push_context(host, job_id, arguments.context)
+    fleetd_arguments = ["add", job_id, "--steps-file", "/dev/stdin"] + (["--retry"] if arguments.retry else [])
+    job = transport.call(host, fleetd_arguments, stdin_text=json.dumps(steps))
+    console.print(f"[bold]{host.name}:{job_id}[/] {job['status']} · now {len(job['steps'])} step(s)")
+
+
+def command_push(arguments: argparse.Namespace) -> None:
+    host, job_id = resolve(arguments.job)
+    push_context(host, job_id, arguments.paths)
+    console.print(f"pushed {len(arguments.paths)} path(s) to {host.name}:~/.fleet/jobs/{job_id}/context/")
+
+
+def command_pull(arguments: argparse.Namespace) -> None:
+    host, job_id = resolve(arguments.job)
+    destination = Path(arguments.destination or f"./fleet-{job_id}").resolve()
+    destination.mkdir(parents=True, exist_ok=True)
+    source = f"~/.fleet/jobs/{job_id}/outbox/"
+    transport.rsync([host.rsync_target(os.path.expanduser(source) if host.is_local else source)], str(destination), host)
+    console.print(f"outbox of {host.name}:{job_id} → {destination}")
+
+
+def command_show(arguments: argparse.Namespace) -> None:
+    host, job_id = resolve(arguments.job)
+    job = transport.call(host, ["show", job_id, "--events", str(arguments.events)])
+    if arguments.json:
+        print(json.dumps(job))
+        return
+    tree = Tree(job_label(host.name, job))
+    add_steps(tree, job, brief=False)
+    console.print(tree)
+    console.print(f"[dim]cwd {job['cwd']} · {job['permission']} · session {job.get('session_id')}[/]")
+    for event in job["events"]:
+        stamp = time.strftime("%H:%M:%S", time.localtime(event["ts"]))
+        kind = event.get("tool") or event["kind"]
+        line = Text(f"{stamp} {event.get('step', '')} ", "dim")
+        line.append(f"{TOOL_ICON.get(kind, kind)} {event.get('summary', '')}", "red" if event["kind"] == "error" else "")
+        console.print(line, highlight=False)
+
+
+def command_tail(arguments: argparse.Namespace) -> None:
+    host, job_id = resolve(arguments.job)
+    command = host.fleetd_command(["events", job_id, "--lines", str(arguments.lines)] + (["-f"] if arguments.follow else []))
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, text=True)
+    assert process.stdout is not None
+    try:
+        for line in process.stdout:
+            event = json.loads(line)
+            stamp = time.strftime("%H:%M:%S", time.localtime(event["ts"]))
+            kind = event.get("tool") or event["kind"]
+            print(f"{stamp} [{event.get('step', '-')}] {TOOL_ICON.get(kind, kind)} {event.get('summary', '')}", flush=True)
+    except KeyboardInterrupt:
+        process.terminate()
+
+
+def command_attach(arguments: argparse.Namespace) -> None:
+    host, job_id = resolve(arguments.job)
+    command = host.shell_command(f"tmux -L fleet attach -t fleet-{job_id}", interactive=True)
+    os.execvp(command[0], command)
+
+
+def wait_for(references: list[str], *, step: int | None, timeout: float | None, as_json: bool,
+             any_job: bool = False) -> None:
+    """Block until the jobs finish. Exit code 0 if all finished jobs are done, 1 otherwise."""
+    pending = {reference: resolve(reference) for reference in references}
+    finished: dict[str, dict[str, Any]] = {}
+    processes = {}
+    for reference, (host, job_id) in pending.items():
+        fleetd_arguments = ["wait", job_id] + (["--step", str(step)] if step is not None else [])
+        fleetd_arguments += ["--timeout", str(timeout)] if timeout else []
+        processes[reference] = subprocess.Popen(host.fleetd_command(fleetd_arguments), stdout=subprocess.PIPE, text=True)
+    while processes:
+        for reference, process in list(processes.items()):
+            if process.poll() is None:
+                continue
+            output = (process.stdout.read() if process.stdout else "").strip().splitlines()
+            finished[reference] = json.loads(output[-1]) if output else {"error": "no output"}
+            del processes[reference]
+            report_finished(reference, finished[reference], as_json=as_json)
+        if any_job and finished:
+            for process in processes.values():
+                process.terminate()
+            break
+        time.sleep(0.5)
+    sys.exit(0 if all(job.get("status") == "done" for job in finished.values()) else 1)
+
+
+def report_finished(reference: str, job: dict[str, Any], *, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps({"job": reference, **job}), flush=True)
+        return
+    if "error" in job:
+        console.print(f"[red]{reference}: {job['error']}[/]")
+        return
+    icon, style = STATUS_STYLE.get(job["status"], ("?", ""))
+    console.print(f"[{style}]{icon} {reference} {job['status']}[/] · {job['description']}")
+    for result in job.get("results", []):
+        step_icon, step_style = STEP_STYLE.get(result["status"], ("?", ""))
+        console.print(f"  [{step_style}]{step_icon} {result['index'] + 1}. {result['title']}[/]")
+        if result.get("result"):
+            console.print(f"     {result['result']}", style="dim", markup=False, highlight=False)
+
+
+def command_wait(arguments: argparse.Namespace) -> None:
+    wait_for(arguments.jobs, step=arguments.step, timeout=arguments.timeout, as_json=arguments.json,
+             any_job=arguments.any)
+
+
+def command_result(arguments: argparse.Namespace) -> None:
+    host, job_id = resolve(arguments.job)
+    fleetd_arguments = ["result", job_id] + (["--step", str(arguments.step - 1)] if arguments.step else [])
+    document = transport.call(host, fleetd_arguments)
+    if arguments.json:
+        print(json.dumps(document))
+        return
+    for result in document["results"]:
+        print(f"## Step {result['index'] + 1} ({result['status']})\n\n{result['text'] or '(no result yet)'}\n")
+    if document["outbox"]:
+        print("Outbox (fetch with `fleet pull`):\n" + "\n".join(f"- {path}" for path in document["outbox"]))
+
+
+def command_cancel(arguments: argparse.Namespace) -> None:
+    host, job_id = resolve(arguments.job)
+    job = transport.call(host, ["cancel", job_id] + (["--all-steps"] if arguments.all_steps else []))
+    console.print(f"{host.name}:{job_id} {job['status']}")
+
+
+def command_move(arguments: argparse.Namespace) -> None:
+    for reference in arguments.jobs:
+        host, job_id = resolve(reference)
+        transport.call(host, ["mv", job_id, arguments.project])
+        console.print(f"{host.name}:{job_id} → {arguments.project}")
+
+
+def command_remove(arguments: argparse.Namespace) -> None:
+    host, job_id = resolve(arguments.job)
+    transport.call(host, ["rm", job_id])
+    console.print(f"removed {host.name}:{job_id}")
+
+
+def command_notify(arguments: argparse.Namespace) -> None:
+    """Print one line whenever any step or job changes status — made for a Monitor/background watcher."""
+    hosts = selected_hosts(arguments)
+    known: dict[str, str] = {}
+    first_pass = True
+    while True:
+        for report in transport.gather(hosts, ["ls", "--since-hours", "48"]):
+            for job in report.jobs:
+                reference = f"{report.host.name}:{job['id']}"
+                for step in job["steps"]:
+                    key = f"{reference}#{step['index']}"
+                    if known.get(key) != step["status"]:
+                        if not first_pass and step["status"] in ("done", "failed", "cancelled", "running"):
+                            print(f"STEP {step['status'].upper()} {reference} step {step['index'] + 1}/{len(job['steps'])}: "
+                                  f"{step['title']}" + (f" — {step['result'][:200]}" if step.get("result") else ""), flush=True)
+                        known[key] = step["status"]
+                if known.get(reference) != job["status"]:
+                    if not first_pass and job["status"] in ("done", "failed", "cancelled", "stalled"):
+                        print(f"JOB {job['status'].upper()} {reference} ({job['project']}): {job['description']}", flush=True)
+                    known[reference] = job["status"]
+        first_pass = False
+        time.sleep(arguments.interval)
+
+
+def command_host_add(arguments: argparse.Namespace) -> None:
+    config = transport.load_config()
+    config.setdefault("hosts", {})[arguments.name] = {"ssh": None if arguments.local else (arguments.ssh or arguments.name),
+                                                      "python": arguments.python}
+    transport.save_config(config)
+    console.print(f"added {arguments.name}; now run: fleet install {arguments.name}")
+
+
+def command_host_remove(arguments: argparse.Namespace) -> None:
+    config = transport.load_config()
+    config.get("hosts", {}).pop(arguments.name, None)
+    transport.save_config(config)
+
+
+def command_hosts(arguments: argparse.Namespace) -> None:
+    for report in transport.gather(transport.configured_hosts(), ["ls"]):
+        target = report.host.ssh_target or "(local)"
+        state = f"[red]{report.error}[/]" if report.error else f"[green]ok[/] · {len(report.jobs)} active job(s)"
+        console.print(f"[bold]{report.host.name}[/] {target} · {state}")
+
+
+# Agents are often only on PATH in interactive login shells (nvm, pyenv), so ask those first.
+# Each shell may set up a different PATH (e.g. nvm only in .bashrc), so every one is asked.
+DETECT_SCRIPT = r"""
+probe='echo "PATH=$PATH"; echo "claude=$(command -v claude)"; echo "codex=$(command -v codex)"'
+for shell in zsh bash; do
+  command -v $shell >/dev/null || continue
+  $shell -lic "$probe" 2>/dev/null </dev/null | grep -E '^(PATH|claude|codex)='
+done
+eval "$probe"
+"""
+
+
+def merge_detected(output: str) -> dict[str, str | None]:
+    """First hit for each agent wins; its directory goes on PATH so `#!/usr/bin/env node` resolves."""
+    found: dict[str, str] = {}
+    first_path = ""
+    for line in output.splitlines():
+        name, _, value = line.partition("=")
+        if name == "PATH":
+            first_path = first_path or value
+        elif value.startswith("/") and name not in found:
+            found[name] = value
+    directories = list(dict.fromkeys(os.path.dirname(binary) for binary in found.values()))
+    path = ":".join(directories + [entry for entry in first_path.split(":") if entry and entry not in directories])
+    return {"path": path, "claude": found.get("claude"), "codex": found.get("codex")}
+
+
+# Spelled out rather than $XDG_RUNTIME_DIR, which some sshd/PAM setups leave unset.
+AGENT_SOCKET = "/run/user/$(id -u)/fleet-ssh-agent.sock"
+
+
+def command_install(arguments: argparse.Namespace) -> None:
+    """Copy fleetd to the host and record where its agent binaries live."""
+    host = transport.host_by_name(arguments.name)
+    destination = transport.REMOTE_FLEETD_PATH
+    subprocess.run(host.shell_command("mkdir -p ~/.local/share/fleet"), check=True, capture_output=True)
+    transport.rsync([str(transport.LOCAL_FLEETD_SOURCE)],
+                    host.rsync_target(os.path.expanduser(destination) if host.is_local else destination), host)
+    detected = subprocess.run(host.shell_command(DETECT_SCRIPT), capture_output=True, text=True, timeout=60).stdout
+    agent_socket = subprocess.run(host.shell_command(f"test -S {AGENT_SOCKET} && echo {AGENT_SOCKET}"),
+                                  capture_output=True, text=True, timeout=20).stdout.strip()
+    if host.is_local and not agent_socket:
+        agent_socket = os.environ.get("SSH_AUTH_SOCK", "")  # this machine's own agent already holds the keys
+    settings = {**merge_detected(detected), "ssh_auth_sock": agent_socket or None}
+    report = transport.call(host, ["configure", json.dumps(settings)])
+    console.print(f"[bold]{host.name}[/] ({report['host']}) installed")
+    for name in ("claude", "codex"):
+        console.print(f"  {name}: {report['config'].get(name) or '[red]not found[/]'}")
+    console.print(f"  ssh-agent for jobs: {agent_socket or '[yellow]none — jobs get no SSH_AUTH_SOCK[/]'}")
+    if not report["tmux"]:
+        console.print("  [red]tmux not found — jobs cannot start[/]")
+
+
+def command_unlock(arguments: argparse.Namespace) -> None:
+    """Add the host's key to its fleet ssh-agent; prompts for the passphrase once per boot."""
+    if not sys.stdin.isatty():
+        raise FleetError("unlock needs a real terminal to read the passphrase — run it in your own shell, "
+                         "not via Claude Code's ! prefix")
+    host = transport.host_by_name(arguments.name)
+    key = f" {shlex.quote(arguments.key)}" if arguments.key else ""
+    command = host.shell_command(f"SSH_AUTH_SOCK={AGENT_SOCKET} ssh-add{key} && SSH_AUTH_SOCK={AGENT_SOCKET} ssh-add -l",
+                                 interactive=True)
+    sys.exit(subprocess.run(command).returncode)
+
+
+def command_web(arguments: argparse.Namespace) -> None:
+    serve(selected_hosts(arguments), port=arguments.port, bind=arguments.bind, open_browser=arguments.open)
+
+
+# --------------------------------------------------------------- parser
+
+
+def add_listing_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--host", action="append", help="only these hosts (repeatable)")
+    parser.add_argument("--project", "-p", help="only this project")
+    parser.add_argument("--by", dest="group_by", choices=("project", "host"), default="project")
+    parser.add_argument("--all", "-a", action="store_true", help="include old finished jobs")
+    parser.add_argument("--since", type=float, default=24, help="hours of finished jobs to show (default 24)")
+    parser.add_argument("--brief", "-b", action="store_true", help="hide step lists")
+    parser.add_argument("--no-sessions", dest="sessions", action="store_false",
+                        help="leave out live interactive Claude/Codex sessions")
+
+
+def add_step_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--step", "-s", action="append", help="a task prompt; repeat for a task list")
+    parser.add_argument("--steps-file", "-f", help="markdown list (one step per item) or JSON list")
+    parser.add_argument("--context", "-c", action="append", help="file/dir to copy into the job's context dir")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="fleet", description=__doc__)
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    listing = commands.add_parser("ls", help="list jobs across hosts, grouped by project")
+    add_listing_options(listing)
+    listing.add_argument("--json", action="store_true")
+    listing.set_defaults(handler=command_list)
+
+    watch = commands.add_parser("watch", help="live-updating ls")
+    add_listing_options(watch)
+    watch.add_argument("--interval", "-n", type=float, default=3)
+    watch.set_defaults(handler=command_watch)
+
+    send = commands.add_parser("send", help="start a job (a task list) on a host")
+    send.add_argument("--host", "-H", required=True)
+    send.add_argument("--project", "-p", required=True)
+    send.add_argument("--description", "-d", required=True, help="one line: what this job is working on")
+    send.add_argument("--agent", "-a", choices=("claude", "codex"), default="claude")
+    send.add_argument("--cwd", "-C", required=True, help="working directory on the host")
+    send.add_argument("--permission", help="claude: acceptEdits|bypassPermissions|plan|default; "
+                                           "codex: read-only|workspace-write|danger-full-access")
+    send.add_argument("--model", "-m")
+    send.add_argument("--allow", action="append",
+                      help="claude permission rule to pre-approve, e.g. 'Bash(ss:*)' (repeatable)")
+    send.add_argument("--add-dir", action="append", help="extra directory on the host the claude agent may use (repeatable)")
+    send.add_argument("--env", action="append", help="NAME=value set in the agent's environment (repeatable)")
+    send.add_argument("--id")
+    send.add_argument("--keep-going", action="store_true", help="continue to next step after a failure")
+    send.add_argument("--hold", action="store_true", help="create but don't start")
+    send.add_argument("--wait", "-w", action="store_true", help="block until the job finishes")
+    send.add_argument("--json", action="store_true")
+    add_step_options(send)
+    send.set_defaults(handler=command_send)
+
+    add = commands.add_parser("add", help="append steps to a job (restarts it if idle)")
+    add.add_argument("job")
+    add.add_argument("--retry", action="store_true", help="also re-queue failed/cancelled steps")
+    add_step_options(add)
+    add.set_defaults(handler=command_add)
+
+    push = commands.add_parser("push", help="copy files into a job's context dir")
+    push.add_argument("job")
+    push.add_argument("paths", nargs="+")
+    push.set_defaults(handler=command_push)
+
+    pull = commands.add_parser("pull", help="copy a job's outbox here")
+    pull.add_argument("job")
+    pull.add_argument("destination", nargs="?")
+    pull.set_defaults(handler=command_pull)
+
+    show = commands.add_parser("show", help="job details and recent activity")
+    show.add_argument("job")
+    show.add_argument("--events", type=int, default=25)
+    show.add_argument("--json", action="store_true")
+    show.set_defaults(handler=command_show)
+
+    tail = commands.add_parser("tail", help="activity stream of a job")
+    tail.add_argument("job")
+    tail.add_argument("--follow", "-f", action="store_true")
+    tail.add_argument("--lines", "-n", type=int, default=40)
+    tail.set_defaults(handler=command_tail)
+
+    attach = commands.add_parser("attach", help="attach to the job's tmux session")
+    attach.add_argument("job")
+    attach.set_defaults(handler=command_attach)
+
+    wait = commands.add_parser("wait", help="block until jobs finish; exit 0 only if all are done")
+    wait.add_argument("jobs", nargs="+")
+    wait.add_argument("--step", type=int, help="wait for this step index (0-based) only")
+    wait.add_argument("--any", action="store_true", help="return when the first job finishes")
+    wait.add_argument("--timeout", type=float)
+    wait.add_argument("--json", action="store_true")
+    wait.set_defaults(handler=command_wait)
+
+    result = commands.add_parser("result", help="final messages of each step + outbox listing")
+    result.add_argument("job")
+    result.add_argument("--step", type=int, help="1-based step number")
+    result.add_argument("--json", action="store_true")
+    result.set_defaults(handler=command_result)
+
+    cancel = commands.add_parser("cancel", help="stop the running step")
+    cancel.add_argument("job")
+    cancel.add_argument("--all-steps", action="store_true", help="also cancel upcoming steps")
+    cancel.set_defaults(handler=command_cancel)
+
+    move = commands.add_parser("mv", help="move jobs to another project")
+    move.add_argument("jobs", nargs="+")
+    move.add_argument("project")
+    move.set_defaults(handler=command_move)
+
+    remove = commands.add_parser("rm", help="delete a finished job's state")
+    remove.add_argument("job")
+    remove.set_defaults(handler=command_remove)
+
+    notify = commands.add_parser("notify", help="stream one line per status change (for monitors)")
+    notify.add_argument("--host", action="append")
+    notify.add_argument("--interval", "-n", type=float, default=5)
+    notify.set_defaults(handler=command_notify)
+
+    hosts = commands.add_parser("hosts", help="configured hosts and reachability")
+    hosts.set_defaults(handler=command_hosts)
+
+    host = commands.add_parser("host", help="manage hosts").add_subparsers(dest="host_command", required=True)
+    host_add = host.add_parser("add")
+    host_add.add_argument("name")
+    host_add.add_argument("--ssh", help="ssh target (default: the name)")
+    host_add.add_argument("--local", action="store_true", help="this machine, no ssh")
+    host_add.add_argument("--python", default="python3")
+    host_add.set_defaults(handler=command_host_add)
+    host_remove = host.add_parser("rm")
+    host_remove.add_argument("name")
+    host_remove.set_defaults(handler=command_host_remove)
+
+    install = commands.add_parser("install", help="install/upgrade fleetd on a host")
+    install.add_argument("name")
+    install.set_defaults(handler=command_install)
+
+    unlock = commands.add_parser("unlock", help="add a key to the host's fleet ssh-agent (passphrase once per boot)")
+    unlock.add_argument("name")
+    unlock.add_argument("--key", help="key path on the host (default: ssh-add's defaults)")
+    unlock.set_defaults(handler=command_unlock)
+
+    web = commands.add_parser("web", help="serve the kitchen dashboard")
+    web.add_argument("--host", action="append")
+    web.add_argument("--port", type=int, default=8787)
+    web.add_argument("--bind", default="127.0.0.1")
+    web.add_argument("--open", action="store_true", help="open a browser tab")
+    web.set_defaults(handler=command_web)
+    return parser
+
+
+def main() -> None:
+    arguments = build_parser().parse_args()
+    try:
+        arguments.handler(arguments)
+    except FleetError as error:
+        error_console.print(f"[red]fleet: {error}[/]")
+        sys.exit(2)
+    except KeyboardInterrupt:
+        sys.exit(130)
+
+
+if __name__ == "__main__":
+    main()

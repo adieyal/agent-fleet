@@ -1,0 +1,66 @@
+---
+name: fleet
+description: Dispatch tasks to Claude Code or Codex agents running on other machines (over ssh), give them context files, monitor progress, and get notified when they finish. Use when the user asks to send, delegate, farm out or run work on a remote machine/box/host, check on remote agents, or orchestrate several agents in parallel.
+---
+
+# Fleet: remote agents over ssh
+
+`fleet` runs jobs on hosts listed in
+`~/.config/fleet/config.json`. A **job** is one agent (claude or codex) in one
+working directory on one host, working through an ordered list of **steps**.
+Steps run one after another in the same agent session, so later steps see
+earlier work. Job refs are `host:id` (a unique bare id also works).
+
+Run `fleet hosts` first if you don't know which hosts exist.
+
+## Dispatch
+
+```bash
+fleet send -H home -p <project> -d "<one line: what this job is doing>" -C <cwd on host> \
+  -s "<step 1 prompt>" -s "<step 2 prompt>" \
+  -c ./spec.md -c ./data/            # context: copied to the job's context dir
+  [-a codex] [-m <model>] [--permission <mode>] [--json]
+```
+
+- Steps can come from `-f tasks.md` (one step per `-`/`1.` list item) or a JSON list.
+- Write each step as a self-contained instruction with a checkable outcome. The
+  agent can't ask you questions; say what to do when blocked (stop and report).
+- The agent is told its context dir and an **outbox** dir for files meant for you.
+- Permissions: claude defaults to `acceptEdits` (Bash only if the host's
+  settings allow it); codex defaults to `workspace-write`. Only use
+  `bypassPermissions` / `danger-full-access` when the user asked for it.
+- `-p` groups jobs by project in `fleet ls` and the web view — use the repo or
+  initiative name, consistently.
+
+## Get notified of completion
+
+After `send`, start a background wait so you are re-invoked when it ends:
+
+```bash
+fleet wait home:ab12cd --json        # run with run_in_background: true
+```
+
+It exits 0 when every step is done, 1 if any failed/cancelled, and prints each
+step's final summary. Wait on several with `fleet wait a b c`, or `--any` to
+return on the first. For a long-lived feed of every step/job change across all
+hosts, run `fleet notify` under the Monitor tool.
+
+## Inspect and steer
+
+| Need | Command |
+|---|---|
+| Everything, grouped by project | `fleet ls` (`--by host`, `-p proj`, `-b` brief, `--json`) |
+| One job: steps, todos, recent activity | `fleet show host:id` |
+| Full final message of each step + outbox listing | `fleet result host:id [--step N]` |
+| Fetch files the agent left for you | `fleet pull host:id [dest]` |
+| Send more context mid-job | `fleet push host:id file…` then mention it in the next step |
+| Queue follow-up work (restarts an idle job) | `fleet add host:id -s "…"` (`--retry` re-queues failed steps) |
+| Stop | `fleet cancel host:id [--all-steps]` |
+
+Read results with `fleet result` before reporting to the user or dispatching
+dependent work; don't trust a `done` status alone. Status meanings: `running`,
+`queued` (steps pending), `stalled` (runner died mid-step), `failed`, `done`,
+`cancelled`.
+
+The user watches the same jobs with `fleet watch` and `fleet web` (the
+kitchen dashboard), so keep descriptions and step titles meaningful.
