@@ -97,7 +97,7 @@ Blender bakes in scene-linear values (view transform *Standard*, no look); three
   - `art/assets.json` and `art/assets.lock.json`: what we use, and the exact URL and sha256 of every file.
   - `art/scripts/`: fetching, then the Blender steps (`build_<scene>.py`, `bake.py`, `export.py`, `preview.py`) run with `blender -b -P`.
   - `art/sources/` and `art/build/`: downloads and intermediates, gitignored.
-  - The robot is scripted too (`art/scripts/build_robot.py`). It is a rigid-skinned mesh on a 12-bone rig, so there's no hand-tuned `.blend` to commit.
+  - The robot is the deck's RobotExpressive (CC0), restyled by `art/scripts/build_robot.py`. It keeps its rig and clips and gains arm-only seated clips. The scripted robot this replaced is gone.
 - `fleet/web/assets/world/<scene>/`: built output only, i.e. `<scene>.glb`, `lightmap-<layer>.webp`, and `manifest.json` naming the warm groups and dynamic nodes. Source credits are in `art/CREDITS.md`.
 
 **Sources.** All CC0.

@@ -43,7 +43,7 @@ def test_the_page_is_served_but_not_linked_from_the_deck(url: str) -> None:
 
 def test_it_opens_in_the_l2_state(bench: Page) -> None:
     state = bench.evaluate("window.bench.state()")
-    assert [r["action"] for r in state["robots"]] == ["type", "write", "hold"]
+    assert [r["action"] for r in state["robots"]] == ["Type", "Write", "Hold"]
     assert all(r["busy"] for r in state["robots"])
     assert state["lantern"] is True
     assert [state["warmth"][f"criteria{i}"] for i in range(5)] == [1, 1, 1, 0, 0]
@@ -62,6 +62,6 @@ def test_live_pieces_respond(bench: Page) -> None:
     assert state["tiles"]["0,0"] == "done"
     assert state["warmth"]["criteria4"] == 1
     blue = next(r for r in state["robots"] if r["desk"] == "desk2")
-    assert blue == {"desk": "desk2", "busy": False, "action": "idle"}
+    assert blue == {"desk": "desk2", "busy": False, "action": "Rest"}
     assert state["warmth"]["desk2"] == 0  # the lamp follows activity
     assert state["lantern"] is False

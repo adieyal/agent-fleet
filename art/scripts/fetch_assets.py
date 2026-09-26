@@ -148,6 +148,11 @@ def write_credits(lock: dict) -> None:
         main = next((f for f in a['files'] if f['path'].endswith(('.gltf', '.hdr', '.zip'))), a['files'][0])
         rows.append(f"| [{a['title']}]({a['page']}) | {a['source']} | {', '.join(a['authors'])} "
                     f"| {a['license']} | {main['url']} |")
+    rows += ['', '## Sources already in the repository', '', '| Asset | Path | Authors | Licence | Used for |',
+             '|---|---|---|---|---|']
+    for a in json.loads(MANIFEST.read_text()).get('local', []):
+        rows.append(f"| [{a['title']}]({a['url']}) | `{a['path']}` | {', '.join(a['authors'])} | {a['license']} "
+                    f"| {a['use']} |")
     CREDITS.write_text('\n'.join(rows) + '\n')
 
 

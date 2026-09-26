@@ -12,3 +12,9 @@ Written by `art/scripts/fetch_assets.py --resolve` from `art/assets.lock.json`, 
 | [Wood 095](https://ambientcg.com/view?id=Wood095) | ambientcg | ambientCG | CC0-1.0 | https://ambientcg.com/get?file=Wood095_1K-JPG.zip |
 | [Painted Plaster 017](https://ambientcg.com/view?id=PaintedPlaster017) | ambientcg | ambientCG | CC0-1.0 | https://ambientcg.com/get?file=PaintedPlaster017_1K-JPG.zip |
 | [Concrete 034](https://ambientcg.com/view?id=Concrete034) | ambientcg | ambientCG | CC0-1.0 | https://ambientcg.com/get?file=Concrete034_1K-JPG.zip |
+
+## Sources already in the repository
+
+| Asset | Path | Authors | Licence | Used for |
+|---|---|---|---|---|
+| [RobotExpressive](https://github.com/mrdoob/three.js/tree/r186/examples/models/gltf/RobotExpressive) | `fleet/web/assets/models/robot/RobotExpressive.glb` | Tomás Laulhé, Don McCurdy (modifications) | CC0-1.0 | the robots, restyled by art/scripts/build_robot.py |

@@ -379,7 +379,8 @@ def bench(m, rng: random.Random, props: dict) -> None:
         seat_x, seat_y = cx - 0.25, BENCH_Y + DESK_D / 2 + 0.34
         # far-side chairs face the desk (-Y), near-side ones face the wall (+Y)
         chair(m, f'{name}_chair_far', seat_x, seat_y, 0.0)
-        A.empty(f'seat_{name}', (seat_x, seat_y, SEAT_H), (0, 0, 0), desk=name)
+        # the robot sits at the front of its chair, 0.14 m from the desk edge: its arms are short
+        A.empty(f'seat_{name}', (seat_x, seat_y - 0.2, SEAT_H), (0, 0, 0), desk=name)
         chair(m, f'{name}_chair_near', cx - 0.3, BENCH_Y - DESK_D / 2 - 0.42, math.pi)
         desk_lamp(m, f'{name}_lamp', name, x0 + 0.18, far + 0.1, 1)
         # the warm spill on the floor in front of a working desk (l2's floor there samples ~#fce5d6)

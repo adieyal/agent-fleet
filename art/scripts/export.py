@@ -162,6 +162,7 @@ def main() -> None:
         'anchors': sorted(o.name for o in objs if o.get('fleet') == 'anchor'),
         'actions': sorted(a.name for a in bpy.data.actions),
         'seat_height': info['seat_height'],
+        'runtime': info.get('runtime'),
         'camera': cameras[0] if cameras else None,
         'environment': export_environment(out / 'environment.hdr') if bpy.context.scene.world else None,
         'built_with': {'blender': bpy.app.version_string, 'bake_device': bake.get('device'),

@@ -13,7 +13,12 @@ Output goes to `fleet/web/assets/world/<scene>/`, and that is the only thing com
 
 There are two scenes:
 - `workbench`: the l2 room, baked.
-- `robot`: the rigged character, not baked. It has looping actions `idle`, `type`, `write` and `hold`, and a pencil and a flask on its right hand.
+- `robot`: the deck's RobotExpressive (CC0), restyled, not baked.
+  - It keeps its rig and original clips (`Sitting`, `Idle`, `Wave`, ...).
+  - The restyle adds a glossy body that the page tints per host, dark joints, a dark face screen with cyan eyes, and one subdivision level.
+  - It adds arm-only clips `Rest`, `Type`, `Write` and `Hold`, posed on the end of `Sitting`.
+  - A pencil and a test tube hang from its right hand.
+  - The page plays `Sitting` without its arm tracks, plus one arm clip, and seats the robot using `runtime.seat_point` from the manifest.
 
 The prototype page `/prototype/bench` combines them in three.js. It is served by `fleet/web/server.py` and not linked from the deck.
 

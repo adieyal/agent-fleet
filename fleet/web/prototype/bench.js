@@ -42,9 +42,9 @@ const GradeShader = {
     }`,
 };
 const CAST = [
-  { desk: 'desk1', host: 'teal', action: 'type', icon: 'search' },
-  { desk: 'desk2', host: 'blue', action: 'write', icon: 'pencil', prop: 'prop_pencil' },
-  { desk: 'desk3', host: 'olive', action: 'hold', icon: 'flask', prop: 'prop_flask' },
+  { desk: 'desk1', host: 'teal', action: 'Type', icon: 'search' },
+  { desk: 'desk2', host: 'blue', action: 'Write', icon: 'pencil', prop: 'prop_pencil' },
+  { desk: 'desk3', host: 'olive', action: 'Hold', icon: 'flask', prop: 'prop_flask' },
 ];
 // l2's plan wall: done tiles show a tick; the active row glows. Rows count up from the bottom.
 const DONE = [[5, 1], [4, 1], [4, 5], [2, 6], [1, 6], [1, 8], [0, 4]];
@@ -261,34 +261,54 @@ function answerAttention() {
 
 const robots = [];
 
-function setupRobots(robotGltf, root) {
+// The robot is the deck's RobotExpressive, restyled by art/scripts/build_robot.py. Its body holds the end of
+// `Sitting`; its arms play one of the arm-only clips (Rest, Type, Write, Hold) built on that seated pose.
+const ARM_TRACK = /^(UpperArm|LowerArm)[LR]\./;  // glTF node names lose their dots in three
+
+function trackSubset(clip, keep, name) {
+  return new THREE.AnimationClip(name, clip.duration, clip.tracks.filter(t => keep(t.name)));
+}
+
+function setupRobots(robotGltf, robotManifest, root) {
+  const [sx, sy, sz] = robotManifest.runtime.seat_point;
+  const seatPoint = bl(sx, sy, sz);  // where the seated robot rests, in its own coordinates
+  const all = Object.fromEntries(robotGltf.animations.map(a => [a.name, a]));
+  const clips = {
+    body: trackSubset(all.Sitting, n => !ARM_TRACK.test(n), 'Seated'),
+    ...Object.fromEntries(['Rest', 'Type', 'Write', 'Hold'].map(n => [n, trackSubset(all[n], n2 => ARM_TRACK.test(n2), n)])),
+  };
   for (const cast of CAST) {
     const seat = root.getObjectByName(`seat_${cast.desk}`);
     const robot = SkeletonUtils.clone(robotGltf.scene);
-    seat.getWorldPosition(robot.position);
     seat.getWorldQuaternion(robot.quaternion);
-    robot.scale.setScalar(1.12);  // l2's robots are chunky next to the furniture
+    // put the robot's seat point on the chair's seat
+    seat.getWorldPosition(robot.position).sub(seatPoint.clone().applyQuaternion(robot.quaternion));
     robot.traverse(o => {
       if (!o.isMesh) return;
       o.castShadow = true;
+      o.frustumCulled = false;  // skinned hands: their bounds are the rest pose's
       o.material = o.material.clone();
       o.material.envMapIntensity = 1.0;
       if (o.material.name === 'robot_body') o.material.color.set(HOSTS[cast.host]);
-      if (o.material.name === 'robot_eye') o.material.emissiveIntensity = 1.1;
+      if (o.material.name === 'robot_eye') o.material.emissiveIntensity = 1.4;
       if (o.material.name === 'robot_glass') Object.assign(o.material, { transparent: true, opacity: 0.75 });
       if (o.material.name === 'robot_liquid') o.material.emissiveIntensity = 0.6;
     });
     for (const name of ['prop_pencil', 'prop_flask']) robot.getObjectByName(name).visible = name === cast.prop;
     scene.add(robot);
     const mixer = new THREE.AnimationMixer(robot);
-    const clips = Object.fromEntries(robotGltf.animations.map(a => [a.name, a]));
+    const seated = mixer.clipAction(clips.body);
+    seated.setLoop(THREE.LoopOnce, 1);
+    seated.clampWhenFinished = true;
+    seated.play();
+    seated.time = clips.body.duration;  // already seated when the page opens
     const bubble = new THREE.Sprite(new THREE.SpriteMaterial({ map: glyph.bubble(cast.icon, HOSTS[cast.host]),
       toneMapped: false, depthTest: false }));
     bubble.scale.set(0.42, 0.48, 1);
-    bubble.position.copy(robot.position).add(new THREE.Vector3(0, 1.22, 0));
+    seat.getWorldPosition(bubble.position).add(new THREE.Vector3(0, 0.95, 0));
     bubble.renderOrder = 3;
     scene.add(bubble);
-    const r = { ...cast, robot, mixer, clips, bubble, current: null, busy: true };
+    const r = { ...cast, robot, mixer, clips, seated, bubble, current: null, busy: true };
     robot.traverse(o => { o.userData.robot = r; });
     robots.push(r);
     mixers.push(mixer);
@@ -301,12 +321,16 @@ function play(r, name) {
   if (r.current && r.current !== next) r.current.fadeOut(STILL ? 0 : 0.4);
   next.reset().fadeIn(STILL ? 0 : 0.4).play();
   r.current = next;
-  if (STILL) r.mixer.setTime(0.35);
+  if (STILL) {
+    r.mixer.setTime(0.35);
+    r.seated.time = r.clips.body.duration;
+    r.mixer.update(0);
+  }
 }
 
 function setBusy(r, busy) {
   r.busy = busy;
-  play(r, busy ? r.action : 'idle');
+  play(r, busy ? r.action : 'Rest');
   r.bubble.visible = busy;
   r.robot.getObjectByName('prop_pencil').visible = busy && r.prop === 'prop_pencil';
   r.robot.getObjectByName('prop_flask').visible = busy && r.prop === 'prop_flask';
@@ -410,10 +434,11 @@ function footprints(root) {
 // --- load and wire up ------------------------------------------------------------------------
 
 async function main() {
-  const [manifest, gltf, robotGltf, hdr] = await Promise.all([
+  const [manifest, gltf, robotGltf, robotManifest, hdr] = await Promise.all([
     fetch(WORLD + 'manifest.json').then(r => r.json()),
     new GLTFLoader().loadAsync(WORLD + 'workbench.glb'),
     new GLTFLoader().loadAsync(ROBOT + 'robot.glb'),
+    fetch(ROBOT + 'manifest.json').then(r => r.json()),
     new HDRLoader().loadAsync(WORLD + 'environment.hdr'),
   ]);
   hdr.mapping = THREE.EquirectangularReflectionMapping;
@@ -481,7 +506,7 @@ async function main() {
   setWarm('corner', true, true);
 
   setupLantern(root);
-  setupRobots(robotGltf, root);
+  setupRobots(robotGltf, robotManifest, root);
   robots.forEach(r => setWarm(r.desk, true, true));
   shadowCatchers(root);
   footprints(root);

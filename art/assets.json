@@ -1,4 +1,10 @@
 {
+  "local": [
+    {"id": "RobotExpressive", "path": "fleet/web/assets/models/robot/RobotExpressive.glb",
+     "title": "RobotExpressive", "authors": ["Tomás Laulhé", "Don McCurdy (modifications)"], "license": "CC0-1.0",
+     "url": "https://github.com/mrdoob/three.js/tree/r186/examples/models/gltf/RobotExpressive",
+     "use": "the robots, restyled by art/scripts/build_robot.py"}
+  ],
   "assets": [
     {"id": "white_studio_06", "source": "polyhaven", "type": "hdri", "res": "1k", "format": "hdr",
      "use": "world light for baking and the runtime environment"},
