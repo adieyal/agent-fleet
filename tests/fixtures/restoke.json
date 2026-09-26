@@ -93,23 +93,23 @@
     {
      "id": "d4f7a2", "host": "worker", "project": "restoke", "description": "Write the PAR-by-weekday support article",
      "agent": "claude", "model": "claude-opus-5-5", "cwd": "/home/adi/Development/restoke", "permission": "bypassPermissions",
-     "status": "done", "created_at": 1790392800, "updated_at": 1790397000,
+     "status": "done", "created_at": 1790392800, "updated_at": 1790399700,
      "steps": [
       {"index": 0, "title": "Read the feature PR", "status": "done", "started_at": 1790392810, "finished_at": 1790394000, "result": "Read #1432; weekday PAR uses an 8-week trailing mean"},
-      {"index": 1, "title": "Draft the article", "status": "done", "started_at": 1790394010, "finished_at": 1790397000, "result": "Draft in outbox/par-by-weekday.md"}
+      {"index": 1, "title": "Draft the article", "status": "done", "started_at": 1790394010, "finished_at": 1790399700, "result": "Draft in outbox/par-by-weekday.md"}
      ],
      "todos": [],
-     "activity": {"kind": "text", "summary": "Draft is in outbox/par-by-weekday.md.", "ts": 1790396995},
+     "activity": {"kind": "text", "summary": "Draft is in outbox/par-by-weekday.md.", "ts": 1790399695},
      "events": [
-      {"kind": "text", "summary": "Draft is in outbox/par-by-weekday.md.", "ts": 1790396995},
-      {"kind": "step", "step": 1, "status": "done", "summary": "Draft in outbox/par-by-weekday.md", "ts": 1790397000},
-      {"kind": "job", "status": "done", "summary": "job done", "ts": 1790397000}
+      {"kind": "text", "summary": "Draft is in outbox/par-by-weekday.md.", "ts": 1790399695},
+      {"kind": "step", "step": 1, "status": "done", "summary": "Draft in outbox/par-by-weekday.md", "ts": 1790399700},
+      {"kind": "job", "status": "done", "summary": "job done", "ts": 1790399700}
      ],
      "session_id": "7c3d1e90-2f5a-4b6c-9d8e-0a1b2c3d4e5f",
      "tmux": "tmux -L fleet attach -t fleet-d4f7a2",
      "documents": [
-      {"id": "report-1", "kind": "report", "name": "Step 2: Draft the article", "step": 1, "path": "/home/adi/.fleet/jobs/d4f7a2/result-1.md", "size": 812, "mtime": 1790397000},
-      {"id": "outbox-par-by-weekday.md", "kind": "outbox", "name": "par-by-weekday.md", "step": null, "path": "/home/adi/.fleet/jobs/d4f7a2/outbox/par-by-weekday.md", "size": 1460, "mtime": 1790396990}
+      {"id": "report-1", "kind": "report", "name": "Step 2: Draft the article", "step": 1, "path": "/home/adi/.fleet/jobs/d4f7a2/result-1.md", "size": 812, "mtime": 1790399700},
+      {"id": "outbox-par-by-weekday.md", "kind": "outbox", "name": "par-by-weekday.md", "step": null, "path": "/home/adi/.fleet/jobs/d4f7a2/outbox/par-by-weekday.md", "size": 1460, "mtime": 1790399690}
      ]
     },
     {

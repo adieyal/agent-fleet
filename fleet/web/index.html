@@ -4045,6 +4045,11 @@ loadAssets().then(() => {
       miniBot(cv, hostLook(host), agent, pose || 'normal');
     }
   }
+  // read-only probe for browser tests: rooms live only in WebGL, so they have no DOM to query
+  window.fleetDeck = Object.freeze({
+    rooms: () => rooms.map(r => ({ name: r.name, label: r.label })),
+    agents: () => [...ents.values()].map(e => ({ key: e.key, kind: e.kind, room: e.room, status: e.job.status })),
+  });
   if (DEMO) {
     const tick = demoSource();
     applyState(tick());

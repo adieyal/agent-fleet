@@ -1,34 +1,15 @@
 """The deck's HTTP API served from a recorded fleet (`fleet web --fixture`)."""
 
 import json
-import threading
-from collections.abc import Iterator
-from http.server import ThreadingHTTPServer
-from pathlib import Path
+from typing import Any
 from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
 import pytest
 
+from conftest import FIXTURE
 from fleet.cli import build_parser
-from fleet.web.fixture import FixtureLibrary, FixtureState
-from fleet.web.server import make_handler
-
-FIXTURE = Path(__file__).parent / "fixtures" / "restoke.json"
-
-
-@pytest.fixture(scope="module")
-def base_url() -> Iterator[str]:
-    state = FixtureState.load(FIXTURE)
-    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(state, FixtureLibrary(state.fixture)))
-    server.daemon_threads = True
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    yield f"http://127.0.0.1:{server.server_port}"
-    server.shutdown()
-    server.server_close()
-    thread.join(timeout=5)
 
 
 def get(base_url: str, path: str, **query: str) -> dict:
@@ -42,9 +23,9 @@ def status_of(base_url: str, path: str, **query: str) -> int:
     return raised.value.code
 
 
-def test_state_is_the_recorded_fleet(base_url: str) -> None:
+def test_state_is_the_recorded_fleet(base_url: str, fixture_data: dict[str, Any]) -> None:
     state = get(base_url, "/api/state")
-    assert state == {key: json.loads(FIXTURE.read_text())[key] for key in ("time", "project_labels", "hosts")}
+    assert state == {key: fixture_data[key] for key in ("time", "project_labels", "hosts")}
     hosts = {host["name"]: host for host in state["hosts"]}
     assert hosts["gpu-box"]["ok"] is False and hosts["gpu-box"]["error"]
     restoke = [job for host in state["hosts"] for job in host["jobs"] if job["project"] == "restoke"]
