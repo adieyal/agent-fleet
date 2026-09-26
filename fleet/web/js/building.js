@@ -79,7 +79,8 @@ document.addEventListener('keydown', ev => {
   if (buildingShown) { if (vacancy || storehouseOpen || moving || merging) { closeDialogs(); renderUi(); } return; }
   if (current === null) return;
   const open = !document.getElementById('reader').hidden || !document.getElementById('libraryPane').hidden
-    || document.getElementById('panel').classList.contains('open') || !document.getElementById('attnPanel').hidden;
+    || document.getElementById('panel').classList.contains('open') || !document.getElementById('attnPanel').hidden
+    || !document.getElementById('workarea').hidden;
   if (open) return;
   if (current === 'S') openStorehouse(); else showView('building');
 }, { capture: true });

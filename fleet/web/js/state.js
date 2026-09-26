@@ -17,6 +17,7 @@ import { applyFocus } from './focus.js';
 import { applyAttention } from './attention.js';
 import { patchScene } from './dim.js';
 import { applyBuilding } from './building.js';
+import { applyWorkarea } from './workarea.js';
 
 // Dismissed agents are hidden in this browser only (the deck stays view-only). Each is remembered with
 // the updated_at it had when dismissed, so any new activity brings it back.
@@ -103,6 +104,7 @@ export function enterProject(projectId) {
 export function applyState(doc) {
   lastDoc = doc;
   applyBuilding(doc);   // from the whole document: dismissed and finished work still counts there
+  applyWorkarea(doc);
   const shown = visibleHosts(doc);
   setHosts(entered ? shown.map(h => ({ ...h, jobs: h.jobs.filter(j => j.project_id === entered),
     sessions: h.sessions.filter(s => s.project_id === entered) })) : shown);
