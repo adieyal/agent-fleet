@@ -179,4 +179,5 @@ def main() -> None:
          'device': gpu(), 'blender': bpy.app.version_string}, indent=2))
 
 
-main()
+if __name__ == '__main__':  # importable by art/scripts/bakeoff.py
+    main()

@@ -176,4 +176,5 @@ def main() -> None:
     print(f'EXPORT {scene_name}: {total / 1e6:.1f} MB in {out}')
 
 
-main()
+if __name__ == '__main__':  # importable by art/scripts/bakeoff.py
+    main()

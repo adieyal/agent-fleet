@@ -10,52 +10,52 @@
       "base": {
         "file": "lightmap-base.webp",
         "size": 2304,
-        "scale": 1.56926
+        "scale": 1.56808
       },
       "corner": {
         "file": "lightmap-corner.webp",
         "size": 1152,
-        "scale": 1.0395
+        "scale": 1.03576
       },
       "criteria0": {
         "file": "lightmap-criteria0.webp",
         "size": 1152,
-        "scale": 1.22115
+        "scale": 1.22193
       },
       "criteria1": {
         "file": "lightmap-criteria1.webp",
         "size": 1152,
-        "scale": 1.22178
+        "scale": 1.2227
       },
       "criteria2": {
         "file": "lightmap-criteria2.webp",
         "size": 1152,
-        "scale": 1.232
+        "scale": 1.23062
       },
       "criteria3": {
         "file": "lightmap-criteria3.webp",
         "size": 1152,
-        "scale": 1.22592
+        "scale": 1.22865
       },
       "criteria4": {
         "file": "lightmap-criteria4.webp",
         "size": 1152,
-        "scale": 1.23066
+        "scale": 1.23217
       },
       "desk1": {
         "file": "lightmap-desk1.webp",
         "size": 1152,
-        "scale": 1.23978
+        "scale": 1.23952
       },
       "desk2": {
         "file": "lightmap-desk2.webp",
         "size": 1152,
-        "scale": 1.23043
+        "scale": 1.23059
       },
       "desk3": {
         "file": "lightmap-desk3.webp",
         "size": 1152,
-        "scale": 1.24251
+        "scale": 1.24285
       }
     },
     "ao": {
@@ -220,56 +220,56 @@
   },
   "files": {
     "ao.webp": {
-      "bytes": 219420,
-      "sha256": "f8eb3e59728c64e8922484e729d9a77bfafe6296659be2b4f4ec9805be18a9d7"
+      "bytes": 219540,
+      "sha256": "bbe120f36b599579a3e1f1725a64096d640eba6220e3d75f8020777e208393be"
     },
     "environment.hdr": {
       "bytes": 335827,
       "sha256": "557f348b3a48b147afe9b780d205da5ee68a5a5bba45452f4dfffeb4c95f012a"
     },
     "lightmap-base.webp": {
-      "bytes": 192008,
-      "sha256": "9fdb1c646c158c3c0571d0e25d0899bd648225e75b933f7ccb5c5eb9f376bd8c"
+      "bytes": 192002,
+      "sha256": "fff2b68bd54f1e469128a3f753588f48b73dfbc49b7c2522edaee61f04b8bb03"
     },
     "lightmap-corner.webp": {
-      "bytes": 55818,
-      "sha256": "9e78557b003fc5846f90d1f2a55fd75864aadcece26c674792b4ed4c6b1e5a3f"
+      "bytes": 55884,
+      "sha256": "7defa308eef75b099eb7cc690b9a2fec1180ba7891b5bc14f174fc08521a99c6"
     },
     "lightmap-criteria0.webp": {
-      "bytes": 50984,
-      "sha256": "d4667ccb5ba82bb3c1e6f5f5f84aeb33cf7ef772c61e2358c16fb8d03c0f44f5"
+      "bytes": 50842,
+      "sha256": "3e735f7ed5cedb596983f358e1331f064494784ccdfb761a39594b81a5ed7867"
     },
     "lightmap-criteria1.webp": {
-      "bytes": 50658,
-      "sha256": "381ccb1347098be552b3a2f4937edce992f11c455544a06b83401b0b88235c51"
+      "bytes": 50570,
+      "sha256": "7e5b5723f7822afa3299e8fa83f4c68400ac9563cc40a04c5d48862c48ffaa00"
     },
     "lightmap-criteria2.webp": {
-      "bytes": 51186,
-      "sha256": "b2fd3ee19f3d9e880f1158092225790701af36e0985b7c275d88d105a2499ed9"
+      "bytes": 51400,
+      "sha256": "766c90b273a1a47aad192714fca404ebf3e45ed96e0aec555a698f52293f007a"
     },
     "lightmap-criteria3.webp": {
-      "bytes": 51480,
-      "sha256": "cc9e1c9b6281f084d2667b18a82c20607b4baa38a0b937f1e2da5519a8e52fb2"
+      "bytes": 51300,
+      "sha256": "ffcff96406ea3c4313dda2b69585718f48a888e2da0a41e3060a48ad61e3e43e"
     },
     "lightmap-criteria4.webp": {
-      "bytes": 49666,
-      "sha256": "4038fd822835b9d9ac44643cbd4b18f047f988651860e0cb1a54aa70404d6e76"
+      "bytes": 49746,
+      "sha256": "4d1a8799bf57c85df20133de5a91a7a5bc6bd2993b97d1f19be0e978ed4db723"
     },
     "lightmap-desk1.webp": {
-      "bytes": 73524,
-      "sha256": "1bc94e58dbbae37695928c1d3c9f2fe0f94d6d089fdb88ff80f62968cdc24c95"
+      "bytes": 73870,
+      "sha256": "a374edf26719ccc3a42dfebc0e95c8496458707a17a811d244e0388274d38dde"
     },
     "lightmap-desk2.webp": {
-      "bytes": 75862,
-      "sha256": "d14decea7431d3e4bedec3aba49e9a3f188f1bfc961706166625521beb7b2722"
+      "bytes": 75906,
+      "sha256": "55b91655e9fe28f82c3bd33ec06d41f1d2f272e5b625d8b7c7ed5e66d0f9df80"
     },
     "lightmap-desk3.webp": {
       "bytes": 74150,
-      "sha256": "76b398b35e819bbd3ca033d8f41d6b56f62e91afe814d69f82287d9250b4b45e"
+      "sha256": "ca96dfc4652750f5f22d8efa3244f9c581f4394a87c8934be9e08871720f59de"
     },
     "workbench.glb": {
       "bytes": 4051512,
-      "sha256": "a636ad9af3d9b42ebf1e031f9aaa775eec2bdce8f272378402950f95802b3476"
+      "sha256": "310197300a100e82dd12ec15a5f80f83f0ccaa9768fccc6c9b0113c7155d7e7c"
     }
   },
   "glb_summary": {

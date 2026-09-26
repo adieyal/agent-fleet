@@ -1,0 +1,320 @@
+{
+  "variant": "B1",
+  "camera": {
+    "pitch": 44.5,
+    "yaw": 21.25,
+    "px_per_m_1x": 171.528
+  },
+  "blender": "4.2.23 LTS",
+  "objects": {
+    "bench": {
+      "1x": {
+        "file": "bench@1x.png",
+        "bytes": 549913,
+        "size": [
+          1117,
+          755
+        ],
+        "px_per_m": 171.528,
+        "ref_world": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "ref_px": [
+          -751.11,
+          651.97
+        ]
+      },
+      "2x": {
+        "file": "bench@2x.png",
+        "bytes": 1909621,
+        "size": [
+          2234,
+          1509
+        ],
+        "px_per_m": 343.055,
+        "ref_world": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "ref_px": [
+          -1502.22,
+          1303.93
+        ]
+      },
+      "4x": {
+        "file": "bench@4x.png",
+        "bytes": 6740587,
+        "size": [
+          4468,
+          3018
+        ],
+        "px_per_m": 686.11,
+        "ref_world": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "ref_px": [
+          -3004.45,
+          2607.86
+        ]
+      }
+    },
+    "robot": {
+      "type": {
+        "1x": {
+          "file": "robot_type@1x.png",
+          "bytes": 60051,
+          "frames": 8,
+          "fps": 8.0,
+          "desk": "desk1",
+          "size": [
+            166,
+            201
+          ],
+          "px_per_m": 171.528,
+          "ref_world": [
+            4.45,
+            4.89,
+            0.47
+          ],
+          "ref_px": [
+            86.51,
+            124.35
+          ]
+        },
+        "2x": {
+          "file": "robot_type@2x.png",
+          "bytes": 181822,
+          "frames": 8,
+          "fps": 8.0,
+          "desk": "desk1",
+          "size": [
+            332,
+            401
+          ],
+          "px_per_m": 343.055,
+          "ref_world": [
+            4.45,
+            4.89,
+            0.47
+          ],
+          "ref_px": [
+            173.02,
+            248.7
+          ]
+        },
+        "4x": {
+          "file": "robot_type@4x.png",
+          "bytes": 573301,
+          "frames": 8,
+          "fps": 8.0,
+          "desk": "desk1",
+          "size": [
+            663,
+            801
+          ],
+          "px_per_m": 686.11,
+          "ref_world": [
+            4.45,
+            4.89,
+            0.47
+          ],
+          "ref_px": [
+            346.04,
+            497.4
+          ]
+        }
+      },
+      "write": {
+        "1x": {
+          "file": "robot_write@1x.png",
+          "bytes": 116245,
+          "frames": 8,
+          "fps": 4.0,
+          "desk": "desk2",
+          "size": [
+            166,
+            201
+          ],
+          "px_per_m": 171.528,
+          "ref_world": [
+            6.25,
+            4.89,
+            0.47
+          ],
+          "ref_px": [
+            86.51,
+            124.35
+          ]
+        },
+        "2x": {
+          "file": "robot_write@2x.png",
+          "bytes": 307981,
+          "frames": 8,
+          "fps": 4.0,
+          "desk": "desk2",
+          "size": [
+            332,
+            401
+          ],
+          "px_per_m": 343.055,
+          "ref_world": [
+            6.25,
+            4.89,
+            0.47
+          ],
+          "ref_px": [
+            173.02,
+            248.7
+          ]
+        },
+        "4x": {
+          "file": "robot_write@4x.png",
+          "bytes": 922860,
+          "frames": 8,
+          "fps": 4.0,
+          "desk": "desk2",
+          "size": [
+            663,
+            801
+          ],
+          "px_per_m": 686.11,
+          "ref_world": [
+            6.25,
+            4.89,
+            0.47
+          ],
+          "ref_px": [
+            346.04,
+            497.4
+          ]
+        }
+      },
+      "hold": {
+        "1x": {
+          "file": "robot_hold@1x.png",
+          "bytes": 141807,
+          "frames": 8,
+          "fps": 2.67,
+          "desk": "desk3",
+          "size": [
+            199,
+            201
+          ],
+          "px_per_m": 171.528,
+          "ref_world": [
+            8.05,
+            4.89,
+            0.47
+          ],
+          "ref_px": [
+            119.14,
+            124.35
+          ]
+        },
+        "2x": {
+          "file": "robot_hold@2x.png",
+          "bytes": 393978,
+          "frames": 8,
+          "fps": 2.67,
+          "desk": "desk3",
+          "size": [
+            397,
+            401
+          ],
+          "px_per_m": 343.055,
+          "ref_world": [
+            8.05,
+            4.89,
+            0.47
+          ],
+          "ref_px": [
+            238.27,
+            248.7
+          ]
+        },
+        "4x": {
+          "file": "robot_hold@4x.png",
+          "bytes": 1188576,
+          "frames": 8,
+          "fps": 2.67,
+          "desk": "desk3",
+          "size": [
+            794,
+            801
+          ],
+          "px_per_m": 686.11,
+          "ref_world": [
+            8.05,
+            4.89,
+            0.47
+          ],
+          "ref_px": [
+            476.54,
+            497.4
+          ]
+        }
+      }
+    },
+    "plant": {
+      "1x": {
+        "file": "plant@1x.png",
+        "bytes": 60836,
+        "size": [
+          321,
+          393
+        ],
+        "px_per_m": 171.528,
+        "ref_world": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "ref_px": [
+          153.07,
+          241.02
+        ]
+      },
+      "2x": {
+        "file": "plant@2x.png",
+        "bytes": 209619,
+        "size": [
+          642,
+          785
+        ],
+        "px_per_m": 343.055,
+        "ref_world": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "ref_px": [
+          306.13,
+          482.05
+        ]
+      },
+      "4x": {
+        "file": "plant@4x.png",
+        "bytes": 742610,
+        "size": [
+          1283,
+          1570
+        ],
+        "px_per_m": 686.11,
+        "ref_world": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "ref_px": [
+          612.26,
+          964.1
+        ]
+      }
+    }
+  }
+}

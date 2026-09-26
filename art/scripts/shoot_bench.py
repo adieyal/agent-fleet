@@ -58,16 +58,17 @@ def shoot(out: Path) -> Path:
     return shot
 
 
-def side_by_side(shot: Path, out: Path) -> Path:
+def side_by_side(shot: Path, out: Path, title: str = 'prototype: /prototype/bench (three.js, baked)',
+                 name: str = 'bench-vs-l2.png') -> Path:
     a, b = Image.open(shot).convert('RGB'), Image.open(CONCEPT).convert('RGB')
     pad, label = 16, 36
     img = Image.new('RGB', (a.width + b.width + pad * 3, max(a.height, b.height) + pad * 2 + label), 'white')
     img.paste(a, (pad, pad + label))
     img.paste(b, (a.width + pad * 2, pad + label))
     d = ImageDraw.Draw(img)
-    d.text((pad, pad), 'prototype: /prototype/bench (three.js, baked)', fill='black')
+    d.text((pad, pad), title, fill='black')
     d.text((a.width + pad * 2, pad), 'concept: docs/images/concept/l2.png', fill='black')
-    dest = out / 'bench-vs-l2.png'
+    dest = out / name
     img.save(dest, optimize=True)
     return dest
 

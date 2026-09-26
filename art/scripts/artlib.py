@@ -420,22 +420,27 @@ def lightmap_uvs(texel: float, max_res: int = 4096, margin_px: int = 6) -> dict:
     bpy.ops.uv.select_all(action='SELECT')
     bpy.ops.uv.average_islands_scale()
     bpy.ops.object.mode_set(mode='OBJECT')
-    metres_per_uv = math.sqrt(area / sum(_uv_area(o) for o in objs))
-    res = _shelf_pack(objs, metres_per_uv / texel, margin_px, max_res)
-    for o in objs:
-        o.data.uv_layers.active = o.data.uv_layers['UVMap']
-        o.data.uv_layers['UVMap'].active_render = True
+    # scale each object's islands by its own world area: parts can carry very different object scales
+    # (an imported rig's bone-parented meshes), which Blender's island averaging does not see
+    px_per_uv = {o.name: math.sqrt(surface_area([o]) / max(_uv_area(o), 1e-12)) / texel for o in objs}
+    res = _shelf_pack(objs, px_per_uv, margin_px, max_res)
+    for o in objs:  # the material UVs stay the active ones (imported meshes may name theirs differently)
+        main = next((l for l in o.data.uv_layers if l.name != 'Lightmap'), None)
+        if main:
+            o.data.uv_layers.active = main
+            main.active_render = True
     uv_area = sum(_uv_area(o) for o in objs)
     return {'resolution': res, 'surface_m2': round(area, 1), 'uv_fill': round(uv_area, 3),
             'texel_m': round(math.sqrt(area / uv_area) / res, 4)}
 
 
-def _shelf_pack(objs, px_per_uv: float, margin_px: int, max_res: int) -> int:
+def _shelf_pack(objs, px_per_uv: dict, margin_px: int, max_res: int) -> int:
     """Pack every object's `Lightmap` islands into the smallest square (a multiple of 256 px) that holds
-    them at `px_per_uv`: islands turned landscape, sorted by height, laid out in shelves. Returns the size."""
+    them at each object's `px_per_uv[name]`: islands turned landscape, sorted by height, laid out in shelves.
+    Returns the size."""
     from bpy_extras.bmesh_utils import bmesh_linked_uv_islands
 
-    islands = []  # (height, width, order, bm, uv layer, faces, min u, min v, rotated)
+    islands = []  # (height, width, order, bm, uv layer, faces, min u, min v, rotated, px per uv)
     meshes = []
     for oi, o in enumerate(objs):
         bm = bmesh.new()
@@ -443,15 +448,16 @@ def _shelf_pack(objs, px_per_uv: float, margin_px: int, max_res: int) -> int:
         bm.faces.ensure_lookup_table()
         uv = bm.loops.layers.uv['Lightmap']
         meshes.append((o, bm))
+        ppu = px_per_uv[o.name]
         for ii, faces in enumerate(bmesh_linked_uv_islands(bm, uv)):
             us = [lp[uv].uv.x for f in faces for lp in f.loops]
             vs = [lp[uv].uv.y for f in faces for lp in f.loops]
-            w, h = (max(us) - min(us)) * px_per_uv, (max(vs) - min(vs)) * px_per_uv
+            w, h = (max(us) - min(us)) * ppu, (max(vs) - min(vs)) * ppu
             rot = h > w
             if rot:
                 w, h = h, w
             islands.append((math.ceil(h), math.ceil(w), (oi, min(f.index for f in faces)), bm, uv, faces,
-                            min(us), min(vs), rot))
+                            min(us), min(vs), rot, ppu))
     islands.sort(key=lambda i: (-i[0], -i[1], i[2]))
 
     def layout(size: int):
@@ -470,10 +476,10 @@ def _shelf_pack(objs, px_per_uv: float, margin_px: int, max_res: int) -> int:
         size += 256
         if size > max_res:
             sys.exit(f'art: lightmap islands need more than {max_res}px at this texel size')
-    for (h, w, _, bm, uv, faces, u0, v0, rot), (x, y) in zip(islands, spots):
+    for (h, w, _, bm, uv, faces, u0, v0, rot, ppu), (x, y) in zip(islands, spots):
         for f in faces:
             for lp in f.loops:
-                du, dv = (lp[uv].uv.x - u0) * px_per_uv, (lp[uv].uv.y - v0) * px_per_uv
+                du, dv = (lp[uv].uv.x - u0) * ppu, (lp[uv].uv.y - v0) * ppu
                 if rot:  # transpose: a tall island lies down in its landscape slot
                     du, dv = dv, du
                 lp[uv].uv = ((x + du) / size, (y + dv) / size)

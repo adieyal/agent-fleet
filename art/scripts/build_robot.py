@@ -303,4 +303,5 @@ def main() -> None:
     print('BUILD', SCENE, info)
 
 
-main()
+if __name__ == '__main__':  # importable by art/scripts/bakeoff.py
+    main()
