@@ -9,28 +9,34 @@ const MIN_NODE = 4, MIN_BAND = 1.5;
 export const fmt = n => Math.round(n).toLocaleString('en-US');
 
 // Nodes keep their true counts; a small one is drawn no thinner than MIN_NODE (bands MIN_BAND) so it stays visible.
-// The scale leaves room for the baseline's counts too, so its outlines fit.
-export function layout(columns, counts, edges, W, H, { nodeW = 12, gap = 14, baseline = {} } = {}) {
+// With a baseline, each node's slot is as tall as the larger of its two runs, and the baseline's bands (`ghost`) stack
+// in it as the current ones do, so its outlines stay inside the plot and between the node's neighbours.
+export function layout(columns, counts, edges, W, H, { nodeW = 12, gap = 14, baseline = {}, baseEdges = [] } = {}) {
   const value = n => counts[n] || 0;
   let k = Infinity;
   for (const col of columns) {
-    const sum = Math.max(col.reduce((s, n) => s + value(n), 0), col.reduce((s, n) => s + (baseline[n] || 0), 0));
+    const sum = col.reduce((s, n) => s + Math.max(value(n), baseline[n] || 0), 0);
     if (sum > 0) k = Math.min(k, (H - gap * (col.length - 1) - MIN_NODE * col.length) / sum);
   }
   if (!Number.isFinite(k) || k < 0) k = 0;
   const nodes = new Map();
   columns.forEach((col, ci) => col.forEach(name => nodes.set(name, { name, col: ci, value: value(name), out: [], in: [],
     x: columns.length > 1 ? ci * (W - nodeW) / (columns.length - 1) : 0 })));
-  const bands = [];
+  const bands = [], was = new Map(baseEdges.map(([s, t, c]) => [s + '→' + t, c]));
   for (const [s, t, count] of edges) {
-    const a = nodes.get(s), b = nodes.get(t);
+    const a = nodes.get(s), b = nodes.get(t), key = s + '→' + t;
     if (!a || !b) continue;
-    const band = { key: s + '→' + t, s: a, t: b, count, w: Math.max(MIN_BAND, count * k) };
+    const band = { key, s: a, t: b, count, w: Math.max(MIN_BAND, count * k),
+      ghost: was.has(key) ? { w: Math.max(1, was.get(key) * k) } : null };
     bands.push(band); a.out.push(band); b.in.push(band);
   }
+  const sum = (bs, w) => bs.reduce((s, b) => s + (w(b) || 0), 0);
   columns.forEach(col => {
     const list = col.map(n => nodes.get(n));
-    for (const n of list) n.h = Math.max(MIN_NODE, n.value * k, ...[n.out, n.in].map(bs => bs.reduce((s, b) => s + b.w, 0)));
+    for (const n of list) {
+      n.hc = Math.max(MIN_NODE, n.value * k, sum(n.out, b => b.w), sum(n.in, b => b.w));   // drawn
+      n.h = Math.max(n.hc, (baseline[n.name] || 0) * k, sum(n.out, b => b.ghost?.w), sum(n.in, b => b.ghost?.w));   // its slot
+    }
     const total = list.reduce((s, n) => s + n.h, 0);
     const space = list.length > 1 ? Math.max(gap, (H - total) / (list.length - 1)) : 0;
     let y = list.length > 1 ? 0 : (H - total) / 2;
@@ -38,12 +44,18 @@ export function layout(columns, counts, edges, W, H, { nodeW = 12, gap = 14, bas
   });
   for (const n of nodes.values()) {   // bands leave in their targets' order and arrive in their sources', so few cross
     n.out.sort((p, q) => p.t.y - q.t.y); n.in.sort((p, q) => p.s.y - q.s.y);
-    let y = n.y;
-    for (const b of n.out) { b.y0 = y + b.w / 2; y += b.w; }
-    y = n.y;
-    for (const b of n.in) { b.y1 = y + b.w / 2; y += b.w; }
+    for (const [list, end] of [[n.out, 0], [n.in, 1]]) {
+      let y = n.y, g = n.y;
+      for (const b of list) {
+        b['y' + end] = y + b.w / 2; y += b.w;
+        if (b.ghost) { b.ghost['y' + end] = g + b.ghost.w / 2; g += b.ghost.w; }
+      }
+    }
   }
-  for (const b of bands) { b.x0 = b.s.x + nodeW; b.x1 = b.t.x; }
+  for (const b of bands) {
+    b.x0 = b.s.x + nodeW; b.x1 = b.t.x;
+    if (b.ghost) { b.ghost.x0 = b.x0; b.ghost.x1 = b.x1; }
+  }
   return { nodes, bands, k, nodeW };
 }
 export function bandPath(b, w = b.w) {
@@ -113,7 +125,8 @@ export const sankeyPane = document.getElementById('sankey');
 const sheet = sankeyPane.querySelector('.rd-sheet');
 const chart = document.getElementById('skChart'), svg = document.getElementById('skSvg'), dotsCanvas = document.getElementById('skDots');
 const side = document.getElementById('skSide');
-const TWEEN_MS = 400, DOT_MS = 1400, DOTS_PER_UPDATE = 80, PAD = 18, LABEL_GAP = 28;   // nodes apart by a two-line label
+const TWEEN_MS = 400, DOT_MS = 1400, DOTS_PER_UPDATE = 80, PAD = 18;
+const LABEL_GAP = 36, LABEL_TOP = 36;   // room above each node, and above the top ones, for a two-line label
 const CAPTION_H = 38, LABEL_W = 250, MIN_WIDTH = 760, NARROW = 700, LABEL_W_NARROW = 130, MIN_WIDTH_NARROW = 620;
 const sk = { key: null, p: null, from: null, to: null, t0: 0, dots: [], carry: {}, raf: 0, selected: null, lastFocus: null, geo: null };
 
@@ -197,7 +210,8 @@ function drawFrame() {
   const values = current(), run = sk.p.run, base = sk.p.baseline;
   const { W, H, width, height, narrow } = geometry(), firsts = firstOfColumns(run);
   const edges = Object.entries(values.edges).map(([key, c]) => [...key.split('→'), c]);
-  const L = layout(run.nodes, values.counts, edges, W, firsts.size ? H - CAPTION_H : H, { baseline: base?.counts, gap: LABEL_GAP });
+  const L = layout(run.nodes, values.counts, edges, W, H - LABEL_TOP - (firsts.size ? CAPTION_H : 0),
+    { baseline: base?.counts, baseEdges: base?.edges, gap: LABEL_GAP });
   sk.geo = L;
   renderChart(L, run, base, width, height, narrow, firsts);
   edgeFade();
@@ -205,30 +219,37 @@ function drawFrame() {
   const tweening = performance.now() - sk.t0 < TWEEN_MS;
   if (tweening || sk.dots.length) sk.raf = requestAnimationFrame(drawFrame);
 }
-// Labels sit right of their node: name over figures, so a middle column's label fits before the next column; the
-// last column has room for one line on a wide screen. Baseline outlines go under the bands, which show through.
+// Labels keep off the bands and outlines: the last column's sit right of their node, where nothing flows; every other
+// node's sits in the gap above it (name and count, then share and prev for an end node). Baseline outlines go under
+// the bands.
 function renderChart(L, run, base, width, height, narrow, firsts) {
   const ends = terminals(run, base), values = Object.fromEntries([...L.nodes.values()].map(n => [n.name, n.value]));
-  const baseEdges = Object.fromEntries((base?.edges || []).map(([s, t, c]) => [s + '→' + t, c]));
   const lastCol = run.nodes.length - 1;
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
-  const ghosts = L.bands.filter(b => b.key in baseEdges)
-    .map(b => `<path class="sk-ghost" d="${bandPath(b, Math.max(1, baseEdges[b.key] * L.k))}"/>`).join('');
+  const ghosts = L.bands.filter(b => b.ghost).map(b => `<path class="sk-ghost" d="${bandPath(b.ghost)}"/>`).join('');
   const bands = L.bands.map(b => {
-    const tip = `${b.s.name} → ${b.t.name}: ${fmt(b.count)}${b.key in baseEdges ? ` (baseline ${fmt(baseEdges[b.key])})` : ''}`;
+    const was = base?.edges?.find(([s, t]) => s + '→' + t === b.key)?.[2];
+    const tip = `${b.s.name} → ${b.t.name}: ${fmt(b.count)}${was !== undefined ? ` (baseline ${fmt(was)})` : ''}`;
     return `<path class="sk-band${sk.selected && b.t.name === sk.selected ? ' on' : ''}" d="${bandPath(b)}"><title>${esc(tip)}</title></path>`;
   }).join('');
   const nodes = [...L.nodes.values()].map(n => {
-    const end = ends.has(n.name), y = n.y + n.h / 2, x = n.x + L.nodeW + 6;
-    const share = end ? pct(shareOf(run.nodes, values, n.name)) : '';
+    const end = ends.has(n.name), share = end ? pct(shareOf(run.nodes, values, n.name)) : '';
     const vs = end ? versus(run, base, n.name, n.value) : null;
-    const figures = `<tspan class="ct"${n.col === lastCol && !narrow ? ' dx="7"' : ` x="${x}" y="${y + 12}"`}>${fmt(n.value)}${share ? ' · ' + share : ''}</tspan>${
-      vs ? `<tspan class="dl" dx="7">${esc(vs.text)}</tspan>` : ''}`;
-    const oneLine = n.col === lastCol && !narrow;
+    const rest = [share, vs?.text].filter(Boolean).join(' · ');
+    let label;
+    if (n.col === lastCol) {
+      const x = n.x + L.nodeW + 7, y = n.y + n.hc / 2;
+      label = narrow
+        ? `<text x="${x}" y="${y - 2}"><tspan class="nm">${esc(n.name)}</tspan><tspan class="ct" x="${x}" dy="14">${fmt(n.value)}${rest ? ' · ' + esc(rest) : ''}</tspan></text>`
+        : `<text x="${x}" y="${y + 4}"><tspan class="nm">${esc(n.name)}</tspan><tspan class="ct" dx="7">${fmt(n.value)}${rest ? ' · ' + esc(rest) : ''}</tspan></text>`;
+    } else {
+      const y = n.y - (rest ? 20 : 6);
+      label = `<text x="${n.x}" y="${y}"><tspan class="nm">${esc(n.name)}</tspan><tspan class="ct" dx="6">${fmt(n.value)}</tspan>${
+        rest ? `<tspan class="ct" x="${n.x}" dy="14">${esc(rest)}</tspan>` : ''}</text>`;
+    }
     return `<g class="sk-node${end ? ' end' : ''}${sk.selected === n.name ? ' on' : ''}" data-node="${esc(n.name)}" tabindex="${end ? 0 : -1}"
       ${end ? `role="button" aria-label="${esc(`${n.name}: ${fmt(n.value)}, show its latest items`)}"` : ''}>
-      <rect x="${n.x}" y="${n.y}" width="${L.nodeW}" height="${n.h}" rx="2"/>
-      <text x="${x}" y="${oneLine ? y + 4 : y - 2}"><tspan class="nm">${esc(n.name)}</tspan>${figures}</text></g>`;
+      <rect x="${n.x}" y="${n.y}" width="${L.nodeW}" height="${n.hc}" rx="2"/>${label}</g>`;
   }).join('');
   // under a column that counts each item once, by the first of its reasons, say so
   const captions = [...firsts].map(([ci, key]) => {
@@ -236,7 +257,7 @@ function renderChart(L, run, base, width, height, narrow, firsts) {
     const bottom = Math.max(0, ...col.map(n => n.y + n.h));
     return `<text class="sk-cap" x="${x}" y="${bottom + 22}"><tspan>by first of its ${esc(key)}:</tspan><tspan x="${x}" dy="14">each item counted once</tspan></text>`;
   }).join('');
-  svg.innerHTML = `<g transform="translate(${PAD},${PAD})">${ghosts}${bands}${nodes}${captions}</g>`;
+  svg.innerHTML = `<g transform="translate(${PAD},${PAD + LABEL_TOP})">${ghosts}${bands}${nodes}${captions}</g>`;
   chart.querySelector('.sk-empty')?.remove();
   const off = !sk.p.host_ok ? `<div class="sk-note" role="status">${esc(sk.p.host)} is offline (${esc(sk.p.host_error || 'no connection')}): this is its last report, written ${age(run.updated_at)} ago</div>` : '';
   const note = chart.querySelector('.sk-note');
@@ -259,7 +280,7 @@ function drawDots(L, width, height) {
     if (u < 0) continue;
     const b = bands.get(d.key), at = bandPoint(b, u, d.off * Math.max(0, b.w / 2 - 1.5));
     g.globalAlpha = Math.min(1, u * 6, (1 - u) * 6);
-    g.beginPath(); g.arc(PAD + at.x, PAD + at.y, 2, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.arc(PAD + at.x, PAD + LABEL_TOP + at.y, 2, 0, Math.PI * 2); g.fill();
   }
   g.globalAlpha = 1;
 }

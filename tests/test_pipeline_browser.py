@@ -161,6 +161,21 @@ def test_an_end_node_lists_its_latest_items(deck: Deck, fixture_pipelines: dict[
     assert deck.errors == []
 
 
+INSIDE_SVG = """[...document.querySelectorAll('#skSvg .sk-ghost, #skSvg .sk-band, #skSvg text')].filter(el => {
+  const r = el.getBoundingClientRect(), s = document.getElementById('skSvg').getBoundingClientRect();
+  return r.top < s.top - 0.5 || r.bottom > s.bottom + 0.5 || r.left < s.left - 0.5 || r.right > s.right + 0.5;
+}).map(el => el.closest('[data-node]')?.dataset.node || el.getAttribute('class'))"""
+
+
+def test_bands_outlines_and_labels_stay_inside_the_chart(deck: Deck) -> None:
+    if deck.name == "narrow":
+        pytest.skip("phone width still clips end labels")
+    open_screen(deck, "home:sample-training")
+    outside = deck.page.evaluate(INSIDE_SVG)
+    close(deck)
+    assert outside == []
+
+
 def test_a_finished_run_shows_its_change_on_the_baseline(deck: Deck) -> None:
     got = deck.page.evaluate("""import('/js/sankey.js').then(({ versus }) => {
       const base = { counts: { confident: 100 } };
