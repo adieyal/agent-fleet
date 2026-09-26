@@ -1,4 +1,4 @@
-"""Focus as live workspace state: focus.json beside the Fleet config, /api/state and POST /api/focus."""
+"""Focus as live workspace state: workspace.json beside the Fleet config, /api/state and POST /api/focus."""
 import json
 import threading
 from http.server import ThreadingHTTPServer
@@ -8,9 +8,9 @@ from urllib.request import Request, urlopen
 import pytest
 
 from fleet import projects, transport
-from fleet.focus import FocusStore
+from fleet.workspace import WorkspaceStore
 from fleet.transport import FleetError, Host
-from fleet.web.server import FleetState, focus_path, make_handler
+from fleet.web.server import FleetState, make_handler, workspace_path
 
 HOSTS = [Host("home", None), Host("gpu", "gpu.example")]
 CONFIG = {"hosts": {"home": {}, "gpu": {"ssh": "gpu.example"}}}
@@ -26,7 +26,7 @@ def config_path(tmp_path, monkeypatch):
 
 def start_deck():
     """A deck as `fleet web` builds it; each host has a job and a session labelled `agent-fleet`."""
-    state = FleetState(HOSTS, {}, projects.load_registry, FocusStore(focus_path()))
+    state = FleetState(HOSTS, {}, projects.load_registry, WorkspaceStore(workspace_path()))
     for index, host in enumerate(HOSTS):
         def fill(entry, index=index):
             entry["ok"], entry["error"] = True, None
@@ -84,7 +84,7 @@ def test_nothing_stored_means_priority_and_no_file(deck, config_path):
     document = fetch_state(deck)
     assert document["focus"] == {"projects": {}, "labels": {}}
     assert focus_by_host(document) == {"home": "priority", "gpu": "priority"}
-    assert not (config_path.parent / "focus.json").exists()
+    assert not (config_path.parent / "workspace.json").exists()
 
 
 def test_linked_work_follows_its_project_and_unlinked_work_its_label(deck, config_path):
@@ -98,8 +98,8 @@ def test_linked_work_follows_its_project_and_unlinked_work_its_label(deck, confi
     post_focus(deck, {"focus": "priority", "projects": [project_id]})
     assert focus_by_host(fetch_state(deck)) == {"home": "priority", "gpu": "background"}
 
-    stored = json.loads((config_path.parent / "focus.json").read_text())
-    assert stored == {"projects": {project_id: "priority"}, "labels": {"agent-fleet": "background"}}
+    stored = json.loads((config_path.parent / "workspace.json").read_text())
+    assert stored["focus"] == {"projects": {project_id: "priority"}, "labels": {"agent-fleet": "background"}}
     config = json.loads(config_path.read_text())
     assert "focus" not in config and all("focus" not in entry for entry in config["projects"].values())
 
@@ -141,10 +141,10 @@ def test_a_change_is_pushed_to_open_browsers(deck):
 def test_refused_writes_change_nothing(deck, config_path, body, headers, status):
     assert post_focus(deck, body, **headers)[0] == status
     assert fetch_state(deck)["focus"] == {"projects": {}, "labels": {}}
-    assert not (config_path.parent / "focus.json").exists()
+    assert not (config_path.parent / "workspace.json").exists()
 
 
 def test_a_broken_focus_file_is_reported_not_ignored(config_path):
-    (config_path.parent / "focus.json").write_text(json.dumps({"labels": {"agent-fleet": "parked"}}))
+    (config_path.parent / "workspace.json").write_text(json.dumps({"focus": {"labels": {"agent-fleet": "parked"}}}))
     with pytest.raises(FleetError, match="priority or background"):
-        FocusStore(focus_path())
+        WorkspaceStore(workspace_path())

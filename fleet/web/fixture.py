@@ -1,7 +1,7 @@
 """Serves a recorded fleet from a JSON file instead of following hosts, for browser tests and demos.
 
 A fixture holds the hosts of an `/api/state` document, the project registry as it
-is stored in the Fleet config, focus choices as in `focus.json`, and the Markdown
+is stored in the Fleet config, focus choices as in `workspace.json`, and the Markdown
 behind them:
 
     {"time": …, "project_labels": {…}, "hosts": [{name, ok, error, jobs, sessions}, …],
@@ -10,9 +10,9 @@ behind them:
      "job_documents": {"<host>/<job>/<document id>": "markdown", …},
      "library": {"<project>": [{"id": "README.md", "mtime": …, "markdown": "…"}, …]}}
 
-Jobs and sessions gain `project_id` and `focus`, as they do live. Timestamps
-are served as recorded; a browser test pins its clock to `time`. Focus can be set,
-in memory only, so the recorded file never changes.
+Jobs and sessions gain `project_id` and `focus`, and attention items are derived, as they are live. Timestamps
+are served as recorded; a browser test pins its clock to `time`. Focus and attention
+actions can be set, in memory only, so the recorded file never changes.
 """
 from __future__ import annotations
 
@@ -21,19 +21,22 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from fleet.focus import FocusStore
+from fleet.attention import AttentionBoard
 from fleet.projects import Registry
 from fleet.transport import FleetError
 from fleet.web.documents import STATUS_LINE, render_markdown
+from fleet.web.live import LiveWorkspace
+from fleet.workspace import WorkspaceStore
 
 
-class FixtureState:
-    """Same surface the HTTP handler uses on FleetState; only focus ever changes."""
+class FixtureState(LiveWorkspace):
+    """Same surface the HTTP handler uses on FleetState; only the user's choices ever change."""
 
     def __init__(self, fixture: dict[str, Any]) -> None:
         self.fixture = fixture
         self.registry = Registry.from_config({"projects": fixture.get("projects", {})})
-        self.focus = FocusStore(None, fixture.get("focus"))
+        self.workspace = WorkspaceStore(None, {"focus": fixture.get("focus")})
+        self.board = AttentionBoard(self.workspace)
         self.changed = threading.Condition()
         self.version = 0
 
@@ -46,24 +49,16 @@ class FixtureState:
 
     def document(self) -> dict[str, Any]:
         with self.changed:
-            return {"time": self.fixture["time"], "project_labels": self.fixture.get("project_labels", {}),
+            return self.with_attention({"time": self.fixture["time"], "project_labels": self.fixture.get("project_labels", {}),
                     "projects": [{"id": project_id, **entry} for project_id, entry in self.registry.to_config().items()],
-                    "projects_error": None, "focus": self.focus.snapshot(), "hosts": [
-                {**host, "jobs": [self.focus.annotate(self.registry.resolve(host["name"], job)) for job in host["jobs"]],
-                 "sessions": [self.focus.annotate(self.registry.resolve(host["name"], session))
+                    "projects_error": None, "hosts": [
+                {**host, "jobs": [self.workspace.annotate(self.registry.resolve(host["name"], job)) for job in host["jobs"]],
+                 "sessions": [self.workspace.annotate(self.registry.resolve(host["name"], session))
                               for session in host["sessions"]]}
-                for host in self.fixture["hosts"]]}
+                for host in self.fixture["hosts"]]})
 
-    def set_focus(self, focus: str, projects: list[str], labels: list[str]) -> None:
-        with self.changed:
-            self.focus.set(focus, projects, labels, self.registry.projects)
-            self.version += 1
-            self.changed.notify_all()
-
-    def wait_for_change(self, seen_version: int, timeout: float) -> int:
-        with self.changed:
-            self.changed.wait_for(lambda: self.version != seen_version, timeout=timeout)
-            return self.version
+    def known_projects(self) -> dict[str, Any]:
+        return self.registry.projects
 
     def read_document(self, host_name: str, job_id: str, document_id: str) -> dict[str, Any]:
         """What /api/doc returns for a live host: the job's document entry plus rendered Markdown."""
