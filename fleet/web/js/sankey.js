@@ -238,6 +238,9 @@ function geometry(run) {
   const clear = narrow ? MORE_H : 0;   // the strip the "more columns" button floats over
   return { W: width - PAD * 2 - labelW, H: Math.max(160, height - PAD * 2 - clear), width, height, clear, nameW: labelW - LABEL_ROOM };
 }
+// How far an end label (its name's lines and a count line, 14 px apart) reaches below its node's middle, and where a
+// caption's baseline goes below what it must clear.
+const endLabelBelow = (name, nameW) => 7 * (nameLines(name, nameW).length + 1) + 15, CAPTION_GAP = 22;
 // Text widths as the chart's labels draw them, measured on a canvas so the margin is known before the chart is laid out.
 const NAME_FONT = '600 12.5px', LABEL_ROOM = 7 + 6;   // the gap from the node, and slack for the label's halo
 const measurer = document.createElement('canvas').getContext('2d'), widths = new Map();
@@ -286,7 +289,10 @@ function drawFrame() {
   const values = current(), run = sk.p.run, base = sk.p.baseline;
   const { W, H, width, height, clear, nameW } = geometry(run), firsts = firstOfColumns(run);
   const edges = Object.entries(values.edges).map(([key, c]) => [...key.split('→'), c]);
-  const L = layout(run.nodes, values.counts, edges, W, H - LABEL_TOP - (firsts.size ? CAPTION_H : 0),
+  // an end label is centred on its node, so under the last column's caption room for the half of it below a thin node
+  const lastCol = run.nodes.length - 1, lowest = run.nodes[lastCol]?.at(-1);
+  const tail = firsts.has(lastCol) && lowest ? endLabelBelow(lowest, nameW) - CAPTION_GAP : 0;
+  const L = layout(run.nodes, values.counts, edges, W, H - LABEL_TOP - (firsts.size ? CAPTION_H + Math.max(0, tail) : 0),
     { baseline: base?.counts, baseEdges: base?.edges, gap: LABEL_GAP });
   sk.geo = L;
   renderChart(L, run, base, width, height, clear, nameW, firsts, { ...run, counts: values.counts, edges });
@@ -331,11 +337,13 @@ function renderChart(L, run, base, width, height, clear, nameW, firsts, now) {
       <rect x="${n.x}" y="${n.y}" width="${L.nodeW}" height="${n.hc}" rx="2"/>${label}${
       lines.join(' ') !== n.name ? `<title>${esc(n.name)}</title>` : ''}</g>`;
   }).join('');
-  // under a column that counts each item once, by the first of its reasons, say so
+  // under a column that counts each item once, by the first of its reasons, say so: below its nodes, and below the end
+  // labels beside them
   const captions = [...firsts].map(([ci, key]) => {
     const col = [...L.nodes.values()].filter(n => n.col === ci), x = col[0]?.x ?? 0;
-    const bottom = Math.max(0, ...col.map(n => n.y + n.h));
-    return `<text class="sk-cap" x="${x}" y="${bottom + 22}"><tspan>by first of its ${esc(key)}:</tspan><tspan x="${x}" dy="14">each item counted once</tspan></text>`;
+    const bottom = Math.max(0, ...col.map(n => Math.max(n.y + n.h,
+      ci === lastCol ? n.y + n.hc / 2 + endLabelBelow(n.name, nameW) - CAPTION_GAP : 0)));
+    return `<text class="sk-cap" x="${x}" y="${bottom + CAPTION_GAP}"><tspan>by first of its ${esc(key)}:</tspan><tspan x="${x}" dy="14">each item counted once</tspan></text>`;
   }).join('');
   svg.innerHTML = `<defs><pattern id="skHatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
     <rect class="sk-hatch" width="2" height="5"/></pattern></defs>
@@ -384,21 +392,40 @@ function occupancy(L, rects, x0, y0, width, height) {
     };
   });
 }
-// Labels never lie on a band. The last column's sit right of their node, where nothing flows. Every other label goes
-// in the nearest free spot of the gaps above or below its node, from wholly left of it to wholly right: clear of
-// outlines too if it can be, else of the bands only. With no free spot it sits on a chip level with its node, left of
-// it (its stub is on the right), covering the bands there.
-const LABEL_REACH = 60, LABEL_STEP = 4, LABEL_M = 2;
+// Labels never lie on a band. The last column's sit right of their node, where nothing flows. A node bands leave has
+// its label in the nearest free spot of the gaps above or below it, from wholly left of it to wholly right; a node
+// nothing leaves (yet), touching it, so it never drifts off towards the next column. Clear of outlines too if it can
+// be, else of the bands only. With no free spot it sits on a chip level with its node, left of it if it fits (its stub
+// is on the right), moved up or down off other labels, covering the bands there.
+const LABEL_REACH = 60, LABEL_STEP = 4, LABEL_M = 2, LABEL_DX = 400;
+// the gap search's offsets once, cheapest first: level with the node's left edge, then either way, then further off
+const GAP_OFFSETS = [false, true].flatMap(below => Array.from({ length: LABEL_REACH / LABEL_STEP + 1 }, (_, i) => i * LABEL_STEP)
+  .flatMap(dy => Array.from({ length: LABEL_DX / LABEL_STEP + 1 }, (_, j) => j * LABEL_STEP)
+    .flatMap(d => (d ? [-d, d] : [0]).map(dx => ({ below, dy, dx, cost: dy * 2 + d + (below ? 12 : 0) })))))
+  .sort((p, q) => p.cost - q.cost);
 function placeLabels(L, lastCol, width, height, stubs) {
   const x0 = -PAD, y0 = -PAD - LABEL_TOP, M = LABEL_M;
   const nodeRects = [...L.nodes.values()].map(n => ({ x: n.x, y: n.y, width: L.nodeW, height: n.hc }));
   const [strict, loose] = occupancy(L, [...nodeRects, ...stubs], x0, y0, width, height);
   const placed = [...svg.querySelectorAll('.sk-cap')].map(el => el.getBBox());
   const inView = (x, y, w, h) => x >= x0 + 1 && y >= y0 + 1 && x + w <= x0 + width - 1 && y + h <= y0 + height - 1;
-  const free = (taken, x, y, w, h) => {
-    if (!inView(x, y, w, h) || taken(x - M, y - M, w + 2 * M, h + 2 * M)) return false;
-    for (const p of placed) if (x < p.x + p.width + M && p.x < x + w + M && y < p.y + p.height + M && p.y < y + h + M) return false;
-    return true;
+  const clash = (x, y, w, h) => placed.some(p => x < p.x + p.width + M && p.x < x + w + M && y < p.y + p.height + M && p.y < y + h + M);
+  const free = (taken, x, y, w, h) => inView(x, y, w, h) && !taken(x - M, y - M, w + 2 * M, h + 2 * M) && !clash(x, y, w, h);
+  // a node bands leave: the gaps above or below it, from wholly left of it to wholly right, nearest first
+  function* gapSpots(n, w, h) {
+    for (const o of GAP_OFFSETS) if (Math.abs(o.dx) <= w + L.nodeW) yield { x: n.x + o.dx, y: o.below ? n.y + n.hc + 4 + o.dy : n.y - 4 - h - o.dy };
+  }
+  // a node nothing leaves: touching it (and its stub) above, right, below or left
+  const stubEnd = new Map(stubs.map(s => [s.name, s.x + s.width]));
+  const besideSpots = (n, w, h) => {
+    const right = stubEnd.get(n.name) ?? n.x + L.nodeW, mid = n.y + n.hc / 2 - h / 2, spots = [];
+    for (let d = 0; d <= Math.max(w, n.hc / 2 + h / 2); d += LABEL_STEP) {
+      if (d <= w - 4) spots.push({ cost: d, x: n.x - d, y: n.y - 4 - h }, { cost: d + 12, x: n.x - d, y: n.y + n.hc + 4 });
+      if (d <= right - n.x - 4) spots.push({ cost: d, x: n.x + d, y: n.y - 4 - h }, { cost: d + 12, x: n.x + d, y: n.y + n.hc + 4 });
+      if (d <= Math.max(0, n.hc / 2 + h / 2 - 4)) for (const dy of d ? [-d, d] : [0])
+        spots.push({ cost: 6 + d, x: right + 4, y: mid + dy }, { cost: 8 + d, x: n.x - 4 - w, y: mid + dy });
+    }
+    return spots.sort((p, q) => p.cost - q.cost);
   };
   const labels = [...svg.querySelectorAll('.sk-node')].map(g => ({ g, n: L.nodes.get(g.dataset.node), text: g.querySelector('text') }))
     .map(l => ({ ...l, box: l.text.getBBox() }))   // the last column's first: their spots are fixed
@@ -406,29 +433,20 @@ function placeLabels(L, lastCol, width, height, stubs) {
     const w = box.width, h = box.height;
     let spot = null;
     if (n.col === lastCol) spot = { x: n.x + L.nodeW + 7, y: n.y + n.hc / 2 - h / 2 };
-    else {
-      for (const taken of [strict, loose]) {
-        let best = null;
-        for (const below of [false, true]) for (let dy = 0; dy <= LABEL_REACH; dy += LABEL_STEP) {
-          const y = below ? n.y + n.hc + 4 + dy : n.y - 4 - h - dy;
-          for (let dx = 0; dx <= w + L.nodeW; dx += LABEL_STEP) {   // left-aligned first, then either way
-            const cost = dy * 2 + dx + (below ? 12 : 0);
-            if (best && cost >= best.cost) break;
-            const x = free(taken, n.x - dx, y, w, h) ? n.x - dx : free(taken, n.x + dx, y, w, h) ? n.x + dx : null;
-            if (x !== null) { best = { cost, x, y }; break; }
-          }
-        }
-        if (best) { spot = best; break; }
-      }
-      if (!spot) {
-        const y = n.y + n.hc / 2 - h / 2, left = n.x - 4 - w, right = n.x + L.nodeW + WAIT_W + 4;
-        spot = { x: inView(left, y, w, h) ? left : inView(right, y, w, h) ? right : n.x, y };
-        const chip = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        for (const [k, v] of Object.entries({ class: 'sk-chip', x: spot.x - 4, y: spot.y - 2, width: w + 8, height: h + 4, rx: 4 }))
-          chip.setAttribute(k, v);
-        g.insertBefore(chip, text);
-        g.classList.add('chip');
-      }
+    else for (const taken of [strict, loose]) {
+      for (const c of n.out.length ? gapSpots(n, w, h) : besideSpots(n, w, h)) if (free(taken, c.x, c.y, w, h)) { spot = c; break; }
+      if (spot) break;
+    }
+    if (!spot) {   // on a chip level with its node, left of it if it fits, shifted up or down off other labels
+      const right = n.x + L.nodeW + WAIT_W + 4, mid = n.y + n.hc / 2 - h / 2;
+      const chips = [0, ...Array.from({ length: 2 * LABEL_REACH / LABEL_STEP }, (_, i) => (i % 2 ? 1 : -1) * LABEL_STEP * (1 + (i >> 1)))]
+        .flatMap(dy => [{ x: n.x - 4 - w, y: mid + dy }, { x: right, y: mid + dy }]).filter(c => inView(c.x, c.y, w, h));
+      spot = chips.find(c => !clash(c.x - 4, c.y - 2, w + 8, h + 4)) || chips[0] || { x: n.x, y: mid };
+      const chip = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      for (const [k, v] of Object.entries({ class: 'sk-chip', x: spot.x - 4, y: spot.y - 2, width: w + 8, height: h + 4, rx: 4 }))
+        chip.setAttribute(k, v);
+      g.insertBefore(chip, text);
+      g.classList.add('chip');
     }
     text.setAttribute('transform', `translate(${spot.x - box.x},${spot.y - box.y})`);
     placed.push({ x: spot.x, y: spot.y, width: w, height: h });

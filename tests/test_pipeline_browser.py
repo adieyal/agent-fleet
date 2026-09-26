@@ -272,8 +272,10 @@ LABELS_ON_BANDS = """(() => {
       if (r.left < q.right && q.left < r.right && r.top < q.bottom && q.top < r.bottom) hits.push([g.dataset.node, 'stub', chip]);
     }
   }
-  const boxes = [...svg.querySelectorAll('.sk-node text, .sk-cap')].map(t => t.getBoundingClientRect());
-  const crowded = boxes.some((p, i) => boxes.some((q, j) => i < j && p.left < q.right && q.left < p.right && p.top < q.bottom && q.top < p.bottom));
+  const els = [...svg.querySelectorAll('.sk-node text, .sk-cap')], boxes = els.map(t => t.getBoundingClientRect());
+  const name = el => el.closest('[data-node]')?.dataset.node || 'caption';
+  const crowded = boxes.flatMap((p, i) => boxes.map((q, j) => i < j && p.left < q.right && q.left < p.right && p.top < q.bottom
+    && q.top < p.bottom ? [name(els[i]), name(els[j])] : null)).filter(Boolean);
   return { hits, crowded, chips: [...svg.querySelectorAll('.sk-node.chip')].map(g => g.dataset.node) };
 })()"""
 
@@ -368,6 +370,21 @@ SIDE_AND_WAITS = """[[...document.querySelectorAll('#skSide tbody tr')].map(r =>
     .map(g => g.dataset.node)]"""
 
 
+LABEL_NEAR = """(() => {   // node with no band leaving it → pixels between its label and it (with its stub)
+  const svg = document.getElementById('skSvg'), out = {};
+  const leaving = new Set([...svg.querySelectorAll('.sk-band')].map(b => b.dataset.band.split('→')[0]));
+  for (const g of svg.querySelectorAll('.sk-node')) {
+    if (leaving.has(g.dataset.node)) continue;
+    const t = g.querySelector('text').getBoundingClientRect(), r = g.querySelector('rect:not(.sk-chip)').getBoundingClientRect();
+    const stub = [...svg.querySelectorAll('.sk-wait')].map(s => s.getBoundingClientRect())
+      .find(s => Math.abs(s.left - r.right) < 1 && s.top >= r.top - 1 && s.bottom <= r.bottom + 1);
+    const right = stub ? stub.right : r.right;
+    out[g.dataset.node] = Math.max(0, t.left - right, r.left - t.right, t.top - r.bottom, r.top - t.bottom);
+  }
+  return out;
+})()"""
+
+
 def test_mid_run_nodes_waiting_for_a_gate_burst_are_not_ends(deck: Deck, fixture_pipelines: dict[str, Any]) -> None:
     """A run with no finished run before it, part-way, whose gates run as a burst at the end: nothing has left agree,
     disagree or profile yet, but alone and unsettled beside them pass items on. The run line's `ends` says they are
@@ -385,6 +402,11 @@ def test_mid_run_nodes_waiting_for_a_gate_burst_are_not_ends(deck: Deck, fixture
             expect(page.locator("#skMeta")).to_contain_text("gates at the end")
             got[bool(declared)] = page.evaluate(SIDE_AND_WAITS)
         deck.shot("gate-burst-mid-run")
+        # a node nothing leaves keeps its label beside it, off every band, as any label
+        page.evaluate("(c => { c.scrollLeft = 0; })(document.getElementById('skChart'))")
+        near, placed = page.evaluate(LABEL_NEAR), page.evaluate(LABELS_ON_BANDS)
+        assert [hit for hit in placed["hits"] if not hit[2] or hit[1] == "stub"] == [] and not placed["crowded"], placed
+        assert burst <= set(near) and all(gap <= 8 for gap in near.values()), near
         ends, waits = got[True]
         last = run["nodes"][-1]
         assert set(ends) == {n for n in [*generator["ENDS"], *last] if run["counts"].get(n)}
