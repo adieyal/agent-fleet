@@ -23,7 +23,7 @@ def choose(rng: random.Random, weights: dict[str, float]) -> str:
     return rng.choices(list(weights), list(weights.values()))[0]
 
 
-ENDS = ["unlearnable", "confident"]   # where items stop before the last column
+ENDS = ["unsettled", "confident"]   # where items stop before the last column, as orient_v4 declares them
 BURST = ("agree", "disagree", "profile")   # in a run like orient_v4's, these go to the gates only at the run's end
 
 
@@ -42,11 +42,12 @@ def run_events(run_id: str, label: str, started: float, until: float, items: int
         lines.append({"type": "flow", "run_id": run_id, "item": item, "from": "items", "to": first, "ts": ts})
         if first == "unlearnable":
             lines[-1]["attrs"] = {"why": rng.choice(["no printed total", "unreadable scan"])}
-            continue
         ts += rng.uniform(1, 20)
         second = choose(rng, {"alone": 0.3, "agree": 0.4, "disagree": 0.15, "profile": 0.15} if first == "decided"
-                        else {"agree": 0.3, "unsettled": 0.7})
+                        else {"agree": 0.3, "unsettled": 0.7} if first == "tied" else {"unsettled": 0.7, "profile": 0.3})
         lines.append({"type": "flow", "run_id": run_id, "item": item, "from": first, "to": second, "ts": ts})
+        if second == "unsettled" and rng.random() < 0.4:
+            continue   # left unsettled for good
         ts += rng.uniform(60, 240)
         if not end and (ts > until or second in burst):
             continue   # not at the gates yet

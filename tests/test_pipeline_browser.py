@@ -339,13 +339,13 @@ def test_on_a_phone_the_chart_scrolls_to_every_column(deck: Deck) -> None:
 
 
 def test_items_not_yet_gone_on_are_waiting(deck: Deck, fixture_pipelines: dict[str, Any]) -> None:
-    """Mid-run, what a middle column holds beyond what has left it is waiting: a stub and 'N waiting' per node, adding
-    up to the difference between that column and the next."""
+    """Mid-run, what a middle column's nodes that are not declared ends hold beyond what has left them is waiting: a
+    stub and 'N waiting' per node."""
     page = deck.page
     open_screen(deck, "home:sample-training")
     run = fixture_pipelines["pipeline_reports"][0]["run"]
-    counts, (middle, after) = run["counts"], run["nodes"][2:4]
-    gap = sum(counts[n] for n in middle) - sum(counts[n] for n in after)
+    middle = [n for n in run["nodes"][2] if n not in run["ends"]]
+    gap = sum(run["counts"][n] for n in middle) - sum(c for s, _, c in run["edges"] if s in middle)
     assert gap > 0
     shown = 0
     for node in middle:
@@ -387,7 +387,7 @@ def test_mid_run_nodes_waiting_for_a_gate_burst_are_not_ends(deck: Deck, fixture
         deck.shot("gate-burst-mid-run")
         ends, waits = got[True]
         last = run["nodes"][-1]
-        assert set(ends) == {n for n in ["unlearnable", "confident", *last] if run["counts"].get(n)}
+        assert set(ends) == {n for n in [*generator["ENDS"], *last] if run["counts"].get(n)}
         assert burst <= set(waits) and not burst & set(ends)
         assert burst <= set(got[False][0])   # undeclared: today's guess
         page.evaluate(f"{SHOW_REPORT}({json.dumps(generator['gate_burst'](generator['ENDS'], 'done'))})")
