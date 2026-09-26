@@ -122,7 +122,7 @@ loadAssets().then(() => {
       miniBot(cv, hostLook(host), agent, pose || 'normal');
     }
   }
-  // read-only probe for browser tests: rooms live only in WebGL, so they have no DOM to query
+  // probe for browser tests: rooms live only in WebGL, so they have no DOM to query
   const onScreen = mesh => {   // a unit plane's bounding box on screen
     const pts = [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]].map(([x, y]) => toScreen(mesh.localToWorld(_w.set(x, y, 0)), { x: 0, y: 0 }));
     const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
@@ -137,7 +137,8 @@ loadAssets().then(() => {
     rooms: () => rooms.map(r => ({ name: r.name, label: r.label, x: r.ox, y: r.oy,
       screen: toScreen(_w.set(r.ox + RW / 2, 0, r.oy + RD / 2), { x: 0, y: 0 }), focus: r.focus, dim: r.dimK ?? null,
       attention: r.attention?.level ? { kind: r.attention.kind, state: r.attention.level, count: r.attention.shown.length } : null })),
-    agents: () => [...ents.values()].map(e => ({ key: e.key, kind: e.kind, room: e.room, status: e.job.status })),
+    agents: () => [...ents.values()].map(e => ({ key: e.key, kind: e.kind, room: e.room, status: e.job.status, leaving: !!e.leaving })),
+    apply: doc => applyState(doc),   // feed a state document as the stream would
     pipelines: () => pipelines.map(p => {
       const s = screenOf(keyOf(p));
       return { key: keyOf(p), room: p.project, run: p.run?.run_id ?? null,

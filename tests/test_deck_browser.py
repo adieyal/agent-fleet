@@ -19,6 +19,13 @@ const offset = %d * 1000 - Date.now();
 const realNow = Date.now.bind(Date);
 Date.now = () => realNow() + offset;
 """
+FINISHED = {"done", "cancelled"}
+
+
+def on_the_floor(fixture_data: dict[str, Any]) -> set[str]:
+    """Every job and session the deck draws: finished jobs have left."""
+    return {f"{host['name']}:{item['id']}" for host in fixture_data["hosts"]
+            for item in host["jobs"] + host["sessions"] if item["status"] not in FINISHED}
 
 
 @dataclass
@@ -38,8 +45,7 @@ def deck(request: pytest.FixtureRequest, browser: Browser, base_url: str,
     page.on("console", lambda message: message.type == "error" and deck.errors.append(message.text))
     page.on("pageerror", lambda error: deck.errors.append(str(error)))
     page.goto(base_url + "/")
-    agent_count = sum(len(host["jobs"]) + len(host["sessions"]) for host in fixture_data["hosts"])
-    page.wait_for_function(f"window.fleetDeck && fleetDeck.agents().length === {agent_count}")
+    page.wait_for_function(f"window.fleetDeck && fleetDeck.agents().length === {len(on_the_floor(fixture_data))}")
     yield deck
     context.close()
 
@@ -52,9 +58,8 @@ def test_every_project_gets_a_room(deck: Deck, fixture_data: dict[str, Any]) -> 
     assert deck.errors == []
 
 
-def test_every_job_and_session_is_an_agent(deck: Deck, fixture_data: dict[str, Any]) -> None:
-    expected = {f"{host['name']}:{item['id']}" for host in fixture_data["hosts"]
-                for item in host["jobs"] + host["sessions"]}
+def test_every_unfinished_job_and_session_is_an_agent(deck: Deck, fixture_data: dict[str, Any]) -> None:
+    expected = on_the_floor(fixture_data)
     agents = deck.page.evaluate("fleetDeck.agents()")
     assert {agent["key"] for agent in agents} == expected
     assert sum(agent["kind"] == "session" for agent in agents) == 2
@@ -64,10 +69,68 @@ def test_every_job_and_session_is_an_agent(deck: Deck, fixture_data: dict[str, A
     assert deck.errors == []
 
 
+def test_finished_jobs_are_off_the_deck_until_the_chip_shows_them(deck: Deck, fixture_data: dict[str, Any]) -> None:
+    page = deck.page
+    finished = {f"{host['name']}:{job['id']}" for host in fixture_data["hosts"]
+                for job in host["jobs"] if job["status"] in FINISHED}
+    assert finished == {"worker:d4f7a2"}
+    assert not finished & {agent["key"] for agent in page.evaluate("fleetDeck.agents()")}
+    expect(page.locator("#tags .tag", has_text="d4f7a2")).to_have_count(0)
+    chip = page.locator("#toggleFinished")
+    expect(chip).to_have_text("1 finished · show")
+
+    chip.dispatch_event("click")
+    page.wait_for_function("fleetDeck.agents().some(agent => agent.key === 'worker:d4f7a2')")
+    expect(page.locator("#tags .tag", has_text="d4f7a2")).to_have_count(1)
+    expect(chip).to_have_text("hide finished")
+
+    chip.dispatch_event("click")
+    page.wait_for_function("!fleetDeck.agents().some(agent => agent.key === 'worker:d4f7a2')")
+    expect(page.locator("#tags .tag", has_text="d4f7a2")).to_have_count(0)
+    expect(chip).to_have_text("1 finished · show")
+    assert deck.errors == []
+
+
+def finish_jobs(base_url: str, statuses: dict[str, str]) -> dict[str, Any]:
+    """The server's state document with some jobs finished, as the next state update would bring it."""
+    with urlopen(base_url + "/api/state", timeout=5) as response:
+        doc = json.load(response)
+    for host in doc["hosts"]:
+        for job in host["jobs"]:
+            job["status"] = statuses.get(f"{host['name']}:{job['id']}", job["status"])
+    return doc
+
+
+@pytest.mark.parametrize("motion", ["no-preference", "reduce"])
+def test_a_job_that_finishes_walks_out(browser: Browser, base_url: str, fixture_data: dict[str, Any],
+                                       motion: str) -> None:
+    context = browser.new_context(viewport=VIEWPORTS["desktop"], reduced_motion=motion)
+    context.add_init_script(PIN_CLOCK % fixture_data["time"])
+    page = context.new_page()
+    errors: list[str] = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.goto(base_url + "/")
+    page.wait_for_function(f"window.fleetDeck && fleetDeck.agents().length === {len(on_the_floor(fixture_data))}")
+    leaving = {"worker:c90e11": "done", "home:b7d042": "cancelled"}
+    page.evaluate("doc => fleetDeck.apply(doc)", finish_jobs(base_url, leaving))
+    gone = f"!fleetDeck.agents().some(agent => {json.dumps(list(leaving))}.includes(agent.key))"
+    if motion == "reduce":
+        assert page.evaluate(gone)                                          # removed at once
+    else:
+        agents = {agent["key"]: agent for agent in page.evaluate("fleetDeck.agents()")}
+        assert all(agents[key]["leaving"] for key in leaving)               # a completion moment, then the door
+        assert not agents["home:a1c3e9"]["leaving"]
+        page.wait_for_function(gone, timeout=60_000)
+    expect(page.locator("#tags .tag", has_text="c90e11")).to_have_count(0)
+    expect(page.locator("#toggleFinished")).to_have_text("3 finished · show")
+    context.close()
+    assert errors == []
+
+
 def test_bubbles_show_action_glyphs_and_the_words_stay_a_click_away(deck: Deck) -> None:
     page = deck.page
     expected = {"a1c3e9": "test", "b7d042": "edit", "Why does the st": "ask", "f20a6d": "edit", "c90e11": "think",
-                "0a9e3b": "queued", "e1b5c8": "failed", "d4f7a2": "done"}
+                "0a9e3b": "queued", "e1b5c8": "failed"}
     for agent, action in expected.items():
         bubble = page.locator("#tags .tag", has_text=agent).locator(".bubble")
         expect(bubble).to_have_attribute("data-action", action)
@@ -157,6 +220,21 @@ def test_demo_mode_fills_the_deck_without_errors(browser: Browser, base_url: str
     assert len(page.evaluate("fleetDeck.rooms()")) > 1
     page.locator("#tags .tag").first.dispatch_event("click")
     expect(page.locator("#panel")).to_have_class("open")
+    context.close()
+    assert errors == []
+
+
+def test_demo_androids_finish_and_walk_out(browser: Browser, base_url: str) -> None:
+    context = browser.new_context(viewport=VIEWPORTS["desktop"])
+    page = context.new_page()
+    errors: list[str] = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.goto(base_url + "/?demo")
+    page.wait_for_function("window.fleetDeck && fleetDeck.agents().length > 0")
+    assert not any(agent["status"] in FINISHED for agent in page.evaluate("fleetDeck.agents()"))
+    leaving = page.wait_for_function("fleetDeck.agents().find(agent => agent.leaving)", timeout=60_000).json_value()
+    assert leaving["status"] == "done"
+    page.wait_for_function(f"!fleetDeck.agents().some(agent => agent.key === '{leaving['key']}')", timeout=60_000)
     context.close()
     assert errors == []
 
@@ -277,8 +355,7 @@ def test_focus_of_an_unregistered_room_survives_reload(deck: Deck, base_url: str
     wait_for_dim(page, "agent-fleet", 1)
     assert focus_on_server(base_url, "agent-fleet") == {"background"}
     page.reload()
-    agent_count = sum(len(host["jobs"]) + len(host["sessions"]) for host in fixture_data["hosts"])
-    page.wait_for_function(f"window.fleetDeck && fleetDeck.agents().length === {agent_count}")
+    page.wait_for_function(f"window.fleetDeck && fleetDeck.agents().length === {len(on_the_floor(fixture_data))}")
     wait_for_dim(page, "agent-fleet", 1)
     expect(page.locator('.focus-switch[data-room="agent-fleet"]')).to_have_attribute("data-focus", "background")
     assert tag_is_calm(page, "f20a6d")
