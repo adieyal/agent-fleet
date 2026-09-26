@@ -1,14 +1,16 @@
 """Serves a recorded fleet from a JSON file instead of following hosts, for browser tests and demos.
 
 A fixture holds the hosts of an `/api/state` document, the project registry as it
-is stored in the Fleet config, and the Markdown behind them:
+is stored in the Fleet config, focus choices as in `focus.json`, and the Markdown
+behind them:
 
     {"time": …, "project_labels": {…}, "hosts": [{name, ok, error, jobs, sessions}, …],
-     "projects": {"p-…": {"name": …, "links": […], "focus": …}, …},
+     "projects": {"p-…": {"name": …, "links": […]}, …},
+     "focus": {"projects": {"p-…": "background"}, "labels": {"<label>": "background"}},
      "job_documents": {"<host>/<job>/<document id>": "markdown", …},
      "library": {"<project>": [{"id": "README.md", "mtime": …, "markdown": "…"}, …]}}
 
-Jobs and sessions gain `project_id` from the registry, as they do live. Timestamps
+Jobs and sessions gain `project_id` and `focus`, as they do live. Timestamps
 are served as recorded; a browser test pins its clock to `time`. Focus can be set,
 in memory only, so the recorded file never changes.
 """
@@ -19,6 +21,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from fleet.focus import FocusStore
 from fleet.projects import Registry
 from fleet.transport import FleetError
 from fleet.web.documents import STATUS_LINE, render_markdown
@@ -30,6 +33,7 @@ class FixtureState:
     def __init__(self, fixture: dict[str, Any]) -> None:
         self.fixture = fixture
         self.registry = Registry.from_config({"projects": fixture.get("projects", {})})
+        self.focus = FocusStore(None, fixture.get("focus"))
         self.changed = threading.Condition()
         self.version = 0
 
@@ -44,14 +48,15 @@ class FixtureState:
         with self.changed:
             return {"time": self.fixture["time"], "project_labels": self.fixture.get("project_labels", {}),
                     "projects": [{"id": project_id, **entry} for project_id, entry in self.registry.to_config().items()],
-                    "projects_error": None, "hosts": [
-                {**host, "jobs": [self.registry.resolve(host["name"], job) for job in host["jobs"]],
-                 "sessions": [self.registry.resolve(host["name"], session) for session in host["sessions"]]}
+                    "projects_error": None, "focus": self.focus.snapshot(), "hosts": [
+                {**host, "jobs": [self.focus.annotate(self.registry.resolve(host["name"], job)) for job in host["jobs"]],
+                 "sessions": [self.focus.annotate(self.registry.resolve(host["name"], session))
+                              for session in host["sessions"]]}
                 for host in self.fixture["hosts"]]}
 
-    def set_focus(self, project_id: str, focus: str) -> None:
+    def set_focus(self, focus: str, projects: list[str], labels: list[str]) -> None:
         with self.changed:
-            self.registry.set_focus(project_id, focus)
+            self.focus.set(focus, projects, labels, self.registry.projects)
             self.version += 1
             self.changed.notify_all()
 

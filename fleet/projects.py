@@ -13,9 +13,6 @@ on different hosts. The registry adds identity on top without changing labels:
   (host, label) pairs whose repository matches; accepting one is an explicit link.
 - A (host, label) pair with no link stays an unregistered group, grouped and shown
   exactly as before the registry existed.
-- A project has a focus, the user's explicit choice of where resources go: `priority`
-  or `background`. Activity never changes it. New projects start in priority, and
-  entries stored before focus existed load as priority.
 
 `project_labels` (label → friendly room name, host-agnostic) is kept as is and is
 not migrated: turning it into links would merge every host's same-named label into
@@ -26,8 +23,7 @@ Stored under `projects` in the config file:
 
     "projects": {"p-1a2b3c4d": {"name": "Agent Fleet",
                                 "links": [{"host": "home", "label": "agent-fleet"}],
-                                "repositories": ["git@github.com:adieyal/agent-fleet.git"],
-                                "focus": "priority"}}
+                                "repositories": ["git@github.com:adieyal/agent-fleet.git"]}}
 """
 from __future__ import annotations
 
@@ -40,7 +36,6 @@ from fleet import transport
 from fleet.transport import FleetError
 
 PROJECT_ID = re.compile(r"^p-[0-9a-f]{8}$")
-FOCUSES = ("priority", "background")
 
 
 @dataclass(frozen=True, order=True)
@@ -55,12 +50,11 @@ class Project:
     name: str
     links: list[Link] = field(default_factory=list)
     repositories: list[str] = field(default_factory=list)
-    focus: str = "priority"
 
     def to_config(self) -> dict[str, Any]:
         return {"name": self.name,
                 "links": [{"host": link.host, "label": link.label} for link in sorted(self.links)],
-                "repositories": list(self.repositories), "focus": self.focus}
+                "repositories": list(self.repositories)}
 
 
 @dataclass(frozen=True)
@@ -93,7 +87,6 @@ class Registry:
             if not PROJECT_ID.match(project.id):
                 raise FleetError(f"invalid project id '{project.id}' in config")
             self.projects[project.id] = Project(project.id, project.name)
-            self.set_focus(project.id, project.focus)
             for repository in project.repositories:
                 self.add_repository(project.id, repository)
             for link in project.links:
@@ -103,7 +96,7 @@ class Registry:
     def from_config(cls, config: dict[str, Any]) -> Registry:
         return cls(Project(project_id, entry["name"],
                            [Link(link["host"], link["label"]) for link in entry.get("links", [])],
-                           list(entry.get("repositories", [])), entry.get("focus", "priority"))
+                           list(entry.get("repositories", [])))
                    for project_id, entry in config.get("projects", {}).items())
 
     def to_config(self) -> dict[str, Any]:
@@ -129,11 +122,6 @@ class Registry:
         if not name.strip():
             raise FleetError("a project needs a name")
         self.get(project_id).name = name.strip()
-
-    def set_focus(self, project_id: str, focus: str) -> None:
-        if focus not in FOCUSES:
-            raise FleetError(f"focus is priority or background, not '{focus}'")
-        self.get(project_id).focus = focus
 
     def remove(self, project_id: str) -> Project:
         """Forget a project; its labels fall back to unregistered groups."""

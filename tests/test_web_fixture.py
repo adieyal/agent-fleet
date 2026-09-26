@@ -28,9 +28,10 @@ def test_state_is_the_recorded_fleet(base_url: str, fixture_data: dict[str, Any]
     state = get(base_url, "/api/state")
     assert {key: state[key] for key in ("time", "project_labels")} == {
         key: fixture_data[key] for key in ("time", "project_labels")}
-    unresolved = [{**host, "jobs": [{key: value for key, value in job.items() if key != "project_id"}
+    added = ("project_id", "focus")
+    unresolved = [{**host, "jobs": [{key: value for key, value in job.items() if key not in added}
                                     for job in host["jobs"]],
-                   "sessions": [{key: value for key, value in session.items() if key != "project_id"}
+                   "sessions": [{key: value for key, value in session.items() if key not in added}
                                 for session in host["sessions"]]} for host in state["hosts"]]
     assert unresolved == fixture_data["hosts"]
     hosts = {host["name"]: host for host in state["hosts"]}
@@ -42,13 +43,15 @@ def test_state_is_the_recorded_fleet(base_url: str, fixture_data: dict[str, Any]
 
 def test_project_ids_resolve_from_the_recorded_registry(base_url: str) -> None:
     state = get(base_url, "/api/state")
-    assert {(project["id"], project["focus"]) for project in state["projects"]} == {
-        ("p-5e1f0a01", "priority"), ("p-1c0ce5a2", "background")}
+    assert {project["id"] for project in state["projects"]} == {"p-5e1f0a01", "p-1c0ce5a2"}
+    assert state["focus"]["projects"]["p-1c0ce5a2"] == "background"   # browser tests may add explicit priorities
     by_label = {(host["name"], item["project"]): item["project_id"]
                 for host in state["hosts"] for item in host["jobs"] + host["sessions"]}
     assert by_label[("home", "restoke")] == by_label[("worker", "restoke")] == "p-5e1f0a01"
     assert by_label[("worker", "invoice-parser")] == "p-1c0ce5a2"
     assert by_label[("worker", "agent-fleet")] is None
+    focus = {item["project"]: item["focus"] for host in state["hosts"] for item in host["jobs"] + host["sessions"]}
+    assert focus == {"restoke": "priority", "invoice-parser": "background", "agent-fleet": "priority"}
 
 
 def test_stream_pushes_the_recorded_state(base_url: str) -> None:

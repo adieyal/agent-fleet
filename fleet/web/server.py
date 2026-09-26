@@ -18,7 +18,8 @@ from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from fleet import projects, transport
-from fleet.projects import FOCUSES, Registry
+from fleet.focus import FOCUSES, FocusStore
+from fleet.projects import Registry
 from fleet.transport import FleetError, Host
 from fleet.web.documents import fetch_document
 from fleet.web.fixture import FixtureLibrary, FixtureState
@@ -51,19 +52,20 @@ class FleetState:
     restart. If a re-read fails, the last good registry is used and `projects_error`
     says why.
 
-    Focus is the one thing the deck writes: `set_focus` saves it to the registry and
-    pushes a new document to every browser.
+    Each also gains `focus`, from its project when linked and its label otherwise (see
+    fleet.focus); the document carries the stored choices under `focus`. Focus is the
+    one thing the deck writes: `set_focus` stores it and pushes a new document to every
+    browser.
     """
 
     def __init__(self, hosts: list[Host], project_labels: dict[str, str] | None = None,
                  load_registry: Callable[[], Registry] | None = None,
-                 save_registry: Callable[[Registry], None] | None = None) -> None:
+                 focus: FocusStore | None = None) -> None:
         self.hosts = hosts
         self.project_labels = project_labels or {}
         self.load_registry = load_registry or Registry
-        self.save_registry = save_registry
         self.registry = self.load_registry()
-        self.registry_write = threading.Lock()
+        self.focus = focus or FocusStore(None)
         self.changed = threading.Condition()
         self.version = 0
         self.by_host: dict[str, dict[str, Any]] = {
@@ -83,13 +85,9 @@ class FleetState:
         except (FleetError, ValueError, KeyError, TypeError) as error:
             return f"project registry not reloaded: {error}"
 
-    def set_focus(self, project_id: str, focus: str) -> None:
-        if self.save_registry is None:
-            raise FleetError("this deck has no project registry to save focus to")
-        with self.registry_write:
-            registry = self.load_registry()
-            registry.set_focus(project_id, focus)
-            self.save_registry(registry)
+    def set_focus(self, focus: str, projects: list[str], labels: list[str]) -> None:
+        self.refresh_registry()   # a project registered a moment ago can be focused
+        self.focus.set(focus, projects, labels, self.registry.projects)
         with self.changed:
             self.version += 1
             self.changed.notify_all()
@@ -100,11 +98,11 @@ class FleetState:
         with self.changed:
             return {"time": time.time(), "project_labels": self.project_labels,
                     "projects": [{"id": project_id, **entry} for project_id, entry in registry.to_config().items()],
-                    "projects_error": projects_error, "hosts": [
+                    "projects_error": projects_error, "focus": self.focus.snapshot(), "hosts": [
                 {**{key: value for key, value in self.by_host[host.name].items() if key not in ("jobs", "sessions")},
-                 "jobs": [registry.resolve(host.name, job) for job in
+                 "jobs": [self.focus.annotate(registry.resolve(host.name, job)) for job in
                           sorted(self.by_host[host.name]["jobs"].values(), key=lambda job: job["created_at"])],
-                 "sessions": [registry.resolve(host.name, session) for session in
+                 "sessions": [self.focus.annotate(registry.resolve(host.name, session)) for session in
                               sorted(self.by_host[host.name]["sessions"].values(),
                                      key=lambda session: session.get("started_at") or 0)]}
                 for host in self.hosts]}
@@ -236,20 +234,28 @@ def make_handler(state: FleetState | FixtureState,
             return origin is None or urlsplit(origin).netloc == self.headers.get("Host")
 
         def focus(self) -> None:
-            """POST /api/focus {"project": id, "focus": "priority" | "background"}"""
+            """POST /api/focus {"focus": "priority" | "background", "projects": [id, …], "labels": [label, …]}
+
+            Projects are focused by ID; labels are for jobs and sessions with no linked project.
+            """
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)))
             except ValueError:
                 body = None
-            if not isinstance(body, dict) or not isinstance(body.get("project"), str) or body.get("focus") not in FOCUSES:
-                self.respond(400, "application/json", b'{"error": "project and focus (priority or background) are required"}')
+            if not isinstance(body, dict):
+                body = {}
+            project_ids, labels = body.get("projects", []), body.get("labels", [])
+            if (body.get("focus") not in FOCUSES or not isinstance(project_ids, list) or not isinstance(labels, list)
+                    or not all(isinstance(name, str) for name in project_ids + labels) or not project_ids + labels):
+                self.respond(400, "application/json",
+                             b'{"error": "focus (priority or background) and some projects or labels are required"}')
                 return
             try:
-                state.set_focus(body["project"], body["focus"])
+                state.set_focus(body["focus"], project_ids, labels)
             except FleetError as error:
                 self.respond(400, "application/json", json.dumps({"error": str(error)}).encode())
                 return
-            self.respond(200, "application/json", json.dumps({"project": body["project"], "focus": body["focus"]}).encode())
+            self.respond(200, "application/json", json.dumps(state.focus.snapshot()).encode())
 
         def static_file(self, path: str) -> None:
             """Vendored libraries and 3D assets; anything resolving outside those folders is refused."""
@@ -321,9 +327,14 @@ def make_handler(state: FleetState | FixtureState,
     return Handler
 
 
+def focus_path() -> Path:
+    """Live focus choices sit beside the Fleet config, outside Git."""
+    return transport.CONFIG_PATH.parent / "focus.json"
+
+
 def serve(hosts: list[Host], *, port: int, bind: str, open_browser: bool = False,
           libraries: dict[str, str] | None = None, project_labels: dict[str, str] | None = None) -> None:
-    state = FleetState(hosts, project_labels, projects.load_registry, projects.save_registry)
+    state = FleetState(hosts, project_labels, projects.load_registry, FocusStore(focus_path()))
     for host in hosts:
         threading.Thread(target=follow_host, args=(state, host), daemon=True).start()
     run_server(make_handler(state, ProjectLibrary(libraries or {})), port=port, bind=bind, open_browser=open_browser)

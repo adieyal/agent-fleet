@@ -80,7 +80,6 @@ fleet project link p-1a2b3c4d gpu:fleet
 fleet project unlink gpu:fleet
 fleet project rename p-1a2b3c4d "Fleet"   # the ID never changes
 fleet project repo add p-1a2b3c4d https://github.com/adieyal/agent-fleet
-fleet project focus p-1a2b3c4d background # or priority
 ```
 
 Projects are stored under `"projects"` in the same config file. A repository only
@@ -88,12 +87,15 @@ suggests links in `fleet project ls`; nothing links until you run `fleet project
 The deck's `/api/state` reports each job's and session's `project_id`, which is null
 when its label is unlinked.
 
-A registered project's focus is where you are putting resources: priority or
-background. In the deck, each room has an Open · Windows switch at its front corner.
-A background room closes behind a windowed front: its androids stay inside and its
-windows glow while anyone works there. Only the switch changes focus; rooms never
-move. A room whose work is not one registered project keeps its old look and has a
-disabled switch.
+Focus is where you are putting resources: priority or background. Each room in the
+deck has a priority/background switch at its front corner; one click sets it. A
+background room is dimmed and desaturated, its androids lose their speech bubbles and
+stay nearly still however busy they are, and its props rest. Rooms never move when
+focus changes. Work is focused through its registered project when its label is
+linked, otherwise through the label itself, so unregistered rooms can be focused too.
+Anything you have never set is in priority. Choices are live workspace state, kept in
+`focus.json` beside the config file (not in the registry, not in Git), and every open
+deck updates as soon as one changes.
 
 A room with a failed or stalled job gets a lantern: a diamond with ✋ when the agent
 reported itself blocked and ! otherwise, plus a count when there is more than one.
@@ -164,7 +166,7 @@ working directories, session details, and Markdown documents. The library endpoi
 also expose Markdown under configured local project roots. Anyone who can reach
 the dashboard can read that data. Keep it on loopback or use an SSH tunnel. Add
 access control before binding it to a shared network. Its one write, `POST /api/focus`,
-changes a project's focus in the config file; it refuses requests from pages on
+changes focus in `focus.json`; it refuses requests from pages on
 other origins, but anyone who can reach the dashboard directly can use it.
 
 Agents can place Markdown outside the job directory in the document list, so review

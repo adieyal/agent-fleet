@@ -512,13 +512,6 @@ def command_project_rename(arguments: argparse.Namespace) -> None:
     console.print(f"{arguments.id} → {escape(registry.get(arguments.id).name)}")
 
 
-def command_project_focus(arguments: argparse.Namespace) -> None:
-    registry = projects.load_registry()
-    registry.set_focus(arguments.id, arguments.focus)
-    projects.save_registry(registry)
-    console.print(f"{arguments.id} {escape(registry.get(arguments.id).name)} → {arguments.focus}")
-
-
 def command_project_link(arguments: argparse.Namespace) -> None:
     registry = projects.load_registry()
     link = registry.link(arguments.id, *parse_link(arguments.link))
@@ -580,8 +573,7 @@ def command_project_list(arguments: argparse.Namespace) -> None:
     if not registry.projects:
         console.print("no registered projects — add one with: fleet project add <name> --link host:label")
     for project in sorted(registry.projects.values(), key=lambda project: (project.name.lower(), project.id)):
-        console.print(f"[bold]{project.id}[/] {escape(project.name)}"
-                      + (" [dim](background)[/]" if project.focus == "background" else ""))
+        console.print(f"[bold]{project.id}[/] {escape(project.name)}")
         for link in sorted(project.links):
             console.print(f"  {escape(link.host)}:{escape(link.label)}")
         for repository in project.repositories:
@@ -836,10 +828,6 @@ def build_parser() -> argparse.ArgumentParser:
     project_rename.add_argument("id")
     project_rename.add_argument("name")
     project_rename.set_defaults(handler=command_project_rename)
-    project_focus = project.add_parser("focus", help="put a project in priority or the background")
-    project_focus.add_argument("id")
-    project_focus.add_argument("focus", choices=projects.FOCUSES)
-    project_focus.set_defaults(handler=command_project_focus)
     project_link = project.add_parser("link", help="attach a host's label to a project")
     project_link.add_argument("id")
     project_link.add_argument("link", metavar="HOST:LABEL")

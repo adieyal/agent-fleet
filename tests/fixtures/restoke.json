@@ -2,11 +2,12 @@
  "time": 1790400000,
  "project_labels": {"invoice-parser": "Invoice parser"},
  "projects": {
-  "p-5e1f0a01": {"name": "Restoke", "focus": "priority", "repositories": [],
+  "p-5e1f0a01": {"name": "Restoke", "repositories": [],
                  "links": [{"host": "home", "label": "restoke"}, {"host": "worker", "label": "restoke"}]},
-  "p-1c0ce5a2": {"name": "Invoice analysis", "focus": "background", "repositories": [],
+  "p-1c0ce5a2": {"name": "Invoice analysis", "repositories": [],
                  "links": [{"host": "worker", "label": "invoice-parser"}]}
  },
+ "focus": {"projects": {"p-1c0ce5a2": "background"}, "labels": {}},
  "hosts": [
   {
    "name": "home", "ok": true, "error": null,

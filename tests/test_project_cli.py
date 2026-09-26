@@ -44,7 +44,7 @@ def test_add_with_links_keeps_other_config(config_path, fleet):
     stored = json.loads(config_path.read_text())
     assert stored["project_labels"] == {"old": "Old sign"} and set(stored["hosts"]) == {"home", "gpu"}
     assert stored["projects"][project_id] == {
-        "name": "Agent Fleet", "repositories": [], "focus": "priority",
+        "name": "Agent Fleet", "repositories": [],
         "links": [{"host": "gpu", "label": "fleet"}, {"host": "home", "label": "agent-fleet"}]}
 
 
@@ -53,21 +53,7 @@ def test_rename_keeps_the_id(config_path, fleet):
     project_id = only_id(config_path)
     fleet("project", "rename", project_id, "Fleet")
     assert stored_projects(config_path) == {project_id: {
-        "name": "Fleet", "links": [{"host": "home", "label": "agent-fleet"}], "repositories": [],
-        "focus": "priority"}}
-
-
-def test_focus_switches_between_priority_and_background(config_path, fleet):
-    fleet("project", "add", "Invoices", "--link", "home:invoices")
-    project_id = only_id(config_path)
-    fleet("project", "focus", project_id, "background")
-    assert stored_projects(config_path)[project_id]["focus"] == "background"
-    assert "Invoices (background)" in fleet("project", "ls", "--no-suggest")
-    fleet("project", "focus", project_id, "priority")
-    assert stored_projects(config_path)[project_id]["focus"] == "priority"
-    assert "(background)" not in fleet("project", "ls", "--no-suggest")
-    with pytest.raises(SystemExit):
-        fleet("project", "focus", project_id, "parked")
+        "name": "Fleet", "links": [{"host": "home", "label": "agent-fleet"}], "repositories": []}}
 
 
 def test_link_and_unlink(config_path, fleet):
