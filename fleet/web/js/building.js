@@ -501,7 +501,8 @@ function fit() {
   const narrow = vw < 760;
   const l = MARGIN + (narrow ? 100 : PLATE_ROOM), r = vw - MARGIN, t = TOP_UI + MARGIN, b = vh - MARGIN - (narrow ? NARROW_LOBBY_H : 0);
   zoom = Math.min(MAX_Z, (r - l) / (x1 - x0), (b - t) / (y1 - y0));
-  const ax = (l + r) / 2, ay = (t + b) / 2, mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+  const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, ax = (l + r) / 2;
+  const ay = narrow ? b - (my - y0) * zoom : (t + b) / 2;   // on a phone the building stands on the lobby's list
   camera.left = mx - ax / zoom; camera.right = mx + (vw - ax) / zoom;
   camera.top = my + ay / zoom; camera.bottom = my - (vh - ay) / zoom;
   camera.updateProjectionMatrix();
@@ -732,8 +733,9 @@ function placeUi() {
   }
   const sign = ui.querySelector('.annex-sign');
   if (sign) {
-    const p = screenOf((AX0 + AX1) / 2, AH + 0.35, FD + 0.15);
-    sign.style.transform = `translate(${Math.round(p.x)}px,${Math.round(p.y)}px) translate(-50%,-100%)`;
+    const p = screenOf((AX0 + AX1) / 2, AH + 0.35, FD + 0.15), half = sign.offsetWidth / 2;
+    const x = Math.min(Math.max(p.x, MARGIN + half), vw - MARGIN - half);   // kept on screen when the building is small
+    sign.style.transform = `translate(${Math.round(x)}px,${Math.round(p.y)}px) translate(-50%,-100%)`;
   }
   const lob = ui.querySelector('.lobby');
   if (lob) {

@@ -257,7 +257,7 @@ body[data-view=floor] #lift{display:flex}
 .vacancy li button:hover{border-color:var(--warn)}
 .vacancy [data-cancel]{color:var(--muted)}
 /* the undo toast after shuttering */
-#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:50;display:flex;align-items:center;gap:14px;max-width:calc(100vw - 24px);
+#toast{position:fixed;left:12px;right:12px;bottom:22px;width:fit-content;margin:0 auto;z-index:50;display:flex;align-items:center;gap:14px;
   padding:10px 14px 12px;border-radius:12px;background:var(--panel-solid);border:1px solid var(--line2);box-shadow:0 12px 32px rgba(0,0,0,.5);font-size:13px;overflow:hidden}
 #toast[hidden]{display:none}
 #toast button{flex:none;padding:4px 12px;border-radius:999px;border:1px solid var(--run);background:rgba(56,189,248,.12);color:var(--text);font:600 12px var(--sans);cursor:pointer}
