@@ -2,6 +2,7 @@
 
 import io
 import json
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
@@ -60,6 +61,26 @@ def test_every_job_and_session_is_an_agent(deck: Deck, fixture_data: dict[str, A
     expect(deck.page.locator("#tags .tag")).to_have_count(len(expected))
     expect(deck.page.locator("#tags .tag.sess")).to_have_count(2)
     expect(deck.page.locator("#legendBody .crew.off")).to_have_count(1)
+    assert deck.errors == []
+
+
+def test_bubbles_show_action_glyphs_and_the_words_stay_a_click_away(deck: Deck) -> None:
+    page = deck.page
+    expected = {"a1c3e9": "test", "b7d042": "edit", "Why does the st": "ask", "f20a6d": "edit", "c90e11": "think",
+                "0a9e3b": "queued", "e1b5c8": "failed", "d4f7a2": "done"}
+    for agent, action in expected.items():
+        bubble = page.locator("#tags .tag", has_text=agent).locator(".bubble")
+        expect(bubble).to_have_attribute("data-action", action)
+        expect(bubble.locator(f'.glyph[data-action="{action}"][role="img"]')).to_have_count(1)
+        assert bubble.text_content().strip() == ""                       # no sentence in the bubble
+    running = page.locator("#tags .tag", has_text="a1c3e9")
+    expect(running.locator(".bubble")).to_have_attribute("title", re.compile("tests"))
+    running.dispatch_event("click")
+    expect(page.locator("#panel")).to_have_class("open")
+    expect(page.locator("#panelBody .evs")).to_contain_text("pnpm vitest run suppliers")
+    page.locator("#panel #close").click()
+    expect(page.locator("#panel")).not_to_have_class("open")
+    expect(page.locator("#feed")).to_contain_text("pnpm vitest run suppliers")   # and the deck log keeps it
     assert deck.errors == []
 
 
