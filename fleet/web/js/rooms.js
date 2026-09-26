@@ -11,7 +11,7 @@ import {
 } from './scene.js';
 import { setDocSig } from './docs3d.js';
 import { deckBounds, fit } from './camera.js';
-import { buildFront, carryFocus } from './focus.js';
+import { carryFocus } from './focus.js';
 import { applyAttention } from './attention.js';
 
 // ------------------------------------------------------------------ the deck: plates, rooms, furniture
@@ -193,10 +193,8 @@ function buildRoom(r, place) {
   const sign = new THREE.Mesh(G.plane, signMat);
   sign.scale.set(6, 1.5, 1); sign.position.set(ox + 3.2, WALL_H + 0.8, oy + 0.02);
   g.add(sign);
-  r.signMesh = sign; r.signY = sign.position.y;
   disposables.push(r.sign.tex, signMat);
   drawSign(r);
-  buildFront(r);
 }
 
 export let rooms = [];

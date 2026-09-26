@@ -12,6 +12,7 @@ import { G, ROBOT, _m4, _m4b, _q, _sc, _v, cam, drawScreen, scene, softDot } fro
 import { ents, selectedKey } from './model.js';
 import { PRESS, placer, roomByName, rooms } from './rooms.js';
 import { playClip } from './agents.js';
+import { CALM } from './focus.js';
 
 export function assignTargets() {
   const now = performance.now() / 1000;
@@ -176,7 +177,7 @@ export function stepMotion(dt, now) {
       e.holdClip = 'Standing'; e.holdUntil = now + ROBOT.clips.Standing.duration * 0.8;
       continue;
     }
-    let remaining = SPEED * dt * (e.slow ? PACE_SPEED : 1);
+    let remaining = SPEED * dt * (e.slow ? PACE_SPEED : 1) * (e.calm ? CALM : 1);
     while (remaining > 0 && e.path.length) {
       const p = e.path[0], dx = p.x - e.local.x, dy = p.y - e.local.y, d = Math.hypot(dx, dy);
       if (d > 0.001) e.facing = Math.atan2(dx, dy);
@@ -302,13 +303,13 @@ export function updateEnt(e, r, dt, t, now) {
   const bot = e.bot, root = bot.root;
   playClip(e, clipFor(e, now));
   if (bot.clip === 'Walking') bot.actions.Walking.timeScale = e.slow ? 0.6 : 1.25;   // pacing is a slow amble
-  bot.mixer.update(REDUCED ? 0 : dt);
+  bot.mixer.update(REDUCED ? 0 : e.calm ? dt * CALM : dt);   // a background room's androids are near still
   const st = e.job.status, arrived = !e.walking && !!e.target;
   if (st === 'stalled' && arrived) bot.head.rotation.x += 0.55;   // slumped over
   // on top of the clip: typing forearms, a nod or head shake, eyes down on a printout
   const A = ACTS[e.act] || {}, seated = arrived && bot.clip === 'Sitting' && isActive(st);
-  if (!REDUCED && seated && A.hands) bot.arms.forEach((arm, i) => { arm.rotation.x += Math.sin(t * 15 + i * 2.1) * 0.14; });
-  if (e.nod && now < e.nod.until) {
+  if (!REDUCED && !e.calm && seated && A.hands) bot.arms.forEach((arm, i) => { arm.rotation.x += Math.sin(t * 15 + i * 2.1) * 0.14; });
+  if (e.nod && now < e.nod.until && !e.calm) {
     const k = Math.sin((e.nod.until - now) * 13) * 0.32;
     if (e.nod.yes) bot.head.rotation.x += k; else bot.head.rotation.y += k * 1.3;
   }
@@ -326,11 +327,11 @@ export function updateEnt(e, r, dt, t, now) {
   tone(e, t);
   e.ring.visible = e.key === selectedKey;
   if (e.ring.visible) e.ring.material.opacity = REDUCED ? 0.8 : 0.55 + Math.sin(t * 4) * 0.3;
-  if (e.halo) e.halo.material.opacity = st === 'working' && !REDUCED ? 0.4 + Math.sin(t * 3) * 0.25 : 0.3;
+  if (e.halo) e.halo.material.opacity = st === 'working' && !REDUCED && !e.calm ? 0.4 + Math.sin(t * 3) * 0.25 : 0.3;
   e.glow.visible = st === 'done' && arrived;
   e.fail.visible = st === 'failed' && arrived;
-  if (e.fail.visible && Math.random() < 0.12) spawn(root.position.x + (Math.random() - 0.5) * 0.3, 0.5, root.position.z + (Math.random() - 0.5) * 0.3, 0);
-  if (e.glow.visible && Math.random() < 0.03) spawn(root.position.x + (Math.random() - 0.5) * 0.8, 0.2, root.position.z + (Math.random() - 0.5) * 0.5, 1);
+  if (e.fail.visible && !e.calm && Math.random() < 0.12) spawn(root.position.x + (Math.random() - 0.5) * 0.3, 0.5, root.position.z + (Math.random() - 0.5) * 0.3, 0);
+  if (e.glow.visible && !e.calm && Math.random() < 0.03) spawn(root.position.x + (Math.random() - 0.5) * 0.8, 0.2, root.position.z + (Math.random() - 0.5) * 0.5, 1);
 }
 
 const WAVE_ON = new THREE.Color('#38bdf8'), WAVE = new THREE.Color();

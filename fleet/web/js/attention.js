@@ -5,11 +5,10 @@
 // blocker, anything else an alert. An item stays until the job goes away or is dismissed in this browser.
 
 import * as THREE from 'three';
-import { RD, REDUCED, RW } from './env.js';
+import { BOT_H, RD, REDUCED, RW } from './env.js';
 import { G, deckGroup, softDot, toScreen } from './scene.js';
 import { ents } from './model.js';
 import { isSession } from './activity.js';
-import { SHELL_H } from './focus.js';
 import { select } from './panel.js';
 
 const BLOCKED = /FLEET_STATUS:\s*\**\s*blocked\b/i;
@@ -47,7 +46,7 @@ export function applyAttention(rooms) {
 
 // ------------------------------------------------------------------ the lantern: a post, an arm and a cord in the world,
 // the marked diamond itself drawn over the cord's end so it stays legible at every zoom
-const POST_H = SHELL_H + 1.4, ARM = 0.6, CORD = 0.5, SWING_S = 2.6;
+const POST_H = BOT_H + 1.7, ARM = 0.6, CORD = 0.5, SWING_S = 2.6;
 const SWING_AXIS = new THREE.Vector3(1, 0, 1).normalize();   // across the screen
 const postMat = new THREE.MeshStandardMaterial({ color: '#5b6780', roughness: 0.5, metalness: 0.6 });
 const glowMat = new THREE.SpriteMaterial({ map: softDot('rgba(255,79,176,.6)', 'rgba(255,79,176,0)'), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });

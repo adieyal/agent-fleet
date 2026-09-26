@@ -1,13 +1,14 @@
 """Browser smoke tests: the deck against the recorded fleet, at desktop and phone widths."""
 
+import io
 import json
-import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.request import urlopen
 
 import pytest
+from PIL import Image, ImageStat
 from playwright.sync_api import Browser, Page, expect
 
 VIEWPORTS = {"desktop": {"width": 1440, "height": 900}, "narrow": {"width": 390, "height": 844}}
@@ -113,47 +114,86 @@ def rooms_by_name(page: Page) -> dict[str, dict[str, Any]]:
     return {room["name"]: room for room in page.evaluate("fleetDeck.rooms()")}
 
 
-def tag_shown(page: Page, job_id: str) -> bool:
-    return page.locator("#tags .tag", has_text=job_id).evaluate("tag => tag.style.display !== 'none'")
+def tag_is_calm(page: Page, job_id: str) -> bool:
+    """A calm tag has no speech bubble showing."""
+    tag = page.locator("#tags .tag", has_text=job_id)
+    return tag.evaluate("tag => tag.classList.contains('calm') && getComputedStyle(tag.firstChild).display === 'none'")
 
 
-def focus_on_server(base_url: str, project_id: str) -> str:
+def focus_on_server(base_url: str, room: str) -> set[str]:
+    """The focus the server resolves for every job and session in a room."""
     with urlopen(base_url + "/api/state", timeout=5) as response:
-        return next(project["focus"] for project in json.load(response)["projects"] if project["id"] == project_id)
+        hosts = json.load(response)["hosts"]
+    return {item["focus"] for host in hosts for item in host["jobs"] + host["sessions"] if item["project"] == room}
 
 
-def test_background_rooms_are_closed_and_keep_their_androids_quiet(deck: Deck) -> None:
+def room_colour(page: Page, room: str) -> tuple[float, float]:
+    """Mean brightness and saturation of the rendered floor around a room's centre, with overlays hidden."""
+    centre = rooms_by_name(page)[room]["screen"]
+    viewport = page.viewport_size
+    box = {"x": max(0, centre["x"] - 40), "y": max(0, centre["y"] - 30), "width": 80, "height": 60}
+    assert box["x"] + 80 <= viewport["width"] and box["y"] + 60 <= viewport["height"]
+    style = page.add_style_tag(content="#tags,#floorUi,header,.card,#zoom{visibility:hidden!important}")
+    page.wait_for_timeout(100)
+    image = Image.open(io.BytesIO(page.screenshot(clip=box))).convert("HSV")
+    style.evaluate("tag => tag.remove()")
+    _, saturation, value = ImageStat.Stat(image).mean
+    return value, saturation
+
+
+def wait_for_dim(page: Page, room: str, dim: int) -> None:
+    page.wait_for_function(f"fleetDeck.rooms().find(room => room.name === '{room}').dim === {dim}")
+
+
+def test_background_rooms_are_dim_and_quiet(deck: Deck) -> None:
     page = deck.page
-    page.wait_for_function("fleetDeck.rooms().find(room => room.name === 'invoice-parser').closed")
+    wait_for_dim(page, "invoice-parser", 1)
     rooms = rooms_by_name(page)
-    assert {name: (room["project"], room["focus"], room["open"]) for name, room in rooms.items()} == {
-        "restoke": ("p-5e1f0a01", "priority", True),
-        "invoice-parser": ("p-1c0ce5a2", "background", False),
-        "agent-fleet": (None, None, True)}
+    assert {name: (room["focus"], room["dim"]) for name, room in rooms.items()} == {
+        "restoke": ("priority", 0), "invoice-parser": ("background", 1), "agent-fleet": ("priority", 0)}
     expect(page.locator('.focus-switch[data-room="invoice-parser"]')).to_have_attribute("data-focus", "background")
-    unregistered = page.locator('.focus-switch[data-room="agent-fleet"]')
-    expect(unregistered).to_have_attribute("data-focus", "none")
-    expect(unregistered.locator("button:disabled")).to_have_count(2)
-    expect(unregistered).to_have_attribute("title", re.compile("Not a registered project"))
-    assert not tag_shown(page, "0a9e3b") and not tag_shown(page, "3c71d5")
-    assert tag_shown(page, "c90e11") and tag_shown(page, "f20a6d")
+    expect(page.locator('.focus-switch[data-room="agent-fleet"]')).to_have_attribute("data-focus", "priority")
+    assert tag_is_calm(page, "0a9e3b") and tag_is_calm(page, "3c71d5")
+    assert not tag_is_calm(page, "c90e11") and not tag_is_calm(page, "f20a6d")
     assert deck.errors == []
 
 
-def test_the_switch_changes_focus_and_nothing_moves(deck: Deck, base_url: str) -> None:
+def test_the_switch_dims_the_room_and_nothing_moves(deck: Deck, base_url: str) -> None:
     page = deck.page
-    places = {name: (room["x"], room["y"]) for name, room in rooms_by_name(page).items()}
+    before = {name: (room["x"], room["y"], room["screen"]) for name, room in rooms_by_name(page).items()}
+    bright, vivid = room_colour(page, "restoke")
     switch = page.locator('.focus-switch[data-room="restoke"]')
     switch.locator('[data-set="background"]').dispatch_event("click")
     expect(switch).to_have_attribute("data-focus", "background")
-    page.wait_for_function("fleetDeck.rooms().find(room => room.name === 'restoke').closed")
-    assert focus_on_server(base_url, "p-5e1f0a01") == "background"
-    assert not tag_shown(page, "c90e11")
+    wait_for_dim(page, "restoke", 1)
+    assert focus_on_server(base_url, "restoke") == {"background"}
+    dim, grey = room_colour(page, "restoke")
+    assert dim < bright * 0.75 and grey < vivid * 0.6
+    assert tag_is_calm(page, "c90e11") and tag_is_calm(page, "e1b5c8")
+    assert {name: (room["x"], room["y"], room["screen"]) for name, room in rooms_by_name(page).items()} == before
+
     switch.locator('[data-set="priority"]').dispatch_event("click")
-    page.wait_for_function("fleetDeck.rooms().find(room => room.name === 'restoke').open")
-    assert focus_on_server(base_url, "p-5e1f0a01") == "priority"
-    assert tag_shown(page, "c90e11")
-    assert {name: (room["x"], room["y"]) for name, room in rooms_by_name(page).items()} == places
+    wait_for_dim(page, "restoke", 0)
+    assert focus_on_server(base_url, "restoke") == {"priority"}
+    assert not tag_is_calm(page, "c90e11")
+    assert {name: (room["x"], room["y"], room["screen"]) for name, room in rooms_by_name(page).items()} == before
+    assert deck.errors == []
+
+
+def test_focus_of_an_unregistered_room_survives_reload(deck: Deck, base_url: str, fixture_data: dict[str, Any]) -> None:
+    page = deck.page
+    page.locator('.focus-switch[data-room="agent-fleet"] [data-set="background"]').dispatch_event("click")
+    wait_for_dim(page, "agent-fleet", 1)
+    assert focus_on_server(base_url, "agent-fleet") == {"background"}
+    page.reload()
+    agent_count = sum(len(host["jobs"]) + len(host["sessions"]) for host in fixture_data["hosts"])
+    page.wait_for_function(f"window.fleetDeck && fleetDeck.agents().length === {agent_count}")
+    wait_for_dim(page, "agent-fleet", 1)
+    expect(page.locator('.focus-switch[data-room="agent-fleet"]')).to_have_attribute("data-focus", "background")
+    assert tag_is_calm(page, "f20a6d")
+    page.locator('.focus-switch[data-room="agent-fleet"] [data-set="priority"]').dispatch_event("click")
+    wait_for_dim(page, "agent-fleet", 0)
+    assert focus_on_server(base_url, "agent-fleet") == {"priority"}
     assert deck.errors == []
 
 

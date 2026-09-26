@@ -168,7 +168,7 @@ const proxies = [];
 // the nearest android (an invisible capsule around each) or document sheet under the pointer
 function pick(px, py) {
   proxies.length = 0;
-  for (const e of ents.values()) if (roomByName.has(e.room) && !roomByName.get(e.room).shellK) proxies.push(e.proxy);
+  for (const e of ents.values()) if (roomByName.has(e.room)) proxies.push(e.proxy);
   for (const kind in docMeshes) proxies.push(docMeshes[kind]);
   _ndc.set(px / vw * 2 - 1, -(py / vh) * 2 + 1);
   raycaster.setFromCamera(_ndc, camera);

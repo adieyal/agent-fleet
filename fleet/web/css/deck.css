@@ -133,16 +133,19 @@ header{position:fixed;top:0;left:0;right:0;height:52px;display:flex;align-items:
 .tag.tiny{display:none}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 
-/* ---------- focus switch: Open · Windows on each room's front corner */
+/* ---------- focus switch: priority · background on each room's front corner */
 #floorUi{position:fixed;inset:0;pointer-events:none;overflow:hidden}
 .focus-switch{position:absolute;left:0;top:0;display:flex;padding:2px;border-radius:999px;background:rgba(5,9,17,.88);
   border:1px solid var(--line2);pointer-events:auto;will-change:transform}
-.focus-switch button{border:0;background:none;padding:3px 9px;border-radius:999px;font:600 10.5px/1.2 var(--sans);letter-spacing:.04em;
+.focus-switch button{border:0;background:none;padding:2px 8px;border-radius:999px;font:600 10px/1.2 var(--sans);letter-spacing:.03em;
   color:var(--dim);cursor:pointer}
 .focus-switch button[aria-pressed=true]{background:var(--text);color:#05080f}
-.focus-switch button:disabled{cursor:default}
-.focus-switch[data-focus=none]{opacity:.45;border-style:dashed}
+.focus-switch[data-focus=background] button[aria-pressed=true]{background:var(--dim)}
 .focus-switch[data-error]{border-color:var(--bad)}
+/* a background room's androids: no speech bubbles, no pulsing pips */
+.tag.calm .bubble{display:none}
+.tag.calm .pip.running{animation:none;box-shadow:none}
+.tag.calm .stack{opacity:.6}
 
 /* ---------- attention lantern: a marked diamond, glyph for the kind, count when more than one. Never animated here:
    the 3D cord it hangs from swings once when an item arrives. */

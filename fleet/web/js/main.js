@@ -1,6 +1,6 @@
 // Deck entry point: the frame loop and boot.
 
-import { BK, DEBUG, DEMO, POLL_MS, QS, REDUCED, WARP, canvas } from './env.js';
+import { BK, DEBUG, DEMO, POLL_MS, QS, RD, REDUCED, RW, WARP, canvas } from './env.js';
 import { esc } from './util.js';
 import { hostLook } from './looks.js';
 import { isActive } from './activity.js';
@@ -41,10 +41,8 @@ function frame(ts) {
   for (const e of ents.values()) {
     const r = roomByName.get(e.room);
     if (!r) continue;
-    e.bot.root.visible = !r.closed;   // a closed room keeps its androids to itself
-    if (r.closed) continue;
     updateEnt(e, r, dt, t, now);
-    if (e.walking || !e.target || !isActive(e.job.status)) continue;
+    if (e.walking || !e.target || !isActive(e.job.status) || r.focus === 'background') continue;   // a background room's props rest
     const p = e.target.prop;
     if (p === 'terminal') { r.busyTerm |= 1 << e.target.propIdx; if (e.act === 'test') r.testTerm |= 1 << e.target.propIdx; }
     else if (p === 'cabinet') r.busyCab |= 1 << e.target.propIdx;
@@ -60,7 +58,7 @@ function frame(ts) {
       dashedLine(_w, _p, e.look.color, t, 0.7);
     }
   }
-  for (const r of rooms) if (!r.closed) updateRoom(r, t, dt, now);
+  for (const r of rooms) updateRoom(r, t, dt, now);
   stepLanterns(rooms, now);
   stepDocFx(t);
   liftHovered();
@@ -120,8 +118,8 @@ loadAssets().then(() => {
   }
   // read-only probe for browser tests: rooms live only in WebGL, so they have no DOM to query
   window.fleetDeck = Object.freeze({
-    rooms: () => rooms.map(r => ({ name: r.name, label: r.label, x: r.ox, y: r.oy, project: r.project?.id ?? null,
-      focus: r.focus, closed: !!r.closed, open: !r.shellK,
+    rooms: () => rooms.map(r => ({ name: r.name, label: r.label, x: r.ox, y: r.oy,
+      screen: toScreen(_w.set(r.ox + RW / 2, 0, r.oy + RD / 2), { x: 0, y: 0 }), focus: r.focus, dim: r.dimK ?? null,
       attention: r.attention ? { kind: r.attention.kind, count: r.attention.items.length } : null })),
     agents: () => [...ents.values()].map(e => ({ key: e.key, kind: e.kind, room: e.room, status: e.job.status })),
   });

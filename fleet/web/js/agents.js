@@ -216,10 +216,7 @@ export function positionTags() {
   for (const e of ents.values()) {
     const r = roomByName.get(e.room);
     if (!r) continue;
-    // a background room shows light in its windows, not its androids' chatter
-    const behind = r.focus === 'background';
-    if (behind !== !!e.behind) { e.behind = behind; e.el.style.display = behind ? 'none' : ''; }
-    if (behind) continue;
+    e.calm = r.focus === 'background';   // a background room's androids keep their chatter to themselves
     if (e.sizeDirty) { e.tw = e.el.offsetWidth; e.th = e.el.offsetHeight; e.sizeDirty = false; }
     // anchor on the head bone, lifted clear of the head and its kit, plus a few pixels at every zoom
     e.bot.head.getWorldPosition(_w);
@@ -257,7 +254,7 @@ export function positionTags() {
   for (const e of tagList) {
     const z = ++order + (e.key === selectedKey ? 1000 : 0);
     if (z !== e.qz) { e.qz = z; e.el.style.zIndex = String(z); }
-    const cls = e.tagBase + (tiny ? ' tiny' : e.key === selectedKey ? ' sel' : small ? ' small' : '');
+    const cls = e.tagBase + (e.calm ? ' calm' : '') + (tiny ? ' tiny' : e.key === selectedKey ? ' sel' : small ? ' small' : '');
     if (e.el.className !== cls) { e.el.className = cls; e.sizeDirty = true; }
   }
 }
