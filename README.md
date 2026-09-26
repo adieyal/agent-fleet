@@ -79,7 +79,13 @@ fleet project ls                      # IDs, links, and links suggested by match
 fleet project link p-1a2b3c4d gpu:fleet
 fleet project unlink gpu:fleet
 fleet project rename p-1a2b3c4d "Fleet"   # the ID never changes
+fleet project repo add p-1a2b3c4d https://github.com/adieyal/agent-fleet
 ```
+
+Projects are stored under `"projects"` in the same config file. A repository only
+suggests links in `fleet project ls`; nothing links until you run `fleet project link`.
+The deck's `/api/state` reports each job's and session's `project_id`, which is null
+when its label is unlinked.
 
 ## Read the work
 
