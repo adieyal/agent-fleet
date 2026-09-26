@@ -223,9 +223,9 @@ function edgeFade() {
   // columns whose node is still out of view to the right
   const xs = sk.geo ? [...new Set([...sk.geo.nodes.values()].map(n => n.x))] : [];
   const hidden = xs.filter(x => PAD + x + sk.geo.nodeW > chart.scrollLeft + chart.clientWidth).length;
-  more.hidden = !(chart.scrollLeft < max - 1 && sk.p?.run);
+  more.hidden = !(hidden && sk.p?.run);
   if (more.hidden && document.activeElement === more) sheet.focus();   // keep Esc and Tab in the sheet
-  more.textContent = hidden ? `${hidden} more column${hidden === 1 ? '' : 's'} →` : 'more →';
+  more.textContent = `${hidden} more column${hidden === 1 ? '' : 's'} →`;
   more.setAttribute('aria-label', 'Scroll the chart right');
 }
 chart.addEventListener('scroll', edgeFade, { passive: true });

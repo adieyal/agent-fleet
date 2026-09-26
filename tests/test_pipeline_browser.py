@@ -201,9 +201,11 @@ def test_on_a_phone_the_chart_scrolls_to_every_column(deck: Deck) -> None:
         return
     expect(more).to_be_visible()
     expect(more).to_contain_text("more column")
-    while more.is_visible():
+    while more.is_visible():   # it goes once every column is in view
         more.click()
         page.wait_for_timeout(500)
+    page.evaluate("(c => { c.scrollLeft = c.scrollWidth; })(document.getElementById('skChart'))")   # the rest of the labels
+    page.wait_for_timeout(100)
     deck.shot("sankey-end")
     in_view = page.evaluate("""(() => { const c = document.getElementById('skChart').getBoundingClientRect();
       return [...document.querySelectorAll('#skSvg .sk-node')].filter(g => g.getBoundingClientRect().left >= c.left)
