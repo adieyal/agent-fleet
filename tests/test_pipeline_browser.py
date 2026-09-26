@@ -93,6 +93,16 @@ def test_declared_pipelines_get_rooms_even_without_work(deck: Deck) -> None:
     assert deck.errors == []
 
 
+def test_screens_are_readable_glow_and_leave_the_room_sign_clear(deck: Deck) -> None:
+    screens = {p["key"]: p for p in deck.page.evaluate("fleetDeck.pipelines()")}
+    for p in screens.values():
+        rect, sign = p["rect"], p["sign"]
+        assert rect["left"] > sign["right"] or rect["right"] < sign["left"], p   # beside the sign on the wall, not over it
+    # a live run's frame glows steadily under reduced motion; the others keep a low glow
+    assert screens["home:sample-training"]["glow"] == pytest.approx(0.6)
+    assert screens["home:embeddings"]["glow"] == pytest.approx(0.25)
+
+
 def test_pipeline_labels_wait_in_the_lobby_as_visitors(deck: Deck) -> None:
     """No project claims these labels, so the building lists them as visitors, one row per label; a label with a job
     and a pipeline on the same host is still one row."""
@@ -228,6 +238,9 @@ def test_the_demo_pipeline_moves_while_the_sankey_is_open(browser: Browser, pipe
     page.goto(pipeline_url + "/?demo")
     page.wait_for_function("window.fleetDeck && fleetDeck.pipelines().some(p => p.screen)")
     deck = Deck(page, f"demo-{motion}", request.config.getoption("--shots"))
+    glow = "fleetDeck.pipelines().find(p => p.key === 'node-a:demo-training').glow"
+    glows = [page.evaluate(glow), page.wait_for_timeout(400), page.evaluate(glow)][::2]
+    assert (glows[0] != glows[1]) == (motion == "no-preference")   # a live run's frame pulses, unless motion is reduced
     open_screen(deck, "node-a:demo-training")
     expect(page.locator("#skMeta")).to_contain_text("demo run 1 (synthetic)")
     first = int(page.locator('#skSvg .sk-node[data-node="items"] text .ct').text_content().replace(",", ""))

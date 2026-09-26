@@ -20,7 +20,7 @@ import { reader } from './reader.js';
 import { demoSource } from './demo.js';
 import { buildingReady, buildingShown } from './building.js';
 import { sankeyPane } from './sankey.js';
-import { keyOf, pipelines, screenOf } from './pipelines.js';
+import { glowOf, keyOf, pipelines, screenOf, stepScreens } from './pipelines.js';
 
 // ------------------------------------------------------------------ frame loop
 let lastT = 0;
@@ -65,6 +65,7 @@ function frame(ts) {
   for (const r of rooms) updateRoom(r, t, dt, now);
   stepLanterns(rooms, now);
   stepDocFx(t);
+  stepScreens(t);
   liftHovered();
   lineGeo.setDrawRange(0, nSeg * 2);
   lineGeo.attributes.position.needsUpdate = true;
@@ -122,6 +123,11 @@ loadAssets().then(() => {
     }
   }
   // read-only probe for browser tests: rooms live only in WebGL, so they have no DOM to query
+  const onScreen = mesh => {   // a unit plane's bounding box on screen
+    const pts = [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]].map(([x, y]) => toScreen(mesh.localToWorld(_w.set(x, y, 0)), { x: 0, y: 0 }));
+    const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+    return { left: Math.min(...xs), right: Math.max(...xs), top: Math.min(...ys), bottom: Math.max(...ys) };
+  };
   window.fleetDeck = Object.freeze({
     rooms: () => rooms.map(r => ({ name: r.name, label: r.label, x: r.ox, y: r.oy,
       screen: toScreen(_w.set(r.ox + RW / 2, 0, r.oy + RD / 2), { x: 0, y: 0 }), focus: r.focus, dim: r.dimK ?? null,
@@ -130,7 +136,8 @@ loadAssets().then(() => {
     pipelines: () => pipelines.map(p => {
       const s = screenOf(keyOf(p));
       return { key: keyOf(p), room: p.project, run: p.run?.run_id ?? null,
-        screen: s ? toScreen(s.mesh.getWorldPosition(_w), { x: 0, y: 0 }) : null };
+        screen: s ? toScreen(s.mesh.getWorldPosition(_w), { x: 0, y: 0 }) : null,
+        rect: s ? onScreen(s.mesh) : null, sign: s ? onScreen(s.room.signMesh) : null, glow: glowOf(keyOf(p)) };
     }),
     lookAt: (key, zoom) => {   // bring a pipeline's screen to the middle of the view (a phone shows one room at a time)
       const s = screenOf(key);

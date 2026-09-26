@@ -193,6 +193,7 @@ function buildRoom(r, place) {
   const sign = new THREE.Mesh(G.plane, signMat);
   sign.scale.set(6, 1.5, 1); sign.position.set(ox + 3.2, WALL_H + 0.8, oy + 0.02);
   g.add(sign);
+  r.signMesh = sign;
   disposables.push(r.sign.tex, signMat);
   drawSign(r);
 }
