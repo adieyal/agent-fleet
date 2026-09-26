@@ -1,672 +1,31 @@
+// Deck entry point: the frame loop and boot.
+
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-
-(() => {
-'use strict';
-
-const QS = new URLSearchParams(location.search);
-const DEMO = QS.has('demo');
-const DEBUG = QS.has('debug');
-const WARP = DEBUG ? Number(QS.get('warp')) || 1 : 1;   // ?debug&warp=4 speeds up motion, for screenshots on slow software GL
-const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches || (DEBUG && QS.has('reduced'));
-const RW = 12, RD = 10, GAP = 4;    // room size (tiles) and corridor width
-const SPEED = 2.3;                  // walking speed, tiles per second
-const POLL_MS = 2000;
-const FS = 2;                       // furniture scale: tiles per Kenney unit
-const BOT_H = 2.2;                  // android height in tiles (a Kenney desk chair is ~1.2): the focal object of a room
-const BK = BOT_H / 1.7;             // accessories below were sized on a 1.7-tile android
-const WALL_H = 1.7;                 // back wall height
-const DESK_TOP = 0.77;              // desk surface height once scaled
-const SMALL_Z = 16, TINY_Z = 9;     // pixels per tile below which tags shrink / hide
-const PI = Math.PI, HALF = Math.PI / 2;
-
-const canvas = document.getElementById('world');
-const tagsEl = document.getElementById('tags');
-let dpr = 1, vw = 0, vh = 0;
-
-if (DEBUG) {
-  const box = document.createElement('pre');
-  box.style.cssText = 'position:fixed;left:280px;top:60px;z-index:99;max-width:60vw;max-height:40vh;overflow:auto;margin:0;padding:8px;font:11px/1.4 monospace;color:#fecaca;background:rgba(40,0,0,.85);pointer-events:none;white-space:pre-wrap';
-  box.hidden = true;
-  document.body.appendChild(box);
-  const report = msg => { box.hidden = false; box.textContent += msg + '\n'; };
-  addEventListener('error', ev => report('error: ' + (ev.message || ev.error)));
-  addEventListener('unhandledrejection', ev => report('rejection: ' + (ev.reason && (ev.reason.stack || ev.reason.message) || ev.reason)));
-  const err = console.error.bind(console), warn = console.warn.bind(console);
-  console.error = (...a) => { report('console.error: ' + a.join(' ')); err(...a); };
-  console.warn = (...a) => { report('console.warn: ' + a.join(' ')); warn(...a); };
-}
-
-// ------------------------------------------------------------------ colour + misc utils
-function hexToRgb(h) { h = h.replace('#', ''); if (h.length === 3) h = h.split('').map(c => c + c).join(''); const n = parseInt(h, 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
-function rgbToHex(r, g, b) { return '#' + [r, g, b].map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join(''); }
-function mix(a, b, t) { const A = hexToRgb(a), B = hexToRgb(b); return rgbToHex(A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t, A[2] + (B[2] - A[2]) * t); }
-function rgba(hex, a) { const [r, g, b] = hexToRgb(hex); return `rgba(${r},${g},${b},${a})`; }
-function hsl(h, s, l) {
-  s /= 100; l /= 100;
-  const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l);
-  const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
-  return rgbToHex(f(0) * 255, f(8) * 255, f(4) * 255);
-}
-function hash(s) { let h = 2166136261; for (const ch of String(s)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
-function seeded(seed) { let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
-function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
-function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
-function clock(ts) { if (!ts) return ''; return new Date(ts * 1000).toTimeString().slice(0, 8); }
-function age(ts) {
-  if (!ts) return '';
-  const s = Math.max(0, Math.round(Date.now() / 1000 - ts));
-  if (s < 60) return s + 's'; if (s < 3600) return Math.floor(s / 60) + 'm'; if (s < 86400) return Math.floor(s / 3600) + 'h'; return Math.floor(s / 86400) + 'd';
-}
-function trunc(s, n) { s = String(s ?? '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s; }
-function rr(c, x, y, w, h, r) {
-  r = Math.max(0, Math.min(r, w / 2, h / 2));
-  c.beginPath(); c.moveTo(x + r, y);
-  c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
-  c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
-}
-function angleTo(from, to) { let d = (to - from) % (PI * 2); if (d > PI) d -= PI * 2; if (d < -PI) d += PI * 2; return d; }
-
-// ------------------------------------------------------------------ looks: hosts → androids, projects → rooms
-// Every android is the same robot; a host is told apart by its colour and one piece of kit.
-const ACCESSORIES = { backpack: 'Backpack unit', antenna: 'Antenna unit', halo: 'Halo unit', crest: 'Crested unit' };
-const KNOWN_HOSTS = { 'node-a': ['backpack', '#ff9340'], 'node-b': ['antenna', '#2dd4bf'], 'node-c': ['halo', '#a78bfa'], 'node-d': ['crest', '#facc15'] };
-const hostLooks = new Map();
-function hostLook(name) {
-  if (hostLooks.has(name)) return hostLooks.get(name);
-  let look;
-  if (KNOWN_HOSTS[name]) look = { acc: KNOWN_HOSTS[name][0], color: KNOWN_HOSTS[name][1] };
-  else { const h = hash(name), keys = Object.keys(ACCESSORIES); look = { acc: keys[h % keys.length], color: hsl((h >>> 4) % 360, 72, 62) }; }
-  look.label = ACCESSORIES[look.acc];
-  hostLooks.set(name, look);
-  return look;
-}
-const AGENT_COLOR = { claude: '#ff8f6b', codex: '#7ce7ff' };
-const PROJECT_HUES = [205, 28, 140, 265, 330, 175, 238, 300, 8, 100];   // at least 25° apart; no murky yellows
-// a project keeps its hashed hue unless another room on the deck already has it; then it takes the next free one
-function projectLook(name, taken) {
-  let i = hash(name) % PROJECT_HUES.length;
-  for (let k = 0; k < PROJECT_HUES.length && taken.has(PROJECT_HUES[i]); k++) i = (i + 1) % PROJECT_HUES.length;
-  const hue = PROJECT_HUES[i];
-  taken.add(hue);
-  return { hue, accent: hsl(hue, 85, 64), floor: hsl(hue, 22, 30), floor2: hsl(hue, 20, 25), wall: hsl(hue, 16, 42), rim: hsl(hue, 20, 26) };
-}
-
-// ------------------------------------------------------------------ the room (room-local tiles: x across the back wall, y towards the door)
-// Furniture: [model, x, y, facing, height]; x/y is the footprint centre, facing is where the front points (0 = towards the door).
-const TERMINALS = [1.3, 3.0, 4.7];   // bash desks along the back wall
-const BENCH = [5.0, 6.5];            // edit desks in the middle, worked from the far side
-const FURNITURE = [
-  // (the desk chair's seat faces -z in the kit, unlike the rest of it)
-  ...TERMINALS.flatMap(x => [['desk', x, 0.5, 0], ['computerScreen', x, 0.3, 0, DESK_TOP], ['computerKeyboard', x, 0.72, 0, DESK_TOP], ['chairDesk', x, 1.55, 0]]),
-  ...BENCH.flatMap(x => [['desk', x, 4.6, PI], ['laptop', x, 4.55, PI, DESK_TOP], ['chairDesk', x, 3.65, PI]]),
-  ['bookcaseOpen', 0.28, 2.3, HALF], ['bookcaseOpen', 0.28, 3.12, HALF],
-  ['kitchenCabinetDrawer', 0.47, 5.2, HALF], ['kitchenCabinetDrawer', 0.47, 6.08, HALF],
-  // '@role' is the room theme's model for that role (see THEMES); a theme can leave a role empty
-  ['@sofa', 8.7, 7.5, 0], ['@sofa', 10.75, 7.5, 0], ['@rug', 9.7, 8.95, 0],
-  ['@lamp', 11.6, 6.5, 0], ['@plant', 11.45, 9.35, 0], ['@corner', 0.55, 9.3, 0], ['@back', 6.05, 0.35, 0],
-  ['kitchenCabinet', 0.47, 7.45, HALF], ['kitchenCabinet', 0.47, 8.33, HALF],   // kitchen corner: the coffee machine sits on top
-  ['@armchair', 9.2, 5.0, 0],                                                    // reading armchair
-  ['cardboardBoxClosed', 2.85, 9.5, 0.25],                                        // parcels waiting by the outbox
-];
-// Room themes: each project room gets one, from its name (see themeFor). A theme sets the floor pattern and palette,
-// fills the furniture roles above, and adds decor and wall art in slots that stay clear of every station, so the
-// androids behave the same in every room. Decor: [model, x, y, facing, height] ('rack' is a server rack built from
-// primitives; height 'counter' or 'on:<model>' stacks on the kitchen counter or that model). Art: [wall, along, kind].
-const RIGHT_SLOT = [11.45, 2.1], FRONT_L = [1.5, 9.5], FRONT_R = [7.0, 9.5], BENCH_RUG = [5.75, 4.3], WALL_GAP = [0.35, 4.15];
-const THEMES = {
-  office: {
-    label: 'open-plan office', floor: 'checker', pal: h => ({ floor: hsl(h, 22, 30), wall: hsl(h, 16, 42) }),
-    roles: { sofa: 'loungeSofa', armchair: 'loungeChair', rug: 'rugRectangle', lamp: 'lampRoundFloor', plant: 'pottedPlant', corner: 'pottedPlant', back: 'pottedPlant' },
-    decor: [['rugRectangle', ...BENCH_RUG, 0], ['trashcan', ...FRONT_R, 0], ['plantSmall1', ...WALL_GAP, HALF], ['coatRackStanding', ...RIGHT_SLOT, 0]],
-    art: [['back', 6.05, 'poster'], ['left', 5.64, 'poster']],
-  },
-  lab: {
-    label: 'lab', floor: 'tile', pal: h => ({ floor: hsl(h, 10, 44), wall: hsl(h, 12, 60) }),
-    roles: { sofa: 'loungeSofa', armchair: 'loungeChair', rug: null, lamp: 'lampSquareFloor', plant: 'plantSmall2', corner: 'washer', back: 'plantSmall2' },
-    decor: [['dryer', ...RIGHT_SLOT, -HALF], ['cardboardBoxOpen', ...FRONT_L, 0.3], ['trashcan', ...FRONT_R, 0], ['kitchenMicrowave', 0.42, 8.33, HALF, 'counter']],
-    art: [['back', 6.05, 'chart'], ['left', 5.64, 'chart']],
-  },
-  library: {
-    label: 'library', floor: 'planks', pal: h => ({ floor: mix(hsl(h, 30, 28), '#4a3526', 0.6), wall: mix(hsl(h, 20, 36), '#5b4331', 0.45) }),
-    roles: { sofa: 'loungeSofa', armchair: 'loungeDesignChair', rug: 'rugRound', lamp: 'lampRoundFloor', plant: 'pottedPlant', corner: 'pottedPlant', back: 'bookcaseOpenLow' },
-    decor: [['bookcaseOpen', ...RIGHT_SLOT, -HALF], ['books', 11.5, 1.95, -HALF, 0.47], ['books', 11.5, 2.25, -HALF, 0.9], ['books', 11.5, 2.0, -HALF, 1.32],
-      ['books', 5.8, 0.35, 0, 'on:bookcaseOpenLow'], ['lampRoundTable', 6.35, 0.35, 0, 'on:bookcaseOpenLow'], ['rugRound', ...BENCH_RUG, 0], ['plantSmall3', ...WALL_GAP, HALF]],
-    art: [['back', 6.05, 'painting'], ['left', 5.64, 'painting']],
-  },
-  lounge: {
-    label: 'lounge and kitchen', floor: 'planks', pal: h => ({ floor: mix(hsl(h, 35, 36), '#7a5838', 0.45), wall: hsl(h, 32, 46) }),
-    roles: { sofa: 'loungeDesignSofa', armchair: 'loungeChairRelax', rug: 'rugRounded', lamp: null, plant: 'plantSmall3', corner: 'kitchenFridge', back: 'pottedPlant' },
-    decor: [['cabinetTelevision', 11.45, 6.5, -HALF], ['televisionModern', 11.45, 6.5, -HALF, 'on:cabinetTelevision'], ['toaster', 0.42, 8.33, HALF, 'counter'],
-      ['rugRectangle', ...BENCH_RUG, 0], ['plantSmall1', ...RIGHT_SLOT, 0]],
-    art: [['back', 6.05, 'canvas'], ['left', 5.64, 'painting']],
-  },
-  server: {
-    label: 'server room', floor: 'grate', pal: h => ({ floor: hsl(h, 14, 19), wall: hsl(h, 16, 25) }),
-    roles: { sofa: 'loungeSofa', armchair: 'loungeChair', rug: null, lamp: null, plant: null, corner: 'rack', back: 'rack' },
-    decor: [['rack', ...RIGHT_SLOT, -HALF], ['trashcan', ...FRONT_R, 0], ['speakerSmall', ...FRONT_L, 0]],
-    art: [['left', 5.64, 'panel'], ['left', 8.33, 'panel']],
-  },
-  studio: {
-    label: 'studio', floor: 'carpet', pal: h => ({ floor: hsl(h, 30, 26), wall: hsl(h, 34, 38) }),
-    roles: { sofa: 'loungeDesignSofa', armchair: 'loungeDesignChair', rug: 'rugRectangle', lamp: 'lampSquareFloor', plant: 'plantSmall1', corner: 'speaker', back: 'plantSmall2' },
-    decor: [['televisionVintage', ...RIGHT_SLOT, -HALF], ['radio', 0.42, 8.33, HALF, 'counter'], ['speaker', ...FRONT_R, 0], ['rugSquare', ...BENCH_RUG, 0]],
-    art: [['back', 6.05, 'canvas'], ['left', 5.64, 'canvas']],
-  },
-};
-const THEME_KEYS = Object.keys(THEMES);
-// a project keeps its hashed theme unless another room on the deck already has it (like the hue in projectLook)
-function themeFor(name, taken) {
-  let i = hash(name + '#room') % THEME_KEYS.length;
-  for (let k = 0; k < THEME_KEYS.length && taken.has(THEME_KEYS[i]); k++) i = (i + 1) % THEME_KEYS.length;
-  taken.add(THEME_KEYS[i]);
-  return THEME_KEYS[i];
-}
-const KITCHEN = { x: 0.42, y: 7.45 };           // coffee machine
-const OUTBOX = { x: 3.75, y: 9.55, h: 0.95 };   // mail chute by the door: commits and pushes go in the slot on top
-const RACK = { x: 9.65, y: 0.3, h: 1.5 };       // build machine against the back wall, with a progress meter
-const SEAT = 0.0;   // extra lift for androids sitting on a chair or sofa (the Sitting clip already bends to seat height)
-// Spots per station, in order of preference: [x, y, facing, prop instance, sit]. Seats come first; the rest are
-// standing places beside the station for when the seats are taken. Every android gets its own spot (see allocate).
-// (the Sitting clip drops the hips backwards, so chair spots sit a little in front of the chair's centre)
-// (seats within a station are laid out so their androids don't overlap on screen; see apart())
-const SPOTS = {
-  terminal:   [...TERMINALS.map((x, i) => [x, 1.3, PI, i, SEAT]), [2.15, 2.75, PI, 0], [3.85, 2.75, PI, 1]],
-  workbench:  [[4.95, 3.9, 0, 0, SEAT], [6.55, 3.9, 0, 1, SEAT], [3.6, 4.9, HALF, 0], [7.9, 4.9, -HALF, 1]],
-  whiteboard: [[7.15, 1.35, PI, 0], [8.75, 1.35, PI, 0], [7.95, 2.75, PI, 0]],
-  comms:      [[10.35, 2.2, PI * 0.95, 0], [9.95, 3.65, PI * 0.9, 0]],
-  bookshelf:  [[1.35, 2.95, -HALF, 0], [1.35, 4.55, -HALF, 1]],
-  cabinet:    [[1.6, 5.45, -0.76, 1], [1.6, 4.45, -0.67, 0]],   // behind the drawer as seen, turned to it, so it shows
-  think:      [[3.2, 3.0, 0.6], [8.7, 3.3, -0.5], [3.0, 7.3, 0.9], [10.3, 6.3, -0.4], [4.8, 7.7, 0.3], [6.9, 6.4, -0.2]],
-  lounge:     [[5.7, 7.7, 0.2], [6.1, 9.1, 0], [2.6, 7.7, 0.6], [7.3, 6.5, -0.4], [4.6, 6.9, 0.3]],
-  dock:       [[8.7, 7.55, 0, 0, SEAT], [10.75, 7.55, 0, 1, SEAT], [8.1, 9.1, 0.3, 0], [9.75, 9.2, 0, 0], [11.35, 9.1, -0.3, 1]],
-  kitchen:    [[1.55, 7.45, -HALF, 0], [1.6, 8.45, -HALF, 0], [2.45, 6.95, -HALF * 1.3, 0]],
-  mail:       [[3.75, 8.75, 0, 0], [2.95, 8.5, 0.5, 0]],
-  rack:       [[9.6, 1.4, PI, 0], [9.0, 2.35, PI * 0.85, 0]],
-  press:      [[10.2, 3.4, HALF, 0], [10.2, 4.8, HALF, 0]],
-  armchair:   [[9.2, 5.05, 0, 0, SEAT], [8.0, 6.1, 0.4, 0]],
-};
-// Two spots are far enough apart when their androids don't overlap on screen: side by side (across the screen) they
-// need about a head's width, one behind the other (along the view) about an android's on-screen height.
-const APART_ACROSS = 1.25, APART_ALONG = 2.6;
-function apart(ax, ay, bx, by) {
-  const u = ((ax - ay) - (bx - by)) / Math.SQRT2, v = ((ax + ay) - (bx + by)) / Math.SQRT2;
-  return (u / APART_ACROSS) ** 2 + (v / APART_ALONG) ** 2 >= 1;
-}
-// furniture footprints (room tiles, padded by an android's radius) that spots and delegates must stay out of
-const BLOCKS = [[0.3, 0.1, 5.6, 1.0], [0.3, 1.2, 5.6, 1.9], [4.3, 4.2, 7.2, 5.0], [0, 1.9, 0.6, 3.6], [0, 4.7, 1.0, 6.6],
-  [7.6, 7.0, 11.8, 8.0], [10.9, 2.9, 11.8, 5.7], [10.3, 0.5, 11.2, 1.3], [6.8, 0, 9.1, 0.25],
-  [0, 6.95, 1.0, 10], [8.55, 4.4, 9.85, 5.6], [1.0, 9.15, 4.15, 10], [9.2, 0, 10.1, 0.6],
-  [11.0, 1.5, 12, 2.7], [6.7, 9.15, 7.3, 10], [11.0, 5.9, 12, 7.0]];   // (the last three: theme decor slots)
-const blocked = (x, y) => x < 0.6 || y < 0.8 || x > RW - 0.6 || y > RD - 0.45 || BLOCKS.some(([x0, y0, x1, y1]) => x > x0 - 0.3 && x < x1 + 0.3 && y > y0 - 0.3 && y < y1 + 0.3);
-// free floor for androids whose station is full, stalled or failed ones, and delegates with nowhere beside their partner
-const OVERFLOW = [[3.4, 4.3, 0.4], [8.3, 3.6, -0.4], [2.4, 8.0, 0.5], [6.9, 8.0, -0.3], [9.7, 6.3, -0.6], [4.4, 6.1, 0.2],
-  [6.0, 6.35, 0], [2.4, 3.9, 0.6], [10.3, 5.9, -0.8], [6.0, 2.7, 0], [4.7, 2.6, 0.3], [2.2, 6.6, 0.5]].filter(([x, y]) => !blocked(x, y));
-// every clear floor point on a 0.8-tile grid, for when the overflow list runs out
-const FLOOR = [];
-for (let x = 0.8; x < RW; x += 0.8) for (let y = 1.0; y < RD; y += 0.8) if (!blocked(x, y)) FLOOR.push([x, y, 0]);
-const DOOR_X0 = 4.6, DOOR_X1 = 6.4;
-const AISLES = [2.55, 6.5, 8.75];    // walkways across the room (y) and the columns that join them (x)
-const CROSSINGS = [3.2, 7.55];
-const FACE_VIEWER = PI / 4;          // the camera looks along (-1,-1,-1): an android facing +x+z looks out at you
-// What an android does for each activity (see activityOf). station: where it works (a list is walked in turn: a book
-// from the shelf, then the armchair); hands: typing while seated; carry: what it holds; pace: strolls this far and back.
-const ACTS = {
-  type:     { station: 'terminal', hands: true },
-  test:     { station: 'terminal' },                   // watches the run; nods or shakes its head at the result
-  ship:     { station: 'mail', carry: 'box' },         // commit/push: a parcel into the outbox
-  build:    { station: 'rack' },                       // installs, builds, containers: waits by the machine
-  edit:     { station: 'workbench', hands: true },
-  review:   { station: 'workbench', carry: 'sheet' },  // diff/log/status: reads a printout at the desk
-  doc:      { station: 'press' },                      // writing markdown: at the document press
-  read:     { station: ['bookshelf', 'armchair'], carry: 'book' },
-  search:   { station: 'cabinet' },
-  web:      { station: 'comms' },
-  plan:     { station: 'whiteboard' },
-  think:    { station: 'think', pace: 1.4 },
-  wait:     { station: 'kitchen' },                    // sleep, background jobs, questions: a coffee
-  delegate: { station: 'partner' },
-  idle:     { station: 'lounge', pace: 2.2 },
-  await:    { station: 'stay' },                       // a live session waiting on its human: stays put, faces you
-  dock: { station: 'dock' }, failed: { station: 'stay' }, stalled: { station: 'stay' },
-};
-function stationOf(act, stage = 0) {
-  const s = (ACTS[act] || ACTS.think).station;
-  return Array.isArray(s) ? s[Math.min(stage, s.length - 1)] : s;
-}
-const TOOL_ICON = { bash: '$', edit: '✎', read: '▤', search: '⌕', web: '◎', think: '∴', plan: '☰', delegate: '⇄', other: '•' };
-
-// ------------------------------------------------------------------ renderer, camera, lights
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
-renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.1;
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFShadowMap;   // r186 folded PCFSoft into PCF; shadow.radius softens it
-renderer.setClearColor(0x000000, 0);
-
-const scene = new THREE.Scene();
-const deckGroup = new THREE.Group();   // floors, walls, furniture: rebuilt when the set of rooms changes
-const botGroup = new THREE.Group();
-scene.add(deckGroup, botGroup);
-
-scene.add(new THREE.HemisphereLight(0xb4c8ff, 0x2a2238, 1.35));
-const sun = new THREE.DirectionalLight(0xfff0dc, 2.4);
-sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
-sun.shadow.bias = -0.0004;
-sun.shadow.normalBias = 0.02;
-sun.shadow.radius = 3;
-scene.add(sun, sun.target);
-const rim = new THREE.DirectionalLight(0x7fa2ff, 0.7);
-rim.position.set(-8, 6, -10);
-scene.add(rim);
-const SUN_DIR = new THREE.Vector3(0.45, 1, 0.7).normalize();
-
-// True isometric: the camera looks down (-1,-1,-1), so the back walls are y = 0 and x = 0.
-const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 600);
-const ISO = new THREE.Vector3(1, 1, 1).normalize();
-const RIGHT = new THREE.Vector3(1, 0, -1).normalize();
-const UP = new THREE.Vector3(-1, 2, -1).normalize();
-const cam = { c: new THREE.Vector3(), z: 40, userMoved: false, tween: null };   // c: a point on the view axis; z: pixels per tile
-function applyCamera() {
-  camera.left = -vw / 2 / cam.z; camera.right = vw / 2 / cam.z;
-  camera.top = vh / 2 / cam.z; camera.bottom = -vh / 2 / cam.z;
-  camera.position.copy(cam.c).addScaledVector(ISO, 200);
-  camera.lookAt(cam.c);
-  camera.updateProjectionMatrix();
-  camera.updateMatrixWorld();
-}
-const _p = new THREE.Vector3();
-function toScreen(v, out) { _p.copy(v).project(camera); out.x = (_p.x + 1) / 2 * vw; out.y = (1 - _p.y) / 2 * vh; return out; }
-// the camera centre that puts world point P at screen (sx, sy)
-function centreFor(P, sx, sy, z) {
-  return new THREE.Vector3().copy(P).addScaledVector(RIGHT, -(sx - vw / 2) / z).addScaledVector(UP, (sy - vh / 2) / z);
-}
-
-// ------------------------------------------------------------------ assets: Kenney furniture + RobotExpressive
-const KIT_MODELS = [...new Set(['wall', 'wallWindow', 'desk', 'chairDesk', 'computerScreen', 'computerKeyboard', 'laptop', 'bookcaseOpen', 'books',
-  'kitchenCabinetDrawer', 'kitchenCabinet', 'kitchenCoffeeMachine', 'cardboardBoxClosed',
-  // (plus every model the room themes use)
-  ...Object.values(THEMES).flatMap(t => [...Object.values(t.roles), ...t.decor.map(d => d[0])]).filter(m => m && m !== 'rack')])];
-const KIT = {};       // name → { parts: [{ geometry, material, matrix }], size }, footprint centred on the origin, scaled by FS
-let ROBOT = null;     // { scene, clips, main, headBox, torsoBox }
-
-async function loadAssets() {
-  const loader = new GLTFLoader();
-  const kit = KIT_MODELS.map(async name => {
-    const g = await loader.loadAsync(`/assets/models/furniture/${name}.glb`);
-    const root = g.scene;
-    root.updateMatrixWorld(true);
-    const box = new THREE.Box3().setFromObject(root);
-    const norm = new THREE.Matrix4().makeScale(FS, FS, FS)
-      .multiply(new THREE.Matrix4().makeTranslation(-(box.min.x + box.max.x) / 2, -box.min.y, -(box.min.z + box.max.z) / 2));
-    const parts = [];
-    root.traverse(o => { if (o.isMesh) parts.push({ geometry: o.geometry, material: o.material, matrix: norm.clone().multiply(o.matrixWorld) }); });
-    KIT[name] = { parts, size: box.getSize(new THREE.Vector3()).multiplyScalar(FS) };
-  });
-  const bot = loader.loadAsync('/assets/models/robot/RobotExpressive.glb').then(g => {
-    const tpl = g.scene;
-    tpl.updateMatrixWorld(true);
-    const box = new THREE.Box3().setFromObject(tpl);
-    tpl.scale.setScalar(BOT_H / (box.max.y - box.min.y));
-    tpl.updateMatrixWorld(true);
-    // bones and meshes share names in this file, so the loader suffixes one of each pair ("Head", "Head_1")
-    let main = null, headMesh = null, torsoMesh = null;
-    const isPart = (o, name) => !o.isBone && new RegExp(`^${name}(_\\d+)?$`).test(o.name) && (o.isMesh || o.children.some(c => c.isMesh));
-    tpl.traverse(o => {
-      if (o.isMesh && !Array.isArray(o.material) && o.material.name === 'Main') main = o.material;
-      if (!headMesh && isPart(o, 'Head')) headMesh = o;
-      if (!torsoMesh && isPart(o, 'Torso')) torsoMesh = o;
-    });
-    if (!main || !headMesh || !torsoMesh) {
-      const names = []; tpl.traverse(o => { if (!o.isBone) names.push(o.name); });
-      throw new Error(`RobotExpressive.glb: no ${!main ? 'Main material' : !headMesh ? 'Head mesh' : 'Torso mesh'} (nodes: ${names.join(', ')})`);
-    }
-    // the face morph targets go away with the merge, so drop their tracks from the clips
-    for (const c of g.animations) c.tracks = c.tracks.filter(t => !t.name.endsWith('.morphTargetInfluences'));
-    ROBOT = { scene: tpl, clips: Object.fromEntries(g.animations.map(c => [c.name, c])), main,
-      headBox: new THREE.Box3().setFromObject(headMesh), torsoBox: new THREE.Box3().setFromObject(torsoMesh) };
-    mergeRobot(tpl);
-  });
-  await Promise.all([...kit, bot]);
-  // pull the kit's daylight palette towards the night deck: slate upholstery, smoked wood
-  const RECOLOR = { carpet: '#56648a', carpetWhite: '#8a96b4', wood: '#a88d72', woodDark: '#6e5a48' };
-  for (const k of Object.values(KIT)) for (const p of k.parts) {
-    const m = p.material;
-    if (RECOLOR[m.name]) m.color.set(RECOLOR[m.name]);
-    if (m.name === 'glass') { m.transparent = true; m.opacity = 0.25; m.depthWrite = false; }
-  }
-  registerPrims();
-}
-
-// The robot ships as a couple of dozen meshes, some skinned and some rigid parts hanging off bones. Merge them all
-// into one skinned mesh with a group per material, so an android costs three draw calls. Every part is baked into
-// the skeleton's bind space (rigid parts become single-bone skins); in attached bind mode that makes the result
-// independent of where the merged mesh sits.
-function mergeRobot(tpl) {
-  const parts = [];
-  tpl.traverse(o => { if (o.isMesh) parts.push(o); });
-  parts.sort((a, b) => b.isSkinnedMesh - a.isSkinnedMesh);   // skins first: their inverse bind matrices are authoritative
-  const bones = [], inverses = [], boneIndex = new Map(), byMat = new Map(), merged = [];
-  const toLoad = tpl.matrixWorld.clone().invert();      // bind poses were recorded before the robot was scaled
-  const boneOf = (b, inverse) => {
-    if (!boneIndex.has(b)) { boneIndex.set(b, bones.length); bones.push(b); inverses.push(inverse()); }
-    return boneIndex.get(b);
-  };
-  const indexed = parts.every(p => p.geometry.index);
-  for (const p of parts) {
-    const src = p.geometry, g = new THREE.BufferGeometry(), n = src.attributes.position.count;
-    for (const name of ['position', 'normal']) g.setAttribute(name, src.attributes[name].clone());
-    const idx = new Uint16Array(n * 4);
-    if (p.isSkinnedMesh) {
-      // skin indices point into this part's skeleton; remap them onto one shared bone list
-      const remap = p.skeleton.bones.map((b, i) => boneOf(b, () => p.skeleton.boneInverses[i].clone()));
-      const si = src.attributes.skinIndex;
-      for (let i = 0; i < n; i++) for (let k = 0; k < 4; k++) idx[i * 4 + k] = remap[si.getComponent(i, k)];
-      const sw = src.attributes.skinWeight, w = new Float32Array(n * 4);   // may be normalised bytes; rigid parts use floats
-      for (let i = 0; i < n; i++) for (let k = 0; k < 4; k++) w[i * 4 + k] = sw.getComponent(i, k) / (sw.normalized && sw.array instanceof Uint8Array ? 255 : sw.normalized && sw.array instanceof Uint16Array ? 65535 : 1);
-      g.setAttribute('skinWeight', new THREE.BufferAttribute(w, 4));
-      g.applyMatrix4(p.bindMatrix);
-    } else {
-      let b = p.parent;
-      while (b && !b.isBone) b = b.parent;
-      if (!b) continue;
-      // bone · inverse · v' must equal bone · (bone at load)⁻¹ · (part at load) · v, whichever inverse the bone got
-      const boneLoad = toLoad.clone().multiply(b.matrixWorld);
-      const bi = boneOf(b, () => boneLoad.clone().invert());
-      const w = new Float32Array(n * 4);
-      for (let i = 0; i < n; i++) { idx[i * 4] = bi; w[i * 4] = 1; }
-      g.setAttribute('skinWeight', new THREE.BufferAttribute(w, 4));
-      g.applyMatrix4(inverses[bi].clone().invert().multiply(boneLoad.invert()).multiply(toLoad.clone().multiply(p.matrixWorld)));
-    }
-    g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(idx, 4));
-    if (indexed) g.setIndex(src.index.clone());
-    const list = byMat.get(p.material) || byMat.set(p.material, []).get(p.material);
-    list.push(indexed ? g : g.toNonIndexed());
-    merged.push(p);
-  }
-  const mats = [...byMat.keys()];
-  const geo = mergeGeometries(mats.map(m => mergeGeometries(byMat.get(m), false)), true);
-  if (!geo) throw new Error('RobotExpressive.glb: could not merge the robot parts');
-  for (const p of merged) p.removeFromParent();
-  const mesh = new THREE.SkinnedMesh(geo, mats);
-  mesh.name = 'Robot';
-  tpl.add(mesh);
-  mesh.bind(new THREE.Skeleton(bones, inverses), new THREE.Matrix4());
-}
-
-// shared bits of geometry and material
-const G = {
-  box: new THREE.BoxGeometry(1, 1, 1),
-  plane: new THREE.PlaneGeometry(1, 1),
-  ring: new THREE.RingGeometry(0.4, 0.5, 48).rotateX(-HALF),
-  disc: new THREE.CircleGeometry(0.62, 40).rotateX(-HALF),
-  sphere: new THREE.SphereGeometry(1, 16, 12),
-  proxy: new THREE.CylinderGeometry(0.42 * BK, 0.42 * BK, BOT_H, 10).translate(0, BOT_H / 2, 0),
-};
-function softDot(inner, outer) {
-  const c = document.createElement('canvas'); c.width = c.height = 64;
-  const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-  gr.addColorStop(0, inner); gr.addColorStop(1, outer);
-  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
-}
-const M = {
-  plate: new THREE.MeshStandardMaterial({ color: 0x0f1726, roughness: 0.9, metalness: 0.2 }),
-  dark:new THREE.MeshStandardMaterial({ color: 0x1b2333, roughness: 0.6, metalness: 0.4 }),
-  wallTint: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 }),
-  beacon: new THREE.MeshBasicMaterial({ color: 0xf87171 }),
-  failGlow: new THREE.SpriteMaterial({ map: softDot('rgba(255,80,80,1)', 'rgba(255,60,60,0)'), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }),
-  doneRing: new THREE.MeshBasicMaterial({ color: 0x4ade80, transparent: true, opacity: 0.55, depthWrite: false }),
-  doneDisc: new THREE.MeshBasicMaterial({ map: softDot('rgba(74,222,128,.55)', 'rgba(74,222,128,0)'), transparent: true, depthWrite: false }),
-  hidden: new THREE.MeshBasicMaterial({ visible: false }),
-  blob: new THREE.MeshBasicMaterial({ map: softDot('rgba(0,0,0,.6)', 'rgba(0,0,0,0)'), transparent: true, depthWrite: false }),
-};
-
-// ------------------------------------------------------------------ static geometry: instanced across every room
-// Kenney models and the deck's own primitives each become one InstancedMesh per part, shared by every room, so ten
-// rooms cost the same few dozen draw calls as one. Per-room colour comes from instance colours.
-class Placer {
-  constructor() { this.byModel = new Map(); this.meshes = new Map(); }
-  // returns a handle for instances that change later (lights, pulses)
-  add(model, x, z, rot = 0, y = 0, scale = null, tint = null) {
-    const m = new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromAxisAngle(THREE.Object3D.DEFAULT_UP, rot),
-      scale || new THREE.Vector3(1, 1, 1));
-    if (!this.byModel.has(model)) this.byModel.set(model, []);
-    const list = this.byModel.get(model);
-    list.push({ m, tint });
-    return { model, i: list.length - 1, base: m };
-  }
-  build(group) {
-    const tmp = new THREE.Matrix4(), col = new THREE.Color();
-    const merged = new Map();   // material signature → { material, geos, shadow }
-    for (const [model, list] of this.byModel) {
-      const kit = KIT[model], meshes = [];
-      if (!kit.prim) { mergeKit(kit, list, merged); continue; }
-      for (const part of kit.parts) {
-        const tinted = kit.prim || (list[0].tint && part.material.name !== 'metalDark' && part.material.name !== 'glass');
-        const im = new THREE.InstancedMesh(part.geometry, tinted && !kit.prim ? M.wallTint : part.material, list.length);
-        list.forEach((it, i) => {
-          im.setMatrixAt(i, tmp.multiplyMatrices(it.m, part.matrix));
-          if (tinted) im.setColorAt(i, col.set(it.tint || '#ffffff'));
-        });
-        im.castShadow = part.shadow ?? part.material.name !== 'glass';
-        im.receiveShadow = !kit.prim || part.shadow !== false;
-        im.computeBoundingSphere();
-        group.add(im);
-        meshes.push({ im, part });
-      }
-      this.meshes.set(model, meshes);
-    }
-    for (const { material, geos, shadow } of merged.values()) {
-      const geo = mergeGeometries(geos, false);
-      for (const g of geos) g.dispose();
-      const mesh = new THREE.Mesh(geo, material);
-      mesh.castShadow = shadow; mesh.receiveShadow = true;
-      group.add(mesh);
-      disposables.push(geo);
-    }
-  }
-  setColor(h, hex) {
-    for (const { im } of this.meshes.get(h.model)) { im.setColorAt(h.i, _col.set(hex)); im.instanceColor.needsUpdate = true; }
-  }
-  setMatrix(h, m) {
-    for (const { im, part } of this.meshes.get(h.model)) { im.setMatrixAt(h.i, _m4.multiplyMatrices(m, part.matrix)); im.instanceMatrix.needsUpdate = true; }
-  }
-}
-// Kenney models never change once placed, so every instance of every model is baked into one mesh per material
-// across the whole deck: the draw calls stay flat however many models and themes the rooms use. Parts that are tinted
-// (walls in the project colour) take the tint as a vertex colour on one shared material.
-const TINT_MAT = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, vertexColors: true });
-const mergedMats = new Map();
-function mergeKit(kit, list, merged) {
-  const col = new THREE.Color();
-  for (const part of kit.parts) {
-    const m = part.material, tinted = !!list[0].tint && m.name !== 'metalDark' && m.name !== 'glass';
-    const sig = tinted ? 'tint' : [m.name, m.color.getHexString(), m.opacity, m.transparent, m.roughness, m.metalness, m.map ? m.map.uuid : ''].join('|');
-    if (!merged.has(sig)) {
-      if (!tinted && !mergedMats.has(sig)) mergedMats.set(sig, m);
-      merged.set(sig, { material: tinted ? TINT_MAT : mergedMats.get(sig), geos: [], shadow: m.name !== 'glass' && !kit.flat });
-    }
-    const bucket = merged.get(sig);
-    for (const it of list) {
-      const g = new THREE.BufferGeometry();
-      g.setAttribute('position', part.geometry.attributes.position.clone());
-      g.setAttribute('normal', part.geometry.attributes.normal.clone());
-      if (m.map) g.setAttribute('uv', part.geometry.attributes.uv.clone());
-      g.setIndex(part.geometry.index ? part.geometry.index.clone() : [...Array(g.attributes.position.count).keys()]);
-      g.applyMatrix4(_m4.multiplyMatrices(it.m, part.matrix));
-      if (tinted) {
-        col.set(it.tint || '#ffffff');
-        const n = g.attributes.position.count, c = new Float32Array(n * 3);
-        for (let i = 0; i < n; i++) { c[i * 3] = col.r; c[i * 3 + 1] = col.g; c[i * 3 + 2] = col.b; }
-        g.setAttribute('color', new THREE.BufferAttribute(c, 3));
-      }
-      bucket.geos.push(g);
-    }
-  }
-}
-const _col = new THREE.Color(), _m4 = new THREE.Matrix4(), _m4b = new THREE.Matrix4();
-const _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _sc = new THREE.Vector3();
-
-// the deck's own shapes, registered next to the Kenney models so the Placer can instance them
-function registerPrims() {
-  const I = new THREE.Matrix4();
-  const mat = {
-    std: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 }),
-    metal: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.45, metalness: 0.6 }),
-    dish: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35, metalness: 0.5, side: THREE.DoubleSide }),
-    glow: new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }),
-    add: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }),
-    board: new THREE.MeshStandardMaterial({ map: whiteboardTexture(), roughness: 0.4 }),
-  };
-  const prim = (geometry, material, shadow) => ({ prim: true, parts: [{ geometry, material, matrix: I, shadow }] });
-  Object.assign(KIT, {
-    box: prim(G.box, mat.std, true),
-    metalBox: prim(G.box, mat.metal, true),
-    glowBox: prim(G.box, mat.glow, false),
-    lightBox: prim(G.box, mat.add, false),
-    board: prim(G.plane, mat.board, false),
-    slit: prim(G.plane, mat.glow, false),
-    dish: prim(new THREE.SphereGeometry(0.5, 24, 10, 0, PI * 2, 0, 0.95).rotateX(-2.2), mat.dish, true),
-    orb: prim(G.sphere, mat.glow, false),
-    pulse: prim(new THREE.RingGeometry(0.8, 1, 40).rotateX(-0.6), mat.add, false),
-    beacon: prim(G.sphere, M.beacon, false),
-  });
-  // one floor per pattern (room themes pick one); rooms sharing a pattern share its draw call
-  for (const style of FLOORS) KIT['floor:' + style] = prim(G.box, new THREE.MeshStandardMaterial({ color: 0xffffff, map: floorTexture(style),
-    roughness: style === 'grate' ? 0.55 : 0.8, metalness: style === 'grate' ? 0.35 : 0.1 }), false);
-}
-
-// ------------------------------------------------------------------ canvas textures: screens, whiteboard, signs
-function canvasTex(w, h) {
-  const c = document.createElement('canvas'); c.width = w; c.height = h;
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-  return { c, g: c.getContext('2d'), tex };
-}
-const SCREEN_LINES = [0.55, 0.3, 0.72, 0.42, 0.62, 0.5, 0.36, 0.68];
-function drawScreen(s, t) {
-  const { g, c } = s, w = c.width, h = c.height;
-  g.fillStyle = s.shown === false ? '#2a0707' : s.busy ? '#03140c' : '#071a30';
-  g.fillRect(0, 0, w, h);
-  if (s.shown != null) {
-    // a test run's verdict: a big pass bar or a red fail
-    g.fillStyle = s.shown ? '#22c55e' : '#ef4444';
-    g.fillRect(10, 22, w - 20, h - 44);
-    g.fillStyle = s.shown ? '#03140c' : '#2a0707';
-    g.font = '700 26px JetBrains Mono, monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText(s.shown ? 'PASS' : 'FAIL', w / 2, h / 2 + 1);
-    g.textAlign = 'start'; g.textBaseline = 'alphabetic';
-  } else if (s.test) {
-    // tests running: a grid of dots filling in, the odd one amber
-    const n = REDUCED ? 20 : Math.floor(t * 9 + s.seed * 5) % 41;
-    for (let k = 0; k < 40; k++) {
-      g.fillStyle = k < n ? ((k * 7 + s.seed) % 13 === 0 ? '#facc15' : '#4ade80') : 'rgba(74,222,128,.15)';
-      g.fillRect(9 + (k % 10) * 11.2, 12 + Math.floor(k / 10) * 15, 7, 8);
-    }
-  } else if (s.busy) {
-    g.fillStyle = '#4ade80';
-    const scroll = REDUCED ? 0 : (t * 26) % 12;
-    for (let k = 0; k < 9; k++) {
-      const y = h - 8 - k * 12 + scroll;
-      if (y < 4 || y > h - 4) continue;
-      g.globalAlpha = k === 0 ? 1 : 0.85;
-      g.fillRect(8, y, SCREEN_LINES[(k + s.seed + Math.floor(REDUCED ? 0 : t * 2.2)) % 8] * (w - 16), 5);
-    }
-    g.globalAlpha = 1;
-  } else {
-    g.fillStyle = 'rgba(125,180,255,.75)';
-    g.fillRect(8, 10, 34, 5);
-    if (REDUCED || Math.sin(t * 3 + s.seed) > 0) g.fillRect(8, 22, 8, 7);
-  }
-  s.tex.needsUpdate = true;
-}
-let boardTex = null;
-function whiteboardTexture() {
-  if (boardTex) return boardTex;
-  const { g, tex } = canvasTex(512, 256);
-  g.fillStyle = '#e8eef7'; g.fillRect(0, 0, 512, 256);
-  g.lineWidth = 5; g.lineCap = 'round'; g.lineJoin = 'round';
-  const line = (pts, c) => { g.strokeStyle = c; g.beginPath(); pts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.stroke(); };
-  line([[30, 50], [190, 50]], '#1e3a8a'); line([[30, 90], [150, 90]], '#1e3a8a'); line([[30, 130], [210, 130]], '#b91c1c');
-  line([[260, 150], [320, 70], [380, 120], [450, 40]], '#047857');
-  g.strokeStyle = '#1e3a8a'; g.lineWidth = 3; g.strokeRect(250, 30, 220, 150);
-  for (const [x, c] of [[40, '#fde047'], [110, '#f9a8d4'], [180, '#86efac']]) { g.fillStyle = c; g.fillRect(x, 170, 55, 55); }
-  boardTex = tex;
-  return tex;
-}
-function drawSign(room) {
-  const { g, c, tex } = room.sign;
-  const { look } = room;
-  const running = room.ents.filter(e => working(e.job)).length, sessions = room.ents.filter(isSession).length;
-  const jobs = room.ents.length - sessions;
-  const sub = room.ents.length ? `${running} running · ${jobs} job${jobs === 1 ? '' : 's'}${sessions ? ` · ${sessions} live` : ''}` : 'empty';
-  const key = room.label + sub;
-  if (room.signKey === key) return;
-  room.signKey = key;
-  g.clearRect(0, 0, c.width, c.height);
-  g.fillStyle = 'rgba(6,10,20,.94)'; rr(g, 4, 4, c.width - 8, c.height - 8, 22); g.fill();
-  g.strokeStyle = rgba(look.accent, 0.8); g.lineWidth = 5; g.stroke();
-  g.fillStyle = look.accent; g.fillRect(4, 26, 12, c.height - 52);
-  g.fillStyle = '#f2f7ff'; g.font = '700 92px Space Grotesk, system-ui, sans-serif';
-  g.shadowColor = look.accent; g.shadowBlur = 18;
-  g.fillText(room.label.toUpperCase(), 46, 118, c.width - 80);
-  g.shadowBlur = 0;
-  g.fillStyle = rgba(look.accent, 0.95); g.font = '500 46px JetBrains Mono, monospace';
-  g.fillText(sub, 48, 196, c.width - 80);
-  tex.needsUpdate = true;
-}
-// floor patterns, drawn light so the room's floor colour tints them; one 128px tile covers 2×2 room tiles
-function floorTexture(style) {
-  const { g, tex } = canvasTex(128, 128);
-  const line = (x0, y0, x1, y1) => { g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke(); };
-  g.fillStyle = '#ffffff'; g.fillRect(0, 0, 128, 128);
-  if (style === 'planks') {        // boards with staggered joints
-    for (let k = 0; k < 8; k++) {
-      g.fillStyle = ['#f2ede6', '#e2d9cc', '#ebe4d9', '#d9cfc1'][k % 4]; g.fillRect(0, k * 16, 128, 16);
-      g.strokeStyle = 'rgba(0,0,0,.22)'; g.lineWidth = 1.5; line(0, k * 16, 128, k * 16);
-      const j = (k * 47) % 128; line(j, k * 16, j, k * 16 + 16);
-    }
-  } else if (style === 'tile') {   // small square tiles with grout
-    g.strokeStyle = 'rgba(0,0,0,.16)'; g.lineWidth = 2;
-    for (let k = 0; k <= 128; k += 32) { line(k, 0, k, 128); line(0, k, 128, k); }
-  } else if (style === 'carpet') { // flecked
-    const rand = seeded(7);
-    for (let k = 0; k < 900; k++) { g.fillStyle = rand() < 0.5 ? 'rgba(0,0,0,.07)' : 'rgba(255,255,255,.5)'; g.fillRect(rand() * 128, rand() * 128, 2, 2); }
-  } else if (style === 'grate') {  // raised-floor panels with vent slots
-    g.fillStyle = '#c9ced8'; g.fillRect(0, 0, 128, 128);
-    g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 3;
-    for (let k = 0; k <= 128; k += 64) { line(k, 0, k, 128); line(0, k, 128, k); }
-    g.fillStyle = 'rgba(0,0,0,.25)';
-    for (let k = 0; k < 5; k++) { g.fillRect(12, 12 + k * 8, 40, 3); g.fillRect(76, 76 + k * 8, 40, 3); }
-  } else {                         // checker
-    g.fillStyle = '#d2d6de'; g.fillRect(0, 0, 64, 64); g.fillRect(64, 64, 64, 64);
-    g.strokeStyle = 'rgba(0,0,0,.18)'; g.lineWidth = 2;
-    for (let k = 0; k <= 128; k += 64) { line(k, 0, k, 128); line(0, k, 128, k); }
-  }
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(RW / 2, RD / 2);
-  return tex;
-}
-const FLOORS = ['checker', 'planks', 'tile', 'carpet', 'grate'];
-let dashTex = null;
-function dashTexture() {
-  if (dashTex) return dashTex;
-  const { g, tex } = canvasTex(64, 8);
-  g.fillStyle = '#38bdf8'; g.fillRect(0, 2, 26, 4);
-  tex.wrapS = THREE.RepeatWrapping;
-  dashTex = tex;
-  return tex;
-}
+import {
+  BK, BOT_H, DEBUG, DEMO, DESK_TOP, GAP, HALF, PI, POLL_MS, QS, RD, REDUCED, RW, SMALL_Z, SPEED, TINY_Z, WALL_H,
+  WARP, canvas, dpr, setDpr, setVh, setVw, tagsEl, vh, vw,
+} from './env.js';
+import { age, angleTo, clamp, clock, esc, hash, hsl, mix, rr, seeded, store, trunc } from './util.js';
+import {
+  ACTS, AGENT_COLOR, AISLES, APART_ACROSS, APART_ALONG, CROSSINGS, DOOR_X0, DOOR_X1, FACE_VIEWER, FLOOR,
+  FURNITURE, KITCHEN, OUTBOX, OVERFLOW, RACK, SPOTS, TERMINALS, THEMES, TOOL_ICON, apart, blocked, hostLook,
+  projectLook, stationOf, themeFor,
+} from './looks.js';
+import { DOC_FILE, activityFor, activityOf, isActive, isSession, mumble, shortId } from './activity.js';
+import {
+  G, KIT, M, Placer, RIGHT, ROBOT, SUN_DIR, UP, _col, _m4, _m4b, _p, _q, _sc, _v, _w, applyCamera, botGroup,
+  cam, camera, canvasTex, centreFor, dashTexture, deckGroup, disposables, drawScreen, drawSign, loadAssets,
+  renderer, scene, softDot, sun, toScreen,
+} from './scene.js';
+import {
+  ents, everLoaded, feed, feedSeeded, hosts, live, seenEvents, selectedKey, setEverLoaded, setFeedSeeded,
+  setHosts, setLive, setSelectedKey,
+} from './model.js';
 
 // ------------------------------------------------------------------ the deck: plates, rooms, furniture
 let placer = null;
-const disposables = [];
+
 const edgeStrips = [];
 function buildDeck() {
   for (const d of disposables.splice(0)) d.dispose();
@@ -1144,73 +503,11 @@ function playClip(e, name, fade = 0.3) {
   bot.clip = name;
 }
 
-// ------------------------------------------------------------------ state
-let hosts = [];
-const ents = new Map();        // "host:id" → android entity
 let rooms = [];
 let plates = [];               // deck modules the rooms sit on
 const roomByName = new Map();
 let layoutKey = '';
 let layoutNames = [];
-let selectedKey = null;
-let everLoaded = false;
-let live = { ok: false, at: 0, err: null };
-const feed = [];
-const seenEvents = new Set();
-let feedSeeded = false;
-
-// Interactive CLI sessions (Claude Code / Codex run by a person) sit on the deck beside fleet jobs. Their entity
-// keeps the session in `e.job` like a job, with kind 'session'; status is 'working' or 'idle' (waiting on the human).
-const isSession = e => e.kind === 'session';
-const working = j => j.status === 'running' || j.status === 'working';
-const shortId = id => String(id).slice(0, 8);
-
-// status first: an idle session waits on its human; working ones act on their events like running jobs
-function activityFor(job) {
-  switch (job.status) {
-    case 'idle': return 'await';
-    case 'queued': return 'idle';
-    case 'done': case 'cancelled': return 'dock';
-    case 'failed': return 'failed';
-    case 'stalled': return 'stalled';
-  }
-  return activityOf(job.activity);
-}
-const isActive = status => status === 'running' || status === 'working';
-
-// What an event has an android doing: the coarse tool kind refined with the same parse the mumbling uses (shellClass),
-// so a bubble saying "committing my work" goes with an android carrying a box to the outbox. null (an error): carry on.
-const GIT_ACTS = { commit: 'ship', push: 'ship', diff: 'review', log: 'review', show: 'review', blame: 'review', status: 'review' };
-const SHELL_ACTS = { test: 'test', lint: 'test', typecheck: 'test', install: 'build', build: 'build', serve: 'build', make: 'build',
-  docker: 'build', packages: 'build', curl: 'web', ssh: 'web', copy: 'web', gh: 'web', fleet: 'web', grep: 'search', list: 'search',
-  db: 'search', sleep: 'wait', ps: 'wait' };
-const DOC_FILE = /\.(md|mdx|markdown|rst|txt)$/i;
-function shellActivity(command) {
-  const c = shellClass(command);
-  return c.cls === 'git' ? GIT_ACTS[c.sub] || 'type' : SHELL_ACTS[c.cls] || 'type';
-}
-function activityOf(ev) {
-  if (!ev || ev.kind === 'text') return 'think';
-  if (ev.kind !== 'tool') return null;
-  const s = ev.summary || '';
-  switch (ev.name) {
-    case 'Bash': case 'shell': return shellActivity(s);
-    case 'BashOutput': case 'AskUserQuestion': return 'wait';
-    case 'Read': case 'Skill': return 'read';
-    case 'Edit': case 'MultiEdit': case 'Write': case 'NotebookEdit': return DOC_FILE.test(s) ? 'doc' : 'edit';
-    case 'apply_patch': return s && s.split(', ').every(p => DOC_FILE.test(p)) ? 'doc' : 'edit';
-    case 'Grep': case 'Glob': return 'search';
-    case 'WebFetch': case 'WebSearch': case 'web_search': return 'web';
-    case 'TodoWrite': case 'TaskCreate': case 'TaskUpdate': case 'EnterPlanMode': case 'ExitPlanMode': return 'plan';
-    case 'Task': case 'Agent': return 'delegate';
-  }
-  switch (ev.tool) {
-    case 'bash': return shellActivity(s);
-    case 'edit': return DOC_FILE.test(s) ? 'doc' : 'edit';
-    case 'read': case 'search': case 'web': case 'think': case 'plan': case 'delegate': return ev.tool;
-  }
-  return 'type';
-}
 
 function layoutRooms(names) {
   layoutNames = names;
@@ -1364,7 +661,7 @@ function restoreDismissed() {
 
 function applyState(doc) {
   lastDoc = doc;
-  hosts = visibleHosts(doc);
+  setHosts(visibleHosts(doc));
   const projects = new Set();
   for (const h of hosts) for (const j of h.jobs || []) projects.add(j.project);
   // hosts on an older fleetd send no sessions; a session whose cwd fleetd could not tell has no room and is not drawn
@@ -1399,7 +696,7 @@ function applyState(doc) {
     }
   }
   for (const [k, e] of ents) if (!seen.has(k)) { dropEnt(e); ents.delete(k); if (selectedKey === k) closePanel(); }
-  everLoaded = true;
+  setEverLoaded(true);
   collectEvents();
   assignTargets();
   buildDocs();
@@ -1670,7 +967,7 @@ function stepParticles(dt) {
 }
 
 // ------------------------------------------------------------------ per-frame update of androids and props
-const _w = new THREE.Vector3();
+
 function tone(e, t) {
   // stalled androids dim; finished ones rest with their face light low
   const st = e.job.status, arrived = !e.walking && !!e.target;
@@ -2071,8 +1368,8 @@ function drawStars() {
 }
 
 function resize() {
-  dpr = Math.min(window.devicePixelRatio || 1, 2);
-  vw = window.innerWidth; vh = window.innerHeight;
+  setDpr(Math.min(window.devicePixelRatio || 1, 2));
+  setVw(window.innerWidth); setVh(window.innerHeight);
   renderer.setPixelRatio(dpr);
   renderer.setSize(vw, vh, false);
   drawStars();
@@ -2251,14 +1548,14 @@ document.getElementById('panelBody').addEventListener('scroll', () => {
 }, { passive: true });
 function select(key) {
   if (key !== selectedKey) document.getElementById('panelBody').scrollTop = 0;
-  selectedKey = key;
+  setSelectedKey(key);
   panel.classList.add('open');
   panel.setAttribute('aria-hidden', 'false');
   renderPanel();
   focusOn(ents.get(key));
 }
 function closePanel() {
-  selectedKey = null;
+  setSelectedKey(null);
   panel.classList.remove('open');
   panel.setAttribute('aria-hidden', 'true');
 }
@@ -2454,10 +1751,7 @@ const THEME_ICON = {
   dark: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></svg><span class="lb">Paper</span>',
   paper: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M13.2 9.6A5.6 5.6 0 0 1 6.4 2.8a5.6 5.6 0 1 0 6.8 6.8Z"/></svg><span class="lb">Dark</span>',
 };
-function store(area, key, value) {
-  try { if (value === undefined) return window[area].getItem(key); window[area].setItem(key, value); } catch (err) { /* storage unavailable */ }
-  return null;
-}
+
 function setReaderTheme(theme) {
   rdSheet.dataset.theme = theme;
   const b = document.getElementById('rdTheme');
@@ -2771,171 +2065,13 @@ function collectEvents() {
   }
   fresh.sort((a, b) => a.ev.ts - b.ev.ts);
   for (const f of fresh) feed.unshift(f);
-  if (!feedSeeded) { feed.sort((a, b) => b.ev.ts - a.ev.ts); feedSeeded = true; }
+  if (!feedSeeded) { feed.sort((a, b) => b.ev.ts - a.ev.ts); setFeedSeeded(true); }
   feed.length = Math.min(feed.length, 60);
   if (seenEvents.size > 5000) { seenEvents.clear(); for (const f of feed) seenEvents.add(`${f.host}:${f.id}:${f.ev.ts}:${f.ev.kind}:${f.ev.summary}`); }
 }
 // Commands, paths and patterns read better in monospace; agent prose reads better in Inter.
 const CODE_TOOLS = new Set(['bash', 'edit', 'read', 'search', 'web']);
 function isCodeEvent(ev) { return ev.kind === 'tool' && CODE_TOOLS.has(ev.tool); }
-
-// ------------------------------------------------------------------ mumbling: tool events → what an agent would mutter
-// Speech bubbles say what the agent is doing in plain English; the log and panel keep the raw commands.
-// Claude's shell calls carry their own description (ev.intent); everything else is phrased from the tool and its argument.
-const MUMBLE_LEADS = ['', '', '', 'now ', 'ok, ', 'hmm, ', 'right, ', 'just '];
-const DOUBLED_VERBS = new Set(['run', 'rerun', 'get', 'set', 'put', 'stop', 'cut', 'sit', 'plan', 'begin', 'commit', 'drop', 'ship',
-  'split', 'strip', 'swap', 'grab', 'skim', 'scan', 'trim', 'tag', 'map', 'zip', 'dig', 'pin', 'log', 'submit', 'admit', 'rip', 'snip', 'wrap', 'step', 'prep', 'chop', 'pop']);
-function gerund(verb) {
-  const v = verb.toLowerCase();
-  if (DOUBLED_VERBS.has(v)) return v + v.slice(-1) + 'ing';
-  if (v.endsWith('ie')) return v.slice(0, -2) + 'ying';
-  if (v.endsWith('e') && !v.endsWith('ee') && v.length > 2) return v.slice(0, -1) + 'ing';
-  return v + 'ing';
-}
-// "Run database migrations" → "running database migrations"
-function fromIntent(text) {
-  const words = String(text).trim().replace(/[.:]+$/, '').split(/\s+/);
-  if (!words[0]) return '';
-  const first = /^[A-Za-z]+$/.test(words[0]) && !/ing$/i.test(words[0]) ? gerund(words[0]) : words[0].toLowerCase();
-  return (first + ' ' + words.slice(1).join(' ')).trim();
-}
-const baseName = p => String(p || '').replace(/\/+$/, '').split('/').pop() || String(p || '');
-function hostOf(url) { try { return new URL(url).hostname.replace(/^www\./, ''); } catch (err) { return trunc(url, 40); } }
-function quoted(s) { return `“${trunc(s, 40)}”`; }
-function globPhrase(pattern) {
-  const p = String(pattern || '');
-  const ext = p.match(/\*\.(\{[^}]+\}|[\w.]+)$/);
-  const dir = p.split(/[*{]/)[0].replace(/\/+$/, '');
-  const what = ext ? `.${ext[1].replace(/[{}]/g, '').split(',').join('/.')} files` : `files like ${trunc(p, 40)}`;
-  return `looking for ${what}${dir ? ' in ' + baseName(dir) : ''}`;
-}
-// strip wrappers so "cd x && timeout 60 uv run pytest -q" reads as "pytest -q"
-function mainCommand(command) {
-  const parts = String(command || '').split(/\s*(?:&&|\|\||;|\|)\s*/).map(s => s.trim()).filter(Boolean);
-  const pick = parts.find(s => !/^(cd|export|source|set|\.)\b/.test(s)) || parts[0] || '';
-  let words = pick.split(/\s+/);
-  const skip = () => {
-    for (;;) {
-      if (/^\w+=/.test(words[0] || '')) words = words.slice(1);
-      else if (['sudo', 'exec', 'nice', 'time', 'command', 'env'].includes(words[0])) words = words.slice(1);
-      else if (words[0] === 'timeout') words = words.slice(words[1] && /^\d/.test(words[1]) ? 2 : 1);
-      else if (words[0] === 'uv' && words[1] === 'run') words = words.slice(2);
-      else if (['npx', 'pnpx', 'bunx'].includes(words[0])) words = words.slice(words[1] === '-y' ? 2 : 1);
-      else if (/^python[\d.]*$/.test(words[0] || '') && words[1] === '-m') words = words.slice(2);
-      else return;
-    }
-  };
-  skip();
-  return words;
-}
-const GIT_PHRASES = { status: "checking what's changed", diff: 'looking over the diff', log: 'reading the git history', commit: 'committing my work',
-  add: 'staging changes', push: 'pushing my branch', pull: 'pulling the latest', fetch: 'fetching the latest', checkout: 'switching branches',
-  switch: 'switching branches', worktree: 'setting up a worktree', rebase: 'rebasing', merge: 'merging branches', stash: 'stashing changes',
-  show: 'looking at a commit', grep: 'searching the repo', blame: 'working out who wrote this', branch: 'looking at branches',
-  reset: 'resetting a branch', restore: 'restoring a file', 'cherry-pick': 'cherry-picking a commit', clone: 'cloning a repo' };
-// What a shell command is: { cls, prog, sub, arg, w }. The one parse both the mumbling and the androids' activities use,
-// so what an agent says and what it does agree. For git and npm-style runners `sub` is the subcommand or script.
-function shellClass(command) {
-  const wrapped = String(command || '').match(/^\s*(?:ba|z)?sh\s+-l?c\s+(['"])([\s\S]*)\1\s*$/);   // codex: bash -lc '…'
-  if (wrapped) return shellClass(wrapped[2]);
-  const w = mainCommand(command), prog = baseName(w[0] || ''), arg = w.slice(1).find(x => !x.startsWith('-')) || '';
-  const is = (cls, sub = w[1] || '') => ({ cls, prog, sub, arg, w });
-  if (!prog) return is('none');
-  if (prog === 'git') return is('git', w.find((x, i) => i > 0 && !x.startsWith('-')) || '');
-  if (/^(pytest|vitest|jest|mocha|tox|nox)$/.test(prog) || /\btest\b/.test(w.slice(0, 3).join(' '))) return is('test');
-  if (/^(npm|pnpm|yarn|bun)$/.test(prog)) {
-    if (/^(i|install|ci|add)$/.test(w[1] || '')) return is('install');
-    const script = w[1] === 'run' ? w[2] || '' : w[1] || '';
-    return is(/build/.test(script) ? 'build' : /lint/.test(script) ? 'lint' : /format|prettier/.test(script) ? 'format' : /dev|start|serve/.test(script) ? 'serve' : 'script', script);
-  }
-  if (prog === 'make') return is('make');
-  if (/^(eslint|ruff|flake8|pylint|mypy|pyright|tsc)$/.test(prog)) return is(prog === 'tsc' || prog === 'mypy' || prog === 'pyright' ? 'typecheck' : 'lint');
-  if (/^(prettier|black|isort)$/.test(prog)) return is('format');
-  if (/^(ls|tree|find|fd|du|stat)$/.test(prog)) return is('list');
-  if (/^(cat|head|tail|less|bat|sed|awk|jq|wc)$/.test(prog)) return is('cat');
-  if (/^(grep|rg|ag)$/.test(prog)) return is('grep');
-  if (/^(curl|wget|http)$/.test(prog)) return is('curl');
-  if (prog === 'ssh') return is('ssh');
-  if (/^(scp|rsync)$/.test(prog)) return is('copy');
-  if (/^docker(-compose)?$/.test(prog)) return is('docker');
-  if (/^(psql|mysql|sqlite3)$/.test(prog)) return is('db');
-  if (/^(python[\d.]*|node|ruby|deno|bun|bash|sh|zsh)$/.test(prog)) return is('script-run');
-  if (prog === 'manage.py' || arg === 'manage.py') return is('django');
-  if (/^(kill|pkill|killall)$/.test(prog)) return is('kill');
-  if (prog === 'mkdir') return is('mkdir');
-  if (prog === 'rm') return is('rm');
-  if (/^(mv|cp|ln)$/.test(prog)) return is('move');
-  if (prog === 'gh') return is('gh');
-  if (prog === 'fleet') return is('fleet');
-  if (prog === 'sleep') return is('sleep');
-  if (/^(echo|printf)$/.test(prog)) return is('echo');
-  if (/^(playwright|chromium|chrome)$/.test(prog)) return is('shots');
-  if (/^(pip|pip3|uv|poetry)$/.test(prog)) return is('packages');
-  if (/^(ps|top|htop|pgrep|lsof|ss|netstat)$/.test(prog)) return is('ps');
-  if (/^(tmux|screen)$/.test(prog)) return is('tmux');
-  return is('other');
-}
-const SHELL_PHRASES = { none: 'at the terminal', test: 'running the tests', install: 'installing dependencies', build: 'building it',
-  lint: 'linting', typecheck: 'type-checking', format: 'tidying the formatting', serve: 'starting the dev server', copy: 'copying files across',
-  db: 'querying the database', django: 'poking Django', kill: 'stopping a process', mkdir: 'making a folder', rm: 'cleaning up',
-  move: 'shuffling files around', fleet: 'checking on the fleet', sleep: 'waiting a moment', echo: 'jotting something down',
-  shots: 'taking screenshots', packages: 'sorting out python packages', ps: 'checking what’s running', tmux: 'juggling terminals' };
-function shellPhrase(command) {
-  const { cls, prog, sub, arg, w } = shellClass(command);
-  switch (cls) {
-    case 'git': return GIT_PHRASES[sub] || 'doing some git';
-    case 'script': return sub ? `running ${sub}` : 'fiddling with npm';
-    case 'make': return sub ? `running make ${sub}` : 'running make';
-    case 'list': return `looking around${arg && !arg.startsWith('.') ? ' ' + baseName(arg) : ''}`;
-    case 'cat': return arg && !/^['"\d]/.test(arg) ? `reading ${baseName(arg)}` : 'reading some output';
-    case 'grep': return arg ? `searching for ${quoted(arg.replace(/^['"]|['"]$/g, ''))}` : 'searching';
-    case 'curl': { const url = w.find(x => /^https?:/.test(x.replace(/^['"]/, ''))); return url ? `poking ${hostOf(url.replace(/^['"]|['"]$/g, ''))}` : 'poking a server'; }
-    case 'ssh': return `hopping onto ${arg.split('@').pop() || 'another box'}`;
-    case 'docker': return sub === 'compose' || prog === 'docker-compose' ? 'wrangling containers' : 'fiddling with docker';
-    case 'script-run': return arg ? `running ${baseName(arg)}` : `trying something in ${prog.replace(/[\d.]+$/, '')}`;
-    case 'gh': return sub === 'pr' ? 'checking the pull request' : sub === 'issue' ? 'looking at issues' : 'talking to GitHub';
-    case 'other': return `running ${prog}`;
-  }
-  return SHELL_PHRASES[cls];
-}
-function toolPhrase(ev) {
-  const s = ev.summary || '', name = ev.name || '';
-  if (ev.intent) return fromIntent(ev.intent);
-  switch (name) {
-    case 'Bash': case 'shell': case 'BashOutput': return name === 'BashOutput' ? 'checking on a background job' : shellPhrase(s);
-    case 'Read': return `reading ${baseName(s)}`;
-    case 'Edit': case 'MultiEdit': return `editing ${baseName(s)}`;
-    case 'Write': return `writing ${baseName(s)}`;
-    case 'NotebookEdit': return `editing ${baseName(s)}`;
-    case 'apply_patch': return `editing ${s.split(', ').map(baseName).slice(0, 2).join(' and ')}`;
-    case 'Grep': return `searching for ${quoted(s)}`;
-    case 'Glob': return globPhrase(s);
-    case 'WebFetch': return `reading ${hostOf(s)}`;
-    case 'WebSearch': case 'web_search': return `searching the web for ${quoted(s)}`;
-    case 'TodoWrite': case 'TaskCreate': case 'TaskUpdate': return 'updating my todo list';
-    case 'Task': case 'Agent': return s ? `asking a helper to ${fromIntent(s).replace(/^(\w+)ing\b/, (m, v) => v)}` : 'asking a helper';
-    case 'Skill': return `reading up on ${trunc(s, 40)}`;
-    case 'AskUserQuestion': return 'waiting on a question for you';
-    case 'ExitPlanMode': case 'EnterPlanMode': return 'thinking through a plan';
-  }
-  switch (ev.tool) {
-    case 'bash': return shellPhrase(s);
-    case 'edit': return s ? `editing ${baseName(s)}` : 'editing';
-    case 'read': return s ? `reading ${baseName(s)}` : 'reading';
-    case 'search': return s ? `searching for ${quoted(s)}` : 'searching';
-    case 'web': return /^https?:/.test(s) ? `reading ${hostOf(s)}` : `looking up ${quoted(s)}`;
-    case 'think': return s && s !== 'thinking…' ? s : 'thinking';
-    case 'plan': return 'updating my todo list';
-    case 'delegate': return 'handing something off';
-  }
-  return name ? `using ${name.replace(/^mcp__.+__/, '').replace(/_/g, ' ')}` : 'working on it';
-}
-function mumble(ev) {
-  const phrase = toolPhrase(ev).trim();
-  if (ev.tool === 'think') return phrase;   // already the agent's own words
-  const lead = MUMBLE_LEADS[hash(ev.summary + (ev.ts || '')) % MUMBLE_LEADS.length];
-  return trunc(lead + phrase, 110) + '…';
-}
 
 function renderFeed() {
   const ul = document.getElementById('feedList');
@@ -2964,15 +2100,15 @@ function updateHint() {
 function stream() {
   const source = new EventSource('/api/stream');
   source.addEventListener('state', (message) => {
-    live = { ok: true, at: Date.now(), err: null };
+    setLive({ ok: true, at: Date.now(), err: null });
     applyState(JSON.parse(message.data));
   });
   source.addEventListener('ping', () => {
-    live = { ok: true, at: Date.now(), err: null };
+    setLive({ ok: true, at: Date.now(), err: null });
     renderLive();
   });
   source.onerror = () => {
-    live = { ok: false, at: live.at, err: 'stream disconnected — reconnecting' };
+    setLive({ ok: false, at: live.at, err: 'stream disconnected — reconnecting' });
     renderLive(); updateHint();
   };
 }
@@ -3549,4 +2685,3 @@ loadAssets().then(() => {
   hint.innerHTML = `<h2>The deck couldn’t load its 3D assets</h2><p><code>${esc(err.message || String(err))}</code></p><p>They are served from <code>/vendor/</code> and <code>/assets/</code> by <code>fleet web</code>.</p>`;
   console.error(err);
 });
-})();
