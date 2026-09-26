@@ -2,6 +2,7 @@
 
 import json
 import re
+import runpy
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -188,7 +189,7 @@ def test_an_end_node_lists_its_latest_items(deck: Deck, fixture_pipelines: dict[
     page = deck.page
     open_screen(deck, "home:sample-training")
     run = fixture_pipelines["pipeline_reports"][0]["run"]
-    expect(page.locator("#skSide tbody tr")).to_have_count(6)
+    expect(page.locator("#skSide tbody tr")).to_have_count(7)
     page.locator('#skSvg .sk-node[data-node="null cell"] rect').click()
     items = run["recent"]["null cell"]
     expect(page.locator("#skSide h3")).to_contain_text("null cell")
@@ -204,10 +205,29 @@ def test_an_end_node_lists_its_latest_items(deck: Deck, fixture_pipelines: dict[
     expect(page.locator("#skSvg .sk-cap")).to_have_count(1)
     expect(page.locator("#skSvg .sk-cap")).to_contain_text("by first of its reasons")
     deck.shot("drilldown")
+    assert page.evaluate(DRILL_FITS % json.dumps("null cell")) == {"label": True, "wide": []}
     page.locator("#skSide [data-back]").click()
-    expect(page.locator("#skSide tbody tr")).to_have_count(6)
+    expect(page.locator("#skSide tbody tr")).to_have_count(7)
+    # chosen from the table, a node off to the side of a phone's chart is brought into view with its whole label
+    long = next(n for n in run["nodes"][-1] if len(n) >= 45)
+    page.evaluate("(c => { c.scrollLeft = 0; })(document.getElementById('skChart'))")
+    page.locator(f'#skSide tr[data-node="{long}"]').click()
+    expect(page.locator("#skSide h3")).to_contain_text(long)
+    deck.shot("drilldown-long")
+    assert page.evaluate(DRILL_FITS % json.dumps(long)) == {"label": True, "wide": []}
     close(deck)
     assert deck.errors == []
+
+
+DRILL_FITS = """(name => {   // the chosen node's column's labels in the chart's view; nothing in the side list wider than it
+  const c = document.getElementById('skChart').getBoundingClientRect(), side = document.getElementById('skSide');
+  const nodes = [...document.querySelectorAll('#skSvg .sk-node')], g = nodes.find(g => g.dataset.node === name);
+  const x = g.querySelector('rect').getBoundingClientRect().left, s = side.getBoundingClientRect();
+  const column = nodes.filter(n => Math.abs(n.querySelector('rect').getBoundingClientRect().left - x) < 1)
+    .map(n => n.querySelector('text').getBoundingClientRect());
+  return { label: column.every(t => t.left >= c.left && t.right <= c.right),
+    wide: [...side.querySelectorAll('*')].filter(el => el.getBoundingClientRect().right > s.right + 0.5).map(el => el.textContent.slice(0, 40)) };
+})(%s)"""
 
 
 INSIDE_SVG = """[...document.querySelectorAll('#skSvg .sk-ghost, #skSvg .sk-band, #skSvg text')].filter(el => {
@@ -221,6 +241,37 @@ def test_bands_outlines_and_labels_stay_inside_the_chart(deck: Deck) -> None:
     outside = deck.page.evaluate(INSIDE_SVG)
     close(deck)
     assert outside == []
+
+
+LONG_LABEL = """(name => {
+  const chart = document.getElementById('skChart');
+  chart.scrollLeft = chart.scrollWidth;   // a phone scrolls to the last column
+  const g = [...document.querySelectorAll('#skSvg .sk-node')].find(g => g.dataset.node === name);
+  const r = g.querySelector('text').getBoundingClientRect(), c = chart.getBoundingClientRect();
+  return { inside: r.left >= c.left && r.right <= c.right && r.top >= c.top && r.bottom <= c.bottom,
+    shown: [...g.querySelectorAll('text .nm')].map(t => t.textContent).join(' '), tip: g.querySelector('title')?.textContent ?? null };
+})"""
+
+
+def test_a_long_end_label_is_whole_and_inside_the_chart(deck: Deck, fixture_pipelines: dict[str, Any]) -> None:
+    """The last column's margin is as wide as its longest name needs, so a long reason shows in full, in view."""
+    name = next(n for n in fixture_pipelines["pipeline_reports"][0]["run"]["nodes"][-1] if len(n) >= 45)
+    open_screen(deck, "home:sample-training")
+    got = deck.page.evaluate(f"{LONG_LABEL}({json.dumps(name)})")
+    deck.shot("long-label")
+    close(deck)
+    assert got == {"inside": True, "shown": name, "tip": None}, got
+
+
+def test_an_end_name_wider_than_its_margin_wraps_then_ends_in_an_ellipsis(deck: Deck) -> None:
+    got = deck.page.evaluate("""import('/js/sankey.js').then(({ nameLines }) => [
+      nameLines('null cell', 200), nameLines('line totals do not add up to the printed total', 200),
+      nameLines('line totals do not add up to the printed total on any of the pages of this invoice', 200),
+      nameLines('line_totals_do_not_add_up_to_the_printed_total', 200)])""")
+    assert got[0] == ["null cell"]
+    assert " ".join(got[1]) == "line totals do not add up to the printed total" and len(got[1]) == 2
+    assert len(got[2]) == 2 and got[2][0].startswith("line totals") and got[2][1].endswith("…")
+    assert len(got[3]) == 1 and got[3][0].endswith("…")
 
 
 LABELS_ON_BANDS = """(() => {
@@ -240,8 +291,10 @@ LABELS_ON_BANDS = """(() => {
       if (r.left < q.right && q.left < r.right && r.top < q.bottom && q.top < r.bottom) hits.push([g.dataset.node, 'stub', chip]);
     }
   }
-  const boxes = [...svg.querySelectorAll('.sk-node text, .sk-cap')].map(t => t.getBoundingClientRect());
-  const crowded = boxes.some((p, i) => boxes.some((q, j) => i < j && p.left < q.right && q.left < p.right && p.top < q.bottom && q.top < p.bottom));
+  const els = [...svg.querySelectorAll('.sk-node text, .sk-cap')], boxes = els.map(t => t.getBoundingClientRect());
+  const name = el => el.closest('[data-node]')?.dataset.node || 'caption';
+  const crowded = boxes.flatMap((p, i) => boxes.map((q, j) => i < j && p.left < q.right && q.left < p.right && p.top < q.bottom
+    && q.top < p.bottom ? [name(els[i]), name(els[j])] : null)).filter(Boolean);
   return { hits, crowded, chips: [...svg.querySelectorAll('.sk-node.chip')].map(g => g.dataset.node) };
 })()"""
 
@@ -307,13 +360,13 @@ def test_on_a_phone_the_chart_scrolls_to_every_column(deck: Deck) -> None:
 
 
 def test_items_not_yet_gone_on_are_waiting(deck: Deck, fixture_pipelines: dict[str, Any]) -> None:
-    """Mid-run, what a middle column holds beyond what has left it is waiting: a stub and 'N waiting' per node, adding
-    up to the difference between that column and the next."""
+    """Mid-run, what a middle column's nodes that are not declared ends hold beyond what has left them is waiting: a
+    stub and 'N waiting' per node."""
     page = deck.page
     open_screen(deck, "home:sample-training")
     run = fixture_pipelines["pipeline_reports"][0]["run"]
-    counts, (middle, after) = run["counts"], run["nodes"][2:4]
-    gap = sum(counts[n] for n in middle) - sum(counts[n] for n in after)
+    middle = [n for n in run["nodes"][2] if n not in run["ends"]]
+    gap = sum(run["counts"][n] for n in middle) - sum(c for s, _, c in run["edges"] if s in middle)
     assert gap > 0
     shown = 0
     for node in middle:
@@ -323,6 +376,69 @@ def test_items_not_yet_gone_on_are_waiting(deck: Deck, fixture_pipelines: dict[s
     assert shown == gap
     expect(page.locator("#skSvg .sk-wait")).to_have_count(len(middle))
     close(deck)
+    assert deck.errors == []
+
+
+SHOW_REPORT = """(async report => {   // what fleetd would stream next for the open pipeline
+  const { pipelineByKey, applyPipeline } = await import('/js/pipelines.js');
+  const p = pipelineByKey('home:sample-training');
+  applyPipeline({ ...p, ...report, seq: (p.seq || 0) + 1 });
+})"""
+SIDE_AND_WAITS = """[[...document.querySelectorAll('#skSide tbody tr')].map(r => r.dataset.node),
+  [...document.querySelectorAll('#skSvg .sk-node')].filter(g => / waiting$/.test(g.querySelector('text').textContent))
+    .map(g => g.dataset.node)]"""
+
+
+LABEL_NEAR = """(() => {   // node with no band leaving it → pixels between its label and it (with its stub)
+  const svg = document.getElementById('skSvg'), out = {};
+  const leaving = new Set([...svg.querySelectorAll('.sk-band')].map(b => b.dataset.band.split('→')[0]));
+  for (const g of svg.querySelectorAll('.sk-node')) {
+    if (leaving.has(g.dataset.node)) continue;
+    const t = g.querySelector('text').getBoundingClientRect(), r = g.querySelector('rect:not(.sk-chip)').getBoundingClientRect();
+    const stub = [...svg.querySelectorAll('.sk-wait')].map(s => s.getBoundingClientRect())
+      .find(s => Math.abs(s.left - r.right) < 1 && s.top >= r.top - 1 && s.bottom <= r.bottom + 1);
+    const right = stub ? stub.right : r.right;
+    out[g.dataset.node] = Math.max(0, t.left - right, r.left - t.right, t.top - r.bottom, r.top - t.bottom);
+  }
+  return out;
+})()"""
+
+
+def test_mid_run_nodes_waiting_for_a_gate_burst_are_not_ends(deck: Deck, fixture_pipelines: dict[str, Any]) -> None:
+    """A run with no finished run before it, part-way, whose gates run as a burst at the end: nothing has left agree,
+    disagree or profile yet, but alone and unsettled beside them pass items on. The run line's `ends` says they are
+    waiting; without it the deck can only guess, and takes them for ends as it always has."""
+    generator = runpy.run_path(str(FIXTURE.parent / "make_pipelines.py"))
+    page = deck.page
+    open_screen(deck, "home:sample-training")
+    try:
+        got = {}
+        for declared in (None, generator["ENDS"]):
+            report = generator["gate_burst"](declared)
+            burst, run = set(generator["BURST"]), report["run"]
+            assert all(source not in burst for source, _, _ in run["edges"]) and report["baseline"] is None
+            page.evaluate(f"{SHOW_REPORT}({json.dumps(report)})")
+            expect(page.locator("#skMeta")).to_contain_text("gates at the end")
+            got[bool(declared)] = page.evaluate(SIDE_AND_WAITS)
+        deck.shot("gate-burst-mid-run")
+        # a node nothing leaves keeps its label beside it, off every band, as any label
+        page.evaluate("(c => { c.scrollLeft = 0; })(document.getElementById('skChart'))")
+        near, placed = page.evaluate(LABEL_NEAR), page.evaluate(LABELS_ON_BANDS)
+        assert [hit for hit in placed["hits"] if not hit[2] or hit[1] == "stub"] == [] and not placed["crowded"], placed
+        assert burst <= set(near) and all(gap <= 8 for gap in near.values()), near
+        ends, waits = got[True]
+        last = run["nodes"][-1]
+        assert set(ends) == {n for n in [*generator["ENDS"], *last] if run["counts"].get(n)}
+        assert burst <= set(waits) and not burst & set(ends)
+        assert burst <= set(got[False][0])   # undeclared: today's guess
+        page.evaluate(f"{SHOW_REPORT}({json.dumps(generator['gate_burst'](generator['ENDS'], 'done'))})")
+        expect(page.locator("#skMeta")).to_contain_text("done")
+        ends, waits = page.evaluate(SIDE_AND_WAITS)
+        deck.shot("gate-burst-done")
+        assert waits == [] and not burst & set(ends)   # the burst passed every item on
+    finally:
+        page.evaluate(f"{SHOW_REPORT}({json.dumps(fixture_pipelines['pipeline_reports'][0])})")
+        close(deck)
     assert deck.errors == []
 
 
@@ -337,6 +453,17 @@ def test_once_a_run_is_done_what_a_node_holds_ended_there(deck: Deck) -> None:
     assert got == [[["b", "x"], {"a": 1}], [["b", "x"], {"a": 1}], [["a", "b", "x"], {}]]
 
 
+def test_declared_ends_settle_which_nodes_end_items_until_the_run_is_done(deck: Deck) -> None:
+    got = deck.page.evaluate("""import('/js/sankey.js').then(({ terminals, waiting }) => {
+      const run = (status, ends) => ({ status, ends, nodes: [['in'], ['a', 'b', 'c'], ['x', 'y']],
+        counts: { in: 10, a: 5, b: 3, c: 2, x: 5, y: 0 }, edges: [['in', 'a', 5], ['in', 'b', 3], ['in', 'c', 2], ['a', 'x', 5]] });
+      return ['running', 'failed', 'done'].map(s => { const r = run(s, ['c']), ends = terminals(r, null);
+        return [[...ends].sort(), Object.fromEntries(waiting(r, ends))]; });
+    })""")
+    # b has nothing leaving it and its neighbour a passes items on, but only c is declared: b's items wait
+    assert got == [[["c", "x"], {"b": 3}], [["c", "x"], {"b": 3}], [["b", "c", "x"], {}]]
+
+
 def test_a_finished_run_shows_its_change_on_the_baseline(deck: Deck) -> None:
     got = deck.page.evaluate("""import('/js/sankey.js').then(({ versus }) => {
       const base = { counts: { confident: 100, review: 60 } }, nodes = [['confident', 'review']];
@@ -345,6 +472,21 @@ def test_a_finished_run_shows_its_change_on_the_baseline(deck: Deck) -> None:
         .map(v => v && v.text);
     })""")
     assert got == ["prev 62.5%", "−10", "+12", None]
+
+
+ALL_IN_VIEW = """(() => {
+  const c = document.getElementById('skChart').getBoundingClientRect(), out = [], onNodes = [];
+  const nodes = [...document.querySelectorAll('#skSvg .sk-node')];
+  const rects = nodes.map(g => [g.dataset.node, g.querySelector('rect:not(.sk-chip)').getBoundingClientRect()]);
+  for (const g of nodes) {
+    const t = g.querySelector('text').getBoundingClientRect();
+    for (const [what, r] of [['node', rects.find(([n]) => n === g.dataset.node)[1]], ['label', t]])
+      if (r.top < c.top - 0.5 || r.bottom > c.bottom + 0.5 || r.left < c.left - 0.5 || r.right > c.right + 0.5) out.push([g.dataset.node, what]);
+    for (const [n, r] of rects)
+      if (t.left < r.right && r.left < t.right && t.top < r.bottom && r.top < t.bottom) onNodes.push([g.dataset.node, n]);
+  }
+  return { out, onNodes };
+})()"""
 
 
 DOT_PIXELS ="""(() => { const c = document.getElementById('skDots'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
@@ -374,6 +516,16 @@ def test_the_demo_pipeline_moves_while_the_sankey_is_open(browser: Browser, pipe
         .textContent.replace(/,/g, '')) > {first}""", timeout=8000)
     page.wait_for_timeout(250)   # mid-way through an update: bands easing, dots on their way
     deck.shot("sankey-live")
+    # every node and label is in the chart's view, off every node and band, and no two labels overlap: now, mid-way
+    # through an update, and again after the next
+    count = lambda: int(page.locator('#skSvg .sk-node[data-node="items"] text .ct').first.text_content().replace(",", ""))
+    for moment in range(2):
+        if moment:
+            page.wait_for_function(f"""Number(document.querySelector('#skSvg .sk-node[data-node="items"] text .ct')
+                .textContent.replace(/,/g, '')) > {count()}""", timeout=8000)
+        fit, placed = page.evaluate(ALL_IN_VIEW), page.evaluate(LABELS_ON_BANDS)
+        assert fit == {"out": [], "onNodes": []} and placed["crowded"] == [], (moment, fit, placed)
+        assert [hit for hit in placed["hits"] if not hit[2] or hit[1] == "stub"] == [], (moment, placed)
     # the table lists exactly the chart's end nodes, and an end node holds items: empty ones are in neither
     ends = page.evaluate("""[[...document.querySelectorAll('#skSvg .sk-node.end')].map(g => g.dataset.node),
       [...document.querySelectorAll('#skSide tbody tr')].map(r => [r.dataset.node, r.cells[1].textContent])]""")
