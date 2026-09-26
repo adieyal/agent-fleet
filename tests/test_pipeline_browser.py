@@ -368,7 +368,8 @@ def test_the_demo_pipeline_moves_while_the_sankey_is_open(browser: Browser, pipe
     assert (glows[0] != glows[1]) == (motion == "no-preference")   # a live run's frame pulses, unless motion is reduced
     open_screen(deck, "node-a:demo-training")
     expect(page.locator("#skMeta")).to_contain_text("demo run 1 (synthetic)")
-    first = int(page.locator('#skSvg .sk-node[data-node="items"] text .ct').text_content().replace(",", ""))
+    first = int(page.locator('#skSvg .sk-node[data-node="items"] text .ct').first.text_content().replace(",", ""))
+    assert "waiting" not in page.locator('#skSvg .sk-node[data-node="items"] text').text_content()
     page.wait_for_function(f"""Number(document.querySelector('#skSvg .sk-node[data-node="items"] text .ct')
         .textContent.replace(/,/g, '')) > {first}""", timeout=8000)
     page.wait_for_timeout(250)   # mid-way through an update: bands easing, dots on their way

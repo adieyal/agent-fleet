@@ -262,7 +262,8 @@ function drawFrame() {
 // A label is its node's name and count, then share and prev for an end node, or what waits in it. Baseline outlines go
 // under the bands; what a node holds that has not gone on yet is a hatched stub at its right edge.
 function renderChart(L, run, base, width, height, clear, firsts, now) {
-  const ends = terminals(run, base), values = now.counts, waits = waiting(now, ends);
+  // which nodes end or wait is the report's; how much, the eased values' (a tween's fractions would make "0 waiting")
+  const ends = terminals(run, base), values = now.counts, waits = new Map([...waiting(run, ends).keys()].map(n => [n, held(now, n)]));
   const lastCol = run.nodes.length - 1;
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
   const ghosts = L.bands.filter(b => b.ghost).map(b => `<path class="sk-ghost" d="${bandPath(b.ghost)}"/>`).join('');
