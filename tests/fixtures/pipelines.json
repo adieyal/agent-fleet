@@ -69,7 +69,7 @@
     "run_id": "20260926T120000-r2",
     "pipeline": "sample-training",
     "label": "synthetic run",
-    "started_at": 1790399400,
+    "started_at": 1790398800,
     "total": 3000,
     "nodes": [
      [
@@ -102,310 +102,310 @@
      [
       "items",
       "unlearnable",
-      135
+      146
      ],
      [
       "items",
       "decided",
-      1796
-     ],
-     [
-      "decided",
-      "agree",
-      717
-     ],
-     [
-      "decided",
-      "disagree",
-      291
+      1776
      ],
      [
       "items",
       "tied",
-      469
-     ],
-     [
-      "tied",
-      "agree",
-      156
+      478
      ],
      [
       "decided",
       "alone",
-      521
+      538
      ],
      [
       "decided",
-      "profile",
-      267
-     ],
-     [
-      "tied",
-      "unsettled",
-      313
-     ],
-     [
-      "agree",
-      "confident",
-      746
-     ],
-     [
       "disagree",
-      "review",
-      226
+      258
      ],
      [
-      "review",
-      "sum mismatch",
-      188
+      "decided",
+      "agree",
+      712
+     ],
+     [
+      "decided",
+      "profile",
+      268
+     ],
+     [
+      "tied",
+      "unsettled",
+      332
+     ],
+     [
+      "tied",
+      "agree",
+      146
+     ],
+     [
+      "profile",
+      "confident",
+      186
+     ],
+     [
+      "agree",
+      "confident",
+      639
      ],
      [
       "alone",
       "confident",
-      457
+      407
      ],
      [
-      "profile",
+      "alone",
       "review",
-      45
-     ],
-     [
-      "review",
-      "profile disagree",
-      154
-     ],
-     [
-      "unsettled",
-      "review",
-      234
-     ],
-     [
-      "review",
-      "null cell",
-      183
-     ],
-     [
-      "profile",
-      "confident",
-      222
-     ],
-     [
-      "unsettled",
-      "confident",
-      79
+      70
      ],
      [
       "review",
       "low support",
-      171
+      143
+     ],
+     [
+      "unsettled",
+      "review",
+      208
      ],
      [
       "disagree",
       "confident",
-      65
+      61
      ],
      [
       "agree",
       "review",
-      127
+      99
      ],
      [
-      "alone",
       "review",
-      64
+      "profile disagree",
+      162
+     ],
+     [
+      "review",
+      "null cell",
+      135
+     ],
+     [
+      "unsettled",
+      "confident",
+      74
+     ],
+     [
+      "review",
+      "sum mismatch",
+      144
+     ],
+     [
+      "disagree",
+      "review",
+      177
+     ],
+     [
+      "profile",
+      "review",
+      30
      ]
     ],
     "counts": {
-     "confident": 1569,
-     "profile": 267,
-     "review": 696,
-     "sum mismatch": 188,
+     "confident": 1367,
+     "disagree": 258,
+     "alone": 538,
+     "sum mismatch": 144,
+     "unsettled": 332,
      "items": 2400,
-     "unsettled": 313,
-     "tied": 469,
-     "agree": 873,
-     "low support": 171,
-     "disagree": 291,
-     "decided": 1796,
-     "null cell": 183,
-     "unlearnable": 135,
-     "profile disagree": 154,
-     "alone": 521
+     "review": 584,
+     "decided": 1776,
+     "unlearnable": 146,
+     "profile": 268,
+     "profile disagree": 162,
+     "null cell": 135,
+     "tied": 478,
+     "agree": 858,
+     "low support": 143
     },
-    "flows": 7626,
+    "flows": 7189,
     "recent": {
      "unlearnable": [
       {
-       "item": "S-201962",
-       "ts": 1790399887.23,
+       "item": "S-202035",
+       "ts": 1790399814.1083333,
        "attrs": {
         "why": "no printed total"
        }
       },
       {
-       "item": "S-202040",
-       "ts": 1790399906.6,
+       "item": "S-202046",
+       "ts": 1790399819.59,
+       "attrs": {
+        "why": "unreadable scan"
+       }
+      },
+      {
+       "item": "S-202072",
+       "ts": 1790399832.5466666,
        "attrs": {
         "why": "no printed total"
        }
       },
       {
-       "item": "S-202064",
-       "ts": 1790399912.56,
+       "item": "S-202079",
+       "ts": 1790399836.035,
        "attrs": {
         "why": "unreadable scan"
        }
       },
       {
-       "item": "S-202074",
-       "ts": 1790399915.0433333,
+       "item": "S-202092",
+       "ts": 1790399842.5133333,
        "attrs": {
         "why": "no printed total"
        }
       },
       {
-       "item": "S-202090",
-       "ts": 1790399919.0166667,
+       "item": "S-202112",
+       "ts": 1790399852.48,
        "attrs": {
         "why": "unreadable scan"
        }
       },
       {
-       "item": "S-202106",
-       "ts": 1790399922.99,
+       "item": "S-202113",
+       "ts": 1790399852.9783332,
+       "attrs": {
+        "why": "no printed total"
+       }
+      },
+      {
+       "item": "S-202126",
+       "ts": 1790399859.4566667,
        "attrs": {
         "why": "unreadable scan"
        }
       },
       {
-       "item": "S-202131",
-       "ts": 1790399929.1983333,
-       "attrs": {
-        "why": "unreadable scan"
-       }
-      },
-      {
-       "item": "S-202133",
-       "ts": 1790399929.695,
+       "item": "S-202132",
+       "ts": 1790399862.4466667,
        "attrs": {
         "why": "unreadable scan"
        }
       },
       {
        "item": "S-202142",
-       "ts": 1790399931.93,
+       "ts": 1790399867.43,
        "attrs": {
         "why": "no printed total"
        }
       },
       {
-       "item": "S-202152",
-       "ts": 1790399934.4133334,
-       "attrs": {
-        "why": "no printed total"
-       }
-      },
-      {
-       "item": "S-202156",
-       "ts": 1790399935.4066668,
-       "attrs": {
-        "why": "no printed total"
-       }
-      },
-      {
-       "item": "S-202159",
-       "ts": 1790399936.1516666,
+       "item": "S-202174",
+       "ts": 1790399883.3766668,
        "attrs": {
         "why": "no printed total"
        }
       },
       {
        "item": "S-202182",
-       "ts": 1790399941.8633332,
+       "ts": 1790399887.3633332,
        "attrs": {
         "why": "unreadable scan"
        }
       },
       {
-       "item": "S-202188",
-       "ts": 1790399943.3533332,
-       "attrs": {
-        "why": "no printed total"
-       }
-      },
-      {
-       "item": "S-202191",
-       "ts": 1790399944.0983334,
+       "item": "S-202208",
+       "ts": 1790399900.32,
        "attrs": {
         "why": "unreadable scan"
        }
       },
       {
-       "item": "S-202196",
-       "ts": 1790399945.34,
+       "item": "S-202228",
+       "ts": 1790399910.2866666,
        "attrs": {
         "why": "no printed total"
        }
       },
       {
-       "item": "S-202222",
-       "ts": 1790399951.7966666,
+       "item": "S-202232",
+       "ts": 1790399912.28,
        "attrs": {
         "why": "unreadable scan"
        }
       },
       {
-       "item": "S-202254",
-       "ts": 1790399959.7433333,
-       "attrs": {
-        "why": "unreadable scan"
-       }
-      },
-      {
-       "item": "S-202259",
-       "ts": 1790399960.985,
+       "item": "S-202251",
+       "ts": 1790399921.7483332,
        "attrs": {
         "why": "no printed total"
        }
       },
       {
-       "item": "S-202268",
-       "ts": 1790399963.22,
-       "attrs": {
-        "why": "no printed total"
-       }
-      },
-      {
-       "item": "S-202273",
-       "ts": 1790399964.4616666,
+       "item": "S-202260",
+       "ts": 1790399926.2333333,
        "attrs": {
         "why": "no printed total"
        }
       },
       {
        "item": "S-202298",
-       "ts": 1790399970.67,
+       "ts": 1790399945.17,
        "attrs": {
         "why": "no printed total"
        }
       },
       {
-       "item": "S-202328",
-       "ts": 1790399978.12,
+       "item": "S-202299",
+       "ts": 1790399945.6683333,
        "attrs": {
         "why": "unreadable scan"
        }
       },
       {
-       "item": "S-202387",
-       "ts": 1790399992.7716668,
+       "item": "S-202314",
+       "ts": 1790399953.1433334,
+       "attrs": {
+        "why": "no printed total"
+       }
+      },
+      {
+       "item": "S-202343",
+       "ts": 1790399967.595,
        "attrs": {
         "why": "unreadable scan"
        }
       },
       {
-       "item": "S-202399",
-       "ts": 1790399995.7516668,
+       "item": "S-202367",
+       "ts": 1790399979.555,
+       "attrs": {
+        "why": "no printed total"
+       }
+      },
+      {
+       "item": "S-202369",
+       "ts": 1790399980.5516667,
+       "attrs": {
+        "why": "unreadable scan"
+       }
+      },
+      {
+       "item": "S-202383",
+       "ts": 1790399987.5283334,
+       "attrs": {
+        "why": "no printed total"
+       }
+      },
+      {
+       "item": "S-202397",
+       "ts": 1790399994.505,
        "attrs": {
         "why": "unreadable scan"
        }
@@ -413,160 +413,329 @@
      ],
      "confident": [
       {
-       "item": "S-202363",
-       "ts": 1790399997
+       "item": "S-201948",
+       "ts": 1790399973.4739692
       },
       {
-       "item": "S-202364",
-       "ts": 1790399997
+       "item": "S-201913",
+       "ts": 1790399974.086499
       },
       {
-       "item": "S-202365",
-       "ts": 1790399997
+       "item": "S-201935",
+       "ts": 1790399975.113473
       },
       {
-       "item": "S-202366",
-       "ts": 1790399997
+       "item": "S-201964",
+       "ts": 1790399975.4120672
       },
       {
-       "item": "S-202367",
-       "ts": 1790399997
+       "item": "S-201939",
+       "ts": 1790399976.5795958
       },
       {
-       "item": "S-202368",
-       "ts": 1790399997
+       "item": "S-201847",
+       "ts": 1790399976.636389
       },
       {
-       "item": "S-202370",
-       "ts": 1790399997
+       "item": "S-202107",
+       "ts": 1790399976.8623462
       },
       {
-       "item": "S-202371",
-       "ts": 1790399997
+       "item": "S-201953",
+       "ts": 1790399977.5409112
       },
       {
-       "item": "S-202372",
-       "ts": 1790399997
+       "item": "S-201931",
+       "ts": 1790399979.1353183
       },
       {
-       "item": "S-202373",
-       "ts": 1790399997
+       "item": "S-202200",
+       "ts": 1790399979.9158762
       },
       {
-       "item": "S-202374",
-       "ts": 1790399997
+       "item": "S-202136",
+       "ts": 1790399980.05683
       },
       {
-       "item": "S-202378",
-       "ts": 1790399997
+       "item": "S-201894",
+       "ts": 1790399980.4443235
       },
       {
-       "item": "S-202379",
-       "ts": 1790399997
+       "item": "S-202130",
+       "ts": 1790399981.3517983
       },
       {
-       "item": "S-202380",
-       "ts": 1790399997
+       "item": "S-201872",
+       "ts": 1790399982.8535619
       },
       {
-       "item": "S-202381",
-       "ts": 1790399997
+       "item": "S-201900",
+       "ts": 1790399984.1378086
       },
       {
-       "item": "S-202382",
-       "ts": 1790399997
+       "item": "S-202229",
+       "ts": 1790399988.3290946
       },
       {
-       "item": "S-202384",
-       "ts": 1790399997
+       "item": "S-202036",
+       "ts": 1790399988.8122573
       },
       {
-       "item": "S-202386",
-       "ts": 1790399997
+       "item": "S-201995",
+       "ts": 1790399988.9717255
       },
       {
-       "item": "S-202388",
-       "ts": 1790399997
+       "item": "S-202062",
+       "ts": 1790399989.9162514
       },
       {
-       "item": "S-202389",
-       "ts": 1790399997
+       "item": "S-202000",
+       "ts": 1790399989.9637024
       },
       {
-       "item": "S-202390",
-       "ts": 1790399997
+       "item": "S-201955",
+       "ts": 1790399990.0275595
       },
       {
-       "item": "S-202392",
-       "ts": 1790399997
+       "item": "S-202026",
+       "ts": 1790399993.0932539
       },
       {
-       "item": "S-202393",
-       "ts": 1790399997
+       "item": "S-202179",
+       "ts": 1790399993.665958
       },
       {
-       "item": "S-202396",
-       "ts": 1790399997
+       "item": "S-202074",
+       "ts": 1790399994.3272297
       },
       {
-       "item": "S-202398",
-       "ts": 1790399997
+       "item": "S-202192",
+       "ts": 1790399994.789914
       }
      ],
-     "sum mismatch": [
+     "low support": [
       {
-       "item": "S-202067",
-       "ts": 1790399998,
+       "item": "S-201675",
+       "ts": 1790399808.5560856,
        "attrs": {
         "reasons": [
-         "sum mismatch",
-         "profile disagree"
-        ]
-       }
-      },
-      {
-       "item": "S-202068",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "sum mismatch",
          "low support"
         ]
        }
       },
       {
-       "item": "S-202084",
-       "ts": 1790399998,
+       "item": "S-201817",
+       "ts": 1790399827.7659976,
        "attrs": {
         "reasons": [
+         "low support"
+        ]
+       }
+      },
+      {
+       "item": "S-201596",
+       "ts": 1790399831.7149823,
+       "attrs": {
+        "reasons": [
+         "low support"
+        ]
+       }
+      },
+      {
+       "item": "S-201766",
+       "ts": 1790399833.0933013,
+       "attrs": {
+        "reasons": [
+         "low support",
+         "profile disagree"
+        ]
+       }
+      },
+      {
+       "item": "S-201682",
+       "ts": 1790399844.18888,
+       "attrs": {
+        "reasons": [
+         "low support"
+        ]
+       }
+      },
+      {
+       "item": "S-201679",
+       "ts": 1790399853.8366272,
+       "attrs": {
+        "reasons": [
+         "low support",
+         "profile disagree",
+         "null cell"
+        ]
+       }
+      },
+      {
+       "item": "S-201896",
+       "ts": 1790399862.825339,
+       "attrs": {
+        "reasons": [
+         "low support",
+         "null cell"
+        ]
+       }
+      },
+      {
+       "item": "S-201988",
+       "ts": 1790399878.459695,
+       "attrs": {
+        "reasons": [
+         "low support"
+        ]
+       }
+      },
+      {
+       "item": "S-201683",
+       "ts": 1790399880.891522,
+       "attrs": {
+        "reasons": [
+         "low support"
+        ]
+       }
+      },
+      {
+       "item": "S-202001",
+       "ts": 1790399883.7297277,
+       "attrs": {
+        "reasons": [
+         "low support",
+         "null cell",
          "sum mismatch"
         ]
        }
       },
       {
-       "item": "S-202094",
-       "ts": 1790399998,
+       "item": "S-201775",
+       "ts": 1790399886.1512957,
        "attrs": {
         "reasons": [
+         "low support"
+        ]
+       }
+      },
+      {
+       "item": "S-201746",
+       "ts": 1790399891.1011255,
+       "attrs": {
+        "reasons": [
+         "low support",
+         "null cell"
+        ]
+       }
+      },
+      {
+       "item": "S-201899",
+       "ts": 1790399904.2601228,
+       "attrs": {
+        "reasons": [
+         "low support"
+        ]
+       }
+      },
+      {
+       "item": "S-201790",
+       "ts": 1790399908.9154596,
+       "attrs": {
+        "reasons": [
+         "low support",
+         "null cell",
+         "sum mismatch"
+        ]
+       }
+      },
+      {
+       "item": "S-201917",
+       "ts": 1790399929.0524642,
+       "attrs": {
+        "reasons": [
+         "low support",
+         "sum mismatch",
+         "null cell"
+        ]
+       }
+      },
+      {
+       "item": "S-202108",
+       "ts": 1790399933.4806402,
+       "attrs": {
+        "reasons": [
+         "low support",
          "sum mismatch",
          "profile disagree"
         ]
        }
       },
       {
-       "item": "S-202099",
-       "ts": 1790399998,
+       "item": "S-202056",
+       "ts": 1790399940.6840022,
        "attrs": {
         "reasons": [
+         "low support",
+         "null cell"
+        ]
+       }
+      },
+      {
+       "item": "S-201826",
+       "ts": 1790399943.2859797,
+       "attrs": {
+        "reasons": [
+         "low support"
+        ]
+       }
+      },
+      {
+       "item": "S-201926",
+       "ts": 1790399949.3240314,
+       "attrs": {
+        "reasons": [
+         "low support"
+        ]
+       }
+      },
+      {
+       "item": "S-202106",
+       "ts": 1790399962.92035,
+       "attrs": {
+        "reasons": [
+         "low support",
+         "profile disagree",
+         "null cell"
+        ]
+       }
+      },
+      {
+       "item": "S-202176",
+       "ts": 1790399972.32885,
+       "attrs": {
+        "reasons": [
+         "low support"
+        ]
+       }
+      },
+      {
+       "item": "S-202063",
+       "ts": 1790399973.3384774,
+       "attrs": {
+        "reasons": [
+         "low support",
+         "profile disagree",
          "sum mismatch"
         ]
        }
       },
       {
-       "item": "S-202125",
-       "ts": 1790399998,
+       "item": "S-202207",
+       "ts": 1790399982.056855,
        "attrs": {
         "reasons": [
+         "low support",
          "sum mismatch",
          "null cell"
         ]
@@ -574,192 +743,19 @@
       },
       {
        "item": "S-202127",
-       "ts": 1790399998,
+       "ts": 1790399983.395222,
        "attrs": {
         "reasons": [
-         "sum mismatch",
-         "null cell"
-        ]
-       }
-      },
-      {
-       "item": "S-202137",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "sum mismatch",
-         "null cell",
-         "low support"
-        ]
-       }
-      },
-      {
-       "item": "S-202145",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "sum mismatch"
-        ]
-       }
-      },
-      {
-       "item": "S-202164",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "sum mismatch",
-         "low support"
-        ]
-       }
-      },
-      {
-       "item": "S-202171",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "sum mismatch",
-         "null cell"
-        ]
-       }
-      },
-      {
-       "item": "S-202176",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "sum mismatch",
-         "profile disagree"
-        ]
-       }
-      },
-      {
-       "item": "S-202181",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "sum mismatch",
-         "null cell"
-        ]
-       }
-      },
-      {
-       "item": "S-202207",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "sum mismatch",
          "low support",
          "profile disagree"
         ]
        }
       },
       {
-       "item": "S-202214",
-       "ts": 1790399998,
+       "item": "S-202042",
+       "ts": 1790399992.0997097,
        "attrs": {
         "reasons": [
-         "sum mismatch",
-         "null cell",
-         "profile disagree"
-        ]
-       }
-      },
-      {
-       "item": "S-202229",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "sum mismatch"
-        ]
-       }
-      },
-      {
-       "item": "S-202241",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "sum mismatch"
-        ]
-       }
-      },
-      {
-       "item": "S-202251",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "sum mismatch",
-         "null cell",
-         "profile disagree"
-        ]
-       }
-      },
-      {
-       "item": "S-202310",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "sum mismatch",
-         "null cell",
-         "profile disagree"
-        ]
-       }
-      },
-      {
-       "item": "S-202313",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "sum mismatch",
-         "null cell"
-        ]
-       }
-      },
-      {
-       "item": "S-202321",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "sum mismatch",
-         "null cell"
-        ]
-       }
-      },
-      {
-       "item": "S-202336",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "sum mismatch",
-         "null cell"
-        ]
-       }
-      },
-      {
-       "item": "S-202342",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "sum mismatch",
-         "profile disagree"
-        ]
-       }
-      },
-      {
-       "item": "S-202356",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "sum mismatch",
-         "null cell"
-        ]
-       }
-      },
-      {
-       "item": "S-202377",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "sum mismatch",
          "low support"
         ]
        }
@@ -767,46 +763,18 @@
      ],
      "profile disagree": [
       {
-       "item": "S-202008",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "profile disagree"
-        ]
-       }
-      },
-      {
-       "item": "S-202019",
-       "ts": 1790399998,
+       "item": "S-201636",
+       "ts": 1790399794.1219525,
        "attrs": {
         "reasons": [
          "profile disagree",
-         "low support",
-         "sum mismatch"
+         "null cell"
         ]
        }
       },
       {
-       "item": "S-202027",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "profile disagree"
-        ]
-       }
-      },
-      {
-       "item": "S-202032",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "profile disagree"
-        ]
-       }
-      },
-      {
-       "item": "S-202051",
-       "ts": 1790399998,
+       "item": "S-201520",
+       "ts": 1790399796.1824038,
        "attrs": {
         "reasons": [
          "profile disagree",
@@ -815,49 +783,18 @@
        }
       },
       {
-       "item": "S-202055",
-       "ts": 1790399998,
+       "item": "S-201619",
+       "ts": 1790399799.1813045,
        "attrs": {
         "reasons": [
          "profile disagree",
-         "sum mismatch"
-        ]
-       }
-      },
-      {
-       "item": "S-202058",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "profile disagree",
-         "low support",
          "null cell"
         ]
        }
       },
       {
-       "item": "S-202089",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "profile disagree"
-        ]
-       }
-      },
-      {
-       "item": "S-202102",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "profile disagree",
-         "null cell",
-         "sum mismatch"
-        ]
-       }
-      },
-      {
-       "item": "S-202112",
-       "ts": 1790399998,
+       "item": "S-201713",
+       "ts": 1790399817.963061,
        "attrs": {
         "reasons": [
          "profile disagree",
@@ -867,19 +804,46 @@
        }
       },
       {
-       "item": "S-202128",
-       "ts": 1790399998,
+       "item": "S-201892",
+       "ts": 1790399820.9315743,
+       "attrs": {
+        "reasons": [
+         "profile disagree"
+        ]
+       }
+      },
+      {
+       "item": "S-201588",
+       "ts": 1790399827.3926532,
+       "attrs": {
+        "reasons": [
+         "profile disagree"
+        ]
+       }
+      },
+      {
+       "item": "S-201832",
+       "ts": 1790399848.531265,
+       "attrs": {
+        "reasons": [
+         "profile disagree"
+        ]
+       }
+      },
+      {
+       "item": "S-201654",
+       "ts": 1790399853.216712,
        "attrs": {
         "reasons": [
          "profile disagree",
-         "low support",
+         "sum mismatch",
          "null cell"
         ]
        }
       },
       {
-       "item": "S-202150",
-       "ts": 1790399998,
+       "item": "S-201943",
+       "ts": 1790399858.035786,
        "attrs": {
         "reasons": [
          "profile disagree",
@@ -889,8 +853,8 @@
        }
       },
       {
-       "item": "S-202178",
-       "ts": 1790399998,
+       "item": "S-201812",
+       "ts": 1790399863.0765486,
        "attrs": {
         "reasons": [
          "profile disagree"
@@ -898,40 +862,8 @@
        }
       },
       {
-       "item": "S-202184",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "profile disagree",
-         "null cell",
-         "sum mismatch"
-        ]
-       }
-      },
-      {
-       "item": "S-202223",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "profile disagree",
-         "sum mismatch"
-        ]
-       }
-      },
-      {
-       "item": "S-202225",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "profile disagree",
-         "null cell",
-         "sum mismatch"
-        ]
-       }
-      },
-      {
-       "item": "S-202237",
-       "ts": 1790399998,
+       "item": "S-201869",
+       "ts": 1790399881.9432776,
        "attrs": {
         "reasons": [
          "profile disagree",
@@ -940,592 +872,647 @@
        }
       },
       {
-       "item": "S-202262",
-       "ts": 1790399998,
+       "item": "S-201777",
+       "ts": 1790399886.9398198,
+       "attrs": {
+        "reasons": [
+         "profile disagree",
+         "low support"
+        ]
+       }
+      },
+      {
+       "item": "S-201947",
+       "ts": 1790399887.4793274,
+       "attrs": {
+        "reasons": [
+         "profile disagree"
+        ]
+       }
+      },
+      {
+       "item": "S-201962",
+       "ts": 1790399889.1694589,
+       "attrs": {
+        "reasons": [
+         "profile disagree",
+         "sum mismatch",
+         "null cell"
+        ]
+       }
+      },
+      {
+       "item": "S-201908",
+       "ts": 1790399890.0417647,
        "attrs": {
         "reasons": [
          "profile disagree",
          "low support",
-         "sum mismatch"
+         "null cell"
         ]
        }
       },
       {
-       "item": "S-202264",
-       "ts": 1790399998,
+       "item": "S-201823",
+       "ts": 1790399914.5370965,
        "attrs": {
         "reasons": [
          "profile disagree",
+         "low support",
          "null cell"
         ]
        }
       },
       {
-       "item": "S-202305",
-       "ts": 1790399998,
+       "item": "S-202070",
+       "ts": 1790399917.572327,
        "attrs": {
         "reasons": [
          "profile disagree",
-         "null cell"
+         "low support"
         ]
        }
       },
       {
-       "item": "S-202340",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "profile disagree"
-        ]
-       }
-      },
-      {
-       "item": "S-202343",
-       "ts": 1790399998,
+       "item": "S-202094",
+       "ts": 1790399919.2095752,
        "attrs": {
         "reasons": [
          "profile disagree",
+         "null cell",
          "sum mismatch"
         ]
        }
       },
       {
-       "item": "S-202359",
-       "ts": 1790399998,
+       "item": "S-201825",
+       "ts": 1790399922.251009,
        "attrs": {
         "reasons": [
-         "profile disagree"
-        ]
-       }
-      },
-      {
-       "item": "S-202361",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "profile disagree"
-        ]
-       }
-      },
-      {
-       "item": "S-202383",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "profile disagree"
-        ]
-       }
-      }
-     ],
-     "null cell": [
-      {
-       "item": "S-202095",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "null cell",
-         "sum mismatch",
-         "profile disagree"
-        ]
-       }
-      },
-      {
-       "item": "S-202096",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "null cell",
+         "profile disagree",
          "low support"
         ]
        }
       },
       {
-       "item": "S-202109",
-       "ts": 1790399998,
+       "item": "S-201933",
+       "ts": 1790399965.2752874,
        "attrs": {
         "reasons": [
-         "null cell",
-         "sum mismatch",
          "profile disagree"
         ]
        }
       },
       {
-       "item": "S-202135",
-       "ts": 1790399998,
+       "item": "S-202091",
+       "ts": 1790399967.14452,
        "attrs": {
         "reasons": [
-         "null cell",
-         "sum mismatch"
-        ]
-       }
-      },
-      {
-       "item": "S-202151",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "null cell",
-         "sum mismatch"
-        ]
-       }
-      },
-      {
-       "item": "S-202154",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "null cell"
-        ]
-       }
-      },
-      {
-       "item": "S-202177",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "null cell",
          "profile disagree"
         ]
        }
       },
       {
-       "item": "S-202185",
-       "ts": 1790399998,
+       "item": "S-201979",
+       "ts": 1790399975.8174474,
        "attrs": {
         "reasons": [
-         "null cell"
-        ]
-       }
-      },
-      {
-       "item": "S-202224",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "null cell",
-         "sum mismatch"
-        ]
-       }
-      },
-      {
-       "item": "S-202233",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "null cell",
+         "profile disagree",
          "low support"
         ]
        }
       },
       {
-       "item": "S-202236",
-       "ts": 1790399998,
+       "item": "S-202080",
+       "ts": 1790399987.2793553,
        "attrs": {
         "reasons": [
-         "null cell",
-         "sum mismatch",
-         "low support"
-        ]
-       }
-      },
-      {
-       "item": "S-202238",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "null cell"
-        ]
-       }
-      },
-      {
-       "item": "S-202245",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "null cell",
-         "low support",
-         "profile disagree"
-        ]
-       }
-      },
-      {
-       "item": "S-202261",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "null cell"
-        ]
-       }
-      },
-      {
-       "item": "S-202270",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "null cell"
-        ]
-       }
-      },
-      {
-       "item": "S-202285",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "null cell",
-         "low support",
-         "sum mismatch"
-        ]
-       }
-      },
-      {
-       "item": "S-202286",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "null cell",
-         "sum mismatch",
-         "profile disagree"
-        ]
-       }
-      },
-      {
-       "item": "S-202288",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "null cell",
-         "profile disagree"
-        ]
-       }
-      },
-      {
-       "item": "S-202319",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "null cell",
-         "profile disagree"
-        ]
-       }
-      },
-      {
-       "item": "S-202339",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "null cell",
-         "low support",
-         "profile disagree"
-        ]
-       }
-      },
-      {
-       "item": "S-202345",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "null cell"
-        ]
-       }
-      },
-      {
-       "item": "S-202351",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "null cell",
-         "sum mismatch",
-         "low support"
-        ]
-       }
-      },
-      {
-       "item": "S-202369",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "null cell",
-         "low support"
-        ]
-       }
-      },
-      {
-       "item": "S-202376",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "null cell"
-        ]
-       }
-      },
-      {
-       "item": "S-202394",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "null cell",
-         "sum mismatch"
-        ]
-       }
-      }
-     ],
-     "low support": [
-      {
-       "item": "S-201973",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "low support",
-         "sum mismatch",
-         "profile disagree"
-        ]
-       }
-      },
-      {
-       "item": "S-201986",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "low support"
-        ]
-       }
-      },
-      {
-       "item": "S-201991",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "low support",
-         "sum mismatch",
-         "null cell"
-        ]
-       }
-      },
-      {
-       "item": "S-202018",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "low support",
-         "sum mismatch",
-         "null cell"
-        ]
-       }
-      },
-      {
-       "item": "S-202024",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "low support",
-         "null cell",
-         "profile disagree"
-        ]
-       }
-      },
-      {
-       "item": "S-202033",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "low support",
-         "sum mismatch",
-         "profile disagree"
-        ]
-       }
-      },
-      {
-       "item": "S-202113",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "low support",
-         "sum mismatch"
-        ]
-       }
-      },
-      {
-       "item": "S-202122",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "low support",
-         "sum mismatch",
-         "profile disagree"
-        ]
-       }
-      },
-      {
-       "item": "S-202203",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "low support",
-         "sum mismatch",
-         "null cell"
-        ]
-       }
-      },
-      {
-       "item": "S-202210",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "low support",
          "profile disagree"
         ]
        }
       },
       {
        "item": "S-202212",
-       "ts": 1790399998,
+       "ts": 1790399987.5210845,
        "attrs": {
         "reasons": [
-         "low support",
-         "sum mismatch"
+         "profile disagree",
+         "null cell"
         ]
        }
       },
       {
-       "item": "S-202260",
-       "ts": 1790399998,
+       "item": "S-202141",
+       "ts": 1790399988.5051382,
        "attrs": {
         "reasons": [
+         "profile disagree",
+         "sum mismatch"
+        ]
+       }
+      }
+     ],
+     "null cell": [
+      {
+       "item": "S-201727",
+       "ts": 1790399759.3085508,
+       "attrs": {
+        "reasons": [
+         "null cell",
          "low support"
         ]
        }
       },
       {
-       "item": "S-202266",
-       "ts": 1790399998,
+       "item": "S-201594",
+       "ts": 1790399774.1741219,
        "attrs": {
         "reasons": [
+         "null cell",
+         "low support"
+        ]
+       }
+      },
+      {
+       "item": "S-201678",
+       "ts": 1790399782.5954025,
+       "attrs": {
+        "reasons": [
+         "null cell",
          "low support",
+         "profile disagree"
+        ]
+       }
+      },
+      {
+       "item": "S-201567",
+       "ts": 1790399783.962525,
+       "attrs": {
+        "reasons": [
+         "null cell",
          "profile disagree",
+         "low support"
+        ]
+       }
+      },
+      {
+       "item": "S-201547",
+       "ts": 1790399805.0533018,
+       "attrs": {
+        "reasons": [
+         "null cell"
+        ]
+       }
+      },
+      {
+       "item": "S-201612",
+       "ts": 1790399836.299064,
+       "attrs": {
+        "reasons": [
+         "null cell",
          "sum mismatch"
         ]
        }
       },
       {
-       "item": "S-202283",
-       "ts": 1790399998,
+       "item": "S-201694",
+       "ts": 1790399844.736172,
        "attrs": {
         "reasons": [
+         "null cell",
+         "profile disagree",
+         "low support"
+        ]
+       }
+      },
+      {
+       "item": "S-201621",
+       "ts": 1790399864.1533866,
+       "attrs": {
+        "reasons": [
+         "null cell"
+        ]
+       }
+      },
+      {
+       "item": "S-202010",
+       "ts": 1790399872.5489297,
+       "attrs": {
+        "reasons": [
+         "null cell"
+        ]
+       }
+      },
+      {
+       "item": "S-201772",
+       "ts": 1790399877.9597952,
+       "attrs": {
+        "reasons": [
+         "null cell"
+        ]
+       }
+      },
+      {
+       "item": "S-201765",
+       "ts": 1790399897.1936507,
+       "attrs": {
+        "reasons": [
+         "null cell",
+         "low support"
+        ]
+       }
+      },
+      {
+       "item": "S-201796",
+       "ts": 1790399906.2241004,
+       "attrs": {
+        "reasons": [
+         "null cell"
+        ]
+       }
+      },
+      {
+       "item": "S-201723",
+       "ts": 1790399908.0916936,
+       "attrs": {
+        "reasons": [
+         "null cell"
+        ]
+       }
+      },
+      {
+       "item": "S-201884",
+       "ts": 1790399908.155682,
+       "attrs": {
+        "reasons": [
+         "null cell",
+         "low support"
+        ]
+       }
+      },
+      {
+       "item": "S-201779",
+       "ts": 1790399909.9339268,
+       "attrs": {
+        "reasons": [
+         "null cell"
+        ]
+       }
+      },
+      {
+       "item": "S-201849",
+       "ts": 1790399910.4218123,
+       "attrs": {
+        "reasons": [
+         "null cell",
+         "sum mismatch",
+         "low support"
+        ]
+       }
+      },
+      {
+       "item": "S-201985",
+       "ts": 1790399920.4542978,
+       "attrs": {
+        "reasons": [
+         "null cell",
+         "low support"
+        ]
+       }
+      },
+      {
+       "item": "S-201801",
+       "ts": 1790399924.9627142,
+       "attrs": {
+        "reasons": [
+         "null cell"
+        ]
+       }
+      },
+      {
+       "item": "S-201968",
+       "ts": 1790399926.3719482,
+       "attrs": {
+        "reasons": [
+         "null cell",
          "low support",
+         "profile disagree"
+        ]
+       }
+      },
+      {
+       "item": "S-201974",
+       "ts": 1790399941.9375508,
+       "attrs": {
+        "reasons": [
+         "null cell"
+        ]
+       }
+      },
+      {
+       "item": "S-202050",
+       "ts": 1790399945.9432604,
+       "attrs": {
+        "reasons": [
+         "null cell",
+         "profile disagree"
+        ]
+       }
+      },
+      {
+       "item": "S-201903",
+       "ts": 1790399951.7967227,
+       "attrs": {
+        "reasons": [
+         "null cell",
+         "low support"
+        ]
+       }
+      },
+      {
+       "item": "S-202122",
+       "ts": 1790399964.7560625,
+       "attrs": {
+        "reasons": [
+         "null cell",
+         "sum mismatch"
+        ]
+       }
+      },
+      {
+       "item": "S-202047",
+       "ts": 1790399991.3805583,
+       "attrs": {
+        "reasons": [
+         "null cell"
+        ]
+       }
+      },
+      {
+       "item": "S-202003",
+       "ts": 1790399993.737481,
+       "attrs": {
+        "reasons": [
+         "null cell"
+        ]
+       }
+      }
+     ],
+     "sum mismatch": [
+      {
+       "item": "S-201886",
+       "ts": 1790399871.1153536,
+       "attrs": {
+        "reasons": [
+         "sum mismatch"
+        ]
+       }
+      },
+      {
+       "item": "S-201807",
+       "ts": 1790399876.773327,
+       "attrs": {
+        "reasons": [
+         "sum mismatch"
+        ]
+       }
+      },
+      {
+       "item": "S-201740",
+       "ts": 1790399881.2754893,
+       "attrs": {
+        "reasons": [
+         "sum mismatch",
+         "null cell"
+        ]
+       }
+      },
+      {
+       "item": "S-201883",
+       "ts": 1790399883.5687244,
+       "attrs": {
+        "reasons": [
+         "sum mismatch"
+        ]
+       }
+      },
+      {
+       "item": "S-202030",
+       "ts": 1790399886.1804974,
+       "attrs": {
+        "reasons": [
+         "sum mismatch",
+         "null cell",
+         "profile disagree"
+        ]
+       }
+      },
+      {
+       "item": "S-201736",
+       "ts": 1790399891.3930125,
+       "attrs": {
+        "reasons": [
+         "sum mismatch",
+         "null cell"
+        ]
+       }
+      },
+      {
+       "item": "S-202031",
+       "ts": 1790399904.3876543,
+       "attrs": {
+        "reasons": [
+         "sum mismatch",
+         "low support",
+         "profile disagree"
+        ]
+       }
+      },
+      {
+       "item": "S-201855",
+       "ts": 1790399906.4917068,
+       "attrs": {
+        "reasons": [
+         "sum mismatch",
+         "null cell",
+         "low support"
+        ]
+       }
+      },
+      {
+       "item": "S-201952",
+       "ts": 1790399908.3312624,
+       "attrs": {
+        "reasons": [
+         "sum mismatch",
+         "null cell",
+         "low support"
+        ]
+       }
+      },
+      {
+       "item": "S-201927",
+       "ts": 1790399911.5423448,
+       "attrs": {
+        "reasons": [
+         "sum mismatch",
+         "null cell",
+         "low support"
+        ]
+       }
+      },
+      {
+       "item": "S-201865",
+       "ts": 1790399929.8635116,
+       "attrs": {
+        "reasons": [
+         "sum mismatch"
+        ]
+       }
+      },
+      {
+       "item": "S-201794",
+       "ts": 1790399941.8243139,
+       "attrs": {
+        "reasons": [
          "sum mismatch",
          "profile disagree"
         ]
        }
       },
       {
-       "item": "S-202284",
-       "ts": 1790399998,
+       "item": "S-201840",
+       "ts": 1790399951.9192867,
        "attrs": {
         "reasons": [
+         "sum mismatch",
          "low support"
         ]
        }
       },
       {
-       "item": "S-202293",
-       "ts": 1790399998,
+       "item": "S-201944",
+       "ts": 1790399953.9567037,
        "attrs": {
         "reasons": [
-         "low support",
-         "null cell"
-        ]
-       }
-      },
-      {
-       "item": "S-202314",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "low support",
-         "null cell"
-        ]
-       }
-      },
-      {
-       "item": "S-202333",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "low support",
-         "profile disagree",
          "sum mismatch"
         ]
        }
       },
       {
-       "item": "S-202354",
-       "ts": 1790399998,
+       "item": "S-202093",
+       "ts": 1790399956.2497098,
        "attrs": {
         "reasons": [
+         "sum mismatch"
+        ]
+       }
+      },
+      {
+       "item": "S-201858",
+       "ts": 1790399959.274503,
+       "attrs": {
+        "reasons": [
+         "sum mismatch"
+        ]
+       }
+      },
+      {
+       "item": "S-201958",
+       "ts": 1790399962.4219553,
+       "attrs": {
+        "reasons": [
+         "sum mismatch"
+        ]
+       }
+      },
+      {
+       "item": "S-201996",
+       "ts": 1790399963.5189757,
+       "attrs": {
+        "reasons": [
+         "sum mismatch",
+         "profile disagree"
+        ]
+       }
+      },
+      {
+       "item": "S-201893",
+       "ts": 1790399965.2210577,
+       "attrs": {
+        "reasons": [
+         "sum mismatch",
          "low support",
          "null cell"
         ]
        }
       },
       {
-       "item": "S-202357",
-       "ts": 1790399998,
+       "item": "S-202173",
+       "ts": 1790399969.873703,
        "attrs": {
         "reasons": [
-         "low support"
+         "sum mismatch",
+         "profile disagree"
         ]
        }
       },
       {
-       "item": "S-202375",
-       "ts": 1790399998,
+       "item": "S-201902",
+       "ts": 1790399976.008814,
        "attrs": {
         "reasons": [
+         "sum mismatch",
          "low support",
+         "profile disagree"
+        ]
+       }
+      },
+      {
+       "item": "S-201928",
+       "ts": 1790399978.0621977,
+       "attrs": {
+        "reasons": [
          "sum mismatch"
         ]
        }
       },
       {
-       "item": "S-202385",
-       "ts": 1790399998,
+       "item": "S-201954",
+       "ts": 1790399983.2638524,
        "attrs": {
         "reasons": [
-         "low support"
+         "sum mismatch",
+         "null cell",
+         "profile disagree"
         ]
        }
       },
       {
-       "item": "S-202391",
-       "ts": 1790399998,
+       "item": "S-202044",
+       "ts": 1790399994.39276,
        "attrs": {
         "reasons": [
-         "low support"
+         "sum mismatch",
+         "null cell",
+         "profile disagree"
         ]
        }
       },
       {
-       "item": "S-202395",
-       "ts": 1790399998,
+       "item": "S-201942",
+       "ts": 1790399994.6283758,
        "attrs": {
         "reasons": [
-         "low support"
-        ]
-       }
-      },
-      {
-       "item": "S-202397",
-       "ts": 1790399998,
-       "attrs": {
-        "reasons": [
-         "low support"
+         "sum mismatch",
+         "low support",
+         "profile disagree"
         ]
        }
       }
      ]
     },
-    "item_rate": 2.0,
+    "item_rate": 1.0,
     "updated_at": 1790399996,
     "status": "running",
     "ended_at": null
@@ -1539,135 +1526,135 @@
      [
       "items",
       "decided",
-      1709
-     ],
-     [
-      "decided",
-      "disagree",
-      256
+      1806
      ],
      [
       "items",
       "tied",
-      521
-     ],
-     [
-      "tied",
-      "agree",
-      160
-     ],
-     [
-      "decided",
-      "agree",
-      690
-     ],
-     [
-      "decided",
-      "alone",
-      493
-     ],
-     [
-      "tied",
-      "unsettled",
-      361
-     ],
-     [
-      "decided",
-      "profile",
-      270
+      464
      ],
      [
       "items",
       "unlearnable",
-      370
+      330
      ],
      [
-      "disagree",
-      "review",
-      197
+      "decided",
+      "alone",
+      520
      ],
      [
-      "review",
-      "profile disagree",
-      168
+      "decided",
+      "profile",
+      282
      ],
      [
+      "tied",
       "agree",
-      "confident",
-      722
+      123
      ],
      [
-      "review",
-      "null cell",
-      187
+      "decided",
+      "disagree",
+      278
+     ],
+     [
+      "tied",
+      "unsettled",
+      341
+     ],
+     [
+      "decided",
+      "agree",
+      726
      ],
      [
       "alone",
       "confident",
-      418
+      449
      ],
      [
-      "unsettled",
+      "agree",
       "confident",
-      86
+      739
      ],
      [
+      "disagree",
       "review",
-      "sum mismatch",
-      197
-     ],
-     [
-      "profile",
-      "confident",
-      232
-     ],
-     [
-      "unsettled",
-      "review",
-      275
+      207
      ],
      [
       "review",
       "low support",
-      161
-     ],
-     [
-      "agree",
-      "review",
-      128
+      196
      ],
      [
       "alone",
       "review",
-      75
+      71
+     ],
+     [
+      "review",
+      "sum mismatch",
+      174
      ],
      [
       "profile",
+      "confident",
+      233
+     ],
+     [
       "review",
-      38
+      "null cell",
+      160
+     ],
+     [
+      "unsettled",
+      "confident",
+      90
+     ],
+     [
+      "agree",
+      "review",
+      110
+     ],
+     [
+      "review",
+      "profile disagree",
+      158
+     ],
+     [
+      "unsettled",
+      "review",
+      251
      ],
      [
       "disagree",
       "confident",
-      59
+      71
+     ],
+     [
+      "profile",
+      "review",
+      49
      ]
     ],
     "counts": {
-     "confident": 1517,
-     "profile": 270,
-     "review": 713,
-     "sum mismatch": 197,
+     "confident": 1582,
+     "disagree": 278,
+     "alone": 520,
+     "sum mismatch": 174,
+     "unsettled": 341,
      "items": 2600,
-     "unsettled": 361,
-     "tied": 521,
-     "agree": 850,
-     "low support": 161,
-     "disagree": 256,
-     "decided": 1709,
-     "null cell": 187,
-     "unlearnable": 370,
-     "profile disagree": 168,
-     "alone": 493
+     "review": 688,
+     "decided": 1806,
+     "unlearnable": 330,
+     "profile": 282,
+     "profile disagree": 158,
+     "null cell": 160,
+     "tied": 464,
+     "agree": 849,
+     "low support": 196
     }
    }
   }
