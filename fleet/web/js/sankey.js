@@ -55,8 +55,15 @@ function bandPoint(b, u, dy) {   // a point along the band's centre line, dy off
   return { x: v * v * v * b.x0 + 3 * v * v * u * xm + 3 * v * u * u * xm + u * u * u * b.x1,
     y: v * v * v * b.y0 + 3 * v * v * u * b.y0 + 3 * v * u * u * b.y1 + u * u * u * b.y1 + dy };
 }
-// nodes items end in: nothing has left them in this run, nor in the baseline (a run part-way has not reached its gates)
-export const terminals = (run, base) => new Set(run.nodes.flat().filter(n => ![...run.edges, ...(base?.edges || [])].some(([s]) => s === n)));
+// Nodes items end in: nothing has left them in this run nor in the baseline, and the run has got past their column
+// (it finished, they are in the last column, or a neighbour in their column already passes items on). A run part-way
+// has not reached its gates, so its middle columns are not ends yet.
+export function terminals(run, base) {
+  const left = new Set([...run.edges, ...(base?.edges || [])].map(([s]) => s));
+  const last = run.nodes.length - 1;
+  return new Set(run.nodes.flatMap((col, ci) => col.filter(n => !left.has(n)
+    && (run.status !== 'running' || ci === last || col.some(m => left.has(m))))));
+}
 export const shareBase = run => run.total || run.nodes[0]?.reduce((s, n) => s + (run.counts[n] || 0), 0) || 0;
 
 // What the file says about the run, and whether its host can still be asked.
@@ -74,7 +81,8 @@ export const sankeyPane = document.getElementById('sankey');
 const sheet = sankeyPane.querySelector('.rd-sheet');
 const chart = document.getElementById('skChart'), svg = document.getElementById('skSvg'), dotsCanvas = document.getElementById('skDots');
 const side = document.getElementById('skSide');
-const TWEEN_MS = 400, DOT_MS = 1400, DOTS_PER_UPDATE = 80, LABEL_W = 250, PAD = 18, MIN_WIDTH = 760;
+const TWEEN_MS = 400, DOT_MS = 1400, DOTS_PER_UPDATE = 80, PAD = 18, LABEL_GAP = 28;   // nodes apart by a two-line label
+const LABEL_W = 250, MIN_WIDTH = 760, NARROW = 700, LABEL_W_NARROW = 130, MIN_WIDTH_NARROW = 620;
 const sk = { key: null, p: null, from: null, to: null, t0: 0, dots: [], carry: {}, raf: 0, selected: null, lastFocus: null, geo: null };
 
 const keyOf = p => `${p.host}:${p.pipeline}`;
@@ -137,44 +145,60 @@ function emitDots(before, run) {
   }
 }
 
+// A phone gets a narrower label margin (end labels wrap to two lines) and scrolls the rest sideways.
 function geometry() {
-  const width = Math.max(chart.clientWidth, MIN_WIDTH), height = chart.clientHeight;   // a phone scrolls it sideways
+  const narrow = chart.clientWidth < NARROW;
+  const width = Math.max(chart.clientWidth, narrow ? MIN_WIDTH_NARROW : MIN_WIDTH), height = chart.clientHeight;
   for (const el of [svg, dotsCanvas]) el.style.width = width + 'px';
-  return { W: width - PAD * 2 - LABEL_W, H: Math.max(160, height - PAD * 2), width, height };
+  const labelW = narrow ? LABEL_W_NARROW : LABEL_W;
+  return { W: width - PAD * 2 - labelW, H: Math.max(160, height - PAD * 2), width, height, narrow };
 }
+function edgeFade() {
+  const max = chart.scrollWidth - chart.clientWidth;
+  chart.classList.toggle('more-r', chart.scrollLeft < max - 1);
+  chart.classList.toggle('more-l', chart.scrollLeft > 1);
+}
+chart.addEventListener('scroll', edgeFade, { passive: true });
 function drawFrame() {
   sk.raf = 0;
   if (!sk.key || !sk.p?.run) return;
   const values = current(), run = sk.p.run, base = sk.p.baseline;
-  const { W, H, width, height } = geometry();
+  const { W, H, width, height, narrow } = geometry();
   const edges = Object.entries(values.edges).map(([key, c]) => [...key.split('→'), c]);
-  const L = layout(run.nodes, values.counts, edges, W, H, { baseline: base?.counts });
+  const L = layout(run.nodes, values.counts, edges, W, H, { baseline: base?.counts, gap: LABEL_GAP });
   sk.geo = L;
-  renderChart(L, run, base, width, height);
+  renderChart(L, run, base, width, height, narrow);
+  edgeFade();
   drawDots(L, width, height);
   const tweening = performance.now() - sk.t0 < TWEEN_MS;
   if (tweening || sk.dots.length) sk.raf = requestAnimationFrame(drawFrame);
 }
-function renderChart(L, run, base, width, height) {
+// Labels sit right of their node: name over figures, so a middle column's label fits before the next column; the
+// last column has room for one line on a wide screen. Baseline outlines go under the bands, which show through.
+function renderChart(L, run, base, width, height, narrow) {
   const ends = terminals(run, base), whole = shareBase(run), baseCounts = base?.counts || {};
   const baseEdges = Object.fromEntries((base?.edges || []).map(([s, t, c]) => [s + '→' + t, c]));
+  const lastCol = run.nodes.length - 1;
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  const ghosts = L.bands.filter(b => b.key in baseEdges)
+    .map(b => `<path class="sk-ghost" d="${bandPath(b, Math.max(1, baseEdges[b.key] * L.k))}"/>`).join('');
   const bands = L.bands.map(b => {
-    const ghost = b.key in baseEdges ? `<path class="sk-ghost" d="${bandPath(b, Math.max(1, baseEdges[b.key] * L.k))}"/>` : '';
     const tip = `${b.s.name} → ${b.t.name}: ${fmt(b.count)}${b.key in baseEdges ? ` (baseline ${fmt(baseEdges[b.key])})` : ''}`;
-    return `<path class="sk-band${sk.selected && b.t.name === sk.selected ? ' on' : ''}" d="${bandPath(b)}"><title>${esc(tip)}</title></path>${ghost}`;
+    return `<path class="sk-band${sk.selected && b.t.name === sk.selected ? ' on' : ''}" d="${bandPath(b)}"><title>${esc(tip)}</title></path>`;
   }).join('');
   const nodes = [...L.nodes.values()].map(n => {
     const end = ends.has(n.name), y = n.y + n.h / 2, x = n.x + L.nodeW + 6;
     const share = end && whole ? ` · ${(100 * n.value / whole).toFixed(1)}%` : '';
     const delta = end && base ? Math.round(n.value) - (baseCounts[n.name] || 0) : null;
+    const figures = `<tspan class="ct"${n.col === lastCol && !narrow ? ' dx="7"' : ` x="${x}" y="${y + 12}"`}>${fmt(n.value)}${share}</tspan>${
+      delta !== null ? `<tspan class="dl" dx="7">${delta > 0 ? '+' : delta < 0 ? '−' : '±'}${fmt(Math.abs(delta))}</tspan>` : ''}`;
+    const oneLine = n.col === lastCol && !narrow;
     return `<g class="sk-node${end ? ' end' : ''}${sk.selected === n.name ? ' on' : ''}" data-node="${esc(n.name)}" tabindex="${end ? 0 : -1}"
       ${end ? `role="button" aria-label="${esc(`${n.name}: ${fmt(n.value)}, show its latest items`)}"` : ''}>
       <rect x="${n.x}" y="${n.y}" width="${L.nodeW}" height="${n.h}" rx="2"/>
-      <text x="${x}" y="${y}" dy=".35em"><tspan class="nm">${esc(n.name)}</tspan><tspan class="ct" dx="7">${fmt(n.value)}${share}</tspan>${
-        delta !== null ? `<tspan class="dl" dx="7">${delta > 0 ? '+' : delta < 0 ? '−' : '±'}${fmt(Math.abs(delta))}</tspan>` : ''}</text></g>`;
+      <text x="${x}" y="${oneLine ? y + 4 : y - 2}"><tspan class="nm">${esc(n.name)}</tspan>${figures}</text></g>`;
   }).join('');
-  svg.innerHTML = `<g transform="translate(${PAD},${PAD})">${bands}${nodes}</g>`;
+  svg.innerHTML = `<g transform="translate(${PAD},${PAD})">${ghosts}${bands}${nodes}</g>`;
   chart.querySelector('.sk-empty')?.remove();
   const off = !sk.p.host_ok ? `<div class="sk-note" role="status">${esc(sk.p.host)} is offline (${esc(sk.p.host_error || 'no connection')}): this is its last report, written ${age(run.updated_at)} ago</div>` : '';
   const note = chart.querySelector('.sk-note');

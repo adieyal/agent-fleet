@@ -58,7 +58,7 @@ def deck(request: pytest.FixtureRequest, browser: Browser, pipeline_url: str,
     context.close()
 
 
-def open_screen(deck: Deck, key: str) -> None:
+def open_screen(deck: Deck, key: str, hover_shot: str | None = None) -> None:
     page = deck.page
     screen = next(p for p in page.evaluate("fleetDeck.pipelines()") if p["key"] == key)["screen"]
     if not (0 < screen["x"] < page.viewport_size["width"] and 60 < screen["y"] < page.viewport_size["height"] - 60):
@@ -66,6 +66,9 @@ def open_screen(deck: Deck, key: str) -> None:
         screen = next(p for p in page.evaluate("fleetDeck.pipelines()") if p["key"] == key)["screen"]
     page.mouse.move(screen["x"], screen["y"])
     expect(page.locator("#docTip")).to_contain_text("click to open")
+    if hover_shot:
+        page.wait_for_timeout(100)   # a frame to light the hovered screen's frame
+        deck.shot(hover_shot)
     page.mouse.click(screen["x"], screen["y"])
     expect(page.locator("#sankey")).to_be_visible()
 
@@ -92,7 +95,7 @@ def test_declared_pipelines_get_rooms_even_without_work(deck: Deck) -> None:
 
 def test_the_screen_opens_the_run_as_a_sankey(deck: Deck, fixture_pipelines: dict[str, Any]) -> None:
     page = deck.page
-    open_screen(deck, "home:sample-training")
+    open_screen(deck, "home:sample-training", hover_shot="hover")
     run = fixture_pipelines["pipeline_reports"][0]["run"]
     expect(page.locator("#skTitle")).to_have_text("sample-training")
     expect(page.locator("#skMeta")).to_contain_text("synthetic run")
@@ -132,17 +135,22 @@ def test_an_end_node_lists_its_latest_items(deck: Deck, fixture_pipelines: dict[
     assert deck.errors == []
 
 
+DOT_PIXELS = """(() => { const c = document.getElementById('skDots'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+  let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n; })()"""
+
+
+@pytest.mark.parametrize("motion", ["no-preference", "reduce"])
 def test_the_demo_pipeline_moves_while_the_sankey_is_open(browser: Browser, pipeline_url: str,
-                                                          request: pytest.FixtureRequest) -> None:
-    """With motion allowed: bands ease and dots travel as each demo tick adds items."""
-    context = browser.new_context(viewport=VIEWPORTS["desktop"])
+                                                          request: pytest.FixtureRequest, motion: str) -> None:
+    """Bands take each demo tick's new counts; with motion allowed they ease and dots travel, reduced they don't."""
+    context = browser.new_context(viewport=VIEWPORTS["desktop"], reduced_motion=motion)
     page = context.new_page()
     errors: list[str] = []
     page.on("console", lambda message: message.type == "error" and errors.append(message.text))
     page.on("pageerror", lambda error: errors.append(str(error)))
     page.goto(pipeline_url + "/?demo")
     page.wait_for_function("window.fleetDeck && fleetDeck.pipelines().some(p => p.screen)")
-    deck = Deck(page, "demo", request.config.getoption("--shots"))
+    deck = Deck(page, f"demo-{motion}", request.config.getoption("--shots"))
     open_screen(deck, "node-a:demo-training")
     expect(page.locator("#skMeta")).to_contain_text("demo run 1 (synthetic)")
     first = int(page.locator('#skSvg .sk-node[data-node="items"] text .ct').text_content().replace(",", ""))
@@ -150,6 +158,10 @@ def test_the_demo_pipeline_moves_while_the_sankey_is_open(browser: Browser, pipe
         .textContent.replace(/,/g, '')) > {first}""", timeout=8000)
     page.wait_for_timeout(250)   # mid-way through an update: bands easing, dots on their way
     deck.shot("sankey-live")
+    if motion == "reduce":
+        assert page.evaluate(DOT_PIXELS) == 0
+    else:
+        assert page.evaluate(DOT_PIXELS) > 0
     close(deck)
     context.close()
     assert errors == []

@@ -91,26 +91,26 @@ function drawThumb(s) {
   g.fillStyle = '#071a30'; g.fillRect(0, 0, w, h);
   g.strokeStyle = rgba('#38bdf8', 0.35); g.lineWidth = 4; rr(g, 2, 2, w - 4, h - 4, 10); g.stroke();
   g.textBaseline = 'alphabetic';
-  g.fillStyle = '#e6edf8'; g.font = '700 34px Space Grotesk, system-ui, sans-serif';
-  g.fillText(p.pipeline, 22, 46, w - 44);
-  g.fillStyle = '#a3b2cb'; g.font = '500 22px JetBrains Mono, monospace';
-  g.fillText(r ? (r.label || r.run_id) : p.host, 22, 78, w - 44);
-  g.fillStyle = STATUS_COLOR[st.kind]; g.beginPath(); g.arc(30, 104, 7, 0, Math.PI * 2); g.fill();
-  g.font = '600 22px JetBrains Mono, monospace'; g.fillText(st.text, 46, 112, w - 70);
+  g.fillStyle = '#e6edf8'; g.font = '700 50px Space Grotesk, system-ui, sans-serif';
+  g.fillText(p.pipeline, 22, 58, w - 44);
+  g.fillStyle = '#a3b2cb'; g.font = '500 26px JetBrains Mono, monospace';
+  g.fillText(r ? (r.label || r.run_id) : p.host, 22, 96, w - 44);
+  g.fillStyle = STATUS_COLOR[st.kind]; g.beginPath(); g.arc(33, 128, 10, 0, Math.PI * 2); g.fill();
+  g.font = '700 30px JetBrains Mono, monospace'; g.fillText(st.text, 54, 139, w - 76);
   if (r) {
-    const L = layout(r.nodes, r.counts, r.edges, w - 44, 130, { nodeW: 6, gap: 3 });
-    g.save(); g.translate(22, 132);
+    const L = layout(r.nodes, r.counts, r.edges, w - 44, 100, { nodeW: 6, gap: 3 });
+    g.save(); g.translate(22, 158);
     g.fillStyle = rgba('#38bdf8', 0.45);
     for (const b of L.bands) g.fill(new Path2D(bandPath(b)));
     g.fillStyle = '#e6edf8';
     for (const n of L.nodes.values()) g.fillRect(n.x, n.y, L.nodeW, n.h);
     g.restore();
     const source = r.nodes[0]?.[0], done = r.counts[source] || 0;
-    g.fillStyle = '#e6edf8'; g.font = '600 24px JetBrains Mono, monospace';
-    g.fillText(`${source ?? ''} ${fmt(done)}${r.total ? ' / ' + fmt(r.total) : ''}`, 22, h - 22, w - 44);
+    g.fillStyle = '#e6edf8'; g.font = '700 32px JetBrains Mono, monospace';
+    g.fillText(`${source ?? ''} ${fmt(done)}${r.total ? ' / ' + fmt(r.total) : ''}`, 22, h - 20, w - 44);
   } else {
-    g.fillStyle = '#7384a0'; g.font = '500 22px Inter, system-ui, sans-serif';
-    g.fillText(p.host_ok ? 'Waiting for a run' : (p.host_error || 'host offline'), 22, 190, w - 44);
+    g.fillStyle = '#a3b2cb'; g.font = '500 28px Inter, system-ui, sans-serif';
+    g.fillText(p.host_ok ? 'Waiting for a run' : (p.host_error || 'host offline'), 22, 210, w - 44);
   }
   s.tex.needsUpdate = true;
 }
