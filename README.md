@@ -115,6 +115,10 @@ floors unless the config sets `"capacity"` (1 to 10); raising it is a deliberate
 edit. A project keeps its floor, kept in `workspace.json`: the lowest free one when it
 moves in. The lobby shows the host key and any visitors, labels with work that no
 project claims; **Move in** registers one as a project on the lowest free floor.
+A floor with attention items gets one lantern beside it (items on no floor hang theirs
+by the lobby). Each name plate has an open · windows switch for the project's focus.
+Click a floor to enter it: the deck shows just that project's work, with a lift panel
+on the right edge (a button per floor, L for the whole building); Esc steps back out.
 
 ## Read the work
 
