@@ -42,9 +42,10 @@ def materials() -> dict:
                            texture=A.source('ambientcg', 'PaintedPlaster017', 'PaintedPlaster017_1K-JPG_Color.jpg')),
         'cap': A.material('wall_cap', '#d2cfd6', rough=0.8),
         'pilaster': A.material('pilaster', '#b4afb4', rough=0.8),
-        'oak': A.material('oak', '#ecdcc8', rough=0.45,
+        'oak': A.material('oak', '#e2d8ce', rough=0.45,
                           texture=A.source('ambientcg', 'Wood095', 'Wood095_1K-JPG_Color.jpg')),
         'steel': A.material('steel_grey', '#6f6f77', rough=0.45, metal=0.3),
+        'bezel': A.material('plan_bezel', '#c3c0c6', rough=0.6),
         'frame': A.material('frame_dark', '#4a474e', rough=0.4, metal=0.4),
         'black': A.material('chair_black', '#262528', rough=0.6),
         'lift': A.material('lift_steel', '#7f7d86', rough=0.3, metal=0.6),
@@ -174,7 +175,8 @@ def plan_wall(m) -> None:
     c, r, pitch = PLAN['cols'], PLAN['rows'], PLAN['pitch']
     w, h = c * pitch + 0.14, r * pitch + 0.14
     x0, z0, y = PLAN['x0'], PLAN['z0'], WALL_Y
-    A.box('plan_frame', (w, 0.09, h), (x0 + w / 2, y - 0.045, z0), m['steel'], bevel=0.012)
+    # a thick light-grey bezel, as in l2, rather than dark steel
+    A.box('plan_frame', (w + 0.08, 0.1, h + 0.08), (x0 + w / 2, y - 0.05, z0 - 0.04), m['bezel'], bevel=0.02)
     A.box('plan_back', (w - 0.1, 0.02, h - 0.1), (x0 + w / 2, y - 0.1, z0 + 0.05), m['frame'], bevel=0.004)
     for row in range(r):
         for col in range(c):
@@ -185,8 +187,8 @@ def plan_wall(m) -> None:
     for i in range(5):
         x = x0 + 0.37 + i * 0.46
         z = z0 + h + 0.3
-        A.cylinder(f'criteria_housing_{i}', 0.11, 0.06, (x, y, z), m['frame'], bevel=0.012, rot=(math.pi / 2, 0, 0))
-        bulb = A.cylinder(f'criteria_light_{i}', 0.085, 0.01, (x, y - 0.06, z), m['bulb'], kind='dynamic',
+        A.cylinder(f'criteria_housing_{i}', 0.13, 0.06, (x, y, z), m['frame'], bevel=0.012, rot=(math.pi / 2, 0, 0))
+        bulb = A.cylinder(f'criteria_light_{i}', 0.105, 0.01, (x, y - 0.06, z), m['bulb'], kind='dynamic',
                           rot=(math.pi / 2, 0, 0))
         bulb['warm'] = f'criteria{i}'
         spot = A.light(f'criteria_spot_{i}', 'SPOT', (x, y - 0.3, z + 0.02), 18, '#ffc98a', warm=f'criteria{i}',
@@ -257,11 +259,11 @@ def desk_lamp(m, name, group, x, y, flip: int) -> None:
     bulb = A.cylinder(f'{name}_bulb', 0.03, 0.004, (hx, hy, hz - 0.205), m['bulb'], kind='dynamic', segments=16)
     bulb['warm'] = group
     # just below the shade's mouth: the shade is a closed solid and would swallow the light
-    spot = A.light(f'{name}_light', 'SPOT', (hx, hy, hz - 0.215), 4, '#ff9c45', warm=group,
+    spot = A.light(f'{name}_light', 'SPOT', (hx, hy, hz - 0.215), 1.5, '#ff9c45', warm=group,
                    spot_size=math.radians(140), spot_blend=1.0, shadow_soft_size=0.06)
     A.aim(spot, (hx, hy - 0.1 * flip, DESK_H))
     # the broad warm wash over the desk that l2 shows around a working lamp (a hot spot alone reads as glare)
-    A.light(f'{name}_wash', 'AREA', (x + 0.6, y - 0.25 * flip, DESK_H + 0.9), 18, '#ff9a40', warm=group,
+    A.light(f'{name}_wash', 'AREA', (x + 0.6, y - 0.25 * flip, DESK_H + 0.9), 12, '#ff9a40', warm=group,
             shape='DISK', size=1.1)
 
 

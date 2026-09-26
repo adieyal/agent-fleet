@@ -105,8 +105,12 @@ async function loadLightmaps(manifest) {
 
 const warmth = {};  // group -> { level, target, uniform, bulbs: [], light }
 
+// Desk lamps are pushed past their baked strength: l2's working desks glow amber around the lamp.
+const WARM_GAIN = { desk: 1.35, corner: 1.35 };  // higher and white paper under the lamp blooms
+
 function warmGroup(name, scale) {
-  const w = { level: 0, target: 0, scale, uniform: { value: 0 }, bulbs: [], light: null };
+  const gain = WARM_GAIN[name.replace(/\d+$/, '')] ?? 1;
+  const w = { level: 0, target: 0, scale: scale * gain, uniform: { value: 0 }, bulbs: [], light: null };
   warmth[name] = w;
   return w;
 }
@@ -162,7 +166,7 @@ function paintTile(tile) {
   // amber, not white: a saturated emissive at moderate strength survives tone mapping
   tile.mesh.material.emissive.set(lit ? '#ff9418' : '#000000');
   tile.mesh.material.emissiveIntensity = lit ? 1.5 : 0;
-  tile.mesh.material.color.set(lit ? '#ffc767' : '#eeedf0');
+  tile.mesh.material.color.set(lit ? '#ffc767' : '#f7f6f8');
 }
 
 function flipTile(tile, state) {
@@ -240,11 +244,12 @@ function setupRobots(robotGltf, root) {
     const robot = SkeletonUtils.clone(robotGltf.scene);
     seat.getWorldPosition(robot.position);
     seat.getWorldQuaternion(robot.quaternion);
+    robot.scale.setScalar(1.12);  // l2's robots are chunky next to the furniture
     robot.traverse(o => {
       if (!o.isMesh) return;
       o.castShadow = true;
       o.material = o.material.clone();
-      o.material.envMapIntensity = 0.6;
+      o.material.envMapIntensity = 1.0;
       if (o.material.name === 'robot_body') o.material.color.set(HOSTS[cast.host]);
       if (o.material.name === 'robot_eye') o.material.emissiveIntensity = 1.1;
       if (o.material.name === 'robot_glass') Object.assign(o.material, { transparent: true, opacity: 0.55 });
@@ -256,7 +261,7 @@ function setupRobots(robotGltf, root) {
     const bubble = new THREE.Sprite(new THREE.SpriteMaterial({ map: glyph.bubble(cast.icon, HOSTS[cast.host]),
       toneMapped: false, depthTest: false }));
     bubble.scale.set(0.42, 0.48, 1);
-    bubble.position.copy(robot.position).add(new THREE.Vector3(0, 1.12, 0));
+    bubble.position.copy(robot.position).add(new THREE.Vector3(0, 1.22, 0));
     bubble.renderOrder = 3;
     scene.add(bubble);
     const r = { ...cast, robot, mixer, clips, bubble, current: null, busy: true };
@@ -460,6 +465,8 @@ async function main() {
   sun.shadow.radius = 4;
   sun.shadow.bias = -0.0005;
   scene.add(sun, sun.target);
+  // soft sky/floor fill for the live objects (baked surfaces ignore lights), so they sit in the room's brightness
+  scene.add(new THREE.HemisphereLight('#eef2ff', '#b8a898', 0.9));
 
   placeCamera();
   const composer = new EffectComposer(renderer);
