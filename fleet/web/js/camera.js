@@ -46,6 +46,7 @@ export function fit(silent) {
     cy = top + ah / 2;
   }
   const cx = left + aw / 2;
+  if (!mobile) z = Math.max(6, Math.min(z, clearOfLog(b, cx, cy)));
   cam.z = z;
   // the world point at the middle of the extent goes to (cx, cy)
   const mid = new THREE.Vector3().addScaledVector(RIGHT, (b.minR + b.maxR) / 2).addScaledVector(UP, (b.minU + b.maxU) / 2);
@@ -53,6 +54,28 @@ export function fit(silent) {
   cam.tween = null;
   if (!silent) cam.userMoved = false;
 }
+// The deck log sits over the bottom-left of the deck: the largest zoom that keeps every room's focus switch (hung
+// below its front corner, see focus.js) out from under it. Each switch clears the log by passing it on the right or above.
+const SWITCH = { halfW: 72, drop: 14, h: 24 }, LOG_GAP = 8;
+// the largest zoom z with a·z ≥ need (0 when zooming out can't satisfy it)
+const zoomUpTo = (a, need) => need <= 0 ? (a >= 0 ? Infinity : need / a) : 0;
+function clearOfLog(b, cx, cy) {
+  const log = document.getElementById('feed').getBoundingClientRect();
+  const midR = (b.minR + b.maxR) / 2, midU = (b.minU + b.maxU) / 2;
+  let most = Infinity;
+  for (const r of rooms) {
+    _p.set(r.ox + RW, 0, r.oy + RD);
+    const across = _p.dot(RIGHT) - midR, down = midU - _p.dot(UP);   // tiles from the deck's middle, in screen directions
+    const passRight = zoomUpTo(across, log.right + LOG_GAP + SWITCH.halfW - cx);
+    const passAbove = zoomUpTo(-down, cy + SWITCH.drop + SWITCH.h + LOG_GAP - log.top);
+    const clear = Math.max(passRight, passAbove);
+    if (clear > 0) most = Math.min(most, clear);   // a switch no zoom-out can clear is left where it is
+  }
+  return most;
+}
+// the log grows as entries arrive, and the cards open and close: fit again unless the user has moved the view
+const refit = new ResizeObserver(() => { if (!cam.userMoved) fit(true); });
+for (const id of ['legend', 'feed']) refit.observe(document.getElementById(id));
 function zoomAt(sx, sy, f) {
   const nz = clamp(cam.z * f, 5, 140);
   const P = new THREE.Vector3().copy(cam.c).addScaledVector(RIGHT, (sx - vw / 2) / cam.z).addScaledVector(UP, -(sy - vh / 2) / cam.z);
@@ -199,8 +222,7 @@ for (const b of document.querySelectorAll('[data-toggle]')) {
   b.addEventListener('click', () => {
     const card = document.getElementById(b.dataset.toggle);
     card.classList.toggle('closed');
-    try { localStorage.setItem('fleet.deck.' + b.dataset.toggle, card.classList.contains('closed') ? 'closed' : 'open'); } catch (err) { /* storage unavailable */ }
-  });
+    try { localStorage.setItem('fleet.deck.' + b.dataset.toggle, card.classList.contains('closed') ? 'closed' : 'open'); } catch (err) { /* storage unavailable */ }  });
 }
 for (const id of ['legend', 'feed']) {
   let saved = null;
