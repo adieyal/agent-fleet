@@ -154,7 +154,8 @@ const chart = document.getElementById('skChart'), svg = document.getElementById(
 const side = document.getElementById('skSide');
 const TWEEN_MS = 400, DOT_MS = 1400, DOTS_PER_UPDATE = 80, PAD = 18, WAIT_W = 16;
 const LABEL_GAP = 36, LABEL_TOP = 36;   // room above each node, and above the top ones, for a two-line label
-const CAPTION_H = 38, MORE_H = 44, LABEL_W = 210, MIN_WIDTH = 760, NARROW = 700, LABEL_W_NARROW = 190, COL_W_NARROW = 150;
+const CAPTION_H = 38, MORE_H = 44, LABEL_W = 210, LABEL_W_MAX = 400, MIN_WIDTH = 760, NARROW = 700, LABEL_W_NARROW = 190, COL_W_NARROW = 150;
+const NODE_W = 12;
 const sk = { key: null, p: null, from: null, to: null, t0: 0, dots: [], carry: {}, raf: 0, selected: null, lastFocus: null, geo: null };
 
 const keyOf = p => `${p.host}:${p.pipeline}`;
@@ -220,13 +221,44 @@ function emitDots(before, run) {
 
 // A phone keeps the chart's left-to-right reading: columns stay COL_W_NARROW apart, wide enough for a label above each
 // node, end labels wrap to two lines, and the chart scrolls sideways with a visible bar and a "more columns" button.
-function geometry(columns) {
-  const narrow = chart.clientWidth < NARROW, labelW = narrow ? LABEL_W_NARROW : LABEL_W;
-  const least = narrow ? PAD * 2 + labelW + 12 + COL_W_NARROW * Math.max(0, columns - 1) : MIN_WIDTH;
+// The last column's labels sit in the margin right of it, as wide as its longest name needs, up to LABEL_W_MAX (on a
+// phone, what is left of the view beside its node); a name wider still wraps (see nameLines).
+function geometry(run) {
+  const columns = run.nodes.length, narrow = chart.clientWidth < NARROW;
+  const most = narrow ? Math.max(LABEL_W_NARROW, chart.clientWidth - PAD * 2 - NODE_W - 8) : LABEL_W_MAX;
+  const names = Math.max(0, ...(run.nodes[columns - 1] || []).map(n => textWidth(n, NAME_FONT)));
+  const labelW = Math.min(most, Math.max(narrow ? LABEL_W_NARROW : LABEL_W, names + LABEL_ROOM));
+  const least = narrow ? PAD * 2 + labelW + NODE_W + COL_W_NARROW * Math.max(0, columns - 1) : MIN_WIDTH;
   const width = Math.max(chart.clientWidth, least), height = chart.clientHeight;
   for (const el of [svg, dotsCanvas]) el.style.width = width + 'px';
   const clear = narrow ? MORE_H : 0;   // the strip the "more columns" button floats over
-  return { W: width - PAD * 2 - labelW, H: Math.max(160, height - PAD * 2 - clear), width, height, clear };
+  return { W: width - PAD * 2 - labelW, H: Math.max(160, height - PAD * 2 - clear), width, height, clear, nameW: labelW - LABEL_ROOM };
+}
+// Text widths as the chart's labels draw them, measured on a canvas so the margin is known before the chart is laid out.
+const NAME_FONT = '600 12.5px', LABEL_ROOM = 7 + 6;   // the gap from the node, and slack for the label's halo
+const measurer = document.createElement('canvas').getContext('2d'), widths = new Map();
+function textWidth(text, font) {
+  const key = font + '|' + text;
+  if (!widths.has(key)) {
+    measurer.font = `${font} ${getComputedStyle(svg).getPropertyValue('--sans') || 'sans-serif'}`;
+    widths.set(key, measurer.measureText(text).width);
+  }
+  return widths.get(key);
+}
+// An end node's name in lines no wider than `max`: whole if it fits, else broken at the last space that lets the first
+// line fit, the rest ending in "…" if even that is too wide. The node keeps its full name in a tooltip.
+export function nameLines(name, max) {
+  const fits = s => textWidth(s, NAME_FONT) <= max, words = name.split(' ');
+  if (fits(name)) return [name];
+  let i = words.length - 1;
+  while (i > 0 && !fits(words.slice(0, i).join(' '))) i--;
+  const lines = i ? [words.slice(0, i).join(' '), words.slice(i).join(' ')] : [name];
+  let last = lines.pop();
+  if (!fits(last)) {
+    while (last.length > 1 && !fits(last + '…')) last = last.slice(0, -1);
+    last = last.trimEnd() + '…';
+  }
+  return [...lines, last];
 }
 const more = document.getElementById('skMore');
 function edgeFade() {
@@ -248,12 +280,12 @@ function drawFrame() {
   sk.raf = 0;
   if (!sk.key || !sk.p?.run) return;
   const values = current(), run = sk.p.run, base = sk.p.baseline;
-  const { W, H, width, height, clear } = geometry(run.nodes.length), firsts = firstOfColumns(run);
+  const { W, H, width, height, clear, nameW } = geometry(run), firsts = firstOfColumns(run);
   const edges = Object.entries(values.edges).map(([key, c]) => [...key.split('→'), c]);
   const L = layout(run.nodes, values.counts, edges, W, H - LABEL_TOP - (firsts.size ? CAPTION_H : 0),
     { baseline: base?.counts, baseEdges: base?.edges, gap: LABEL_GAP });
   sk.geo = L;
-  renderChart(L, run, base, width, height, clear, firsts, { ...run, counts: values.counts, edges });
+  renderChart(L, run, base, width, height, clear, nameW, firsts, { ...run, counts: values.counts, edges });
   edgeFade();
   drawDots(L, width, height);
   const tweening = performance.now() - sk.t0 < TWEEN_MS;
@@ -261,7 +293,7 @@ function drawFrame() {
 }
 // A label is its node's name and count, then share and prev for an end node, or what waits in it. Baseline outlines go
 // under the bands; what a node holds that has not gone on yet is a hatched stub at its right edge.
-function renderChart(L, run, base, width, height, clear, firsts, now) {
+function renderChart(L, run, base, width, height, clear, nameW, firsts, now) {
   // which nodes end or wait is the report's; how much, the eased values' (a tween's fractions would make "0 waiting")
   const ends = terminals(run, base), values = now.counts, waits = new Map([...waiting(run, ends).keys()].map(n => [n, held(now, n)]));
   const lastCol = run.nodes.length - 1;
@@ -286,12 +318,14 @@ function renderChart(L, run, base, width, height, clear, firsts, now) {
     const rest = end ? [Math.round(kept) < Math.round(n.value) ? `${fmt(kept)} end here` : '', share, vs?.text].filter(Boolean).join(' · ')
       : waits.has(n.name) ? `${fmt(waits.get(n.name))} ${waitWord(run)}` : '';
     // drawn at the origin; placeLabels moves each where it keeps off the bands
-    const label = `<text><tspan class="nm">${esc(n.name)}</tspan>${n.col === lastCol
+    const lines = n.col === lastCol ? nameLines(n.name, nameW) : [n.name];
+    const label = `<text>${lines.map((line, i) => `<tspan class="nm"${i ? ' x="0" dy="14"' : ''}>${esc(line)}</tspan>`).join('')}${n.col === lastCol
         ? `<tspan class="ct" x="0" dy="14">${fmt(n.value)}${rest ? ' · ' + esc(rest) : ''}</tspan>`
         : `<tspan class="ct" dx="6">${fmt(n.value)}</tspan>${rest ? `<tspan class="ct" x="0" dy="14">${esc(rest)}</tspan>` : ''}`}</text>`;
     return `<g class="sk-node${end ? ' end' : ''}${sk.selected === n.name ? ' on' : ''}" data-node="${esc(n.name)}" tabindex="${end ? 0 : -1}"
       ${end ? `role="button" aria-label="${esc(`${n.name}: ${fmt(n.value)}, show its latest items`)}"` : ''}>
-      <rect x="${n.x}" y="${n.y}" width="${L.nodeW}" height="${n.hc}" rx="2"/>${label}</g>`;
+      <rect x="${n.x}" y="${n.y}" width="${L.nodeW}" height="${n.hc}" rx="2"/>${label}${
+      lines.join(' ') !== n.name ? `<title>${esc(n.name)}</title>` : ''}</g>`;
   }).join('');
   // under a column that counts each item once, by the first of its reasons, say so
   const captions = [...firsts].map(([ci, key]) => {

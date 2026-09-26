@@ -188,7 +188,7 @@ def test_an_end_node_lists_its_latest_items(deck: Deck, fixture_pipelines: dict[
     page = deck.page
     open_screen(deck, "home:sample-training")
     run = fixture_pipelines["pipeline_reports"][0]["run"]
-    expect(page.locator("#skSide tbody tr")).to_have_count(6)
+    expect(page.locator("#skSide tbody tr")).to_have_count(7)
     page.locator('#skSvg .sk-node[data-node="null cell"] rect').click()
     items = run["recent"]["null cell"]
     expect(page.locator("#skSide h3")).to_contain_text("null cell")
@@ -205,7 +205,7 @@ def test_an_end_node_lists_its_latest_items(deck: Deck, fixture_pipelines: dict[
     expect(page.locator("#skSvg .sk-cap")).to_contain_text("by first of its reasons")
     deck.shot("drilldown")
     page.locator("#skSide [data-back]").click()
-    expect(page.locator("#skSide tbody tr")).to_have_count(6)
+    expect(page.locator("#skSide tbody tr")).to_have_count(7)
     close(deck)
     assert deck.errors == []
 
@@ -221,6 +221,37 @@ def test_bands_outlines_and_labels_stay_inside_the_chart(deck: Deck) -> None:
     outside = deck.page.evaluate(INSIDE_SVG)
     close(deck)
     assert outside == []
+
+
+LONG_LABEL = """(name => {
+  const chart = document.getElementById('skChart');
+  chart.scrollLeft = chart.scrollWidth;   // a phone scrolls to the last column
+  const g = [...document.querySelectorAll('#skSvg .sk-node')].find(g => g.dataset.node === name);
+  const r = g.querySelector('text').getBoundingClientRect(), c = chart.getBoundingClientRect();
+  return { inside: r.left >= c.left && r.right <= c.right && r.top >= c.top && r.bottom <= c.bottom,
+    shown: [...g.querySelectorAll('text .nm')].map(t => t.textContent).join(' '), tip: g.querySelector('title')?.textContent ?? null };
+})"""
+
+
+def test_a_long_end_label_is_whole_and_inside_the_chart(deck: Deck, fixture_pipelines: dict[str, Any]) -> None:
+    """The last column's margin is as wide as its longest name needs, so a long reason shows in full, in view."""
+    name = next(n for n in fixture_pipelines["pipeline_reports"][0]["run"]["nodes"][-1] if len(n) >= 45)
+    open_screen(deck, "home:sample-training")
+    got = deck.page.evaluate(f"{LONG_LABEL}({json.dumps(name)})")
+    deck.shot("long-label")
+    close(deck)
+    assert got == {"inside": True, "shown": name, "tip": None}, got
+
+
+def test_an_end_name_wider_than_its_margin_wraps_then_ends_in_an_ellipsis(deck: Deck) -> None:
+    got = deck.page.evaluate("""import('/js/sankey.js').then(({ nameLines }) => [
+      nameLines('null cell', 200), nameLines('line totals do not add up to the printed total', 200),
+      nameLines('line totals do not add up to the printed total on any of the pages of this invoice', 200),
+      nameLines('line_totals_do_not_add_up_to_the_printed_total', 200)])""")
+    assert got[0] == ["null cell"]
+    assert " ".join(got[1]) == "line totals do not add up to the printed total" and len(got[1]) == 2
+    assert len(got[2]) == 2 and got[2][0].startswith("line totals") and got[2][1].endswith("…")
+    assert len(got[3]) == 1 and got[3][0].endswith("…")
 
 
 LABELS_ON_BANDS = """(() => {
