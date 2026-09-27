@@ -156,13 +156,13 @@ def existing_checks(environment):
     before = (work.get(item_id), work.criteria(item_id), work.progress(item_id))
     execution = composition.open_execution(store)
     key = "phase2-" + str(uuid4())
-    
+
     def payload(cwd):
         return {"cwd": cwd, "arguments": ["create", "--project", item.project,
             "--description", key, "--agent", "codex", "--cwd", cwd,
             "--permission", "read-only", "--steps-file", "/dev/stdin", "--hold"],
             "steps": ["Reply with FLEET_STATUS: done. Do not use tools."], "context": [], "hold": True}
-    
+
     print("1. Two controller processes contend for one action; expect identical run IDs and four history rows.", flush=True)
     program = '''
     import json, sys
@@ -200,13 +200,13 @@ def existing_checks(environment):
     subjects = {f"execution:{kind}:{identity}" for kind, identity in
                 (("action", run.action), ("run", run.id), ("claim", run.id), ("request", key))}
     assert len([row for row in store.history_after(sequence) if row["subject"] in subjects]) == 4
-    
+
     print("2. Dispatch another action to the second host; expect distinct actions and two held jobs.", flush=True)
     other = execution.dispatch(item_id, host=hosts[1].name, runtime="codex", payload=payload(environment.homes[hosts[1].name]),
         actor="user", reason="phase2 check", idempotency_key=key + "-home").run
     assert other.action != run.action
     execution.deliver(run, lambda args, stdin: transport.call(hosts[0], args, stdin_text=stdin), lambda *args: None)
-    
+
     print("3. Discard the second host's create reply; expect the same run without another create.", flush=True)
     calls = []
     def dropped(args, stdin):
@@ -222,7 +222,7 @@ def existing_checks(environment):
         matches = [job for job in jobs if job.get("run_id") == intended.id]
         assert len(matches) == 1 and matches[0]["id"] == intended.remote_job_id
         print(f"  {host.name}:{intended.remote_job_id} run={intended.id}")
-    
+
     print("4. Inject a disconnect during reconciliation; expect unknown outcome, active claims, unchanged work.", flush=True)
     def disconnected(args, stdin):
         raise FleetError("injected SSH disconnect")
