@@ -54,8 +54,11 @@ class AttentionItem:
     acknowledged_at: datetime | None = None
     resolved_at: datetime | None = None
     stream_context: StreamContext | None = None
+    options: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
+        for option in self.options:
+            required(option, "option")
         for name in ("project", "owner", "source", "source_reference", "headline", "context_reference"):
             required(getattr(self, name), name)
         if len(self.headline.split()) > 12:

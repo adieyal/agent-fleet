@@ -21,6 +21,8 @@ from fleet.infrastructure.sqlite.execution import ExecutionRepository
 from fleet.infrastructure.sqlite.library import LibraryRepository
 from fleet.modules.execution import ExecutionFacade
 from fleet.modules.library import LibraryFacade
+from fleet.modules.decisions import DecisionsFacade
+from fleet.infrastructure.sqlite.decisions import DecisionRepository
 
 
 def store_path() -> Path:
@@ -59,3 +61,10 @@ def open_execution(store: Store | None = None) -> ExecutionFacade:
 def open_library(store: Store | None = None) -> LibraryFacade:
     store = store if store is not None else open_store()
     return LibraryFacade(LibraryRepository(store), open_work(store))
+
+
+def open_decisions(store: Store | None = None) -> DecisionsFacade:
+    store = store if store is not None else open_store()
+    attention = lambda unit: AttentionFacade(AttentionRepository(store, unit), store.clock)
+    work = lambda unit: WorkFacade(WorkRepository(store, attention, unit), FileEvidenceReader(), store.clock)
+    return DecisionsFacade(DecisionRepository(store, attention, work), store.clock)

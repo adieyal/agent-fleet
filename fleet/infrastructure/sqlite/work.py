@@ -1,14 +1,14 @@
 """SQLite adapter for Work-owned records."""
 
 import json
-from contextlib import closing, contextmanager
 from dataclasses import asdict
 from datetime import datetime
-from typing import Callable, Iterator
+from typing import Callable
 
 from fleet.modules.attention import AttentionFacade
 from fleet.modules.work import Criterion, EvidenceSpecification, Relation, Summary, WorkItem
-from .store import Store, UnitOfWork, connect
+from .store import Store, UnitOfWork
+from .repository import Repository
 
 RECORDS = {"item": WorkItem, "criterion": Criterion, "relation": Relation, "summary": Summary}
 
@@ -29,23 +29,15 @@ def decode(kind: str, payload: str) -> WorkItem | Criterion | Relation | Summary
     return RECORDS[kind](**values)
 
 
-class WorkRepository:
+class WorkRepository(Repository):
     def __init__(self, store: Store, attention: Callable[[UnitOfWork], AttentionFacade],
                  unit: UnitOfWork | None = None) -> None:
         self.store, self.attention_factory, self.unit = store, attention, unit
         if unit is not None:
             self.attention = attention(unit)
 
-    @contextmanager
-    def transaction(self) -> Iterator["WorkRepository"]:
-        with self.store.unit_of_work() as unit:
-            yield WorkRepository(self.store, self.attention_factory, unit)
-
-    def rows(self, query: str, parameters: tuple = ()) -> list:
-        if self.unit is not None:
-            return self.unit.connection.execute(query, parameters).fetchall()
-        with closing(connect(self.store.path)) as connection:
-            return connection.execute(query, parameters).fetchall()
+    def bind(self, unit: UnitOfWork) -> None:
+        self.attention = self.attention_factory(unit)
 
     def get(self, kind: str, identity: str) -> WorkItem | Criterion | Relation | Summary:
         if kind not in RECORDS:
