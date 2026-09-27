@@ -11,7 +11,7 @@ from fleet.transport import FleetError
 @pytest.fixture
 def config_path(tmp_path, monkeypatch):
     path = tmp_path / "config.json"
-    monkeypatch.setattr(transport, "CONFIG_PATH", path)
+    monkeypatch.setenv("FLEET_CONFIG", str(path))
     return path
 
 

@@ -496,7 +496,7 @@ def make_handler(state: FleetState | FixtureState,
 
 def workspace_path() -> Path:
     """Live workspace state sits beside the Fleet config, outside Git."""
-    return transport.CONFIG_PATH.parent / "workspace.json"
+    return transport.config_path().parent / "workspace.json"
 
 
 def serve(hosts: list[Host], *, port: int, bind: str, open_browser: bool = False,
