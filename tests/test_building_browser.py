@@ -402,7 +402,7 @@ def test_the_lift_goes_between_floors_and_back_to_the_building(page: Page, resto
     # Esc steps out one level, but only once whatever is open over the deck has closed
     page.locator('.plate[data-floor="1"] .enter').click()
     expect(page.locator("body")).to_have_attribute("data-view", "floor")
-    page.locator("#tags .tag", has_text="e1b5c8").dispatch_event("click")
+    page.locator("#tags .tag", has_text="a1c3e9").dispatch_event("click")   # a running job: failed ones have left the floor
     expect(page.locator("#panel")).to_have_class("open")
     page.keyboard.press("Escape")
     expect(page.locator("#panel")).not_to_have_class("open")
