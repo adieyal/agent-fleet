@@ -10,6 +10,7 @@ uv run --group dev python art/scripts/shoot_bench.py [DIR]   # screenshot /proto
 blender -b -P art/scripts/shoot_robot.py && uv run --group dev python art/scripts/robot_sheets.py
                           # robot turnaround, faces and accessories, every clip, and a side-by-side with B2
 uv run --group dev python art/scripts/build_robot_sprites.py   # the robot's sprite atlases (after art/build.sh robot)
+uv run --group dev python art/scripts/measure_robot_preview.py # /prototype/robot frame time, SwiftShader and GPU
 ```
 
 Output goes to `fleet/web/assets/world/<scene>/`, and that is the only thing committed. Each scene must stay under 15 MB; `build.sh` fails when one doesn't.

@@ -198,8 +198,17 @@ Rules for the runtime:
 - A clip is drawn only in the facings it lists.
 - Tags hang from the host kit's `kit_top` if the frame lists one for it, else from `head_top`, plus a margin. Items can be anchored to `hand_l` / `hand_r`. `hit` is the click box, frontmost first.
 
+## Preview
+
+`/prototype/robot` (`fleet/web/prototype/robot.js`, served by the deck, not linked from it) is a reference runtime on one 2D canvas, no WebGL. It tints each layer image through its mask the first time it is drawn for a host (and keeps it), composites the layers in the order above, and walks a robot round the B2 bench: in front of it, round its end, behind it, then down onto a chair to type, drawn under and over the desk by the desk split. B2's typing robot sits at desk 1 for comparison. Its frame time is measured by `art/scripts/measure_robot_preview.py` in headless Chromium at 1672 × 941, frame rate uncapped:
+
+| Chromium | Far (1x) | Mid (2x) | Close (4x) |
+|---|---|---|---|
+| GPU disabled (SwiftShader) | 1.31 ms | 3.78 ms | 4.59 ms |
+| GPU (ANGLE GL) | 1.33 ms | 3.49 ms | 4.20 ms |
+
 ## Open
 
-- **Scale against B2.** The concept robot's helmet is 0.71 m wide (`HEAD_M` in `build_robot.py`, fitted to the 3D l2 bench); B2's robots, fitted to l2 by head size, have 0.40 m helmets. The concept robot is about 1.75 times B2's size. One of the two fits is wrong; changing `HEAD_M` means rebuilding the robot and re-rendering the sprites (about 2 hours on the GPU).
+- **Scale against B2.** The concept robot's helmet is 0.71 m wide (`HEAD_M` in `build_robot.py`, fitted to the 3D l2 bench); B2's robots, fitted to l2 by head size, have 0.40 m helmets. On the B2 bench in the preview the concept robot is about 1.75 times B2's. One of the two fits is wrong; changing `HEAD_M` means rebuilding the robot and re-rendering the sprites (about 2 hours on the GPU).
 - **Standing up** cuts from seated to standing: no `StandUp` frames yet.
 
