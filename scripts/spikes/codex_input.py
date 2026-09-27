@@ -12,6 +12,8 @@ import subprocess
 import tempfile
 import time
 
+from terminal import Terminal, acquire_terminal
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -32,23 +34,41 @@ def main() -> None:
         environment["HOME"] = str(root)
         environment["CODEX_HOME"] = str(home)
         prompt = ("Ask me to choose A or B, and stop for my reply. Do not choose for me."
-                  if args.mode == "question" else "Reply with exactly CODEX_FIRST. Do not use tools.")
+                  if args.mode in ("question", "interactive") else "Reply with exactly CODEX_FIRST. Do not use tools.")
         if args.mode == "interactive":
-            command += ["-C", str(root), prompt]
+            command += ["-c", f'projects.{json.dumps(str(root))}.trust_level="trusted"',
+                        "-C", str(root), prompt]
             master, slave = pty.openpty()
+            terminal = Terminal(master, slave)
             process = subprocess.Popen(command, cwd=root, env=environment, stdin=slave, stdout=slave,
-                                       stderr=slave, start_new_session=True)
+                                       stderr=slave, start_new_session=True, preexec_fn=acquire_terminal)
             os.close(slave)
             output = bytearray()
-            deadline = time.monotonic() + 35
+            trusted = False
+            answered = False
+            deadline = time.monotonic() + 60
             while time.monotonic() < deadline and process.poll() is None:
                 if select.select([master], [], [], 0.25)[0]:
                     try:
-                        output.extend(os.read(master, 65536))
+                        chunk = os.read(master, 65536)
+                        output.extend(chunk)
+                        terminal.respond(chunk)
                     except OSError:
                         break
-                if b"CODEX_FIRST" in output and notify_file.exists():
-                    break
+                if not trusted and b"Yes, continue" in output:
+                    time.sleep(1)
+                    os.write(master, b"\r")
+                    trusted = True
+                if notify_file.exists():
+                    notifications = [json.loads(line) for line in notify_file.read_text().splitlines()]
+                    if any("A or B" in item.get("last-assistant-message", "") for item in notifications) and not answered:
+                        print("before_answer_notify:", notifications)
+                        os.write(master, b"A. Reply with exactly CODEX_ANSWER_RECEIVED.")
+                        time.sleep(0.5)
+                        os.write(master, b"\r")
+                        answered = True
+                    if any(item.get("last-assistant-message") == "CODEX_ANSWER_RECEIVED" for item in notifications):
+                        break
             print("tty_tail:", output.decode(errors="replace")[-750:])
             print("waiting_at_capture:", process.poll() is None)
             if process.poll() is None:
@@ -80,10 +100,15 @@ def main() -> None:
                                        if line.startswith("{")]
                     print("resume_exit:", resumed.returncode)
                     print("resume_events:", [r.get("type") for r in resumed_records])
+                    print("resume_thread_ids:", [r.get("thread_id") for r in resumed_records
+                                                  if r.get("type") == "thread.started"])
                     print("resume_text:", [(r.get("item") or {}).get("text") for r in resumed_records
                                            if (r.get("item") or {}).get("type") == "agent_message"])
                     print("resume_stderr:", resumed.stderr[-350:])
         print("notify:", [json.loads(line).get("type") for line in notify_file.read_text().splitlines()]
+              if notify_file.exists() else [])
+        print("notify_messages:", [json.loads(line).get("last-assistant-message")
+                                    for line in notify_file.read_text().splitlines()]
               if notify_file.exists() else [])
 
 

@@ -6,11 +6,14 @@ import json
 import os
 from pathlib import Path
 import pty
+import re
 import select
 import shutil
 import subprocess
 import tempfile
 import time
+
+from terminal import Terminal, acquire_terminal
 
 
 def main() -> None:
@@ -26,7 +29,7 @@ def main() -> None:
             shutil.copyfile(credentials, config / ".credentials.json")
         state = Path.home() / ".claude.json"
         if state.is_file():
-            shutil.copyfile(state, root / ".claude.json")
+            shutil.copyfile(state, config / ".claude.json")
         hook = root / "hook.py"
         hook.write_text(
             "import json,sys\n"
@@ -50,7 +53,7 @@ def main() -> None:
                               capture_output=True, text=True, timeout=10)
         print("auth:", auth.stdout[:200])
         prompt = (
-            "Use the Bash tool to run touch marker.txt exactly once in this temporary directory. "
+            f"Use the Bash tool to run touch {root / 'marker.txt'} exactly once. "
             "Then report whether it worked."
             if args.mode != "resume" else "Reply with the exact word RESUMED."
         )
@@ -58,7 +61,7 @@ def main() -> None:
                    "--include-hook-events", "--permission-mode", "manual", "--settings", str(settings),
                    "--setting-sources", "", "--model", "haiku"]
         if args.mode == "interactive":
-            command = ["claude", "--settings", str(settings), "--setting-sources", "", "--model", "haiku"]
+            command = ["claude", "--settings", str(settings), "--setting-sources", "", "--model", "haiku", prompt]
         if args.mode == "resume":
             first = subprocess.run(command[:], cwd=root, env=environment, capture_output=True,
                                    text=True, timeout=90)
@@ -73,27 +76,43 @@ def main() -> None:
                        "--setting-sources", "", "--model", "haiku"]
         if args.mode == "interactive":
             master, slave = pty.openpty()
+            terminal = Terminal(master, slave)
             process = subprocess.Popen(command, cwd=root, env=environment, stdin=slave, stdout=slave,
-                                       stderr=slave, start_new_session=True)
+                                       stderr=slave, start_new_session=True, preexec_fn=acquire_terminal)
             os.close(slave)
             output = bytearray()
-            sent = False
-            deadline = time.monotonic() + 45
+            trusted = False
+            answered = False
+            deadline = time.monotonic() + 60
             while time.monotonic() < deadline:
                 if select.select([master], [], [], 0.25)[0]:
                     try:
-                        output.extend(os.read(master, 65536))
+                        chunk = os.read(master, 65536)
+                        output.extend(chunk)
+                        terminal.respond(chunk)
                     except OSError:
                         break
-                if not sent and time.monotonic() > deadline - 40:
-                    os.write(master, b"Use Bash to run touch marker.txt.\r")
-                    sent = True
-                if events.exists() and "PermissionRequest" in events.read_text():
-                    break
+                plain = re.sub(rb"\x1b\[[0-?]*[ -/]*[@-~]", b" ", bytes(output))
+                if not trusted and b"trust this folder" in plain and b"confirm" in plain:
+                    time.sleep(1)
+                    os.write(master, b"\x1b[B")
+                    time.sleep(0.5)
+                    os.write(master, b"\r")
+                    trusted = True
+                if events.exists():
+                    hooks = events.read_text()
+                    if "PermissionRequest" in hooks and not answered and b"Yes" in plain[-4000:]:
+                        time.sleep(7)
+                        print("before_answer_hooks:", events.read_text())
+                        os.write(master, b"\r")
+                        answered = True
+                    if answered and '"Stop"' in hooks:
+                        break
                 if process.poll() is not None:
                     break
             print("tty_tail:", output.decode(errors="replace")[-1200:])
             print("waiting_at_capture:", process.poll() is None)
+            print("answer_sent:", answered, "marker_exists:", (root / "marker.txt").exists())
             if process.poll() is None:
                 process.terminate()
             process.wait(timeout=5)

@@ -1,6 +1,8 @@
 # FS-003: input detection and delivery spike
 
-Run on carbon, 2026-09-27, with Claude Code 2.1.283 and codex-cli 0.157.1. The probes create temporary homes, copy only local authentication/state needed to start the CLIs, and pass Claude hook settings explicitly. They do not edit the user's Claude or Codex settings. Each command below is run from this repository. Session IDs and temporary paths vary.
+Run on home, 2026-09-27, with Claude Code 2.1.281 and codex-cli 0.154.0 (`claude --version`; `codex --version`). These results supersede the initial carbon probes (Claude 2.1.283 / Codex 0.157.1), which verified headless behavior but stopped at onboarding/terminal queries interactively. The probes create temporary homes, copy local authentication/state needed to start the CLIs, and pass Claude hook settings explicitly. They do not edit the user's Claude or Codex settings. Each command below is run from this repository. Session IDs and temporary paths vary; excerpts omit terminal escape sequences and repetitive stream records.
+
+The interactive probes own a 120×40 pseudo-terminal, answer terminal queries, acquire a controlling terminal, and accept trust only for their own temporary directory. Claude's copied onboarding state must live at `$CLAUDE_CONFIG_DIR/.claude.json`. Small input pacing delays let the TUIs finish handling the preceding key. Both probes stop their own processes and delete their temporary homes on completion. Codex prints a warning that helper aliases cannot be created under `/tmp`; this did not prevent these no-tool turns.
 
 ## Detection
 
@@ -13,7 +15,7 @@ Observed excerpt:
 ```text
 exit: 0
 stream: ... ('system', 'permission_denied', '<session-id>') ... ('result', 'success', '<session-id>')
-tools: [('Bash', {'command': 'touch marker.txt', ...})]
+tools: [('Bash', {'command': 'touch /tmp/fleet-claude-spike-.../marker.txt', ...})]
 hooks: [('PermissionRequest', None, 'default'), ('Stop', None, 'default')]
 ```
 
@@ -26,13 +28,15 @@ Command: `python3 scripts/spikes/claude_input.py interactive`
 Observed excerpt:
 
 ```text
-tty_tail: ... Select login method: ... Claude account with subscription ...
+before_answer_hooks: ... "hook_event_name": "PermissionRequest", "tool_name": "Bash" ...
+... "hook_event_name": "Notification", "message": "Claude needs your permission", "notification_type": "permission_prompt" ...
 waiting_at_capture: True
+answer_sent: True marker_exists: True
 exit: 143
-hooks: []
+hooks: [('PermissionRequest', None, 'default'), ('Notification', 'permission_prompt', None), ('Stop', None, 'default')]
 ```
 
-The isolated interactive TTY reached Claude's login/onboarding screen, before the prompt was accepted. The script terminated only its own process after 45 seconds. Thus this run did not establish whether `Notification`, `PermissionRequest`, or `Stop` fires at an actual interactive permission or input wait. Do not treat the absence of hook records here as a negative hook result. The transcript parser in fleetd can see an interactive Claude `AskUserQuestion` or `ExitPlanMode` tool call when one is written, but that is evidence of the tool call, not proof that the session is still waiting.
+At a real permission dialog, `PermissionRequest` fires first. Leaving the dialog unanswered for seven seconds also captured `Notification(permission_prompt)`. An earlier run answered immediately and captured only `PermissionRequest` and `Stop`: Notification is delayed and cannot reliably describe short waits. `Stop` appeared after approval and completion, not while blocked. The process remained alive at capture because an interactive session returns to its prompt after a turn. Exit 143 is the probe's termination, not an agent failure. This establishes the tested Bash permission path, not every kind of question or idle notification. The transcript parser in fleetd can see `AskUserQuestion` or `ExitPlanMode` when written, but a tool call alone does not prove the session is still waiting.
 
 ### Codex exec
 
@@ -59,13 +63,17 @@ Command: `python3 scripts/spikes/codex_input.py interactive`
 Observed excerpt:
 
 ```text
-tty_tail: ... \x1b[6n ...
+before_answer_notify: [{'type': 'agent-turn-complete', ... 'client': 'codex-tui', ... 'last-assistant-message': 'Which do you choose: A or B?'}]
+tty_tail: ... CODEX_ANSWER_RECEIVED ...
 waiting_at_capture: True
-exit: -15
-notify: []
+exit: 0
+notify: ['agent-turn-complete', 'agent-turn-complete', 'agent-turn-complete']
+notify_messages: ['Which do you choose: A or B?', '{"title":"Choose A or B"}', 'CODEX_ANSWER_RECEIVED']
 ```
 
-The isolated pseudo-terminal did not answer the TUI's terminal queries, so the probe never reached an agent turn. This run does not establish whether Codex interactive `notify` signals a real wait. fleetd discovers interactive Codex sessions from rollout transcripts, but its `CodexRolloutParser` handles completed messages, commands, plans and errors, not a waiting event.
+The TUI asked a real question and stayed at its prompt. The question, background title generation, and answer acknowledgement all emitted `agent-turn-complete`. Neither event type nor event count proves waiting or answer delivery. The probe checks the exact acknowledgement text before finishing. fleetd discovers interactive Codex sessions from rollout transcripts, but its `CodexRolloutParser` handles completed messages, commands, plans and errors, not a waiting event. A Codex permission dialog was not exercised here. [Official OpenAI notification documentation](https://learn.chatgpt.com/docs/config-file/config-advanced#notifications) distinguishes the external `notify` program (turn completion) from TUI terminal notifications, which can include approval requests; this spike does not establish a fleetd collector for the latter.
+
+A later run through `python3 scripts/checks/input_detection_delivery.py` reached its 60-second bound with `tty_tail: ... model: loading ...`, `notify: []`, and `notify_messages: []`. That repeat is inconclusive, not a negative notification result or evidence of successful delivery. The successful direct command above is the delivery evidence; the checkpoint runner prints observations for review rather than asserting that every runtime reached a turn.
 
 ## Delivery
 
@@ -94,6 +102,7 @@ Observed excerpt:
 thread_id: <thread-id>
 resume_exit: 0
 resume_events: ['thread.started', 'turn.started', 'item.completed', 'turn.completed']
+resume_thread_ids: ['<thread-id>']
 resume_text: ['CODEX_RESUMED']
 ```
 
@@ -101,11 +110,11 @@ Use `codex exec resume --json <thread-id> <answer>` as a new process after the p
 
 ### Claude Code interactive
 
-Command: `python3 scripts/spikes/claude_input.py interactive` produced the login-screen output above. No answer was delivered. fleetd does not own the terminal for independently launched interactive sessions, so it cannot safely write an answer there today. The discovered session's `resume` string is `claude --resume <id>`; that is for continuing a stopped session, not injecting text into a live prompt. Delivery for these sessions remains manual until Fleet explicitly owns their terminal or a runtime-supported input channel is verified.
+Command: `python3 scripts/spikes/claude_input.py interactive` produced `answer_sent: True marker_exists: True` and the hook sequence above. The probe wrote Enter to its owned PTY at the approval dialog; the requested temporary file was then created and `Stop` fired. Recommend terminal input for a live interactive permission dialog **only when Fleet owns that terminal and can correlate its current request**. fleetd does not own independently launched sessions' terminals, so those still require manual delivery. Its displayed `claude --resume <id>` is for continuing a stopped session, not approving a live dialog. This probe verified permission approval, not arbitrary text or option selection.
 
 ### Codex interactive
 
-Command: `python3 scripts/spikes/codex_input.py interactive` produced the terminal-query output above. No answer was delivered. fleetd likewise does not own these terminals. Its displayed `resume` string is `codex resume <id>`, which continues a session through a user terminal; it does not send text into an independently running TUI. Delivery remains manual until a controlled terminal or supported input API is demonstrated.
+Command: `python3 scripts/spikes/codex_input.py interactive` produced the question and `CODEX_ANSWER_RECEIVED` acknowledgement above. The probe wrote `A. Reply with exactly CODEX_ANSWER_RECEIVED.` and then Enter into the same live PTY. Recommend terminal input for a live interactive session that Fleet owns; retain manual delivery for sessions fleetd merely discovers. Its displayed `codex resume <id>` continues a session through a user terminal; it does not inject into an independently running TUI. This probe verified a text answer, not permission-menu selection. The terminal transport alone provides no request identity, acknowledgement protocol, or exactly-once guarantee.
 
 ## What fleetd sees now
 
@@ -115,8 +124,12 @@ Interactive sessions are discovered by scanning recent Claude project and Codex 
 
 ## Observation shape
 
-Emit one sourced observation per confirmed transition, with `host`, `runtime`, `owner_type` (`job` or `session`), `job_id` when applicable, `session_id`, `step_index` when applicable, `kind` (`input_requested`, `input_cleared`, or `turn_ended`), `reason` (`permission`, `question`, `plan_approval`, or unknown), `source_event` (hook name or stream/transcript record type), `source_event_id` or a stable occurrence timestamp, `observed_at`, and a context reference to the retained raw record. Use `(host, job_id)` for a job's source reference and `(host, session_id)` for an interactive session's; include the occurrence ID separately so repeat signals for the same request deduplicate while a later request can open a new attention item. Only emit `input_requested` from a source that actually identifies a request. Record absent/ambiguous signals as unknown, and do not resolve a request on host silence.
+Emit one sourced observation per confirmed transition, with a wire `schema_version`, `host`, `runtime`, `owner_type` (`job` or `session`), `job_id` when applicable, `session_id`, `step_index` when applicable, `kind` (`input_requested`, `input_cleared`, or `turn_ended`), `reason` (`permission`, `question`, `plan_approval`, or unknown), `source_event` (hook name or stream/transcript record type), `source_event_id` or a stable occurrence timestamp, `observed_at`, and a context reference to the retained raw record. Use `(host, job_id)` for a job's source reference and `(host, session_id)` for an interactive session's; include the occurrence ID separately so repeat signals for the same request deduplicate while a later request can open a new attention item. Only emit `input_requested` from a source that actually identifies a request. Record absent/ambiguous signals as unknown, and do not resolve a request on host silence.
+
+Prefer Claude's `PermissionRequest` with its tool input as early evidence, correlating a later `permission_prompt` notification to that request rather than creating another item. A headless denied request is not a suspended process: retain that distinction in context and delivery capability. Emit `input_cleared` only on correlated answer/tool-result evidence; a generic Stop/turn-complete is `turn_ended`, not proof an outstanding request was answered. Observations owns sourced records, Attention deduplicates requests, Decisions records accepted answers, and Execution owns delivery and its idempotency key. No production protocol is changed by this spike.
 
 ## Cannot detect or deliver yet
 
-The probes did not prove reliable interactive hook behavior, a Codex waiting event, or any way to inject an answer into independently owned live terminals. Headless permission requests are denied rather than held open in the tested `claude -p` mode; answering requires a new turn that may retry the denied operation. Ordinary text questions have no machine-readable request identity in the observed Codex event stream. A Stop hook or `agent-turn-complete` cannot distinguish an input request from normal completion. Do not promise automatic interactive answer delivery or exactly-once effects of a resumed prompt from this evidence alone.
+The probes establish Claude's tested interactive Bash permission signal and delivery into both probe-owned terminals. They do not establish signals for every interactive question, a Codex permission wait, or access to independently owned terminals. Headless permission requests are denied rather than held open in the tested `claude -p` mode; answering requires a new turn that may retry the denied operation. Ordinary text questions have no machine-readable request identity in the observed Codex event stream. A Stop hook or `agent-turn-complete` cannot distinguish an input request from normal completion. No finite sample proves hook reliability across runtime versions; hooks must be installed before the session starts. Do not promise automatic delivery to discovered sessions or exactly-once effects from this evidence alone.
+
+The regression check is `uv run --frozen pytest -q tests/integration/test_input_spike_artifacts.py`; it checks artifact coverage and the real PTY's query replies, dimensions and controlling-terminal setup without invoking either paid runtime. At the checkpoint, `python3 scripts/checks/input_detection_delivery.py` runs all seven commands sequentially for evidence review and needs local authentication. A deadline means an inconclusive probe if the stated evidence has not arrived; `waiting_at_capture` alone never proves an input request. The seven-second Claude permission wait and successful approval were repeated twice on home with the same hook sequence.
