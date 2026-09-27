@@ -93,8 +93,27 @@ def board(items, h, out) -> None:
     b.convert('RGB').save(out, optimize=True)
 
 
+def native(items, out, bg=(255, 255, 255, 255)) -> None:
+    """Images side by side at their native pixels (no resampling), bottoms aligned, each captioned."""
+    ims = [(cap, flat(im.convert('RGBA')) if im.mode == 'RGBA' else im.convert('RGBA')) for cap, im in items]
+    h = max(i.height for _, i in ims)
+    W = sum(i.width for _, i in ims) + 12 * (len(ims) - 1)
+    b = Image.new('RGBA', (W, h + 34), bg)
+    d = ImageDraw.Draw(b)
+    x = 0
+    for cap, im in ims:
+        b.paste(im, (x, 34 + h - im.height))
+        d.text((x + 4, 6), cap, fill='black', font=ImageFont.load_default(size=16))
+        x += im.width + 12
+    b.convert('RGB').save(out, optimize=True)
+
+
+L2 = Path(__file__).resolve().parents[2] / 'docs/images/concept/l2.png'
+L2_CROP = (520, 380, 1210, 700)  # l2's three seated robots at its bench, 171.5 px/m
+
+
 def review(src: Path, dest: Path, context: Path) -> None:
-    """Rebuild review boards from render_motion.py's review set. context: the job's motion-test context dir."""
+    """Round-2 review boards from render_motion.py's review set. context: the job's motion-test context dir."""
     dest.mkdir(parents=True, exist_ok=True)
     rebuild = Path.home() / '.local/state/fleet/renovation/robot-rebuild'
     sheet = Image.open(context / 'robot-sheet.png')
@@ -107,15 +126,23 @@ def review(src: Path, dest: Path, context: Path) -> None:
     board([('target', pose)] + [(f'floor camera (28/33), turned {a} deg', o(f'turn_{a:03d}'))
                                 for a in range(0, 360, 45)], 900, dest / '02_turnaround.png')
     board([('head, floor camera', o('close_head_floor')), ('head, front', o('close_head_front')),
-           ('head, back, floor camera', o('close_head_back'))], 800, dest / '03_close_head.png')
-    board([(f'{p.replace("_", " ")}, {v}', o(f'close_hand_{p}_{v}')) for p in ('thumbs_up', 'fist', 'open')
-           for v in ('floor', 'front')] + [('thumbs up, whole robot', o('thumbs_up_full'))], 700,
-          dest / '04_close_hands.png')
-    board([('back, floor camera', o('close_back')), ('turned 135 deg', o('turn_135')),
-           ('turned 225 deg', o('turn_225'))], 900, dest / '05_close_back.png')
-    for name in ('bench_typing', 'bench_walking'):
-        for mult in (1, 2):  # native pixels: 1x and 2x are the floor's sprite densities
-            flat(o(f'{name}_{mult}x')).convert('RGB').save(dest / f'06_{name}_{mult}x.png')
+           ('head, side', o('close_head_side')), ('head, back, floor camera', o('close_head_back'))], 800,
+          dest / '03_close_head.png')
+    board([('back, floor camera (8x)', o('close_back')), ('turned 135 deg', o('turn_135')),
+           ('turned 225 deg', o('turn_225'))], 900, dest / '04_close_back.png')
+    poses = ('fist', 'open', 'thumbs_up', 'cupped', 'pinch', 'book', 'sheet')
+    clip = {'fist': 'walking, idle, typing', 'open': 'waving', 'thumbs_up': 'thumbs up', 'cupped': 'box',
+            'pinch': 'writing', 'book': 'reading (seated)', 'sheet': 'walking, reading'}
+    board([(f'{p.replace("_", " ")}: {clip[p]}', o(f'hand_{p}_close')) for p in poses], 600,
+          dest / '05_hands_close.png')
+    board([(f'{p.replace("_", " ")}: {clip[p]}', o(f'hand_{p}_full')) for p in poses], 600,
+          dest / '06_hands_in_clip.png')
+    l2 = Image.open(L2).crop(L2_CROP)
+    for mult in (1, 2):
+        ref = l2 if mult == 1 else l2.resize((l2.width * 2, l2.height * 2), Image.LANCZOS)
+        native([(f'l2 (concept), {mult}x', ref)] + [(f'{n}, {mult}x', o(f'bench_{n}_{mult}x'))
+                                                     for n in ('typing', 'reading', 'walking')],
+               dest / f'07_bench_{mult}x_vs_l2.png')
 
 
 if __name__ == '__main__' and sys.argv[1] == 'review':

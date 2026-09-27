@@ -4,7 +4,63 @@ This is a throwaway test on branch `renovate/motion-test` that compares clip sou
 
 **Decision after step 2:** the user chose Mixamo for every clip; HY-Motion is dropped. `robot-sheet.png` and `robot-poses/` are the style target, replacing B2. The code now handles Mixamo rigs only. The step-2 scripts (`run_step2.sh`, the HY-Motion `clip` command) remain in commit 9005887.
 
-## Robot rebuild 1: from the whole-body model
+## Robot rebuild 2
+
+This round fixes the user's review of rebuild 1. Boards are in the outbox under `robot-rebuild-2/`; WebP copies and reports are in `rebuild-2/`. `furniture.json` (the ×0.36 chair and desk) is deleted: the robot now sits at the floor kit's **normal** chair (seat 0.47 m) and bench desk (top 0.74 m).
+
+1. **Scale and seating** (`render_motion.py fit`, recorded in `robot_scale.json`).
+   - **Height 1.081 m.** It is set so that, seated at the kit's bench, the robot sits against the desk as l2's robots do at the same camera and 171.5 px/m:
+     - chest light 4.4 px above the desk's far edge (l2's chest emblems: +3 px)
+     - helmet top 97.7 px above it (l2: 90 px)
+
+     The helmet rises about 8 px more than l2's because the sheet's head is larger for its body.
+   - **Seated clips:** the lowest point over the seat (pelvis and thighs) rests on the seat top each frame, and the lower legs hang behind the desk.
+   - **Upright posture:** seated clips keep 35% of Mixamo's spine and head lean (`motion_rig.upright`). At full lean the helmet buries the face in the desk.
+   - **Layout** around the seat point (`bench` in `robot_scale.json`): the chair's centre is 0.244 m behind it, so the shins drop clear of the seat's front edge, and the desk's far edge is 0.176 m ahead, 3 cm clear of the belly. The floor job's seat anchors should use these rather than build_robot's human values (0.2 m and 0.14 m).
+   - **Clipping** (robot vertices inside the desk top, chair seat or chair back, sampled over the whole clip):
+     - reading: none
+     - typing: forearm-cuff rims 3 mm into the desk top where they rest on it
+     - writing: 3 mm of hip ball and shin against the seat's front edge
+   - **Typing** (`motion_rig.desk_arms`): the arms are posed directly each frame. The shoulders sit at desk height, so an IK chain folded them upright. Each upper arm reaches to an elbow at the desk's near edge, the forearm lies on the desk top, and the fist points ahead and is pitched down until it touches the keyboard. The clip's own wrist motion is kept at 30%. Writing uses the same method (the pinch hand writing, the other hand resting). Reading lifts the book in front of the chest with a two-bone IK.
+2. **Hands** (`robot_hands.py`).
+   - About 30% smaller: the fist is 0.12 m across the knuckles, 0.7 of the forearm cuff's 0.171 m.
+   - The cuffed models (cupped, pinch, book) are scaled by their teal cuff, matched to the fist.
+   - Poses per clip:
+
+     | pose | clips |
+     |---|---|
+     | fist | idle, walking, typing, and everything not listed |
+     | open | waving only (the spread hand reads as a claw) |
+     | thumbs up | thumbs-up clips |
+     | cupped | box clips |
+     | pinch | writing |
+     | book | seated reading (`reading-seated`: sitting-idle legs with standing-reading-phone's upper body) |
+     | sheet | walking and reading (`walking-reading-phone`) |
+   - **The sheet pose:** `hands3-2` is dropped. The pose is both pinch hands holding a modelled sheet of paper between their fingertips: a curled off-white plane with six grey text lines, frozen to the right hand at the clip's middle frame.
+   - Every pose is shown in its clip (`05_hands_close`, `06_hands_in_clip`).
+3. **Colour borders** (`robot_body.py`).
+   - The mesh is subdivided once. Each vertex votes teal, cream, black or glow from the texture, and the votes are smoothed over the mesh.
+   - One material draws the colours through a sharp threshold, so every border is a smooth line rather than a staircase of faces.
+   - Teal stays on the one `host_tint` node.
+   - Modelled parts replace the roughest regions:
+     - the face plate: a glossy black superellipse shell dropped onto the helmet opening
+     - the eyes
+     - the ear discs: one lathed profile with a black centre, cyan ring, cream ring and black rim
+   - Baked shadows the texture read as black are painted back to teal (shins, where the hands hung) or cream (torso sides).
+   - Colours were recalibrated: teal #1c9aa7 vs #1d9ba7, cream exact, black #1a1b1a vs #141717 (the albedo is at its floor).
+4. **Cut edges.**
+   - Every piece loses its loose fragments (8 in total) and the dangling spikes along its rims.
+   - Each rim is relaxed, then capped in black.
+   - The model's hands are cut off by distance to the wrist rather than by colour, so no black shards remain on the shins or cuffs.
+   - Each ball joint is sized from the rim points of the two pieces meeting there, clamped between the design's minimum and 0.069 m. A neck ball now covers the head seam.
+
+**Still open:**
+- The inside of the helmet's neck opening shows a faint black and cream ragged edge from the front at 12×. It is hidden at 1x and 2x.
+- The cupped box pose has no box prop.
+- The book is small in the reading pose, and the head still leans towards it.
+- Close-up framing of some hands (fist, sheet) shows more arm than hand.
+
+## Robot rebuild 1: from the whole-body model (superseded by rebuild 2)
 
 The parts robot (assembly round 1, below) is **superseded**. The generated parts sheet never matched the reference, so the robot is now cut from one Hunyuan3D model of the whole robot: `~/.local/state/fleet/renovation/robot-rebuild/teal-robot-apose.glb`, generated from `robot-apose-front.png`. It keeps the sheet's proportions: helmet 36% of the height (sheet about 38%), short legs, hands at hip height. The legs are not stretched.
 

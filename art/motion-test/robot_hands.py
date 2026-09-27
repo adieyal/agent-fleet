@@ -8,7 +8,7 @@ black and teal; a held book or sheet keeps its own colours), and put in one cano
 centre at the origin, the fingers along +X, palm down (-Z) and thumb forward (-Y): a LEFT hand in the Mixamo
 T-pose. The ring and the finger axis are found from the geometry; the roll about the finger axis and the
 handedness are set per file in HANDS, checked by eye with --views. Right hands are mirrored left hands.
-One scale for every hand: the fist is made as wide as the robot's forearm cuff (robot_body.json), and the
+One scale for every hand: the fist is made FIST_TO_CUFF times as wide as the robot's forearm cuff, and the
 others take the fist's wrist-ring size. Writes ~/.cache/fleet-motion-test/robot_hands.blend (hand_<pose>_<L|R>).
 """
 
@@ -30,6 +30,7 @@ SRC = Path.home() / '.local/state/fleet/renovation/robot-hands'
 OUT = Path.home() / '.cache/fleet-motion-test/robot_hands.blend'
 BODY = Path.home() / '.cache/fleet-motion-test/robot_body.blend'
 CHARCOAL = '#2b3131'
+FIST_TO_CUFF = 0.7  # the fist's width across the knuckles over the forearm cuff's width: the sheet's compact mitts
 
 # pose: (file, is a left hand as modelled, roll about the finger axis in degrees, which ring for two-hand models)
 HANDS = {
@@ -205,13 +206,21 @@ def main() -> None:
         canonical(ob, c, n, roll, is_left)
         ob.name = ob.data.name = f'hand_{pose}_L'
         hands[pose], ring_r[pose] = ob, r
-    # one scale: the fist as wide as the cuff (width across the knuckles = the Y extent, palm down)
-    fy = [v.co.y for v in hands['fist'].data.vertices]
-    fist_w = max(fy) - min(fy)
-    ring_target = ring_r['fist'] * cuff / fist_w
-    report = {'cuff_width_m': round(cuff, 4), 'fist_width_src': round(fist_w, 4)}
+    # one scale: the fist FIST_TO_CUFF times the cuff's width (width across the knuckles = the Y extent, palm down).
+    # hands1 (open, thumbs up, peace, OK, fist) share a wrist-ring design, so they take the fist's ring size. The
+    # cuffed models (cupped, pinch, book) measure their teal cuff instead: the cupped hand is set to the fist's
+    # width across the knuckles (shell only, the cuff left out), and the others take its cuff size.
+    def shell_width(ob):
+        ys = [ob.data.vertices[i].co.y for p in ob.data.polygons if p.material_index == 0 for i in p.vertices]
+        return max(ys) - min(ys)
+    fist_w = shell_width(hands['fist'])
+    target_w = FIST_TO_CUFF * cuff
+    ring_target = ring_r['fist'] * target_w / fist_w
+    cuff_target = ring_r['cupped'] * target_w / shell_width(hands['cupped'])
+    cuffed = {p for p, (f, *_rest) in HANDS.items() if not f.startswith('hands1')}
+    report = {'cuff_width_m': round(cuff, 4), 'fist_width_m': round(target_w, 4)}
     for pose, ob in hands.items():
-        s = ring_target / ring_r[pose]
+        s = (cuff_target if pose in cuffed else ring_target) / ring_r[pose]
         ob.data.transform(Matrix.Scale(s, 4))
         right = ob.copy()
         right.data = ob.data.copy()
