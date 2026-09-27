@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fleet.transport import FleetError
+from fleet.errors import FleetError
 
 DEFAULT_CAPACITY = 6
 MAX_CAPACITY = 10

@@ -5,7 +5,7 @@ import threading
 from typing import Any, Container, Iterable
 
 from .building import NoVacancy
-from fleet.transport import FleetError
+from fleet.errors import FleetError
 
 FOCUSES = ("priority", "background")
 DEFAULT_FOCUS = "priority"
