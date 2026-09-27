@@ -5,7 +5,7 @@ import re
 import secrets
 import time
 from dataclasses import dataclass, field
-from typing import Any, Iterable
+from typing import Iterable
 
 from fleet.errors import FleetError
 
@@ -25,13 +25,6 @@ class Project:
     links: list[Link] = field(default_factory=list)
     repositories: list[str] = field(default_factory=list)
     created_at: float | None = None   # unknown for projects registered before it was recorded
-
-    def to_config(self) -> dict[str, Any]:
-        entry = {"name": self.name,
-                 "links": [{"host": link.host, "label": link.label} for link in sorted(self.links)],
-                 "repositories": list(self.repositories)}
-        return entry if self.created_at is None else {**entry, "created_at": self.created_at}
-
 
 @dataclass(frozen=True)
 class Suggestion:
@@ -83,16 +76,6 @@ class Registry:
                 self.add_repository(project.id, repository)
             for link in project.links:
                 self.link(project.id, link.host, link.label)
-
-    @classmethod
-    def from_config(cls, config: dict[str, Any]) -> Registry:
-        return cls(Project(project_id, entry["name"],
-                           [Link(link["host"], link["label"]) for link in entry.get("links", [])],
-                           list(entry.get("repositories", [])), entry.get("created_at"))
-                   for project_id, entry in config.get("projects", {}).items())
-
-    def to_config(self) -> dict[str, Any]:
-        return {project_id: project.to_config() for project_id, project in sorted(self.projects.items())}
 
     def get(self, project_id: str) -> Project:
         if project_id not in self.projects:
@@ -194,11 +177,6 @@ class Registry:
         """The project a job's (host, label) belongs to, or None for an unregistered group."""
         project_id = self.owners.get(Link(host, label))
         return self.projects[project_id] if project_id else None
-
-    def resolve(self, host: str, item: dict[str, Any]) -> dict[str, Any]:
-        """A job or session from `host` with `project_id` added: its label's project, or None."""
-        project = self.project_for(host, item["project"]) if item.get("project") else None
-        return {**item, "project_id": project.id if project else None}
 
     def display_name(self, host: str, label: str, project_labels: dict[str, str]) -> str | None:
         """Linked project name, else the `project_labels` entry, else None (show the label itself)."""

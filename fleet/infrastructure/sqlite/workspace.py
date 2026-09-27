@@ -4,32 +4,28 @@ from __future__ import annotations
 
 import json
 import shutil
-from contextlib import closing, contextmanager
+from contextlib import contextmanager
 from pathlib import Path
 
-from fleet.modules.workspace import WorkspaceState
-from .store import Store, UnitOfWork, connect
+from fleet.modules.workspace import WorkspaceState, WorkspaceSnapshot
+from fleet.infrastructure.config.workspace import decode_workspace
+from fleet.projections.workspace import workspace_config
+from .repository import Repository
 
 
-class WorkspaceRepository:
-    def __init__(self, store: Store, unit: UnitOfWork | None = None) -> None:
-        self.store, self.unit = store, unit
-
-    def read(self) -> dict:
-        if self.unit is not None:
-            return json.loads(self.unit.connection.execute("SELECT record FROM workspace_state WHERE id = 1").fetchone()[0])
-        with closing(connect(self.store.path)) as connection:
-            return json.loads(connection.execute("SELECT record FROM workspace_state WHERE id = 1").fetchone()[0])
+class WorkspaceRepository(Repository):
+    def read(self) -> WorkspaceSnapshot:
+        return decode_workspace(json.loads(self.rows("SELECT record FROM workspace_state WHERE id = 1")[0][0]))
 
     def management_repository(self, project: str) -> str:
-        with closing(connect(self.store.path)) as connection:
-            row = connection.execute('SELECT path FROM workspace_management WHERE project = ?', (project,)).fetchone()
-        if row is None:
+        rows = self.rows('SELECT path FROM workspace_management WHERE project = ?', (project,))
+        if not rows:
             raise ValueError(f'management repository not registered for {project}')
-        return row['path']
+        return rows[0]['path']
 
     def register_management_repository(self, project: str, path: str, actor: str) -> None:
-        with self.store.unit_of_work() as unit:
+        with super().transaction() as repository:
+            unit = repository.unit
             row = unit.connection.execute('SELECT path FROM workspace_management WHERE project = ?', (project,)).fetchone()
             if row is not None:
                 if row['path'] != path:
@@ -40,17 +36,19 @@ class WorkspaceRepository:
 
     @contextmanager
     def transaction(self, actor: str):
-        with self.store.unit_of_work() as unit:
+        with super().transaction() as repository:
+            unit = repository.unit
             before = unit.connection.execute("SELECT record FROM workspace_state WHERE id = 1").fetchone()[0]
-            state = WorkspaceState(json.loads(before))
+            state = WorkspaceState(decode_workspace(json.loads(before)))
             yield state
-            after = json.dumps(state.snapshot(), sort_keys=True)
+            after = json.dumps(workspace_config(state.snapshot()), sort_keys=True)
             if json.loads(before) != json.loads(after):
                 unit.connection.execute("UPDATE workspace_state SET record = ? WHERE id = 1", (after,))
                 unit.record_change("workspace", before, after, actor)
 
     def initialize(self, config_path: Path, workspace_path: Path, initial: dict | None = None) -> None:
-        with self.store.unit_of_work() as unit:
+        with super().transaction() as repository:
+            unit = repository.unit
             if unit.connection.execute("SELECT 1 FROM workspace_state WHERE id = 1").fetchone():
                 return
             record = {} if initial is None else initial
@@ -61,7 +59,7 @@ class WorkspaceRepository:
                         backup = path.with_suffix(path.suffix + ".workspace.bak")
                         if not backup.exists():
                             shutil.copyfile(path, backup)
-            state = WorkspaceState(record)
-            encoded = json.dumps(state.snapshot(), sort_keys=True)
+            state = WorkspaceState(decode_workspace(record))
+            encoded = json.dumps(workspace_config(state.snapshot()), sort_keys=True)
             unit.connection.execute("INSERT INTO workspace_state VALUES (1, ?)", (encoded,))
             unit.record_change("workspace", "null", encoded, "legacy-import")

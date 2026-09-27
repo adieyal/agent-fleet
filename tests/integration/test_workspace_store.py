@@ -1,4 +1,5 @@
 import json
+from dataclasses import asdict
 import os
 import subprocess
 import sys
@@ -28,8 +29,8 @@ def test_import_and_backup(tmp_path, monkeypatch):
     assert workspace.registry().project_for("home", "one").id == "p-00000001"
     assert workspace.capacity() == 10
     assert workspace.floors_snapshot() == choices["floors"]
-    assert workspace.shuttered_snapshot() == choices["shuttered"]
-    assert workspace.focus_snapshot() == choices["focus"]
+    assert {key: asdict(record) for key, record in workspace.shuttered_snapshot().items()} == choices["shuttered"]
+    assert asdict(workspace.focus_snapshot()) == choices["focus"]
     for path in (config, legacy):
         assert path.with_suffix(path.suffix + ".workspace.bak").read_bytes() == path.read_bytes()
     workspace.set_capacity(6)
@@ -51,16 +52,16 @@ def test_units_roll_back_and_stable_floors():
     before = workspace.snapshot()
     sequence = open_store().latest_sequence()
     with pytest.raises(FleetError):
-        workspace.move_in(["home"], "one", shutter=second["project_id"])
+        workspace.move_in(["home"], "one", shutter=second.project_id)
     with pytest.raises(FleetError):
-        workspace.merge(second["project_id"], first["project_id"])
+        workspace.merge(second.project_id, first.project_id)
     assert workspace.snapshot() == before
     assert open_store().latest_sequence() == sequence
-    workspace.shutter(first["project_id"])
-    workspace.restore(first["project_id"])
-    assert workspace.floors_snapshot() == before["floors"]
-    workspace.set_focus("background", [first["project_id"]], [])
-    assert workspace.floors_snapshot() == before["floors"]
+    workspace.shutter(first.project_id)
+    workspace.restore(first.project_id)
+    assert workspace.floors_snapshot() == before.floors
+    workspace.set_focus("background", [first.project_id], [])
+    assert workspace.floors_snapshot() == before.floors
 
 
 def test_unchanged_settle_is_read_only():
@@ -74,8 +75,8 @@ def test_unchanged_settle_is_read_only():
 
 def test_failure_after_partial_move_or_merge_rolls_back(monkeypatch):
     workspace = open_workspace()
-    first = workspace.move_in(["home"], "one")["project_id"]
-    second = workspace.move_in(["home"], "two")["project_id"]
+    first = workspace.move_in(["home"], "one").project_id
+    second = workspace.move_in(["home"], "two").project_id
     before = workspace.snapshot()
     sequence = open_store().latest_sequence()
     original_link = Registry.link

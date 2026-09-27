@@ -1,5 +1,6 @@
 """Focus as live workspace state: workspace.json beside the Fleet config, /api/state and POST /api/focus."""
 import json
+from dataclasses import asdict
 import threading
 from http.server import ThreadingHTTPServer
 from urllib.error import HTTPError
@@ -101,7 +102,7 @@ def test_linked_work_follows_its_project_and_unlinked_work_its_label(deck, confi
     assert focus_by_host(fetch_state(deck)) == {"home": "priority", "gpu": "background"}
 
     stored = open_workspace().snapshot()
-    assert stored["focus"] == {"projects": {project_id: "priority"}, "labels": {"agent-fleet": "background"}}
+    assert asdict(stored.focus) == {"projects": {project_id: "priority"}, "labels": {"agent-fleet": "background"}}
     config = json.loads(config_path.read_text())
     assert "focus" not in config and "projects" not in config
 
