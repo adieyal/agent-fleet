@@ -28,6 +28,9 @@ class AttentionRepository:
 
     @contextmanager
     def transaction(self) -> Iterator["AttentionRepository"]:
+        if self.work is not None:
+            yield self
+            return
         with self.store.unit_of_work() as work:
             yield AttentionRepository(self.store, work)
 

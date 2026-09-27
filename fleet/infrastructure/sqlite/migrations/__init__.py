@@ -39,6 +39,12 @@ MIGRATIONS = (
         "CREATE TABLE attention_import (path TEXT PRIMARY KEY)",
     ),
     (
+        "CREATE TABLE work_item (id TEXT PRIMARY KEY, record TEXT NOT NULL)",
+        "CREATE TABLE work_criterion (id TEXT PRIMARY KEY, record TEXT NOT NULL)",
+        "CREATE TABLE work_relation (id TEXT PRIMARY KEY, record TEXT NOT NULL)",
+        "CREATE TABLE work_summary (id TEXT PRIMARY KEY, record TEXT NOT NULL)",
+    ),
+    (
         "ALTER TABLE attention_item ADD COLUMN acknowledged_at TEXT",
         "ALTER TABLE attention_item ADD COLUMN resolved_at TEXT",
         "ALTER TABLE attention_item ADD COLUMN stream_context TEXT",

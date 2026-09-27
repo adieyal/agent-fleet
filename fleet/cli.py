@@ -23,7 +23,8 @@ from rich.text import Text
 from rich.tree import Tree
 
 from fleet import building, projects, transport
-from fleet.composition import open_attention, open_store
+from fleet.composition import open_attention, open_store, open_work
+from fleet.modules.work import EvidenceSpecification
 from fleet.transport import FleetError, Host, HostReport
 from fleet.web.server import serve, serve_fixture
 
@@ -698,6 +699,80 @@ def command_web(arguments: argparse.Namespace) -> None:
 # --------------------------------------------------------------- parser
 
 
+def command_work(arguments: argparse.Namespace) -> None:
+    work = open_work()
+    fields = vars(arguments).copy()
+    command = fields.pop("work_operation")
+    for name in ("handler", "command"):
+        fields.pop(name, None)
+    identity = fields.pop("id", None)
+    try:
+        if command == "criterion_add":
+            reference = fields.pop("evidence_reference")
+            result = fields.pop("required_result")
+            if result is not None and reference is None:
+                raise ValueError("required result needs an evidence reference")
+            fields["specification"] = EvidenceSpecification(reference, result) if reference is not None else None
+            item = work.add_criterion(identity, **fields)
+        elif command == "meet":
+            fields["evidence"] = tuple(fields["evidence"])
+            item = work.meet(identity, **fields)
+        elif command == "relate":
+            item = work.relate(identity, fields.pop("to_item"), **fields)
+        elif command == "add":
+            item = work.add(**fields)
+        else:
+            item = getattr(work, command)(identity, **fields)
+        console.print_json(json.dumps(asdict(item), default=str))
+    except (ValueError, LookupError, OSError) as error:
+        raise FleetError(str(error)) from error
+
+
+def add_work_parsers(commands) -> None:
+    work = commands.add_parser("work", help="persistent work items").add_subparsers(required=True)
+    for name in ("add", "set", "move", "relate", "ready"):
+        action = work.add_parser(name)
+        action.set_defaults(handler=command_work, work_operation=name)
+        action.add_argument("--actor", required=True)
+        action.add_argument("title" if name == "add" else "id")
+        if name == "add":
+            action.add_argument("--project", required=True)
+            action.add_argument("--goal", required=True)
+            action.add_argument("--kind", default="task")
+            for field in ("parent", "focus", "next-step"):
+                action.add_argument(f"--{field}")
+        elif name == "set":
+            for field in ("title", "goal", "kind", "condition", "resume-condition", "next-step", "focus"):
+                action.add_argument(f"--{field}", default=argparse.SUPPRESS)
+        elif name == "move":
+            parent = action.add_mutually_exclusive_group(required=True)
+            parent.add_argument("--parent")
+            parent.add_argument("--root", dest="parent", action="store_const", const=None)
+        elif name == "relate":
+            action.add_argument("to_item")
+            action.add_argument("--type", default="depends-on")
+    criterion = commands.add_parser("criterion", help="work completion criteria").add_subparsers(required=True)
+    add = criterion.add_parser("add")
+    add.set_defaults(handler=command_work, work_operation="criterion_add")
+    add.add_argument("id", help="work item ID")
+    add.add_argument("text")
+    add.add_argument("--verification", required=True, choices=("checked", "judged", "accepted"))
+    add.add_argument("--evidence-reference", help="absolute path to recorded local evidence")
+    add.add_argument("--required-result", help="required result field in JSON evidence")
+    add.add_argument("--actor", required=True)
+    meet = criterion.add_parser("meet")
+    meet.set_defaults(handler=command_work, work_operation="meet")
+    meet.add_argument("id", help="criterion ID")
+    meet.add_argument("--evidence", action="append", default=[])
+    meet.add_argument("--actor", required=True)
+    summary = commands.add_parser("summary", help="work summaries").add_subparsers(required=True)
+    action = summary.add_parser("set")
+    action.set_defaults(handler=command_work, work_operation="set_summary")
+    action.add_argument("id", help="work item ID")
+    for field in ("purpose", "done", "doing", "next", "authoring-role", "actor"):
+        action.add_argument(f"--{field}", required=True)
+
+
 def command_attention(arguments: argparse.Namespace) -> None:
     try:
         attention = open_attention()
@@ -902,6 +977,8 @@ def build_parser() -> argparse.ArgumentParser:
     project_repo_remove.add_argument("id")
     project_repo_remove.add_argument("url")
     project_repo_remove.set_defaults(handler=command_project_repo_remove)
+
+    add_work_parsers(commands)
 
     attention = commands.add_parser("attention", help="stored questions, blockers and alerts").add_subparsers(
         dest="attention_command", required=True)
