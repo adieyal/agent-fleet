@@ -76,4 +76,13 @@ MIGRATIONS = (
         'CREATE TABLE records_intent (id TEXT PRIMARY KEY, project TEXT NOT NULL, key TEXT NOT NULL, record TEXT NOT NULL, UNIQUE(project,key))',
         'CREATE TABLE records_document (project TEXT NOT NULL, path TEXT NOT NULL, record TEXT NOT NULL, PRIMARY KEY(project,path))',
     ),
+    (
+        "ALTER TABLE execution_action ADD COLUMN idempotency_key TEXT",
+        "CREATE UNIQUE INDEX execution_action_key ON execution_action(idempotency_key)",
+        """CREATE TABLE execution_claim (
+            action TEXT NOT NULL, run TEXT PRIMARY KEY, active INTEGER NOT NULL CHECK(active IN (0, 1)))""",
+        "CREATE UNIQUE INDEX execution_active_claim ON execution_claim(action) WHERE active = 1",
+        """CREATE TABLE execution_request (
+            key TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, run TEXT NOT NULL)""",
+    ),
 )
