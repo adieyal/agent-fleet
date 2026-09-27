@@ -6,6 +6,7 @@ happen and are fanned out to every connected browser.
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from copy import deepcopy
 import os
 import selectors
@@ -23,6 +24,7 @@ from fleet.composition import Store, open_attention, open_execution, open_librar
 from fleet.modules.attention import InputObservation, ItemResolved
 from fleet.modules.workspace import (NoVacancy, FOCUSES, AlreadyShuttered, NotShuttered,
                                      WorkspaceFacade, Registry)
+from fleet.projections.workspace import annotate, resolve, registry_config
 from fleet.transport import FleetError, Host
 from fleet.web.documents import DocumentAccessDenied, fetch_document
 from fleet.web.fixture import FixtureLibrary, FixtureState
@@ -113,8 +115,8 @@ class FleetState(LiveWorkspace):
                 host = self.by_host[host_name]
                 observe_runs(self.execution, self.run_library, host)
                 reconciled = self.attention.observe({**host,
-                    "jobs": [self.registry.resolve(host_name, job) for job in host["jobs"].values()],
-                    "sessions": [self.registry.resolve(host_name, session) for session in host["sessions"].values()]},
+                    "jobs": [resolve(self.registry, host_name, job) for job in host["jobs"].values()],
+                    "sessions": [resolve(self.registry, host_name, session) for session in host["sessions"].values()]},
                     owners=owners, raise_items=not heartbeat)
             if previous == self.by_host[host_name] and self.store.latest_sequence() == sequence and not reconciled:
                 return
@@ -153,12 +155,12 @@ class FleetState(LiveWorkspace):
         registry = self.registry
         with self.changed:
             document = self.with_attention({"time": time.time(), "project_labels": self.project_labels,
-                    "projects": [{"id": project_id, **entry} for project_id, entry in registry.to_config().items()],
+                    "projects": [{"id": project_id, **entry} for project_id, entry in registry_config(registry).items()],
                     "projects_error": projects_error, "hosts": [
                 {**{key: value for key, value in self.by_host[host.name].items() if key not in ("jobs", "sessions")},
-                 "jobs": [self.workspace.annotate(registry.resolve(host.name, job)) for job in
+                 "jobs": [annotate(self.workspace, resolve(registry, host.name, job)) for job in
                           sorted(self.by_host[host.name]["jobs"].values(), key=lambda job: job["created_at"])],
-                 "sessions": [self.workspace.annotate(registry.resolve(host.name, session)) for session in
+                 "sessions": [annotate(self.workspace, resolve(registry, host.name, session)) for session in
                               sorted(self.by_host[host.name]["sessions"].values(),
                                      key=lambda session: session.get("started_at") or 0)]}
                 for host in self.hosts]})
@@ -226,7 +228,7 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
     kind = message.get("type")
     if kind == "input_observation":
         observation = InputObservation(**{key: message[key] for key in InputObservation.__dataclass_fields__})
-        project = state.registry.resolve(host.name, {"project": observation.project})
+        project = resolve(state.registry, host.name, {"project": observation.project})
         state.attention.observe_input(host.name, observation, project_id=project.get("project_id"))
         state.bump()
         return
@@ -341,7 +343,7 @@ def make_handler(state: FleetState | FixtureState,
             except FleetError as error:
                 self.error(400, str(error))
                 return
-            self.respond(200, "application/json", json.dumps(state.workspace.focus_snapshot()).encode())
+            self.respond(200, "application/json", json.dumps(asdict(state.workspace.focus_snapshot())).encode())
 
         def move_in_options(self) -> None:
             """GET /api/move-in?label=&host=&host=… — projects the label on those hosts may belong to, to offer

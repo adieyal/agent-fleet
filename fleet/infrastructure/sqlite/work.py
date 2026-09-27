@@ -32,7 +32,8 @@ def decode(kind: str, payload: str) -> WorkItem | Criterion | Relation | Summary
 class WorkRepository(Repository):
     def __init__(self, store: Store, attention: Callable[[UnitOfWork], AttentionFacade],
                  unit: UnitOfWork | None = None) -> None:
-        self.store, self.attention_factory, self.unit = store, attention, unit
+        super().__init__(store, unit)
+        self.attention_factory = attention
         if unit is not None:
             self.attention = attention(unit)
 

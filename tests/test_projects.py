@@ -6,6 +6,7 @@ import pytest
 from fleet import transport
 from fleet.modules import workspace as projects
 from fleet.composition import open_workspace
+from fleet.projections.workspace import registry_config
 from workspace_support import persist_registry
 from fleet.modules.workspace import Link, Registry, Suggestion, normalize_repository
 from fleet.transport import FleetError
@@ -121,7 +122,7 @@ def test_registry_round_trips_through_config_keeping_other_keys(config_path):
     stored = json.loads(config_path.read_text())
     assert stored["hosts"] == {"home": {}} and stored["project_labels"] == {"x": "X"}
     assert "projects" not in stored
-    assert open_workspace().registry().to_config()[project.id]["links"] == [{"host": "home", "label": "agent-fleet"}]
+    assert registry_config(open_workspace().registry())[project.id]["links"] == [{"host": "home", "label": "agent-fleet"}]
     reloaded = open_workspace().registry()
     assert reloaded.project_for("home", "agent-fleet").id == project.id
 

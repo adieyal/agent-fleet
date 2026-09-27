@@ -1,0 +1,1 @@
+"""Legacy configuration decoding adapters."""

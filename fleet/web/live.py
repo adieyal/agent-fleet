@@ -7,6 +7,7 @@ Registry in use), `project_labels`, `capacity`, `known_projects()`, `host_names(
 """
 from __future__ import annotations
 
+from dataclasses import asdict
 import threading
 import time
 from datetime import timedelta
@@ -59,7 +60,7 @@ class LiveWorkspace:
         result = self.workspace.move_in(hosts, label, shutter, self.project_labels.get(label))
         self.registry = self.workspace.registry()
         self.bump()
-        return result
+        return asdict(result)
 
     def link_in(self, project_id: str, hosts: list[str], label: str) -> dict[str, Any]:
         """Link the label on `hosts` to an existing project: its work joins that project, and no floor is taken."""
@@ -69,7 +70,7 @@ class LiveWorkspace:
         result = self.workspace.link_in(project_id, hosts, label)
         self.registry = self.workspace.registry()
         self.bump()
-        return result
+        return asdict(result)
 
     def move_in_options(self, label: str, hosts: list[str]) -> dict[str, Any]:
         """What moving the label in on `hosts` could mean: projects it may belong to (see Registry.link_candidates),
@@ -102,7 +103,7 @@ class LiveWorkspace:
         result = self.workspace.merge(keep, other)
         self.registry = self.workspace.registry()
         self.bump()
-        return result
+        return asdict(result)
 
     def shutter(self, project_id: str) -> dict[str, Any]:
         """Pack a project away in the storehouse (ADR 0005): its floor is freed; its ID, links and records stay."""
@@ -110,7 +111,7 @@ class LiveWorkspace:
             raise LookupError(f"no project '{project_id}'")
         result = self.workspace.shutter(project_id)
         self.bump()
-        return result
+        return asdict(result)
 
     def restore(self, project_id: str, shutter: str | None = None) -> dict[str, Any]:
         """Move a crate back in: to its old floor if free, else the lowest free one; when full, only by shuttering."""
@@ -118,7 +119,7 @@ class LiveWorkspace:
             raise LookupError(f"no project '{project_id}'")
         result = self.workspace.restore(project_id, shutter)
         self.bump()
-        return result
+        return asdict(result)
 
     def with_building(self, document: dict[str, Any], registry: Registry) -> dict[str, Any]:
         """Add the floors registered projects occupy within capacity with each one's focus, the projects in the
@@ -154,7 +155,7 @@ class LiveWorkspace:
 
     def with_attention(self, document: dict[str, Any]) -> dict[str, Any]:
         """Add stored focus choices and the Attention projection."""
-        return {**document, "focus": self.workspace.focus_snapshot(),
+        return {**document, "focus": asdict(self.workspace.focus_snapshot()),
                 "attention": attention_items(self.attention, document["hosts"])}
 
     def report_pipeline(self, host: str, name: str, run: dict[str, Any] | None,
