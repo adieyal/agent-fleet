@@ -7,16 +7,12 @@ through its registered project when its (host, label) is linked, otherwise throu
 label, so unregistered groups can be focused too. Only choices the user made are stored;
 anything without one is in priority, so the deck looks as it did before focus existed.
 
-Attention actions are what the user did to an attention item (see fleet.attention):
-acknowledged, or snoozed until a time. Items themselves are derived and never stored.
-
 Floors are which floor of the building each registered project occupies (see
 fleet.building), numbered from 1 above the lobby. A shuttered project has no floor; it
 is recorded with when it was shuttered and the floor it left, so restoring it can take
 that floor back if it is free. Its ID, links, focus and everything else are untouched.
 
     {"focus": {"projects": {"p-1a2b3c4d": "background"}, "labels": {"scratch": "background"}},
-     "attention": {"<item id>": {"state": "snoozed", "at": 1790400000.0, "until": 1790403600.0}},
      "floors": {"p-1a2b3c4d": 1},
      "shuttered": {"p-5e6f7a8b": {"at": 1790400000.0, "floor": 2}}}
 """
@@ -33,7 +29,6 @@ from fleet.transport import FleetError
 
 FOCUSES = ("priority", "background")
 DEFAULT_FOCUS = "priority"
-ACTIONS = ("acknowledged", "snoozed")
 
 
 class AlreadyShuttered(FleetError):
@@ -62,11 +57,6 @@ class WorkspaceStore:
                 if focus not in FOCUSES:
                     raise FleetError(f"focus for {kind[:-1]} '{key}' is priority or background, not '{focus}'")
                 self.focus[kind][key] = focus
-        self.attention: dict[str, dict[str, Any]] = {}
-        for item_id, action in (initial.get("attention") or {}).items():
-            if action.get("state") not in ACTIONS or (action["state"] == "snoozed" and not action.get("until")):
-                raise FleetError(f"attention item '{item_id}' has an unknown action {action}")
-            self.attention[item_id] = dict(action)
         self.floors: dict[str, int] = {}
         for project_id, floor in (initial.get("floors") or {}).items():
             if isinstance(floor, bool) or not isinstance(floor, int) or floor < 1 or floor in self.floors.values():
@@ -86,7 +76,7 @@ class WorkspaceStore:
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_suffix(".tmp")
-        temporary.write_text(json.dumps({"focus": self.focus, "attention": self.attention, "floors": self.floors,
+        temporary.write_text(json.dumps({"focus": self.focus, "floors": self.floors,
                                          "shuttered": self.shuttered}, indent=2, sort_keys=True) + "\n")
         os.replace(temporary, self.path)
 
@@ -121,29 +111,6 @@ class WorkspaceStore:
             for label in labels:
                 self.focus["labels"][label] = focus
             self.save()
-
-    # ------------------------------------------------------------ attention actions
-    def actions(self) -> dict[str, dict[str, Any]]:
-        with self.lock:
-            return {item_id: dict(action) for item_id, action in self.attention.items()}
-
-    def act(self, item_id: str, action: dict[str, Any] | None) -> None:
-        """Record what the user did to an item; None clears it (reopen)."""
-        with self.lock:
-            if action is None:
-                self.attention.pop(item_id, None)
-            else:
-                self.attention[item_id] = action
-            self.save()
-
-    def forget(self, item_ids: Iterable[str]) -> None:
-        """Drop actions for items that are gone for good."""
-        with self.lock:
-            gone = [item_id for item_id in item_ids if item_id in self.attention]
-            for item_id in gone:
-                del self.attention[item_id]
-            if gone:
-                self.save()
 
     # ------------------------------------------------------------ floors
     def floors_snapshot(self) -> dict[str, int]:

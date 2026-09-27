@@ -1,7 +1,7 @@
 # Stored attention (FS-004)
 
 `fleet.composition.open_attention()` constructs the public `AttentionFacade`.
-Commands are `raise_item`, `acknowledge`, `snooze`, and `resolve`; queries are
+Commands are `raise_item`, `acknowledge`, `snooze`, `reopen`, and `resolve`; queries are
 `get` and `list`. Records are immutable typed values. Commands require an actor.
 Source and source reference identify one item; repeating a signal refreshes
 its metadata and last-seen timestamp while preserving its state and ID.
@@ -16,10 +16,22 @@ The legacy workspace file contains only item IDs and attention actions, without
 project, kind, owner, headline or context. Import preserves those actions in
 `attention_imported_action`, keeps the original file and a `.json.bak`, and records
 completion transactionally. When ingestion first raises an item with a matching
-`source_reference`, that action supplies its initial state. FS-005 should use the
-old occurrence ID as the source reference to retain existing acknowledgements and
-snoozes. No item metadata is manufactured. The legacy deck remains on its existing
-path until FS-005 moves its callers.
+`source_reference`, that action supplies its initial state. Stream ingestion uses
+the old occurrence ID as the source reference to retain existing acknowledgements
+and snoozes. Workspace writes no longer store attention actions.
+
+The web server passes host observations to Attention on stream updates. Job failures
+and stalls become blockers; AskUserQuestion and ExitPlanMode become decisions.
+`stream:<host>` and the occurrence reference identify an item. Typed stream context
+preserves the deck's owner, summary and project fields; its context reference points
+to the source job or session. Acknowledgement and resolution timestamps are stored.
+
+Each job/session message reconciles only that owner. The first heartbeat follows
+fleetd's initial job and session scans, so it reconciles missing owners after a
+reconnect without resolving items prematurely on `hello`. Unreachable hosts cause
+no attention writes. The read-only projection marks their stored items stale and
+includes the retained last-seen time, including before the first report after restart.
+Fixture servers ingest once into their own temporary store, isolated from live state.
 
 CLI output is JSON. For example:
 

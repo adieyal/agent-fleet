@@ -18,9 +18,9 @@ from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from fleet import building, projects, transport
-from fleet.composition import open_store
+from fleet.composition import open_attention, open_store
 from fleet.infrastructure.sqlite import Store
-from fleet.attention import AttentionBoard, ItemResolved
+from fleet.modules.attention import ItemResolved
 from fleet.building import DEFAULT_CAPACITY, NoVacancy
 from fleet.workspace import FOCUSES, AlreadyShuttered, NotShuttered, WorkspaceStore
 from fleet.projects import Registry
@@ -60,8 +60,8 @@ class FleetState(LiveWorkspace):
     says why.
 
     Each also gains `focus`, from its project when linked and its label otherwise; the
-    document carries the stored choices under `focus` and the attention items derived
-    from the hosts under `attention` (see fleet.workspace, fleet.attention). The deck
+    document carries the stored choices under `focus` and stored attention items
+    under `attention`. The deck
     writes only the user's choices: focus, and acknowledging or snoozing an item.
     """
 
@@ -78,11 +78,12 @@ class FleetState(LiveWorkspace):
         self.load_capacity = load_capacity or (lambda: DEFAULT_CAPACITY)
         self.capacity = self.load_capacity()
         self.workspace = workspace or WorkspaceStore(None)
-        self.board = AttentionBoard(self.workspace)
+        self.store = store if store is not None else open_store()
+        self.attention = open_attention(self.store, workspace_path=self.workspace.path)
+        self.woken_until = 0.0
         self.changed = threading.Condition()
         self.version = 0
-        self.store = store
-        self.history_cursor = store.latest_sequence() if store is not None else 0
+        self.history_cursor = self.store.latest_sequence()
         self.by_host: dict[str, dict[str, Any]] = {
             host.name: {"name": host.name, "ok": False, "error": "connecting…", "jobs": {}, "sessions": {}}
             for host in hosts}
@@ -91,8 +92,6 @@ class FleetState(LiveWorkspace):
         self.pipeline_seq = 0
 
     def follow_history(self, stop: threading.Event) -> None:
-        if self.store is None:
-            return
         while not stop.is_set():
             changes = self.store.history_after(self.history_cursor)
             if changes:
@@ -100,9 +99,19 @@ class FleetState(LiveWorkspace):
                 self.bump()
             stop.wait(0.25)
 
-    def update(self, host_name: str, mutate: Any) -> None:
+    def update(self, host_name: str, mutate: Any, *, owners: set[str] | None = None,
+               ingest: bool = True, heartbeat: bool = False) -> None:
         with self.changed:
             mutate(self.by_host[host_name])
+            reconciled = False
+            if ingest:
+                host = self.by_host[host_name]
+                reconciled = self.attention.observe({**host,
+                    "jobs": [self.registry.resolve(host_name, job) for job in host["jobs"].values()],
+                    "sessions": [self.registry.resolve(host_name, session) for session in host["sessions"].values()]},
+                    owners=owners, raise_items=not heartbeat)
+            if heartbeat and not reconciled:
+                return
             self.version += 1
             self.changed.notify_all()
 
@@ -212,17 +221,23 @@ def run_stream(state: FleetState, host: Host) -> str:
 def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> None:
     kind = message.get("type")
     if kind == "hello":
-        state.update(host.name, lambda entry: entry.update(ok=True, error=None, jobs={}, sessions={}))
+        state.update(host.name, lambda entry: entry.update(ok=True, error=None, jobs={}, sessions={}), ingest=False)
     elif kind == "job":
         job = message["job"]
-        state.update(host.name, lambda entry: entry["jobs"].__setitem__(job["id"], job))
+        state.update(host.name, lambda entry: entry["jobs"].__setitem__(job["id"], job),
+                     owners={f"job:{host.name}:{job['id']}"})
     elif kind == "removed":
-        state.update(host.name, lambda entry: entry["jobs"].pop(message["id"], None))
+        state.update(host.name, lambda entry: entry["jobs"].pop(message["id"], None),
+                     owners={f"job:{host.name}:{message['id']}"})
     elif kind == "session":
         session = message["session"]
-        state.update(host.name, lambda entry: entry["sessions"].__setitem__(session["id"], session))
+        state.update(host.name, lambda entry: entry["sessions"].__setitem__(session["id"], session),
+                     owners={f"session:{host.name}:{session['id']}"})
     elif kind == "session_removed":
-        state.update(host.name, lambda entry: entry["sessions"].pop(message["id"], None))
+        state.update(host.name, lambda entry: entry["sessions"].pop(message["id"], None),
+                     owners={f"session:{host.name}:{message['id']}"})
+    elif kind == "heartbeat":
+        state.update(host.name, lambda entry: None, heartbeat=True)
     elif kind == "pipeline" and isinstance(message.get("pipeline"), str):
         state.report_pipeline(host.name, message["pipeline"], message.get("run"), message.get("baseline"))
     elif kind == "error":
@@ -390,7 +405,7 @@ def make_handler(state: FleetState | FixtureState,
             except ItemResolved as error:
                 self.error(409, str(error))
                 return
-            except FleetError as error:
+            except (FleetError, ValueError) as error:
                 self.error(400, str(error))
                 return
             self.respond(200, "application/json", json.dumps({"id": body["id"], "action": action}).encode())

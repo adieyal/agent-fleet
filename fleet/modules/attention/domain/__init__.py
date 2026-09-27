@@ -7,6 +7,10 @@ STATES = ("open", "acknowledged", "snoozed", "resolved")
 KINDS = ("decision", "blocker", "alert")
 
 
+class ItemResolved(ValueError):
+    """A resolved attention item cannot be acted on."""
+
+
 def required(value: str, name: str) -> None:
     if not value.strip():
         raise ValueError(f"{name} is required")
@@ -17,6 +21,18 @@ class ImportedAction:
     state: str
     at: datetime
     until: datetime | None
+
+
+@dataclass(frozen=True)
+class StreamContext:
+    host: str
+    owner_type: str
+    owner_id: str
+    project: str
+    project_id: str | None
+    source: str
+    summary: str
+    since: float | None
 
 
 @dataclass(frozen=True)
@@ -35,6 +51,9 @@ class AttentionItem:
     snooze_until: datetime | None
     resolution_details: str | None
     last_seen: datetime
+    acknowledged_at: datetime | None = None
+    resolved_at: datetime | None = None
+    stream_context: StreamContext | None = None
 
     def __post_init__(self) -> None:
         for name in ("project", "owner", "source", "source_reference", "headline", "context_reference"):
@@ -60,5 +79,7 @@ class AttentionItem:
                 raise ValueError("resolution details are required")
             required(details, "resolution details")
         elif self.state == "resolved":
-            raise ValueError("attention item is resolved")
-        return replace(self, state=state, snooze_until=until, resolution_details=details)
+            raise ItemResolved("attention item is resolved")
+        return replace(self, state=state, snooze_until=until, resolution_details=details,
+                       acknowledged_at=now if state == "acknowledged" else None,
+                       resolved_at=now if state == "resolved" else None)
