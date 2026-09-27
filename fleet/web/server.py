@@ -19,8 +19,7 @@ from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from fleet import transport
-from fleet.composition import open_attention, open_execution, open_library, open_store, open_workspace
-from fleet.infrastructure.sqlite import Store
+from fleet.composition import Store, open_attention, open_execution, open_library, open_store, open_workspace
 from fleet.modules.attention import InputObservation, ItemResolved
 from fleet.modules.workspace import (NoVacancy, FOCUSES, AlreadyShuttered, NotShuttered,
                                      WorkspaceFacade, Registry)
