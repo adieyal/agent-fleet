@@ -1,1 +1,1 @@
-"""Read-only controller projections."""
+"""Read-only views assembled from module contracts."""
