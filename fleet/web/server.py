@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from fleet import transport
 from fleet.composition import open_attention, open_store, open_workspace
 from fleet.infrastructure.sqlite import Store
-from fleet.modules.attention import ItemResolved
+from fleet.modules.attention import InputObservation, ItemResolved
 from fleet.modules.workspace import (NoVacancy, FOCUSES, AlreadyShuttered, NotShuttered,
                                      WorkspaceFacade, Registry)
 from fleet.transport import FleetError, Host
@@ -217,6 +217,12 @@ def run_stream(state: FleetState, host: Host) -> str:
 
 def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> None:
     kind = message.get("type")
+    if kind == "input_observation":
+        observation = InputObservation(**{key: message[key] for key in InputObservation.__dataclass_fields__})
+        project = state.registry.resolve(host.name, {"project": observation.project})
+        state.attention.observe_input(host.name, observation, project_id=project.get("project_id"))
+        state.bump()
+        return
     if kind == "hello":
         state.update(host.name, lambda entry: entry.update(ok=True, error=None, jobs={}, sessions={}), ingest=False)
     elif kind == "job":

@@ -17,6 +17,10 @@ from fleet.infrastructure.sqlite.work import WorkRepository
 from fleet.infrastructure.documents.evidence import FileEvidenceReader
 from fleet.infrastructure.sqlite.workspace import WorkspaceRepository
 from fleet.modules.workspace import WorkspaceFacade
+from fleet.infrastructure.sqlite.execution import ExecutionRepository
+from fleet.infrastructure.sqlite.library import LibraryRepository
+from fleet.modules.execution import ExecutionFacade
+from fleet.modules.library import LibraryFacade
 
 
 def store_path() -> Path:
@@ -44,3 +48,13 @@ def open_workspace(store: Store | None = None, *, initial: dict | None = None,
     repository = WorkspaceRepository(store if store is not None else open_store())
     repository.initialize(transport.CONFIG_PATH, transport.CONFIG_PATH.parent / "workspace.json", initial)
     return WorkspaceFacade(repository, actor)
+
+
+def open_execution(store: Store | None = None) -> ExecutionFacade:
+    store = store if store is not None else open_store()
+    return ExecutionFacade(ExecutionRepository(store), open_work(store))
+
+
+def open_library(store: Store | None = None) -> LibraryFacade:
+    store = store if store is not None else open_store()
+    return LibraryFacade(LibraryRepository(store), open_work(store))

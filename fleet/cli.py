@@ -24,8 +24,7 @@ from rich.tree import Tree
 
 from fleet import transport
 from fleet.modules import workspace as projects
-from fleet.composition import open_workspace
-from fleet.composition import open_attention, open_store, open_work
+from fleet.composition import open_attention, open_execution, open_library, open_store, open_work, open_workspace
 from fleet.projections.project import project_status
 from fleet.modules.work import EvidenceSpecification
 from fleet.transport import FleetError, Host, HostReport
@@ -247,6 +246,11 @@ def push_context(host: Host, job_id: str, paths: list[str]) -> None:
 
 
 def command_send(arguments: argparse.Namespace) -> None:
+    if arguments.work_item is not None:
+        try:
+            open_work().get(arguments.work_item)
+        except LookupError as error:
+            raise FleetError(str(error)) from error
     host = transport.host_by_name(arguments.host)
     steps = read_steps(arguments)
     if not steps:
@@ -273,6 +277,8 @@ def command_send(arguments: argparse.Namespace) -> None:
     if arguments.keep_going:
         fleetd_arguments.append("--keep-going")
     job = transport.call(host, fleetd_arguments, stdin_text=json.dumps(steps))
+    if arguments.work_item is not None:
+        open_execution().link(host.name, job["id"], arguments.work_item, actor="user", runtime=arguments.agent)
     if arguments.context:
         push_context(host, job["id"], arguments.context)
     if not arguments.hold:
@@ -284,6 +290,23 @@ def command_send(arguments: argparse.Namespace) -> None:
         console.print(f"[bold]{reference}[/] {job['status']} · {len(job['steps'])} step(s) · {job['description']}")
     if arguments.wait:
         wait_for([reference], step=None, timeout=None, as_json=arguments.json)
+
+
+def command_run_link(arguments: argparse.Namespace) -> None:
+    try:
+        run = open_execution().link(arguments.host, arguments.job, arguments.work_item, actor=arguments.actor)
+    except (ValueError, LookupError) as error:
+        raise FleetError(str(error)) from error
+    print(json.dumps(asdict(run), default=str))
+
+
+def command_library_link(arguments: argparse.Namespace) -> None:
+    try:
+        entry = open_library().link(arguments.url, project=arguments.project, work_item=arguments.work_item,
+                                    title=arguments.title, actor=arguments.actor)
+    except (ValueError, LookupError) as error:
+        raise FleetError(str(error)) from error
+    print(json.dumps(asdict(entry)))
 
 
 def command_add(arguments: argparse.Namespace) -> None:
@@ -868,6 +891,7 @@ def build_parser() -> argparse.ArgumentParser:
     send = commands.add_parser("send", help="start a job (a task list) on a host")
     send.add_argument("--host", "-H", required=True)
     send.add_argument("--project", "-p", required=True)
+    send.add_argument("--work-item", help="link the created job to stored work")
     send.add_argument("--description", "-d", required=True, help="one line: what this job is working on")
     send.add_argument("--agent", "-a", choices=("claude", "codex"), default="claude")
     send.add_argument("--cwd", "-C", required=True, help="working directory on the host")
@@ -885,6 +909,14 @@ def build_parser() -> argparse.ArgumentParser:
     send.add_argument("--json", action="store_true")
     add_step_options(send)
     send.set_defaults(handler=command_send)
+
+    run = commands.add_parser("run", help="stored execution runs").add_subparsers(dest="run_command", required=True)
+    run_link = run.add_parser("link", help="link an existing host job without fetching it")
+    run_link.add_argument("host")
+    run_link.add_argument("job")
+    run_link.add_argument("work_item")
+    run_link.add_argument("--actor", default="user")
+    run_link.set_defaults(handler=command_run_link)
 
     add = commands.add_parser("add", help="append steps to a job (restarts it if idle)")
     add.add_argument("job")
@@ -969,6 +1001,13 @@ def build_parser() -> argparse.ArgumentParser:
     libraries.set_defaults(handler=command_libraries)
     library = commands.add_parser("library", help="manage local project libraries").add_subparsers(
         dest="library_command", required=True)
+    library_link = library.add_parser("link", help="index an external URL; grants no access")
+    library_link.add_argument("url")
+    library_link.add_argument("--project", help="required when no work item is supplied")
+    library_link.add_argument("--work-item")
+    library_link.add_argument("--title", help="optional display label; omitted titles remain unknown")
+    library_link.add_argument("--actor", default="user")
+    library_link.set_defaults(handler=command_library_link)
     library_add = library.add_parser("add")
     library_add.add_argument("project")
     library_add.add_argument("path")

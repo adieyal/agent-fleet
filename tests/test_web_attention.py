@@ -13,8 +13,7 @@ from fleet import transport
 from fleet.composition import open_workspace
 from fleet.composition import open_attention, open_store
 from fleet.transport import Host
-from fleet.web.server import FleetState, make_handler
-
+from fleet.web.server import FleetState, apply_message, make_handler
 
 HOSTS = [Host("home", None), Host("gpu", "gpu.example")]
 
@@ -244,3 +243,36 @@ def test_a_resolved_item_cannot_be_acted_on(deck):
     deck.report("home", jobs=[])
     assert deck.act("acknowledge", {"id": item_id}) == 409
     assert deck.act("reopen", {"id": item_id}) == 409
+
+
+@pytest.mark.parametrize("owner_type", ["job", "session"])
+def test_input_observations_deduplicate_resume_and_survive_silence(deck, owner_type):
+    observation = {"type": "input_observation", "schema_version": 1, "host": "worker-hostname",
+                   "runtime": "claude", "owner_type": owner_type, "job_id": "j1",
+                   "session_id": "s1", "step_index": 0, "project": "restoke",
+                   "kind": "input_requested", "reason": "permission",
+                   "source_event": "PermissionRequest", "source_event_id": "request1",
+                   "observed_at": 200, "context_reference": "/retained/hook.json"}
+    apply_message(deck.state, HOSTS[0], {"type": "hello"})
+    for _ in range(10):
+        apply_message(deck.state, HOSTS[0], observation)
+    [item] = deck.items().values()
+    assert item["kind"] == "decision" and item["state"] == "open"
+    assert item["owner"]["host"] == "home"
+    assert item["owner"]["id"] == ("j1" if owner_type == "job" else "s1")
+    assert item["last_seen"] == 200
+    apply_message(deck.state, HOSTS[0], {"type": "heartbeat"})
+    deck.report("home", ok=False)
+    [quiet] = deck.items().values()
+    assert quiet["state"] == "open" and quiet["stale"]
+    assert quiet["last_seen"] == item["last_seen"]
+    apply_message(deck.state, HOSTS[0], {**observation, "kind": "input_cleared",
+                                       "source_event": "PostToolUse", "observed_at": 250})
+    [resumed] = deck.items().values()
+    assert resumed["state"] == "resolved"
+    assert resumed["resolution_details"] == "answered in session"
+    apply_message(deck.state, HOSTS[0], observation)
+    assert next(iter(deck.items().values()))["state"] == "resolved"
+    apply_message(deck.state, HOSTS[0], {**observation, "source_event_id": "request2"})
+    assert len(deck.items()) == 1  # projection helper indexes by owner
+    assert len(deck.state.attention.list()) == 2
