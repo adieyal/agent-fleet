@@ -10,6 +10,8 @@ import subprocess
 import sys
 import time
 from collections import defaultdict
+from dataclasses import asdict
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -21,7 +23,7 @@ from rich.text import Text
 from rich.tree import Tree
 
 from fleet import building, projects, transport
-from fleet.composition import open_store
+from fleet.composition import open_attention, open_store
 from fleet.transport import FleetError, Host, HostReport
 from fleet.web.server import serve, serve_fixture
 
@@ -696,6 +698,31 @@ def command_web(arguments: argparse.Namespace) -> None:
 # --------------------------------------------------------------- parser
 
 
+def command_attention(arguments: argparse.Namespace) -> None:
+    try:
+        attention = open_attention()
+        command = arguments.attention_command
+        if command == "add":
+            item = attention.raise_item(
+                project=arguments.project, kind=arguments.kind, owner=arguments.owner,
+                source=arguments.source, source_reference=arguments.source_reference,
+                headline=arguments.headline, context_reference=arguments.context_reference,
+                work_item=arguments.work_item, run=arguments.run, actor=arguments.actor)
+        elif command == "list":
+            items = attention.list(project=arguments.project, state=arguments.state)
+            console.print_json(json.dumps([asdict(item) for item in items], default=str))
+            return
+        elif command == "ack":
+            item = attention.acknowledge(arguments.id, actor=arguments.actor)
+        elif command == "snooze":
+            item = attention.snooze(arguments.id, until=datetime.fromisoformat(arguments.until), actor=arguments.actor)
+        else:
+            item = attention.resolve(arguments.id, details=arguments.details, actor=arguments.actor)
+        console.print_json(json.dumps(asdict(item), default=str))
+    except (ValueError, LookupError) as error:
+        raise FleetError(str(error)) from error
+
+
 def add_listing_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--host", action="append", help="only these hosts (repeatable)")
     parser.add_argument("--project", "-p", help="only this project")
@@ -875,6 +902,29 @@ def build_parser() -> argparse.ArgumentParser:
     project_repo_remove.add_argument("id")
     project_repo_remove.add_argument("url")
     project_repo_remove.set_defaults(handler=command_project_repo_remove)
+
+    attention = commands.add_parser("attention", help="stored questions, blockers and alerts").add_subparsers(
+        dest="attention_command", required=True)
+    attention_add = attention.add_parser("add")
+    attention_add.add_argument("headline")
+    for field in ("project", "kind", "owner", "source", "source-reference", "context-reference", "actor"):
+        attention_add.add_argument(f"--{field}", required=True)
+    attention_add.add_argument("--work-item")
+    attention_add.add_argument("--run")
+    attention_add.set_defaults(handler=command_attention)
+    attention_list = attention.add_parser("list")
+    attention_list.add_argument("--project")
+    attention_list.add_argument("--state", choices=("open", "acknowledged", "snoozed", "resolved"))
+    attention_list.set_defaults(handler=command_attention)
+    for name in ("ack", "snooze", "resolve"):
+        action = attention.add_parser(name)
+        action.add_argument("id")
+        action.add_argument("--actor", required=True)
+        if name == "snooze":
+            action.add_argument("--until", required=True, help="timezone-aware ISO timestamp")
+        elif name == "resolve":
+            action.add_argument("--details", required=True)
+        action.set_defaults(handler=command_attention)
 
     building_parser = commands.add_parser("building", help="the deck's building: how many floors").add_subparsers(
         dest="building_command", required=True)
