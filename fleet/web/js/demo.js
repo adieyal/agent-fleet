@@ -353,6 +353,9 @@ export function demoSource() {
     ['node-c', 'agent-fleet', 'Unit tests for the fleetd parsers', 'codex', 'gpt-5-codex', ['Claude stream fixtures', 'Codex exec fixtures', 'Runner lock tests'], 0, 'queued'],
     ['node-b', 'demo-docs', 'Refresh the onboarding guide screenshots', 'claude', 'claude-opus-5-5', ['List stale screenshots', 'Capture new ones', 'Update the markdown'], 1, 'stalled'],
     ['node-a', 'demo-docs', 'Support article: PAR by weekday', 'claude', 'claude-opus-5-5', ['Read the feature PR', 'Draft the article', 'Tighten the copy'], 3, 'done'],
+    // a batch of six at the comms dish, checking links: more than five at one station gather into a group figure
+    ...[1, 2, 3, 4, 5, 6].map(n => [['node-a', 'node-b', 'node-c'][n % 3], 'demo-docs', `Check the links in guide chapter ${n}`, 'claude', 'claude-opus-5-5',
+      ['Collect the links', 'Fetch each one', 'List the dead ones'], 1, 'running']),
   ];
   const t0 = now();
   const focusOf = project => project === 'demo-parser' ? 'background' : 'priority';   // lit warm while its parse runs
@@ -382,6 +385,8 @@ export function demoSource() {
     job.activity = [...job.events].reverse().find(e => e.kind === 'tool' || e.kind === 'text' || e.kind === 'error') || null;
     return job;
   });
+  const batch = new Set(jobs.filter(job => job.description.startsWith('Check the links')));
+  for (const job of batch) push(job, demoTool('web'));
 
   // interactive CLI sessions, shaped like `fleetd sessions` output: a working Claude, an idle one, a working Codex, and
   // a Claude idle for an hour (off the deck) that gets back to work soon after the page opens
@@ -544,7 +549,7 @@ export function demoSource() {
         push(job, { kind: 'job', status: 'queued', summary: `${job.steps.length} step(s) re-queued` });
         continue;
       }
-      if (job.status !== 'running') continue;
+      if (job.status !== 'running' || batch.has(job)) continue;
       const i = jobs.indexOf(job);
       if (PINS) {
         const seq = PINS[i % PINS.length].split('+'), act = seq[Math.floor(tickCount / 5) % seq.length];   // type+ship: alternate every 10 s
