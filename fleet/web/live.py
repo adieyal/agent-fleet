@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Container, TypeVar
 
 from fleet.modules.attention import AttentionFacade
-from fleet.projections.attention import attention_items
+from fleet.projections.attention import attention_display, attention_items
 from fleet.projections.building import building_state
 from fleet.modules.workspace import Registry, WorkspaceFacade, AlreadyHoused
 from fleet.transport import FleetError
@@ -125,7 +125,9 @@ class LiveWorkspace:
         """Add the floors registered projects occupy within capacity with each one's focus, the projects in the
         storehouse, and the live projects that have no floor."""
         self.workspace.settle()
-        return {**document, "building": building_state(self.workspace, registry, self.capacity)}
+        building = building_state(self.workspace, registry, self.capacity)
+        return {**document, "building": building,
+                "attention_display": attention_display(document["attention"], building, document["projects"])}
 
     def bump(self) -> None:
         """Push a new document to every browser."""

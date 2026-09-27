@@ -201,6 +201,8 @@ def session_state(base_url: str, seconds_later: int, drop_decisions: bool = Fals
         doc = json.load(response)
     if drop_decisions:
         doc["attention"] = [item for item in doc["attention"] if item["kind"] != "decision"]
+        from fleet.projections.attention import attention_display
+        doc["attention_display"] = attention_display(doc["attention"], doc["building"], doc["projects"])
     for host in doc["hosts"]:
         for session in host["sessions"]:
             if f"{host['name']}:{session['id']}" == working:
@@ -328,6 +330,8 @@ def test_demo_mode_fills_the_deck_without_errors(browser: Browser, base_url: str
     assert crew(page, "demo-parser") == set()
     advance_until(page, "fleetDeck.crowds().some(crowd => crowd.room === 'demo-docs' && crowd.count === 6)")
     expect(page.locator('.lantern[data-kind="blocker"]')).to_have_count(2)   # the failed job's and the stalled one's
+    assert any(room["attention"] and room["attention"]["count"] > 1 for room in page.evaluate("fleetDeck.rooms()"))
+    expect(page.locator('.lantern[data-count="2"] b')).to_have_text("2")
     page.locator('.lantern[data-room="demo-docs"]').dispatch_event("click")
     page.locator("#attnPanel [data-owner]").dispatch_event("click")   # the demo pushes a new state every second
     expect(page.locator("#panelHead h2")).to_have_text("Refresh the onboarding guide screenshots")

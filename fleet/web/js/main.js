@@ -14,6 +14,7 @@ import { stepMotion, stepParticles, updateEnt, updateRoom } from './motion.js';
 import { applyState, departIdle, stream } from './state.js';
 import { positionSwitches, stepFocus } from './focus.js';
 import { positionLanterns, stepLanterns } from './attention.js';
+import { lanternState } from './building.js';
 import { fit, resize } from './camera.js';
 import { miniBot, panelScrollUntil, renderLive } from './panel.js';
 import './library.js';
@@ -172,6 +173,7 @@ loadAssets().then(() => {
     : _w.set(r.ox + t.out, t.up + b * t.h / 2, r.oy + t.along - a * t.w / 2), { x: 0, y: 0 }));
   window.fleetDeck = Object.freeze({
     advanceTime,   // seconds; switches to a manual animation clock until reload
+    lanterns: lanternState,
     rooms: () => rooms.map(r => ({ name: r.name, label: r.label, x: r.ox, y: r.oy,
       screen: toScreen(_w.set(r.ox + RW / 2, 0, r.oy + RD / 2), { x: 0, y: 0 }), focus: r.focus, dim: r.dimK ?? null, lit: r.lit,
       attention: r.attention?.level ? { kind: r.attention.kind, state: r.attention.level, count: r.attention.shown.length } : null })),

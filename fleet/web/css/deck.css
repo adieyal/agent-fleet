@@ -236,6 +236,10 @@ body[data-view=floor] #lift{display:flex}
 .lift-lantern{position:absolute;right:-5px;top:-4px;width:11px;height:11px;transform:rotate(45deg);border-radius:2px;
   background:#ff4fb0;border:1.5px solid #fff;box-shadow:0 0 0 1.5px #05080f}
 .lift-lantern[data-state=acknowledged]{background:#6b3a58;border-color:#c9b4c1}
+.lift-lantern[data-glyph]{width:17px;height:17px}
+.lift-lantern[data-glyph]::after{content:attr(data-glyph);display:block;transform:rotate(-45deg);font:14px/14px sans-serif;color:#10121c;text-align:center}
+.front-desk{max-height:100px;max-width:320px;overflow:auto}
+.front-desk button{text-align:left;font:12px var(--sans)}
 /* a floor's lantern: on a bracket from the spine beside its name plate, a cord, the diamond; a modest glow */
 .lantern-hang{position:absolute;left:0;top:0;width:44px;height:52px;pointer-events:none;will-change:transform}
 .lantern-hang::before{content:"";position:absolute;left:16px;right:0;top:0;height:3px;border-radius:2px;background:#8b98ad}
@@ -245,9 +249,6 @@ body[data-view=floor] #lift{display:flex}
 .lantern-hang .floor-lantern{top:10px}
 .floor-lantern::before{box-shadow:0 0 0 2px #05080f,0 0 7px 1px rgba(255,79,176,.4)}
 .floor-lantern.ack::before{box-shadow:0 0 0 2px #05080f}
-.lantern-hang .bob[data-swing]{animation:lanternSwing 2.6s linear both}
-@keyframes lanternSwing{0%{transform:rotate(0)}10%{transform:rotate(14deg)}24%{transform:rotate(-9deg)}38%{transform:rotate(6deg)}
-  52%{transform:rotate(-3.5deg)}66%{transform:rotate(2deg)}80%{transform:rotate(-1deg)}100%{transform:rotate(0)}}
 /* the shutter handle: a pull bar with a ring, on the floor's top corner */
 .shutter-handle{position:absolute;left:0;top:0;width:30px;height:18px;padding:0;border:0;background:none;cursor:pointer;pointer-events:auto;will-change:transform}
 .shutter-handle::before{content:"";position:absolute;left:4px;right:4px;top:3px;height:4px;border-radius:2px;background:#c7d0de;box-shadow:0 1px 0 #05080f}
@@ -475,7 +476,6 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 }
 @media (prefers-reduced-motion:reduce){
   #toast i{animation:none;display:none}
-  .lantern-hang .bob[data-swing]{animation:none}
   .pip.running{animation:none}
   .chip.sess.st-working i{animation:none}
   #feed li.new{animation:none}

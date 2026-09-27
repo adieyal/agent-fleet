@@ -113,6 +113,21 @@ def test_only_genuine_signals_become_items(deck):
     assert deck.items() == items   # reading changes nothing, ids included
 
 
+def test_stored_context_and_display_are_read_only(deck):
+    item = deck.state.attention.raise_item(project="manual", kind="alert", owner="user", source="manual",
+        source_reference="review", headline="Review the release", context_reference="docs/release.md", actor="user")
+    sequence, version = deck.state.store.latest_sequence(), deck.state.version
+    for _ in range(2):
+        with urlopen(deck.url + "/api/state", timeout=5) as response:
+            document = json.load(response)
+        projected = next(row for row in document["attention"] if row["id"] == item.id)
+        assert projected["context_reference"] == "docs/release.md"
+        assert document["attention_display"]["front_desk"] == [item.id]
+        assert document["attention_display"]["places"][0]["glyph"] == "✱"
+    assert deck.state.attention.get(item.id) == item
+    assert (deck.state.store.latest_sequence(), deck.state.version) == (sequence, version)
+
+
 def test_items_resolve_when_their_condition_clears(deck, config_path):
     failing = job("f1", "failed", [("failed", 100)])
     deck.report("home", jobs=[failing, job("gone", "stalled", [("running", 120)])],
