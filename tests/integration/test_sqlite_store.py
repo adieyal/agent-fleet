@@ -19,20 +19,20 @@ from fleet.web.server import FleetState, make_handler
 
 def test_migrations_are_ordered_and_idempotent(tmp_path: Path) -> None:
     path = tmp_path / "controller.db"
-    with open_store(path) as store:
-        assert store.schema_version() == 1
-        with store.unit_of_work() as work:
-            work.record_change("work:1", "ready", "active", "test")
-    with open_store(path) as store:
-        assert store.schema_version() == 1
-        assert [(row["sequence"], row["subject"]) for row in store.history_after(0)] == [(1, "work:1")]
+    store = open_store(path)
+    assert store.schema_version() == 1
+    with store.unit_of_work() as work:
+        work.record_change("work:1", "ready", "active", "test")
+    store = open_store(path)
+    assert store.schema_version() == 1
+    assert [(row["sequence"], row["subject"]) for row in store.history_after(0)] == [(1, "work:1")]
 
 
 def test_store_path_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path = tmp_path / "custom" / "fleet.db"
     monkeypatch.setenv("FLEET_STORE", str(path))
-    with open_store() as store:
-        assert store.path == path
+    store = open_store()
+    assert store.path == path
     assert path.is_file()
 
 
@@ -74,99 +74,141 @@ def test_store_closes_connections(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 
 
 def test_rollback_includes_history(tmp_path: Path) -> None:
-    with open_store(tmp_path / "controller.db") as store:
-        with pytest.raises(RuntimeError):
-            with store.unit_of_work() as work:
-                work.connection.execute("CREATE TABLE sample (value TEXT)")
-                work.connection.execute("INSERT INTO sample VALUES ('lost')")
-                work.record_change("work:1", "ready", "active", "test")
-                raise RuntimeError("abort")
-        assert store.history_after(0) == []
-        with sqlite3.connect(store.path) as connection:
-            assert connection.execute("SELECT name FROM sqlite_master WHERE name = 'sample'").fetchone() is None
+    store = open_store(tmp_path / "controller.db")
+    with pytest.raises(RuntimeError):
+        with store.unit_of_work() as work:
+            work.connection.execute("CREATE TABLE sample (value TEXT)")
+            work.connection.execute("INSERT INTO sample VALUES ('lost')")
+            work.record_change("work:1", "ready", "active", "test")
+            raise RuntimeError("abort")
+    assert store.history_after(0) == []
+    with sqlite3.connect(store.path) as connection:
+        assert connection.execute("SELECT name FROM sqlite_master WHERE name = 'sample'").fetchone() is None
 
 
 def test_successful_write_requires_history(tmp_path: Path) -> None:
-    with open_store(tmp_path / "controller.db") as store:
-        with pytest.raises(ValueError, match="history entry"):
-            with store.unit_of_work() as work:
-                work.connection.execute("CREATE TABLE sample (value TEXT)")
-                work.connection.execute("INSERT INTO sample VALUES ('no history')")
-        with sqlite3.connect(store.path) as connection:
-            assert connection.execute("SELECT name FROM sqlite_master WHERE name = 'sample'").fetchone() is None
+    store = open_store(tmp_path / "controller.db")
+    with pytest.raises(ValueError, match="history entry"):
         with store.unit_of_work() as work:
             work.connection.execute("CREATE TABLE sample (value TEXT)")
-            work.connection.execute("INSERT INTO sample VALUES ('saved')")
-            work.record_change("sample:1", "absent", "saved", "test")
-        assert len(store.history_after(0)) == 1
+            work.connection.execute("INSERT INTO sample VALUES ('no history')")
+    with sqlite3.connect(store.path) as connection:
+        assert connection.execute("SELECT name FROM sqlite_master WHERE name = 'sample'").fetchone() is None
+    with store.unit_of_work() as work:
+        work.connection.execute("CREATE TABLE sample (value TEXT)")
+        work.connection.execute("INSERT INTO sample VALUES ('saved')")
+        work.record_change("sample:1", "absent", "saved", "test")
+    assert len(store.history_after(0)) == 1
 
 
 def test_history_and_retention(tmp_path: Path) -> None:
     now = datetime(2026, 9, 27, tzinfo=timezone.utc)
-    with open_store(tmp_path / "controller.db", clock=lambda: now) as store:
-        with store.unit_of_work() as work:
-            work.record_change("work:1", "ready", "active", "first")
-            work.record_change("work:2", "ready", "active", "second")
-        rows = store.history_after(0)
-        assert [(row["sequence"], row["subject"], row["from"], row["to"], row["actor"])
-                for row in rows] == [(1, "work:1", "ready", "active", "first"),
-                                    (2, "work:2", "ready", "active", "second")]
-        assert all(row["time"] == now.isoformat() for row in rows)
-        store.clock = lambda: now + timedelta(days=7)
-        with store.unit_of_work() as work:
-            work.record_change("work:3", "ready", "active", "third")
-        assert [row["sequence"] for row in store.history_after(0)] == [1, 2, 3]
-        store.clock = lambda: now + timedelta(days=7, microseconds=1)
-        with store.unit_of_work() as work:
-            work.record_change("work:4", "ready", "active", "fourth")
-        assert [row["sequence"] for row in store.history_after(0)] == [3, 4]
+    store = open_store(tmp_path / "controller.db", clock=lambda: now)
+    with store.unit_of_work() as work:
+        work.record_change("work:1", "ready", "active", "first")
+        work.record_change("work:2", "ready", "active", "second")
+    rows = store.history_after(0)
+    assert [(row["sequence"], row["subject"], row["from"], row["to"], row["actor"])
+            for row in rows] == [(1, "work:1", "ready", "active", "first"),
+                                (2, "work:2", "ready", "active", "second")]
+    assert all(row["time"] == now.isoformat() for row in rows)
+    store.clock = lambda: now + timedelta(days=7)
+    with store.unit_of_work() as work:
+        work.record_change("work:3", "ready", "active", "third")
+    assert [row["sequence"] for row in store.history_after(0)] == [1, 2, 3]
+    store.clock = lambda: now + timedelta(days=7, microseconds=1)
+    with store.unit_of_work() as work:
+        work.record_change("work:4", "ready", "active", "fourth")
+    assert [row["sequence"] for row in store.history_after(0)] == [3, 4]
 
 
 def test_two_processes_lose_no_write(tmp_path: Path) -> None:
     path = tmp_path / "controller.db"
-    script = ("import sys\nfrom fleet.composition import open_store\n"
-              "with open_store() as store:\n"
-              "    with store.unit_of_work() as work:\n"
-              "        work.record_change(sys.argv[1], 'ready', 'active', 'process')\n")
+    store = open_store(path)
+    with sqlite3.connect(path) as connection:
+        connection.execute("CREATE TABLE counter (value INTEGER NOT NULL)")
+        connection.execute("INSERT INTO counter VALUES (0)")
+    start = tmp_path / "start"
+    writes = 200
+    script = """
+import sys
+import time
+from pathlib import Path
+from fleet.composition import open_store
+
+store = open_store()
+print('ready', flush=True)
+while not Path(sys.argv[1]).exists():
+    time.sleep(0.01)
+for _ in range(int(sys.argv[2])):
+    print('next', flush=True)
+    assert sys.stdin.readline() == 'write\\n'
+    with store.unit_of_work() as work:
+        value = work.connection.execute('SELECT value FROM counter').fetchone()[0]
+        time.sleep(0.001)
+        work.connection.execute('UPDATE counter SET value = ?', (value + 1,))
+        work.record_change('counter', str(value), str(value + 1), sys.argv[3])
+"""
     env = {**os.environ, "FLEET_STORE": str(path)}
-    processes = [subprocess.Popen([sys.executable, "-c", script, f"work:{index}"], env=env)
+    processes = [subprocess.Popen([sys.executable, "-c", script, str(start), str(writes), f"process:{index}"],
+                                  env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE, text=True)
                  for index in range(2)]
-    for process in processes:
-        assert process.wait(timeout=20) == 0
-    with open_store(path) as store:
-        rows = store.history_after(0)
-        assert {row["subject"] for row in rows} == {"work:0", "work:1"}
-        assert [row["sequence"] for row in rows] == [1, 2]
+    try:
+        for process in processes:
+            assert process.stdout.readline() == "ready\n"
+        start.touch()
+        for _ in range(writes):
+            for process in processes:
+                assert process.stdout.readline() == "next\n", process.stderr.read()
+            for process in processes:
+                process.stdin.write("write\n")
+                process.stdin.flush()
+        for process in processes:
+            _, stderr = process.communicate(timeout=300)
+            assert process.returncode == 0, stderr
+    finally:
+        for process in processes:
+            if process.poll() is None:
+                process.kill()
+            process.communicate()
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("SELECT value FROM counter").fetchone()[0] == 2 * writes
+    rows = store.history_after(0)
+    assert len(rows) == 2 * writes
+    assert [row["sequence"] for row in rows] == list(range(1, 2 * writes + 1))
+    assert [(row["from"], row["to"]) for row in rows] == [(str(i), str(i + 1)) for i in range(2 * writes)]
+    assert all(sum(row["actor"] == f"process:{index}" for row in rows) == writes for index in range(2))
 
 
 def test_cli_process_change_refreshes_sse(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path = tmp_path / "controller.db"
     monkeypatch.setenv("FLEET_STORE", str(path))
-    with open_store() as store:
-        state = FleetState([], store=store)
-        stop = threading.Event()
-        watcher = threading.Thread(target=state.follow_history, args=(stop,))
-        watcher.start()
-        server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(state))
-        server.daemon_threads = True
-        thread = threading.Thread(target=server.serve_forever)
-        thread.start()
-        try:
-            with urlopen(f"http://127.0.0.1:{server.server_port}/api/stream", timeout=10) as stream:
-                assert stream.readline() == b"event: state\n"
-                assert stream.readline().startswith(b"data: ")
-                assert stream.readline() == b"\n"
-                baseline = state.version
-                script = ("from fleet.cli import open_store\n"
-                          "with open_store() as store:\n"
-                          "    with store.unit_of_work() as work:\n"
-                          "        work.record_change('work:1', 'ready', 'active', 'cli')\n")
-                subprocess.run([sys.executable, "-c", script], env=os.environ.copy(), check=True, timeout=20)
-                assert stream.readline() == b"event: state\n"
-                assert state.version > baseline
-        finally:
-            stop.set()
-            watcher.join(timeout=5)
-            server.shutdown()
-            server.server_close()
-            thread.join(timeout=5)
+    store = open_store()
+    state = FleetState([], store=store)
+    stop = threading.Event()
+    watcher = threading.Thread(target=state.follow_history, args=(stop,))
+    watcher.start()
+    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(state))
+    server.daemon_threads = True
+    thread = threading.Thread(target=server.serve_forever)
+    thread.start()
+    try:
+        with urlopen(f"http://127.0.0.1:{server.server_port}/api/stream", timeout=10) as stream:
+            assert stream.readline() == b"event: state\n"
+            assert stream.readline().startswith(b"data: ")
+            assert stream.readline() == b"\n"
+            baseline = state.version
+            script = ("from fleet.cli import open_store\n"
+                      "store = open_store()\n"
+                      "with store.unit_of_work() as work:\n"
+                      "    work.record_change('work:1', 'ready', 'active', 'cli')\n")
+            subprocess.run([sys.executable, "-c", script], env=os.environ.copy(), check=True, timeout=20)
+            assert stream.readline() == b"event: state\n"
+            assert state.version > baseline
+    finally:
+        stop.set()
+        watcher.join(timeout=5)
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)

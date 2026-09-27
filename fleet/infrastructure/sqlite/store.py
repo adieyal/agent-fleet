@@ -73,12 +73,6 @@ class Store:
                 connection.rollback()
                 raise
 
-    def __enter__(self) -> Store:
-        return self
-
-    def __exit__(self, error_type: object, error: object, traceback: object) -> None:
-        pass
-
     def unit_of_work(self) -> UnitOfWork:
         return UnitOfWork(self)
 
