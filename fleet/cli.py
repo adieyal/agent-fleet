@@ -22,8 +22,9 @@ from rich.markup import escape
 from rich.text import Text
 from rich.tree import Tree
 
-from fleet import building, projects, transport
-from fleet.composition import open_attention, open_execution, open_library, open_store, open_work
+from fleet import transport
+from fleet.modules import workspace as projects
+from fleet.composition import open_attention, open_execution, open_library, open_store, open_work, open_workspace
 from fleet.projections.project import project_status
 from fleet.modules.work import EvidenceSpecification
 from fleet.transport import FleetError, Host, HostReport
@@ -526,58 +527,53 @@ def parse_link(text: str) -> tuple[str, str]:
 
 
 def command_project_add(arguments: argparse.Namespace) -> None:
-    registry = projects.load_registry()
-    project = registry.create(arguments.name, arguments.repo or [])
-    for text in arguments.link or []:
-        registry.link(project.id, *parse_link(text))
-    projects.save_registry(registry)
+    links = [parse_link(text) for text in arguments.link or []]
+
+    def create(registry: projects.Registry) -> projects.Project:
+        project = registry.create(arguments.name, arguments.repo or [])
+        for host, label in links:
+            registry.link(project.id, host, label)
+        return project
+    project = open_workspace().edit_registry(create)
     console.print(f"added project [bold]{project.id}[/] {escape(project.name)}")
 
 
 def command_project_rename(arguments: argparse.Namespace) -> None:
-    registry = projects.load_registry()
-    registry.rename(arguments.id, arguments.name)
-    projects.save_registry(registry)
-    console.print(f"{arguments.id} → {escape(registry.get(arguments.id).name)}")
+    workspace = open_workspace()
+    workspace.edit_registry(lambda registry: registry.rename(arguments.id, arguments.name))
+    console.print(f"{arguments.id} → {escape(workspace.registry().get(arguments.id).name)}")
 
 
 def command_project_link(arguments: argparse.Namespace) -> None:
-    registry = projects.load_registry()
-    link = registry.link(arguments.id, *parse_link(arguments.link))
-    projects.save_registry(registry)
+    host, label = parse_link(arguments.link)
+    link = open_workspace().edit_registry(lambda registry: registry.link(arguments.id, host, label))
     console.print(f"linked {escape(link.host)}:{escape(link.label)} → {arguments.id}")
 
 
 def command_project_unlink(arguments: argparse.Namespace) -> None:
     host, _, label = arguments.link.partition(":")
-    registry = projects.load_registry()
-    project_id = registry.unlink(host, label)
-    projects.save_registry(registry)
+    project_id = open_workspace().edit_registry(lambda registry: registry.unlink(host, label))
     console.print(f"unlinked {escape(host)}:{escape(label)} from {project_id}")
 
 
 def command_project_merge(arguments: argparse.Namespace) -> None:
-    """Fold a project registered by mistake into the older one. The deck frees the other's floor when it next looks,
-    as it does for any project no longer registered."""
-    registry = projects.load_registry()
+    """Merge project identity and free the other's floor in one transaction."""
+    workspace = open_workspace()
+    registry = workspace.registry()
     other = registry.get(arguments.other)
-    keep = registry.merge(arguments.keep, arguments.other)
-    projects.save_registry(registry)
+    workspace.merge(arguments.keep, arguments.other)
+    keep = workspace.registry().get(arguments.keep)
     console.print(f"merged {arguments.other} {escape(other.name)} into [bold]{keep.id}[/] {escape(keep.name)}")
     for link in sorted(keep.links):
         console.print(f"  {escape(link.host)}:{escape(link.label)}")
 
 
 def command_project_repo_add(arguments: argparse.Namespace) -> None:
-    registry = projects.load_registry()
-    registry.add_repository(arguments.id, arguments.url)
-    projects.save_registry(registry)
+    open_workspace().edit_registry(lambda registry: registry.add_repository(arguments.id, arguments.url))
 
 
 def command_project_repo_remove(arguments: argparse.Namespace) -> None:
-    registry = projects.load_registry()
-    registry.remove_repository(arguments.id, arguments.url)
-    projects.save_registry(registry)
+    open_workspace().edit_registry(lambda registry: registry.remove_repository(arguments.id, arguments.url))
 
 
 def observed_labels(registry: projects.Registry, hosts: list[Host]) -> tuple[list[tuple[str, str, str]], list[str]]:
@@ -610,7 +606,7 @@ def observed_labels(registry: projects.Registry, hosts: list[Host]) -> tuple[lis
 
 
 def command_project_list(arguments: argparse.Namespace) -> None:
-    registry = projects.load_registry()
+    registry = open_workspace().registry()
     if not registry.projects:
         console.print("no registered projects — add one with: fleet project add <name> --link host:label")
     for project in sorted(registry.projects.values(), key=lambda project: (project.name.lower(), project.id)):
@@ -636,13 +632,11 @@ def command_project_list(arguments: argparse.Namespace) -> None:
 
 def command_building_capacity(arguments: argparse.Namespace) -> None:
     """The building's floors: a deliberate setting, never raised as a side effect of starting work (ADR 0005)."""
-    config = transport.load_config()
+    workspace = open_workspace()
     if arguments.floors is None:
-        console.print(f"{building.capacity_of(config)} floors")
+        console.print(f"{workspace.capacity()} floors")
         return
-    config["capacity"] = arguments.floors
-    building.capacity_of(config)   # refuses anything but 1 to MAX_CAPACITY before writing
-    transport.save_config(config)
+    workspace.set_capacity(arguments.floors)
     console.print(f"the building has {arguments.floors} floors")
 
 
@@ -1092,7 +1086,7 @@ def build_parser() -> argparse.ArgumentParser:
     building_parser = commands.add_parser("building", help="the deck's building: how many floors").add_subparsers(
         dest="building_command", required=True)
     building_capacity = building_parser.add_parser(
-        "capacity", help=f"show or set how many projects can be live at once (1 to {building.MAX_CAPACITY})")
+        "capacity", help=f"show or set how many projects can be live at once (1 to {projects.MAX_CAPACITY})")
     building_capacity.add_argument("floors", nargs="?", type=int)
     building_capacity.set_defaults(handler=command_building_capacity)
 

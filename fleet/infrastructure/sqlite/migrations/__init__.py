@@ -57,4 +57,7 @@ MIGRATIONS = (
             UNIQUE (host, remote_job_id))""",
         "CREATE TABLE library_entry (id TEXT PRIMARY KEY, record TEXT NOT NULL)",
     ),
+    (
+        "CREATE TABLE workspace_state (id INTEGER PRIMARY KEY CHECK (id = 1), record TEXT NOT NULL)",
+    ),
 )

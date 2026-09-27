@@ -1,7 +1,7 @@
 """What the deck writes and derives on top of host state, shared by live and fixture decks.
 
 A state class using LiveWorkspace provides `changed` (a Condition), `version`,
-`workspace` (a WorkspaceStore), `attention` (an AttentionFacade), `registry` (the project
+`workspace` (a WorkspaceFacade), `attention` (an AttentionFacade), `registry` (the project
 Registry in use), `project_labels`, `capacity`, `known_projects()`, `host_names()`,
 `edit_registry()` and `repository_remotes()`.
 """
@@ -15,23 +15,16 @@ from typing import Any, Callable, Container, TypeVar
 
 from fleet.modules.attention import AttentionFacade
 from fleet.projections.attention import attention_items
-from fleet.building import NoVacancy
-from fleet.projects import Registry
+from fleet.projections.building import building_state
+from fleet.modules.workspace import Registry, WorkspaceFacade, AlreadyHoused
 from fleet.transport import FleetError
-from fleet.workspace import NotShuttered, WorkspaceStore
-
-MOVE_IN_LOCK = threading.Lock()   # moving in, linking, merging, shuttering and restoring: one at a time
 T = TypeVar("T")
-
-
-class AlreadyHoused(FleetError):
-    """The host's label already belongs to a registered project."""
 
 
 class LiveWorkspace:
     changed: threading.Condition
     version: int
-    workspace: WorkspaceStore
+    workspace: WorkspaceFacade
     attention: AttentionFacade
     woken_until: float
     registry: Registry
@@ -59,47 +52,24 @@ class LiveWorkspace:
         if not hosts or not label or any(host not in self.host_names() for host in hosts):
             raise FleetError("known hosts and a label are required")
 
-    def housed(self, hosts: list[str], label: str) -> None:
-        """Refuse when any host's label already belongs to a project. Call with the lock."""
-        for host in hosts:
-            if self.registry.project_for(host, label):
-                raise AlreadyHoused(f"{host}:{label} already belongs to {self.registry.project_for(host, label).id}")
-
     def move_in(self, hosts: list[str], label: str, shutter: str | None = None) -> dict[str, Any]:
         """Register an unregistered label on `hosts` as one project on the lowest free floor, named as its room is.
         When the building is full the only way in is to shutter a floor first (`shutter`); capacity never grows here."""
         self.check_hosts(hosts, label)
-        with MOVE_IN_LOCK:
-            self.known_projects()   # the registry as it is on disk now
-            self.housed(hosts, label)
-            self.make_room(shutter)
-
-            def register(registry: Registry) -> str:
-                project = registry.create(self.project_labels.get(label) or label)
-                for host in hosts:
-                    registry.link(project.id, host, label)
-                return project.id
-
-            project_id = self.edit_registry(register)
-            floor = self.workspace.move_in(project_id, self.capacity)
+        result = self.workspace.move_in(hosts, label, shutter, self.project_labels.get(label))
+        self.registry = self.workspace.registry()
         self.bump()
-        return {"project_id": project_id, "floor": floor}
+        return result
 
     def link_in(self, project_id: str, hosts: list[str], label: str) -> dict[str, Any]:
         """Link the label on `hosts` to an existing project: its work joins that project, and no floor is taken."""
         self.check_hosts(hosts, label)
-        with MOVE_IN_LOCK:
-            if project_id not in self.known_projects():
-                raise LookupError(f"no project '{project_id}'")
-            self.housed(hosts, label)
-
-            def link(registry: Registry) -> None:
-                for host in hosts:
-                    registry.link(project_id, host, label)
-
-            self.edit_registry(link)
+        if project_id not in self.known_projects():
+            raise LookupError(f"no project '{project_id}'")
+        result = self.workspace.link_in(project_id, hosts, label)
+        self.registry = self.workspace.registry()
         self.bump()
-        return {"project_id": project_id, "floor": self.workspace.floors_snapshot().get(project_id)}
+        return result
 
     def move_in_options(self, label: str, hosts: list[str]) -> dict[str, Any]:
         """What moving the label in on `hosts` could mean: projects it may belong to (see Registry.link_candidates),
@@ -126,60 +96,35 @@ class LiveWorkspace:
 
     def merge(self, keep: str, other: str) -> dict[str, Any]:
         """Fold a project registered by mistake into the older one (Registry.merge) and free its floor."""
-        with MOVE_IN_LOCK:
-            for project_id in (keep, other):
-                if project_id not in self.known_projects():
-                    raise LookupError(f"no project '{project_id}'")
-            self.edit_registry(lambda registry: registry.merge(keep, other))
-            freed = self.workspace.forget_project(other)
+        for project_id in (keep, other):
+            if project_id not in self.known_projects():
+                raise LookupError(f"no project '{project_id}'")
+        result = self.workspace.merge(keep, other)
+        self.registry = self.workspace.registry()
         self.bump()
-        return {"project_id": keep, "merged": other, "freed": freed,
-                "floor": self.workspace.floors_snapshot().get(keep)}
+        return result
 
     def shutter(self, project_id: str) -> dict[str, Any]:
         """Pack a project away in the storehouse (ADR 0005): its floor is freed; its ID, links and records stay."""
-        with MOVE_IN_LOCK:
-            if project_id not in self.known_projects():
-                raise LookupError(f"no project '{project_id}'")
-            floor = self.workspace.shutter(project_id, time.time())
+        if project_id not in self.known_projects():
+            raise LookupError(f"no project '{project_id}'")
+        result = self.workspace.shutter(project_id)
         self.bump()
-        return {"project_id": project_id, "floor": floor}
+        return result
 
     def restore(self, project_id: str, shutter: str | None = None) -> dict[str, Any]:
         """Move a crate back in: to its old floor if free, else the lowest free one; when full, only by shuttering."""
-        with MOVE_IN_LOCK:
-            if project_id not in self.known_projects():
-                raise LookupError(f"no project '{project_id}'")
-            if project_id not in self.workspace.shuttered_snapshot():
-                raise NotShuttered(f"{project_id} is not in the storehouse")
-            self.make_room(shutter)
-            floor = self.workspace.restore(project_id, self.capacity)
+        if project_id not in self.known_projects():
+            raise LookupError(f"no project '{project_id}'")
+        result = self.workspace.restore(project_id, shutter)
         self.bump()
-        return {"project_id": project_id, "floor": floor}
-
-    def make_room(self, shutter: str | None) -> None:
-        """Shutter `shutter` if given (it must hold a floor); then there must be a free floor. Call with the lock."""
-        self.workspace.settle(self.registry.projects, self.capacity)
-        floors = self.workspace.floors_snapshot()
-        if shutter is not None:
-            if floors.get(shutter, self.capacity + 1) > self.capacity:
-                raise FleetError(f"{shutter} holds no floor to clear")
-            self.workspace.shutter(shutter, time.time())
-        elif len({floor for floor in floors.values() if floor <= self.capacity}) >= self.capacity:
-            raise NoVacancy("The building's full: shutter a floor to make room")
+        return result
 
     def with_building(self, document: dict[str, Any], registry: Registry) -> dict[str, Any]:
         """Add the floors registered projects occupy within capacity with each one's focus, the projects in the
         storehouse, and the live projects that have no floor."""
-        self.workspace.settle(registry.projects, self.capacity)
-        floors = {project_id: floor for project_id, floor in self.workspace.floors_snapshot().items()
-                  if project_id in registry.projects and floor <= self.capacity}
-        shuttered = self.workspace.shuttered_snapshot()
-        focus = {project_id: self.workspace.focus_of({"project_id": project_id}) for project_id in floors}
-        return {**document, "building": {"capacity": self.capacity, "floors": floors, "focus": focus,
-                                         "shuttered": shuttered,
-                                         "no_floor": [project_id for project_id in registry.projects
-                                                      if project_id not in floors and project_id not in shuttered]}}
+        self.workspace.settle()
+        return {**document, "building": building_state(self.workspace, registry, self.capacity)}
 
     def bump(self) -> None:
         """Push a new document to every browser."""
@@ -188,7 +133,7 @@ class LiveWorkspace:
             self.changed.notify_all()
 
     def set_focus(self, focus: str, projects: list[str], labels: list[str]) -> None:
-        self.workspace.set_focus(focus, projects, labels, self.known_projects())
+        self.workspace.set_focus(focus, projects, labels)
         self.bump()
 
     def document(self) -> dict[str, Any]:

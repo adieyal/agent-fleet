@@ -1,38 +1,4 @@
-"""Project registry: stable project identity, kept in the Fleet config (ADR 0001).
-
-A job's `project` string is a *label* chosen on one host (fleetd derives it from a
-repository directory name or `--project`). Labels are not identity: two hosts may
-use the same label for unrelated work, and one project may carry different labels
-on different hosts. The registry adds identity on top without changing labels:
-
-- A registered project has a random, stable ID (`p-` + 8 hex chars) and a display
-  name. The name can change freely and need not be unique.
-- A project owns explicit links, each a (host, label) pair. A pair links to at most
-  one project. Only a link attaches jobs to a project; matching names never do.
-- A project may list repository remote URLs. They only *suggest* links for unlinked
-  (host, label) pairs whose repository matches; accepting one is an explicit link.
-- A (host, label) pair with no link stays an unregistered group, grouped and shown
-  exactly as before the registry existed.
-- Moving a label in looks for projects it may belong to (`link_candidates`): the same
-  label linked on another host, a matching repository, or a matching name. These are
-  only offers; the user chooses between linking and a new project.
-- Two projects registered for one piece of work by mistake merge into the older one
-  (`merge`): it keeps its ID and name and gains the other's links and repositories.
-  Projects registered before `created_at` was recorded have no known age; merging
-  them needs the user to say which to keep.
-
-`project_labels` (label → friendly room name, host-agnostic) is kept as is and is
-not migrated: turning it into links would merge every host's same-named label into
-one project, which is the name matching ADR 0001 forbids. It remains a display name
-for unregistered groups; a linked pair shows its project's name instead.
-
-Stored under `projects` in the config file:
-
-    "projects": {"p-1a2b3c4d": {"name": "Agent Fleet",
-                                "links": [{"host": "home", "label": "agent-fleet"}],
-                                "repositories": ["git@github.com:adieyal/agent-fleet.git"],
-                                "created_at": 1790400000.0}}
-"""
+"""Stable project identities and explicit host-label links."""
 from __future__ import annotations
 
 import re
@@ -41,7 +7,6 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
-from fleet import transport
 from fleet.transport import FleetError
 
 PROJECT_ID = re.compile(r"^p-[0-9a-f]{8}$")
@@ -262,14 +227,3 @@ class Registry:
 
 def new_project_id() -> str:
     return "p-" + secrets.token_hex(4)
-
-
-def load_registry() -> Registry:
-    return Registry.from_config(transport.load_config())
-
-
-def save_registry(registry: Registry) -> None:
-    """Write the registry back, keeping every other config key as it is on disk."""
-    config = transport.load_config()
-    config["projects"] = registry.to_config()
-    transport.save_config(config)
