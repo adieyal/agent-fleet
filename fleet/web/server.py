@@ -25,7 +25,7 @@ from fleet.building import DEFAULT_CAPACITY, NoVacancy
 from fleet.workspace import FOCUSES, AlreadyShuttered, NotShuttered, WorkspaceStore
 from fleet.projects import Registry
 from fleet.transport import FleetError, Host
-from fleet.web.documents import fetch_document
+from fleet.web.documents import DocumentAccessDenied, fetch_document
 from fleet.web.fixture import FixtureLibrary, FixtureState
 from fleet.web.library import ProjectLibrary
 from fleet.web.live import AlreadyHoused, LiveWorkspace
@@ -413,6 +413,9 @@ def make_handler(state: FleetState | FixtureState,
                 return
             try:
                 body = state.read_document(query["host"], query["job"], query["id"])
+            except DocumentAccessDenied as error:
+                self.respond(403, "application/json", json.dumps({"error": str(error)}).encode())
+                return
             except FleetError as error:
                 self.respond(404, "application/json", json.dumps({"error": str(error)}).encode())
                 return
