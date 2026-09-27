@@ -99,6 +99,33 @@ def test_empty_project_has_no_invented_progress():
     assert project([]) == {"project": "p", "work_items": [], "attention": []}
 
 
+def test_bench_projects_slice_and_orders_tasks_without_host_streams():
+    from fleet.projections.bench import bench_state
+
+    summary = Summary("milestone", "Purpose", "Done", "Doing", "Next", "user", NOW)
+    alert = AttentionItem("a", "p", "next", None, "blocker", "user", "work", "next",
+                          "Choose", "work:next", "open", None, None, NOW)
+    report = LibraryEntry("report", "p", "milestone", "r", "report", "Report", "run",
+                          "file:///report", "available", True)
+    doc = project([item("epic", kind="epic"), item("milestone", kind="milestone", parent="epic"),
+                   item("next", parent="milestone"), item("doing", parent="milestone"),
+                   item("done", parent="milestone", condition="complete")],
+                  criteria=[Criterion("c", "milestone", "Approved", "accepted", None)],
+                  summaries=[summary], attention=[alert], entries=[report])
+    task = doc["work_items"][0]["children"][0]["children"][1]
+    task["runs"] = [{"id": "r", "host": "home", "status": "running"}]
+    result = bench_state(doc, "milestone")
+    assert [(t["id"], t["lane"]) for t in result["tasks"]] == [
+        ("done", "done"), ("doing", "doing"), ("next", "next")]
+    assert result["criteria"][0]["verification"] == "accepted"
+    assert result["agents"] == [{"run": "r", "host": "home", "status": "running", "action_glyph": None}]
+    assert result["attention"][0]["id"] == "a"
+    assert result["reports"][0]["id"] == "report"
+    assert result["summary"]["purpose"] == "Purpose"
+    with pytest.raises(ValueError, match="Unknown bench"):
+        bench_state(doc, "absent")
+
+
 def run(identity, host, status="failed", end=NOW):
     return Run(identity, identity, host, "job", "codex", status, "lost", NOW,
                end, NOW + timedelta(minutes=1))

@@ -23,6 +23,8 @@ import { demoSource } from './demo.js';
 import { buildingReady, buildingShown, stepBuilding } from './building.js';
 import { sankeyPane, stepSankey } from './sankey.js';
 import { glowOf, keyOf, pipelines, screenOf, stepScreens } from './pipelines.js';
+import { enterFloor } from './bench.js';
+import { textBudget } from './text-budget.js';
 
 // ------------------------------------------------------------------ frame loop
 let lastT = 0;
@@ -172,6 +174,7 @@ loadAssets().then(() => {
     ? _w.set(r.ox + t.along + a * t.w / 2, t.up + b * t.h / 2, r.oy + t.out)
     : _w.set(r.ox + t.out, t.up + b * t.h / 2, r.oy + t.along - a * t.w / 2), { x: 0, y: 0 }));
   window.fleetDeck = Object.freeze({
+    enterFloor, textBudget,
     advanceTime,   // seconds; switches to a manual animation clock until reload
     lanterns: lanternState,
     rooms: () => rooms.map(r => ({ name: r.name, label: r.label, x: r.ox, y: r.oy,

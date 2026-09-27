@@ -20,11 +20,14 @@ from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from fleet import transport
-from fleet.composition import Store, open_attention, open_execution, open_library, open_store, open_workspace
+from fleet.composition import (Store, open_attention, open_execution, open_library, open_store,
+                               open_workspace, open_work, open_decisions)
 from fleet.modules.attention import InputObservation, ItemResolved
 from fleet.modules.workspace import (NoVacancy, FOCUSES, AlreadyShuttered, NotShuttered,
                                      WorkspaceFacade, Registry)
 from fleet.projections.workspace import annotate, resolve, registry_config
+from fleet.projections.project import project_status
+from fleet.projections.bench import bench_rooms, bench_state
 from fleet.transport import FleetError, Host
 from fleet.web.documents import DocumentAccessDenied, fetch_document
 from fleet.web.fixture import FixtureLibrary, FixtureState
@@ -288,6 +291,19 @@ def make_handler(state: FleetState | FixtureState,
                 self.move_in_options()
             elif path == "/api/state":
                 self.respond(200, "application/json", json.dumps(state.document()).encode())
+            elif path == "/api/bench":
+                query = parse_qs(urlsplit(self.path).query)
+                if "project" not in query:
+                    self.error(400, "project is required")
+                    return
+                projection = project_status(query["project"][0], open_work(state.store), state.attention,
+                    open_execution(state.store), open_library(state.store), open_decisions(state.store))
+                try:
+                    result = bench_state(projection, query["slice"][0]) if "slice" in query else bench_rooms(projection)
+                except ValueError as error:
+                    self.error(404, str(error))
+                    return
+                self.respond(200, "application/json", json.dumps(result).encode())
             elif path in ("/", "/index.html"):
                 self.respond(200, "text/html; charset=utf-8", index_page)
             elif path in app_files:

@@ -119,6 +119,62 @@ def test_every_project_gets_a_room(deck: Deck, fixture_data: dict[str, Any]) -> 
     assert deck.errors == []
 
 
+def test_bench_route_steps_out_one_level(changed_deck: Deck) -> None:
+    page = changed_deck.page
+    page.locator('#viewToggle [data-view="building"]').click()
+    page.evaluate('fleetDeck.advanceTime(0)')
+    page.locator('.plate[data-floor="1"] .enter').click()
+    page.locator('[data-epic]').first.click()
+    expect(page.locator('#benchRoute')).to_have_attribute('data-level', 'room')
+    page.locator('[data-slice]').first.click()
+    expect(page.locator('#benchRoute')).to_have_attribute('data-level', 'bench')
+    expect(page.locator('#benchBreadcrumb')).to_contain_text('Supplier slice')
+    assert page.evaluate("fleetDeck.textBudget(document.getElementById('benchRoute'))") <= 20
+    page.keyboard.press('Escape')
+    expect(page.locator('#benchRoute')).to_have_attribute('data-level', 'room')
+    expect(page.locator('#benchBreadcrumb')).not_to_contain_text('Supplier slice')
+    page.keyboard.press('Escape')
+    expect(page.locator('#benchRoute')).to_have_attribute('data-level', 'floor')
+    page.keyboard.press('Escape')
+    assert page.evaluate('fleetBuilding.current()') is None
+    page.locator('#viewToggle [data-view="deck"]').click()
+
+
+def test_text_budget_detects_overflow(deck: Deck) -> None:
+    assert deck.page.evaluate("""async () => {
+        const { assertTextBudget } = await import('/js/text-budget.js');
+        const el = document.body.appendChild(document.createElement('div'));
+        el.textContent = 'one two three';
+        try {
+            assertTextBudget(el, 3);
+            try { assertTextBudget(el, 2); } catch (e) { return /3 > 2/.test(e.message); }
+            return false;
+        } finally { el.remove(); }
+    }""")
+
+
+def test_redact_has_no_visible_text(browser: Browser, base_url: str) -> None:
+    page = browser.new_page()
+    try:
+        page.goto(base_url + '/?redact')
+        page.wait_for_function('window.fleetDeck')
+        page.evaluate("fleetDeck.enterFloor('p-5e1f0a01')")
+        page.locator('[data-epic]').first.click()
+        page.locator('[data-slice]').first.click()
+        assert page.evaluate("fleetDeck.textBudget(document.body)") == 0
+        assert page.evaluate("""() => {
+            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+            while (walker.nextNode()) {
+                const node = walker.currentNode;
+                if (!node.textContent.trim() || !node.parentElement.checkVisibility()) continue;
+                if (getComputedStyle(node.parentElement).color !== 'rgba(0, 0, 0, 0)') return false;
+            }
+            return true;
+        }""")
+    finally:
+        page.close()
+
+
 def test_every_unfinished_job_and_session_is_an_agent(deck: Deck, fixture_data: dict[str, Any]) -> None:
     expected = on_the_floor(fixture_data)
     agents = deck.page.evaluate("fleetDeck.agents()")
