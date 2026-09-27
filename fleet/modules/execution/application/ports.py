@@ -1,11 +1,17 @@
-from typing import ContextManager, Protocol
+from typing import Callable, ContextManager, Protocol
 
-from ..domain import Action, Claim, Run
+from fleet.modules.attention import AttentionFacade
 from fleet.modules.work import WorkFacade
 from fleet.modules.workspace import WorkspaceFacade
 
+from ..domain import Action, Claim, Delivery, Run
+from .dtos import InputResult
+
+InputSender = Callable[[Run, Delivery], InputResult]
+
 
 class ExecutionRepository(Protocol):
+    attention: AttentionFacade
     work: WorkFacade
     workspace: WorkspaceFacade
 
@@ -15,6 +21,8 @@ class ExecutionRepository(Protocol):
     def runs(self) -> list[Run]: ...
     def save(self, action: Action, run: Run, actor: str) -> None: ...
     def update(self, run: Run, actor: str) -> None: ...
+    def deliveries(self) -> list[Delivery]: ...
+    def save_delivery(self, delivery: Delivery, actor: str) -> None: ...
     def claims(self) -> list[Claim]: ...
     def save_action(self, action: Action, actor: str) -> None: ...
     def save_run(self, run: Run, actor: str) -> None: ...

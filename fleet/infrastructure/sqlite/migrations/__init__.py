@@ -85,4 +85,7 @@ MIGRATIONS = (
         """CREATE TABLE execution_request (
             key TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, run TEXT NOT NULL)""",
     ),
+    (
+        "CREATE TABLE execution_delivery (id TEXT PRIMARY KEY, record TEXT NOT NULL)",
+    ),
 )

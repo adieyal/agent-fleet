@@ -23,6 +23,7 @@ from fleet.modules.execution import ExecutionFacade
 from fleet.modules.library import LibraryFacade
 from fleet.modules.decisions import DecisionsFacade
 from fleet.infrastructure.sqlite.decisions import DecisionRepository
+from fleet.infrastructure.input_delivery import send_input
 from fleet.infrastructure.sqlite.records import RecordsRepository
 from fleet.infrastructure.git import RepositoryWriter
 from fleet.modules.records import RecordsFacade
@@ -71,13 +72,15 @@ def open_workspace(store: Store | None = None, *, initial: dict | None = None,
 
 def open_execution(store: Store | None = None) -> ExecutionFacade:
     store = store if store is not None else open_store()
+    attention = lambda unit: AttentionFacade(AttentionRepository(store, unit), store.clock)
 
     def collaborators(unit):
         work = WorkFacade(WorkRepository(store, lambda bound: AttentionFacade(AttentionRepository(store, bound), store.clock),
                                         unit), FileEvidenceReader(), store.clock)
         return work, WorkspaceFacade(WorkspaceRepository(store, unit))
 
-    return ExecutionFacade(ExecutionRepository(store, collaborators=collaborators), open_work(store),
+    return ExecutionFacade(ExecutionRepository(store, attention=attention, collaborators=collaborators),
+                           open_work(store), send=send_input,
                            prepare_dispatch=lambda: open_workspace(store))
 
 
@@ -90,4 +93,5 @@ def open_decisions(store: Store | None = None) -> DecisionsFacade:
     store = store if store is not None else open_store()
     attention = lambda unit: AttentionFacade(AttentionRepository(store, unit), store.clock)
     work = lambda unit: WorkFacade(WorkRepository(store, attention, unit), FileEvidenceReader(), store.clock)
-    return DecisionsFacade(DecisionRepository(store, attention, work), store.clock)
+    execution = lambda unit: ExecutionFacade(ExecutionRepository(store, unit, attention=attention), work(unit), send=send_input)
+    return DecisionsFacade(DecisionRepository(store, attention, work, execution), store.clock, open_execution(store))
