@@ -23,6 +23,9 @@ def setup_question():
 
 def test_answer_resolves_exactly_selected_item_and_records_actor_and_unblocks():
     store, work, attention, item, question, blocker = setup_question()
+    other_question = attention.raise_item(project="p", work_item=item.id, kind="decision", owner="user",
+        source="manual", source_reference="q2", headline="When to leave?", context_reference="doc:time",
+        actor="author")
     sequence = store.latest_sequence()
     decision = open_decisions(store).answer(question.id, "2", actor="adi", next_step="Take route")
     assert decision.question == "Which route?"
@@ -31,11 +34,12 @@ def test_answer_resolves_exactly_selected_item_and_records_actor_and_unblocks():
     assert decision.context == "doc:route"
     assert decision.affected_work_items == (item.id,)
     assert attention.get(question.id).state == "resolved"
-    assert attention.get(blocker.id).state == "open"
+    assert attention.get(blocker.id).state == "resolved"
+    assert attention.get(other_question.id).state == "open"
     assert work.get(item.id).condition == "none"
     assert work.get(item.id).next_step == "Take route"
     history = store.history_after(sequence)
-    assert len(history) == 3
+    assert len(history) == 4
     assert {row["actor"] for row in history} == {"adi"}
     assert open_decisions(open_store()).get(decision.id) == decision
     with pytest.raises(ValueError, match="resolved"):
@@ -91,4 +95,7 @@ def test_answer_work_blocker_itself_preserves_next_step():
     assert work.get(item.id).next_step == "Existing plan"
     assert work.get(item.id).condition == "none"
     assert attention.get(question.id).state == "open"
-    assert len(store.history_after(sequence)) == 3
+    assert attention.get(blocker.id).state == "resolved"
+    history = store.history_after(sequence)
+    assert len(history) == 4
+    assert {row["actor"] for row in history} == {"adi"}

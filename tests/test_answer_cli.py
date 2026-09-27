@@ -21,6 +21,7 @@ def test_options_and_answer_and_status(capsys):
     cli.main(["status", "p", "--json"])
     node, = json.loads(capsys.readouterr().out)["work_items"]
     assert node["decisions"] == [decision]
+    assert node["attention"] == []
     assert node["condition"] == "none"
     assert node["next_step"] == "Travel"
     cli.main(["status", "p"])

@@ -70,10 +70,9 @@ class Commands:
             if item.condition == "blocked":
                 changes["condition"] = "none"
             if next_step is not None:
-                changes.update(next_step=next_step, next_step_recorded_at=self.clock())
+                changes["next_step"] = next_step
             if changes:
-                item = replace(item, **changes, updated=self.clock())
-                repository.save("item", item, actor)
+                return self.change(identity, actor, **changes)
             return item
 
     def add_criterion(self, identity: str, *, actor: str, **fields) -> Criterion:
