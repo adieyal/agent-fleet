@@ -6,6 +6,7 @@ happen and are fanned out to every connected browser.
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 import os
 import selectors
 import subprocess
@@ -18,7 +19,7 @@ from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from fleet import building, projects, transport
-from fleet.composition import open_attention, open_store
+from fleet.composition import open_attention, open_execution, open_library, open_store
 from fleet.infrastructure.sqlite import Store
 from fleet.modules.attention import InputObservation, ItemResolved
 from fleet.building import DEFAULT_CAPACITY, NoVacancy
@@ -29,6 +30,7 @@ from fleet.web.documents import DocumentAccessDenied, fetch_document
 from fleet.web.fixture import FixtureLibrary, FixtureState
 from fleet.web.library import ProjectLibrary
 from fleet.web.live import AlreadyHoused, LiveWorkspace
+from fleet.web.ingester import observe_runs
 
 WEB_ROOT = Path(__file__).parent.resolve()
 INDEX_PATH = WEB_ROOT / "index.html"
@@ -80,6 +82,8 @@ class FleetState(LiveWorkspace):
         self.workspace = workspace or WorkspaceStore(None)
         self.store = store if store is not None else open_store()
         self.attention = open_attention(self.store, workspace_path=self.workspace.path)
+        self.execution = open_execution(self.store)
+        self.run_library = open_library(self.store)
         self.woken_until = 0.0
         self.changed = threading.Condition()
         self.version = 0
@@ -102,15 +106,19 @@ class FleetState(LiveWorkspace):
     def update(self, host_name: str, mutate: Any, *, owners: set[str] | None = None,
                ingest: bool = True, heartbeat: bool = False) -> None:
         with self.changed:
+            previous = deepcopy(self.by_host[host_name])
+            sequence = self.store.latest_sequence()
             mutate(self.by_host[host_name])
+            self.by_host[host_name] = deepcopy(self.by_host[host_name])
             reconciled = False
             if ingest:
                 host = self.by_host[host_name]
+                observe_runs(self.execution, self.run_library, host)
                 reconciled = self.attention.observe({**host,
                     "jobs": [self.registry.resolve(host_name, job) for job in host["jobs"].values()],
                     "sessions": [self.registry.resolve(host_name, session) for session in host["sessions"].values()]},
                     owners=owners, raise_items=not heartbeat)
-            if heartbeat and not reconciled:
+            if previous == self.by_host[host_name] and self.store.latest_sequence() == sequence and not reconciled:
                 return
             self.version += 1
             self.changed.notify_all()

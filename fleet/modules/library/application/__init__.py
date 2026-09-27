@@ -1,4 +1,4 @@
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from fleet.modules.work import WorkFacade
 from .ports import LibraryRepository
@@ -20,4 +20,14 @@ def link(repository: LibraryRepository, work: WorkFacade, url: str, *, project: 
     entry = LibraryEntry(str(uuid4()), project, work_item, None, "reference",
                          title, "linked", url, "external", True)
     repository.save(entry, actor)
+    return entry
+
+
+def index_run(repository: LibraryRepository, work: WorkFacade, *, run: str, work_item: str,
+              kind: str, title: str | None, location: str, availability: str) -> LibraryEntry:
+    item = work.get(work_item)
+    identity = str(uuid5(NAMESPACE_URL, f"{run}:{kind}:{location}"))
+    entry = LibraryEntry(identity, item.project, work_item, run, kind, title, "fleetd",
+                         location, availability, True)
+    repository.save(entry, "fleetd")
     return entry

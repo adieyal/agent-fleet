@@ -54,3 +54,11 @@ class ExecutionRepository:
             (run.id, run.action, run.host, run.remote_job_id, run_payload))
         self.unit.record_change(f"execution:action:{action.id}", "", action_payload, actor)
         self.unit.record_change(f"execution:run:{run.id}", "", run_payload, actor)
+
+    def update(self, run: Run, actor: str) -> None:
+        if self.unit is None:
+            raise RuntimeError("execution writes require a transaction")
+        previous = self.rows("SELECT record FROM execution_run WHERE id = ?", (run.id,))[0]["record"]
+        payload = json.dumps(asdict(run), default=lambda value: value.isoformat(), sort_keys=True)
+        self.unit.connection.execute("UPDATE execution_run SET record = ? WHERE id = ?", (payload, run.id))
+        self.unit.record_change(f"execution:run:{run.id}", previous, payload, actor)

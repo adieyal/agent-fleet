@@ -10,6 +10,18 @@ import pytest
 from fleet.remote import fleetd
 
 
+def test_trace_availability_survives_pruning(job):
+    record, directory = job
+    record.update(permission="read-only", created_at=1, updated_at=2)
+    trace = directory / "events.jsonl"
+    trace.write_text('{"kind":"text","summary":"working"}\n')
+    signature = fleetd.job_signature(directory)
+    assert fleetd.job_summary(record, 1)["trace"] == {"path": str(trace), "availability": "available"}
+    trace.unlink()
+    assert fleetd.job_signature(directory) != signature
+    assert fleetd.job_summary(record, 1)["trace"] == {"path": str(trace), "availability": "unavailable"}
+
+
 @pytest.fixture
 def job(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[dict, Path]:
     home = tmp_path / "fleet"

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fleet.modules.work import WorkFacade
-from .application import link
+from .application import index_run, link
 from .application.ports import LibraryRepository
 from .domain import LibraryEntry
 
@@ -16,3 +16,8 @@ class LibraryFacade:
 
     def list(self) -> list[LibraryEntry]:
         return self.repository.list()
+
+    def index_run(self, *, run: str, work_item: str, kind: str, title: str | None,
+                  location: str, availability: str) -> LibraryEntry:
+        return index_run(self.repository, self.work, run=run, work_item=work_item, kind=kind,
+                         title=title, location=location, availability=availability)
