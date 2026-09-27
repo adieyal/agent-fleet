@@ -20,11 +20,11 @@ from fleet.web.server import FleetState, make_handler
 def test_migrations_are_ordered_and_idempotent(tmp_path: Path) -> None:
     path = tmp_path / "controller.db"
     store = open_store(path)
-    assert store.schema_version() == 1
+    assert store.schema_version() == len(sqlite_store.MIGRATIONS)
     with store.unit_of_work() as work:
         work.record_change("work:1", "ready", "active", "test")
     store = open_store(path)
-    assert store.schema_version() == 1
+    assert store.schema_version() == len(sqlite_store.MIGRATIONS)
     assert [(row["sequence"], row["subject"]) for row in store.history_after(0)] == [(1, "work:1")]
 
 
@@ -45,7 +45,7 @@ def test_pending_migrations_run_in_order(tmp_path: Path, monkeypatch: pytest.Mon
     ))
     for _ in range(2):
         store = open_store(path)
-        assert store.schema_version() == 3
+        assert store.schema_version() == len(sqlite_store.MIGRATIONS)
     with sqlite3.connect(path) as connection:
         assert connection.execute("SELECT value FROM sample").fetchall() == [("migrated",)]
 
