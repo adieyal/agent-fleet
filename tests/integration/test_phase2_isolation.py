@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import socket
 import subprocess
 import sys
 
@@ -12,6 +13,70 @@ from fleet import transport
 
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts/checks/phase2-gate.sh"
+
+
+@pytest.fixture(autouse=True)
+def configured_local_host():
+    transport.config_path().parent.mkdir(parents=True, exist_ok=True)
+    transport.config_path().write_text(json.dumps({"hosts": {"local": {"ssh": None}}}))
+
+
+def test_gate_resolves_config_before_isolating_environment(tmp_path, monkeypatch):
+    gate = load_gate()
+    monkeypatch.setattr(socket, "gethostname", lambda: "carbon")
+    config = transport.config_path()
+    config.write_text(json.dumps({"hosts": {
+        "carbon": {"ssh": "operator@carbon-alias", "python": "/opt/python"},
+        "home": {"ssh": None, "python": sys.executable},
+    }}))
+    before = (config.read_bytes(), config.stat().st_mtime_ns)
+    environment = gate.Environment(["carbon", "home"], tmp_path)
+    try:
+        assert [(h.name, h.ssh_target, h.python) for h in environment.hosts] == [
+            ("home", None, sys.executable), ("carbon", "operator@carbon-alias", "/opt/python")]
+        assert transport.config_path() == tmp_path / "config.json"
+        assert (config.read_bytes(), config.stat().st_mtime_ns) == before
+    finally:
+        environment.cleanup()
+
+
+def test_gate_keeps_transport_globals_and_guards_disconnected_calls(tmp_path):
+    gate = load_gate()
+    options = transport.SSH_OPTIONS
+    original_options = options[:]
+    master = transport.ensure_master
+    transport.config_path().write_text(json.dumps({"hosts": {"remote": {"ssh": "alias"}}}))
+    environment = gate.Environment(["remote"], tmp_path)
+    try:
+        assert transport.SSH_OPTIONS is options
+        assert transport.SSH_OPTIONS == original_options
+        assert transport.ensure_master is master
+        host, = environment.hosts
+        assert host.control_path == environment.control
+        environment.offline = True
+        with pytest.raises(transport.FleetError, match="disconnected"):
+            environment.call(host, ["ls"])
+    finally:
+        environment.cleanup()
+
+
+def test_custom_control_path_reaches_all_ssh_commands(tmp_path, monkeypatch):
+    control = str(tmp_path / "ssh-%C")
+    host = transport.Host("remote", "alias", control_path=control)
+    commands = []
+
+    def run(command, **kwargs):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 1 if "check" in command else 0, '{"jobs": []}', "")
+
+    monkeypatch.setattr(transport.subprocess, "run", run)
+    assert transport.call(host, ["ls"]) == {"jobs": []}
+    commands.append(host.shell_command("echo test"))
+    transport.rsync(["source"], "alias:destination", host)
+    for command in commands:
+        joined = " ".join(command)
+        assert f"ControlPath={control}" in joined
+        assert f"{Path.home() / '.ssh'}/fleet-%C" not in joined
 
 
 @pytest.mark.parametrize("local", [True, False])

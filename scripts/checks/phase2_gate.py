@@ -1,12 +1,12 @@
 """Isolated, operator-run Phase 2 checkpoint."""
 import argparse
+from dataclasses import replace
 import json
 import os
 from pathlib import Path
 import select
 import shlex
 import signal
-import socket
 import subprocess
 import sys
 import tempfile
@@ -35,8 +35,8 @@ def agent_pid(home: Path, job: str, run: str) -> int | None:
 
 class Environment:
     def __init__(self, names: list[str], root: Path):
-        local = socket.gethostname().split(".")[0]
-        self.hosts = sorted([transport.Host(name, None if name in (local, "local") else name)
+        self.control = str(root / "ssh-%C")
+        self.hosts = sorted([replace(transport.host_by_name(name), control_path=self.control)
                              for name in names], key=lambda host: not host.is_local)
         self.root = root
         self.suffix = "m5-" + uuid4().hex[:12]
@@ -44,14 +44,7 @@ class Environment:
         self.copies = {}
         self.masters = {}
         self.offline = False
-        self.original_options = transport.SSH_OPTIONS[:]
-        self.original_master = transport.ensure_master
         self.original_env = dict(os.environ)
-        self.control = str(root / "ssh-%C")
-        transport.SSH_OPTIONS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=6",
-                                 "-o", "ControlMaster=auto", "-o", f"ControlPath={self.control}",
-                                 "-o", "ControlPersist=no"]
-        transport.ensure_master = self.ensure_master
         os.environ.update(FLEET_FLEETD_PATH=f"~/.local/share/fleet-{self.suffix}/fleetd.py",
                           FLEET_REMOTE_HOME=f"~/.fleet-{self.suffix}",
                           FLEET_STORE=str(root / "store.db"), FLEET_CONFIG=str(root / "config.json"),
@@ -64,7 +57,7 @@ class Environment:
             raise FleetError("dedicated SSH connection is disconnected")
         if host.name in self.masters and self.masters[host.name].poll() is None:
             return
-        process = subprocess.Popen(["ssh", *transport.SSH_OPTIONS, "-M", "-N", host.ssh_target],
+        process = subprocess.Popen(["ssh", "-o", "ControlPersist=no", *host.ssh_options, "-M", "-N", host.ssh_target],
                                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.masters[host.name] = process
         for _ in range(100):
@@ -76,6 +69,10 @@ class Environment:
                 raise FleetError(f"cannot open dedicated SSH connection to {host.name}")
             time.sleep(0.05)
         raise FleetError("dedicated SSH connection did not become ready")
+
+    def call(self, host, arguments, *, stdin_text=None):
+        self.ensure_master(host)
+        return transport.call(host, arguments, stdin_text=stdin_text)
 
     def python(self, host, source, *args, stdin=None):
         self.ensure_master(host)
@@ -100,7 +97,7 @@ home.mkdir(mode=0o700)
 copy.mkdir(parents=True)
 (copy / 'fleetd.py').write_text(sys.stdin.read())
 """, self.homes[host.name], self.copies[host.name], stdin=transport.LOCAL_FLEETD_SOURCE.read_text())
-            assert transport.call(host, ["ls", "--all"])["jobs"] == []
+            assert self.call(host, ["ls", "--all"])["jobs"] == []
         (self.root / "config.json").write_text(json.dumps({"hosts": {
             h.name: {"ssh": h.ssh_target, "python": h.python} for h in self.hosts}}))
 
@@ -124,9 +121,9 @@ copy.mkdir(parents=True)
             if host.name not in self.copies:
                 continue
             try:
-                jobs = transport.call(host, ["ls", "--all"])["jobs"]
+                jobs = self.call(host, ["ls", "--all"])["jobs"]
                 for job in jobs:
-                    transport.call(host, ["cancel", job["id"], "--all-steps"])
+                    self.call(host, ["cancel", job["id"], "--all-steps"])
                 self.python(host, """
 from pathlib import Path
 import shutil, sys
@@ -141,8 +138,6 @@ for value in sys.argv[1:]:
             if process.poll() is None:
                 process.terminate()
             process.wait(timeout=10)
-        transport.SSH_OPTIONS = self.original_options
-        transport.ensure_master = self.original_master
         os.environ.clear()
         os.environ.update(self.original_env)
         if errors:
@@ -205,20 +200,20 @@ def existing_checks(environment):
     other = execution.dispatch(item_id, host=hosts[1].name, runtime="codex", payload=payload(environment.homes[hosts[1].name]),
         actor="user", reason="phase2 check", idempotency_key=key + "-home").run
     assert other.action != run.action
-    execution.deliver(run, lambda args, stdin: transport.call(hosts[0], args, stdin_text=stdin), lambda *args: None)
+    execution.deliver(run, lambda args, stdin: environment.call(hosts[0], args, stdin_text=stdin), lambda *args: None)
 
     print("3. Discard the second host's create reply; expect the same run without another create.", flush=True)
     calls = []
     def dropped(args, stdin):
         calls.append(args[0])
-        reply = transport.call(hosts[1], args, stdin_text=stdin)
+        reply = environment.call(hosts[1], args, stdin_text=stdin)
         if args[0] == "create":
             raise FleetError("injected dropped SSH reply after remote create")
         return reply
     job = execution.deliver(other, dropped, lambda *args: None)
     assert calls == ["create", "reconcile"] and job["run_id"] == other.id
     for host, intended in zip(hosts, (run, other)):
-        jobs = transport.call(host, ["ls", "--all"])["jobs"]
+        jobs = environment.call(host, ["ls", "--all"])["jobs"]
         matches = [job for job in jobs if job.get("run_id") == intended.id]
         assert len(matches) == 1 and matches[0]["id"] == intended.remote_job_id
         print(f"  {host.name}:{intended.remote_job_id} run={intended.id}")
@@ -253,7 +248,7 @@ def real_disconnect(environment, store, work, item, execution, payload):
     def dropped(args, stdin):
         environment.ensure_master(host)
         if args[0] != "create":
-            return transport.call(host, args, stdin_text=stdin)
+            return environment.call(host, args, stdin_text=stdin)
         command = host.fleetd_command(args)
         reply = str(Path(environment.homes[host.name]) / "withheld-reply.json")
         command[-1] += f" > {shlex.quote(reply)} && echo created && exec sleep 30"
@@ -288,9 +283,9 @@ def real_disconnect(environment, store, work, item, execution, payload):
     assert store.latest_sequence() == sequence
     assert (work.get(item.id), work.criteria(item.id), work.progress(item.id)) == before
     environment.offline = False
-    job = execution.deliver(run, lambda args, stdin: transport.call(host, args, stdin_text=stdin),
+    job = execution.deliver(run, lambda args, stdin: environment.call(host, args, stdin_text=stdin),
                             lambda *args: None, reconcile=True)
-    jobs = transport.call(host, ["ls", "--all"])["jobs"]
+    jobs = environment.call(host, ["ls", "--all"])["jobs"]
     assert job["id"] == run.remote_job_id
     assert len([j for j in jobs if j.get("run_id") == run.id]) == 1
     print("5. Real SSH disconnect: unknown outcome, claim retained, unchanged work, one job after reconnect.")
@@ -311,7 +306,7 @@ def killed_agent(environment, store, work, item, execution, payload):
     request["steps"] = ["Think carefully about a plan for a large database migration. Do not use tools or write files."]
     run = execution.dispatch(item.id, host=host.name, runtime="codex", payload=request,
         actor="user", reason="real killed agent", idempotency_key="killed-agent").run
-    execution.deliver(run, lambda args, stdin: transport.call(host, args, stdin_text=stdin), lambda *args: None)
+    execution.deliver(run, lambda args, stdin: environment.call(host, args, stdin_text=stdin), lambda *args: None)
     # A foreground runner avoids touching the user's tmux server.
     runner = subprocess.Popen(host.fleetd_command(["_run", run.remote_job_id]),
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -327,19 +322,19 @@ def killed_agent(environment, store, work, item, execution, payload):
         else:
             raise AssertionError("agent pid was not recorded")
         assert runner.wait(timeout=20) == 0
-        execution.deliver(run, lambda args, stdin: transport.call(host, args, stdin_text=stdin),
+        execution.deliver(run, lambda args, stdin: environment.call(host, args, stdin_text=stdin),
                           lambda *args: None, reconcile=True)
         ended = execution.get_run(run.id)
         assert (ended.status, ended.reason) == ("failed", "lost")
         assert not next(c for c in execution.claims() if c.run == run.id).active
         assert work.get(item.id).condition != "complete"
         sequence = store.latest_sequence()
-        execution.deliver(run, lambda args, stdin: transport.call(host, args, stdin_text=stdin),
+        execution.deliver(run, lambda args, stdin: environment.call(host, args, stdin_text=stdin),
                           lambda *args: None, reconcile=True)
         assert store.latest_sequence() == sequence
     finally:
         if runner.poll() is None:
-            transport.call(host, ["cancel", run.remote_job_id, "--all-steps"])
+            environment.call(host, ["cancel", run.remote_job_id, "--all-steps"])
             try:
                 runner.wait(timeout=10)
             except subprocess.TimeoutExpired:
@@ -366,7 +361,7 @@ directories. Close only the printed socket with ssh -S <socket> -O exit <host>,
 and remove the printed controller temporary directory. Never use a PID pattern.
 """, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--hosts", nargs="+", default=["carbon", "home"],
-                        help="host names; this machine or 'local' runs locally, others use SSH")
+                        help="host names from Fleet config; configured SSH targets determine locality")
     parser.add_argument("--setup-only", action="store_true", help="verify setup and teardown without dispatch or agents")
     args = parser.parse_args()
     if len(set(args.hosts)) != len(args.hosts):

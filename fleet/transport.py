@@ -28,6 +28,13 @@ class Host:
     name: str
     ssh_target: str | None
     python: str = "python3"
+    control_path: str | None = None
+
+    @property
+    def ssh_options(self) -> list[str]:
+        return [f"ControlPath={self.control_path}"
+                if self.control_path is not None and option.startswith("ControlPath=") else option
+                for option in SSH_OPTIONS]
 
     @property
     def is_local(self) -> bool:
@@ -45,12 +52,12 @@ class Host:
         remote_command = " ".join([fleetd[0], fleetd[1]] + [shlex.quote(argument) for argument in arguments])
         if home is not None:
             remote_command = f"env FLEET_HOME={_remote_path(home)} " + remote_command
-        return ["ssh", *SSH_OPTIONS, self.ssh_target, remote_command]
+        return ["ssh", *self.ssh_options, self.ssh_target, remote_command]
 
     def shell_command(self, command: str, *, interactive: bool = False) -> list[str]:
         if self.is_local:
             return ["bash", "-c", command]
-        return ["ssh", *(["-t"] if interactive else []), *SSH_OPTIONS, self.ssh_target, command]
+        return ["ssh", *(["-t"] if interactive else []), *self.ssh_options, self.ssh_target, command]
 
     def rsync_target(self, path: str) -> str:
         return path if self.is_local else f"{self.ssh_target}:{path}"
@@ -118,10 +125,10 @@ def ensure_master(host: Host) -> None:
     """
     if host.is_local:
         return
-    control = ["-o", f"ControlPath={Path.home() / '.ssh'}/fleet-%C"]
+    control = ["-o", next(option for option in host.ssh_options if option.startswith("ControlPath="))]
     check = subprocess.run(["ssh", *control, "-O", "check", host.ssh_target], capture_output=True)
     if check.returncode != 0:
-        subprocess.run(["ssh", *SSH_OPTIONS, "-o", "ControlMaster=yes", "-M", "-N", "-f", host.ssh_target],
+        subprocess.run(["ssh", *host.ssh_options, "-o", "ControlMaster=yes", "-M", "-N", "-f", host.ssh_target],
                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
 
 
@@ -199,7 +206,7 @@ def rsync(sources: list[str], destination: str, host: Host) -> None:
     ensure_master(host)
     command = ["rsync", "-a", *sources, destination]
     if not host.is_local:
-        command[1:1] = ["-e", " ".join(["ssh", *SSH_OPTIONS])]
+        command[1:1] = ["-e", " ".join(["ssh", *host.ssh_options])]
     completed = subprocess.run(command, capture_output=True, text=True)
     if completed.returncode != 0:
         raise FleetError(f"rsync failed: {completed.stderr.strip()}")
