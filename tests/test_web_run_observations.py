@@ -9,6 +9,36 @@ from fleet.transport import Host
 from fleet.web import server
 
 
+def test_unscoped_dispatch_observations_keep_deck_available():
+    store = composition.open_store()
+    execution = composition.open_execution(store)
+    run = execution.dispatch(None, project="p", host="worker", runtime="codex", payload={"cwd": "/repo"},
+                             actor="user", reason="manual", idempotency_key="request").run
+    host = Host("worker", None)
+    state = server.FleetState([host], store=store)
+    message = {"type": "job", "job": {
+        "id": run.remote_job_id, "project": "p", "description": "Task", "status": "done", "agent": "codex",
+        "created_at": 1, "updated_at": 2, "steps": [],
+        "documents": [{"kind": "report", "name": "Report", "path": "/repo/report.md"}]}}
+    server.apply_message(state, host, {"type": "hello"})
+    server.apply_message(state, host, message)
+    sequence = store.latest_sequence()
+    server.apply_message(state, host, message)
+    assert not [row for row in store.history_after(sequence) if row["subject"].startswith("execution:")]
+    assert not execution.claims()[0].active
+    http = ThreadingHTTPServer(("127.0.0.1", 0), server.make_handler(state))
+    thread = threading.Thread(target=http.serve_forever, kwargs={"poll_interval": 0.01})
+    thread.start()
+    try:
+        with urlopen(f"http://127.0.0.1:{http.server_port}/api/state", timeout=5) as response:
+            document = json.load(response)
+        assert document["hosts"][0]["jobs"][0]["id"] == run.remote_job_id
+    finally:
+        http.shutdown()
+        http.server_close()
+        thread.join(timeout=5)
+
+
 def test_silence_deadline_marks_linked_run_unknown(monkeypatch):
     store = composition.open_store()
     work = composition.open_work(store).add(project="p", title="Task", goal="Ship", actor="user")

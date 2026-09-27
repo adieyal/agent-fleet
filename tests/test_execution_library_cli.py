@@ -36,7 +36,10 @@ def test_send_links_created_job(monkeypatch, capsys, start_fails):
         calls.append(arguments[0])
         if arguments[0] == "start" and start_fails:
             raise cli.FleetError("start unavailable")
-        return {"id": "created-job", "status": "queued", "steps": [{}], "description": "Task"}
+        run, = composition.open_execution().runs()
+        if arguments[0] == "create":
+            assert arguments[arguments.index("--id") + 1] == run.remote_job_id
+        return {"id": run.remote_job_id, "status": "queued", "steps": [{}], "description": "Task"}
 
     monkeypatch.setattr(cli.transport, "host_by_name", lambda name: SimpleNamespace(name=name))
     monkeypatch.setattr(cli.transport, "call", call)
@@ -48,6 +51,6 @@ def test_send_links_created_job(monkeypatch, capsys, start_fails):
     else:
         cli.main(arguments)
     run, = composition.open_execution().runs()
-    assert (run.host, run.remote_job_id, run.runtime) == ("fake", "created-job", "claude")
+    assert (run.host, run.remote_job_id, run.runtime) == ("fake", run.id, "claude")
     assert composition.open_execution().actions()[0].work_item == item.id
     assert calls == ["create", "start"]
