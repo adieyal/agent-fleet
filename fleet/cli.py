@@ -21,6 +21,7 @@ from rich.text import Text
 from rich.tree import Tree
 
 from fleet import building, projects, transport
+from fleet.composition import open_store
 from fleet.transport import FleetError, Host, HostReport
 from fleet.web.server import serve, serve_fixture
 
@@ -904,6 +905,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> None:
     arguments = build_parser().parse_args(argv)
     try:
+        open_store()
         arguments.handler(arguments)
     except FleetError as error:
         error_console.print(f"[red]fleet: {error}[/]")

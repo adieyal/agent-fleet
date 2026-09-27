@@ -23,6 +23,11 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption("--shots", default=None, help="a directory browser tests leave screenshots in, for reviewing the look")
 
 
+@pytest.fixture(autouse=True)
+def isolated_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("FLEET_STORE", str(tmp_path / "fleet.db"))
+
+
 @pytest.fixture(scope="session")
 def fixture_data() -> dict[str, Any]:
     return json.loads(FIXTURE.read_text())
