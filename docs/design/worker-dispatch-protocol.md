@@ -21,3 +21,21 @@ A worker reports `lost` when an agent is killed without a result, or when both t
 recorded runner and agent processes are confirmed gone during observation. A missing
 PID or a surviving agent does not prove loss. Execution records failed with reason
 lost and releases the claim; repeated identical observations add no history.
+# Reconciliation after controller death
+
+Reconcile query version 4 adds a successful `absent` response containing
+`schema_version: 4`, `run_id` and the requested `fingerprint` when the worker
+has no job for that run. Existing jobs return their usual summary with version
+4. Version 3 retains its error for missing runs; create and start remain version
+3. Install the updated worker before using version 4 reconciliation.
+
+Only a matching version 4 absence permits the controller to create the stored
+intent again, using its original run ID and payload. A timeout, disconnect or
+worker error leaves the claim held and the outcome unknown. Concurrent creates
+remain protected by the worker's run identity lock. Repeated reconciliation of
+an existing job does not create another job or start it again.
+
+Run `scripts/checks/phase2-gate.sh` on carbon at the checkpoint to exercise
+local/SSH claims, parallel actions, a dropped create reply and disconnects.
+It creates held jobs and documents the expected result at each step; automated
+tests use isolated controller stores and worker directories instead.

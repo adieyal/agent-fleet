@@ -20,25 +20,34 @@ def deliver(repository: ExecutionRepository, run: Run, call: Callable, push: Cal
 
     def check(job: dict) -> dict:
         if (job["id"] != run.remote_job_id or job["run_id"] != run.id
-                or job["schema_version"] != 3 or job["fingerprint"] != digest):
+                or job["schema_version"] not in (3, 4) or job["fingerprint"] != digest):
             raise FleetError("worker returned a different run; run outcome is unknown")
         observe(repository, run.host, JobObservation(job["id"], job["status"], run.runtime,
                                                     run.start, run.end, run.last_observed, Usage.from_worker(job)))
         return job
 
-    def recover() -> dict:
-        return check(call(["reconcile", run.id, *identity[2:]], None))
-
-    if reconcile:
-        job = recover()
-    else:
+    def create() -> dict:
         arguments = list(payload["arguments"])
         if "--id" in arguments:
             index = arguments.index("--id")
             del arguments[index:index + 2]
         arguments += ["--id", run.remote_job_id, *identity]
+        return check(call(arguments, json.dumps(payload["steps"])))
+
+    def recover() -> dict:
+        job = call(["reconcile", run.id, "--fingerprint", digest, "--schema-version", "4"], None)
+        if job["status"] == "absent":
+            if (job["schema_version"] != 4 or job["run_id"] != run.id
+                    or job["fingerprint"] != digest):
+                raise FleetError("worker returned a different run; run outcome is unknown")
+            return create()
+        return check(job)
+
+    if reconcile:
+        job = recover()
+    else:
         try:
-            job = check(call(arguments, json.dumps(payload["steps"])))
+            job = create()
         except FleetError as error:
             try:
                 job = recover()
