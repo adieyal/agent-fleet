@@ -7,7 +7,7 @@ import { AGENT_COLOR, TOOL_ICON, hostLook } from './looks.js';
 import { isSession, shortId } from './activity.js';
 import { ROBOT, renderer } from './scene.js';
 import {
-  ents, everLoaded, feed, feedSeeded, hosts, live, seenEvents, selectedKey, setFeedSeeded, setSelectedKey,
+  ents, everLoaded, feed, feedSeeded, hosts, live, seenEvents, selectedKey, setFeedSeeded, setSelectedKey, workOf,
 } from './model.js';
 import { DOC_KIND, docMeta, docsOf, kindOf } from './docs3d.js';
 import { action, buildRobot } from './agents.js';
@@ -96,7 +96,7 @@ export function renderPanel() {
     if (!panelRenderPending) { panelRenderPending = true; setTimeout(() => { panelRenderPending = false; renderPanel(); }, wait + 20); }
     return;
   }
-  const e = ents.get(selectedKey);
+  const e = workOf(selectedKey);
   if (!e) return;
   if (isSession(e)) { renderSessionPanel(e); return; }
   const j = e.job;
@@ -201,7 +201,7 @@ panel.addEventListener('click', ev => {
   if (workarea) { if (!workarea.disabled) openWorkarea(workarea.dataset.workarea); return; }
   const open = ev.target.closest('[data-doc]');
   if (open) {
-    const e = ents.get(selectedKey), doc = e && (e.job.documents || []).find(d => d.id === open.dataset.doc);
+    const e = workOf(selectedKey), doc =e && (e.job.documents || []).find(d => d.id === open.dataset.doc);
     if (doc) openReader(e, doc);
     return;
   }
@@ -305,7 +305,7 @@ export function renderFeed() {
 }
 document.getElementById('feedList').addEventListener('click', ev => {
   const li = ev.target.closest('li[data-key]');
-  if (li && ents.has(li.dataset.key)) select(li.dataset.key);
+  if (li && workOf(li.dataset.key)) select(li.dataset.key);
 });
 export function updateHint() {
   const hint = document.getElementById('hint');

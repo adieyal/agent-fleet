@@ -21,14 +21,15 @@ Date.now = () => realNow() + offset;
 window.advanceClock = seconds => { offset += seconds * 1000; };
 """
 FINISHED = {"done", "cancelled"}
+BLOCKED = {"failed", "stalled"}
 ASKING = "home:8e1f0c42-2b7d-4a55-9c1e-7f3a2d6b9e10"     # idle two minutes, with a decision waiting
 REVIEWING = "worker:019a7c3e-55d1-7b20-a8f4-3c9e0d1b2a67"  # idle about eighteen minutes
 
 
 def on_the_floor(fixture_data: dict[str, Any]) -> set[str]:
-    """Every job and session the deck draws: finished jobs have left."""
+    """Every job and session the deck draws: finished jobs have left, blocked ones are under their lantern."""
     return {f"{host['name']}:{item['id']}" for host in fixture_data["hosts"]
-            for item in host["jobs"] + host["sessions"] if item["status"] not in FINISHED}
+            for item in host["jobs"] + host["sessions"] if item["status"] not in FINISHED | BLOCKED}
 
 
 @dataclass
@@ -188,7 +189,7 @@ def test_sessions_idle_for_half_an_hour_leave_unless_a_decision_waits(browser: B
 def test_bubbles_show_action_glyphs_and_the_words_stay_a_click_away(deck: Deck) -> None:
     page = deck.page
     expected = {"a1c3e9": "test", "b7d042": "edit", "Why does the st": "ask", "f20a6d": "edit", "c90e11": "think",
-                "0a9e3b": "queued", "e1b5c8": "failed"}
+                "0a9e3b": "queued"}
     for agent, action in expected.items():
         bubble = page.locator("#tags .tag", has_text=agent).locator(".bubble")
         expect(bubble).to_have_attribute("data-action", action)
@@ -250,9 +251,11 @@ def test_a_jobs_workarea_shows_its_plan_desk_and_tray(deck: Deck, fixture_data: 
     assert deck.errors == []
 
 
-def test_document_reader_opens_from_an_agent(deck: Deck) -> None:
+def test_document_reader_opens_from_a_failed_jobs_panel(deck: Deck) -> None:
     page = deck.page
-    page.locator("#tags .tag", has_text="e1b5c8").dispatch_event("click")
+    page.locator('.lantern[data-room="restoke"]').dispatch_event("click")
+    page.locator('#attnPanel [data-owner="home:e1b5c8"]').click()
+    page.locator("#attnPanel [data-close]").click()
     expect(page.locator("#panel")).to_have_class("open")
     expect(page.locator("#panelHead h2")).to_have_text("Upgrade Django to 5.2")
     page.locator('#panelBody [data-doc="report-0"]').click()
@@ -276,6 +279,12 @@ def test_demo_mode_fills_the_deck_without_errors(browser: Browser, base_url: str
     page.wait_for_function("window.fleetDeck && fleetDeck.agents().length > 0")
     expect(page.locator("#live")).to_contain_text("demo data")
     assert len(page.evaluate("fleetDeck.rooms()")) > 1
+    assert not any(agent["status"] in BLOCKED for agent in page.evaluate("fleetDeck.agents()"))
+    expect(page.locator('.lantern[data-kind="blocker"]')).to_have_count(2)   # the failed job's and the stalled one's
+    page.locator('.lantern[data-room="demo-docs"]').dispatch_event("click")
+    page.locator("#attnPanel [data-owner]").dispatch_event("click")   # the demo pushes a new state every second
+    expect(page.locator("#panelHead h2")).to_have_text("Refresh the onboarding guide screenshots")
+    page.locator("#attnPanel [data-close]").dispatch_event("click")
     page.locator("#tags .tag").first.dispatch_event("click")
     expect(page.locator("#panel")).to_have_class("open")
     context.close()
@@ -397,7 +406,7 @@ def test_background_rooms_are_dim_and_quiet(deck: Deck) -> None:
         "restoke": ("priority", 0), "invoice-parser": ("background", 1), "agent-fleet": ("priority", 0)}
     expect(page.locator('.focus-switch[data-room="invoice-parser"]')).to_have_attribute("data-focus", "background")
     expect(page.locator('.focus-switch[data-room="agent-fleet"]')).to_have_attribute("data-focus", "priority")
-    assert tag_is_calm(page, "0a9e3b") and tag_is_calm(page, "3c71d5")
+    assert tag_is_calm(page, "0a9e3b")
     assert not tag_is_calm(page, "c90e11") and not tag_is_calm(page, "f20a6d")
     assert deck.errors == []
 
@@ -413,7 +422,7 @@ def test_the_switch_dims_the_room_and_nothing_moves(deck: Deck, base_url: str) -
     assert focus_on_server(base_url, "restoke") == {"background"}
     dim, grey = room_colour(page, "restoke")
     assert dim < bright * 0.75 and grey < vivid * 0.6
-    assert tag_is_calm(page, "c90e11") and tag_is_calm(page, "e1b5c8")
+    assert tag_is_calm(page, "c90e11") and tag_is_calm(page, "a1c3e9")
     assert {name: (room["x"], room["y"], room["screen"]) for name, room in rooms_by_name(page).items()} == before
 
     switch.locator('[data-set="priority"]').dispatch_event("click")
@@ -494,6 +503,7 @@ def test_a_room_with_open_items_gets_one_lantern_with_a_count(deck: Deck, base_u
     expect(page.locator('#attnPanel .attn-item[data-kind="decision"] b')).to_contain_text("Keep the double fetch")
     page.locator('#attnPanel [data-owner="home:e1b5c8"]').click()
     expect(page.locator("#panelHead h2")).to_have_text("Upgrade Django to 5.2")
+    expect(page.locator("#panelBody .steps li.failed")).to_contain_text("Bump Django and run the test suite")
     assert attention_on_server(base_url) == before   # reading and opening change nothing
     page.locator("#panel #close").click()
     page.keyboard.press("Escape")
@@ -524,3 +534,66 @@ def test_acknowledging_dims_the_lantern_and_snoozing_hides_it(deck: Deck, base_u
     page.keyboard.press("Escape")
     assert set(attention_on_server(base_url).values()) == {"open"}
     assert deck.errors == []
+
+
+def test_failed_and_stalled_jobs_leave_the_floor_to_their_lantern(deck: Deck, base_url: str,
+                                                                  fixture_data: dict[str, Any]) -> None:
+    page = deck.page
+    blocked = {f"{host['name']}:{job['id']}" for host in fixture_data["hosts"]
+               for job in host["jobs"] if job["status"] in BLOCKED}
+    assert blocked == {"home:e1b5c8", "worker:3c71d5"}
+    assert not blocked & {agent["key"] for agent in page.evaluate("fleetDeck.agents()")}
+    for key in blocked:
+        expect(page.locator("#tags .tag", has_text=key.split(":")[1])).to_have_count(0)
+    rooms = rooms_by_name(page)
+    assert rooms["restoke"]["attention"] == {"kind": "blocker", "state": "open", "count": 2}
+    assert rooms["invoice-parser"]["attention"] == {"kind": "blocker", "state": "open", "count": 1}
+    expect(page.locator("#needYou b")).to_have_text("3")
+    expect_need_you(page, base_url)
+    assert deck.errors == []
+
+
+def blocked_deck(browser: Browser, base_url: str, fixture_data: dict[str, Any]) -> tuple[Page, list[str]]:
+    """A deck of its own, with motion, so what one test changes stays out of the shared deck."""
+    context = browser.new_context(viewport=VIEWPORTS["desktop"])
+    context.add_init_script(PIN_CLOCK % fixture_data["time"])
+    page = context.new_page()
+    errors: list[str] = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.goto(base_url + "/")
+    page.wait_for_function(f"window.fleetDeck && fleetDeck.agents().length === {len(on_the_floor(fixture_data))}")
+    return page, errors
+
+
+def test_a_job_that_fails_or_stalls_leaves_the_floor_at_once(browser: Browser, base_url: str,
+                                                             fixture_data: dict[str, Any]) -> None:
+    page, errors = blocked_deck(browser, base_url, fixture_data)
+    blocked = {"worker:c90e11": "stalled", "home:b7d042": "failed"}
+    page.evaluate("doc => fleetDeck.apply(doc)", finish_jobs(base_url, blocked))
+    assert not page.evaluate(f"fleetDeck.agents().some(agent => {json.dumps(list(blocked))}.includes(agent.key))")
+    expect(page.locator("#tags .tag", has_text="c90e11")).to_have_count(0)
+    expect(page.locator("#tags .tag", has_text="b7d042")).to_have_count(0)
+    expect(page.locator("#toggleFinished")).to_have_text("1 finished · show")   # blocked is not finished
+    expect(page.locator("#needYou b")).to_have_text("3")
+    page.context.close()
+    assert errors == []
+
+
+def test_a_failed_job_can_still_be_dismissed_from_its_panel(browser: Browser, base_url: str,
+                                                            fixture_data: dict[str, Any]) -> None:
+    page, errors = blocked_deck(browser, base_url, fixture_data)
+    page.locator('.lantern[data-room="restoke"]').dispatch_event("click")
+    page.locator('#attnPanel [data-owner="home:e1b5c8"]').click()
+    expect(page.locator("#panelHead h2")).to_have_text("Upgrade Django to 5.2")
+    page.locator("#panel #dismiss").click()
+    expect(page.locator("#panel")).not_to_have_class(re.compile("open"))
+    chip = page.locator("#restoreDismissed")
+    expect(chip).to_have_text("1 hidden · show")
+    expect(page.locator('#attnPanel [data-owner="home:e1b5c8"]')).to_have_count(0)   # nothing to open while hidden
+    expect(page.locator('.lantern[data-room="restoke"]')).to_have_attribute("data-count", "2")
+    chip.click()
+    expect(chip).to_have_count(0)
+    page.locator('#attnPanel [data-owner="home:e1b5c8"]').click()
+    expect(page.locator("#panel")).to_have_class(re.compile("open"))
+    page.context.close()
+    assert errors == []

@@ -14,8 +14,6 @@ export function activityFor(job) {
     case 'idle': return 'await';
     case 'queued': return 'idle';
     case 'done': case 'cancelled': return 'dock';
-    case 'failed': return 'failed';
-    case 'stalled': return 'stalled';
   }
   return activityOf(job.activity);
 }
