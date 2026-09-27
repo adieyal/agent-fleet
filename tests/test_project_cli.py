@@ -6,6 +6,7 @@ import pytest
 from rich.console import Console
 
 from fleet import cli, transport
+from fleet.composition import open_workspace
 from fleet.transport import HostReport
 
 
@@ -29,7 +30,7 @@ def fleet(monkeypatch):
 
 
 def stored_projects(config_path):
-    return json.loads(config_path.read_text())["projects"]
+    return open_workspace().registry().to_config()
 
 
 def only_id(config_path):
@@ -43,6 +44,8 @@ def test_add_with_links_keeps_other_config(config_path, fleet):
     assert project_id in output
     stored = json.loads(config_path.read_text())
     assert stored["project_labels"] == {"old": "Old sign"} and set(stored["hosts"]) == {"home", "gpu"}
+    assert "projects" not in stored
+    stored["projects"] = stored_projects(config_path)
     assert isinstance(stored["projects"][project_id].pop("created_at"), float)
     assert stored["projects"][project_id] == {
         "name": "Agent Fleet", "repositories": [],

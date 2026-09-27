@@ -7,10 +7,12 @@ from urllib.request import Request, urlopen
 
 import pytest
 
-from fleet import projects, transport
-from fleet.workspace import WorkspaceStore
+from fleet import transport
+from fleet.composition import open_workspace
+from workspace_support import persist_registry
+
 from fleet.transport import FleetError, Host
-from fleet.web.server import FleetState, make_handler, workspace_path
+from fleet.web.server import FleetState, make_handler
 
 HOSTS = [Host("home", None), Host("gpu", "gpu.example")]
 CONFIG = {"hosts": {"home": {}, "gpu": {"ssh": "gpu.example"}}}
@@ -26,7 +28,7 @@ def config_path(tmp_path, monkeypatch):
 
 def start_deck():
     """A deck as `fleet web` builds it; each host has a job and a session labelled `agent-fleet`."""
-    state = FleetState(HOSTS, {}, projects.load_registry, WorkspaceStore(workspace_path()))
+    state = FleetState(HOSTS, {}, open_workspace().registry, open_workspace())
     for index, host in enumerate(HOSTS):
         def fill(entry, index=index):
             entry["ok"], entry["error"] = True, None
@@ -72,11 +74,11 @@ def focus_by_host(document):
 
 
 def register(name, *links):
-    registry = projects.load_registry()
+    registry = open_workspace().registry()
     project = registry.create(name)
     for host, label in links:
         registry.link(project.id, host, label)
-    projects.save_registry(registry)
+    persist_registry(registry)
     return project.id
 
 
@@ -98,10 +100,10 @@ def test_linked_work_follows_its_project_and_unlinked_work_its_label(deck, confi
     post_focus(deck, {"focus": "priority", "projects": [project_id]})
     assert focus_by_host(fetch_state(deck)) == {"home": "priority", "gpu": "background"}
 
-    stored = json.loads((config_path.parent / "workspace.json").read_text())
+    stored = open_workspace().snapshot()
     assert stored["focus"] == {"projects": {project_id: "priority"}, "labels": {"agent-fleet": "background"}}
     config = json.loads(config_path.read_text())
-    assert "focus" not in config and all("focus" not in entry for entry in config["projects"].values())
+    assert "focus" not in config and "projects" not in config
 
 
 def test_focus_survives_a_restart(config_path):
@@ -147,4 +149,4 @@ def test_refused_writes_change_nothing(deck, config_path, body, headers, status)
 def test_a_broken_focus_file_is_reported_not_ignored(config_path):
     (config_path.parent / "workspace.json").write_text(json.dumps({"focus": {"labels": {"agent-fleet": "parked"}}}))
     with pytest.raises(FleetError, match="priority or background"):
-        WorkspaceStore(workspace_path())
+        open_workspace()

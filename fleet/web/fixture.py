@@ -27,13 +27,11 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Callable
 
-from fleet.composition import open_attention, open_store
-from fleet.building import capacity_of
-from fleet.projects import Registry
+from fleet.composition import open_attention, open_store, open_workspace
+from fleet.modules.workspace import capacity_of, Registry
 from fleet.transport import FleetError
 from fleet.web.documents import STATUS_LINE, render_markdown
 from fleet.web.live import LiveWorkspace
-from fleet.workspace import WorkspaceStore
 
 
 class FixtureState(LiveWorkspace):
@@ -44,10 +42,10 @@ class FixtureState(LiveWorkspace):
         self.project_labels = fixture.get("project_labels", {})
         self.registry = Registry.from_config({"projects": fixture.get("projects", {})})
         self.capacity = capacity_of(fixture)
-        self.workspace = WorkspaceStore(None, {"focus": fixture.get("focus"), "floors": fixture.get("floors"),
-                                               "shuttered": fixture.get("shuttered")})
         self.attention_directory = TemporaryDirectory(prefix="fleet-fixture-")
-        self.attention = open_attention(open_store(Path(self.attention_directory.name) / "fleet.db"),
+        store = open_store(Path(self.attention_directory.name) / "fleet.db")
+        self.workspace = open_workspace(store, initial=fixture, actor="fixture-user")
+        self.attention = open_attention(store,
                                         workspace_path=Path(self.attention_directory.name) / "workspace.json")
         self.woken_until = 0.0
         for host in fixture["hosts"]:
@@ -70,13 +68,16 @@ class FixtureState(LiveWorkspace):
         return [host["name"] for host in self.fixture["hosts"]]
 
     def edit_registry(self, change: Callable[[Registry], Any]) -> Any:
-        return change(self.registry)
+        result = self.workspace.edit_registry(change)
+        self.registry = self.workspace.registry()
+        return result
 
     def repository_remotes(self, host: str, directories: list[str]) -> dict[str, list[str]]:
         recorded = self.fixture.get("remotes", {}).get(host, {})
         return {directory: list(recorded.get(directory, [])) for directory in directories}
 
     def document(self) -> dict[str, Any]:
+        self.registry = self.workspace.registry()
         with self.changed:
             document = self.with_attention({"time": self.fixture["time"], "project_labels": self.project_labels,
                     "projects": [{"id": project_id, **entry} for project_id, entry in self.registry.to_config().items()],
@@ -94,6 +95,7 @@ class FixtureState(LiveWorkspace):
         return self.pipelines(self.registry, {host["name"]: host for host in self.fixture["hosts"]}, after)
 
     def known_projects(self) -> dict[str, Any]:
+        self.registry = self.workspace.registry()
         return self.registry.projects
 
     def read_document(self, host_name: str, job_id: str, document_id: str) -> dict[str, Any]:

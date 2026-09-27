@@ -49,4 +49,7 @@ MIGRATIONS = (
         "ALTER TABLE attention_item ADD COLUMN resolved_at TEXT",
         "ALTER TABLE attention_item ADD COLUMN stream_context TEXT",
     ),
+    (
+        "CREATE TABLE workspace_state (id INTEGER PRIMARY KEY CHECK (id = 1), record TEXT NOT NULL)",
+    ),
 )

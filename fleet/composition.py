@@ -15,6 +15,8 @@ from fleet.modules.attention import AttentionFacade
 from fleet.modules.work import WorkFacade
 from fleet.infrastructure.sqlite.work import WorkRepository
 from fleet.infrastructure.documents.evidence import FileEvidenceReader
+from fleet.infrastructure.sqlite.workspace import WorkspaceRepository
+from fleet.modules.workspace import WorkspaceFacade
 
 
 def store_path() -> Path:
@@ -35,3 +37,10 @@ def open_work(store: Store | None = None) -> WorkFacade:
     store = store if store is not None else open_store()
     repository = WorkRepository(store, lambda unit: AttentionFacade(AttentionRepository(store, unit), store.clock))
     return WorkFacade(repository, FileEvidenceReader(), store.clock)
+
+
+def open_workspace(store: Store | None = None, *, initial: dict | None = None,
+                   actor: str = "user") -> WorkspaceFacade:
+    repository = WorkspaceRepository(store if store is not None else open_store())
+    repository.initialize(transport.CONFIG_PATH, transport.CONFIG_PATH.parent / "workspace.json", initial)
+    return WorkspaceFacade(repository, actor)

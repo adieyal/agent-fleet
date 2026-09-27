@@ -3,8 +3,11 @@ import json
 
 import pytest
 
-from fleet import projects, transport
-from fleet.projects import Link, Registry, Suggestion, normalize_repository
+from fleet import transport
+from fleet.modules import workspace as projects
+from fleet.composition import open_workspace
+from workspace_support import persist_registry
+from fleet.modules.workspace import Link, Registry, Suggestion, normalize_repository
 from fleet.transport import FleetError
 
 
@@ -110,21 +113,22 @@ def test_duplicate_repository_forms_are_stored_once():
 
 def test_registry_round_trips_through_config_keeping_other_keys(config_path):
     config_path.write_text(json.dumps({"hosts": {"home": {}}, "project_labels": {"x": "X"}}))
-    registry = projects.load_registry()
+    registry = open_workspace().registry()
     project = registry.create("Agent Fleet", ["git@github.com:adieyal/agent-fleet.git"])
     registry.link(project.id, "home", "agent-fleet")
-    projects.save_registry(registry)
+    persist_registry(registry)
 
     stored = json.loads(config_path.read_text())
     assert stored["hosts"] == {"home": {}} and stored["project_labels"] == {"x": "X"}
-    assert stored["projects"][project.id]["links"] == [{"host": "home", "label": "agent-fleet"}]
-    reloaded = projects.load_registry()
+    assert "projects" not in stored
+    assert open_workspace().registry().to_config()[project.id]["links"] == [{"host": "home", "label": "agent-fleet"}]
+    reloaded = open_workspace().registry()
     assert reloaded.project_for("home", "agent-fleet").id == project.id
 
 
 def test_config_without_projects_loads_empty(config_path):
     config_path.write_text(json.dumps({"hosts": {}, "project_labels": {"x": "X"}}))
-    assert projects.load_registry().projects == {}
+    assert open_workspace().registry().projects == {}
 
 
 @pytest.mark.parametrize("entries, message", [
@@ -135,4 +139,4 @@ def test_config_without_projects_loads_empty(config_path):
 def test_inconsistent_config_is_rejected(config_path, entries, message):
     config_path.write_text(json.dumps({"projects": entries}))
     with pytest.raises(FleetError, match=message):
-        projects.load_registry()
+        open_workspace().registry()

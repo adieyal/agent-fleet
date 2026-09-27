@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 
 from fleet.composition import open_store
+from fleet import transport
 from fleet.web.fixture import FixtureLibrary, FixtureState
 from fleet.web.server import make_handler
 
@@ -37,6 +38,9 @@ def isolated_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, empty_store:
     path = tmp_path / "fleet.db"
     shutil.copyfile(empty_store, path)
     monkeypatch.setenv("FLEET_STORE", str(path))
+    monkeypatch.setenv("FLEET_CONFIG", str(tmp_path / "config.json"))
+    monkeypatch.setenv("FLEET_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(transport, "CONFIG_PATH", tmp_path / "config.json")
 
 
 @pytest.fixture(scope="session")

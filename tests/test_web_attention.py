@@ -9,11 +9,12 @@ from urllib.request import Request, urlopen
 
 import pytest
 
-from fleet import projects, transport
+from fleet import transport
+from fleet.composition import open_workspace
 from fleet.composition import open_attention, open_store
 from fleet.transport import Host
-from fleet.web.server import FleetState, make_handler, workspace_path
-from fleet.workspace import WorkspaceStore
+from fleet.web.server import FleetState, make_handler
+
 
 HOSTS = [Host("home", None), Host("gpu", "gpu.example")]
 
@@ -39,7 +40,7 @@ class Deck:
     """A live deck whose host state the test sets directly, as the host streams would."""
 
     def __init__(self, clock=None):
-        self.state = FleetState(HOSTS, {}, projects.load_registry, WorkspaceStore(workspace_path()),
+        self.state = FleetState(HOSTS, {}, open_workspace().registry, open_workspace(),
                                store=open_store(clock=clock))
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(self.state))
         threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
@@ -193,7 +194,7 @@ def test_legacy_action_is_imported_before_workspace_stops_writing_attention(conf
         item = deck.items()["home:f1"]
         assert item["state"] == "acknowledged" and item["acknowledged_at"] == 150
         deck.state.set_focus("background", [], ["restoke"])
-        assert "attention" not in json.loads(path.read_text())
+        assert "attention" in json.loads(path.read_text())
         assert json.loads(path.with_suffix(".json.bak").read_text())["attention"]
     finally:
         deck.close()
