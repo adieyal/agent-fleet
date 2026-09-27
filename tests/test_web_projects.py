@@ -19,7 +19,7 @@ HOSTS = [Host("home", None), Host("gpu", "gpu.example")]
 def config_path(tmp_path, monkeypatch):
     path = tmp_path / "config.json"
     path.write_text(json.dumps({"hosts": {"home": {}, "gpu": {"ssh": "gpu.example"}}}))
-    monkeypatch.setattr(transport, "CONFIG_PATH", path)
+    monkeypatch.setenv("FLEET_CONFIG", str(path))
     return path
 
 

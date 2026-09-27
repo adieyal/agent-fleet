@@ -24,7 +24,7 @@ from fleet.modules.library import LibraryFacade
 
 
 def store_path() -> Path:
-    return Path(os.environ["FLEET_STORE"]) if "FLEET_STORE" in os.environ else transport.CONFIG_PATH.parent / "fleet.db"
+    return Path(os.environ["FLEET_STORE"]) if "FLEET_STORE" in os.environ else transport.config_path().parent / "fleet.db"
 
 
 def open_store(path: Path | None = None, *, clock: Callable[[], datetime] | None = None) -> Store:
@@ -33,7 +33,7 @@ def open_store(path: Path | None = None, *, clock: Callable[[], datetime] | None
 
 def open_attention(store: Store | None = None, *, workspace_path: Path | None = None) -> AttentionFacade:
     store = store if store is not None else open_store()
-    import_workspace(store, workspace_path if workspace_path is not None else transport.CONFIG_PATH.parent / "workspace.json")
+    import_workspace(store, workspace_path if workspace_path is not None else transport.config_path().parent / "workspace.json")
     return AttentionFacade(AttentionRepository(store), store.clock)
 
 
@@ -46,7 +46,8 @@ def open_work(store: Store | None = None) -> WorkFacade:
 def open_workspace(store: Store | None = None, *, initial: dict | None = None,
                    actor: str = "user") -> WorkspaceFacade:
     repository = WorkspaceRepository(store if store is not None else open_store())
-    repository.initialize(transport.CONFIG_PATH, transport.CONFIG_PATH.parent / "workspace.json", initial)
+    path = transport.config_path()
+    repository.initialize(path, path.parent / "workspace.json", initial)
     return WorkspaceFacade(repository, actor)
 
 

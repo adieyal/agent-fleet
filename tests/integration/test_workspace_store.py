@@ -15,7 +15,7 @@ from fleet.modules.workspace import Registry
 
 def test_import_and_backup(tmp_path, monkeypatch):
     config = tmp_path / "config.json"
-    monkeypatch.setattr(transport, "CONFIG_PATH", config)
+    monkeypatch.setenv("FLEET_CONFIG", str(config))
     original = {"hosts": {"home": {}}, "capacity": 10, "projects": {
         "p-00000001": {"name": "One", "links": [{"host": "home", "label": "one"}]},
         "p-00000002": {"name": "Two"}}}

@@ -1,2 +1,2 @@
 from .facade import ExecutionFacade
-from .domain import Action, Run
+from .domain import Action, JobObservation, Run

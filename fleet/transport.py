@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-CONFIG_PATH = Path(os.environ.get("FLEET_CONFIG", Path.home() / ".config" / "fleet" / "config.json"))
 REMOTE_FLEETD_PATH = "~/.local/share/fleet/fleetd.py"
 LOCAL_FLEETD_SOURCE = Path(__file__).parent / "remote" / "fleetd.py"
 SSH_OPTIONS = [
@@ -59,9 +58,16 @@ class HostReport:
     error: str | None = None
 
 
+def config_path() -> Path:
+    if "FLEET_CONFIG" in os.environ:
+        return Path(os.environ["FLEET_CONFIG"])
+    return Path.home() / ".config" / "fleet" / "config.json"
+
+
 def load_config() -> dict[str, Any]:
-    if CONFIG_PATH.exists():
-        return json.loads(CONFIG_PATH.read_text())
+    path = config_path()
+    if path.exists():
+        return json.loads(path.read_text())
     return {"hosts": {}}
 
 
@@ -70,13 +76,14 @@ def save_config(config: dict[str, Any]) -> None:
     from fleet.composition import open_workspace
 
     open_workspace()
-    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    path = config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
     settings = {key: value for key, value in config.items() if key not in ("projects", "capacity")}
-    with tempfile.NamedTemporaryFile(mode="w", dir=CONFIG_PATH.parent, delete=False) as temporary:
+    with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False) as temporary:
         temporary.write(json.dumps(settings, indent=2) + "\n")
         temporary.flush()
         os.fsync(temporary.fileno())
-    os.replace(temporary.name, CONFIG_PATH)
+    os.replace(temporary.name, path)
 
 
 def configured_hosts() -> list[Host]:

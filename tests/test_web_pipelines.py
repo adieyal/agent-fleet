@@ -27,7 +27,7 @@ RUN = {"run_id": "r2", "label": "orient v4", "status": "running", "nodes": [["in
 def config_path(tmp_path, monkeypatch):
     path = tmp_path / "config.json"
     path.write_text(json.dumps({"hosts": {"home": {}}}))
-    monkeypatch.setattr(transport, "CONFIG_PATH", path)
+    monkeypatch.setenv("FLEET_CONFIG", str(path))
     return path
 
 
