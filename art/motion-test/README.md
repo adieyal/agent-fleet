@@ -4,7 +4,64 @@ This is a throwaway test on branch `renovate/motion-test` that compares clip sou
 
 **Decision after step 2:** the user chose Mixamo for every clip; HY-Motion is dropped. `robot-sheet.png` and `robot-poses/` are the style target, replacing B2. The code now handles Mixamo rigs only. The step-2 scripts (`run_step2.sh`, the HY-Motion `clip` command) remain in commit 9005887.
 
-## Robot assembly round 1
+## Robot rebuild 1: from the whole-body model
+
+The parts robot (assembly round 1, below) is **superseded**. The generated parts sheet never matched the reference, so the robot is now cut from one Hunyuan3D model of the whole robot: `~/.local/state/fleet/renovation/robot-rebuild/teal-robot-apose.glb`, generated from `robot-apose-front.png`. It keeps the sheet's proportions: helmet 36% of the height (sheet about 38%), short legs, hands at hip height. The legs are not stretched.
+
+Boards and renders are in the outbox under `robot-rebuild-1/`. Small WebP copies, the furniture fit, the joints and the build reports are in `rebuild-1/`. `robot_parts.py` (the old parts library) is no longer used.
+
+```bash
+B=~/.local/bin/blender; M=art/motion-test
+$B -b --factory-startup --python $M/robot_body.py -- --report body_report.json   # pieces + robot_body.json
+$B -b --factory-startup --python $M/robot_hands.py [-- --views <dir>]              # posed hands library
+$B -b --factory-startup --python $M/render_motion.py -- calib /tmp/c.png          # colour loop, as before:
+python $M/calibrate_colours.py /tmp/c.png                                         #  then rebuild body and hands
+$B -b --factory-startup --python $M/render_motion.py -- fit $M/furniture.json     # chair and desk the robot needs
+$B -b --factory-startup --python $M/render_motion.py -- review <dir>
+python $M/compose.py review <dir> <boards dir> <job context>/motion-test
+```
+
+1. **Model and scale** (`robot_body.py`).
+   - Cleaning: 5,760 duplicate vertices welded (the import splits the mesh along UV seams), normals recalculated, no floating islands found, 0 open edges after welding.
+   - Scale: 1.05 m tall with the soles on the floor, in the 1.0–1.1 m range of l2's robots.
+   - Checked against `robot-apose-front.png` and `robot-sheet.png` in `01_vs_references`.
+   - Every face takes a flat sheet colour, read from the model's baked texture and cleaned with a two-pass neighbour majority filter. Colours were recalibrated on this model until a studio render matched the sheet's mid-tones: teal #1b9ba7 vs #1d9ba7, cream exact, black #191b1a vs #141717 (the albedo is already at its floor).
+2. **Pieces.** The model is cut at the design's own seams, following the sheet's colour regions:
+   - head and helmet with the neck
+   - torso
+   - waist band and pelvis
+   - per side: upper arm with the shoulder shell, forearm cuff, thigh, and shin with the boot
+
+   Each cut is closed by a black ball joint at the shoulders, elbows, hips and knees. Each piece is pinned to one Mixamo bone. The skeleton is fitted to the model: every joint sits where it is measured on the model (`rebuild-1/robot_body.json`), and the arms lie flat in Mixamo's T-pose at the model's arm lengths. The existing retargeting carries over unchanged (rotations applied as-is, root motion scaled, per-frame grounding, walks pinned). The model stands in an A-pose, so the arm bones are posed along the model's arms before the arm pieces are pinned.
+   - **Layers:** the face plate (`<tag>_faceplate`) and the eyes (`<tag>_eyes`) are their own objects on the head bone, so the Claude visor or Codex eyes can replace them. The texture's eye glow was ragged at this mesh density, so the eyes are rebuilt as clean emissive capsules where the glow was. All teal is on one `host_tint` node (`motion_rig.tint`).
+3. **Hands** (`robot_hands.py`). The model's own mitts are cut off and replaced by the user's posed hands:
+   - Each hand is recoloured to the robot's palette: black mitt, charcoal knuckle bands, black wrist ring, teal cuff where the model has one.
+   - Each is set in one canonical frame (wrist at the origin, fingers along the arm, palm down, thumb forward), with the roll and handedness checked by eye.
+   - One scale for all: the fist is as wide as the forearm cuff (0.166 m). The other hands take the fist's scale factor (`rebuild-1/hands_report.json`).
+   - Pose per clip (`motion_rig.HAND_POSE`):
+
+     | pose | clips |
+     |---|---|
+     | fist | walks |
+     | thumbs up | thumbs-up clips |
+     | cupped | box clips |
+     | book | reading-phone clips |
+     | pinch | writing |
+     | open | typing, waving and everything else |
+   - `hands3-2` ("holding a sheet") is unusable: the sheet came out as a solid cube. The peace and OK hands are in the library but no clip uses them.
+   - Only thumbs up, fist and open are shown in this round. Cupped, pinch and book are aligned by eye in the canonical views but not yet checked in their clips.
+4. **Furniture.** With the sheet's short legs, every seated clip puts the seat at **0.171–0.185 m**, with the feet flat on the floor and no lift (`rebuild-1/furniture.json`, "fit"). For typing, with the palms resting on the desk, the desk top should be at **0.253 m** and its near edge **0.205 m** ahead of the seat point.
+   - **Scale factors for the floor job**, against the floor kit's seat (0.47 m) and desk top (0.74 m): **chair × 0.364, desk × 0.342**, applied uniformly about the floor.
+   - If only heights are scaled: seat 0.17 m, desk top 0.25 m.
+   - The renders use `build_workbench`'s chair and desk scaled by those factors.
+5. **Camera.** Everything is rendered with the floor's one camera, orthographic at pitch 28° and yaw 33°, taken from the copy of `sprite-world.md` and `projection.js` in `floor-camera/`. It uses the same axes as `bakeoff.axes()` and 171.5 px/m at 1x. The only exceptions are the front views for comparison.
+
+**Known issues:**
+- Black-to-teal borders (face-plate rim, ear discs, boot soles) are jagged in close-ups, because the colour is read per face from a 40k-face mesh. At 1x and 2x they do not show; a colour-border bake or remesh would fix them.
+- The inner lips at the bottoms of the cuffs, where the model's hands were cut off, are ragged. The hands mostly cover them.
+- The open hand reads as claw-like at close range.
+
+## Robot assembly round 1 (superseded)
 
 This round fixes the user's review of the parts robot. Boards and renders are in the outbox under `robot-assembly-1/`; small WebP copies are in `assembly-1/`. The pipeline is:
 

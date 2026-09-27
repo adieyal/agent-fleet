@@ -1,13 +1,18 @@
-"""Put a Mixamo clip on the robot built from the parts library (robot_parts.py).
+"""Put a Mixamo clip on the robot rebuilt from the whole-body model (robot_body.py, robot_hands.py).
 
-Retargeting keeps the Mixamo skeleton but moves its joints to the robot's proportions. Only joint positions
-change; every bone keeps its rest orientation, so the clip's local rotations apply unchanged. Root motion is
-scaled by leg length (horizontal) and hip height (vertical), then every frame is grounded: the robot is
-raised or lowered so its lowest point touches the floor. There is no seat lift: with these legs a seated
-robot's feet reach the floor from the floor kit's 0.47 m chair. Walks can be pinned in place (linear drift
-removed). Each part is parented rigidly to one bone (no skinning); left parts are mirrored copies of the right.
+Retargeting keeps the Mixamo skeleton but moves its joints onto the robot: every mapped joint goes to the
+position measured on the model (robot_body.json), with the arms laid out straight in Mixamo's T-pose at the
+model's upper-arm and forearm lengths. Only joint positions change; every bone keeps its rest orientation, so
+the clip's local rotations apply unchanged. Root motion is scaled by leg length (horizontal) and hip height
+(vertical), then every frame is grounded: the robot is raised or lowered so its lowest point touches the floor.
+Walks can be pinned in place (linear drift removed).
+
+Pieces are rigid, each parented to one bone (no skinning). The model stands in an A-pose, so the arm bones are
+first posed to the model's arm directions and the arm pieces parented there; the posed hands are canonical
+T-pose hands and are parented at rest. The hands are swapped per clip (HAND_POSE).
 """
 
+import json
 import math
 import sys
 from pathlib import Path
@@ -19,43 +24,46 @@ from mathutils import Matrix, Vector
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import palette  # noqa: E402
 
-LIB = Path.home() / '.cache/fleet-motion-test/robot_parts.blend'
-
-# robot proportions, metres. The upper body follows robot-sheet.png (helmet about as wide as the shoulders,
-# torso a little taller than the helmet, hands at hip height). The legs are longer than the sheet's so that a
-# seated robot's feet reach the floor from a 0.47 m seat; SHIN is solved against the seated typing clip.
-ANKLE_H, SHIN, THIGH, HIP_X = 0.10, 0.423, 0.21, 0.09
-SPINE, NECK, SHOULDER_X = 0.28, 0.05, 0.175
-UPPER, FORE, HAND = 0.17, 0.15, 0.19
-KNUCKLE = 0.57       # the fingers piece starts this far along the hand (robot_parts.KNUCKLE_Y)
+CACHE = Path.home() / '.cache/fleet-motion-test'
+BODY, HANDS = CACHE / 'robot_body.blend', CACHE / 'robot_hands.blend'
 SRC_ANKLE_H = 0.085  # Mixamo ankle height above the floor
-JOINT_D = {'arm': 0.105, 'fore': 0.09, 'thigh': 0.11, 'shin': 0.10}  # ball joint diameters
 
 ROLES = {'root': 'Hips', 'spine1': 'Spine', 'spine2': 'Spine1', 'spine3': 'Spine2', 'neck': 'Neck', 'head': 'Head'}
 for _s, _side in (('L', 'Left'), ('R', 'Right')):
     for _r, _b in (('collar', 'Shoulder'), ('arm', 'Arm'), ('fore', 'ForeArm'), ('hand', 'Hand'),
-                   ('thumb', 'HandThumb1'), ('fingers', 'HandMiddle1'),
                    ('thigh', 'UpLeg'), ('shin', 'Leg'), ('foot', 'Foot'), ('toe', 'ToeBase')):
         ROLES[f'{_r}_{_s}'] = _side + _b
 ROLES = {k: 'mixamorig:' + v for k, v in ROLES.items()}
 
-# part, the role it rides on, offset from that role's joint (right-side rest frame, metres; None = special)
-MOUNTS = [
-    ('pelvis', 'root', None),
-    ('waist', 'spine2', None), ('chest', 'spine3', None), ('chest_light', 'spine3', None),
-    ('neck', 'neck', None), ('helmet', 'head', None), ('visor', 'head', None), ('ear', 'head', None),
-    ('joint', 'arm', (0, 0, 0)), ('upper_arm', 'arm', (-0.055, 0, 0)),
-    ('joint', 'fore', (0, 0, 0)), ('forearm', 'fore', (-0.03, 0, 0)),
-    ('palm', 'hand', (0.02, 0, 0)), ('fingers', 'fingers', None), ('thumb', 'thumb', None),
-    ('joint', 'thigh', (0, 0, 0)), ('thigh', 'thigh', (0, 0, -0.03)),
-    ('joint', 'shin', (0, 0, 0)), ('shin', 'shin', (0, 0, -0.05)),
-    ('foot', 'foot', (0, 0, 0)),
-]
-SIDED_ROLES = {'arm', 'fore', 'hand', 'fingers', 'thumb', 'thigh', 'shin', 'foot'}
+# hand pose per Mixamo clip (robot_hands.HANDS); anything not listed holds the open hand
+HAND_POSE = {
+    'walk': 'fist', 'walk-normal': 'fist', 'box-idle': 'cupped', 'box-walk-arc': 'cupped',
+    'thumbs-up-standing': 'thumbs_up', 'thumbs-up-sitting': 'thumbs_up', 'writing-seated': 'pinch',
+    'standing-reading-phone': 'book', 'walking-reading-phone': 'book', 'waving': 'open', 'typing': 'open',
+}
+TWO_HANDED = {'book'}  # one model holds both hands: carried by the right hand bone
 
 
-def sided(role: str, side: str | None) -> str:
-    return f'{role}_{side}' if side and f'{role}_{side}' in ROLES else role
+def body_meta() -> dict:
+    return json.loads(BODY.with_suffix('.json').read_text())
+
+
+def targets() -> dict:
+    """Mixamo rest (T-pose) joint targets in metres, robot frame (facing -Y, soles at z = 0)."""
+    J = {k: Vector(v) for k, v in body_meta()['joints_m'].items()}
+    t = {'root': J['root'], 'spine1': J['spine'], 'spine2': (J['spine'] + J['chest']) / 2, 'spine3': J['chest'],
+         'neck': J['neck'], 'head': J['head']}
+    for s, sx in (('L', 1), ('R', -1)):
+        sh = J[f'shoulder_{s}']
+        upper = (J[f'elbow_{s}'] - sh).length
+        fore = (J[f'wrist_{s}'] - J[f'elbow_{s}']).length
+        t[f'collar_{s}'] = Vector((sh.x * 0.35, sh.y, sh.z + 0.01))
+        t[f'arm_{s}'] = sh
+        t[f'fore_{s}'] = sh + Vector((sx * upper, 0, 0))
+        t[f'hand_{s}'] = t[f'fore_{s}'] + Vector((sx * fore, 0, 0))
+        t[f'thigh_{s}'], t[f'shin_{s}'] = J[f'hip_{s}'], J[f'knee_{s}']
+        t[f'foot_{s}'], t[f'toe_{s}'] = J[f'ankle_{s}'], J[f'toe_{s}']
+    return t
 
 
 def load_clip(path: Path):
@@ -67,6 +75,7 @@ def load_clip(path: Path):
         if o is not arm:
             bpy.data.objects.remove(o)
     arm.name = path.stem
+    arm['clip'] = path.stem
     return arm
 
 
@@ -86,47 +95,39 @@ def sample(arm, names: list[str]) -> dict:
 
 
 def resize(arm) -> tuple[float, float]:
-    """Move joints to robot proportions in edit mode. Returns (vertical, horizontal) root-motion scales."""
+    """Move the mapped joints to the robot's targets in edit mode (world robot frame, before any yaw), and
+    the unmapped ones (fingers, end bones) by their nearest mapped ancestor's scale. Returns the (vertical,
+    horizontal) root-motion scales."""
+    T = targets()
     B = ROLES.__getitem__
+    role_of = {v: k for k, v in ROLES.items()}
     bpy.context.view_layer.objects.active = arm
     bpy.ops.object.mode_set(mode='EDIT')
     eb = arm.data.edit_bones
     Mw = arm.matrix_world
     old = {b.name: Mw @ b.head for b in eb}
-    d = lambda a, b: (old[B(b)] - old[B(a)]).length  # noqa: E731
-    lat = lambda r: abs(old[B(r)].x - old[B('root')].x)  # noqa: E731
-    spine = SPINE / d('root', 'neck')
-    scale = {  # scale of the offset from a bone's parent to the bone, by the bone's role
-        'spine1': spine, 'spine2': spine, 'spine3': spine, 'neck': spine, 'head': NECK / d('neck', 'head'),
-        'collar': SHOULDER_X / lat('arm_L'), 'arm': SHOULDER_X / lat('arm_L'),
-        'fore': UPPER / d('arm_L', 'fore_L'), 'hand': FORE / d('fore_L', 'hand_L'),
-        'fingers': KNUCKLE * HAND / d('hand_L', 'fingers_L'), 'thumb': KNUCKLE * HAND / d('hand_L', 'fingers_L'),
-        'thigh': HIP_X / lat('thigh_L'), 'shin': THIGH / d('thigh_L', 'shin_L'),
-        'foot': SHIN / d('shin_L', 'foot_L'), 'toe': 0.10 / d('foot_L', 'toe_L'),
-    }
-    role_of = {v: k.split('_')[0] for k, v in ROLES.items()}
-
-    def seg_scale(b) -> float:
-        role = role_of.get(b.name)
-        if role and role != 'root':
-            return scale[role]
-        p = b.parent  # unmapped bones (finger segments, end bones) follow their nearest mapped ancestor
-        while p is not None and p.name not in role_of:
-            p = p.parent
-        return scale.get(role_of[p.name], 0.6) if p is not None else 0.6
-
-    root = B('root')
     new = {}
-    drop = (scale['thigh'] * (old[B('thigh_L')].z - old[root].z)
-            + scale['shin'] * (old[B('shin_L')].z - old[B('thigh_L')].z)
-            + scale['foot'] * (old[B('foot_L')].z - old[B('shin_L')].z))
-    new[root] = Vector((old[root].x, old[root].y, ANKLE_H - drop))
 
-    def walk(b):
+    def ratio(role) -> float:
+        """How much the segment ending at this role's joint was scaled (for unmapped children)."""
+        b = eb[B(role)]
+        p = b.parent
+        if p is None or p.name not in role_of:
+            return 1.0
+        o = (old[b.name] - old[p.name]).length
+        return (T[role] - T[role_of[p.name]]).length / o if o > 1e-6 else 1.0
+
+    def walk(b, parent_ratio):
+        role = role_of.get(b.name)
+        if role:
+            new[b.name] = T[role].copy()
+            r = ratio(role) if role != 'root' else 1.0
+        else:
+            new[b.name] = new[b.parent.name] + parent_ratio * (old[b.name] - old[b.parent.name])
+            r = parent_ratio
         for c in b.children:
-            new[c.name] = new[b.name] + seg_scale(c) * (old[c.name] - old[b.name])
-            walk(c)
-    walk(eb[root])
+            walk(c, r)
+    walk(eb[B('root')], 1.0)
     Mi = Mw.inverted()
     for b in eb:
         b.use_connect = False
@@ -137,9 +138,11 @@ def resize(arm) -> tuple[float, float]:
         b.matrix = m
         b.length = length
     bpy.ops.object.mode_set(mode='OBJECT')
+    root = B('root')
     src_hip = old[root].z - old[B('foot_L')].z + SRC_ANKLE_H
-    src_leg = d('thigh_L', 'shin_L') + d('shin_L', 'foot_L')
-    return new[root].z / src_hip, (THIGH + SHIN) / src_leg
+    src_leg = (old[B('shin_L')] - old[B('thigh_L')]).length + (old[B('foot_L')] - old[B('shin_L')]).length
+    leg = (T['shin_L'] - T['thigh_L']).length + (T['foot_L'] - T['shin_L']).length
+    return T['root'].z / src_hip, leg / src_leg
 
 
 def strip_channels(arm) -> int:
@@ -230,100 +233,75 @@ def ground(arm, parts) -> dict:
     return {'ground_shift_m': [round(min(shift), 3), round(max(shift), 3)]}
 
 
-def attach(arm, tag: str) -> list:
-    """Append the parts library, place each part at its joint in the rest pose and parent it to its bone."""
-    with bpy.data.libraries.load(str(LIB), link=False) as (src, dst):
-        dst.objects = list(src.objects)
-    lib = {o.name.split('.')[0]: o for o in dst.objects}
-    yawed = arm.matrix_world.copy()  # parts are placed in the rest frame, which faces -Y before the yaw fix
-    arm.matrix_world = Matrix.Rotation(-arm.get('yaw', 0.0), 4, 'Z') @ yawed
-    arm.data.pose_position = 'REST'
+def append(path: Path, names: list[str]) -> dict:
+    with bpy.data.libraries.load(str(path), link=False) as (src, dst):
+        dst.objects = [n for n in src.objects if n in names]
+    return {o.name: o for o in dst.objects}
+
+
+def pose_arms_to_model(arm) -> None:
+    """Pose the upper-arm and forearm bones along the model's A-pose arms (elbow and wrist directions)."""
+    J = {k: Vector(v) for k, v in body_meta()['joints_m'].items()}
+    Mi = arm.matrix_world.inverted()
+    for s in 'LR':
+        for role, a, b in (('arm', 'shoulder', 'elbow'), ('fore', 'elbow', 'wrist')):
+            pb = arm.pose.bones[ROLES[f'{role}_{s}']]
+            bpy.context.view_layer.update()
+            child = arm.pose.bones[ROLES[f'{"fore" if role == "arm" else "hand"}_{s}']]
+            cur = (child.head - pb.head).normalized()          # armature space, as posed so far
+            want = ((Mi @ J[f'{b}_{s}']) - (Mi @ J[f'{a}_{s}'])).normalized()
+            q = cur.rotation_difference(want)
+            m = pb.matrix.copy()
+            head = m.translation.copy()
+            m = q.to_matrix().to_4x4() @ Matrix.Translation(-head) @ m
+            m.translation = head
+            pb.matrix = m
     bpy.context.view_layer.update()
-    Mw = arm.matrix_world
-    J = {r: Mw @ arm.data.bones[b].head_local for r, b in ROLES.items()}
-    dims = {k: Vector(o['hi_m']) - Vector(o['lo_m']) for k, o in lib.items()}
+
+
+def attach(arm, tag: str, hand_pose: str | None = None) -> list:
+    """Parent the body pieces (arms in the model's A-pose) and the clip's posed hands (at rest) to their bones."""
+    meta = body_meta()
+    pose = hand_pose or HAND_POSE.get(arm.get('clip', ''), 'open')
+    pieces = {k: v for k, v in meta['pieces'].items() if not k.startswith('hand_')}  # the model's own mitts go
+    lib = append(BODY, [f'body_{k}' for k in pieces])
+    yawed = arm.matrix_world.copy()  # the pieces sit in the robot frame, which faces -Y before the yaw fix
+    arm.matrix_world = Matrix.Rotation(-arm.get('yaw', 0.0), 4, 'Z') @ yawed
+    action = arm.animation_data.action
+    arm.animation_data.action = None
+    for pb in arm.pose.bones:
+        pb.matrix_basis = Matrix()
+    bpy.context.view_layer.update()
     parts = []
 
-    def place(key: str, role: str, side: str | None, at: Vector, size: float = 1.0):
-        mirror = side == 'L' and key != 'joint'
-        ob = lib[key].copy()
-        ob.data = lib[key].data.copy() if mirror else lib[key].data
-        if mirror:
-            ob.data.transform(Matrix.Scale(-1, 4, Vector((1, 0, 0))))
-            ob.data.flip_normals()
-        ob.name = f'{tag}_{key}_{role}' + (f'_{side}' if side else '')
+    def parent(ob, role_key):
         bpy.context.scene.collection.objects.link(ob)
-        ob.parent, ob.parent_type, ob.parent_bone = arm, 'BONE', ROLES[sided(role, side)]
+        mw = ob.matrix_world.copy()
+        ob.parent, ob.parent_type, ob.parent_bone = arm, 'BONE', ROLES[role_key]
         bpy.context.view_layer.update()
-        ob.matrix_world = Matrix.Translation(at) @ Matrix.Scale(size, 4)
+        ob.matrix_world = mw
         parts.append(ob)
 
-    hd, cd, vd = dims['helmet'], dims['chest'], dims['visor']
-    chest_bottom = J['arm_L'].z - 0.53 * cd.z  # the arm sockets sit about half-way up the chest
-    head = Vector((J['root'].x, J['root'].y, chest_bottom + cd.z - 0.02))  # helmet rim sits on the chest
-    waist_z = chest_bottom + 0.012 - lib['waist']['hi_m'][2]  # waist band's top 1.2 cm up inside the chest
-    for key, role, off in MOUNTS:
-        sides = ('R', 'L') if role in SIDED_ROLES or key == 'ear' else (None,)
-        for side in sides:
-            sx = -1 if side == 'R' else 1
-            j = J[sided(role, side)]
-            size = JOINT_D[role] if key == 'joint' else 1.0
-            if off is not None:
-                at = j + Vector((-sx * off[0], off[1], off[2]))  # offsets are written for the right side
-            elif key == 'chest':
-                at = Vector((J['root'].x, J['root'].y, chest_bottom))
-            elif key == 'chest_light':
-                at = Vector((J['root'].x, J['root'].y - cd.y * 0.40, chest_bottom + cd.z * 0.52))
-            elif key == 'waist':
-                at = Vector((J['root'].x, J['root'].y, waist_z))
-            elif key == 'pelvis':  # its top tucks 1.5 cm under the waist band
-                at = Vector((J['root'].x, J['root'].y, waist_z + lib['waist']['lo_m'][2] + 0.015
-                             - lib['pelvis']['hi_m'][2]))
-            elif key == 'neck':
-                at = head + Vector((0, 0, -0.005))
-            elif key == 'helmet':
-                at = head
-            elif key == 'visor':
-                at = head + Vector((0, -hd.y * 0.30, hd.z * 0.46))
-            elif key == 'ear':
-                at = head + Vector((sx * hd.x * 0.485, 0.01, hd.z * 0.45))
-            else:  # fingers, thumb: the palm's rest placement, pivoting on their own bones
-                at = J[sided('hand', side)] + Vector((-sx * 0.02, 0, 0))
-            place(key, role, side, at, size)
-    for side, sx in (('L', 1), ('R', -1)):  # the visor has no eyes: two glowing capsules
-        bpy.ops.mesh.primitive_uv_sphere_add(radius=0.03, segments=24, ring_count=12)
-        eye = bpy.context.active_object
-        eye.scale = (0.7, 0.3, 1.35)
-        bpy.ops.object.transform_apply(scale=True)
-        for pl in eye.data.polygons:
-            pl.use_smooth = True
-        eye.name = f'{tag}_eye_{side}'
-        eye.data.materials.append(eye_material())
-        eye.parent, eye.parent_type, eye.parent_bone = arm, 'BONE', ROLES['head']
-        bpy.context.view_layer.update()
-        eye.matrix_world = Matrix.Translation(head + Vector((sx * 0.062, -hd.y * 0.30 - vd.y * 0.5 + 0.004,
-                                                             hd.z * 0.47)))
-        parts.append(eye)
-    for o in dst.objects:
-        if not o.users_collection:
-            bpy.data.objects.remove(o)
-    arm.data.pose_position = 'POSE'
+    # hands first, at rest (T-pose): canonical hands sit at the wrist, fingers along the arm
+    hands = append(HANDS, [f'hand_{pose}_{s}' for s in 'LR'])
+    for s in ('R',) if pose in TWO_HANDED else ('L', 'R'):
+        h = hands[f'hand_{pose}_{s}']
+        h.name = f'{tag}_hand_{pose}_{s}'
+        h.matrix_world = Matrix.Translation(arm.matrix_world @ arm.data.bones[ROLES[f'hand_{s}']].head_local)
+        parent(h, f'hand_{s}')
+    pose_arms_to_model(arm)
+    for key, info in pieces.items():
+        ob = lib[f'body_{key}']
+        ob.name = f'{tag}_{key}'
+        role = info['role'] + (f'_{info["side"]}' if info['side'] else '')
+        parent(ob, role)
+    for pb in arm.pose.bones:
+        pb.matrix_basis = Matrix()
+    arm.animation_data.action = action
     arm.matrix_world = yawed
     arm.hide_render = True
+    arm['hand_pose'] = pose
     return parts
-
-
-def eye_material() -> bpy.types.Material:
-    m = bpy.data.materials.get('eye_glow')
-    if m:
-        return m
-    m = bpy.data.materials.new('eye_glow')
-    m.use_nodes = True
-    b = m.node_tree.nodes['Principled BSDF']
-    b.inputs['Base Color'].default_value = palette.lin('glow')
-    b.inputs['Emission Color'].default_value = palette.lin('glow')
-    b.inputs['Emission Strength'].default_value = 1.0
-    return m
 
 
 def tint(hex_colour: str) -> None:

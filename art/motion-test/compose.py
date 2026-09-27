@@ -2,7 +2,7 @@
 
     python compose.py sheet <clip_dir> <out.png> <title> <label>[:<caption>] ...
     python compose.py webm  <clip_dir> <out.webm> <ffmpeg> <label>[:<caption>] ...
-    python compose.py review <render_motion review dir> <out dir> <robot-sheet pose png>
+    python compose.py review <render_motion review dir> <out dir> <job context motion-test dir>
 """
 import subprocess
 import sys
@@ -75,42 +75,47 @@ if __name__ == '__main__' and sys.argv[1] != 'review':
         webm(Path(a[1]), Path(a[2]), a[3], a[4:])
 
 
-def review(src: Path, dest: Path, sheet_png: Path) -> None:
-    """Assembly review boards: turnaround next to the sheet, close-ups, bench frames (on the floor colour)."""
+def board(items, h, out) -> None:
+    """Images side by side at height h, each captioned, transparent ones on the floor colour."""
+    ims = []
+    for cap, im in items:
+        im = im.convert('RGBA')
+        im = im.resize((round(im.width * h / im.height), h), Image.LANCZOS)
+        ims.append((cap, flat(im)))
+    W = sum(i.width for _, i in ims) + 10 * (len(ims) - 1)
+    b = Image.new('RGBA', (W, h + 40), (255, 255, 255, 255))
+    d = ImageDraw.Draw(b)
+    x = 0
+    for cap, im in ims:
+        b.paste(im, (x, 40))
+        d.text((x + 6, 8), cap, fill='black', font=FONT)
+        x += im.width + 10
+    b.convert('RGB').save(out, optimize=True)
+
+
+def review(src: Path, dest: Path, context: Path) -> None:
+    """Rebuild review boards from render_motion.py's review set. context: the job's motion-test context dir."""
     dest.mkdir(parents=True, exist_ok=True)
-
-    def board(items, h, out):
-        ims = []
-        for cap, im in items:
-            im = im.convert('RGBA')
-            im = im.resize((round(im.width * h / im.height), h), Image.LANCZOS)
-            ims.append((cap, flat(im)))
-        W = sum(i.width for _, i in ims) + 10 * (len(ims) - 1)
-        b = Image.new('RGBA', (W, h + 40), (255, 255, 255, 255))
-        d = ImageDraw.Draw(b)
-        x = 0
-        for cap, im in ims:
-            b.paste(im, (x, 40))
-            d.text((x + 6, 8), cap, fill='black', font=FONT)
-            x += im.width + 10
-        b.convert('RGB').save(out, optimize=True)
-
-    target = Image.open(sheet_png)
-    turns = [(f'B1 camera, turned {a} deg', Image.open(src / f'turn_{a:03d}.png')) for a in range(0, 360, 45)]
-    board([('target: robot-sheet teal standing', target), ('parts robot, sheet-like angle',
-           Image.open(src / 'sheet_angle.png')), ('parts robot, front', Image.open(src / 'front.png'))],
-          900, dest / '01_vs_sheet.png')
-    board([('target', target)] + turns, 900, dest / '02_turnaround.png')
-    board([(n.replace('close_', '').replace('_', ' '), Image.open(src / f'{n}.png')) for n in
-           ('close_head_b1', 'close_head_front', 'close_head_back')], 800, dest / '03_close_head.png')
-    board([(n.replace('close_', '').replace('_', ' '), Image.open(src / f'{n}.png')) for n in
-           ('close_hand_thumbs_up_b1', 'close_hand_thumbs_up_side', 'thumbs_up_full')], 800,
+    rebuild = Path.home() / '.local/state/fleet/renovation/robot-rebuild'
+    sheet = Image.open(context / 'robot-sheet.png')
+    pose = Image.open(context / 'robot-poses' / 'teal robot standing.png')
+    apose = Image.open(rebuild / 'robot-apose-front.png')
+    o = lambda n: Image.open(src / f'{n}.png')  # noqa: E731
+    board([('robot-sheet.png', sheet), ('robot-apose-front.png', apose), ('rebuilt robot, its A-pose, front',
+           o('apose_front')), ('robot-sheet teal standing', pose), ('rebuilt robot, standing idle, similar angle',
+           o('sheet_angle'))], 900, dest / '01_vs_references.png')
+    board([('target', pose)] + [(f'floor camera (28/33), turned {a} deg', o(f'turn_{a:03d}'))
+                                for a in range(0, 360, 45)], 900, dest / '02_turnaround.png')
+    board([('head, floor camera', o('close_head_floor')), ('head, front', o('close_head_front')),
+           ('head, back, floor camera', o('close_head_back'))], 800, dest / '03_close_head.png')
+    board([(f'{p.replace("_", " ")}, {v}', o(f'close_hand_{p}_{v}')) for p in ('thumbs_up', 'fist', 'open')
+           for v in ('floor', 'front')] + [('thumbs up, whole robot', o('thumbs_up_full'))], 700,
           dest / '04_close_hands.png')
-    board([('back, B1 camera', Image.open(src / 'close_back.png')), ('135 deg', Image.open(src / 'turn_135.png')),
-           ('225 deg', Image.open(src / 'turn_225.png'))], 900, dest / '05_close_back.png')
+    board([('back, floor camera', o('close_back')), ('turned 135 deg', o('turn_135')),
+           ('turned 225 deg', o('turn_225'))], 900, dest / '05_close_back.png')
     for name in ('bench_typing', 'bench_walking'):
-        for mult in (1, 2):  # native pixels: these are the sprite densities
-            flat(Image.open(src / f'{name}_{mult}x.png')).convert('RGB').save(dest / f'06_{name}_{mult}x.png')
+        for mult in (1, 2):  # native pixels: 1x and 2x are the floor's sprite densities
+            flat(o(f'{name}_{mult}x')).convert('RGB').save(dest / f'06_{name}_{mult}x.png')
 
 
 if __name__ == '__main__' and sys.argv[1] == 'review':
