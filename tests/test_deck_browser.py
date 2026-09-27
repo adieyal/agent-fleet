@@ -3,7 +3,7 @@
 import io
 import json
 import re
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.request import urlopen
@@ -21,6 +21,7 @@ let offset = %d * 1000 - Date.now();
 const realNow = Date.now.bind(Date);
 Date.now = () => realNow() + offset;
 window.advanceClock = seconds => { offset += seconds * 1000; };
+window.resetClock = () => { offset = %d * 1000 - realNow(); };
 """
 FINISHED = {"done", "cancelled"}
 BLOCKED = {"failed", "stalled"}
@@ -63,20 +64,51 @@ class Deck:
     errors: list[str] = field(default_factory=list)
 
 
+@pytest.fixture(scope="module")
+def loaded_decks(browser: Browser, base_url: str,
+                 fixture_data: dict[str, Any]) -> Iterator[Callable[[str, str], Deck]]:
+    decks: dict[tuple[str, str], Deck] = {}
+
+    def load(viewport: str, motion: str) -> Deck:
+        key = viewport, motion
+        if key not in decks:
+            context = browser.new_context(viewport=VIEWPORTS[viewport], reduced_motion=motion)
+            context.add_init_script(PIN_CLOCK % (fixture_data["time"], fixture_data["time"]))
+            page = context.new_page()
+            deck = decks[key] = Deck(page)
+            page.on("console", lambda message: message.type == "error" and deck.errors.append(message.text))
+            page.on("pageerror", lambda error: deck.errors.append(str(error)))
+            page.goto(base_url + "/")
+            page.wait_for_function(f"window.fleetDeck && (fleetDeck.advanceTime(0), fleetDeck.agents().length === {len(on_the_floor(fixture_data))})")
+        return decks[key]
+
+    yield load
+    for deck in decks.values():
+        deck.page.context.close()
+
+
 @pytest.fixture(scope="module", params=list(VIEWPORTS))
-def deck(request: pytest.FixtureRequest, browser: Browser, base_url: str,
-         fixture_data: dict[str, Any]) -> Iterator[Deck]:
+def deck(request: pytest.FixtureRequest, loaded_decks: Callable[[str, str], Deck]) -> Deck:
     """One page per viewport, loaded once; each test leaves it with nothing open."""
-    context = browser.new_context(viewport=VIEWPORTS[request.param], reduced_motion="reduce")
-    context.add_init_script(PIN_CLOCK % fixture_data["time"])
-    page = context.new_page()
-    deck = Deck(page)
-    page.on("console", lambda message: message.type == "error" and deck.errors.append(message.text))
-    page.on("pageerror", lambda error: deck.errors.append(str(error)))
-    page.goto(base_url + "/")
-    page.wait_for_function(f"window.fleetDeck && (fleetDeck.advanceTime(0), fleetDeck.agents().length === {len(on_the_floor(fixture_data))})")
-    yield deck
-    context.close()
+    return loaded_decks(request.param, "reduce")
+
+
+@pytest.fixture
+def changed_deck(request: pytest.FixtureRequest, loaded_decks: Callable[[str, str], Deck],
+                 base_url: str) -> Iterator[Deck]:
+    deck = loaded_decks("desktop", getattr(request, "param", "reduce"))
+    original = finish_jobs(base_url, {})
+    try:
+        yield deck
+    finally:
+        deck.page.keyboard.press("Escape")
+        deck.page.keyboard.press("Escape")
+        deck.page.evaluate("""doc => {
+            resetClock();
+            fleetDeck.apply(doc);
+            fleetDeck.lookAtRoom(null);
+            fleetDeck.advanceTime(0);
+        }""", original)
 
 
 def test_every_project_gets_a_room(deck: Deck, fixture_data: dict[str, Any]) -> None:
@@ -130,20 +162,13 @@ def finish_jobs(base_url: str, statuses: dict[str, str]) -> dict[str, Any]:
     return doc
 
 
-@pytest.mark.parametrize("motion", ["no-preference", "reduce"])
-def test_a_job_that_finishes_walks_out(browser: Browser, base_url: str, fixture_data: dict[str, Any],
-                                       motion: str) -> None:
-    context = browser.new_context(viewport=VIEWPORTS["desktop"], reduced_motion=motion)
-    context.add_init_script(PIN_CLOCK % fixture_data["time"])
-    page = context.new_page()
-    errors: list[str] = []
-    page.on("pageerror", lambda error: errors.append(str(error)))
-    page.goto(base_url + "/")
-    page.wait_for_function(f"window.fleetDeck && (fleetDeck.advanceTime(0), fleetDeck.agents().length === {len(on_the_floor(fixture_data))})")
+@pytest.mark.parametrize("changed_deck", ["no-preference", "reduce"], indirect=True)
+def test_a_job_that_finishes_walks_out(changed_deck: Deck, base_url: str) -> None:
+    page = changed_deck.page
     leaving = {"worker:c90e11": "done", "home:b7d042": "cancelled"}
     page.evaluate("doc => fleetDeck.apply(doc)", finish_jobs(base_url, leaving))
     gone = f"!fleetDeck.agents().some(agent => {json.dumps(list(leaving))}.includes(agent.key))"
-    if motion == "reduce":
+    if page.evaluate("matchMedia('(prefers-reduced-motion: reduce)').matches"):
         assert page.evaluate(gone)                                          # removed at once
     else:
         agents = {agent["key"]: agent for agent in page.evaluate("fleetDeck.agents()")}
@@ -154,8 +179,7 @@ def test_a_job_that_finishes_walks_out(browser: Browser, base_url: str, fixture_
         advance_until(page, gone)
     expect(page.locator("#tags .tag", has_text="c90e11")).to_have_count(0)
     expect(page.locator("#toggleFinished")).to_have_text("3 finished · show")
-    context.close()
-    assert errors == []
+    assert changed_deck.errors == []
 
 
 def test_idle_sessions_rest_without_a_bubble(deck: Deck) -> None:
@@ -184,15 +208,8 @@ def session_state(base_url: str, seconds_later: int, drop_decisions: bool = Fals
     return doc
 
 
-def test_sessions_idle_for_half_an_hour_leave_unless_a_decision_waits(browser: Browser, base_url: str,
-                                                                      fixture_data: dict[str, Any]) -> None:
-    context = browser.new_context(viewport=VIEWPORTS["desktop"], reduced_motion="reduce")
-    context.add_init_script(PIN_CLOCK % fixture_data["time"])
-    page = context.new_page()
-    errors: list[str] = []
-    page.on("pageerror", lambda error: errors.append(str(error)))
-    page.goto(base_url + "/")
-    page.wait_for_function(f"window.fleetDeck && (fleetDeck.advanceTime(0), fleetDeck.agents().length === {len(on_the_floor(fixture_data))})")
+def test_sessions_idle_for_half_an_hour_leave_unless_a_decision_waits(changed_deck: Deck, base_url: str) -> None:
+    page = changed_deck.page
     live = page.locator("#stats .chip.sess")
     expect(live).to_have_text("2 live · 2 waiting")
 
@@ -210,8 +227,7 @@ def test_sessions_idle_for_half_an_hour_leave_unless_a_decision_waits(browser: B
     page.evaluate("doc => fleetDeck.apply(doc)", session_state(base_url, later, drop_decisions=True, working=REVIEWING))
     assert REVIEWING in {agent["key"] for agent in page.evaluate("fleetDeck.agents()")}
     expect(live).to_have_text("2 live · 1 waiting")
-    context.close()
-    assert errors == []
+    assert changed_deck.errors == []
 
 
 def test_bubbles_show_action_glyphs_and_the_words_stay_a_click_away(deck: Deck) -> None:
@@ -396,18 +412,12 @@ def crowded_state(base_url: str, copies: int) -> dict[str, Any]:
     return doc
 
 
-def crowded_deck(browser: Browser, base_url: str, fixture_data: dict[str, Any], copies: int) -> tuple[Page, list[str]]:
-    """A deck of its own, zoomed into agent-fleet, with that many more androids at the workbench."""
-    context = browser.new_context(viewport=VIEWPORTS["desktop"], reduced_motion="reduce")
-    context.add_init_script(PIN_CLOCK % fixture_data["time"])
-    page = context.new_page()
-    errors: list[str] = []
-    page.on("pageerror", lambda error: errors.append(str(error)))
-    page.goto(base_url + "/")
-    page.wait_for_function(f"window.fleetDeck && (fleetDeck.advanceTime(0), fleetDeck.agents().length === {len(on_the_floor(fixture_data))})")
+def crowded_deck(deck: Deck, base_url: str, copies: int) -> Page:
+    """Zoom into agent-fleet with that many more androids at the workbench."""
+    page = deck.page
     page.evaluate("doc => fleetDeck.apply(doc)", crowded_state(base_url, copies))
     page.evaluate("fleetDeck.lookAtRoom('agent-fleet', 60)")
-    return page, errors
+    return page
 
 
 def at_the_workbench(page: Page) -> list[dict[str, Any]]:
@@ -423,9 +433,8 @@ def click_canvas(page: Page, x: int, y: int) -> None:
     }""", [x, y])
 
 
-def test_six_androids_at_one_station_gather_into_a_group_figure(browser: Browser, base_url: str,
-                                                                 fixture_data: dict[str, Any]) -> None:
-    page, errors = crowded_deck(browser, base_url, fixture_data, 5)
+def test_six_androids_at_one_station_gather_into_a_group_figure(changed_deck: Deck, base_url: str) -> None:
+    page = crowded_deck(changed_deck, base_url, 5)
     advance_until(page, "fleetDeck.crowds().length === 1")
     assert len(at_the_workbench(page)) == 6
     assert page.evaluate("fleetDeck.crowds()") == [
@@ -437,13 +446,11 @@ def test_six_androids_at_one_station_gather_into_a_group_figure(browser: Browser
     expect(page.locator("#tags .tag:visible", has_text="f20a6d")).to_have_count(0)
     assert not any(agent["gathered"] for agent in page.evaluate("fleetDeck.agents()")
                    if agent["room"] == "agent-fleet" and agent["station"] != "workbench")
-    page.context.close()
-    assert errors == []
+    assert changed_deck.errors == []
 
 
-def test_clicking_the_group_fans_it_out_and_clicking_away_gathers_it(browser: Browser, base_url: str,
-                                                                     fixture_data: dict[str, Any]) -> None:
-    page, errors = crowded_deck(browser, base_url, fixture_data, 5)
+def test_clicking_the_group_fans_it_out_and_clicking_away_gathers_it(changed_deck: Deck, base_url: str) -> None:
+    page = crowded_deck(changed_deck, base_url, 5)
     advance_until(page, "fleetDeck.crowds().length === 1")
     badge = page.locator("#tags .crowd")
     badge.click()
@@ -465,20 +472,17 @@ def test_clicking_the_group_fans_it_out_and_clicking_away_gathers_it(browser: Br
     page.locator("#panel #close").click()                               # closing the panel gathers them again
     advance_until(page, "!fleetDeck.crowds()[0].fanned && fleetDeck.crowds()[0].count === 6")
     expect(page.locator("#tags .tag:visible", has_text="f20a6d")).to_have_count(0)
-    page.context.close()
-    assert errors == []
+    assert changed_deck.errors == []
 
 
-def test_five_androids_at_one_station_stand_on_their_own(browser: Browser, base_url: str,
-                                                         fixture_data: dict[str, Any]) -> None:
-    page, errors = crowded_deck(browser, base_url, fixture_data, 4)
+def test_five_androids_at_one_station_stand_on_their_own(changed_deck: Deck, base_url: str) -> None:
+    page = crowded_deck(changed_deck, base_url, 4)
     advance_until(page, "fleetDeck.agents().filter(agent => agent.room === 'agent-fleet' && agent.station === 'workbench').length === 5")
     assert page.evaluate("fleetDeck.crowds()") == []
     assert not any(agent["gathered"] for agent in at_the_workbench(page))
     expect(page.locator("#tags .crowd")).to_have_count(0)
     expect(page.locator("#tags .tag:visible", has_text="f20a6d")).to_have_count(5)
-    page.context.close()
-    assert errors == []
+    assert changed_deck.errors == []
 
 
 def rooms_on_screen(page: Page, zoomed: str) -> set[str]:
@@ -545,15 +549,8 @@ def test_background_rooms_are_dim_with_no_crew(deck: Deck) -> None:
     assert deck.errors == []
 
 
-def test_a_background_room_is_lit_while_its_work_runs(browser: Browser, base_url: str,
-                                                     fixture_data: dict[str, Any]) -> None:
-    context = browser.new_context(viewport=VIEWPORTS["desktop"], reduced_motion="reduce")
-    context.add_init_script(PIN_CLOCK % fixture_data["time"])
-    page = context.new_page()
-    errors: list[str] = []
-    page.on("pageerror", lambda error: errors.append(str(error)))
-    page.goto(base_url + "/")
-    page.wait_for_function(f"window.fleetDeck && (fleetDeck.advanceTime(0), fleetDeck.agents().length === {len(on_the_floor(fixture_data))})")
+def test_a_background_room_is_lit_while_its_work_runs(changed_deck: Deck, base_url: str) -> None:
+    page = changed_deck.page
     assert rooms_by_name(page)["invoice-parser"]["lit"] is False                 # a queued job is not running
     in_priority = finish_jobs(base_url, {})
     for host in in_priority["hosts"]:
@@ -577,8 +574,7 @@ def test_a_background_room_is_lit_while_its_work_runs(browser: Browser, base_url
     expect(page.locator("#stats .chip", has_text="working")).to_have_text("5 working")   # still counted
     page.evaluate("doc => fleetDeck.apply(doc)", finish_jobs(base_url, {}))
     assert rooms_by_name(page)["invoice-parser"]["lit"] is False
-    context.close()
-    assert errors == []
+    assert changed_deck.errors == []
 
 
 def test_the_switch_sends_the_crew_away_and_brings_it_back(deck: Deck, base_url: str) -> None:
@@ -739,21 +735,9 @@ def test_failed_and_stalled_jobs_leave_the_floor_to_their_lantern(deck: Deck, ba
     assert deck.errors == []
 
 
-def blocked_deck(browser: Browser, base_url: str, fixture_data: dict[str, Any]) -> tuple[Page, list[str]]:
-    """A deck of its own, with motion, so what one test changes stays out of the shared deck."""
-    context = browser.new_context(viewport=VIEWPORTS["desktop"])
-    context.add_init_script(PIN_CLOCK % fixture_data["time"])
-    page = context.new_page()
-    errors: list[str] = []
-    page.on("pageerror", lambda error: errors.append(str(error)))
-    page.goto(base_url + "/")
-    page.wait_for_function(f"window.fleetDeck && (fleetDeck.advanceTime(0), fleetDeck.agents().length === {len(on_the_floor(fixture_data))})")
-    return page, errors
-
-
-def test_a_job_that_fails_or_stalls_leaves_the_floor_at_once(browser: Browser, base_url: str,
-                                                             fixture_data: dict[str, Any]) -> None:
-    page, errors = blocked_deck(browser, base_url, fixture_data)
+@pytest.mark.parametrize("changed_deck", ["no-preference"], indirect=True)
+def test_a_job_that_fails_or_stalls_leaves_the_floor_at_once(changed_deck: Deck, base_url: str) -> None:
+    page = changed_deck.page
     blocked = {"worker:c90e11": "stalled", "home:b7d042": "failed"}
     page.evaluate("doc => fleetDeck.apply(doc)", finish_jobs(base_url, blocked))
     assert not page.evaluate(f"fleetDeck.agents().some(agent => {json.dumps(list(blocked))}.includes(agent.key))")
@@ -761,13 +745,12 @@ def test_a_job_that_fails_or_stalls_leaves_the_floor_at_once(browser: Browser, b
     expect(page.locator("#tags .tag", has_text="b7d042")).to_have_count(0)
     expect(page.locator("#toggleFinished")).to_have_text("1 finished · show")   # blocked is not finished
     expect(page.locator("#needYou b")).to_have_text("3")
-    page.context.close()
-    assert errors == []
+    assert changed_deck.errors == []
 
 
-def test_a_failed_job_can_still_be_dismissed_from_its_panel(browser: Browser, base_url: str,
-                                                            fixture_data: dict[str, Any]) -> None:
-    page, errors = blocked_deck(browser, base_url, fixture_data)
+@pytest.mark.parametrize("changed_deck", ["no-preference"], indirect=True)
+def test_a_failed_job_can_still_be_dismissed_from_its_panel(changed_deck: Deck) -> None:
+    page = changed_deck.page
     page.locator('.lantern[data-room="restoke"]').dispatch_event("click")
     page.locator('#attnPanel [data-owner="home:e1b5c8"]').click()
     expect(page.locator("#panelHead h2")).to_have_text("Upgrade Django to 5.2")
@@ -781,5 +764,4 @@ def test_a_failed_job_can_still_be_dismissed_from_its_panel(browser: Browser, ba
     expect(chip).to_have_count(0)
     page.locator('#attnPanel [data-owner="home:e1b5c8"]').click()
     expect(page.locator("#panel")).to_have_class(re.compile("open"))
-    page.context.close()
-    assert errors == []
+    assert changed_deck.errors == []
