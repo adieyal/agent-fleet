@@ -20,8 +20,8 @@ from mathutils import Vector  # noqa: E402
 
 B2 = A.ART / 'bakeoff' / 'B2'
 # the three B2 poses: sprite, arm clip, prop, and the B2 helmet width in sprite pixels (measured by hand)
-POSES = [('robot-typing', 'Type', None, 104), ('robot-pencil', 'Write', 'prop_pencil', 98),
-         ('robot-tube', 'Hold', 'prop_flask', 100)]
+POSES = [('robot-typing', 'Type', ('prop_laptop',), 104), ('robot-pencil', 'Write', ('prop_pencil', 'prop_paper'), 98),
+         ('robot-tube', 'Hold', ('prop_flask',), 100)]
 GREY, TEAL = '#c9c6c1', '#1fb5b0'
 B2_PITCH, L2_YAW = 30.0, 21.25  # B2 was generated looking about 30° down (its STYLE prompt); l2's yaw
 SIT_END = 10
@@ -171,7 +171,7 @@ def main() -> None:
     root.rotation_euler.z = math.radians(L2_YAW - FACING)
     for name, arms, prop, b2_head in POSES:
         for color, tag in ((GREY, 'grey'), (TEAL, 'teal')):
-            show({'robot_eyes': True, **({prop: True} if prop else {})})
+            show({'robot_eyes': True, **{p: True for p in prop}})
             tint(color)
             pose(rig, 'Sitting', SIT_END, arms)
             lo, hi = bounds(root)

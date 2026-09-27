@@ -54,13 +54,13 @@ CLIPS = {
     'Death': ('Death', 16, False, None, []),
     'Sitting': ('Sitting', 8, False, None, ['book', 'sheet']),
     'Typing': ('Sitting', 8, True, 'Type', ['laptop']),
-    'Writing': ('Sitting', 8, True, 'Write', ['pencil']),
+    'Writing': ('Sitting', 8, True, 'Write', ['pencil', 'paper']),
     'Holding': ('Sitting', 8, True, 'Hold', ['flask']),
 }
 SEATED = {'Sitting', 'Typing', 'Writing', 'Holding'}
 HOLD_LAST = {'Sitting', 'Death'}  # played once and held on the last frame
 ACCESSORIES = ['backpack', 'antenna', 'halo', 'crest']
-ITEMS = ['box', 'book', 'sheet', 'laptop', 'pencil', 'flask']
+ITEMS = ['box', 'book', 'sheet', 'laptop', 'paper', 'pencil', 'flask']
 FACES = {'eyes': 'codex', 'band': 'claude'}
 GREY = '#cccccc'  # the shell's neutral grey; the runtime multiplies masked pixels by host / GREY
 RES = (1, 2, 4)
@@ -325,13 +325,10 @@ def render_frame(bpy, scene, tmp: Path) -> None:
 
 def make_items(bpy, A, rig, Vector, Matrix) -> dict:
     """What the robot carries. The box, book and sheet ride on the torso, in front of the chest (the deck holds
-    them in the android's frame, not in its hands); the laptop sits on the desk under the typing hands; the
-    pencil and flask are the build's hand props."""
+    them in the android's frame, not in its hands); the laptop, paper, pencil and flask are the build's props."""
     m = {'box': A.material('item_box', '#b98b52', rough=0.85), 'tape': A.material('item_tape', '#d9c08a', rough=0.5),
          'book': A.material('item_book', '#b4463c', rough=0.6), 'pages': A.material('item_pages', '#f3ecdc', rough=0.8),
-         'sheet': A.material('item_sheet', '#f4f6fa', rough=0.7), 'ink': A.material('item_ink', '#7c8594', rough=0.7),
-         'laptop': A.material('item_laptop', '#3f4147', rough=0.35, metal=0.6),
-         'screen': A.material('item_screen', '#0d1117', rough=0.1, emission='#1d2a3a')}
+         'sheet': A.material('item_sheet', '#f4f6fa', rough=0.7), 'ink': A.material('item_ink', '#7c8594', rough=0.7)}
     M = rig.matrix_world
     torso = M @ rig.data.bones['Torso'].head_local
     s = json.loads(bpy.context.scene['fleet_build'])['scale']  # metres per model unit
@@ -377,20 +374,9 @@ def make_items(bpy, A, rig, Vector, Matrix) -> dict:
                          'item_sheet')
     for k in ('box', 'book', 'sheet'):
         hang(made[k], 'Torso')
-    # the laptop on the desk under the typing hands (the desk's height as seated at the workbench)
-    import build_workbench as W
-    info = json.loads(bpy.context.scene['fleet_build'])
-    seat = Vector(info['runtime']['seat_point'])
-    top = seat.z + W.DESK_H - W.SEAT_H
-    ahead = seat.y - 0.36  # the robot faces -Y; the keyboard under its reach
-    base = A.box('laptop', (0.34, 0.24, 0.016), (0, ahead - 0.02, top), m['laptop'], kind='dynamic', bevel=0.004, tile=None)
-    lid = A.box('laptop_lid', (0.34, 0.012, 0.23), (0, ahead - 0.14 - 0.03, top + 0.11), m['laptop'], kind='dynamic', bevel=0.004,
-                rot=(math.radians(-15), 0, 0), tile=None)
-    screen = A.box('laptop_screen', (0.31, 0.004, 0.2), (0, ahead - 0.14 - 0.02, top + 0.115), m['screen'], kind='dynamic',
-                   rot=(math.radians(-15), 0, 0), tile=None)
-    made['laptop'] = join([base, lid, screen], 'item_laptop')
-    made['laptop'].parent = bpy.data.objects['RootNode']
-    made['laptop'].matrix_parent_inverse = bpy.data.objects['RootNode'].matrix_world.inverted()
+    # the model's own work props: the laptop and paper on the desk under its hands, the pencil and flask in its hand
+    made['laptop'] = bpy.data.objects['prop_laptop']
+    made['paper'] = bpy.data.objects['prop_paper']
     made['pencil'] = bpy.data.objects['prop_pencil']
     made['flask'] = bpy.data.objects['prop_flask']
     for ob in made.values():

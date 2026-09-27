@@ -25,7 +25,9 @@ actions are kept; its meshes are deleted.
   `Rest`, `Type`, `Write` and `Hold` are posed on top of the end of `Sitting`: the runtime plays `Sitting`
   without its arm tracks and one of these for the arms. Their base poses are found by searching joint
   angles for hand targets on the desk (or, for `Hold`, beside the head).
-- Props `prop_pencil` and `prop_flask` hang from the right hand bone; the runtime shows one per robot.
+- Props, sized to B2 against the helmet: `prop_pencil` and `prop_flask` hang from the right hand bone;
+  `prop_laptop` and `prop_paper` sit on the desk under the typing and writing hands. The runtime shows
+  the one its loop uses.
 
 The build records `runtime.seat_point`: where the seated pelvis rests, in the robot's own coordinates.
 """
@@ -42,7 +44,7 @@ from mathutils import Euler, Matrix, Quaternion, Vector  # noqa: E402
 
 SCENE = 'robot'
 SOURCE = A.REPO / 'fleet' / 'web' / 'assets' / 'models' / 'robot' / 'RobotExpressive.glb'
-HEAD_M = 0.71  # helmet width in metres: the restyled RobotExpressive's, fitted to l2
+HEAD_M = 0.404  # helmet width in metres: B2's robots, fitted to l2 by head size (104 px at 257.3 px/m)
 FPS = 24
 SIT_END = 10  # last frame of Sitting: the seated pose
 ARM_BONES = ('UpperArm', 'LowerArm')
@@ -53,8 +55,9 @@ ACCESSORIES = ('backpack', 'antenna', 'halo', 'crest')
 
 # Proportions, in the rig's units: it stands on z 0 facing -Y, arms hanging forward, in the pose its nodes
 # rest in. Joints sit on the bones; everything else is shaped to the B2 sprites.
-HEAD = {'c': Vector((0, -0.02, 3.52)), 'r': (0.93, 0.875, 0.875), 'e': 2.15}
-TORSO = {'c': Vector((0, 0.04, 2.0)), 'r': (0.72, 0.56, 0.76)}
+HEAD = {'c': Vector((0, -0.02, 3.55)), 'r': (0.72, 0.685, 0.685), 'e': 2.15}
+TORSO = {'c': Vector((0, 0.03, 2.08)), 'r': (0.58, 0.47, 0.84)}
+LIMB = {'upper': (0.17, 0.16), 'fore': (0.17, 0.2), 'thigh': (0.25, 0.22), 'shin': (0.22, 0.25), 'finger': 0.074}
 
 
 def load() -> tuple[bpy.types.Object, bpy.types.Object]:
@@ -88,8 +91,14 @@ def materials() -> dict:
     bsdf = body.node_tree.nodes['Principled BSDF']
     bsdf.inputs['Coat Weight'].default_value = 0.8  # the glossy, toy-like highlight (KHR_materials_clearcoat)
     bsdf.inputs['Coat Roughness'].default_value = 0.06
-    visor = A.material('robot_visor', '#030405', rough=0.12)
-    visor.node_tree.nodes['Principled BSDF'].inputs['Coat Weight'].default_value = 1.0
+    glass = A.material('robot_glass', '#eef8fa', rough=0.03)
+    gb = glass.node_tree.nodes['Principled BSDF']
+    gb.inputs['Transmission Weight'].default_value = 1.0  # clear, as B2's tube
+    gb.inputs['IOR'].default_value = 1.45
+    visor = A.material('robot_visor', '#030405', rough=0.05)  # glossy black glass: it catches the key light
+    vb = visor.node_tree.nodes['Principled BSDF']
+    vb.inputs['Coat Weight'].default_value = 1.0
+    vb.inputs['Coat Roughness'].default_value = 0.02
     return {'body': body,
             'joint': A.material('robot_joint', '#3b3e45', rough=0.4, metal=0.2),
             'panel': A.material('robot_panel', '#c4c7cd', rough=0.35),
@@ -98,9 +107,13 @@ def materials() -> dict:
             'band': A.material('robot_band', '#ff8f6b', rough=0.3, emission='#ff6a3d'),
             'halo': A.material('robot_halo', '#ffffff', rough=0.3, emission='#ffffff'),
             'dark': A.material('robot_dark', '#15171b', rough=0.4),
-            'glass': A.material('robot_glass', '#dff2f5', rough=0.05),
-            'liquid': A.material('robot_liquid', '#8fe04a', rough=0.2, emission='#5fbf2a'),
-            'pencil': A.material('robot_pencil', '#f0b43c', rough=0.5)}
+            'glass': glass,
+            'liquid': A.material('robot_liquid', '#23282e', rough=0.15),
+            'pencil': A.material('robot_pencil', '#f0b43c', rough=0.5),
+            'wood': A.material('robot_wood', '#e3c08e', rough=0.7),
+            'laptop': A.material('robot_laptop', '#44474d', rough=0.35, metal=0.6),
+            'keys': A.material('robot_keys', '#1d2024', rough=0.6),
+            'paper': A.material('robot_paper', '#f6f4ee', rough=0.8)}
 
 
 # --- modelling ---------------------------------------------------------------------------
@@ -249,6 +262,11 @@ class Rig:
         return self.rig.matrix_world @ self.rig.data.bones[bone].head_local
 
 
+def ring(center: Vector, axis: Vector, r: float, depth: float) -> bmesh.types.BMesh:
+    """A dark joint ring round a limb: a flat puck across `axis`."""
+    return blob((r, r, depth / 2), center, e=2.0, ez=4.0, rot=frame(axis), cuts=3)
+
+
 def build_body(m: dict, rig) -> tuple[bpy.types.Object, dict]:
     R = Rig(rig)
     parts = []
@@ -257,79 +275,79 @@ def build_body(m: dict, rig) -> tuple[bpy.types.Object, dict]:
     head = part('head', blob(hr, hc, e=HEAD['e'], ez=2.1, cuts=7,
                              shape=lambda p: Vector((p.x, p.y, p.z * (0.93 if p.z < 0 else 1.0)))), m['body'], 'Head')
     parts.append(head)
-    # the face plate: a big dark rounded rectangle on the front, a little below the middle
-    plate = shell('visor', head, hc + Vector((0, 0, -0.02)), Vector((0, -1, 0)), Vector((0, 0, 1)), 0.69, 0.54,
-                  m['visor'], 0.05, lift=0.03, e=3.0, bone='Head', bevel=0.012, n=14)
+    # the face plate: a big, glossy dark rounded rectangle over most of the front
+    plate = shell('visor', head, hc + Vector((0, 0, -0.04 * hr[2])), Vector((0, -1, 0)), Vector((0, 0, 1)),
+                  0.84 * hr[0], 0.72 * hr[2], m['visor'], 0.05, lift=0.03, e=3.2, bone='Head', bevel=0.012, n=14)
     parts.append(plate)
     # ear discs: a light rim round a dark hub
     for s in (-1, 1):
-        c = hc + Vector((s * (hr[0] - 0.02), 0.04, -0.06))
-        parts.append(part(f'ear{s:+d}', disc(c, Vector((s, 0, 0)), 0.32, 0.2, e=2.0), m['panel'], 'Head'))
-        parts.append(part(f'hub{s:+d}', blob((0.2, 0.2, 0.06), c + Vector((s * 0.1, 0, 0)), ez=5.0, rot=frame(Vector((s, 0, 0))), cuts=3),
-                          m['joint'], 'Head'))
+        c = hc + Vector((s * (hr[0] - 0.02), 0.04, -0.06 * hr[2]))
+        parts.append(part(f'ear{s:+d}', disc(c, Vector((s, 0, 0)), 0.34 * hr[0], 0.2 * hr[0], e=2.0), m['panel'], 'Head'))
+        parts.append(part(f'hub{s:+d}', blob((0.21 * hr[0], 0.21 * hr[0], 0.06), c + Vector((s * 0.1, 0, 0)), ez=5.0,
+                                             rot=frame(Vector((s, 0, 0))), cuts=3), m['joint'], 'Head'))
     # neck
-    parts.append(part('neck', capsule(R.at('Neck') - Vector((0, 0, 0.1)), R.at('Head') + Vector((0, 0, 0.1)), 0.22, 0.25, cuts=3),
+    parts.append(part('neck', capsule(R.at('Neck') - Vector((0, 0, 0.1)), R.at('Head') + Vector((0, 0, 0.1)), 0.18, 0.2, cuts=3),
                       m['joint'], 'Neck'))
-    # torso: rounded, broad at the chest, drawn in at the waist; a collar under the head
+    # torso: tall and upright, rounded, a little narrower at the waist; a chest panel; a collar under the head
     tc, tr = TORSO['c'], TORSO['r']
-    torso = part('torso', blob(tr, tc, e=2.3, ez=2.2, cuts=7,
-                               shape=lambda p: Vector((p.x * (1 - 0.18 * max(0, -p.z / tr[2]) ** 2),
-                                                       p.y * (1 - 0.1 * max(0, -p.z / tr[2]) ** 2), p.z))),
+    torso = part('torso', blob(tr, tc, e=2.8, ez=2.6, cuts=7,
+                               shape=lambda p: Vector((p.x * (1 - 0.1 * max(0, -p.z / tr[2]) ** 2),
+                                                       p.y * (1 - 0.06 * max(0, -p.z / tr[2]) ** 2), p.z))),
                  m['body'], ramp('Abdomen', 'Torso', 1.7, 2.15))
     parts.append(torso)
-    parts.append(shell('chest', torso, tc + Vector((0, 0, 0.12)), Vector((0, -1, 0)), Vector((0, 0, 1)), 0.26, 0.2,
+    parts.append(shell('chest', torso, tc + Vector((0, 0, 0.18)), Vector((0, -1, 0)), Vector((0, 0, 1)), 0.22, 0.2,
                        m['panel'], 0.035, e=4.0, bone='Torso', bevel=0.01, n=8))
-    parts.append(part('collar', blob((0.36, 0.34, 0.08), tc + Vector((0, 0.02, tr[2] - 0.06)), ez=5.0, cuts=3), m['joint'], 'Torso'))
+    parts.append(part('collar', blob((0.3, 0.28, 0.07), tc + Vector((0, 0.02, tr[2] - 0.05)), ez=5.0, cuts=3), m['joint'], 'Torso'))
     # pelvis: dark, with ball sockets for the legs
-    parts.append(part('pelvis', blob((0.56, 0.42, 0.26), R.at('Hips') + Vector((0, 0.04, 0.1)), e=2.6, ez=2.4), m['joint'], 'Hips'))
+    parts.append(part('pelvis', blob((0.5, 0.38, 0.22), R.at('Hips') + Vector((0, 0.04, 0.1)), e=2.6, ez=2.4), m['joint'], 'Hips'))
     for side in 'LR':
         s = 1 if side == 'L' else -1
-        # arm: shoulder cap, upper arm, elbow, chunky forearm, dark cuff and mitten
+        # arm: shoulder cap, slim upper arm, a dark elbow ring, forearm, dark cuff, a small hand with fingers
         sh, el, wr = R.at(f'UpperArm.{side}'), R.at(f'LowerArm.{side}'), R.at(f'Palm2.{side}')
         out = Vector((s, 0, 0))
         up_d, fore_d = (el - sh).normalized(), (wr - el).normalized()
-        parts.append(part(f'shoulder{side}', blob((0.34, 0.33, 0.33), sh + out * 0.1 + Vector((0, 0, 0.02))), m['body'],
+        parts.append(part(f'shoulder{side}', blob((0.23, 0.23, 0.24), sh + out * 0.03 + Vector((0, 0, 0.02))), m['body'],
                           f'Shoulder.{side}'))
-        parts.append(part(f'socket{side}', blob((0.27, 0.27, 0.07), sh - out * 0.1, ez=4.0, rot=frame(out), cuts=3), m['joint'],
-                          f'Shoulder.{side}'))
-        parts.append(part(f'upperarm{side}', capsule(sh + up_d * 0.2, el - up_d * 0.12, 0.25, 0.24), m['body'], f'UpperArm.{side}'))
-        parts.append(part(f'elbow{side}', blob((0.21,) * 3, el, cuts=3), m['joint'], f'LowerArm.{side}'))
-        cuff = el + (wr - el) * 0.6
-        parts.append(part(f'forearm{side}', capsule(el + fore_d * 0.14, cuff, 0.25, 0.29), m['body'], f'LowerArm.{side}'))
-        parts.append(part(f'wrist{side}', capsule(cuff, wr - fore_d * 0.06, 0.2, 0.17, cuts=3), m['joint'], f'LowerArm.{side}'))
+        parts.append(part(f'socket{side}', ring(sh - out * 0.12, out, 0.2, 0.11), m['joint'], f'Shoulder.{side}'))
+        parts.append(part(f'upperarm{side}', capsule(sh + up_d * 0.18, el - up_d * 0.1, *LIMB['upper']), m['body'], f'UpperArm.{side}'))
+        parts.append(part(f'elbow{side}', blob((0.15,) * 3, el, cuts=3), m['joint'], f'LowerArm.{side}'))
+        parts.append(part(f'elbowring{side}', ring(el + fore_d * 0.13, fore_d, 0.2, 0.1), m['joint'], f'LowerArm.{side}'))
+        cuff = el + (wr - el) * 0.72
+        parts.append(part(f'forearm{side}', capsule(el + fore_d * 0.16, cuff, *LIMB['fore']), m['body'], f'LowerArm.{side}'))
+        parts.append(part(f'wrist{side}', capsule(cuff, wr - fore_d * 0.02, 0.15, 0.12, cuts=3), m['joint'], f'LowerArm.{side}'))
         mid = R.at(f'Middle1.{side}')
-        palm_c = wr + (mid - wr) * 0.45
+        palm_c = wr + (mid - wr) * 0.5
         axis = (mid - wr).normalized()
-        parts.append(part(f'palm{side}', blob((0.22, 0.24, 0.19), palm_c, e=2.6, ez=2.6, rot=frame(axis, out)),
+        parts.append(part(f'palm{side}', blob((0.15, 0.17, 0.12), palm_c, e=2.6, ez=2.6, rot=frame(axis, out)),
                           m['joint'], f'Palm2.{side}'))
-        # a mitten: the four fingers are one block on the middle finger's bones (the rig fans its fingers
-        # apart), and a thumb
-        a, b = R.at(f'Middle1.{side}'), R.at(f'Middle2.{side}')
-        spread = R.at(f'Index.{side}') - R.at(f'Ring1.{side}')
-        half = spread.length / 2 + 0.1
-        for bone, p0, p1 in ((f'Middle1.{side}', a - (b - a) * 0.35, b), (f'Middle2.{side}', b, b + (b - a) * 0.55)):
-            parts.append(part(f'{bone}_mitten', blob(((p1 - p0).length / 2 + 0.08, half * 0.55, half), (p0 + p1) / 2, e=2.4, ez=2.8,
-                                                   rot=frame(spread, p1 - p0), cuts=3), m['joint'], bone))
-        a, b = R.at(f'Thumb.{side}'), R.at(f'Thumb2.{side}')
-        parts.append(part(f'thumb{side}', capsule(a - (b - a) * 0.3, b, 0.1, 0.1, cuts=3), m['joint'], f'Thumb.{side}'))
-        parts.append(part(f'thumb2{side}', capsule(b, b + (b - a) * 0.5, 0.1, 0.09, cuts=3), m['joint'], f'Thumb2.{side}'))
-        # leg: hip ball, thigh, knee, shin flaring into a boot
+        # fingers: three and a thumb, each on its own bones, drawn in towards the middle finger (the rig fans them)
+        base = R.at(f'Middle1.{side}')
+        r = LIMB['finger']
+        for f1, f2 in (('Index', 'Index2'), ('Middle1', 'Middle2'), ('Ring1', 'Ring2'), ('Thumb', 'Thumb2')):
+            a, b = R.at(f'{f1}.{side}'), R.at(f'{f2}.{side}')
+            pull = Vector() if f1 in ('Middle1', 'Thumb') else (base - a) * 0.6  # close together, as B2's
+            a, b = a + pull, b + pull
+            tip = b + (b - a) * 0.75
+            parts.append(part(f'{f1}{side}', capsule(a - (b - a) * 0.3, b, r, r, cuts=3), m['joint'], f'{f1}.{side}'))
+            parts.append(part(f'{f2}{side}', capsule(b, tip, r, r * 0.9, cuts=3), m['joint'], f'{f2}.{side}'))
+        # leg: hip ball, slim thigh, a dark knee ring, shin flaring into a boot
         hip, knee = R.at(f'UpperLeg.{side}'), R.at(f'LowerLeg.{side}')
         foot = R.at(f'Foot.{side}')
-        ankle = Vector((foot.x, foot.y - 0.04, 0.42))
+        ankle = Vector((foot.x, foot.y - 0.04, 0.4))
         thigh_d, shin_d = (knee - hip).normalized(), (ankle - knee).normalized()
-        parts.append(part(f'hip{side}', blob((0.26,) * 3, hip, cuts=3), m['joint'], f'UpperLeg.{side}'))
-        parts.append(part(f'thigh{side}', capsule(hip + thigh_d * 0.05, knee - thigh_d * 0.12, 0.37, 0.33),
+        parts.append(part(f'hip{side}', blob((0.2,) * 3, hip, cuts=3), m['joint'], f'UpperLeg.{side}'))
+        parts.append(part(f'thigh{side}', capsule(hip + thigh_d * 0.08, knee - thigh_d * 0.1, *LIMB['thigh']),
                           m['body'], f'UpperLeg.{side}'))
-        parts.append(part(f'knee{side}', blob((0.25,) * 3, knee, cuts=3), m['joint'], f'LowerLeg.{side}'))
-        parts.append(part(f'shin{side}', capsule(knee + shin_d * 0.14, ankle + Vector((0, 0, 0.1)), 0.3, 0.33),
+        parts.append(part(f'knee{side}', blob((0.18,) * 3, knee, cuts=3), m['joint'], f'LowerLeg.{side}'))
+        parts.append(part(f'kneering{side}', ring(knee + shin_d * 0.13, shin_d, 0.25, 0.11), m['joint'], f'LowerLeg.{side}'))
+        parts.append(part(f'shin{side}', capsule(knee + shin_d * 0.17, ankle + Vector((0, 0, 0.08)), *LIMB['shin']),
                           m['body'], f'LowerLeg.{side}'))
-        parts.append(part(f'ankle{side}', blob((0.22,) * 3, ankle, cuts=3), m['joint'], f'Foot.{side}'))
-        boot_c = Vector((foot.x, foot.y - 0.14, 0.2))
-        parts.append(part(f'boot{side}', blob((0.35, 0.5, 0.21), boot_c, e=2.4, ez=2.2,
+        parts.append(part(f'ankle{side}', blob((0.17,) * 3, ankle, cuts=3), m['joint'], f'Foot.{side}'))
+        boot_c = Vector((foot.x, foot.y - 0.14, 0.19))
+        parts.append(part(f'boot{side}', blob((0.29, 0.44, 0.19), boot_c, e=2.4, ez=2.2,
                                               shape=lambda p: Vector((p.x, p.y, p.z if p.z > 0 else p.z * 0.6))),
                           m['body'], f'Foot.{side}'))
-        parts.append(part(f'sole{side}', blob((0.35, 0.49, 0.05), Vector((boot_c.x, boot_c.y, 0.06)), e=2.4, ez=4.0, cuts=3),
+        parts.append(part(f'sole{side}', blob((0.29, 0.43, 0.05), Vector((boot_c.x, boot_c.y, 0.06)), e=2.4, ez=4.0, cuts=3),
                           m['joint'], f'Foot.{side}'))
     body = join(parts, 'robot')
     body['fleet'] = 'character'
@@ -357,8 +375,12 @@ def skin(ob, rig) -> None:
 
 
 def head_width(body) -> float:
+    """The helmet shell's width, without the ear discs (as B2's helmets were measured)."""
     g = body.vertex_groups['Head'].index
-    xs = [(body.matrix_world @ v.co).x for v in body.data.vertices if any(e.group == g and e.weight > 0.5 for e in v.groups)]
+    shell_mat = [i for i, s in enumerate(body.material_slots) if s.material.name == 'robot_body']
+    on_shell = {v for p in body.data.polygons if p.material_index in shell_mat for v in p.vertices}
+    xs = [(body.matrix_world @ v.co).x for v in body.data.vertices
+          if v.index in on_shell and any(e.group == g and e.weight > 0.5 for e in v.groups)]
     return max(xs) - min(xs)
 
 
@@ -382,11 +404,12 @@ def face(m: dict, rig, body) -> None:
     bm.to_mesh(visor.data)
     bm.free()
     hc = HEAD['c']
-    c = hc + Vector((0, 0, -0.03))
-    eyes = [shell(f'eye{s:+d}', visor, c + Vector((s * 0.28, 0, 0)), Vector((0, -1, 0)), Vector((0, 0, 1)),
-                  0.13, 0.18, m['eye'], 0.02, lift=0.001, e=2.3, n=6) for s in (-1, 1)]
+    hr = HEAD['r']
+    c = hc + Vector((0, 0, -0.04 * hr[2]))
+    eyes = [shell(f'eye{s:+d}', visor, c + Vector((s * 0.27 * hr[0], 0, 0.02 * hr[2])), Vector((0, -1, 0)), Vector((0, 0, 1)),
+                  0.12 * hr[0], 0.2 * hr[2], m['eye'], 0.02, lift=0.001, e=2.0, n=6) for s in (-1, 1)]  # tall ovals, as B2's
     eyes_ob = join(eyes, 'robot_eyes')
-    band = shell('robot_band', visor, c, Vector((0, -1, 0)), Vector((0, 0, 1)), 0.56, 0.095, m['band'], 0.02,
+    band = shell('robot_band', visor, c, Vector((0, -1, 0)), Vector((0, 0, 1)), 0.62 * hr[0], 0.11 * hr[2], m['band'], 0.02,
                  lift=0.001, e=5.0, n=8)
     bpy.data.meshes.remove(visor.data)
     for ob in (eyes_ob, band):
@@ -399,15 +422,16 @@ def accessories(m: dict, rig) -> None:
     hc, hr = HEAD['c'], HEAD['r']
     tc, tr = TORSO['c'], TORSO['r']
     top = hc.z + hr[2]
+    k = hr[0] / 0.93  # the kit was sized on a helmet of radius 0.93
     made = {
         'backpack': ([part('pack', blob((0.44, 0.2, 0.42), tc + Vector((0, tr[1] + 0.12, 0.12)), e=3.0, ez=3.0), m['body']),
                       part('pack_vent', blob((0.28, 0.05, 0.06), tc + Vector((0, tr[1] + 0.3, 0.3)), e=3.0, ez=3.0), m['joint']),
                       part('pack_vent2', blob((0.28, 0.05, 0.06), tc + Vector((0, tr[1] + 0.3, 0.12)), e=3.0, ez=3.0), m['joint'])],
                      'Torso'),
-        'antenna': ([part('rod', capsule(hc + Vector((0.42, 0, 0.72)), hc + Vector((0.52, 0, 1.3)), 0.04, 0.035), m['joint']),
-                     part('bulb', blob((0.11,) * 3, hc + Vector((0.53, 0, 1.36))), m['body'])], 'Head'),
-        'halo': ([part('ring', torus(hc + Vector((0, 0, hr[2] + 0.28)), 0.58, 0.045), m['halo'], levels=0)], 'Head'),
-        'crest': ([part('fin', blob((0.08, 0.72, 0.2), Vector((0, hc.y + 0.12, top - 0.08)), e=2.0, ez=2.4), m['body'])],
+        'antenna': ([part('rod', capsule(hc + Vector((0.42, 0, 0.72)) * k, hc + Vector((0.52, 0, 1.3)) * k, 0.04, 0.035), m['joint']),
+                     part('bulb', blob((0.11 * k,) * 3, hc + Vector((0.53, 0, 1.36)) * k), m['body'])], 'Head'),
+        'halo': ([part('ring', torus(hc + Vector((0, 0, hr[2] + 0.28 * k)), 0.58 * k, 0.045), m['halo'], levels=0)], 'Head'),
+        'crest': ([part('fin', blob((0.08, 0.72 * k, 0.2 * k), Vector((0, hc.y + 0.12 * k, top - 0.08 * k)), e=2.0, ez=2.4), m['body'])],
                   'Head'),
     }
     for kind, (pieces, bone) in made.items():
@@ -443,28 +467,75 @@ def pose(rig, base: dict, offsets: dict) -> Vector:
     return rig.matrix_world @ rig.pose.bones['Palm2.R'].head
 
 
-def props(m: dict, rig: bpy.types.Object, base: dict, found: dict) -> None:
-    """A pencil and a test tube in the right hand. Each is modelled in the pose that uses it (the pencil
-    tilted onto the paper in Write, the tube upright in Hold), then hung from the hand bone."""
+def props(m: dict, rig: bpy.types.Object, base: dict, found: dict, desk_z: float) -> list[str]:
+    """What the seated loops work with, sized to B2 against the helmet: a pencil and a test tube in the right
+    hand (each modelled in the pose that uses it, then hung from the hand bone), and a laptop and a sheet of
+    paper on the desk under the typing and writing hands (fixed in the robot's frame)."""
     rig.animation_data.action = None
-    palm = pose(rig, base, found['Write'])
-    pencil = A.cylinder('prop_pencil', 0.035, 0.8, palm + Vector((0, -0.15, -0.35)), m['pencil'], kind='dynamic',
-                        segments=8, rot=(math.radians(-30), 0, 0), tile=None)
+    hw = 2 * HEAD['r'][0]  # helmet width, in model units
+    M = rig.matrix_world
+
+    def hand(side='R'):
+        palm = M @ rig.pose.bones[f'Palm2.{side}'].head
+        return palm, (M @ rig.pose.bones[f'Middle1.{side}'].head - palm).normalized()
+
+    def joined(objs, name):
+        bpy.ops.object.select_all(action='DESELECT')
+        for o in objs:
+            o.select_set(True)
+        bpy.context.view_layer.objects.active = objs[0]
+        bpy.ops.object.join()
+        ob = bpy.context.view_layer.objects.active
+        ob.name = name
+        return ob
+
+    # pencil: 0.7 helmets long, gripped in the fingers, tipped onto the paper
+    pose(rig, base, found['Write'])
+    palm, along = hand()
+    grip = palm + along * 0.2
+    length, r = 0.7 * hw, 0.035 * hw
+    tilt = (math.radians(-25), 0, 0)
+    shaft = A.cylinder('prop_pencil', r, length, grip + Vector((0, 0, -0.45 * length)), m['pencil'], kind='dynamic',
+                       segments=6, rot=tilt, tile=None)
+    tip = A.cylinder('prop_pencil_tip', r, 0.12 * length, grip + Vector((0, 0.04, -0.55 * length)), m['wood'], kind='dynamic',
+                     radius2=0.004, segments=6, rot=(tilt[0] + math.pi, 0, 0), tile=None)
+    pencil = joined([shaft, tip], 'prop_pencil')
     hang(pencil, rig, 'Palm2.R')
-    palm = pose(rig, base, found['Hold'])
-    liquid = A.cylinder('prop_flask_liquid', 0.1, 0.3, palm + Vector((0, -0.12, 0.05)), m['liquid'], kind='dynamic',
+    # test tube: 1.1 helmets tall, two-thirds full of a dark liquid, held upright beside the head
+    pose(rig, base, found['Hold'])
+    palm, along = hand()
+    grip = palm + along * 0.18
+    length, r = 0.95 * hw, 0.12 * hw
+    bottom = grip - Vector((0, 0, 0.3 * length))
+    liquid = A.cylinder('prop_flask_liquid', r * 0.74, 0.55 * length, bottom + Vector((0, 0, 0.03)), m['liquid'], kind='dynamic',
                         segments=16, tile=None)
-    flask = A.cylinder('prop_flask', 0.13, 0.9, palm + Vector((0, -0.12, 0.0)), m['glass'], kind='dynamic',
-                       segments=16, bevel=0.03, tile=None)
-    bpy.ops.object.select_all(action='DESELECT')
-    liquid.select_set(True)
-    flask.select_set(True)
-    bpy.context.view_layer.objects.active = flask
-    bpy.ops.object.join()
+    glass = A.cylinder('prop_flask', r, length, bottom, m['glass'], kind='dynamic', segments=16, bevel=0.03, tile=None)
+    flask = joined([glass, liquid], 'prop_flask')
     hang(flask, rig, 'Palm2.R')
-    for ob in (pencil, flask):
+    # laptop and paper: on the desk, under the hands that use them
+    pose(rig, base, found['Type'])
+    c = (hand('L')[0] + hand('R')[0]) / 2
+    w, d = 1.25 * hw * 0.62, 0.9 * hw * 0.62
+    base_c = Vector((c.x, c.y - 0.12, desk_z))
+    parts = [A.box('prop_laptop', (w, d, 0.05), base_c, m['laptop'], kind='dynamic', bevel=0.02, tile=None),
+             A.box('prop_laptop_keys', (w * 0.86, d * 0.5, 0.012), base_c + Vector((0, 0.08, 0.05)), m['keys'], kind='dynamic', tile=None)]
+    hinge = base_c + Vector((0, -d / 2, 0.03))
+    lid = A.box('prop_laptop_lid', (w, 0.04, 0.8 * d), hinge, m['laptop'], kind='dynamic', bevel=0.02, rot=(math.radians(22), 0, 0), tile=None)  # open past upright, away from the hands
+    parts.append(lid)
+    laptop = joined(parts, 'prop_laptop')
+    pose(rig, base, found['Write'])
+    c = (hand('L')[0] + hand('R')[0]) / 2
+    paper = A.box('prop_paper', (0.62 * hw, 0.85 * hw, 0.01), Vector((c.x, c.y - 0.05, desk_z)), m['paper'], kind='dynamic',
+                  rot=(0, 0, math.radians(12)), tile=None)
+    bpy.context.view_layer.update()  # new objects have no world matrix until the scene updates
+    for ob in (laptop, paper):  # fixed in the robot's frame, not a bone's
+        world = ob.matrix_world.copy()
+        ob.parent = rig
+        ob.matrix_world = world
+    for ob in (pencil, flask, laptop, paper):
         ob['fleet'] = 'prop'
     pose(rig, base, {})
+    return [ob.name for ob in (pencil, flask, laptop, paper)]
 
 
 def pose_at_sit_end(rig) -> dict[str, Quaternion]:
@@ -487,9 +558,10 @@ def seat_point(rig, body) -> Vector:
     return Vector((hips.x, hips.y, lowest))
 
 
-def reach(rig, side: str, base: dict, target: Vector, fingers: Vector | None) -> dict[str, Euler]:
+def reach(rig, side: str, base: dict, target: Vector, fingers: Vector | None, relaxed: bool = True) -> dict[str, Euler]:
     """Offsets (on top of the seated pose) for the upper and lower arm that bring the palm near `target`,
-    with the fingers pointing along `fingers` (if given). Coordinate descent over six angles."""
+    with the fingers pointing along `fingers` (if given) and, when `relaxed`, the elbow hanging low and close to
+    the body rather than flung out. Coordinate descent over six angles."""
     bones = [f'UpperArm.{side}', f'LowerArm.{side}']
     angles = [0.0] * 6  # upper x, y, z, lower x, y, z (degrees)
 
@@ -503,6 +575,12 @@ def reach(rig, side: str, base: dict, target: Vector, fingers: Vector | None) ->
         if fingers:
             along = (rig.matrix_world @ rig.pose.bones[f'Middle1.{side}'].head - palm).normalized()
             err += 0.25 * (1 - along.dot(fingers.normalized()))
+        sh = rig.matrix_world @ rig.pose.bones[f'UpperArm.{side}'].head
+        el = rig.matrix_world @ rig.pose.bones[f'LowerArm.{side}'].head
+        if relaxed:
+            err += 0.5 * max(0.0, el.z - (sh.z - 0.45)) + 0.5 * max(0.0, abs(el.x) - abs(sh.x) - 0.3)
+        else:  # a raised arm: the elbow out to the side and no higher than the shoulder, as B2 holds the tube
+            err += 0.5 * max(0.0, el.z - sh.z) + 0.5 * max(0.0, abs(sh.x) + 0.3 - abs(el.x))
         return err
 
     best = apply(angles)
@@ -550,21 +628,29 @@ def actions(rig, body, scale: float) -> tuple:
     base = pose_at_sit_end(rig)
     seat = seat_point(rig, body)
     u = 1 / scale  # metres to model units
-    desk_z = seat.z + DESK_ABOVE_SEAT * u + 0.15
-    ahead = seat.y - (DESK_EDGE_AHEAD + 0.12) * u  # the robot faces -Y
-    down = Vector((0, -1, -0.3))  # fingers forward, tipped down onto the desk
-    targets = {  # palm target and finger direction, per side
-        'Rest': {'L': (Vector((0.75, ahead + 0.2, desk_z)), down), 'R': (Vector((-0.75, ahead + 0.2, desk_z)), down)},
-        'Type': {'L': (Vector((0.45, ahead - 0.3, desk_z)), down), 'R': (Vector((-0.45, ahead - 0.3, desk_z)), down)},
-        'Write': {'L': (Vector((0.62, seat.y - 0.75, seat.z + 0.55)), down), 'R': (Vector((-0.25, ahead - 0.45, desk_z)), down)},
-        'Hold': {'L': (Vector((0.62, seat.y - 0.75, seat.z + 0.55)), down),  # the free hand on its knee
-                 'R': (Vector((-1.35, ahead + 0.1, seat.z + 2.2)), Vector((1, -0.4, 0)))},
+    desk_z = seat.z + DESK_ABOVE_SEAT * u  # the desk top, seated at the workbench
+    for pb in rig.pose.bones:
+        pb.rotation_quaternion = base[pb.name]
+    bpy.context.view_layer.update()
+    M = rig.matrix_world
+    torso, head = M @ rig.pose.bones['Torso'].head, M @ rig.pose.bones['Head'].head
+    knee = M @ rig.pose.bones['LowerLeg.L'].head
+    front = torso.y - TORSO['r'][1]  # the chest (the robot faces -Y)
+    hand_z = desk_z + 0.14  # palms just over the keys or the paper
+    down = Vector((0, -1, -0.35))  # fingers forward, tipped down onto the desk
+    targets = {  # palm target and finger direction, per side, placed as in B2's sprites
+        'Rest': {'L': (Vector((0.5, front - 0.35, hand_z)), down), 'R': (Vector((-0.5, front - 0.35, hand_z)), down)},
+        'Type': {'L': (Vector((0.34, front - 0.6, hand_z)), down), 'R': (Vector((-0.34, front - 0.6, hand_z)), down)},
+        'Write': {'L': (Vector((0.5, front - 0.5, hand_z)), down),
+                  'R': (Vector((-0.12, front - 0.62, hand_z + 0.08)), Vector((0.4, -1, -0.6)))},
+        'Hold': {'L': (knee + Vector((0, -0.05, 0.25)), down),  # the free hand on its knee; the tube up beside the head
+                 'R': (Vector((head.x - 1.5, head.y - 0.45, head.z - 0.05)), Vector((1, -0.25, 0)))},
     }
     found, errors = {}, {}
     for name, sides in targets.items():
         found[name] = {}
         for side, (target, fingers) in sides.items():
-            r = reach(rig, side, base, target, fingers)
+            r = reach(rig, side, base, target, fingers, relaxed=not (name == 'Hold' and side == 'R'))
             errors[f'{name}.{side}'] = round(r.pop('error'), 2)
             found[name].update(r)
     motions = {
@@ -579,7 +665,7 @@ def actions(rig, body, scale: float) -> tuple:
     for pb in rig.pose.bones:
         pb.rotation_quaternion = base[pb.name]
     runtime = {'seat_point': [round(v * scale, 4) for v in seat], 'reach_error_units': errors}
-    return runtime, base, found
+    return runtime, base, found, desk_z
 
 
 def main() -> None:
@@ -592,8 +678,8 @@ def main() -> None:
     face(m, rig, body)
     accessories(m, rig)
     scale = HEAD_M / dims['head']
-    runtime, base, found = actions(rig, body, scale)
-    props(m, rig, base, found)
+    runtime, base, found, desk_z = actions(rig, body, scale)
+    prop_names = props(m, rig, base, found, desk_z)
     rig.animation_data.action = None
     # back to rest: bones a clip doesn't key keep whatever pose they hold, and the exporter samples it into
     # every clip
@@ -601,7 +687,7 @@ def main() -> None:
         pb.location, pb.rotation_quaternion, pb.scale = (0, 0, 0), (1, 0, 0, 0), (1, 1, 1)
     root.scale = (scale,) * 3
     info = {'kind': 'character', 'source': 'RobotExpressive.glb (CC0): armature and actions', 'scale': round(scale, 4),
-            'actions': sorted(a.name for a in bpy.data.actions), 'props': ['prop_pencil', 'prop_flask'],
+            'actions': sorted(a.name for a in bpy.data.actions), 'props': prop_names,
             'faces': {'codex': 'robot_eyes', 'claude': 'robot_band'},
             'accessories': {k: f'acc_{k}' for k in ACCESSORIES},
             'arm_bones': list(ARM_BONES), 'warm_groups': [], 'seat_height': None, 'runtime': runtime,

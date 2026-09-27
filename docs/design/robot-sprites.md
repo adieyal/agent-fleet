@@ -209,6 +209,6 @@ Rules for the runtime:
 
 ## Open
 
-- **Scale against B2.** The concept robot's helmet is 0.71 m wide (`HEAD_M` in `build_robot.py`, fitted to the 3D l2 bench); B2's robots, fitted to l2 by head size, have 0.40 m helmets. On the B2 bench in the preview the concept robot is about 1.75 times B2's. One of the two fits is wrong; changing `HEAD_M` means rebuilding the robot and re-rendering the sprites (about 2 hours on the GPU).
+- **The atlases predate the refined model.** `style(art): robot proportions` reshaped the robot (slimmer limbs, taller torso, smaller hands, a helmet 0.40 m wide as B2's) and re-aimed the seated loops; the committed sprites were rendered from the model before it. Re-render with `build_robot_sprites.py` after deleting `art/build/robot_sprites/frames/` (about 2 hours on the GPU). Writing then also gets `item_paper`.
 - **Standing up** cuts from seated to standing: no `StandUp` frames yet.
 

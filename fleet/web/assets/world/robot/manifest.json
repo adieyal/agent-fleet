@@ -36,18 +36,18 @@
   "runtime": {
     "seat_point": [
       0.0,
-      0.2202,
-      0.2115
+      0.1879,
+      0.2107
     ],
     "reach_error_units": {
-      "Rest.L": 0.07,
-      "Rest.R": 0.16,
-      "Type.L": 0.03,
-      "Type.R": 0.05,
+      "Rest.L": 0.02,
+      "Rest.R": 0.12,
+      "Type.L": 0.04,
+      "Type.R": 0.02,
       "Write.L": 0.01,
-      "Write.R": 0.06,
-      "Hold.L": 0.01,
-      "Hold.R": 0.04
+      "Write.R": 0.05,
+      "Hold.L": 0.05,
+      "Hold.R": 0.03
     }
   },
   "camera": null,
@@ -59,16 +59,18 @@
   },
   "files": {
     "robot.glb": {
-      "bytes": 2720232,
-      "sha256": "a0abf6307f2b06fab63c9e62b5e297a71e022bcf613b56d42ee15e147e37325d"
+      "bytes": 3009420,
+      "sha256": "27ef008677a25d55e3564ed62d7ded20dfafe0debf5d3e6e1a0f53c98906fa58"
     }
   },
   "glb_summary": {
-    "nodes": 69,
-    "meshes": 9,
+    "nodes": 71,
+    "meshes": 11,
     "images": 0,
     "extensions": [
-      "KHR_materials_clearcoat"
+      "KHR_materials_clearcoat",
+      "KHR_materials_transmission",
+      "KHR_materials_ior"
     ]
   }
 }
