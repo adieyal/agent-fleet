@@ -64,7 +64,7 @@ def test_crash_reconciles_without_claiming_unconfirmed_revision(tmp_path, monkey
         records.write('p', 'a.md', 'body', key='once', actor='author', source_run='run')
     intent, = records.intents()
     assert intent['revision'] is None
-    reopened = open_records(store)
+    reopened = open_records(open_store(store.path))
     reopened.reconcile()
     result, = reopened.intents()
     assert result['state'] == ('confirmed' if committed else 'failed')
@@ -137,7 +137,7 @@ def test_recovery_cannot_replace_a_newer_document_revision(tmp_path, monkeypatch
     monkeypatch.setattr(records.writer, 'commit', crash)
     with pytest.raises(SystemExit):
         records.write('p', 'same.md', 'old', key='old', actor='author')
-    reopened = open_records(store)
+    reopened = open_records(open_store(store.path))
     result = reopened.write('p', 'same.md', 'new', key='new', actor='author')
     reopened.reconcile()
     assert reopened.read('p', 'same.md') == 'new'

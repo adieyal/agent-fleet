@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
+from functools import cached_property
 from pathlib import Path
 from typing import Callable
 
@@ -39,68 +40,103 @@ def open_store(path: Path | None = None, *, clock: Callable[[], datetime] | None
     return Store(path if path is not None else store_path(), clock)
 
 
+class Facades:
+    def __init__(self, store, unit=None):
+        self.store, self.unit = store, unit
+
+    def bound(self, unit):
+        return facades(self.store, unit)
+
+    @cached_property
+    def attention(self):
+        return AttentionFacade(AttentionRepository(self.store, self.unit), self.store.clock)
+
+    @cached_property
+    def workspace_repository(self):
+        return WorkspaceRepository(self.store, self.unit)
+
+    @cached_property
+    def workspace(self):
+        return WorkspaceFacade(self.workspace_repository)
+
+    @cached_property
+    def records(self):
+        return RecordsFacade(RecordsRepository(self.store), RepositoryWriter(), self.workspace, lambda: self.work)
+
+    @cached_property
+    def work(self):
+        repository = WorkRepository(self.store, lambda unit: self.bound(unit).attention, self.unit)
+        return WorkFacade(repository, FileEvidenceReader(), self.store.clock,
+                          records=self.records, authority=lambda: self.authority)
+
+    @cached_property
+    def execution(self):
+        repository = ExecutionRepository(self.store, self.unit,
+            attention=lambda unit: self.bound(unit).attention,
+            collaborators=lambda unit: (self.bound(unit).work, self.bound(unit).workspace))
+        return ExecutionFacade(repository, self.work, send=send_input,
+            prepare_dispatch=lambda: open_workspace(self.store), authority=lambda: self.authority)
+
+    @cached_property
+    def decisions(self):
+        repository = DecisionRepository(self.store, lambda unit: self.bound(unit).attention,
+            lambda unit: self.bound(unit).work, lambda unit: self.bound(unit).execution)
+        return DecisionsFacade(repository, self.store.clock, self.execution,
+                               records=self.records, authority=lambda: self.authority)
+
+    @cached_property
+    def authority(self):
+        return AuthorityFacade(AuthorityRepository(self.store), self.records, self.work,
+                               self.decisions, self.attention, self.execution)
+
+    @cached_property
+    def library(self):
+        return LibraryFacade(LibraryRepository(self.store, self.unit), self.work)
+
+
+def facades(store=None, unit=None):
+    store = open_store() if store is None else store
+    owner = store if unit is None else unit
+    if not hasattr(owner, '_facades'):
+        owner._facades = Facades(store, unit)
+    return owner._facades
+
+
 def open_attention(store: Store | None = None, *, workspace_path: Path | None = None) -> AttentionFacade:
-    store = store if store is not None else open_store()
-    import_workspace(store, workspace_path if workspace_path is not None else transport.config_path().parent / "workspace.json")
-    return AttentionFacade(AttentionRepository(store), store.clock)
+    services = facades(store)
+    import_workspace(services.store, workspace_path if workspace_path is not None else transport.config_path().parent / 'workspace.json')
+    return services.attention
 
 
 def open_work(store: Store | None = None) -> WorkFacade:
-    store = store if store is not None else open_store()
-    repository = WorkRepository(store, lambda unit: AttentionFacade(AttentionRepository(store, unit), store.clock))
-    work = WorkFacade(repository, FileEvidenceReader(), store.clock, authority=lambda: open_authority(store))
-    work.records = open_records(store, work=work)
-    return work
+    return facades(store).work
 
 
-def open_records(store: Store | None = None, *, work: WorkFacade | None = None) -> RecordsFacade:
-    store = store if store is not None else open_store()
-    if work is None:
-        repository = WorkRepository(store, lambda unit: AttentionFacade(AttentionRepository(store, unit), store.clock))
-        work = WorkFacade(repository, FileEvidenceReader(), store.clock)
-    records = RecordsFacade(RecordsRepository(store), RepositoryWriter(),
-                            WorkspaceFacade(WorkspaceRepository(store)), work)
-    work.records = records
-    return records
+def open_records(store: Store | None = None) -> RecordsFacade:
+    return facades(store).records
 
 
 def open_workspace(store: Store | None = None, *, initial: dict | None = None,
-                   actor: str = "user") -> WorkspaceFacade:
-    repository = WorkspaceRepository(store if store is not None else open_store())
+                   actor: str = 'user') -> WorkspaceFacade:
+    services = facades(store)
     path = transport.config_path()
-    repository.initialize(path, path.parent / "workspace.json", initial)
-    return WorkspaceFacade(repository, actor)
+    services.workspace_repository.initialize(path, path.parent / 'workspace.json', initial)
+    if actor == 'user':
+        return services.workspace
+    return WorkspaceFacade(services.workspace_repository, actor)
 
 
 def open_execution(store: Store | None = None) -> ExecutionFacade:
-    store = store if store is not None else open_store()
-    attention = lambda unit: AttentionFacade(AttentionRepository(store, unit), store.clock)
-
-    def collaborators(unit):
-        work = WorkFacade(WorkRepository(store, lambda bound: AttentionFacade(AttentionRepository(store, bound), store.clock),
-                                        unit), FileEvidenceReader(), store.clock)
-        return work, WorkspaceFacade(WorkspaceRepository(store, unit))
-
-    return ExecutionFacade(ExecutionRepository(store, attention=attention, collaborators=collaborators),
-                           open_work(store), send=send_input,
-                           prepare_dispatch=lambda: open_workspace(store), authority=lambda: open_authority(store))
+    return facades(store).execution
 
 
 def open_library(store: Store | None = None) -> LibraryFacade:
-    store = store if store is not None else open_store()
-    return LibraryFacade(LibraryRepository(store), open_work(store))
+    return facades(store).library
 
 
 def open_decisions(store: Store | None = None) -> DecisionsFacade:
-    store = store if store is not None else open_store()
-    attention = lambda unit: AttentionFacade(AttentionRepository(store, unit), store.clock)
-    work = lambda unit: WorkFacade(WorkRepository(store, attention, unit), FileEvidenceReader(), store.clock)
-    execution = lambda unit: ExecutionFacade(ExecutionRepository(store, unit, attention=attention), work(unit), send=send_input)
-    return DecisionsFacade(DecisionRepository(store, attention, work, execution), store.clock, open_execution(store))
+    return facades(store).decisions
 
 
 def open_authority(store: Store | None = None) -> AuthorityFacade:
-    store = store if store is not None else open_store()
-    return AuthorityFacade(AuthorityRepository(store), open_records(store), open_work(store),
-                           open_decisions(store), AttentionFacade(AttentionRepository(store), store.clock),
-                           open_execution(store))
+    return facades(store).authority

@@ -39,7 +39,7 @@ def test_send_links_created_job(monkeypatch, capsys, start_fails):
         run, = composition.open_execution().runs()
         if arguments[0] == "create":
             assert arguments[arguments.index("--id") + 1] == run.remote_job_id
-        return {"id": run.remote_job_id, "run_id": run.id, "schema_version": 3,
+        return {"id": run.remote_job_id, "run_id": run.id, "schema_version": 4,
                 "fingerprint": arguments[arguments.index("--fingerprint") + 1],
                 "start_requested": arguments[0] == "start",
                 "status": "queued", "steps": [{}], "description": "Task"}

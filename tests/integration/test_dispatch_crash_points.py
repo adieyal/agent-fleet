@@ -148,7 +148,7 @@ fleetd.main()
 
 def test_absent_reconcile_is_versioned():
     arguments = ["reconcile", "missing", "--fingerprint", "digest", "--schema-version"]
-    with pytest.raises(FleetError, match="no such run"):
+    with pytest.raises(FleetError, match="unsupported dispatch schema version"):
         worker_call([*arguments, "3"], None)
     assert worker_call([*arguments, "4"], None) == {
         "schema_version": 4, "run_id": "missing", "fingerprint": "digest", "status": "absent"}
