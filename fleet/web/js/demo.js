@@ -511,6 +511,7 @@ export function demoSource() {
   function blocker(job) {
     const step = job.steps.find(s => s.status === (job.status === 'failed' ? 'failed' : 'running'));
     return { id: `job:${job.host}:${job.id}:${job.status}:${step.index}`, kind: 'blocker', state: 'open', project: job.project,
+      project_id: null, source: 'Demo job', context_reference: `${job.host}:${job.id}`, last_seen: job.updated_at,
       owner: { type: 'job', host: job.host, id: job.id, key: `${job.host}:${job.id}` },
       summary: `step ${step.index + 1} ${job.status}: ${step.title}`, since: job.updated_at };
   }
@@ -589,6 +590,18 @@ export function demoSource() {
         sessions: sessions.filter(s => s.host === name) })),
       { name: 'node-d', ok: false, error: 'node-d: ssh: connect to host 192.0.2.10 port 22: Connection timed out', jobs: [] },
     ] };
+    const first = doc.attention[0];
+    doc.attention.push({ ...first, id: 'demo-release-review', kind: 'decision', summary: 'Review the release plan' });
+    const rooms = {};
+    for (const item of doc.attention) {
+      if (!rooms[item.project]) rooms[item.project] = { count: 0, level: 'open', kind: 'blocker', glyph: '✱', open_ids: [], shown: [], listed: [] };
+      const marker = rooms[item.project];
+      marker.count++;
+      for (const key of ['open_ids', 'shown', 'listed']) marker[key].push(item.id);
+    }
+    doc.attention_display = { rooms, places: [{ place: 'lobby', count: doc.attention.length, level: 'open',
+      kind: 'blocker', glyph: '✱', open_ids: doc.attention.map(item => item.id) }],
+      front_desk: doc.attention.map(item => item.id), open_count: doc.attention.length };
     return JSON.parse(JSON.stringify(doc));
   }
   return tick;

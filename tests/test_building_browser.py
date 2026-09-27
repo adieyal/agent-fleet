@@ -147,6 +147,40 @@ def lanterns(page: Page) -> dict[Any, dict[str, Any]]:
     return {lantern["place"]: lantern for lantern in page.evaluate("fleetBuilding.lanterns()")}
 
 
+@pytest.mark.parametrize("motion", ["reduce", "no-preference"])
+def test_stored_attention_display(browser: Browser, restoke_url: str, motion: str) -> None:
+    with browser.new_context(viewport=DESKTOP, reduced_motion=motion) as context:
+        page = context.new_page()
+        open_building(page, restoke_url)
+        page.evaluate("fleetDeck.advanceTime(0)")
+        before = state(restoke_url)
+        page.evaluate("""doc => {
+            for (const marker of doc.attention_display.places) marker.open_ids = marker.open_ids.map(id => id + ':arrival');
+            fleetDeck.apply(doc);
+        }""", before)
+        lamps = page.evaluate("fleetDeck.lanterns()")
+        assert [(l["place"], l["count"], l["glyph"]) for l in lamps] == [(1, 2, "✱"), (2, 1, "✱")]
+        page.locator('#buildingUi').evaluate("el => el.style.filter = 'grayscale(1)'")
+        expect(page.locator('.floor-lantern[data-place="1"] .lg')).to_have_text("✱")
+        assert all(l["swinging"] == (motion == "no-preference") for l in lamps)
+        page.evaluate("fleetDeck.advanceTime(3)")
+        assert not any(l["swinging"] for l in page.evaluate("fleetDeck.lanterns()"))
+        page.evaluate("doc => fleetDeck.apply(doc)", before)
+        assert not any(l["swinging"] for l in page.evaluate("fleetDeck.lanterns()"))
+        expect(page.locator('[data-attention-context]')).to_have_count(3)
+        page.locator('.front-desk summary').click()
+        page.locator('[data-attention-context]').first.click()
+        expect(page.locator('#reader')).to_be_visible()
+        expect(page.locator('#rdBody')).to_contain_text(before["attention"][0]["summary"])
+        expect(page.locator('#rdBody')).to_contain_text(before["attention"][0]["context_reference"])
+        expect(page.locator('#rdBody')).to_contain_text("Last seen:")
+        assert state(restoke_url)["attention"] == before["attention"]
+        page.keyboard.press("Escape")
+        page.locator('[data-enter="1"]').click()
+        expect(page.locator('#lift [data-lift="1"] .lift-lantern')).to_have_attribute("data-glyph", "✱")
+        assert not any(l["place"] == 3 for l in page.evaluate("fleetDeck.lanterns()"))
+
+
 # ------------------------------------------------------------------ the view switch
 def test_the_deck_stays_the_default_and_the_choice_is_remembered(page: Page, restoke_url: str) -> None:
     page.goto(restoke_url + "/")
@@ -235,6 +269,11 @@ def test_priority_floors_are_open_and_background_floors_windowed(reading_page: P
         return sum(floor_pixels(page, floor)) / 3
     windowed = [floor for floor in floors if floor["mode"] == "windowed"]
     busy = next(floor for floor in windowed if floor["active"])
+    attention_projects = {item["project_id"] for item in state(ten_floors_url)["attention"]}
+    quiet_signal = [floor for floor in windowed if floor["active"] and floor["project"] not in attention_projects]
+    assert quiet_signal
+    lit_places = {lamp["place"] for lamp in page.evaluate("fleetDeck.lanterns()")}
+    assert all(floor["floor"] not in lit_places for floor in quiet_signal)
     quiet = next(floor for floor in windowed if not floor["active"])
     assert warmth(busy) > warmth(quiet) + 4
     busy_open = [floor for floor in floors if floor["mode"] == "open" and floor["active"]]
