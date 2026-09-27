@@ -12,7 +12,7 @@ from fleet.modules.execution import JobObservation
 def setup_dispatch():
     store = composition.open_store()
     workspace = composition.open_workspace(store)
-    project = workspace.move_in(["one", "two"], "demo")["project_id"]
+    project = workspace.move_in(["one", "two"], "demo").project_id
     item = composition.open_work(store).add(project=project, title="Epic", goal="Ship", kind="epic", actor="user")
     return store, workspace, item, composition.open_execution(store)
 

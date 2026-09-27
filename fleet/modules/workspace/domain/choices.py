@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import threading
-from typing import Any, Container, Iterable
+from typing import Container, Iterable
+
+from .records import Focus, ProjectReference, Shuttered, WorkspaceSnapshot
 
 from .building import NoVacancy
 from fleet.errors import FleetError
@@ -26,42 +28,38 @@ class NotShuttered(FleetError):
 class Choices:
     """Workspace choices within one transaction."""
 
-    def __init__(self, initial: dict[str, Any] | None = None) -> None:
+    def __init__(self, initial: WorkspaceSnapshot) -> None:
         self.lock = threading.Lock()
-        initial = initial or {}
         self.focus: dict[str, dict[str, str]] = {"projects": {}, "labels": {}}
         for kind in self.focus:
-            for key, focus in ((initial.get("focus") or {}).get(kind) or {}).items():
+            for key, focus in getattr(initial.focus, kind).items():
                 if focus not in FOCUSES:
                     raise FleetError(f"focus for {kind[:-1]} '{key}' is priority or background, not '{focus}'")
                 self.focus[kind][key] = focus
         self.floors: dict[str, int] = {}
-        for project_id, floor in (initial.get("floors") or {}).items():
+        for project_id, floor in initial.floors.items():
             if isinstance(floor, bool) or not isinstance(floor, int) or floor < 1 or floor in self.floors.values():
                 raise FleetError(f"project '{project_id}' has floor {floor!r}: floors are distinct whole numbers from 1")
             self.floors[project_id] = floor
-        self.shuttered: dict[str, dict[str, Any]] = {}
-        for project_id, record in (initial.get("shuttered") or {}).items():
-            floor = record.get("floor")
-            if project_id in self.floors or not isinstance(record.get("at"), (int, float)) or not (
+        self.shuttered: dict[str, Shuttered] = {}
+        for project_id, record in initial.shuttered.items():
+            floor = record.floor
+            if project_id in self.floors or not isinstance(record.at, (int, float)) or not (
                     floor is None or (isinstance(floor, int) and not isinstance(floor, bool) and floor >= 1)):
                 raise FleetError(f"shuttered project '{project_id}' has an unknown record {record}")
-            self.shuttered[project_id] = {"at": record["at"], "floor": floor}
+            self.shuttered[project_id] = record
 
     # ------------------------------------------------------------ focus
-    def focus_snapshot(self) -> dict[str, dict[str, str]]:
+    def focus_snapshot(self) -> Focus:
         with self.lock:
-            return {kind: dict(choices) for kind, choices in self.focus.items()}
+            return Focus(**{kind: dict(choices) for kind, choices in self.focus.items()})
 
-    def focus_of(self, item: dict[str, Any]) -> str:
+    def focus_of(self, item: ProjectReference) -> str:
         """A job's or session's focus: its project's when linked, else its label's."""
         with self.lock:
-            if item.get("project_id"):
-                return self.focus["projects"].get(item["project_id"], DEFAULT_FOCUS)
-            return self.focus["labels"].get(item.get("project") or "", DEFAULT_FOCUS)
-
-    def annotate(self, item: dict[str, Any]) -> dict[str, Any]:
-        return {**item, "focus": self.focus_of(item)}
+            if item.project_id:
+                return self.focus["projects"].get(item.project_id, DEFAULT_FOCUS)
+            return self.focus["labels"].get(item.project or "", DEFAULT_FOCUS)
 
     def set_focus(self, focus: str, projects: Iterable[str], labels: Iterable[str], known_projects: Container[str]) -> None:
         """Store a choice for registered projects (by ID) and unlinked labels; refuse anything else."""
@@ -108,9 +106,9 @@ class Choices:
                 except NoVacancy:
                     break
 
-    def shuttered_snapshot(self) -> dict[str, dict[str, Any]]:
+    def shuttered_snapshot(self) -> dict[str, Shuttered]:
         with self.lock:
-            return {project_id: dict(record) for project_id, record in self.shuttered.items()}
+            return dict(self.shuttered)
 
     def shutter(self, project_id: str, now: float) -> int | None:
         """Take the project off its floor into the storehouse; return the floor it freed."""
@@ -118,7 +116,7 @@ class Choices:
             if project_id in self.shuttered:
                 raise AlreadyShuttered(f"{project_id} is already in the storehouse")
             floor = self.floors.pop(project_id, None)
-            self.shuttered[project_id] = {"at": now, "floor": floor}
+            self.shuttered[project_id] = Shuttered(now, floor)
             return floor
 
     def restore(self, project_id: str, capacity: int) -> int:
@@ -127,7 +125,7 @@ class Choices:
             record = self.shuttered.get(project_id)
             if record is None:
                 raise NotShuttered(f"{project_id} is not in the storehouse")
-            old = record["floor"]
+            old = record.floor
             if old is not None and old <= capacity and old not in self.floors.values():
                 floor = old
             else:

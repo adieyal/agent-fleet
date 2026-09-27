@@ -28,7 +28,8 @@ from tempfile import TemporaryDirectory
 from typing import Any, Callable
 
 from fleet.composition import open_attention, open_store, open_workspace
-from fleet.modules.workspace import capacity_of, Registry
+from fleet.modules.workspace import Registry
+from fleet.projections.workspace import annotate, resolve, registry_config
 from fleet.transport import FleetError
 from fleet.web.documents import STATUS_LINE, render_markdown
 from fleet.web.live import LiveWorkspace
@@ -40,18 +41,18 @@ class FixtureState(LiveWorkspace):
     def __init__(self, fixture: dict[str, Any]) -> None:
         self.fixture = fixture
         self.project_labels = fixture.get("project_labels", {})
-        self.registry = Registry.from_config({"projects": fixture.get("projects", {})})
-        self.capacity = capacity_of(fixture)
         self.attention_directory = TemporaryDirectory(prefix="fleet-fixture-")
         store = open_store(Path(self.attention_directory.name) / "fleet.db")
         self.workspace = open_workspace(store, initial=fixture, actor="fixture-user")
+        self.registry = self.workspace.registry()
+        self.capacity = self.workspace.capacity()
         self.attention = open_attention(store,
                                         workspace_path=Path(self.attention_directory.name) / "workspace.json")
         self.woken_until = 0.0
         for host in fixture["hosts"]:
             self.attention.observe({**host,
-                "jobs": [self.registry.resolve(host["name"], job) for job in host["jobs"]],
-                "sessions": [self.registry.resolve(host["name"], session) for session in host["sessions"]]})
+                "jobs": [resolve(self.registry, host["name"], job) for job in host["jobs"]],
+                "sessions": [resolve(self.registry, host["name"], session) for session in host["sessions"]]})
         self.changed = threading.Condition()
         self.version = 0
         self.pipeline_config = fixture.get("pipelines", {})
@@ -80,10 +81,10 @@ class FixtureState(LiveWorkspace):
         self.registry = self.workspace.registry()
         with self.changed:
             document = self.with_attention({"time": self.fixture["time"], "project_labels": self.project_labels,
-                    "projects": [{"id": project_id, **entry} for project_id, entry in self.registry.to_config().items()],
+                    "projects": [{"id": project_id, **entry} for project_id, entry in registry_config(self.registry).items()],
                     "projects_error": None, "hosts": [
-                {**host, "jobs": [self.workspace.annotate(self.registry.resolve(host["name"], job)) for job in host["jobs"]],
-                 "sessions": [self.workspace.annotate(self.registry.resolve(host["name"], session))
+                {**host, "jobs": [annotate(self.workspace, resolve(self.registry, host["name"], job)) for job in host["jobs"]],
+                 "sessions": [annotate(self.workspace, resolve(self.registry, host["name"], session))
                               for session in host["sessions"]]}
                 for host in self.fixture["hosts"]]})
         document = self.with_building(document, self.registry)
