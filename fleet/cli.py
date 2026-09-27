@@ -293,11 +293,13 @@ def command_dispatch(arguments: argparse.Namespace) -> None:
     except (ValueError, LookupError) as error:
         raise FleetError(str(error)) from error
     if not intent.created:
-        print(json.dumps({"job": f"{intent.run.host}:{intent.run.remote_job_id}", "status": intent.run.status,
+        if intent.run.status == "unknown outcome":
+            deliver_dispatch(intent.run, reconcile=True)
+        current = next(run for run in execution.runs() if run.id == intent.run.id)
+        print(json.dumps({"job": f"{intent.run.host}:{intent.run.remote_job_id}", "status": current.status,
                           "run": intent.run.id, "action": intent.run.action, "steps": len(steps)}))
         return
-    action = next(action for action in execution.actions() if action.id == intent.run.action)
-    job = deliver_dispatch(intent.run, action.payload)
+    job = deliver_dispatch(intent.run)
     reference = f"{host.name}:{job['id']}"
     if arguments.json:
         print(json.dumps({"job": reference, "status": job["status"], "steps": len(job["steps"])}))
@@ -307,21 +309,11 @@ def command_dispatch(arguments: argparse.Namespace) -> None:
         wait_for([reference], step=None, timeout=None, as_json=arguments.json)
 
 
-def deliver_dispatch(run: Run, payload: dict) -> dict:
+def deliver_dispatch(run: Run, *, reconcile: bool = False) -> dict:
     host = transport.host_by_name(run.host)
-    arguments = list(payload["arguments"])
-    if "--id" in arguments:
-        index = arguments.index("--id")
-        del arguments[index:index + 2]
-    arguments += ["--id", run.remote_job_id]
-    job = transport.call(host, arguments, stdin_text=json.dumps(payload["steps"]))
-    if job["id"] != run.remote_job_id:
-        raise FleetError("worker returned a different job ID; run outcome is unknown")
-    if payload["context"]:
-        push_context(host, job["id"], payload["context"])
-    if not payload["hold"]:
-        job = transport.call(host, ["start", job["id"]])
-    return job
+    return open_execution().deliver(run,
+        lambda arguments, stdin: transport.call(host, arguments, stdin_text=stdin),
+        lambda job, context: push_context(host, job, context), reconcile=reconcile)
 
 
 def command_run_retry(arguments: argparse.Namespace) -> None:
@@ -333,8 +325,7 @@ def command_run_retry(arguments: argparse.Namespace) -> None:
     except (ValueError, LookupError) as error:
         raise FleetError(str(error)) from error
     if intent.created:
-        action = next(action for action in execution.actions() if action.id == intent.run.action)
-        deliver_dispatch(intent.run, action.payload)
+        deliver_dispatch(intent.run)
     print(json.dumps(asdict(intent.run), default=str))
 
 

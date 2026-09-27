@@ -42,8 +42,9 @@ TMUX_PREFIX = "fleet-"
 # A private tmux server without the user's config: personal configs can take seconds to load.
 TMUX_COMMAND = ["tmux", "-L", "fleet", "-f", "/dev/null"]
 SUMMARY_LENGTH = 160
-TERMINAL_STATUSES = ("done", "failed", "cancelled")
-STREAM_PROTOCOL_VERSION = 2
+TERMINAL_STATUSES = ("done", "failed", "cancelled", "lost")
+STREAM_PROTOCOL_VERSION = 3
+DISPATCH_SCHEMA_VERSION = 3
 
 JsonObject = Dict[str, Any]
 
@@ -90,7 +91,10 @@ def locked_job(job_id: str) -> Iterator[JsonObject]:
     with open(directory / ".lock", "w") as lock_file:
         fcntl.flock(lock_file, fcntl.LOCK_EX)
         job = json.loads((directory / "job.json").read_text())
+        before = json.dumps(job, sort_keys=True)
         yield job
+        if json.dumps(job, sort_keys=True) == before:
+            return
         job["updated_at"] = now()
         temporary_path = directory / "job.json.tmp"
         temporary_path.write_text(json.dumps(job, indent=1))
@@ -134,13 +138,18 @@ def tmux_session(job_id: str) -> str:
 
 
 def runner_alive(job: JsonObject) -> bool:
-    process_id = job.get("runner_pid")
+    return process_alive(job.get("runner_pid"))
+
+
+def process_alive(process_id: Optional[int]) -> bool:
     if not process_id:
         return False
     try:
         os.kill(process_id, 0)
-    except OSError:
+    except ProcessLookupError:
         return False
+    except PermissionError:
+        return True
     return True
 
 
@@ -148,8 +157,14 @@ def derive_status(job: JsonObject) -> str:
     if job.get("cancelled"):
         return "cancelled"
     steps = job["steps"]
+    if any(step.get("reason") == "lost" for step in steps):
+        return "lost"
     if any(step["status"] == "running" for step in steps):
-        return "running" if runner_alive(job) else "stalled"
+        if runner_alive(job):
+            return "running"
+        if job.get("agent_pid") is not None and not process_alive(job["agent_pid"]):
+            return "lost"
+        return "stalled"
     if any(step["status"] == "failed" for step in steps):
         return "failed"
     if any(step["status"] == "pending" for step in steps):
@@ -416,6 +431,7 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
     command = agent_command(job, step, job.get("session_id"))
     append_event(job_id, {"kind": "step", "step": step["index"], "status": "running", "summary": step["title"]})
     outcome: JsonObject = {"ok": False, "summary": "", "text": ""}
+    result_recorded = False
     last_text = ""
     raw_path = JOBS_DIRECTORY / job_id / f"raw-{step['index']}.jsonl"
     with open(raw_path, "a") as raw_file:
@@ -433,6 +449,8 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
                 if line.strip():
                     append_event(job_id, {"kind": "log", "step": step["index"], "summary": shorten(line)})
                 continue
+            if job["agent"] == "codex" and record.get("type") in ("turn.completed", "turn.failed"):
+                result_recorded = True
             for event in parser.parse(record):
                 event["step"] = step["index"]
                 if event["kind"] == "session" and event.get("session_id"):
@@ -447,6 +465,7 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
                 if event["kind"] == "text":
                     last_text = event.pop("text", None) or event["summary"]
                 if event["kind"] == "result":
+                    result_recorded = True
                     outcome = {"ok": event["ok"], "summary": event["summary"], "text": event.pop("text", "")}
                 append_event(job_id, event)
         exit_code = process.wait()
@@ -455,6 +474,8 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
     elif not outcome["summary"] and exit_code != 0:
         outcome["summary"] = f"agent exited with code {exit_code}"
     outcome["exit_code"] = exit_code
+    if exit_code < 0 and not result_recorded:
+        outcome["reason"] = "lost"
     reported = reported_status(outcome.get("text") or outcome["summary"])
     if reported is not None:
         outcome["reported_status"] = reported
@@ -491,6 +512,8 @@ def run_job(job_id: str) -> None:
                     live_step["status"] = "done" if outcome["ok"] else "failed"
                 live_step["finished_at"] = now()
                 live_step["result"] = outcome["summary"]
+                if "reason" in outcome:
+                    live_step["reason"] = outcome["reason"]
                 (JOBS_DIRECTORY / job_id / f"result-{step['index']}.md").write_text(outcome.get("text") or outcome["summary"])
                 job["agent_pid"] = None
                 stop = live_step["status"] != "done" and job.get("stop_on_failure", True)
@@ -531,6 +554,8 @@ def job_summary(job: JsonObject, event_count: int) -> JsonObject:
     activity = next((event for event in reversed(events) if event.get("kind") in ("tool", "text", "error")), None)
     return {
         "id": job["id"], "host": os.uname().nodename, "project": job["project"],
+        "schema_version": DISPATCH_SCHEMA_VERSION, "run_id": job.get("run_id"),
+        "fingerprint": job.get("fingerprint"), "start_requested": job.get("start_requested"),
         "description": job["description"], "agent": job["agent"], "model": job.get("model"),
         "cwd": job["cwd"], "permission": job["permission"], "status": status,
         "created_at": job["created_at"], "updated_at": job.get("updated_at"),
@@ -1225,10 +1250,9 @@ def parse_steps(steps_json: str) -> List[JsonObject]:
 
 
 def command_create(arguments: argparse.Namespace) -> None:
+    validate_dispatch(arguments)
     job_id = arguments.id or secrets.token_hex(3)
     directory = JOBS_DIRECTORY / job_id
-    if directory.exists():
-        fail(f"job already exists: {job_id}")
     cwd = os.path.abspath(os.path.expanduser(arguments.cwd))
     if not os.path.isdir(cwd):
         fail(f"working directory does not exist on {os.uname().nodename}: {cwd}")
@@ -1238,8 +1262,6 @@ def command_create(arguments: argparse.Namespace) -> None:
              for index, item in enumerate(parse_steps(Path(arguments.steps_file).read_text()))]
     if not steps:
         fail("a job needs at least one step")
-    (directory / "context").mkdir(parents=True)
-    (directory / "outbox").mkdir()
     job = {"id": job_id, "project": arguments.project, "description": arguments.description,
            "agent": arguments.agent, "model": arguments.model, "cwd": cwd, "permission": arguments.permission,
            "stop_on_failure": not arguments.keep_going, "created_at": now(), "updated_at": now(),
@@ -1247,11 +1269,64 @@ def command_create(arguments: argparse.Namespace) -> None:
            "add_dirs": [os.path.abspath(os.path.expanduser(directory)) for directory in arguments.add_dir],
            "env": dict(pair.split("=", 1) for pair in arguments.env),
            "steps": steps, "todos": [], "session_id": None, "runner_pid": None, "agent_pid": None}
-    (directory / "job.json").write_text(json.dumps(job, indent=1))
-    append_event(job_id, {"kind": "job", "status": "queued", "summary": f"job created: {arguments.description}"})
+    if arguments.run_id is not None:
+        definition = {key: value for key, value in job.items() if key not in ("created_at", "updated_at")}
+        job.update(run_id=arguments.run_id, fingerprint=arguments.fingerprint,
+                   definition_fingerprint=hashlib.sha256(json.dumps(definition, sort_keys=True).encode()).hexdigest(),
+                   start_requested=False)
+    JOBS_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    with open(JOBS_DIRECTORY / ".create-lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        existing = next((candidate for candidate in all_jobs()
+                         if arguments.run_id is not None and candidate.get("run_id") == arguments.run_id), None)
+        if existing is None and directory.exists():
+            existing = read_job(job_id)
+        if existing is not None:
+            if arguments.run_id is None:
+                fail(f"job already exists: {job_id}")
+            if any(existing.get(key) != job[key] for key in
+                   ("run_id", "fingerprint", "definition_fingerprint")):
+                fail("run fingerprint has changed payload")
+        else:
+            (directory / "context").mkdir(parents=True)
+            (directory / "outbox").mkdir()
+            (directory / "job.json").write_text(json.dumps(job, indent=1))
+            append_event(job_id, {"kind": "job", "status": "queued", "summary": f"job created: {arguments.description}"})
     if not arguments.hold:
-        launch_runner(job_id)
+        start_job(job_id, arguments)
     emit(job_summary(read_job(job_id), 0))
+
+
+def validate_dispatch(arguments: argparse.Namespace) -> None:
+    if arguments.run_id is None and arguments.schema_version is None and arguments.fingerprint is None:
+        return
+    if arguments.schema_version != DISPATCH_SCHEMA_VERSION or not arguments.run_id or not arguments.fingerprint:
+        fail("dispatch requires schema version 3, run ID and fingerprint")
+
+
+def start_job(job_id: str, arguments: argparse.Namespace) -> None:
+    validate_dispatch(arguments)
+    with locked_job(job_id) as job:
+        if job.get("run_id") is not None:
+            if job["run_id"] != arguments.run_id or job["fingerprint"] != arguments.fingerprint:
+                fail("run fingerprint has changed payload")
+            if job["start_requested"]:
+                return
+            job["start_requested"] = True
+        elif arguments.run_id is not None:
+            fail("job has no run fingerprint")
+    launch_runner(job_id)
+
+
+def command_reconcile(arguments: argparse.Namespace) -> None:
+    if arguments.schema_version != DISPATCH_SCHEMA_VERSION:
+        fail("unsupported dispatch schema version")
+    job = next((job for job in all_jobs() if job.get("run_id") == arguments.run_id), None)
+    if job is None:
+        fail(f"no such run: {arguments.run_id}")
+    if job["fingerprint"] != arguments.fingerprint:
+        fail("run fingerprint has changed payload")
+    emit(job_summary(job, 0))
 
 
 def command_deliver(arguments: argparse.Namespace) -> None:
@@ -1306,7 +1381,7 @@ def command_add(arguments: argparse.Namespace) -> None:
 
 
 def command_start(arguments: argparse.Namespace) -> None:
-    launch_runner(arguments.job)
+    start_job(arguments.job, arguments)
     emit(job_summary(read_job(arguments.job), 0))
 
 
@@ -1363,7 +1438,7 @@ def command_stream(arguments: argparse.Namespace) -> None:
                 signature = job_signature(path.parent)
                 if ignored.get(job_id) == signature:
                     continue
-                # Unchanged files only matter while a runner is alive: its death means "stalled".
+                # Recheck processes until both runner and agent have ended.
                 if signature == signatures.get(job_id) and not runner_states.get(job_id):
                     seen.add(job_id)
                     continue
@@ -1376,7 +1451,7 @@ def command_stream(arguments: argparse.Namespace) -> None:
                     ignored[job_id] = signature
                     continue
                 seen.add(job_id)
-                alive = runner_alive(job)
+                alive = runner_alive(job) or process_alive(job.get("agent_pid"))
                 if signature != signatures.get(job_id) or alive != runner_states.get(job_id):
                     emit({"type": "job", "job": job_summary(job, arguments.events)})
                 signatures[job_id] = signature
@@ -1527,6 +1602,9 @@ def main() -> None:
 
     create = commands.add_parser("create")
     create.add_argument("--id")
+    create.add_argument("--run-id")
+    create.add_argument("--fingerprint")
+    create.add_argument("--schema-version", type=int)
     create.add_argument("--project", required=True)
     create.add_argument("--description", required=True)
     create.add_argument("--agent", choices=("claude", "codex"), required=True)
@@ -1550,7 +1628,16 @@ def main() -> None:
 
     start = commands.add_parser("start")
     start.add_argument("job")
+    start.add_argument("--run-id")
+    start.add_argument("--fingerprint")
+    start.add_argument("--schema-version", type=int)
     start.set_defaults(handler=command_start)
+
+    reconcile = commands.add_parser("reconcile")
+    reconcile.add_argument("run_id")
+    reconcile.add_argument("--fingerprint", required=True)
+    reconcile.add_argument("--schema-version", type=int, required=True)
+    reconcile.set_defaults(handler=command_reconcile)
 
     listing = commands.add_parser("ls")
     listing.add_argument("--all", action="store_true")

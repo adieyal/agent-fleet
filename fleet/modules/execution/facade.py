@@ -7,6 +7,7 @@ from .application.ports import ExecutionRepository, InputSender
 from .domain import Action, Claim, Delivery, DispatchResult, JobObservation, Run
 from fleet.modules.attention import AttentionItem
 from .application.dispatch import dispatch, retry, resolve_unknown
+from .application.worker import deliver
 from fleet.modules.work import WorkFacade
 
 if TYPE_CHECKING:
@@ -41,6 +42,9 @@ class ExecutionFacade:
         if self.prepare_dispatch is not None:
             self.prepare_dispatch()
         return dispatch(self.repository, work_item, **arguments)
+
+    def deliver(self, run: Run, call: Callable, push: Callable, *, reconcile: bool = False) -> dict:
+        return deliver(self.repository, run, call, push, reconcile=reconcile)
 
     def retry(self, run: str, *, actor: str, idempotency_key: str) -> DispatchResult:
         return retry(self.repository, run, actor=actor, idempotency_key=idempotency_key)
