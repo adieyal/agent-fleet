@@ -21,6 +21,23 @@ class WorkspaceRepository:
         with closing(connect(self.store.path)) as connection:
             return json.loads(connection.execute("SELECT record FROM workspace_state WHERE id = 1").fetchone()[0])
 
+    def management_repository(self, project: str) -> str:
+        with closing(connect(self.store.path)) as connection:
+            row = connection.execute('SELECT path FROM workspace_management WHERE project = ?', (project,)).fetchone()
+        if row is None:
+            raise ValueError(f'management repository not registered for {project}')
+        return row['path']
+
+    def register_management_repository(self, project: str, path: str, actor: str) -> None:
+        with self.store.unit_of_work() as unit:
+            row = unit.connection.execute('SELECT path FROM workspace_management WHERE project = ?', (project,)).fetchone()
+            if row is not None:
+                if row['path'] != path:
+                    raise ValueError('management repository already registered')
+                return
+            unit.connection.execute('INSERT INTO workspace_management VALUES (?, ?)', (project, path))
+            unit.record_change('workspace:management:' + project, '', path, actor)
+
     @contextmanager
     def transaction(self, actor: str):
         with self.store.unit_of_work() as unit:

@@ -18,6 +18,14 @@ class WorkspaceFacade:
     def snapshot(self) -> dict:
         return self.application.snapshot()
 
+    def register_management_repository(self, project: str, path: str, *, actor: str) -> None:
+        if not project.strip() or not actor.strip():
+            raise ValueError('project and actor are required')
+        self.application.repository.register_management_repository(project, path, actor)
+
+    def management_repository(self, project: str) -> str:
+        return self.application.repository.management_repository(project)
+
     def registry(self) -> Registry:
         return self.application.registry()
 

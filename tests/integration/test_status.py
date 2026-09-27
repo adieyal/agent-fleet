@@ -1,12 +1,16 @@
 import json
+import subprocess
 
 from fleet import cli, transport
-from fleet.composition import open_attention, open_decisions, open_execution, open_library, open_store, open_work
+from fleet.composition import open_attention, open_decisions, open_execution, open_library, open_records, open_store, open_work
 from fleet.projections.project import project_status
 
 
-def test_phase1_status_after_reopening_store_without_hosts(monkeypatch, capsys):
+def test_phase1_status_after_reopening_store_without_hosts(monkeypatch, capsys, tmp_path):
     store = open_store()
+    repo = tmp_path / 'management'
+    subprocess.run(['git', 'init', str(repo)], check=True, capture_output=True, timeout=10)
+    open_records(store).register('p', repo, actor='user')
     work, attention = open_work(store), open_attention(store)
     epic = work.add(project="p", title="Supplier slice", goal="Migrate suppliers", kind="epic",
                     next_step="Choose mapping", actor="user")
