@@ -109,6 +109,8 @@ class FleetState(LiveWorkspace):
             sequence = self.store.latest_sequence()
             mutate(self.by_host[host_name])
             self.by_host[host_name] = deepcopy(self.by_host[host_name])
+            if self.by_host[host_name]["ok"] and previous != self.by_host[host_name]:
+                self.execution.retry_deliveries(host_name)
             reconciled = False
             if ingest:
                 host = self.by_host[host_name]

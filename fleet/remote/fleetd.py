@@ -1254,6 +1254,39 @@ def command_create(arguments: argparse.Namespace) -> None:
     emit(job_summary(read_job(job_id), 0))
 
 
+def command_deliver(arguments: argparse.Namespace) -> None:
+    if arguments.schema_version != 1:
+        fail("unsupported delivery schema version")
+    answer = sys.stdin.read()
+    if not arguments.key.strip() or not answer.strip():
+        fail("delivery key and answer are required")
+    directory = job_directory(arguments.job)
+    with open(directory / ".delivery-lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        with locked_job(arguments.job) as job:
+            step = next((step for step in job["steps"] if step.get("delivery_key") == arguments.key), None)
+            if step is not None:
+                if step["prompt"] != answer:
+                    fail("delivery key has changed payload")
+            else:
+                if not job["session_id"]:
+                    fail("job has no session to resume")
+                if runner_alive(job):
+                    fail("session turn is still running; retry after it exits")
+                if job["cancelled"]:
+                    fail("job is cancelled")
+                step = make_step(len(job["steps"]), answer, "Answer")
+                step["delivery_key"] = arguments.key
+                job["steps"].append(step)
+            pending = step["status"] == "pending"
+        if pending:
+            launch_runner(arguments.job)
+        step = next(step for step in read_job(arguments.job)["steps"] if step.get("delivery_key") == arguments.key)
+        if step["status"] == "pending":
+            fail("answer step has not started; retry delivery")
+    emit({"schema_version": 1, "key": arguments.key, "status": "applied"})
+
+
 def command_add(arguments: argparse.Namespace) -> None:
     new_steps = parse_steps(Path(arguments.steps_file).read_text())
     with locked_job(arguments.job) as job:
@@ -1483,6 +1516,12 @@ def command_configure(arguments: argparse.Namespace) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(prog="fleetd")
     commands = parser.add_subparsers(dest="command", required=True)
+
+    deliver = commands.add_parser("deliver")
+    deliver.add_argument("job")
+    deliver.add_argument("--key", required=True)
+    deliver.add_argument("--schema-version", type=int, required=True)
+    deliver.set_defaults(handler=command_deliver)
 
     create = commands.add_parser("create")
     create.add_argument("--id")

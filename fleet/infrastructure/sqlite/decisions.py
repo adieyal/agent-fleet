@@ -8,6 +8,7 @@ from typing import Callable
 from fleet.modules.attention import AttentionFacade
 from fleet.modules.decisions import Decision
 from fleet.modules.work import WorkFacade
+from fleet.modules.execution import ExecutionFacade
 from .repository import Repository
 from .store import Store, UnitOfWork
 
@@ -21,13 +22,16 @@ def decode(payload: str) -> Decision:
 
 class DecisionRepository(Repository):
     def __init__(self, store: Store, attention: Callable[[UnitOfWork], AttentionFacade],
-                 work: Callable[[UnitOfWork], WorkFacade]) -> None:
+                 work: Callable[[UnitOfWork], WorkFacade],
+                 execution: Callable[[UnitOfWork], ExecutionFacade]) -> None:
         super().__init__(store)
         self.attention_factory, self.work_factory = attention, work
+        self.execution_factory = execution
 
     def bind(self, unit: UnitOfWork) -> None:
         self.attention = self.attention_factory(unit)
         self.work = self.work_factory(unit)
+        self.execution = self.execution_factory(unit)
 
     def insert(self, decision: Decision) -> None:
         if self.unit is None:

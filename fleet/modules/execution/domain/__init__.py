@@ -5,6 +5,17 @@ from datetime import datetime
 
 
 @dataclass(frozen=True)
+class Delivery:
+    key: str
+    decision: str
+    run: str
+    answer: str
+    status: str = "pending"
+    failures: int = 0
+    error: str | None = None
+
+
+@dataclass(frozen=True)
 class JobObservation:
     job: str
     status: str

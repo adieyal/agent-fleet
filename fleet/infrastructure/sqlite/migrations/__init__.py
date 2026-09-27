@@ -71,4 +71,7 @@ MIGRATIONS = (
         """CREATE TRIGGER decisions_no_delete BEFORE DELETE ON decisions_decision
            BEGIN SELECT RAISE(ABORT, 'decisions are immutable'); END""",
     ),
+    (
+        "CREATE TABLE execution_delivery (id TEXT PRIMARY KEY, record TEXT NOT NULL)",
+    ),
 )
