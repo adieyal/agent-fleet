@@ -515,6 +515,13 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 .rd-actions button.ok{color:#3fa66a;border-color:#3fa66a}
 .rd-actions svg{width:15px;height:15px;flex:none}
 .rd-actions .rd-x{width:34px;padding:0;justify-content:center;font-size:15px}
+.decision-answer{display:grid;gap:16px;font:16px/1.5 var(--sans)}
+.decision-answer label{display:block}
+.decision-answer textarea{display:block;box-sizing:border-box;width:100%;padding:10px;resize:vertical}
+.decision-answer textarea,.decision-answer button,.decision-answer fieldset{border:1px solid var(--rd-rule);border-radius:6px;background:var(--rd-bg2);color:var(--rd-text)}
+.decision-answer button{padding:10px 16px;justify-self:start;cursor:pointer}
+.decision-answer button:disabled{opacity:.6;cursor:default}
+.decision-answer [role="alert"]{color:var(--rd-bad)}
 .rd-body{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--rd-rule) transparent}
 .rd-grid{--rd-size:18.5px;font:400 var(--rd-size)/1.65 var(--serif);display:grid;grid-template-columns:minmax(0,68ch);justify-content:center;
   column-gap:64px;padding:52px 32px 140px}
