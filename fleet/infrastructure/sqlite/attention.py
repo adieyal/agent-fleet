@@ -1,18 +1,17 @@
 """SQLite persistence for the Attention module."""
 
-from contextlib import closing, contextmanager
 from dataclasses import asdict
 from datetime import datetime
 import json
-from typing import Iterator
 
 from fleet.modules.attention import AttentionItem, ImportedAction, StreamContext
 
-from .store import Store, UnitOfWork, connect
+from .repository import Repository
 
 
 def decode(row) -> AttentionItem:
     values = dict(row)
+    values["options"] = tuple(json.loads(values["options"]))
     if values["stream_context"] is not None:
         values["stream_context"] = StreamContext(**json.loads(values["stream_context"]))
     for name in ("last_seen", "snooze_until", "acknowledged_at", "resolved_at"):
@@ -21,25 +20,7 @@ def decode(row) -> AttentionItem:
     return AttentionItem(**values)
 
 
-class AttentionRepository:
-    def __init__(self, store: Store, work: UnitOfWork | None = None) -> None:
-        self.store = store
-        self.work = work
-
-    @contextmanager
-    def transaction(self) -> Iterator["AttentionRepository"]:
-        if self.work is not None:
-            yield self
-            return
-        with self.store.unit_of_work() as work:
-            yield AttentionRepository(self.store, work)
-
-    def rows(self, query: str, parameters: tuple = ()) -> list:
-        if self.work is not None:
-            return self.work.connection.execute(query, parameters).fetchall()
-        with closing(connect(self.store.path)) as connection:
-            return connection.execute(query, parameters).fetchall()
-
+class AttentionRepository(Repository):
     def get(self, item_id: str) -> AttentionItem:
         rows = self.rows("SELECT * FROM attention_item WHERE id = ?", (item_id,))
         if not rows:
@@ -63,9 +44,10 @@ class AttentionRepository:
                               datetime.fromisoformat(row["until"]) if row["until"] is not None else None)
 
     def save(self, item: AttentionItem, previous: str | None, actor: str) -> None:
-        if self.work is None:
+        if self.unit is None:
             raise RuntimeError("attention writes require a transaction")
         values = asdict(item)
+        values["options"] = json.dumps(values["options"])
         if values["stream_context"] is not None:
             values["stream_context"] = json.dumps(values["stream_context"])
         for name in ("last_seen", "snooze_until", "acknowledged_at", "resolved_at"):
@@ -74,7 +56,7 @@ class AttentionRepository:
         columns = ", ".join(values)
         parameters = ", ".join("?" for _ in values)
         updates = ", ".join(f"{key} = excluded.{key}" for key in values if key != "id")
-        self.work.connection.execute(
+        self.unit.connection.execute(
             f"INSERT INTO attention_item ({columns}) VALUES ({parameters}) ON CONFLICT(id) DO UPDATE SET {updates}",
             tuple(values.values()))
-        self.work.record_change(f"attention:{item.id}", previous if previous is not None else "", item.state, actor)
+        self.unit.record_change(f"attention:{item.id}", previous if previous is not None else "", item.state, actor)

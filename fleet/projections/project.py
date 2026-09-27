@@ -5,7 +5,10 @@ from datetime import datetime
 from typing import Any
 
 from fleet.modules.attention import AttentionFacade
-from fleet.modules.work import WorkFacade
+from fleet.modules.decisions import DecisionsFacade
+from fleet.modules.execution import ExecutionFacade, Run
+from fleet.modules.library import LibraryFacade
+from fleet.modules.work import WorkFacade, WorkItem
 
 
 def _json_value(value: Any) -> Any:
@@ -18,18 +21,46 @@ def _json_value(value: Any) -> Any:
     return value
 
 
-def project_status(project: str, work: WorkFacade, attention: AttentionFacade) -> dict[str, Any]:
+def no_follow_up_yet(item: WorkItem, runs: list[Run]) -> bool | None:
+    failed = [run for run in runs if run.status == "failed"]
+    if not failed:
+        return False
+    if not item.next_step:
+        return True
+    recorded = item.next_step_recorded_at
+    if recorded is None:
+        return None
+    if any(run.end is not None and recorded <= run.end for run in failed):
+        return True
+    if any(run.end is None for run in failed):
+        return None
+    return False
+
+
+def project_status(project: str, work: WorkFacade, attention: AttentionFacade,
+                   execution: ExecutionFacade, library: LibraryFacade,
+                   decisions: DecisionsFacade) -> dict[str, Any]:
     items = work.list(project=project)
     open_items = attention.list(project=project, state="open")
+    actions = {action.id: action.work_item for action in execution.actions()}
+    runs = execution.runs()
+    entries = library.list()
+    answers = decisions.list()
     nodes = {}
     for item in items:
         summary = work.summary(item.id)
+        item_runs = [run for run in runs if actions[run.action] == item.id]
         nodes[item.id] = {
             **asdict(item),
             "progress": asdict(work.progress(item.id)),
             "criteria": [asdict(criterion) for criterion in work.criteria(item.id)],
             "summary": asdict(summary) if summary is not None else None,
             "attention": [asdict(entry) for entry in open_items if entry.work_item == item.id],
+            "decisions": [asdict(answer) for answer in answers if item.id in answer.affected_work_items],
+            "runs": [asdict(run) for run in item_runs],
+            "library": [asdict(entry) for entry in entries
+                        if entry.project == project and entry.work_item == item.id],
+            "no_follow_up_yet": no_follow_up_yet(item, item_runs),
             "children": [],
         }
     roots = []

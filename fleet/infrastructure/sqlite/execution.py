@@ -1,13 +1,13 @@
 """Atomic action/run links and their state history."""
 
 import json
-from contextlib import closing, contextmanager
 from dataclasses import asdict
 from datetime import datetime
-from typing import Callable, Iterator
+from typing import Callable
 
 from fleet.modules.execution import Action, Claim, Run
-from .store import Store, UnitOfWork, connect
+from .store import Store, UnitOfWork
+from .repository import Repository
 
 
 def decode_run(payload: str) -> Run:
@@ -18,24 +18,17 @@ def decode_run(payload: str) -> Run:
     return Run(**values)
 
 
-class ExecutionRepository:
+class ExecutionRepository(Repository):
     def __init__(self, store: Store, unit: UnitOfWork | None = None,
                  collaborators: Callable | None = None) -> None:
-        self.store, self.unit = store, unit
+        super().__init__(store, unit)
         self.collaborators = collaborators
-        if unit is not None and collaborators is not None:
-            self.work, self.workspace = collaborators(unit)
+        if unit is not None:
+            self.bind(unit)
 
-    @contextmanager
-    def transaction(self) -> Iterator["ExecutionRepository"]:
-        with self.store.unit_of_work() as unit:
-            yield ExecutionRepository(self.store, unit, self.collaborators)
-
-    def rows(self, query: str, parameters: tuple = ()) -> list:
-        if self.unit is not None:
-            return self.unit.connection.execute(query, parameters).fetchall()
-        with closing(connect(self.store.path)) as connection:
-            return connection.execute(query, parameters).fetchall()
+    def bind(self, unit: UnitOfWork) -> None:
+        if self.collaborators is not None:
+            self.work, self.workspace = self.collaborators(unit)
 
     def find(self, host: str, job: str) -> Run | None:
         rows = self.rows("SELECT record FROM execution_run WHERE host = ? AND remote_job_id = ?", (host, job))

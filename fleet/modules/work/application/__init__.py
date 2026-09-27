@@ -28,7 +28,8 @@ class Commands:
     def add(self, *, actor: str, **fields) -> WorkItem:
         required(actor, "actor")
         now = self.clock()
-        item = WorkItem(id=str(uuid4()), created=now, updated=now, **fields)
+        item = WorkItem(id=str(uuid4()), created=now, updated=now,
+                        next_step_recorded_at=now if fields["next_step"] is not None else None, **fields)
         with self.repository.transaction() as repository:
             self.parent(repository, item)
             repository.save("item", item, actor)
@@ -45,7 +46,10 @@ class Commands:
                 if previous.condition != "waiting":
                     raise ValueError("only waiting work can become ready")
                 changes["condition"] = "ready for review"
-            item = replace(previous, **changes, updated=self.clock())
+            now = self.clock()
+            if "next_step" in changes:
+                changes["next_step_recorded_at"] = now if changes["next_step"] is not None else None
+            item = replace(previous, **changes, updated=now)
             self.parent(repository, item)
             if item.condition == "blocked" and previous.condition != "blocked":
                 repository.attention.raise_item(project=item.project, work_item=item.id, kind="blocker",
@@ -57,6 +61,19 @@ class Commands:
                         repository.attention.resolve(blocker.id, details="Work item unblocked", actor=actor)
             repository.save("item", item, actor)
         return item
+
+    def apply_answer(self, identity: str, *, actor: str, next_step: str | None) -> WorkItem:
+        required(actor, "actor")
+        with self.repository.transaction() as repository:
+            item = repository.get("item", identity)
+            changes = {}
+            if item.condition == "blocked":
+                changes["condition"] = "none"
+            if next_step is not None:
+                changes["next_step"] = next_step
+            if changes:
+                return self.change(identity, actor, **changes)
+            return item
 
     def add_criterion(self, identity: str, *, actor: str, **fields) -> Criterion:
         required(actor, "actor")

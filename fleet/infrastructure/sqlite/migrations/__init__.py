@@ -61,6 +61,17 @@ MIGRATIONS = (
         "CREATE TABLE workspace_state (id INTEGER PRIMARY KEY CHECK (id = 1), record TEXT NOT NULL)",
     ),
     (
+        "UPDATE work_item SET record = json_set(record, '$.next_step_recorded_at', NULL)",
+    ),
+    (
+        "ALTER TABLE attention_item ADD COLUMN options TEXT NOT NULL DEFAULT '[]'",
+        "CREATE TABLE decisions_decision (id TEXT PRIMARY KEY, record TEXT NOT NULL)",
+        """CREATE TRIGGER decisions_no_update BEFORE UPDATE ON decisions_decision
+           BEGIN SELECT RAISE(ABORT, 'decisions are immutable'); END""",
+        """CREATE TRIGGER decisions_no_delete BEFORE DELETE ON decisions_decision
+           BEGIN SELECT RAISE(ABORT, 'decisions are immutable'); END""",
+    ),
+    (
         "ALTER TABLE execution_action ADD COLUMN idempotency_key TEXT",
         "CREATE UNIQUE INDEX execution_action_key ON execution_action(idempotency_key)",
         """CREATE TABLE execution_claim (

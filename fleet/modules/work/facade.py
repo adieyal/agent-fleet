@@ -23,6 +23,9 @@ class WorkFacade:
     def set(self, identity: str, *, actor: str, **changes) -> WorkItem:
         return self.commands.change(identity, actor, **changes)
 
+    def apply_answer(self, identity: str, *, actor: str, next_step: str | None) -> WorkItem:
+        return self.commands.apply_answer(identity, actor=actor, next_step=next_step)
+
     def move(self, identity: str, *, parent: str | None, actor: str) -> WorkItem:
         return self.commands.change(identity, actor, parent=parent)
 

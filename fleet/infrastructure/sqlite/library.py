@@ -3,20 +3,17 @@
 from __future__ import annotations
 
 import json
-from contextlib import closing
 from dataclasses import asdict
 
 from fleet.modules.library import LibraryEntry
-from .store import Store, connect
+from .repository import Repository
 
 
-class LibraryRepository:
-    def __init__(self, store: Store) -> None:
-        self.store = store
-
+class LibraryRepository(Repository):
     def save(self, entry: LibraryEntry, actor: str) -> None:
         payload = json.dumps(asdict(entry), sort_keys=True)
-        with self.store.unit_of_work() as unit:
+        with self.transaction() as repository:
+            unit = repository.unit
             row = unit.connection.execute("SELECT record FROM library_entry WHERE id = ?", (entry.id,)).fetchone()
             previous = row["record"] if row is not None else ""
             if previous == payload:
@@ -26,6 +23,5 @@ class LibraryRepository:
             unit.record_change(f"library:entry:{entry.id}", previous, payload, actor)
 
     def list(self) -> list[LibraryEntry]:
-        with closing(connect(self.store.path)) as connection:
-            return [LibraryEntry(**json.loads(row["record"]))
-                    for row in connection.execute("SELECT record FROM library_entry ORDER BY rowid")]
+        return [LibraryEntry(**json.loads(row["record"]))
+                for row in self.rows("SELECT record FROM library_entry ORDER BY rowid")]

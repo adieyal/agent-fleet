@@ -24,7 +24,7 @@ from rich.tree import Tree
 
 from fleet import transport
 from fleet.modules import workspace as projects
-from fleet.composition import open_attention, open_execution, open_library, open_store, open_work, open_workspace
+from fleet.composition import open_attention, open_decisions, open_execution, open_library, open_store, open_work, open_workspace
 from fleet.projections.project import project_status
 from fleet.modules.work import EvidenceSpecification
 from fleet.modules.execution import Run
@@ -785,7 +785,8 @@ def command_web(arguments: argparse.Namespace) -> None:
 
 def command_status(arguments: argparse.Namespace) -> None:
     store = open_store()
-    projection = project_status(arguments.project, open_work(store), open_attention(store))
+    projection = project_status(arguments.project, open_work(store), open_attention(store),
+                                open_execution(store), open_library(store), open_decisions(store))
     if arguments.json:
         print(json.dumps(projection))
         return
@@ -808,12 +809,29 @@ def print_status_item(item: dict[str, Any], depth: int = 0) -> None:
     print(f"{indent}  Progress: {mark}; condition: {item['condition']}")
     next_step = "not recorded" if item["next_step"] is None else item["next_step"]
     print(f"{indent}  Next step: {next_step}")
+    if item["no_follow_up_yet"] is True:
+        print(f"{indent}  No follow-up yet")
+    elif item["no_follow_up_yet"] is None:
+        print(f"{indent}  Follow-up timing: unknown")
+    print(f"{indent}  Runs:")
+    for run in item["runs"]:
+        print(f"{indent}    {run['id']} on {run['host']} ({run['remote_job_id']}): {run['status']}")
+        for field in ("runtime", "reason", "start", "end", "last_observed"):
+            value = "unknown" if run[field] is None else run[field]
+            print(f"{indent}      {field.replace('_', ' ').capitalize()}: {value}")
+    print(f"{indent}  Library:")
+    for entry in item["library"]:
+        title = "unknown" if entry["title"] is None else entry["title"]
+        print(f"{indent}    {entry['kind']}: {title} ({entry['availability']}) — {entry['canonical_location']}")
     if item["resume_condition"] is not None:
         print(f"{indent}  Resume condition: {item['resume_condition']}")
     for criterion in item["criteria"]:
         print(f"{indent}  Criterion ({criterion['verification']}, {criterion['state']}): {criterion['text']}")
     for entry in item["attention"]:
         print(f"{indent}  Attention ({entry['kind']}): {entry['headline']}")
+    for decision in item["decisions"]:
+        print(f"{indent}  Decision {decision['id']}: {decision['question']}")
+        print(f"{indent}    {decision['answer']} — {decision['actor']} at {decision['time']}")
     summary = item["summary"]
     if summary is not None:
         print(f"{indent}  Summary ({summary['authoring_role']}, {summary['updated']}):")
@@ -895,6 +913,15 @@ def add_work_parsers(commands) -> None:
     action.add_argument("id", help="work item ID")
     for field in ("purpose", "done", "doing", "next", "authoring-role", "actor"):
         action.add_argument(f"--{field}", required=True)
+
+
+def command_answer(arguments: argparse.Namespace) -> None:
+    try:
+        decision = open_decisions().answer(arguments.id, arguments.answer, actor="user",
+                                           next_step=arguments.next_step)
+        console.print_json(json.dumps(asdict(decision), default=lambda value: value.isoformat()))
+    except (ValueError, LookupError) as error:
+        raise FleetError(str(error)) from error
 
 
 def command_attention(arguments: argparse.Namespace) -> None:
@@ -1142,6 +1169,12 @@ def build_parser() -> argparse.ArgumentParser:
     status.add_argument("project")
     status.add_argument("--json", action="store_true", help="emit the project projection")
     status.set_defaults(handler=command_status)
+
+    answer = commands.add_parser("answer", help="record an answer; options use 1-based numbers")
+    answer.add_argument("id")
+    answer.add_argument("answer")
+    answer.add_argument("--next-step")
+    answer.set_defaults(handler=command_answer)
 
     attention = commands.add_parser("attention", help="stored questions, blockers and alerts").add_subparsers(
         dest="attention_command", required=True)
