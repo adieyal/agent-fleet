@@ -1,7 +1,7 @@
-# Worker dispatch protocol 3
+# Worker dispatch protocol 4
 
 Controller dispatch sends `create --id <job> --run-id <run> --fingerprint <sha256>
---schema-version 3 --hold`, followed by `start <job>` with the same run identity,
+--schema-version 4 --hold`, followed by `start <job>` with the same run identity,
 fingerprint and schema version. The fingerprint covers the stored dispatch payload,
 including context references. The worker also hashes its immutable job definition,
 so a caller cannot reuse a fingerprint with changed steps or runtime options.
@@ -12,7 +12,7 @@ job; a changed identity or fingerprint is refused. Legacy jobs without run ident
 retain the existing command interface. Stream hello now reports protocol version 3.
 
 After an uncertain create or start reply, the controller sends
-`reconcile <run> --fingerprint <sha256> --schema-version 3`. An unreachable or missing
+`reconcile <run> --fingerprint <sha256> --schema-version 4`. An unreachable or missing
 run keeps its unknown outcome and claim. A queued job with `start_requested: false`
 can be started after reconciliation; a reserved start is never sent again blindly.
 Repeating an unknown dispatch reconciles the same run instead of creating another.
@@ -26,8 +26,8 @@ lost and releases the claim; repeated identical observations add no history.
 Reconcile query version 4 adds a successful `absent` response containing
 `schema_version: 4`, `run_id` and the requested `fingerprint` when the worker
 has no job for that run. Existing jobs return their usual summary with version
-4. Version 3 retains its error for missing runs; create and start remain version
-3. Install the updated worker before using version 4 reconciliation.
+4. Create, start and reconcile all require version 4; version 3 is rejected.
+Install the updated worker before using controller dispatch.
 
 Only a matching version 4 absence permits the controller to create the stored
 intent again, using its original run ID and payload. A timeout, disconnect or

@@ -26,13 +26,16 @@ class Proposal:
 @dataclass(frozen=True)
 class Decision:
     id: str
-    attention_item: str
+    attention_item: str | None
     question: str
     answer: str
     actor: str
     context: str
     affected_work_items: tuple[str, ...]
     time: datetime
+    activation: str | None = None
+    mandate_version: str | None = None
+    source_run: str | None = None
 
     def __post_init__(self) -> None:
         for name in ("answer", "actor"):

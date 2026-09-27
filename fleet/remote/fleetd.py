@@ -44,7 +44,7 @@ TMUX_COMMAND = ["tmux", "-L", "fleet", "-f", "/dev/null"]
 SUMMARY_LENGTH = 160
 TERMINAL_STATUSES = ("done", "failed", "cancelled", "lost")
 STREAM_PROTOCOL_VERSION = 3
-DISPATCH_SCHEMA_VERSION = 3
+DISPATCH_SCHEMA_VERSION = 4
 USAGE_SCHEMA_VERSION = 1
 
 JsonObject = Dict[str, Any]
@@ -1329,6 +1329,12 @@ def command_create(arguments: argparse.Namespace) -> None:
     cwd = os.path.abspath(os.path.expanduser(arguments.cwd))
     if not os.path.isdir(cwd):
         fail(f"working directory does not exist on {os.uname().nodename}: {cwd}")
+    try:
+        arguments.permission = _runtime(arguments.agent).dispatch_permission(
+            arguments.permission, json.loads(arguments.allowed_tools) if arguments.allowed_tools else [],
+            arguments.add_dir)
+    except ValueError as error:
+        fail(str(error))
     _runtime(arguments.agent).validate_permission(arguments.permission)
     steps = [make_step(index, item["prompt"], item.get("title"))
              for index, item in enumerate(parse_steps(Path(arguments.steps_file).read_text()))]
@@ -1373,7 +1379,7 @@ def validate_dispatch(arguments: argparse.Namespace) -> None:
     if arguments.run_id is None and arguments.schema_version is None and arguments.fingerprint is None:
         return
     if arguments.schema_version != DISPATCH_SCHEMA_VERSION or not arguments.run_id or not arguments.fingerprint:
-        fail("dispatch requires schema version 3, run ID and fingerprint")
+        fail("dispatch requires schema version 4, run ID and fingerprint")
 
 
 def start_job(job_id: str, arguments: argparse.Namespace) -> None:
@@ -1391,15 +1397,13 @@ def start_job(job_id: str, arguments: argparse.Namespace) -> None:
 
 
 def command_reconcile(arguments: argparse.Namespace) -> None:
-    if arguments.schema_version not in (DISPATCH_SCHEMA_VERSION, 4):
+    if arguments.schema_version != DISPATCH_SCHEMA_VERSION:
         fail("unsupported dispatch schema version")
     job = next((job for job in all_jobs() if job.get("run_id") == arguments.run_id), None)
     if job is None:
-        if arguments.schema_version == 4:
-            emit({"schema_version": 4, "run_id": arguments.run_id,
-                  "fingerprint": arguments.fingerprint, "status": "absent"})
-            return
-        fail(f"no such run: {arguments.run_id}")
+        emit({"schema_version": DISPATCH_SCHEMA_VERSION, "run_id": arguments.run_id,
+              "fingerprint": arguments.fingerprint, "status": "absent"})
+        return
     if job["fingerprint"] != arguments.fingerprint:
         fail("run fingerprint has changed payload")
     summary = job_summary(job, 0)
@@ -1688,7 +1692,7 @@ def main() -> None:
     create.add_argument("--agent", choices=("claude", "codex"), required=True)
     create.add_argument("--model")
     create.add_argument("--cwd", required=True)
-    create.add_argument("--permission", required=True)
+    create.add_argument("--permission")
     create.add_argument("--steps-file", required=True)
     create.add_argument("--keep-going", action="store_true")
     create.add_argument("--hold", action="store_true")

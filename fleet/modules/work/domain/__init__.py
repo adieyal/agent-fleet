@@ -123,6 +123,8 @@ class Summary:
     next: str
     authoring_role: str
     updated: datetime
+    activation: str | None = None
+    mandate_version: str | None = None
 
     def __post_init__(self) -> None:
         required(self.authoring_role, "authoring role")

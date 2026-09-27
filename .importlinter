@@ -6,7 +6,9 @@ name = Controller layers
 type = layers
 layers =
     fleet.cli : fleet.web
+    fleet.orchestration
     fleet.composition
+    fleet.transport
     fleet.projections
     fleet.modules
 
