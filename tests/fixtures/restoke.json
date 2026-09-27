@@ -1,5 +1,10 @@
 {
  "time": 1790400000,
+ "work_items": [
+  {"key": "supplier-epic", "project": "p-5e1f0a01", "parent": null, "kind": "epic", "title": "Supplier intelligence", "goal": "Understand suppliers"},
+  {"key": "supplier-slice", "project": "p-5e1f0a01", "parent": "supplier-epic", "kind": "milestone", "title": "Supplier slice", "goal": "Verify supplier evidence"},
+  {"key": "supplier-task", "project": "p-5e1f0a01", "parent": "supplier-slice", "kind": "task", "title": "Review evidence", "goal": "Review the reports"}
+ ],
  "floors": {"p-5e1f0a01": 1, "p-1c0ce5a2": 2},
  "project_labels": {"invoice-parser": "Invoice parser"},
  "projects": {

@@ -772,3 +772,17 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
   background:#4c3a24;border:1px solid #6f5536;cursor:pointer}
 .tray:disabled{cursor:default;opacity:.55}
 .tray .paper{width:14px;height:12px;border-radius:1px;background:#e8dcc2;box-shadow:0 -2px 0 #cdbf9f}
+/* Persisted work route over the existing deck. */
+#benchRoute { position:fixed; z-index:30; left:76px; top:80px; max-width:calc(100vw - 100px); max-height:75vh; overflow:auto; padding:20px; background:#142031ee; border:1px solid #64748b; border-radius:12px; color:#e2e8f0; }
+#benchRoute[hidden] { display:none; }
+#benchRoute button { color:inherit; background:#26374c; border:1px solid #64748b; border-radius:6px; padding:10px; margin:4px; cursor:pointer; }
+#benchBreadcrumb { margin-bottom:16px; }
+.bench-cluster { display:flex; flex-wrap:wrap; gap:20px; }
+.bench-cluster button { display:grid; gap:12px; }
+.bench-cluster i { display:block; height:36px; border:6px solid #aa805b; border-top-width:12px; border-bottom:0; }
+#benchRoute [data-lane] { padding:6px; border-left:4px solid #94a3b8; }
+#benchRoute [data-lane="done"] { border-color:#34d399; text-decoration:line-through; }
+#benchRoute [data-lane="doing"] { border-color:#38bdf8; font-weight:bold; }
+#benchRoute [data-condition="blocked"] { outline:2px dashed #f87171; }
+#benchRoute [data-verification] { display:inline-block; padding:8px; border:1px solid #64748b; }
+#benchRoute [data-state="met"] { background:#047857; }
