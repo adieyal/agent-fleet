@@ -7,7 +7,7 @@ import { AGENT_COLOR, TOOL_ICON, hostLook } from './looks.js';
 import { isSession, shortId } from './activity.js';
 import { ROBOT, renderer } from './scene.js';
 import {
-  ents, everLoaded, feed, feedSeeded, hosts, live, seenEvents, selectedKey, setFeedSeeded, setSelectedKey, workOf,
+  ents, everLoaded, feed, feedSeeded, hosts, live, seenEvents, selectedKey, setFanned, setFeedSeeded, setSelectedKey, workOf,
 } from './model.js';
 import { DOC_KIND, docMeta, docsOf, kindOf } from './docs3d.js';
 import { action, buildRobot } from './agents.js';
@@ -86,6 +86,7 @@ export function select(key) {
 }
 export function closePanel() {
   setSelectedKey(null);
+  setFanned(null);   // a fanned-out crowd gathers again
   panel.classList.remove('open');
   panel.setAttribute('aria-hidden', 'true');
 }

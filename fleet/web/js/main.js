@@ -5,10 +5,10 @@ import { esc } from './util.js';
 import { hostLook } from './looks.js';
 import { isActive } from './activity.js';
 import { M, _p, _w, applyCamera, cam, camera, centreFor, loadAssets, renderer, scene, toScreen } from './scene.js';
-import { ents } from './model.js';
+import { ents, fanned } from './model.js';
 import { edgeStrips, layoutRooms, roomByName, rooms } from './rooms.js';
 import { _la, _lb, dashedLine, docSlots, liftHovered, lineGeo, nSeg, setNSeg, stepDocFx } from './docs3d.js';
-import { positionTags } from './agents.js';
+import { crowds, positionTags } from './agents.js';
 import { stepMotion, stepParticles, updateEnt, updateRoom } from './motion.js';
 import { applyState, departIdle, stream } from './state.js';
 import { positionSwitches, stepFocus } from './focus.js';
@@ -137,7 +137,9 @@ loadAssets().then(() => {
     rooms: () => rooms.map(r => ({ name: r.name, label: r.label, x: r.ox, y: r.oy,
       screen: toScreen(_w.set(r.ox + RW / 2, 0, r.oy + RD / 2), { x: 0, y: 0 }), focus: r.focus, dim: r.dimK ?? null, lit: r.lit,
       attention: r.attention?.level ? { kind: r.attention.kind, state: r.attention.level, count: r.attention.shown.length } : null })),
-    agents: () => [...ents.values()].map(e => ({ key: e.key, kind: e.kind, room: e.room, status: e.job.status, leaving: !!e.leaving, clip: e.bot.clip })),
+    agents: () => [...ents.values()].map(e => ({ key: e.key, kind: e.kind, room: e.room, status: e.job.status, leaving: !!e.leaving, clip: e.bot.clip,
+      station: e.spotProp ?? null, gathered: !!e.crowd })),
+    crowds: () => [...crowds.values()].map(c => ({ room: c.room, station: c.station, count: c.members.length, fanned: fanned === c.key })),
     apply: doc => applyState(doc),   // feed a state document as the stream would
     pipelines: () => pipelines.map(p => {
       const s = screenOf(keyOf(p));

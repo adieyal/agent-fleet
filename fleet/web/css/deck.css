@@ -147,6 +147,10 @@ header{position:fixed;top:0;left:0;right:0;height:52px;display:flex;align-items:
 @media (prefers-reduced-motion: reduce){.bubble.pop .glyph{animation:none}}
 .tag.far .bubble{display:none}
 .tag.tiny{display:none}
+/* more than five at one station: one figure with a count badge, fanned out on a click */
+.tag.gathered,.tag.crowd.fanned{display:none}
+.tag.crowd .stack{border-color:var(--text)}
+.tag.crowd .stack b{margin:0;font-size:12px;color:var(--text)}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 
 /* ---------- focus switch: priority · background on each room's front corner */

@@ -285,6 +285,7 @@ def test_demo_mode_fills_the_deck_without_errors(browser: Browser, base_url: str
     parser = rooms_by_name(page)["demo-parser"]                              # in the background, its parse running
     assert (parser["focus"], parser["lit"]) == ("background", True)
     assert crew(page, "demo-parser") == set()
+    page.wait_for_function("fleetDeck.crowds().some(crowd => crowd.room === 'demo-docs' && crowd.count === 6)")
     expect(page.locator('.lantern[data-kind="blocker"]')).to_have_count(2)   # the failed job's and the stalled one's
     page.locator('.lantern[data-room="demo-docs"]').dispatch_event("click")
     page.locator("#attnPanel [data-owner]").dispatch_event("click")   # the demo pushes a new state every second
@@ -359,6 +360,101 @@ def test_bubbles_appear_only_in_a_room_you_zoom_into(deck: Deck) -> None:
     page.evaluate("fleetDeck.lookAtRoom(null)")
     page.wait_for_function(none_speak)
     assert deck.errors == []
+
+
+def crowded_state(base_url: str, copies: int) -> dict[str, Any]:
+    """The server's state document with worker:f20a6d, editing at the agent-fleet workbench, joined there by copies of
+    itself."""
+    doc = finish_jobs(base_url, {})
+    worker = next(host for host in doc["hosts"] if host["name"] == "worker")
+    job = next(job for job in worker["jobs"] if job["id"] == "f20a6d")
+    worker["jobs"] += [{**job, "id": f"f20a6d-{n}"} for n in range(1, copies + 1)]
+    return doc
+
+
+def crowded_deck(browser: Browser, base_url: str, fixture_data: dict[str, Any], copies: int) -> tuple[Page, list[str]]:
+    """A deck of its own, zoomed into agent-fleet, with that many more androids at the workbench."""
+    context = browser.new_context(viewport=VIEWPORTS["desktop"], reduced_motion="reduce")
+    context.add_init_script(PIN_CLOCK % fixture_data["time"])
+    page = context.new_page()
+    errors: list[str] = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.goto(base_url + "/")
+    page.wait_for_function(f"window.fleetDeck && fleetDeck.agents().length === {len(on_the_floor(fixture_data))}")
+    page.evaluate("doc => fleetDeck.apply(doc)", crowded_state(base_url, copies))
+    page.evaluate("fleetDeck.lookAtRoom('agent-fleet', 60)")
+    return page, errors
+
+
+def at_the_workbench(page: Page) -> list[dict[str, Any]]:
+    return [agent for agent in page.evaluate("fleetDeck.agents()")
+            if agent["room"] == "agent-fleet" and agent["station"] == "workbench"]
+
+
+def click_canvas(page: Page, x: int, y: int) -> None:
+    """A click on the 3D view itself, whatever overlay is above that point."""
+    page.evaluate("""([x, y]) => {
+      const opts = { clientX: x, clientY: y, pointerId: 97, pointerType: 'mouse', bubbles: true };
+      for (const type of ['pointerdown', 'pointerup']) document.getElementById('world').dispatchEvent(new PointerEvent(type, opts));
+    }""", [x, y])
+
+
+def test_six_androids_at_one_station_gather_into_a_group_figure(browser: Browser, base_url: str,
+                                                                 fixture_data: dict[str, Any]) -> None:
+    page, errors = crowded_deck(browser, base_url, fixture_data, 5)
+    page.wait_for_function("fleetDeck.crowds().length === 1")
+    assert len(at_the_workbench(page)) == 6
+    assert page.evaluate("fleetDeck.crowds()") == [
+        {"room": "agent-fleet", "station": "workbench", "count": 6, "fanned": False}]
+    assert all(agent["gathered"] for agent in at_the_workbench(page))
+    badge = page.locator("#tags .crowd")
+    expect(badge).to_have_count(1)
+    expect(badge).to_have_text("6")
+    expect(page.locator("#tags .tag:visible", has_text="f20a6d")).to_have_count(0)
+    assert not any(agent["gathered"] for agent in page.evaluate("fleetDeck.agents()")
+                   if agent["room"] == "agent-fleet" and agent["station"] != "workbench")
+    page.context.close()
+    assert errors == []
+
+
+def test_clicking_the_group_fans_it_out_and_clicking_away_gathers_it(browser: Browser, base_url: str,
+                                                                     fixture_data: dict[str, Any]) -> None:
+    page, errors = crowded_deck(browser, base_url, fixture_data, 5)
+    page.wait_for_function("fleetDeck.crowds().length === 1")
+    badge = page.locator("#tags .crowd")
+    badge.click()
+    page.wait_for_function("fleetDeck.crowds()[0].fanned")
+    expect(badge).to_be_hidden()
+    expect(page.locator("#tags .tag:visible", has_text="f20a6d")).to_have_count(6)
+    assert not any(agent["gathered"] for agent in at_the_workbench(page))
+
+    click_canvas(page, 5, page.viewport_size["height"] - 5)             # empty floor between the rooms
+    page.wait_for_function("!fleetDeck.crowds()[0].fanned")
+    expect(badge).to_be_visible()
+    expect(page.locator("#tags .tag:visible", has_text="f20a6d")).to_have_count(0)
+
+    badge.click()                                                       # fanned out, one opened: it stands alone
+    page.locator("#tags .tag", has_text="f20a6d-3").click()
+    expect(page.locator("#panel")).to_have_class(re.compile("open"))
+    page.wait_for_function("fleetDeck.crowds()[0].count === 5")
+    assert page.evaluate("fleetDeck.crowds()[0].fanned")
+    page.locator("#panel #close").click()                               # closing the panel gathers them again
+    page.wait_for_function("!fleetDeck.crowds()[0].fanned && fleetDeck.crowds()[0].count === 6")
+    expect(page.locator("#tags .tag:visible", has_text="f20a6d")).to_have_count(0)
+    page.context.close()
+    assert errors == []
+
+
+def test_five_androids_at_one_station_stand_on_their_own(browser: Browser, base_url: str,
+                                                         fixture_data: dict[str, Any]) -> None:
+    page, errors = crowded_deck(browser, base_url, fixture_data, 4)
+    page.wait_for_function("fleetDeck.agents().filter(agent => agent.room === 'agent-fleet' && agent.station === 'workbench').length === 5")
+    assert page.evaluate("fleetDeck.crowds()") == []
+    assert not any(agent["gathered"] for agent in at_the_workbench(page))
+    expect(page.locator("#tags .crowd")).to_have_count(0)
+    expect(page.locator("#tags .tag:visible", has_text="f20a6d")).to_have_count(5)
+    page.context.close()
+    assert errors == []
 
 
 def rooms_on_screen(page: Page, zoomed: str) -> set[str]:

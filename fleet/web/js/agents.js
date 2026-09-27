@@ -8,7 +8,7 @@ import { AGENT_COLOR, hostLook } from './looks.js';
 import { isSession, mumble, shortId } from './activity.js';
 import { actionOf, glyphHtml } from './glyphs.js';
 import { G, M, ROBOT, _w, botGroup, cam, toScreen } from './scene.js';
-import { ents, everLoaded, selectedKey } from './model.js';
+import { ents, everLoaded, fanned, selectedKey, setFanned } from './model.js';
 import { roomByName, rooms } from './rooms.js';
 import { select } from './panel.js';
 
@@ -211,6 +211,46 @@ export function updateTag(e) {
   e.sizeDirty = true;
 }
 
+// ------------------------------------------------------------------ crowds
+// More than five androids at one station of a room gather into one figure (the first of them) with a count badge in
+// place of their tags. Clicking it fans them out until you click elsewhere or close the panel. The selected android
+// always stands on its own.
+const CROWD = 5;
+export const crowds = new Map();   // "room|station" → { key, room, station, members, el }
+function makeBadge(key) {
+  const el = document.createElement('div');
+  el.className = 'tag crowd';
+  el.innerHTML = '<div class="stack"><b></b></div>';
+  el.addEventListener('click', ev => { ev.stopPropagation(); setFanned(key); });
+  tagsEl.appendChild(el);
+  return el;
+}
+function gatherCrowds() {
+  const at = new Map();
+  for (const e of ents.values()) {
+    e.crowd = null;
+    if (e.leaving || !e.spotProp || e.spotProp === 'stay' || e.spotProp === 'partner') continue;
+    const key = e.room + '|' + e.spotProp;
+    if (!at.has(key)) at.set(key, []);
+    at.get(key).push(e);
+  }
+  for (const [key, c] of crowds) {
+    if ((at.get(key)?.length ?? 0) > CROWD) continue;
+    c.el.remove(); crowds.delete(key);
+    if (fanned === key) setFanned(null);
+  }
+  for (const [key, all] of at) {
+    if (all.length <= CROWD) continue;
+    const members = all.filter(e => e.key !== selectedKey);
+    let c = crowds.get(key);
+    if (!c) { c = { key, room: members[0].room, station: members[0].spotProp, el: makeBadge(key) }; crowds.set(key, c); }
+    c.members = members;
+    c.el.firstChild.firstChild.textContent = members.length;
+    if (fanned !== key) for (const e of members) e.crowd = c;
+  }
+  for (const e of ents.values()) e.bot.root.visible = !e.crowd || e === e.crowd.members[0];
+}
+
 // Tags hang above each android's head, projected from 3D. Nearer androids are placed first and
 // colliding tags are pushed upward, with a thin lead line back to their android.
 const tagList = [], placed = [];
@@ -228,6 +268,7 @@ function zoomedInto(r) {
 export function positionTags() {
   // the overview stays quiet: speech bubbles appear only in a room you have zoomed into (or for the selected android)
   const tiny = cam.z < TINY_Z;
+  gatherCrowds();
   for (const r of rooms) r.close = zoomedInto(r);
   tagList.length = 0;
   for (const e of ents.values()) {
@@ -248,7 +289,7 @@ export function positionTags() {
   for (const e of tagList) {
     let bottom = e.sy;
     const w = e.tw || 120, h = e.th || 40;
-    if (!tiny) {
+    if (!tiny && !e.crowd) {
       for (let guard = 0, moved = true; moved && guard < 24; guard++) {
         moved = false;
         for (let i = 0; i < n; i++) {
@@ -272,7 +313,16 @@ export function positionTags() {
     const z = ++order + (e.key === selectedKey ? 1000 : 0);
     if (z !== e.qz) { e.qz = z; e.el.style.zIndex = String(z); }
     // an idle session rests without a word
-    const cls = e.tagBase + (e.job.status === 'idle' ? ' calm' : '') + (tiny ? ' tiny' : e.key === selectedKey ? ' sel' : e.far ? ' far' : '');
+    const cls = e.tagBase + (e.job.status === 'idle' ? ' calm' : '') + (e.crowd ? ' gathered' : '')
+      + (tiny ? ' tiny' : e.key === selectedKey ? ' sel' : e.far ? ' far' : '');
     if (e.el.className !== cls) { e.el.className = cls; e.sizeDirty = true; }
+  }
+  // a crowd's badge hangs where its figure's tag would
+  for (const c of crowds.values()) {
+    const e = c.members[0];
+    const cls = 'tag crowd' + (fanned === c.key ? ' fanned' : tiny ? ' tiny' : '');
+    if (c.el.className !== cls) c.el.className = cls;
+    c.el.style.transform = `translate(${Math.round(e.sx)}px,${Math.round(e.sy)}px) translate(-50%,-100%)`;
+    c.el.style.zIndex = String(e.qz);
   }
 }
