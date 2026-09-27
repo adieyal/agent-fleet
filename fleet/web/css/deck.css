@@ -786,3 +786,26 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 #benchRoute [data-condition="blocked"] { outline:2px dashed #f87171; }
 #benchRoute [data-verification] { display:inline-block; padding:8px; border:1px solid #64748b; }
 #benchRoute [data-state="met"] { background:#047857; }
+.slice-bench { display:grid; grid-template-columns:minmax(180px, 2fr) minmax(120px, 1fr); gap:18px; }
+.slice-bench section, .slice-bench details { padding:8px; border:1px solid #64748b; border-radius:4px; }
+.slice-bench svg { width:24px; height:24px; fill:none; stroke:#e2e8f0; stroke-width:2; }
+.slice-bench ol { padding:0; margin:0; list-style:none; }
+#benchRoute [data-task] { display:flex; gap:10px; margin:5px 0; }
+#benchRoute [data-task] i { width:14px; height:14px; border:2px solid #94a3b8; flex-shrink:0; }
+#benchRoute [data-lane="done"] i { border-width:0 3px 3px 0; width:7px; transform:rotate(45deg); }
+#benchRoute [data-lane="doing"] i { border-radius:50%; border-style:double; border-width:4px; }
+#benchRoute [data-state="unmet"] { border-style:dashed; }
+#benchRoute [data-state="met"] { border:3px double #e2e8f0; }
+#benchRoute [data-desk] { min-height:36px; border:6px solid #aa805b; border-top-width:2px; border-bottom:0; }
+#benchRoute [data-lantern] svg { stroke:#fbbf24; width:32px; height:32px; }
+#benchRoute [data-agents] { display:flex; flex-wrap:wrap; gap:12px; }
+#benchRoute [data-agent] { border-bottom:3px solid var(--hc); }
+#benchRoute [data-agent] > svg { stroke:var(--hc); }
+#benchRoute [data-freshness="stale"] { outline:2px dashed #94a3b8; }
+#benchRoute [data-freshness="unknown"] { outline:2px dotted #94a3b8; }
+#benchRoute [data-agent-group] { border:4px double #94a3b8; border-radius:50%; padding:8px; }
+#benchRoute [data-tray] { border-bottom:6px double #aa805b; }
+#benchRoute [data-tray] small { display:block; }
+#benchRoute [data-flipped="true"] { animation:bench-flip .5s ease-out; }
+@keyframes bench-flip { from { transform:rotateX(180deg); } to { transform:rotateX(0); } }
+@media (prefers-reduced-motion:reduce) { #benchRoute [data-flipped="true"] { animation:none; } }

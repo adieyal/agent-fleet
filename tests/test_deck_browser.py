@@ -140,6 +140,94 @@ def test_bench_route_steps_out_one_level(changed_deck: Deck) -> None:
     page.locator('#viewToggle [data-view="deck"]').click()
 
 
+@pytest.mark.parametrize('redact', [False, True])
+def test_l3_bench_projection(changed_deck: Deck, base_url: str, redact: bool) -> None:
+    page = changed_deck.page
+    doc = {
+        'id': 'slice', 'title': 'Supplier slice', 'project': 'p-5e1f0a01',
+        'tasks': [{'id': lane, 'title': lane, 'lane': lane, 'condition': condition}
+                  for lane, condition in [('done', 'complete'), ('doing', 'waiting'), ('next', 'blocked')]],
+        'criteria': [{'verification': kind, 'state': state, 'text': kind}
+                     for kind in ['checked', 'judged', 'accepted'] for state in ['met', 'unmet']],
+        'progress': {'complete': 3, 'total': 6},
+        'agents': [{'run': str(i), 'host': 'home', 'status': 'running',
+                    'action_glyph': action, 'action_freshness': 'current'}
+                   for i, action in enumerate(['read', 'edit', 'test', 'wait', None])],
+        'attention': [{'id': 'attention'}],
+        'reports': [{'id': 'report', 'title': 'Evidence report', 'availability': 'available',
+                     'canonical_location': '/reports/evidence.md'}],
+        'summary': {'purpose': 'Find suppliers', 'done': 'Evidence gathered',
+                    'doing': 'Review evidence', 'next': 'Accept results'},
+    }
+    def respond(route):
+        if 'slice=' in route.request.url:
+            route.fulfill(json=doc)
+        else:
+            route.fulfill(json={'rooms': [{'id': 'epic', 'title': 'Suppliers',
+                                          'benches': [{'id': 'slice', 'title': 'Supplier slice'}]}]})
+    page.route('**/api/bench?*', respond)
+    try:
+        if redact:
+            page.goto(base_url + '/?redact')
+            page.wait_for_function('window.fleetDeck')
+        page.evaluate("fleetDeck.enterFloor('p-5e1f0a01')")
+        page.locator('[data-epic]').click()
+        page.locator('[data-slice]').click()
+        bench = page.locator('#benchRoute')
+        page.evaluate("document.getElementById('benchRoute').style.filter = 'grayscale(1)'")
+        expect(bench.locator('[data-task]')).to_have_count(3)
+        assert bench.locator('[data-task]').evaluate_all('(els) => els.map(e => e.dataset.lane)') == ['done', 'doing', 'next']
+        shapes = bench.locator('[data-verification] svg').evaluate_all('(els) => els.map(e => e.innerHTML)')
+        assert len(set(shapes)) == 3
+        assert bench.locator('[data-state="met"]').first.evaluate('(e) => getComputedStyle(e).borderStyle') != bench.locator('[data-state="unmet"]').first.evaluate('(e) => getComputedStyle(e).borderStyle')
+        expect(bench.locator('[data-agent]')).to_have_count(5)
+        assert bench.locator('[data-agent]').first.evaluate('(e) => e.style.getPropertyValue("--hc")')
+        assert len(set(bench.locator('[data-agent] .glyph svg').evaluate_all('(els) => els.map(e => e.innerHTML)'))) == 4
+        expect(bench.locator('[data-action="unknown"]')).to_have_count(1)
+        expect(bench.locator('[data-desk] [data-lantern]')).to_have_count(1)
+        bench.locator('[data-tray] summary').click()
+        expect(bench.locator('[data-tray]')).to_contain_text('Evidence report')
+        bench.locator('[data-tray] summary').click()
+        expect(bench.locator('[data-summary]')).to_be_hidden()
+        bench.locator('[data-briefing]').click()
+        expect(bench.locator('[data-summary]')).to_contain_text('Find suppliers')
+        bench.locator('[data-briefing]').click()
+        assert page.evaluate("fleetDeck.textBudget(document.getElementById('benchRoute'))") <= 35
+        if redact:
+            assert page.evaluate("fleetDeck.textBudget(document.getElementById('benchRoute'))") == 0
+            assert bench.locator('[data-verification] svg').first.evaluate('(e) => getComputedStyle(e).stroke') != 'rgba(0, 0, 0, 0)'
+        doc['tasks'][1].update(lane='done', condition='complete')
+        bench.locator('[data-tray] summary').click()
+        doc['agents'].append({**doc['agents'][0], 'run': 'six'})
+        doc['attention'] = []
+        page.evaluate('doc => fleetDeck.apply(doc)', finish_jobs(base_url, {}))
+        expect(bench.locator('[data-task="doing"]')).to_have_attribute('data-flipped', 'true')
+        expect(bench.locator('[data-agent-group]')).to_have_attribute('data-count', '6')
+        expect(bench.locator('[data-agent]')).to_have_count(0)
+        expect(bench.locator('[data-lantern]')).to_have_count(0)
+        expect(bench.locator('[data-tray]')).to_have_attribute('open', '')
+        page.evaluate('doc => fleetDeck.apply(doc)', finish_jobs(base_url, {}))
+        expect(bench.locator('[data-task="doing"]')).to_have_attribute('data-flipped', 'false')
+        for actions in [['web', 'plan', 'delegate', 'type', 'doc'], ['ship', 'review', 'build', 'think', 'search']]:
+            doc['agents'] = [{**doc['agents'][0], 'run': str(i), 'action_glyph': action}
+                             for i, action in enumerate(actions)]
+            page.evaluate('doc => fleetDeck.apply(doc)', finish_jobs(base_url, {}))
+            expect(bench.locator(f'[data-action="{actions[0]}"]')).to_have_count(1)
+            expect(bench.locator('[data-agent]')).to_have_count(5)
+        doc['summary'] = None
+        doc['progress'] = {'complete': None, 'total': None}
+        page.evaluate('doc => fleetDeck.apply(doc)', finish_jobs(base_url, {}))
+        expect(bench).to_contain_text('Progress unknown')
+        bench.locator('[data-briefing]').click()
+        expect(bench.locator('[data-summary]')).to_have_text('Summary unknown')
+    finally:
+        page.unroute('**/api/bench?*', respond)
+        page.evaluate('fleetDeck.enterFloor(null)')
+        if redact:
+            page.goto(base_url + '/')
+            page.wait_for_function('window.fleetDeck')
+
+
 def test_text_budget_detects_overflow(deck: Deck) -> None:
     assert deck.page.evaluate("""async () => {
         const { assertTextBudget } = await import('/js/text-budget.js');
