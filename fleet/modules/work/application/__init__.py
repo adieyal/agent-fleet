@@ -6,7 +6,7 @@ from typing import Callable
 from uuid import uuid4
 
 from .ports import EvidenceReader, WorkRepository
-from ..domain import Criterion, Relation, Summary, WorkItem, required
+from ..domain import Criterion, Relation, WorkItem, required
 
 
 class Commands:
@@ -104,11 +104,3 @@ class Commands:
             relation = Relation(str(uuid4()), from_item, to_item, type)
             repository.save("relation", relation, actor)
         return relation
-
-    def set_summary(self, identity: str, *, actor: str, **fields) -> Summary:
-        required(actor, "actor")
-        summary = Summary(id=identity, updated=self.clock(), **fields)
-        with self.repository.transaction() as repository:
-            repository.get("item", identity)
-            repository.save("summary", summary, actor)
-        return summary

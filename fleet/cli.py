@@ -24,7 +24,7 @@ from rich.tree import Tree
 
 from fleet import transport
 from fleet.modules import workspace as projects
-from fleet.composition import open_attention, open_decisions, open_execution, open_library, open_store, open_work, open_workspace
+from fleet.composition import open_attention, open_decisions, open_execution, open_library, open_records, open_store, open_work, open_workspace
 from fleet.projections.project import project_status
 from fleet.modules.work import EvidenceSpecification
 from fleet.transport import FleetError, Host, HostReport
@@ -568,6 +568,13 @@ def command_project_merge(arguments: argparse.Namespace) -> None:
         console.print(f"  {escape(link.host)}:{escape(link.label)}")
 
 
+def command_project_management(arguments: argparse.Namespace) -> None:
+    try:
+        open_records().register(arguments.id, Path(arguments.path), actor='user')
+    except (ValueError, OSError) as error:
+        raise FleetError(str(error)) from error
+
+
 def command_project_repo_add(arguments: argparse.Namespace) -> None:
     open_workspace().edit_registry(lambda registry: registry.add_repository(arguments.id, arguments.url))
 
@@ -1079,6 +1086,11 @@ def build_parser() -> argparse.ArgumentParser:
     project_repo_remove.add_argument("id")
     project_repo_remove.add_argument("url")
     project_repo_remove.set_defaults(handler=command_project_repo_remove)
+
+    management = project.add_parser('management', help='register the management Git repository and migrate summaries')
+    management.add_argument('id')
+    management.add_argument('path')
+    management.set_defaults(handler=command_project_management)
 
     add_work_parsers(commands)
 

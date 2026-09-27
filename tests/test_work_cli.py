@@ -1,4 +1,5 @@
 import json
+import subprocess
 
 import pytest
 
@@ -6,6 +7,9 @@ from fleet.cli import main
 
 
 def test_work_commands_end_to_end(tmp_path, capsys):
+    repo = tmp_path / 'management'
+    subprocess.run(['git', 'init', str(repo)], check=True, capture_output=True, timeout=10)
+    main(['project', 'management', 'p', str(repo)])
     def run(*args):
         main(list(args))
         return json.loads(capsys.readouterr().out)
