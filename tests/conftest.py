@@ -4,6 +4,7 @@ Tests that change a fleet (moving a project in) start their own with serve_fixtu
 """
 
 import json
+import os
 import shutil
 import threading
 from collections.abc import Iterator
@@ -23,6 +24,16 @@ FIXTURE = Path(__file__).parent / "fixtures" / "restoke.json"
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption("--shots", default=None, help="a directory browser tests leave screenshots in, for reviewing the look")
+
+
+@pytest.fixture(scope="session")
+def browser_type_launch_args(browser_type_launch_args: dict[str, Any]) -> dict[str, Any]:
+    """Headless Chromium must not try to initialize WebGL through a forwarded X display."""
+    if browser_type_launch_args.get("headless") is False:
+        return browser_type_launch_args
+    environment = dict(browser_type_launch_args.get("env", os.environ))
+    environment.pop("DISPLAY", None)
+    return {**browser_type_launch_args, "env": environment}
 
 
 @pytest.fixture(scope="session")

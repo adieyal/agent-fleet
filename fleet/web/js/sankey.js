@@ -1,6 +1,7 @@
 // A pipeline's run as a Sankey: columns from the run, bands from edge counts, dots travelling as items flow.
 
 import { REDUCED } from './env.js';
+import { animationNow, isStepping } from './clock.js';
 import { age, esc } from './util.js';
 import { hostLook } from './looks.js';
 
@@ -193,14 +194,14 @@ export function updateSankey(p) {
   const next = valuesOf(run);
   if (!before || before.run_id !== run.run_id || REDUCED) { sk.from = next; sk.dots = []; sk.carry = {}; }
   else { sk.from = current(); emitDots(before, run); }
-  sk.to = next; sk.t0 = performance.now();
+  sk.to = next; sk.t0 = animationNow();
   if (sk.selected && !run.nodes.flat().includes(sk.selected)) sk.selected = null;
   renderSide();
   drawFrame();
 }
 function current() {
   if (!sk.to) return sk.from;
-  const e = ease(Math.min(1, (performance.now() - sk.t0) / TWEEN_MS));
+  const e = ease(Math.min(1, (animationNow() - sk.t0) / TWEEN_MS));
   const lerp = (a, b) => (a || 0) + ((b || 0) - (a || 0)) * e;
   const out = { counts: {}, edges: {} };
   for (const n of new Set([...Object.keys(sk.from.counts), ...Object.keys(sk.to.counts)])) out.counts[n] = lerp(sk.from.counts[n], sk.to.counts[n]);
@@ -215,7 +216,7 @@ function emitDots(before, run) {
   const total = deltas.reduce((s, [, d]) => s + d, 0);
   if (!total) return;
   const per = Math.max(1, Math.ceil(total / DOTS_PER_UPDATE));   // one dot per `per` items, the same for every band
-  const now = performance.now();
+  const now = animationNow();
   for (const [key, d] of deltas) {
     const exact = d / per + (sk.carry[key] || 0), n = Math.floor(exact);
     sk.carry[key] = exact - n;
@@ -298,8 +299,12 @@ function drawFrame() {
   renderChart(L, run, base, width, height, clear, nameW, firsts, { ...run, counts: values.counts, edges });
   edgeFade();
   drawDots(L, width, height);
-  const tweening = performance.now() - sk.t0 < TWEEN_MS;
-  if (tweening || sk.dots.length) sk.raf = requestAnimationFrame(drawFrame);
+  const tweening = animationNow() - sk.t0 < TWEEN_MS;
+  if (!isStepping() && (tweening || sk.dots.length)) sk.raf = requestAnimationFrame(drawFrame);
+}
+export function stepSankey() {
+  cancelAnimationFrame(sk.raf);
+  drawFrame();
 }
 // A label is its node's name and count, then share and prev for an end node, or what waits in it. Baseline outlines go
 // under the bands; what a node holds that has not gone on yet is a hatched stub at its right edge.
@@ -493,7 +498,7 @@ function drawDots(L, width, height) {
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.clearRect(0, 0, width, height);
   if (REDUCED) { sk.dots = []; return; }
-  const bands = new Map(L.bands.map(b => [b.key, b])), now = performance.now();
+  const bands = new Map(L.bands.map(b => [b.key, b])), now = animationNow();
   g.fillStyle = '#e6f6ff';
   sk.dots = sk.dots.filter(d => now - d.t0 < DOT_MS && bands.has(d.key));
   for (const d of sk.dots) {

@@ -7,6 +7,7 @@
 // dimmed. Clicking it opens a small list of the room's items with their actions; reading never changes an item.
 
 import * as THREE from 'three';
+import { animationNow } from './clock.js';
 import { BOT_H, RD, REDUCED, RW, vh, vw } from './env.js';
 import { clock, esc } from './util.js';
 import { G, deckGroup, softDot, toScreen } from './scene.js';
@@ -24,7 +25,7 @@ let items = [];
 export let openCount = 0;   // open items under the lanterns: the header's "need you"
 export function applyAttention(rooms, doc) {
   if (doc) items = doc.attention || [];
-  const now = performance.now() / 1000;
+  const now = animationNow() / 1000;
   openCount = 0;
   for (const r of rooms) {
     const mine = items.filter(i => i.project === r.name && i.state !== 'resolved');
