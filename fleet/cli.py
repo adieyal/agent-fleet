@@ -24,6 +24,7 @@ from rich.tree import Tree
 
 from fleet import building, projects, transport
 from fleet.composition import open_attention, open_execution, open_library, open_store, open_work
+from fleet.projections.project import project_status
 from fleet.modules.work import EvidenceSpecification
 from fleet.transport import FleetError, Host, HostReport
 from fleet.web.server import serve, serve_fixture
@@ -723,6 +724,46 @@ def command_web(arguments: argparse.Namespace) -> None:
 # --------------------------------------------------------------- parser
 
 
+def command_status(arguments: argparse.Namespace) -> None:
+    store = open_store()
+    projection = project_status(arguments.project, open_work(store), open_attention(store))
+    if arguments.json:
+        print(json.dumps(projection))
+        return
+    print(f"Project: {projection['project']}")
+    if not projection["work_items"]:
+        print("No work items recorded.")
+    for item in projection["work_items"]:
+        print_status_item(item)
+    for entry in projection["attention"]:
+        print(f"  Attention ({entry['kind']}): {entry['headline']}")
+
+
+def print_status_item(item: dict[str, Any], depth: int = 0) -> None:
+    indent = "  " * depth
+    print(f"{indent}{item['kind']}: {item['title']}")
+    print(f"{indent}  Goal: {item['goal']}")
+    progress = item["progress"]
+    mark = ("unknown" if progress["basis"] == "unknown" else
+            f"{progress['complete']}/{progress['total']} {progress['basis']}")
+    print(f"{indent}  Progress: {mark}; condition: {item['condition']}")
+    next_step = "not recorded" if item["next_step"] is None else item["next_step"]
+    print(f"{indent}  Next step: {next_step}")
+    if item["resume_condition"] is not None:
+        print(f"{indent}  Resume condition: {item['resume_condition']}")
+    for criterion in item["criteria"]:
+        print(f"{indent}  Criterion ({criterion['verification']}, {criterion['state']}): {criterion['text']}")
+    for entry in item["attention"]:
+        print(f"{indent}  Attention ({entry['kind']}): {entry['headline']}")
+    summary = item["summary"]
+    if summary is not None:
+        print(f"{indent}  Summary ({summary['authoring_role']}, {summary['updated']}):")
+        for field in ("purpose", "done", "doing", "next"):
+            print(f"{indent}    {field.capitalize()}: {summary[field]}")
+    for child in item["children"]:
+        print_status_item(child, depth + 1)
+
+
 def command_work(arguments: argparse.Namespace) -> None:
     work = open_work()
     fields = vars(arguments).copy()
@@ -1019,6 +1060,11 @@ def build_parser() -> argparse.ArgumentParser:
     project_repo_remove.set_defaults(handler=command_project_repo_remove)
 
     add_work_parsers(commands)
+
+    status = commands.add_parser("status", help="persisted project work and open attention")
+    status.add_argument("project")
+    status.add_argument("--json", action="store_true", help="emit the project projection")
+    status.set_defaults(handler=command_status)
 
     attention = commands.add_parser("attention", help="stored questions, blockers and alerts").add_subparsers(
         dest="attention_command", required=True)
