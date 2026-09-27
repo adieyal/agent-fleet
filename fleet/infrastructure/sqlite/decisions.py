@@ -1,12 +1,14 @@
 """Append-only decision storage with shared transactional collaborators."""
 
+from __future__ import annotations
+
 import json
 from dataclasses import asdict
 from datetime import datetime
 from typing import Callable
 
 from fleet.modules.attention import AttentionFacade
-from fleet.modules.decisions import Decision
+from fleet.modules.decisions import Decision, Proposal
 from fleet.modules.work import WorkFacade
 from fleet.modules.execution import ExecutionFacade
 from .repository import Repository
@@ -49,3 +51,16 @@ class DecisionRepository(Repository):
 
     def list(self) -> list[Decision]:
         return [decode(row["record"]) for row in self.rows("SELECT record FROM decisions_decision ORDER BY rowid")]
+
+    def insert_proposal(self, proposal: Proposal) -> None:
+        payload = json.dumps(asdict(proposal), default=lambda value: value.isoformat(), sort_keys=True)
+        self.unit.connection.execute('INSERT INTO decisions_proposal VALUES (?, ?)', (proposal.id, payload))
+        self.unit.record_change('proposal:' + proposal.id, '', payload, proposal.actor)
+
+    def proposals(self) -> list[Proposal]:
+        result = []
+        for row in self.rows('SELECT record FROM decisions_proposal ORDER BY rowid'):
+            fields = json.loads(row['record'])
+            fields['time'] = datetime.fromisoformat(fields['time'])
+            result.append(Proposal(**fields))
+        return result

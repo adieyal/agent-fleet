@@ -30,7 +30,7 @@ def claim(transaction: ExecutionRepository, action: Action, host: str, runtime: 
 
 def dispatch(repository: ExecutionRepository, work_item: str | None, *, host: str, runtime: str, payload: dict,
              actor: str, reason: str, idempotency_key: str, project: str | None = None,
-             remote_job_id: str | None = None) -> DispatchResult:
+             remote_job_id: str | None = None, authorization=None) -> DispatchResult:
     if not all(value.strip() for value in (host, runtime, actor, reason, idempotency_key)):
         raise ValueError("host, runtime, actor, reason and idempotency key are required")
     if not payload["cwd"].strip():
@@ -46,7 +46,9 @@ def dispatch(repository: ExecutionRepository, work_item: str | None, *, host: st
             return DispatchResult(existing, False)
         transaction.workspace.require_claims_allowed(project, host)
         action = Action(str(uuid4()), work_item, "dispatch", reason, actor, idempotency_key,
-                        digest, project, payload)
+                        digest, project, payload,
+                        None if authorization is None else authorization.id,
+                        None if authorization is None else authorization.mandate_version)
         transaction.save_action(action, actor)
         return claim(transaction, action, host, runtime, actor, idempotency_key, digest, remote_job_id)
 

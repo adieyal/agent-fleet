@@ -40,6 +40,8 @@ class Action:
     payload_fingerprint: str | None = None
     project: str | None = None
     payload: dict | None = None
+    activation: str | None = None
+    mandate_version: str | None = None
 
 
 @dataclass(frozen=True)

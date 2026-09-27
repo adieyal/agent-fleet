@@ -5,6 +5,25 @@ from datetime import datetime
 
 
 @dataclass(frozen=True)
+class Proposal:
+    id: str
+    project: str
+    work_item: str
+    actor: str
+    activation: str
+    mandate_version: str
+    question: str
+    change: str
+    reason: str
+    time: datetime
+
+    def __post_init__(self) -> None:
+        for name in ('question', 'change', 'reason'):
+            if not getattr(self, name).strip():
+                raise ValueError(f'{name} is required')
+
+
+@dataclass(frozen=True)
 class Decision:
     id: str
     attention_item: str

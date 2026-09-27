@@ -88,4 +88,8 @@ MIGRATIONS = (
     (
         "CREATE TABLE execution_delivery (id TEXT PRIMARY KEY, record TEXT NOT NULL)",
     ),
+    (
+        'CREATE TABLE authority_activation (id TEXT PRIMARY KEY, record TEXT NOT NULL)',
+        'CREATE TABLE decisions_proposal (id TEXT PRIMARY KEY, record TEXT NOT NULL)',
+    ),
 )
