@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-CONFIG_PATH = Path(os.environ.get("FLEET_CONFIG", Path.home() / ".config" / "fleet" / "config.json"))
 REMOTE_FLEETD_PATH = "~/.local/share/fleet/fleetd.py"
 LOCAL_FLEETD_SOURCE = Path(__file__).parent / "remote" / "fleetd.py"
 SSH_OPTIONS = [
@@ -59,15 +58,23 @@ class HostReport:
     error: str | None = None
 
 
+def config_path() -> Path:
+    if "FLEET_CONFIG" in os.environ:
+        return Path(os.environ["FLEET_CONFIG"])
+    return Path.home() / ".config" / "fleet" / "config.json"
+
+
 def load_config() -> dict[str, Any]:
-    if CONFIG_PATH.exists():
-        return json.loads(CONFIG_PATH.read_text())
+    path = config_path()
+    if path.exists():
+        return json.loads(path.read_text())
     return {"hosts": {}}
 
 
 def save_config(config: dict[str, Any]) -> None:
-    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG_PATH.write_text(json.dumps(config, indent=2) + "\n")
+    path = config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(config, indent=2) + "\n")
 
 
 def configured_hosts() -> list[Host]:
