@@ -62,6 +62,20 @@ export function closeReader() {
   reader.hidden = true;
   if (rd.lastFocus && rd.lastFocus.focus) rd.lastFocus.focus();
 }
+export function openAttentionReader(item) {
+  rd.req++;
+  rd.key = `attention:${item.id}`;
+  rd.source = 'attention';
+  rd.doc = { id: item.id, name: item.summary, kind: 'file' };
+  const lines = [item.summary, `Source: ${item.source}`, `Context: ${item.context_reference}`,
+    `State: ${item.state}`, `Last seen: ${new Date(item.last_seen * 1000).toISOString()}`];
+  rd.data = { name: item.summary, markdown: lines.join('\n\n'), html: lines.map(line => `<p>${esc(line)}</p>`).join(''), toc: [] };
+  if (reader.hidden) rd.lastFocus = document.activeElement;
+  reader.hidden = false;
+  renderReaderHead();
+  renderReaderBody();
+  rdSheet.focus();
+}
 async function loadDoc(req) {
   try {
     const data = rd.source === 'library' ? await fetchLibraryDoc(rd.doc.project, rd.doc.id)
@@ -96,7 +110,8 @@ function renderReaderHead() {
   document.getElementById('rdTitle').textContent = rd.source === 'library' ? (d.title || doc.title || d.name || doc.name) : (d.name || doc.name);
   const step = d.step ?? doc.step;
   document.getElementById('rdMeta').innerHTML = [
-    rd.source === 'library' ? `<span>${esc(doc.project)} · ${esc(doc.id)}</span>`
+    rd.source === 'attention' ? `<span>Attention item · ${esc(doc.id)}</span>`
+      : rd.source === 'library' ? `<span>${esc(doc.project)} · ${esc(doc.id)}</span>`
       : `<span title="${esc(d.job_description || rd.job.description)}"><i class="hd" style="background:${hostLook(rd.host).color}"></i>${esc(rd.host)} · ${esc(rd.job.id)} · ${esc(d.agent || rd.job.agent)}</span>`,
     step != null ? `<span>step ${step + 1}</span>` : '',
     d.minutes ? `<span>${d.minutes} min read</span>` : '',
@@ -253,7 +268,7 @@ document.getElementById('rdCopy').addEventListener('click', ev => {
 });
 document.getElementById('rdDownload').addEventListener('click', () => {
   if (!rd.data) return;
-  const prefix = rd.source === 'library' ? rd.doc.project : rd.job.id;
+  const prefix = rd.source === 'attention' ? 'attention' : rd.source === 'library' ? rd.doc.project : rd.job.id;
   const base = `${prefix}-${(rd.data.name || rd.doc.name).replace(/\.(md|markdown|mdx)$/i, '')}`.replace(/[^\w.-]+/g, '-').replace(/-+/g, '-');
   const url = URL.createObjectURL(new Blob([rd.data.markdown], { type: 'text/markdown;charset=utf-8' }));
   const a = Object.assign(document.createElement('a'), { href: url, download: base + '.md' });
