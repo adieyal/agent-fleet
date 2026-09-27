@@ -7,15 +7,17 @@
 // Every job the room shows gets a desk (a bench is three desks): active jobs fill the workarea bench's desks, then
 // the next bench's; recently finished ones the bench after; the rest stand idle.
 
-export const FLOOR = { w: 25.2, d: 10.8, h: 3.2 };   // 7 x 3 bays: l1's proportions at real furniture sizes
+export const FLOOR = { w: 21.6, d: 10.8, h: 3.2 };   // 6 x 3 bays: l1's proportions, full with five benches and a workarea
 const BAY = 3.6;
 // benches: the workarea first (against the wall, under its plan wall), then l1's five on the open floor, back to front
-const BENCHES = [[12.3, 9.05], [5.0, 7.0], [19.7, 6.3], [12.9, 4.6], [4.4, 3.2], [20.5, 2.1]];
+const BENCHES = [[10.9, 9.05], [4.3, 7.1], [17.6, 6.6], [10.7, 4.6], [3.7, 3.4], [17.3, 2.2]];   // centres
+const SEATS = 3, DESK_D = 0.8, DESK_Z = 0.74;
+const IDLE_LAMP = 0.3;   // an idle desk's lamp pool, against 1 where a run is at work
 // the workarea as l2 draws it, relative to its bench's centre: the question desk and lantern to the left, the plan
 // wall just right of centre on the back wall (measured against the bake-off's l2 layout, rounds 1-3)
 const WORK = { qdesk: [-2.55, 0], board: 0.35 };
-const LIFT_X = 21.7, PANEL_X = 23.35;
-const PILASTERS = [7.95, 10.35, 14.75, 20.2, 24.1];
+const LIFT_X = 18.6, PANEL_X = 20.25;
+const PILASTERS = [7.45, 13.3, 16.95];
 // a veil over the floor texture: l1's floor is a warm mid grey, which the lamps' warm light shows up on
 const FLOOR_TONE = 'rgba(104, 94, 90, 0.13)';
 const NEAR = { offset: [-0.231, -0.121, 1.698], height: 5.486 };   // l2's framing, relative to its bench's centre
@@ -60,14 +62,15 @@ export function floorLayout(room, kit, colour) {
   const liftThreshold = plus(lift, kit.lift.slots.threshold);
   add('alcove', 'alcove', [0, D, 0], { place: 'waiting' });
   if (room && room.waiting && room.waiting.length) add('crate', 'crate', plus([0, D, 0], plus(kit.alcove.slots.inside, [0, 0.1, 0])), { place: 'waiting' });
-  add('shelf-a', 'shelf', [3.9, D - 0.3, 0], { place: 'library' });
-  add('shelf-b', 'shelf', [5.25, D - 0.3, 0], { place: 'library' });
-  add('book-cart', 'book-cart', [6.9, D - 1.1, 0], { place: 'library' });
-  add('plant-lib', 'plant-tall', [7.4, D - 0.45, 0]);
-  add('podium', 'podium', [16.1, D - 0.75, 0], { place: 'orchestrator' });
-  add('plant-podium', 'plant-bush', [17.3, D - 0.45, 0]);
-  add('whiteboard', 'whiteboard', [18.8, D - 0.8, 0], { place: 'briefing' });
-  add('plant-lift', 'plant-tall', [24.75, D - 0.5, 0]);
+  add('shelf-a', 'shelf', [3.6, D - 0.3, 0], { place: 'library' });
+  add('shelf-b', 'shelf', [4.95, D - 0.3, 0], { place: 'library' });
+  add('book-cart', 'book-cart', [6.4, D - 1.1, 0], { place: 'library' });
+  add('plant-lib', 'plant-tall', [6.95, D - 0.45, 0]);
+  // (the podium stands clear of the workarea bench's right end: robots reach its seats along the wall behind it)
+  add('podium', 'podium', [14.4, D - 0.75, 0], { place: 'orchestrator' });
+  add('plant-podium', 'plant-bush', [15.35, D - 0.45, 0]);
+  add('whiteboard', 'whiteboard', [16.35, D - 0.8, 0], { place: 'briefing' });
+  add('plant-lift', 'plant-tall', [21.05, D - 0.5, 0]);
   add('plant-front-l', 'plant-tall', [0.6, 0.7, 0]);
   add('plant-front-r', 'plant-bush', [W - 0.6, 0.7, 0]);
 
@@ -87,33 +90,40 @@ export function floorLayout(room, kit, colour) {
   const firstEmpty = seated.findIndex(l => !l.length);
   if (firstEmpty >= 0) fill(recent, firstEmpty);
 
-  const slots = kit.bench.slots;
+  // a bench is SEATS modules of the kit's bench pieces (left end, middles, right end), MODULE apart along x, each
+  // anchored at its desk top's far edge on its left seam; one soft shadow lies under the whole bench
+  const M = kit['bench-mid'].module_m, piece = kit['bench-mid'].slots;
+  const moduleAt = (bx, by, d) => [bx - SEATS * M / 2 + d * M, by + DESK_D / 2, DESK_Z];
   BENCHES.forEach(([bx, by], bi) => {
     const at = [bx, by, 0], key = `bench-${bi}`, onBench = seated[bi];
     const live = onBench.some(j => j.active);
-    add(key, 'bench', at, { place: `bench:${key}` });
+    add(`${key}-shadow`, `shadow-bench-${SEATS}`, at);
     benches.push({ key, at, jobs: onBench.map(j => j.key), frame: { target: plus(at, NEAR.offset), height: NEAR.height }, live });
     add(`spill-${bi}`, 'glow-floor-spill', plus(at, [0, -1.3, 0]), { intensity: live ? 0.9 : 0 });
-    for (let d = 0; d < 3; d++) {
-      const job = onBench[d], on = !!(job && job.active), cx = slots.desk_top[d][0];
-      const seat = plus(at, slots.seats[d]), lampAt = plus(at, slots.lamps[d]);
+    for (let d = 0; d < SEATS; d++) {
+      const job = onBench[d], on = !!(job && job.active);
+      const m = moduleAt(bx, by, d), module = `${key}-m${d}`;
+      add(module, d === 0 ? 'bench-left' : d === SEATS - 1 ? 'bench-right' : 'bench-mid', m, { place: `bench:${key}` });
+      const seat = plus(m, piece.seat), lampAt = plus(m, piece.lamp), top = plus(m, piece.desk_top);
       add(`lamp-${bi}-${d}`, 'lamp', lampAt);
-      add(`shade-${bi}-${d}`, 'glow-shade', plus(lampAt, kit.lamp.slots.shade), { intensity: on ? 1 : 0 });
-      add(`pool-${bi}-${d}`, 'glow-desk-pool', plus(lampAt, [0.3, -0.25, 0.005]), { intensity: on ? 1 : 0 });
-      add(`chair-near-${bi}-${d}`, 'chair-back', plus(at, [cx + 0.1, -0.6, 0]), { place: `bench:${key}` });
+      // every lamp throws a gentle pool; a desk with a run at work is bright (brightness still means activity)
+      add(`shade-${bi}-${d}`, 'glow-shade', plus(lampAt, kit.lamp.slots.shade), { intensity: on ? 1 : IDLE_LAMP / 2 });
+      add(`pool-${bi}-${d}`, 'glow-desk-pool', plus(lampAt, [0.3, -0.25, 0.005]), { intensity: on ? 1 : IDLE_LAMP });
+      // (right of the seat's pedestal, which stands under the module's left part: chairs between pedestals, as l2)
+      add(`chair-near-${bi}-${d}`, 'chair-back', [top[0] + 0.3, by - 0.6, 0], { place: `bench:${key}` });
       if (bi === 0) add(`chair-far-${bi}-${d}`, 'chair-front', [seat[0], seat[1] + 0.12, 0], { place: `bench:${key}` });
       // a monitor at most desks, as l1's benches; a robot at work brings its own laptop or papers
       const h = hash(`${key}:${d}`);
-      if (!on && (bi > 0 || d === 2)) add(`monitor-${bi}-${d}`, 'monitor', plus(at, [cx + 0.15, 0.12, 0.74]));
+      if (!on && (bi > 0 || d === 2)) add(`monitor-${bi}-${d}`, 'monitor', [top[0] + 0.15, by + 0.12, DESK_Z]);
       // small things on the near half of the desk: more at a busy workarea (l2), a few elsewhere (l1)
       const n = bi === 0 ? 5 : 1 + (h % 3);
       for (let k = 0; k < n; k++) {
         const [dx, dy] = SPOTS[(h + k * 2) % SPOTS.length];
-        add(`prop-${bi}-${d}-${k}`, SMALL[(h >>> (3 * k)) % SMALL.length], plus(at, [cx + dx, dy, 0.74]));
+        add(`prop-${bi}-${d}-${k}`, SMALL[(h >>> (3 * k)) % SMALL.length], [top[0] + dx, by + dy, DESK_Z]);
       }
       if (on) {
-        runs.push({ key: job.key, host: job.host, agent: job.agent, bench: key, desk: d, seat, chair: bi === 0 ? `chair-far-${bi}-${d}` : null,
-          sprite: POSES[runs.length % POSES.length], tint: colour(job.host) });
+        runs.push({ key: job.key, host: job.host, agent: job.agent, bench: key, module, desk: d, seat,
+          chair: bi === 0 ? `chair-far-${bi}-${d}` : null, sprite: POSES[runs.length % POSES.length], tint: colour(job.host) });
       }
     }
   });
@@ -147,13 +157,14 @@ export function floorLayout(room, kit, colour) {
     const bi = seated.findIndex(l => l.some(j => j.key === f.to));
     if (bi < 0) return null;
     const d = seated[bi].findIndex(j => j.key === f.to);
-    return { to: f.to, from: liftThreshold, seat: plus([...BENCHES[bi], 0], slots.seats[d]) };
+    return { to: f.to, from: liftThreshold, seat: plus(moduleAt(...BENCHES[bi], d), piece.seat), at: f.at };
   }).filter(Boolean);
 
   return {
     size: FLOOR, planes, items, runs, benches, trails, lift: { id: 'lift', at: lift, threshold: liftThreshold },
     panel: { at: [PANEL_X, D, 0], buttons: kit['lift-panel'].slots.buttons },
     frames: { far: { box: [0, 0, -0.9, W, D, H], margin: 0.02 }, near: benches[0].frame },   // (-0.9: the slab)
+    moduleM: M,
     bounds: [0, 0, 0, W, D, H],
   };
 }

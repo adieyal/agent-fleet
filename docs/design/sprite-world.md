@@ -154,19 +154,21 @@ Both are one layout seen at two zooms. The floor follows l1's places along the b
    left wall (x = 0)                                                  right edge cut away
 ```
 
-As built in `layout.js` (a pure function of the room from `workarea-model.js`), after six rounds of side-by-sides against l1 and l2 (`art/scripts/shoot_floor.py`; rounds 4-6 follow the review of round 3):
+As built in `layout.js` (a pure function of the room from `workarea-model.js`), after eight rounds of side-by-sides against l1 and l2 (`art/scripts/shoot_floor.py`; rounds 4-6 and 7-8 follow reviews of rounds 3 and 6):
 
-- **The floor** is 25.2 × 10.8 m (seven bays by three) on a 0.9 m slab with a pale rim, with 3.2 m walls 0.45 m thick under caps; the near and right walls are cut away. A first cut at 32.4 × 14.4 m made everything read small against l1.
+- **The floor** is 21.6 × 10.8 m (six bays by three) on a 0.9 m slab with a pale rim, with 3.2 m walls 0.45 m thick under caps; the near and right walls are cut away. It is sized to read full with five benches and the workarea, as l1 does. Earlier cuts at 32.4 × 14.4 m and 25.2 × 10.8 m left too much empty floor.
 - **Along the back wall**, as l1: the crate alcove with its pendant lamp (a Blender piece; the crate appears when a live session waits on its human), the library (shelves and book cart), the workarea, the orchestrator's podium, the briefing board, and the lift with its floor-button column. The buttons' numbers, this floor and floors with attention are DOM over the rendered buttons.
 - **The workarea** keeps l2's proportions, relative to its bench's centre: the question desk and lantern 2.55 m to the left and 0.45 m off the wall, the plan wall 0.35 m right of centre, the bench 1.75 m from the wall. The plan wall is l2's 10 × 6 grid of 30 cm tiles.
-- **Benches** are l1's long benches (the kit's three-desk bench with near-side chairs): the workarea's and five staggered on the open floor. Idle desks carry a monitor, an unlit lamp and one to three small props; the workarea's carry five.
+- **Benches** are l1's long, solid benches, built from the kit's bench pieces. A left end, middles and a right end come from one AI generation, cut to one 1.6 m seat module each and tiled into one continuous top with a grey pedestal under each seat. Each bench has one soft contact shadow, and near-side chairs stand between the pedestals. There is the workarea's bench and five staggered on the open floor. Idle desks carry a monitor, a lamp and one to three small props; the workarea's carry five.
 - **Desks for jobs.** Each job the room shows takes a desk. Active jobs fill the workarea bench, then the next; recently finished ones the bench after; the rest stand idle. Each workarea desk's row on the plan wall shows its job's steps, and the criteria lights show steps done out of all steps.
-- **Warmth.** Lamps glow only where a run is active. An even warm grade (soft-light) is laid on the floor and walls, over a warm-grey floor tone, with a faint ceiling-light sheen per bay, so an idle floor looks lived in as l1 does.
+- **Warmth.** Every desk's lamp throws a gentle warm pool: dim (0.3) when idle, full where a run is at work, so brightness still means activity. An even warm grade (soft-light) is laid on the floor and walls, over a warm-grey floor tone, with a faint ceiling-light sheen per bay, so an idle floor looks lived in as l1 does.
+- **Depth.** Props carry a two-layer baked contact shadow (a tight core and a soft falloff). Benches have one shadow each, and a seated robot gets a shadow under its chair.
+- **Footprints.** One light trail per walk in the last hour, from the lift to the desk, fading with the walk's age.
 - **Action bubbles** over working robots (the deck's glyphs, in the robot's host colour) appear from zoom level 0.75, as in l2.
 - **Rooms** (epics) are clusters of benches with a shared floor plaque and a DOM headline, per the PRD's first L1 layout decision (not built yet).
 - **The l2 framing** is fixed relative to a bench's centre, so clicking any bench zooms to the same composition.
 
-The remaining differences, largest first (`floor-sbs/round-6` in the job outbox):
+The remaining differences, largest first (`floor-sbs/round-8` in the job outbox):
 1. l1 lights every bench's lamps and l2's whole workarea is warm, whereas here only desks with active runs glow (PRD: warmth is activity); the ambient grade makes up part of it.
 2. l2 shows the lift beside the workarea; here it is at the far right as in l1, and l2's framing shows the library there instead.
 3. l2 is not a single projection: its question desk sits further from the bench's end than a real layout allows.
@@ -249,10 +251,10 @@ Planned: `glow.js` (warmth fading per workarea), `behaviour.js` (renderer-agnost
 
 | Mode | DPR | Whole floor | Bench (l2) | Zooming between them |
 |---|---|---|---|---|
-| no GPU | 1 | 1.2 ms (853 fps) | 1.9 ms (531 fps) | 11.9 ms (84 fps), p95 21 |
-| no GPU | 2 | 2.9 ms (342 fps) | 4.4 ms (228 fps) | 51 ms (20 fps), p95 109 |
-| GPU | 1 | 0.9 ms (1114 fps) | 1.4 ms (732 fps) | 2.3 ms (434 fps) |
-| GPU | 2 | 1.9 ms (538 fps) | 1.0 ms (980 fps) | 8.8 ms (114 fps) |
+| no GPU | 1 | 1.2 ms (823 fps) | 2.7 ms (375 fps) | 12.9 ms (77 fps), p95 23 |
+| no GPU | 2 | 2.8 ms (356 fps) | 6.2 ms (161 fps) | 51 ms (20 fps), p95 137 |
+| GPU | 1 | 0.8 ms (1288 fps) | 1.6 ms (631 fps) | 2.0 ms (500 fps) |
+| GPU | 2 | 1.9 ms (531 fps) | 2.2 ms (457 fps) | 7.8 ms (128 fps) |
 
 Walking robots stay far above 50 fps everywhere. Zooming at pixel ratio 2 without a GPU is the open case. After three slow frames of camera motion the engine draws motion at ratio 1 into a side canvas and scales it up, and the frame at rest is sharp again. That took it from 15 to 20 fps (after moving the warm grade out of the per-frame path). What remains is reading sprite copies and a ground snapshot made at ratio 2; ratio-1 copies of both for motion would close it.
 

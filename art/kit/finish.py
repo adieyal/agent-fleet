@@ -60,7 +60,7 @@ class Prop:
     parts: int = 1                   # how many objects that generation drew
     rows: int = 1
     base: float = 0.0                # anchor height within the box (the lantern hangs from its centre)
-    shadow: float = 0.28             # contact shadow opacity; 0 for none
+    shadow: float = 0.42             # contact shadow opacity; 0 for none
     slots: dict = field(default_factory=dict)
     doc: str = ''
 
@@ -103,12 +103,13 @@ PROPS: dict[str, Prop] = {
 }
 
 
-def components(im: Image.Image, n: int, rows: int) -> list[tuple[int, int, int, int]]:
+def components(im: Image.Image, n: int, rows: int, close: int = 5) -> list[tuple[int, int, int, int]]:
     """The bounding boxes of the n largest separate objects in a generation, row-major: alpha closed over small
     gaps (chair castors, pens) and flood-filled on a quarter-size grid."""
     k = 4
     a = im.getchannel('A').point(lambda v: 255 if v > 40 else 0).reduce(k).point(lambda v: 255 if v > 0 else 0)
-    a = a.filter(ImageFilter.MaxFilter(5))
+    if close > 1:
+        a = a.filter(ImageFilter.MaxFilter(close))
     w, h = a.size
     px = a.load()
     seen = bytearray(w * h)
@@ -154,9 +155,15 @@ def contact_shadow(size: tuple[float, float, float], ppm: float) -> tuple[Image.
     x0, y0 = min(c[0] for c in corners) - pad, min(c[1] for c in corners) - pad
     x1, y1 = max(c[0] for c in corners) + pad, max(c[1] for c in corners) + pad
     W, H = max(1, round((x1 - x0) * ppm)), max(1, round((y1 - y0) * ppm))
-    a = Image.new('L', (W, H), 0)
-    ImageDraw.Draw(a).polygon([((cx - x0) * ppm, (cy - y0) * ppm) for cx, cy in corners], fill=255)
-    a = a.filter(ImageFilter.GaussianBlur(max(1, 0.07 * ppm)))
+    # two layers, as a baked contact shadow reads: a tight dark core where the object meets the floor, and a wide
+    # soft falloff around it
+    def layer(g_m, blur_m, strength):
+        cs = [plane((x, y, 0)) for x, y in ((-w / 2 - g_m, -d / 2 - g_m), (w / 2 + g_m, -d / 2 - g_m),
+                                              (w / 2 + g_m, d / 2 + g_m), (-w / 2 - g_m, d / 2 + g_m))]
+        m = Image.new('L', (W, H), 0)
+        ImageDraw.Draw(m).polygon([((cx - x0) * ppm, (cy - y0) * ppm) for cx, cy in cs], fill=strength)
+        return m.filter(ImageFilter.GaussianBlur(max(1, blur_m * ppm)))
+    a = ImageChops.lighter(layer(-0.02, 0.025, 255), layer(grow + 0.06, 0.1, 150))
     img = Image.new('RGBA', (W, H), (38, 48, 70, 0))
     img.putalpha(a)
     return img, (-x0 * ppm, -y0 * ppm)
@@ -196,6 +203,152 @@ def fit_prop(name: str, p: Prop) -> dict:
             'size_m': list(p.size), 'scale': {'fit': p.fit, 'source_px_per_m': round(src_ppm, 1)},
             'footprint': [round(v, 3) for v in box], 'hit': 'alpha', 'tiers': out,
             **({'slots': p.slots} if p.slots else {}), **({'doc': p.doc} if p.doc else {})}
+
+
+# --- bench pieces: one generation of a left end, a middle module and a right end, cut to tile -----------------------
+
+DEPTH, TOP_Z, TOP_T = 0.8, 0.74, 0.04   # the desk top's depth, height and thickness, metres
+_n = (0.653, 0.362)                      # screen normal to the desk's depth direction (0.362, -0.653): across a seam
+
+
+def _wood(im: Image.Image):
+    """Pixels of the light-oak desk top: warm, light, opaque."""
+    px = im.load()
+    out = []
+    for y in range(im.height):
+        for x in range(im.width):
+            r, g, b, a = px[x, y]
+            if a > 200 and r > 170 and r - b > 45 and g > 120:
+                out.append((x, y))
+    return out
+
+
+MODULE = 1.6   # metres of bench per seat (as asked of the generation; 1.8 drew the bench a fifth larger than l2)
+INSET = 0.08   # seams this share of a top's length in from its ends
+OVERLAP = 0.05 # metres a piece runs on under the next
+
+
+def _far_edge(wd) -> dict:
+    """The topmost wood pixel of each column: the desk top's far edge."""
+    top = {}
+    for x, y in wd:
+        if x not in top or y < top[x]:
+            top[x] = y
+    return top
+
+
+def _slope(points) -> float:
+    n = len(points)
+    mx, my = sum(p[0] for p in points) / n, sum(p[1] for p in points) / n
+    return sum((x - mx) * (y - my) for x, y in points) / sum((x - mx) ** 2 for x, _ in points)
+
+
+def _shear(im: Image.Image, k: float) -> Image.Image:
+    """Shear vertically so a line of slope k becomes level (y' = y - k x); verticals stay vertical."""
+    h_extra = int(abs(k) * im.width) + 2
+    out = im.transform((im.width, im.height + h_extra), Image.Transform.AFFINE,
+                       (1, 0, 0, k, 1, -h_extra if k < 0 else 0), resample=Image.Resampling.BICUBIC)
+    return out
+
+
+def bench_pieces() -> tuple[dict, float]:
+    """The three pieces as sprites of exactly one seat module each, so any number of middles between the two ends
+    makes one continuous bench. The generation draws furniture at its own angle (the desk's long edges slope 0.37
+    where this camera's slope 0.27, like every AI prop here), so each piece is sheared vertically until its far edge
+    has the camera's slope, which makes consecutive modules meet along the bench. The seam then runs along the
+    piece's own depth edge (measured), the module is the middle piece's far edge (one seat, MODULE metres), and
+    each piece is anchored at its top's far-left corner."""
+    raw = Image.open(RAW / 'bench-pieces.png').convert('RGBA')
+    pieces = [raw.crop(b) for b in components(raw, 3, 1, close=1)]
+    k_cam = PY[0] / PX[0]
+    fixed, meta = [], []
+    for im in pieces:
+        top = _far_edge(_wood(im))
+        xs = sorted(top)[len(top) // 5: 4 * len(top) // 5]
+        k_ai = _slope([(x, top[x]) for x in xs])
+        im = _shear(im, k_ai - k_cam)
+        wd = _wood(im)
+        top = _far_edge(wd)
+        corner = min(wd, key=lambda p: (p[1] - k_cam * p[0], p[0]))   # far-left: highest above the far edge's line
+        # the top's left edge (the depth direction): the leftmost wood pixel of each row below the corner
+        left = {}
+        for x, y in wd:
+            if y > corner[1] and (y not in left or x < left[y]):
+                left[y] = x
+        rows = sorted(left)[: max(3, len(left) // 3)]   # the upper part of that edge: the top face, not the front
+        kd = _slope([(left[y], y) for y in rows]) if len(rows) > 2 else -1.0
+        dd = (1.0, kd)                                    # along the depth edge, screen px per px
+        # the near-left corner: the lowest wood pixel still on that edge line (below it: the top's front face, legs)
+        on_edge = [(x, y) for x, y in wd if y > corner[1] and abs(x - (corner[0] + (y - corner[1]) / kd)) <= 2.5]
+        near = max(on_edge, key=lambda p: p[1]) if on_edge else corner
+        far_right = max(top)                              # the far edge's rightmost column
+        # the far edge as a line (it now has the camera's slope): its offset, from the middle of the edge, where the
+        # corners' rounding doesn't reach
+        cols = sorted(top)[len(top) // 5: 4 * len(top) // 5]
+        c_far = sorted(top[x] - k_cam * x for x in cols)[len(cols) // 2]
+        fixed.append(im)
+        meta.append({'corner': corner, 'near': near, 'dd': dd, 'far_right': far_right, 'c_far': c_far})
+    mid = meta[1]
+    # seams sit a little inside each top (its ends are not quite parallel to its depth edge), so both sides of every
+    # seam have wood; all seams take the middle piece's shape, so neighbouring pieces are exact complements
+    far_mid = mid['far_right'] - mid['corner'][0]
+    inset = INSET * far_mid
+    pitch_x = far_mid - 2 * inset
+    pitch = (pitch_x, pitch_x * k_cam)
+    s = pitch_x / (MODULE * PX[0])                         # source px per metre
+    kd, ny = mid['dd'][1], mid['near'][1] - mid['corner'][1]
+
+    def side(x, y, qx, qy):
+        # how far right of the seam through q a pixel lies, horizontally. The seam is the plane x = const: across
+        # the top it runs along the depth edge from q to the near edge; below that (the top's front face, the
+        # pedestals, the legs) it is vertical
+        return x - (qx + min(y - qy, ny) / kd)
+
+    out = {}
+    names = (('bench-left', False, True), ('bench-mid', True, True), ('bench-right', True, False))
+    for (name, cut_left, cut_right), im, m in zip(names, fixed, meta):
+        cx, cy = m['corner']
+        own = m['far_right'] - cx
+        # the module's left seam (the piece's anchor): an inset in from the left end; for the left end piece, one
+        # module before its right seam, so its legs and end stand to the left of the anchor
+        ax = cx + (own - inset - pitch_x if name == 'bench-left' else inset)
+        anchor = (ax, m['c_far'] + k_cam * ax)   # on the far edge's line
+        keep = Image.new('L', im.size, 0)
+        kp = keep.load()
+        for y in range(im.height):
+            for x in range(im.width):
+                a = side(x, y, *anchor)
+                b = side(x, y, anchor[0] + pitch[0], anchor[1] + pitch[1])
+                # (a piece runs OVERLAP past its right seam, under the next piece, which draws after it: its wood
+                # fills any sliver where the two tops' edges don't quite meet)
+                if (not cut_left or a >= -0.5) and (not cut_right or b < OVERLAP * s):
+                    kp[x, y] = 255
+        im.putalpha(ImageChops.multiply(im.getchannel('A'), keep))
+        m['corner'] = anchor
+        t = trim_keep(im, m['corner'])
+        tiers = []
+        for ppm in [t_ for t_ in TIERS if t_ <= s * 1.02] + ([s] if s > TIERS[-1] * 1.2 else []):
+            k = ppm / s
+            spr = t['img'].resize((max(1, round(t['img'].width * k)), max(1, round(t['img'].height * k))), Image.Resampling.LANCZOS)
+            tiers.append(save(name, ppm, spr, (t['anchor'][0] * k, t['anchor'][1] * k)))
+        out[name] = {'source': 'ai', 'from': f'art/kit/raw/bench-pieces.png (piece {len(out) + 1} of 3)', 'layer': 'standing',
+                     'size_m': [MODULE, DEPTH, TOP_Z], 'module_m': MODULE, 'hit': 'alpha', 'tiers': tiers,
+                     'scale': {'fit': 'far edge = one module', 'source_px_per_m': round(s, 1),
+                               'sheared_to_camera': round(k_cam, 4)},
+                     # anchored at the desk top's far-left corner: the footprint and slots are metres from it (the
+                     # module sits at x 0..MODULE, the top's far edge at y 0, its surface at z 0)
+                     'anchor': 'desk top, far edge, at the module\'s left seam',
+                     'footprint': [0, -DEPTH - 0.02, -TOP_Z, MODULE, 0, 0],
+                     'slots': {'seat': [MODULE / 2, 0.14, 0.47 - TOP_Z], 'lamp': [0.18, -0.12, 0],
+                               'desk_top': [MODULE / 2, -DEPTH / 2, 0], 'floor_centre': [MODULE / 2, -DEPTH / 2, -TOP_Z]},
+                     'doc': 'one seat module of the long bench: tile the left end, middles and right end MODULE apart'}
+    return out, MODULE
+
+
+def trim_keep(im: Image.Image, point) -> dict:
+    """Trim to the alpha bounds, keeping track of where `point` lands."""
+    box = im.getchannel('A').point(lambda a: 255 if a > 8 else 0).getbbox()
+    return {'img': im.crop(box), 'anchor': (point[0] - box[0], point[1] - box[1])}
 
 
 def save(name: str, ppm: float, im: Image.Image, anchor, frames: int = 1) -> dict:
@@ -281,7 +434,7 @@ def footprints(angle: float) -> Image.Image:
     return out
 
 
-def procedural() -> dict:
+def procedural(module: float) -> dict:
     out = {}
     flat = lambda img, w_m: (img, (-w_m / 2, w_m / 2, 0))  # noqa: E731  (image centred on the anchor, in the floor)
 
@@ -312,6 +465,23 @@ def procedural() -> dict:
                  'warm pool under a desk lamp, on the desk top (place at desk height)', 'light', {'blend': 'lighter'})
     floor_sprite('glow-floor-spill', radial(int(3.2 * SRC), hexrgb('#fee095'), 0.28),
                  'low warm spill on the floor in front of an active bench', 'light', {'blend': 'lighter'})
+    # contact shadows drawn as one piece, so tiled bench modules don't darken their seams: a whole bench of n seats
+    # (anchor: the bench's centre on the floor) and a seated robot on its chair (anchor: the seat's floor point)
+    def soft_rect(w_m, d_m, core, blur_m, strength):
+        img = Image.new('L', (int((w_m + 0.8) * SRC), int((d_m + 0.8) * SRC)), 0)
+        g = ImageDraw.Draw(img)
+        g.rounded_rectangle((0.4 * SRC, 0.4 * SRC, (0.4 + w_m) * SRC, (0.4 + d_m) * SRC), radius=core * SRC, fill=strength)
+        return img.filter(ImageFilter.GaussianBlur(blur_m * SRC))
+
+    def shadow(a):
+        out_img = Image.new('RGBA', a.size, (38, 48, 70, 0))
+        out_img.putalpha(a)
+        return out_img
+    for n in (3, 4):
+        a = ImageChops.lighter(soft_rect(n * module + 0.1, 0.78, 0.05, 0.035, 150), soft_rect(n * module + 0.3, 1.0, 0.2, 0.12, 80))
+        floor_sprite(f'shadow-bench-{n}', shadow(a), f'the soft contact shadow of a {n}-seat bench, as one piece', 'ground', {'hit': 'none'})
+    a = ImageChops.lighter(soft_rect(0.5, 0.45, 0.2, 0.04, 140), soft_rect(0.7, 0.62, 0.3, 0.1, 70))
+    floor_sprite('shadow-seat', shadow(a), 'a seated robot and its chair\'s contact shadow', 'ground', {'hit': 'none'})
     # sheen: the soft reflection of a ceiling light in l1's satin floor, a wide blurred panel of warm white
     sw, sd = int(2.0 * SRC), int(1.4 * SRC)
     sheen = Image.new('L', (sw, sd), 0)
@@ -393,7 +563,9 @@ def main() -> None:
         sprites[name] = fit_prop(name, p)
         print(f'{name:16s} ai {sprites[name]["scale"]["source_px_per_m"]:7.1f} px/m src', flush=True)
     sprites.update(blender_pieces())
-    sprites.update(procedural())
+    pieces, module = bench_pieces()
+    sprites.update(pieces)
+    sprites.update(procedural(module))
     manifest = {
         'version': 1,
         'about': 'The floor kit: see art/kit/README.md. Sprites are anchored at their base centre unless their doc '

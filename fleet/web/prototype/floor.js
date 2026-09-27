@@ -9,7 +9,7 @@ import { World } from '/js/world/engine.js';
 import { floorLayout } from '/js/world/layout.js';
 import { route, along, length, navGrid } from '/js/world/nav.js';
 import { toScreen } from '/js/world/projection.js';
-import { workareaOf } from '/js/workarea-model.js';
+import { RECENT_S, workareaOf } from '/js/workarea-model.js';
 import { hostLook } from '/js/looks.js';
 import { actionOf, glyphHtml } from '/js/glyphs.js';
 
@@ -23,7 +23,7 @@ const GLYPH = { blocker: '✋', decision: '?', alert: '!' };
 const LOOP = params.has('loop');   // robots walk lift ↔ desk for ever: a steady scene for measuring frame time
 // a warm ambient over everything, so an idle floor looks lived in as l1 does; lamps still carry activity
 const GRADE = { color: '#ffc088', alpha: 0.26, mode: 'soft-light' };
-const PRINTS = 0.5;               // footprint strength: several trails cross a floor where l2 shows one
+const PRINTS = 0.4;               // a fresh trail's strength: light, as l2's; it fades over the hour a walk stays recent
 const BUBBLES_FROM = 0.75;        // zoom level (0 whole floor .. 1 l2) from which working robots show their action
 
 if (params.has('shot')) document.body.classList.add('shot');
@@ -60,7 +60,7 @@ async function main() {
   for (const it of layout.items) {
     const s = kitManifest.sprites[it.sprite];
     // (chairs are pushed aside, not walked around: the row behind a bench is how its seats are reached)
-    if (!s || s.layer === 'light' || /^(footprints|slab|chair|floor-sheen)/.test(it.sprite)) continue;
+    if (!s || s.layer === 'light' || /^(footprints|slab|chair|floor-sheen|shadow)/.test(it.sprite)) continue;   // (flat on the floor)
     const f = s.footprint, z0 = it.at[2] + f[2];
     if (z0 > 1.8) continue;   // hanging (the lantern)
     blocks.push([it.at[0] + f[0], it.at[1] + f[1], it.at[0] + f[3], it.at[1] + f[4]]);
@@ -69,15 +69,16 @@ async function main() {
   floor.grid = grid;
   const liftOut = [layout.lift.at[0], layout.lift.at[1] - 0.15];
 
-  // footprints from the lift to every desk where a run happened in the last hour
+  // one light trail of footprints per recent walk, from the lift to the desk, fading as the walk grows older
   layout.trails.forEach((t, i) => {
-    const pts = route(grid, liftOut, t.seat);
+    const fade = PRINTS * Math.max(0, 1 - (state.time - t.at) / RECENT_S);
+    const pts = fade > 0.02 && route(grid, liftOut, t.seat);
     if (!pts) return;
     const L = length(pts);
-    for (let d = 0.9, k = 0; d < L - 0.9; d += 0.62, k++) {
+    for (let d = 0.9, k = 0; d < L - 0.9; d += 0.75, k++) {
       const { at, heading } = along(pts, d);
       const deg = ((Math.round(heading / (Math.PI / 4)) % 8) + 8) % 8 * 45;
-      world.add({ id: `steps-${i}-${k}`, sprite: `footprints-${String(deg).padStart(3, '0')}`, at: [at[0], at[1], 0], intensity: PRINTS });
+      world.add({ id: `steps-${i}-${k}`, sprite: `footprints-${String(deg).padStart(3, '0')}`, at: [at[0], at[1], 0], intensity: fade });
     }
   });
 
@@ -91,7 +92,8 @@ async function main() {
     const { run } = w;
     if (w.state === 'walking') world.remove(w.id);
     if (run.chair) world.set(run.chair, { visible: false });
-    world.seat(run.key, { sprite: run.sprite, at: run.seat, on: run.bench, tint: run.tint, ambient: true, place: `run:${run.key}` });
+    world.seat(run.key, { sprite: run.sprite, at: run.seat, on: run.module, tint: run.tint, ambient: true, place: `run:${run.key}` });
+    world.add({ id: `seat-shadow-${run.key}`, sprite: 'shadow-seat', at: [run.seat[0], run.seat[1] + 0.05, 0] });   // its contact shadow
     w.state = 'seated';
     floor.seated.push(run.key);
     if (world.onView) world.onView(world.camera.view);

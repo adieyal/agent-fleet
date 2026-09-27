@@ -77,10 +77,12 @@ def test_the_restoke_floor_seats_its_running_jobs_at_the_workarea_bench(page: Pa
 
 def test_lamps_glow_only_at_active_runs(page: Page, state: dict[str, Any]) -> None:
     items = {i["id"]: i for i in layout(page, state)["items"]}
-    lit = sorted(k for k, i in items.items() if k.startswith("pool-") and i["intensity"] > 0)
-    assert lit == ["pool-0-0", "pool-0-1", "pool-0-2"]
+    # every desk's lamp throws a pool; only desks with a run at work are bright
+    bright = sorted(k for k, i in items.items() if k.startswith("pool-") and i["intensity"] == 1)
+    assert bright == ["pool-0-0", "pool-0-1", "pool-0-2"]
+    assert all(0 < i["intensity"] < 0.5 for k, i in items.items() if k.startswith("pool-") and k not in bright)
     assert all(items[f"wash-{dx}"]["intensity"] == 1 for dx in (-1.4, 0, 1.4))  # the workarea is live
-    assert not any(k.startswith("pool-1-") and i["intensity"] > 0 for k, i in items.items())  # a done job's desk is dark
+    assert all(items[f"pool-1-{d}"]["intensity"] < 0.5 for d in range(3))  # a done job's desk is dim
 
 
 def test_tiles_follow_step_states(page: Page, state: dict[str, Any]) -> None:

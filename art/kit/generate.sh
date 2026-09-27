@@ -131,3 +131,18 @@ gen monitor 'one black flat computer monitor on a slim stand, with a black keybo
 as they stand on the desks in the reference, seen from the same angle: the screen faces the lower left of the \
 image, the keyboard in front of it. The screen is dark. No desk, no other items.' "$L1_TERMINALS"
 wait
+
+# Round 4 (reviewer, floor round 7): benches of any length from matching pieces, all from one generation so they
+# match exactly; finish.py cuts them apart and trims each to one seat module along the desk's depth.
+gen bench-pieces "three separate pieces of one modular office workbench, drawn side by side in one row with clear \
+transparent space between them, all at the same scale and from the same camera angle as the reference bench, which \
+they must match exactly in materials and proportions: one continuous light-oak desk top, thin dark-grey metal legs, \
+and a grey metal drawer pedestal under each seat. The pieces, left to right: (1) the LEFT END section: one seat's \
+length of desk top with the dark legs at its left end and a drawer pedestal under it, its right end cut straight \
+across; (2) a MIDDLE section: one seat's length of desk top with a drawer pedestal under it, both ends cut straight \
+across, no legs, made to repeat; (3) the RIGHT END section: one seat's length of desk top with a drawer pedestal \
+under it and the dark legs at its right end, its left end cut straight across. All three are exactly the same length \
+and depth, the desk tops at the same height, so they butt together into one long bench running from the upper left \
+to the lower right as in the reference. Empty desk tops: no lamps, no computers, no papers. No chairs." \
+  "$L2_BENCH" "art/bakeoff/B2/bench.webp"
+wait

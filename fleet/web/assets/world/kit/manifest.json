@@ -2995,6 +2995,231 @@
    },
    "doc": "l1's alcove in the back-left corner: a wall fin projecting from the back wall, a lintel across the opening"
   },
+  "bench-left": {
+   "source": "ai",
+   "from": "art/kit/raw/bench-pieces.png (piece 1 of 3)",
+   "layer": "standing",
+   "size_m": [
+    1.6,
+    0.8,
+    0.74
+   ],
+   "module_m": 1.6,
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "bench-left@86.webp",
+     "size": [
+      211,
+      160
+     ],
+     "anchor_px": [
+      84.07,
+      5.46
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "bench-left@172.webp",
+     "size": [
+      422,
+      320
+     ],
+     "anchor_px": [
+      168.13,
+      10.92
+     ]
+    }
+   ],
+   "scale": {
+    "fit": "far edge = one module",
+    "source_px_per_m": 212.4,
+    "sheared_to_camera": 0.2726
+   },
+   "anchor": "desk top, far edge, at the module's left seam",
+   "footprint": [
+    0,
+    -0.8200000000000001,
+    -0.74,
+    1.6,
+    0,
+    0
+   ],
+   "slots": {
+    "seat": [
+     0.8,
+     0.14,
+     -0.27
+    ],
+    "lamp": [
+     0.18,
+     -0.12,
+     0
+    ],
+    "desk_top": [
+     0.8,
+     -0.4,
+     0
+    ],
+    "floor_centre": [
+     0.8,
+     -0.4,
+     -0.74
+    ]
+   },
+   "doc": "one seat module of the long bench: tile the left end, middles and right end MODULE apart"
+  },
+  "bench-mid": {
+   "source": "ai",
+   "from": "art/kit/raw/bench-pieces.png (piece 2 of 3)",
+   "layer": "standing",
+   "size_m": [
+    1.6,
+    0.8,
+    0.74
+   ],
+   "module_m": 1.6,
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "bench-mid@86.webp",
+     "size": [
+      195,
+      154
+     ],
+     "anchor_px": [
+      67.91,
+      0.98
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "bench-mid@172.webp",
+     "size": [
+      389,
+      309
+     ],
+     "anchor_px": [
+      135.82,
+      1.96
+     ]
+    }
+   ],
+   "scale": {
+    "fit": "far edge = one module",
+    "source_px_per_m": 212.4,
+    "sheared_to_camera": 0.2726
+   },
+   "anchor": "desk top, far edge, at the module's left seam",
+   "footprint": [
+    0,
+    -0.8200000000000001,
+    -0.74,
+    1.6,
+    0,
+    0
+   ],
+   "slots": {
+    "seat": [
+     0.8,
+     0.14,
+     -0.27
+    ],
+    "lamp": [
+     0.18,
+     -0.12,
+     0
+    ],
+    "desk_top": [
+     0.8,
+     -0.4,
+     0
+    ],
+    "floor_centre": [
+     0.8,
+     -0.4,
+     -0.74
+    ]
+   },
+   "doc": "one seat module of the long bench: tile the left end, middles and right end MODULE apart"
+  },
+  "bench-right": {
+   "source": "ai",
+   "from": "art/kit/raw/bench-pieces.png (piece 3 of 3)",
+   "layer": "standing",
+   "size_m": [
+    1.6,
+    0.8,
+    0.74
+   ],
+   "module_m": 1.6,
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "bench-right@86.webp",
+     "size": [
+      216,
+      162
+     ],
+     "anchor_px": [
+      67.91,
+      0.87
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "bench-right@172.webp",
+     "size": [
+      433,
+      325
+     ],
+     "anchor_px": [
+      135.82,
+      1.74
+     ]
+    }
+   ],
+   "scale": {
+    "fit": "far edge = one module",
+    "source_px_per_m": 212.4,
+    "sheared_to_camera": 0.2726
+   },
+   "anchor": "desk top, far edge, at the module's left seam",
+   "footprint": [
+    0,
+    -0.8200000000000001,
+    -0.74,
+    1.6,
+    0,
+    0
+   ],
+   "slots": {
+    "seat": [
+     0.8,
+     0.14,
+     -0.27
+    ],
+    "lamp": [
+     0.18,
+     -0.12,
+     0
+    ],
+    "desk_top": [
+     0.8,
+     -0.4,
+     0
+    ],
+    "floor_centre": [
+     0.8,
+     -0.4,
+     -0.74
+    ]
+   },
+   "doc": "one seat module of the long bench: tile the left end, middles and right end MODULE apart"
+  },
   "footprints-000": {
    "source": "procedural",
    "from": "art/kit/finish.py",
@@ -3526,6 +3751,165 @@
    ],
    "doc": "low warm spill on the floor in front of an active bench",
    "blend": "lighter"
+  },
+  "shadow-bench-3": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    -2.85,
+    -0.79,
+    0,
+    2.85,
+    0.79,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "shadow-bench-3@86.webp",
+     "size": [
+      506,
+      213
+     ],
+     "anchor_px": [
+      253.25,
+      106.35
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "shadow-bench-3@172.webp",
+     "size": [
+      1011,
+      426
+     ],
+     "anchor_px": [
+      505.5,
+      212.71
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "shadow-bench-3@343.webp",
+     "size": [
+      2020,
+      851
+     ],
+     "anchor_px": [
+      1010.0,
+      425.41
+     ]
+    }
+   ],
+   "doc": "the soft contact shadow of a 3-seat bench, as one piece"
+  },
+  "shadow-bench-4": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    -3.65,
+    -0.79,
+    0,
+    3.65,
+    0.79,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "shadow-bench-4@86.webp",
+     "size": [
+      634,
+      248
+     ],
+     "anchor_px": [
+      317.2,
+      123.78
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "shadow-bench-4@172.webp",
+     "size": [
+      1267,
+      496
+     ],
+     "anchor_px": [
+      633.39,
+      247.57
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "shadow-bench-4@343.webp",
+     "size": [
+      2532,
+      991
+     ],
+     "anchor_px": [
+      1265.79,
+      495.13
+     ]
+    }
+   ],
+   "doc": "the soft contact shadow of a 4-seat bench, as one piece"
+  },
+  "shadow-seat": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    -0.65,
+    -0.625,
+    0,
+    0.65,
+    0.625,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "shadow-seat@86.webp",
+     "size": [
+      143,
+      99
+     ],
+     "anchor_px": [
+      71.53,
+      49.18
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "shadow-seat@172.webp",
+     "size": [
+      286,
+      197
+     ],
+     "anchor_px": [
+      143.06,
+      98.36
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "shadow-seat@343.webp",
+     "size": [
+      572,
+      394
+     ],
+     "anchor_px": [
+      286.11,
+      196.71
+     ]
+    }
+   ],
+   "doc": "a seated robot and its chair's contact shadow"
   },
   "floor-sheen": {
    "source": "procedural",

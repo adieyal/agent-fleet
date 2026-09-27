@@ -52,9 +52,15 @@ async function main() {
   S['plan-wall'].slots.lights.forEach((p, i) => add('light' + i, i < 3 ? 'criteria-on' : 'criteria-off', plus(BOARD, p)));
   for (const dx of [-1.4, 0, 1.4]) add('wash' + dx, 'glow-wall-wash', [BOARD[0] + dx, D - 0.01, 3.05], { intensity: 0.9 });
   add('bench', 'bench', BENCH, { place: 'workarea' });
+  add('bench-shadow', 'shadow-bench-3', BENCH);
+  // a four-seat bench from the kit's pieces (left end, two middles, right end), with its one shadow
+  const M = S['bench-mid'].module_m, front = [9.6, 1.6, 0];
+  add('front-shadow', 'shadow-bench-4', front);
+  ['bench-left', 'bench-mid', 'bench-mid', 'bench-right'].forEach((p, d) => add(`front-${d}`, p, [front[0] - 2 * M + d * M, front[1] + 0.4, 0.74]));
   const slots = S.bench.slots;
   slots.seats.forEach((s, i) => {
     world.seat('robot' + i, { sprite: ROBOTS[i], at: plus(BENCH, s), on: 'bench', tint: HOSTS[i], ambient: true, place: 'run' });
+    add('seat-shadow' + i, 'shadow-seat', [BENCH[0] + s[0], BENCH[1] + s[1] + 0.05, 0]);
     add('chair-near' + i, 'chair-back', plus(BENCH, [s[0] + 0.1, -0.75, 0]));
   });
   slots.lamps.forEach((p, i) => {
