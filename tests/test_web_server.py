@@ -10,15 +10,21 @@ from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
+from fleet.composition import open_store
 from fleet.web.documents import renderer
 from fleet.web.library import ProjectLibrary
 from fleet.web.server import FleetState, make_handler
+from fleet.workspace import WorkspaceStore
 
 
 class DashboardHTTPTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(FleetState([])))
+        directory = TemporaryDirectory(prefix="fleet-http-test-")
+        cls.addClassCleanup(directory.cleanup)
+        root = Path(directory.name)
+        state = FleetState([], store=open_store(root / "fleet.db"), workspace=WorkspaceStore(root / "workspace.json"))
+        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(state))
         cls.thread = threading.Thread(target=cls.server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
         cls.thread.start()
         cls.base_url = f"http://127.0.0.1:{cls.server.server_port}"

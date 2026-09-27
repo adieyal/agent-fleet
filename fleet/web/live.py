@@ -1,7 +1,7 @@
 """What the deck writes and derives on top of host state, shared by live and fixture decks.
 
 A state class using LiveWorkspace provides `changed` (a Condition), `version`,
-`workspace` (a WorkspaceStore), `board` (an AttentionBoard), `registry` (the project
+`workspace` (a WorkspaceStore), `attention` (an AttentionFacade), `registry` (the project
 Registry in use), `project_labels`, `capacity`, `known_projects()`, `host_names()`,
 `edit_registry()` and `repository_remotes()`.
 """
@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import threading
 import time
+from datetime import timedelta
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Container, TypeVar
 
-from fleet.attention import AttentionBoard
+from fleet.modules.attention import AttentionFacade
+from fleet.projections.attention import attention_items
 from fleet.building import NoVacancy
 from fleet.projects import Registry
 from fleet.transport import FleetError
@@ -30,7 +32,8 @@ class LiveWorkspace:
     changed: threading.Condition
     version: int
     workspace: WorkspaceStore
-    board: AttentionBoard
+    attention: AttentionFacade
+    woken_until: float
     registry: Registry
     project_labels: dict[str, str]
     capacity: int
@@ -192,14 +195,22 @@ class LiveWorkspace:
         raise NotImplementedError
 
     def act_on_attention(self, action: str, item_id: str, seconds: float | None = None) -> None:
-        self.document()   # brings the board up to date: an item may have resolved since the last push
-        self.board.act(item_id, action, time.time(), seconds)
+        if action == "acknowledge":
+            self.attention.acknowledge(item_id, actor="web-user")
+        elif action == "snooze":
+            if not isinstance(seconds, (int, float)) or isinstance(seconds, bool) or seconds <= 0:
+                raise FleetError("snooze needs a positive number of seconds")
+            self.attention.snooze(item_id, until=self.attention.clock() + timedelta(seconds=seconds), actor="web-user")
+        elif action == "reopen":
+            self.attention.reopen(item_id, actor="web-user")
+        else:
+            raise FleetError(f"unknown attention action '{action}'")
         self.bump()
 
     def with_attention(self, document: dict[str, Any]) -> dict[str, Any]:
-        """Add the stored focus choices and attention items derived from the document's hosts."""
+        """Add stored focus choices and the Attention projection."""
         return {**document, "focus": self.workspace.focus_snapshot(),
-                "attention": self.board.items(document["hosts"], time.time())}
+                "attention": attention_items(self.attention, document["hosts"])}
 
     def report_pipeline(self, host: str, name: str, run: dict[str, Any] | None,
                         baseline: dict[str, Any] | None) -> None:
@@ -237,13 +248,15 @@ class LiveWorkspace:
     def wait_for_change(self, seen_version: int, timeout: float, seen_pipelines: int | None = None) -> int:
         """Also wakes when a snooze ends, so the item comes back on every deck without a reload, and when a pipeline
         report arrives if `seen_pipelines` is given (compare `pipeline_seq` to tell)."""
-        now = time.time()
-        ending = self.board.snooze_ending(now)
+        now = self.attention.clock().timestamp()
+        ends = [item.snooze_until.timestamp() for item in self.attention.list()
+                if item.snooze_until is not None and item.snooze_until.timestamp() > self.woken_until]
+        ending = min(ends) if ends else None
         wait = timeout if ending is None else max(0.0, min(timeout, ending - now))
         with self.changed:
             self.changed.wait_for(lambda: self.version != seen_version or (
                 seen_pipelines is not None and self.pipeline_seq != seen_pipelines), timeout=wait)
-            if self.version == seen_version and ending is not None and time.time() >= ending:
-                self.board.announce(ending)
+            if self.version == seen_version and ending is not None and self.attention.clock().timestamp() >= ending:
+                self.woken_until = max(self.woken_until, ending)
                 self.version += 1
             return self.version

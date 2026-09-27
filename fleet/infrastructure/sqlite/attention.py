@@ -3,16 +3,19 @@
 from contextlib import closing, contextmanager
 from dataclasses import asdict
 from datetime import datetime
+import json
 from typing import Iterator
 
-from fleet.modules.attention import AttentionItem, ImportedAction
+from fleet.modules.attention import AttentionItem, ImportedAction, StreamContext
 
 from .store import Store, UnitOfWork, connect
 
 
 def decode(row) -> AttentionItem:
     values = dict(row)
-    for name in ("last_seen", "snooze_until"):
+    if values["stream_context"] is not None:
+        values["stream_context"] = StreamContext(**json.loads(values["stream_context"]))
+    for name in ("last_seen", "snooze_until", "acknowledged_at", "resolved_at"):
         if values[name] is not None:
             values[name] = datetime.fromisoformat(values[name])
     return AttentionItem(**values)
@@ -63,7 +66,9 @@ class AttentionRepository:
         if self.work is None:
             raise RuntimeError("attention writes require a transaction")
         values = asdict(item)
-        for name in ("last_seen", "snooze_until"):
+        if values["stream_context"] is not None:
+            values["stream_context"] = json.dumps(values["stream_context"])
+        for name in ("last_seen", "snooze_until", "acknowledged_at", "resolved_at"):
             if values[name] is not None:
                 values[name] = values[name].isoformat()
         columns = ", ".join(values)

@@ -15,18 +15,19 @@ behind them:
      "pipeline_reports": [{"host": …, "pipeline": …, "run": …, "baseline": …}, …],   # as fleetd streams them
      "library": {"<project>": [{"id": "README.md", "mtime": …, "markdown": "…"}, …]}}
 
-Jobs and sessions gain `project_id` and `focus`, and attention items are derived, as they are live. Timestamps
+Jobs and sessions gain `project_id` and `focus`, and attention items are ingested into an isolated store. Timestamps
 are served as recorded; a browser test pins its clock to `time`. Focus and attention
-actions can be set, in memory only, so the recorded file never changes.
+actions can be set in the temporary store, so the recorded file never changes.
 """
 from __future__ import annotations
 
 import json
 import threading
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, Callable
 
-from fleet.attention import AttentionBoard
+from fleet.composition import open_attention, open_store
 from fleet.building import capacity_of
 from fleet.projects import Registry
 from fleet.transport import FleetError
@@ -45,7 +46,14 @@ class FixtureState(LiveWorkspace):
         self.capacity = capacity_of(fixture)
         self.workspace = WorkspaceStore(None, {"focus": fixture.get("focus"), "floors": fixture.get("floors"),
                                                "shuttered": fixture.get("shuttered")})
-        self.board = AttentionBoard(self.workspace)
+        self.attention_directory = TemporaryDirectory(prefix="fleet-fixture-")
+        self.attention = open_attention(open_store(Path(self.attention_directory.name) / "fleet.db"),
+                                        workspace_path=Path(self.attention_directory.name) / "workspace.json")
+        self.woken_until = 0.0
+        for host in fixture["hosts"]:
+            self.attention.observe({**host,
+                "jobs": [self.registry.resolve(host["name"], job) for job in host["jobs"]],
+                "sessions": [self.registry.resolve(host["name"], session) for session in host["sessions"]]})
         self.changed = threading.Condition()
         self.version = 0
         self.pipeline_config = fixture.get("pipelines", {})
