@@ -38,6 +38,7 @@ import { THEMES, hostLook, projectLook, themeFor } from './looks.js';
 import { working } from './activity.js';
 import { G, KIT, Placer, canvasTex, softDot } from './scene.js';
 import { enterProject } from './state.js';
+import { enterFloor } from './bench.js';
 
 // ------------------------------------------------------------------ views: the deck, the building (L0), a floor (L1)
 // Inside, `current` is the floor entered, or 'S' with `crate` the project whose crate is open (read-only).
@@ -59,6 +60,7 @@ function showView(view, where = null) {
   if (crate) enterProject(crate);
   else if (current !== null) enterProject(floors.find(f => f.floor === current).projectId);
   else if (leaving) enterProject(null);
+  enterFloor(view === 'floor' ? floors.find(f => f.floor === current).projectId : null);
   if (!buildingShown) closeDialogs();
   renderLift();
   draw();

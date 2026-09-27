@@ -1,4 +1,5 @@
 // Page flags from the query string, deck dimensions and the canvases everything draws into.
+import './text-budget.js';
 
 export const QS = new URLSearchParams(location.search);
 export const DEMO = QS.has('demo');
