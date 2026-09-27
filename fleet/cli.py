@@ -847,6 +847,8 @@ def print_status_item(item: dict[str, Any], depth: int = 0) -> None:
     mark = ("unknown" if progress["basis"] == "unknown" else
             f"{progress['complete']}/{progress['total']} {progress['basis']}")
     print(f"{indent}  Progress: {mark}; condition: {item['condition']}")
+    if item['kind'] == 'milestone':
+        print(f"{indent}  Interruptions: {item['interruptions']}")
     next_step = "not recorded" if item["next_step"] is None else item["next_step"]
     print(f"{indent}  Next step: {next_step}")
     if item["no_follow_up_yet"] is True:

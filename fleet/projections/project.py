@@ -41,6 +41,7 @@ def project_status(project: str, work: WorkFacade, attention: AttentionFacade,
                    execution: ExecutionFacade, library: LibraryFacade,
                    decisions: DecisionsFacade) -> dict[str, Any]:
     items = work.list(project=project)
+    raised_items = attention.list(project=project)
     open_items = attention.list(project=project, state="open")
     actions = {action.id: action.work_item for action in execution.actions()}
     runs = execution.runs()
@@ -57,7 +58,7 @@ def project_status(project: str, work: WorkFacade, attention: AttentionFacade,
             "summary": asdict(summary) if summary is not None else None,
             "attention": [asdict(entry) for entry in open_items if entry.work_item == item.id],
             "decisions": [asdict(answer) for answer in answers if item.id in answer.affected_work_items],
-            "runs": [asdict(run) for run in item_runs],
+            "runs": [{**asdict(run), **execution.run_activity(run)} for run in item_runs],
             "library": [asdict(entry) for entry in entries
                         if entry.project == project and entry.work_item == item.id],
             "no_follow_up_yet": no_follow_up_yet(item, item_runs),
@@ -69,5 +70,15 @@ def project_status(project: str, work: WorkFacade, attention: AttentionFacade,
             roots.append(nodes[item.id])
         else:
             nodes[item.parent]["children"].append(nodes[item.id])
+    def count_interruptions(node: dict[str, Any]) -> int:
+        count = sum(entry.owner == "user" and entry.work_item == node["id"]
+                    for entry in raised_items)
+        count += sum(count_interruptions(child) for child in node["children"])
+        if node["kind"] == "milestone":
+            node["interruptions"] = count
+        return count
+
+    for root in roots:
+        count_interruptions(root)
     return _json_value({"project": project, "work_items": roots,
                         "attention": [asdict(entry) for entry in open_items if entry.work_item is None]})
