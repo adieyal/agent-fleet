@@ -1,34 +1,18 @@
-"""Live workspace state, kept on the machine running `fleet web` in `workspace.json` beside
-the Fleet config — not in Git and not in the project registry. It holds the user's own
-choices; everything else is derived from the host streams.
-
-Focus (CONTEXT.md: Focus) is `priority` or `background`. A job or session is focused
-through its registered project when its (host, label) is linked, otherwise through its
-label, so unregistered groups can be focused too. Only choices the user made are stored;
-anything without one is in priority, so the deck looks as it did before focus existed.
-
-Floors are which floor of the building each registered project occupies (see
-fleet.building), numbered from 1 above the lobby. A shuttered project has no floor; it
-is recorded with when it was shuttered and the floor it left, so restoring it can take
-that floor back if it is free. Its ID, links, focus and everything else are untouched.
-
-    {"focus": {"projects": {"p-1a2b3c4d": "background"}, "labels": {"scratch": "background"}},
-     "floors": {"p-1a2b3c4d": 1},
-     "shuttered": {"p-5e6f7a8b": {"at": 1790400000.0, "floor": 2}}}
-"""
+"""Focus, stable floors and shutter transitions for a workspace."""
 from __future__ import annotations
 
-import json
-import os
 import threading
-from pathlib import Path
 from typing import Any, Container, Iterable
 
-from fleet.building import NoVacancy
+from .building import NoVacancy
 from fleet.transport import FleetError
 
 FOCUSES = ("priority", "background")
 DEFAULT_FOCUS = "priority"
+
+
+class AlreadyHoused(FleetError):
+    """A host label already belongs to a project."""
 
 
 class AlreadyShuttered(FleetError):
@@ -39,17 +23,11 @@ class NotShuttered(FleetError):
     """Only a project in the storehouse can be restored."""
 
 
-class WorkspaceStore:
-    """The user's choices, written through to `path`; with no path they live in memory only (fixtures)."""
+class Choices:
+    """Workspace choices within one transaction."""
 
-    def __init__(self, path: Path | None, initial: dict[str, Any] | None = None) -> None:
-        self.path = path
+    def __init__(self, initial: dict[str, Any] | None = None) -> None:
         self.lock = threading.Lock()
-        if path is not None and path.exists():
-            try:
-                initial = json.loads(path.read_text())
-            except ValueError as error:
-                raise FleetError(f"{path} is not valid JSON: {error}") from None
         initial = initial or {}
         self.focus: dict[str, dict[str, str]] = {"projects": {}, "labels": {}}
         for kind in self.focus:
@@ -69,16 +47,6 @@ class WorkspaceStore:
                     floor is None or (isinstance(floor, int) and not isinstance(floor, bool) and floor >= 1)):
                 raise FleetError(f"shuttered project '{project_id}' has an unknown record {record}")
             self.shuttered[project_id] = {"at": record["at"], "floor": floor}
-
-    def save(self) -> None:
-        """Write the whole file atomically; call with the lock held."""
-        if self.path is None:
-            return
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.path.with_suffix(".tmp")
-        temporary.write_text(json.dumps({"focus": self.focus, "floors": self.floors,
-                                         "shuttered": self.shuttered}, indent=2, sort_keys=True) + "\n")
-        os.replace(temporary, self.path)
 
     # ------------------------------------------------------------ focus
     def focus_snapshot(self) -> dict[str, dict[str, str]]:
@@ -110,7 +78,6 @@ class WorkspaceStore:
                 self.focus["projects"][project_id] = focus
             for label in labels:
                 self.focus["labels"][label] = focus
-            self.save()
 
     # ------------------------------------------------------------ floors
     def floors_snapshot(self) -> dict[str, int]:
@@ -122,7 +89,6 @@ class WorkspaceStore:
         with self.lock:
             if project_id not in self.floors:
                 self.floors[project_id] = self.free_floor(capacity)
-                self.save()
             return self.floors[project_id]
 
     def settle(self, project_ids: Iterable[str], capacity: int) -> None:
@@ -131,11 +97,9 @@ class WorkspaceStore:
         capacity."""
         project_ids = list(project_ids)
         with self.lock:
-            changed = False
             for records in (self.floors, self.shuttered):
                 for project_id in [known for known in records if known not in project_ids]:
                     del records[project_id]
-                    changed = True
             for project_id in project_ids:
                 if project_id in self.floors or project_id in self.shuttered:
                     continue
@@ -143,9 +107,6 @@ class WorkspaceStore:
                     self.floors[project_id] = self.free_floor(capacity)
                 except NoVacancy:
                     break
-                changed = True
-            if changed:
-                self.save()
 
     def shuttered_snapshot(self) -> dict[str, dict[str, Any]]:
         with self.lock:
@@ -158,7 +119,6 @@ class WorkspaceStore:
                 raise AlreadyShuttered(f"{project_id} is already in the storehouse")
             floor = self.floors.pop(project_id, None)
             self.shuttered[project_id] = {"at": now, "floor": floor}
-            self.save()
             return floor
 
     def restore(self, project_id: str, capacity: int) -> int:
@@ -174,7 +134,6 @@ class WorkspaceStore:
                 floor = self.free_floor(capacity)
             del self.shuttered[project_id]
             self.floors[project_id] = floor
-            self.save()
             return floor
 
     def forget_project(self, project_id: str) -> int | None:
@@ -183,7 +142,6 @@ class WorkspaceStore:
             self.focus["projects"].pop(project_id, None)
             self.shuttered.pop(project_id, None)
             floor = self.floors.pop(project_id, None)
-            self.save()
             return floor
 
     def free_floor(self, capacity: int) -> int:

@@ -8,11 +8,13 @@ from urllib.request import urlopen
 
 import pytest
 
-from fleet import projects, transport
+from fleet import transport
+from fleet.composition import open_workspace
+from workspace_support import persist_registry
 from fleet.transport import Host
 from fleet.web.fixture import FixtureState
-from fleet.web.server import FleetState, apply_message, make_handler, workspace_path
-from fleet.workspace import WorkspaceStore
+from fleet.web.server import FleetState, apply_message, make_handler
+
 
 FIXTURES = Path(__file__).parent / "fixtures"
 HOME = Host("home", None)
@@ -34,7 +36,7 @@ def online(state: FleetState) -> None:
 
 
 def test_a_declared_pipeline_is_in_the_document_before_any_run(config_path) -> None:
-    state = FleetState([HOME], load_registry=projects.load_registry, pipelines=DECLARED)
+    state = FleetState([HOME], load_registry=open_workspace().registry, pipelines=DECLARED)
     [pipeline] = state.document()["pipelines"]
     assert pipeline == {"host": "home", "pipeline": "invoice-training", "project": "invoice-training",
                         "project_id": None, "declared": True, "host_ok": False, "host_error": "connecting…",
@@ -42,7 +44,7 @@ def test_a_declared_pipeline_is_in_the_document_before_any_run(config_path) -> N
 
 
 def test_reports_are_kept_per_host_and_pipeline(config_path) -> None:
-    state = FleetState([HOME], load_registry=projects.load_registry, pipelines=DECLARED)
+    state = FleetState([HOME], load_registry=open_workspace().registry, pipelines=DECLARED)
     online(state)
     version = state.version
     apply_message(state, HOME, {"type": "pipeline", "pipeline": "invoice-training", "run": RUN, "baseline": None})
@@ -60,11 +62,11 @@ def test_reports_are_kept_per_host_and_pipeline(config_path) -> None:
 
 
 def test_a_declared_pipeline_resolves_its_room_to_a_registered_project(config_path) -> None:
-    registry = projects.load_registry()
+    registry = open_workspace().registry()
     project = registry.create("Invoice training")
     registry.link(project.id, "home", "invoice-training")
-    projects.save_registry(registry)
-    state = FleetState([HOME], load_registry=projects.load_registry, pipelines=DECLARED)
+    persist_registry(registry)
+    state = FleetState([HOME], load_registry=open_workspace().registry, pipelines=DECLARED)
     assert state.document()["pipelines"][0]["project_id"] == project.id
 
 
@@ -72,11 +74,11 @@ def test_a_pipeline_label_moves_in_like_any_visitor(config_path, monkeypatch) ->
     """A room held only by a declared pipeline has no working directory to read remotes from; linking it to a
     project it may belong to is offered as for any label, and once linked the pipeline's room is that project's."""
     monkeypatch.setattr(transport, "repository_remotes", lambda host, directories: pytest.fail("no directories"))
-    registry = projects.load_registry()
+    registry = open_workspace().registry()
     project = registry.create("Invoice training")
-    projects.save_registry(registry)
-    state = FleetState([HOME], load_registry=projects.load_registry,
-                       workspace=WorkspaceStore(workspace_path()), pipelines=DECLARED)
+    persist_registry(registry)
+    state = FleetState([HOME], load_registry=open_workspace().registry,
+                       workspace=open_workspace(), pipelines=DECLARED)
     online(state)
     offered = state.move_in_options("invoice-training", ["home"])
     assert [(c["project_id"], c["reasons"]) for c in offered["candidates"]] == [(project.id, ["name"])]
@@ -86,7 +88,7 @@ def test_a_pipeline_label_moves_in_like_any_visitor(config_path, monkeypatch) ->
 
 
 def test_pipeline_reports_stream_as_their_own_event(config_path) -> None:
-    state = FleetState([HOME], load_registry=projects.load_registry, pipelines=DECLARED)
+    state = FleetState([HOME], load_registry=open_workspace().registry, pipelines=DECLARED)
     server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(state))
     threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
     try:

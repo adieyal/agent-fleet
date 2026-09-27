@@ -18,13 +18,12 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from fleet import building, projects, transport
-from fleet.composition import open_attention, open_execution, open_library, open_store
+from fleet import transport
+from fleet.composition import open_attention, open_execution, open_library, open_store, open_workspace
 from fleet.infrastructure.sqlite import Store
 from fleet.modules.attention import InputObservation, ItemResolved
-from fleet.building import DEFAULT_CAPACITY, NoVacancy
-from fleet.workspace import FOCUSES, AlreadyShuttered, NotShuttered, WorkspaceStore
-from fleet.projects import Registry
+from fleet.modules.workspace import (NoVacancy, FOCUSES, AlreadyShuttered, NotShuttered,
+                                     WorkspaceFacade, Registry)
 from fleet.transport import FleetError, Host
 from fleet.web.documents import DocumentAccessDenied, fetch_document
 from fleet.web.fixture import FixtureLibrary, FixtureState
@@ -69,19 +68,19 @@ class FleetState(LiveWorkspace):
 
     def __init__(self, hosts: list[Host], project_labels: dict[str, str] | None = None,
                  load_registry: Callable[[], Registry] | None = None,
-                 workspace: WorkspaceStore | None = None,
+                 workspace: WorkspaceFacade | None = None,
                  load_capacity: Callable[[], int] | None = None,
                  pipelines: dict[str, dict[str, str]] | None = None,
                  store: Store | None = None) -> None:
         self.hosts = hosts
         self.project_labels = project_labels or {}
-        self.load_registry = load_registry or Registry
-        self.registry = self.load_registry()
-        self.load_capacity = load_capacity or (lambda: DEFAULT_CAPACITY)
-        self.capacity = self.load_capacity()
-        self.workspace = workspace or WorkspaceStore(None)
         self.store = store if store is not None else open_store()
-        self.attention = open_attention(self.store, workspace_path=self.workspace.path)
+        self.workspace = workspace if workspace is not None else open_workspace(self.store, actor="web-user")
+        self.load_registry = load_registry or self.workspace.registry
+        self.registry = self.load_registry()
+        self.load_capacity = load_capacity or self.workspace.capacity
+        self.capacity = self.load_capacity()
+        self.attention = open_attention(self.store)
         self.execution = open_execution(self.store)
         self.run_library = open_library(self.store)
         self.woken_until = 0.0
@@ -142,10 +141,8 @@ class FleetState(LiveWorkspace):
         return self.registry.projects
 
     def edit_registry(self, change: Callable[[Registry], Any]) -> Any:
-        registry = self.load_registry()
-        result = change(registry)
-        projects.save_registry(registry)
-        self.registry = registry
+        result = self.workspace.edit_registry(change)
+        self.registry = self.workspace.registry()
         return result
 
     def repository_remotes(self, host: str, directories: list[str]) -> dict[str, list[str]]:
@@ -502,16 +499,10 @@ def make_handler(state: FleetState | FixtureState,
     return Handler
 
 
-def workspace_path() -> Path:
-    """Live workspace state sits beside the Fleet config, outside Git."""
-    return transport.config_path().parent / "workspace.json"
-
-
 def serve(hosts: list[Host], *, port: int, bind: str, open_browser: bool = False,
           libraries: dict[str, str] | None = None, project_labels: dict[str, str] | None = None,
           pipelines: dict[str, dict[str, str]] | None = None) -> None:
-    state = FleetState(hosts, project_labels, projects.load_registry, WorkspaceStore(workspace_path()),
-                       building.load_capacity, pipelines, open_store())
+    state = FleetState(hosts, project_labels, pipelines=pipelines)
     threading.Thread(target=state.follow_history, args=(threading.Event(),), daemon=True).start()
     for host in hosts:
         threading.Thread(target=follow_host, args=(state, host), daemon=True).start()

@@ -72,9 +72,18 @@ def load_config() -> dict[str, Any]:
 
 
 def save_config(config: dict[str, Any]) -> None:
+    import tempfile
+    from fleet.composition import open_workspace
+
+    open_workspace()
     path = config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(config, indent=2) + "\n")
+    settings = {key: value for key, value in config.items() if key not in ("projects", "capacity")}
+    with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False) as temporary:
+        temporary.write(json.dumps(settings, indent=2) + "\n")
+        temporary.flush()
+        os.fsync(temporary.fileno())
+    os.replace(temporary.name, path)
 
 
 def configured_hosts() -> list[Host]:
