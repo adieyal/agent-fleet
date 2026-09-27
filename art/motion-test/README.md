@@ -4,6 +4,46 @@ This is a throwaway test on branch `renovate/motion-test` that compares clip sou
 
 **Decision after step 2:** the user chose Mixamo for every clip; HY-Motion is dropped. `robot-sheet.png` and `robot-poses/` are the style target, replacing B2. The code now handles Mixamo rigs only. The step-2 scripts (`run_step2.sh`, the HY-Motion `clip` command) remain in commit 9005887.
 
+## Robot rebuild 3
+
+This round fixes the user's review of rebuild 2. Boards are in the outbox under `robot-rebuild-3/`; WebP copies and reports are in `rebuild-3/`. The standing robot and the glowing ear rings are unchanged.
+
+1. **Seated height.** l2's upright robots (blue and green) were re-measured with a pixel ruler, at the same camera and 171.5 px/m. Their chest emblems sit 25 and 17 px above the desk's far edge and their helmet tops 110 and 115 px above it. My earlier numbers were eyeballed and too low.
+   - The task chair's gas lift is raised from 0.47 to **0.549 m** (+0.079 m), and the kit's chair column grows with it. The desk stays at 0.74 m.
+   - At that height, seated typing puts the chest light **21 px** above the desk edge (l2: 21) and the helmet **112 px** above it (l2: 112).
+   - The whole torso, the chest emblem and the upper arms show above the desk, and the legs hang out of sight beneath it.
+   - The spacing is re-fitted as well: the chair is centred 0.244 m behind the seat point and the desk's far edge sits 0.159 m ahead of it (`robot_scale.json`, `bench`).
+   - The floor job needs the seat height and spacing: `seat_h` 0.549 m, `chair_y` 0.244 m, `desk_edge` 0.159 m.
+2. **Posture.** The retained Mixamo spine and head lean (`motion_rig.upright`) is now set per clip:
+
+   | clip | spine and head lean kept | hip tilt kept |
+   |---|---|---|
+   | typing | 0% (back straight, head level) | 100% |
+   | writing | 8% | 40% |
+   | reading | 15% | 100% |
+
+   - **Typing:** forearms on the desk and fists on the keyboard, as before.
+   - **Writing:** a slight lean.
+   - **Reading:** the head drops just enough to look at the book.
+   - **The book** is a modelled closed book, 0.15 × 0.20 × 0.03 m, blue cover and cream pages. It is held up at chest height in both pinch hands, tilted back 20° towards the face, and every frame the wrists are posed onto its sides (`motion_rig.hold`). It is well clear of the desk.
+   - **Clipping over each clip:**
+     - reading: none
+     - typing: 11 sampled vertices of one cuff at the desk top, 0 mm deep
+     - writing: a hip ball and shin 3 mm into the seat's front edge
+3. **Thumbs up** (`motion_rig.thumbs_up`). While the clip raises its hand, the arm is posed so the fist sits in front of the chest and out to the side, thumb up. The hand is blended in and out with the clip's own arm, so the gesture keeps its timing. It never crosses the visor, standing or sitting.
+4. **Face plate.**
+   - The plate is one smooth glossy black rounded rectangle (a superellipse). It lies on a smooth surface fitted to the scan's opening; the scan itself was bumpy there, which read as seams and steps.
+   - A thin, even teal rim (a tube on the `host_tint` node) frames it and covers the join with the helmet.
+   - The ragged torso-top rim under the helmet is covered by a flattened black neck collar sized to the opening. It reads as the sheet's black neck.
+5. **Eyes.** They are now rounded capsules measured from `robot-apose-front.png`, as fractions of the plate:
+   - 1.73 times as tall as wide
+   - width 0.133 and height 0.343 of the plate
+   - centres 0.233 of the plate's width either side of the middle, and 0.05 of its height below
+   - softly domed, with an even emissive glow
+
+   They stay their own layer (`<tag>_eyes`) for the Codex eyes.
+6. **Box.** A modelled cardboard box, 0.30 × 0.24 × 0.22 m with a tape strip, is held in the cupped hands in `box-idle` and `box-walk-arc`. It rides on the hips, and each frame the wrists are posed onto its sides with the palms facing it.
+
 ## Robot rebuild 2
 
 This round fixes the user's review of rebuild 1. Boards are in the outbox under `robot-rebuild-2/`; WebP copies and reports are in `rebuild-2/`. `furniture.json` (the ×0.36 chair and desk) is deleted: the robot now sits at the floor kit's **normal** chair (seat 0.47 m) and bench desk (top 0.74 m).

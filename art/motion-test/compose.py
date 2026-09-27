@@ -2,7 +2,7 @@
 
     python compose.py sheet <clip_dir> <out.png> <title> <label>[:<caption>] ...
     python compose.py webm  <clip_dir> <out.webm> <ffmpeg> <label>[:<caption>] ...
-    python compose.py review <render_motion review dir> <out dir> <job context motion-test dir>
+    python compose.py review3 <render_motion review dir> <out dir> <job context motion-test dir>
 """
 import subprocess
 import sys
@@ -67,7 +67,7 @@ def webm(clip: Path, dest: Path, ffmpeg: str, specs) -> None:
                         '-pix_fmt', 'yuv420p', str(dest)], check=True)
 
 
-if __name__ == '__main__' and sys.argv[1] != 'review':
+if __name__ == '__main__' and sys.argv[1] not in ('review', 'review3'):
     a = sys.argv[1:]
     if a[0] == 'sheet':
         sheet(Path(a[1]), Path(a[2]), a[3], a[4:])
@@ -143,6 +143,35 @@ def review(src: Path, dest: Path, context: Path) -> None:
         native([(f'l2 (concept), {mult}x', ref)] + [(f'{n}, {mult}x', o(f'bench_{n}_{mult}x'))
                                                      for n in ('typing', 'reading', 'walking')],
                dest / f'07_bench_{mult}x_vs_l2.png')
+
+
+def review3(src: Path, dest: Path, context: Path) -> None:
+    """Round-3 boards from render_motion.py's review set. context: the job's motion-test context dir."""
+    dest.mkdir(parents=True, exist_ok=True)
+    rebuild = Path.home() / '.local/state/fleet/renovation/robot-rebuild'
+    o = lambda n: Image.open(src / f'{n}.png')  # noqa: E731
+    face = Image.open(rebuild / 'robot-apose-front.png').crop((250, 60, 780, 580))
+    pose = Image.open(context / 'robot-poses' / 'teal robot standing.png')
+    board([('robot-apose-front.png (face)', face), ('rebuilt head, front', o('head_front')),
+           ('robot-sheet teal standing', pose), ('rebuilt head, similar angle', o('head_sheet_angle')),
+           ('rebuilt head, floor camera', o('head_floor'))], 700, dest / '01_head_vs_sheet.png')
+    l2 = Image.open(L2).crop(L2_CROP)
+    clips = (('typing', 'typing'), ('writing-seated', 'writing'), ('reading-seated', 'reading'))
+    for mult in (1, 2):
+        ref = l2 if mult == 1 else l2.resize((l2.width * 2, l2.height * 2), Image.LANCZOS)
+        native([(f'l2 (concept), {mult}x', ref)] + [(f'{cap}, {mult}x', o(f'bench_{c}_{mult}x')) for c, cap in clips],
+               dest / f'02_bench_{mult}x_vs_l2.png')
+    board([(cap, o(f'close_{c}')) for c, cap in clips], 700, dest / '03_seated_close.png')
+    board([('thumbs up standing, floor camera', o('thumbs_standing')), ('standing, front', o('thumbs_standing_front')),
+           ('thumbs up sitting, floor camera', o('thumbs_sitting')), ('sitting, front', o('thumbs_sitting_front'))],
+          700, dest / '04_thumbs_up.png')
+    board([(f'walking with the box, frame {k + 1}/4', o(f'box_walk_{k}')) for k in range(4)], 700,
+          dest / '05_box_walk.png')
+    native([('box walk, 1x', o('box_walk_1x')), ('box walk, 2x', o('box_walk_2x'))], dest / '05_box_walk_1x_2x.png')
+
+
+if __name__ == '__main__' and sys.argv[1] == 'review3':
+    review3(Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]))
 
 
 if __name__ == '__main__' and sys.argv[1] == 'review':

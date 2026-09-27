@@ -383,9 +383,10 @@ def clean_and_cap(ob) -> dict:
             'caps': len(caps), 'rim_pts': rim_pts}
 
 
-def ball(name: str, at: Vector, r: float) -> bpy.types.Object:
+def ball(name: str, at: Vector, r: float, squash: float = 1.0) -> bpy.types.Object:
     bm = bmesh.new()
-    bmesh.ops.create_uvsphere(bm, u_segments=32, v_segments=16, radius=r, matrix=Matrix.Translation(at))
+    bmesh.ops.create_uvsphere(bm, u_segments=32, v_segments=16, radius=r,
+                              matrix=Matrix.Translation(at) @ Matrix.Diagonal((1, 1, squash, 1)))
     me = bpy.data.meshes.new(name)
     bm.to_mesh(me)
     bm.free()
@@ -404,11 +405,29 @@ def superellipse(t: float, a: float, b: float, n: float) -> tuple:
     return a * math.copysign(abs(c) ** (2 / n), c), b * math.copysign(abs(s) ** (2 / n), s)
 
 
-def face_plate(bvh: BVHTree, to_m: Matrix) -> bpy.types.Object:
-    """A glossy black shell over the helmet opening: a superellipse disc, each point dropped onto the scan from the
-    front and lifted 4 mm proud, so its outline is smooth wherever the scan's colours were ragged."""
+def plate_surface(bvh: BVHTree):
+    """The face plate's surface, y(x, z), as a smooth quadric fitted to the scan's front inside the opening: the
+    scan itself is bumpy there, which read as seams and steps."""
     p = PLATE
-    rings, segs = 14, 96
+    pts = []
+    for i in range(1, 9):
+        for j in range(24):
+            x, dz = superellipse(2 * math.pi * j / 24, p['a'] * i / 9, p['b'] * i / 9, p['n'])
+            hit = bvh.ray_cast(Vector((x, -3.0, p['zc'] + dz)), Vector((0, 1, 0)))[0]
+            if hit:
+                pts.append((x, dz, hit.y))
+    P = np.array(pts)
+    A = np.c_[np.ones(len(P)), P[:, 0] ** 2, P[:, 1] ** 2, P[:, 1]]
+    coef = np.linalg.lstsq(A, P[:, 2], rcond=None)[0]
+    return lambda x, dz: float(coef[0] + coef[1] * x * x + coef[2] * dz * dz + coef[3] * dz)
+
+
+def face_plate(bvh: BVHTree, to_m: Matrix) -> bpy.types.Object:
+    """One smooth glossy black rounded-rectangle plate over the helmet opening (a superellipse on the fitted plate
+    surface, 8 mm proud of it), framed by a thin, even teal rim: a tube along its outline, on the host_tint node."""
+    p = PLATE
+    surf = plate_surface(bvh)
+    rings, segs = 16, 128
     bm = bmesh.new()
     grid = []
     for i in range(rings + 1):
@@ -416,24 +435,46 @@ def face_plate(bvh: BVHTree, to_m: Matrix) -> bpy.types.Object:
         row = []
         for j in range(segs if i else 1):
             x, dz = superellipse(2 * math.pi * j / segs, p['a'] * r, p['b'] * r, p['n'])
-            hit = bvh.ray_cast(Vector((x, -3.0, p['zc'] + dz)), Vector((0, 1, 0)))[0]
-            y = (hit.y if hit else -0.3) - 0.008
-            row.append(bm.verts.new(to_m @ Vector((x, y, p['zc'] + dz))))
+            row.append(bm.verts.new(to_m @ Vector((x, surf(x, dz) - 0.016, p['zc'] + dz))))
         grid.append(row)
     for j in range(segs):
         bm.faces.new((grid[0][0], grid[1][j], grid[1][(j + 1) % segs]))
     for i in range(1, rings):
         for j in range(segs):
             bm.faces.new((grid[i][j], grid[i + 1][j], grid[i + 1][(j + 1) % segs], grid[i][(j + 1) % segs]))
-    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-    if bm.faces[0].normal.y > 0:
-        bmesh.ops.reverse_faces(bm, faces=bm.faces)
+    plate_faces = list(bm.faces)
+    # the rim: a tube around the outline, sitting on the plate's edge and the helmet
+    tube_r, tsegs = 0.024, 12
+    ring_pts = []
+    for j in range(segs):
+        x, dz = superellipse(2 * math.pi * j / segs, p['a'] * 1.03, p['b'] * 1.03 + 0.012, p['n'])
+        ring_pts.append(Vector((x, surf(x, dz) - 0.012, p['zc'] + dz)))
+    loops = []
+    for j, c in enumerate(ring_pts):
+        t = (ring_pts[(j + 1) % segs] - ring_pts[j - 1]).normalized()
+        out = Vector((c.x, 0, c.z - p['zc']))
+        out = (out - t * out.dot(t)).normalized()
+        fwd = t.cross(out).normalized()
+        if fwd.y > 0:
+            fwd = -fwd
+        loops.append([bm.verts.new(to_m @ (c + (out * math.cos(a) + fwd * math.sin(a)) * tube_r))
+                      for a in (2 * math.pi * k / tsegs for k in range(tsegs))])
+    for j in range(segs):
+        a, b = loops[j], loops[(j + 1) % segs]
+        for k in range(tsegs):
+            f = bm.faces.new((a[k], a[(k + 1) % tsegs], b[(k + 1) % tsegs], b[k]))
+            f.material_index = 1
+    bmesh.ops.recalc_face_normals(bm, faces=plate_faces)
+    if plate_faces[len(plate_faces) // 2].normal.y > 0:
+        bmesh.ops.reverse_faces(bm, faces=plate_faces)
+    bmesh.ops.recalc_face_normals(bm, faces=[f for f in bm.faces if f.material_index == 1])
     me = bpy.data.meshes.new('body_faceplate')
     bm.to_mesh(me)
     bm.free()
     for f in me.polygons:
         f.use_smooth = True
     me.materials.append(flat_material('mat_visor', PALETTE['black'], glossy=True))
+    me.materials.append(flat_material('mat_teal', PALETTE['teal']))
     o = bpy.data.objects.new('body_faceplate', me)
     bpy.context.scene.collection.objects.link(o)
     return o
@@ -481,20 +522,46 @@ def ear_disc(side: int, bvh: BVHTree, to_m: Matrix) -> bpy.types.Object:
     return o
 
 
-def eyes(eyes_src, bvh: BVHTree, to_m: Matrix, s: float) -> bpy.types.Object:
+# the sheet's eyes (robot-apose-front.png): rounded capsules 1.73 times as tall as wide, as fractions of the plate:
+# width 0.133 and height 0.343 of the plate's, centres 0.233 of its width either side and 0.05 of its height below
+EYE_SHAPE = dict(w=0.133, h=0.343, dx=0.233, dz=-0.05)
+
+
+def eyes(bvh: BVHTree, to_m: Matrix) -> bpy.types.Object:
+    """Two glowing capsules on the face plate, domed slightly, their own layer (the Codex eyes reuse it)."""
+    p, e = PLATE, EYE_SHAPE
+    surf = plate_surface(bvh)
+    w, h = e['w'] * 2 * p['a'], e['h'] * 2 * p['b']
+    r, half = w / 2, e['h'] * p['b'] - w / 2  # capsule radius; half-length of its straight sides
     bm = bmesh.new()
-    for c, size in eyes_src:
-        hit = bvh.ray_cast(Vector((c.x, -3.0, c.z)), Vector((0, 1, 0)))[0]
-        y = (hit.y if hit else c.y) - 0.012
-        m = Matrix.Translation(to_m @ Vector((c.x, y, c.z))) @ Matrix.Diagonal(
-            (size.x * s * 0.5, 0.012, size.z * s * 0.5, 1))
-        bmesh.ops.create_uvsphere(bm, u_segments=24, v_segments=12, radius=1.0, matrix=m)
+    n = 48
+    for sx in (1, -1):
+        cx, cz = sx * e['dx'] * 2 * p['a'], p['zc'] + e['dz'] * 2 * p['b']
+        outline = []
+        for k in range(n):
+            a = 2 * math.pi * k / n
+            x, z = r * math.cos(a), r * math.sin(a)
+            z += half if z >= 0 else -half
+            outline.append((x, z))
+        rings = []
+        for t in (1.0, 0.75, 0.45, 0.0):  # outer to centre, rising into a low dome
+            ring = []
+            for x, z in outline:
+                X, Z = cx + x * t, cz + z * t if t else cz
+                lift = 0.004 + 0.006 * (1 - t * t)
+                ring.append(bm.verts.new(to_m @ Vector((X, surf(X, Z - p['zc']) - 0.016 - lift, Z))))
+            rings.append(ring)
+        for a, b in zip(rings, rings[1:]):
+            for k in range(n):
+                bm.faces.new((a[k], a[(k + 1) % n], b[(k + 1) % n], b[k]))
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-7)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     me = bpy.data.meshes.new('body_eyes')
     bm.to_mesh(me)
     bm.free()
-    for p in me.polygons:
-        p.use_smooth = True
-    me.materials.append(flat_material('mat_eye', EYE, emit=2.5))
+    for f in me.polygons:
+        f.use_smooth = True
+    me.materials.append(flat_material('mat_eye', EYE, emit=2.0))
     o = bpy.data.objects.new('body_eyes', me)
     bpy.context.scene.collection.objects.link(o)
     return o
@@ -554,7 +621,7 @@ def main() -> None:
         rims[k] = r.pop('rim_pts')
         report['pieces'][k] = r | {'faces': len(o.data.polygons)}
     pieces['faceplate'] = face_plate(bvh, to_m)
-    pieces['eyes'] = eyes(eyes_src, bvh, to_m, s)
+    pieces['eyes'] = eyes(bvh, to_m)
     for side, name in ((1, 'ear_L'), (-1, 'ear_R')):
         pieces[name] = ear_disc(side, bvh, to_m)
     joints = {k: list(to_m @ srcj(k)) for k in J_SRC}
@@ -573,9 +640,15 @@ def main() -> None:
             for piece in meet:
                 pk = piece if piece in ('head', 'torso', 'pelvis') else f'{piece}_{side}'
                 near += [(p - c).length for p in rims.get(pk, []) if (p - c).length < BALL_MAX * 1.6 * s]
+            name = f'ball_{jk}'
+            if k == 'neck':  # a flattened black collar over the whole torso-top opening, not a ball in it
+                rim = [q for piece in meet for q in rims.get(piece, []) if abs(q.z - c.z) < 0.06]
+                r = 1.06 * max((Vector((q.x - c.x, q.y - c.y, 0))).length for q in rim)
+                pieces[name] = ball(f'body_{name}', c, r, squash=0.45)
+                balls[name] = {'radius_m': round(r, 4), 'rim_points': len(rim), 'squash': 0.45}
+                continue
             r = max([r_min * s] + [d * 0.92 for d in near])
             r = min(r, BALL_MAX * s)
-            name = f'ball_{jk}'
             pieces[name] = ball(f'body_{name}', c, r)
             balls[name] = {'radius_m': round(r, 4), 'rim_points': len(near)}
     report['balls'] = balls

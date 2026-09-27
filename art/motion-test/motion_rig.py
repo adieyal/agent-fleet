@@ -38,11 +38,11 @@ ROLES = {k: 'mixamorig:' + v for k, v in ROLES.items()}
 # hand pose per Mixamo clip (robot_hands.HANDS); anything not listed (idle, walking, typing) holds the fist. The
 # spread open hand reads as a claw, so it is kept for waving only.
 HAND_POSE = {
-    'waving': 'open', 'box-idle': 'cupped', 'box-walk-arc': 'cupped',
+    'waving': 'open', 'box-idle': 'box', 'box-walk-arc': 'box',
     'thumbs-up-standing': 'thumbs_up', 'thumbs-up-sitting': 'thumbs_up', 'writing-seated': 'pinch',
-    'standing-reading-phone': 'book', 'walking-reading-phone': 'sheet', 'reading-seated': 'book',
+    'standing-reading-phone': 'sheet', 'walking-reading-phone': 'sheet', 'reading-seated': 'book',
 }
-TWO_HANDED = {'book'}  # one model holds both hands: carried by the right hand bone
+HELD = {'book': 'pinch', 'box': 'cupped'}  # hand poses that hold a modelled prop (motion_rig.hold): the hands used
 SHEET = dict(paper='#f2efe6', ink='#8f9090', aspect=1.35, curl=0.012)  # the modelled sheet between pinch hands
 # layered clips: a seated base with the arms, neck and head of another clip
 LAYERED = {'reading-seated': ('sitting-idle', 'standing-reading-phone')}
@@ -264,11 +264,15 @@ def ground(arm, parts) -> dict:
     return {'ground_shift_m': [round(min(shift), 3), round(max(shift), 3)]}
 
 
-def upright(arm, keep: float) -> None:
+def upright(arm, keep: float, hips: float = 1.0) -> None:
     """Keep only part of the clip's spine, neck and head rotation (slerp towards rest): Mixamo's seated clips lean
-    over a human desk, which buries this big-headed robot's face in the desk."""
+    over a human desk, which buries this big-headed robot's face in the desk. hips < 1 also eases the pelvis's
+    forward tilt (the root keeps its facing: retarget turns the whole armature, not the root bone)."""
     act = arm.animation_data.action
-    for b in ('Spine', 'Spine1', 'Spine2', 'Neck', 'Head'):
+    for b in ('Hips', 'Spine', 'Spine1', 'Spine2', 'Neck', 'Head'):
+        k = hips if b == 'Hips' else keep
+        if k >= 1.0:
+            continue
         dp = f'pose.bones["mixamorig:{b}"].rotation_quaternion'
         fcs = [act.fcurves.find(dp, index=i) for i in range(4)]
         if not all(fcs):
@@ -276,7 +280,7 @@ def upright(arm, keep: float) -> None:
         from mathutils import Quaternion
         for f in frames(arm):
             q = Quaternion([fc.evaluate(f) for fc in fcs])
-            q = Quaternion().slerp(q, keep)
+            q = Quaternion().slerp(q, k)
             for i, fc in enumerate(fcs):
                 fc.keyframe_points.insert(f, q[i], options={'FAST'})
         for fc in fcs:
@@ -450,6 +454,182 @@ def desk_arms(arm, parts, goals: dict, desk_z: float, over_y: float) -> dict:
     return {'desk_lift_m': [round(min(lifts), 3), round(max(lifts), 3)]}
 
 
+# --- posing the arms directly -----------------------------------------------------------------------------
+
+class ArmPoser:
+    """Set the arm bones of a Mixamo armature from world-space directions. A bone's direction is its head-to-child
+    axis; its roll comes from a second axis: a world vector at rest (default: down, which is the canonical hands'
+    palm normal in the T-pose) is taken to a target world vector, kept perpendicular to the bone."""
+    DOWN = Vector((0, 0, -1))
+
+    def __init__(self, arm, sides='LR'):
+        self.arm, self.Mw = arm, arm.matrix_world
+        self.rest = {}
+        for s in sides:
+            for role, child in (('arm', 'fore'), ('fore', 'hand'), ('hand', 'fingers')):
+                b = arm.data.bones[ROLES[f'{role}_{s}']]
+                head = self.Mw @ b.head_local
+                ck = f'{child}_{s}'
+                tip = self.Mw @ arm.data.bones[ROLES[ck]].head_local if ck in ROLES else self.Mw @ b.tail_local
+                self.rest[(role, s)] = ((self.Mw @ b.matrix_local).to_3x3(), (tip - head).normalized())
+
+    def length(self, role, s) -> float:
+        child = {'arm': 'fore', 'fore': 'hand'}[role]
+        bones = self.arm.data.bones
+        return (bones[ROLES[f'{child}_{s}']].head_local - bones[ROLES[f'{role}_{s}']].head_local).length * \
+            self.Mw.to_scale()[0]
+
+    def head(self, role, s) -> Vector:
+        return self.Mw @ self.arm.pose.bones[ROLES[f'{role}_{s}']].head
+
+    def set(self, role, s, d: Vector, second=None) -> None:
+        R_rest, u_r = self.rest[(role, s)]
+        a_r, a_t = second or (self.DOWN, self.DOWN)
+        d = d.normalized()
+        n_r = (a_r - u_r * a_r.dot(u_r)).normalized()
+        n_d = (a_t - d * a_t.dot(d)).normalized()
+        A_r = Matrix((u_r, n_r, u_r.cross(n_r))).transposed()
+        A_d = Matrix((d, n_d, d.cross(n_d))).transposed()
+        W = (A_d @ A_r.transposed() @ R_rest).to_4x4()
+        W.translation = self.head(role, s)
+        self.arm.pose.bones[ROLES[f'{role}_{s}']].matrix = self.Mw.inverted() @ W
+        bpy.context.view_layer.update()
+
+    def reach(self, s, wrist: Vector, out: Vector, hand_dir: Vector, hand_second=None) -> None:
+        """Two-bone solve: the elbow bends towards `out`; the hand points along hand_dir."""
+        sh = self.head('arm', s)
+        u, f = self.length('arm', s), self.length('fore', s)
+        t = wrist - sh
+        dist = min(t.length, (u + f) * 0.999)
+        axis = t.normalized()
+        a = (u * u - f * f + dist * dist) / (2 * dist)
+        h = math.sqrt(max(u * u - a * a, 0.0))
+        o = (out - axis * out.dot(axis)).normalized()
+        self.set('arm', s, axis * a + o * h)
+        self.set('fore', s, sh + axis * dist - self.head('fore', s))
+        self.set('hand', s, hand_dir, hand_second)
+
+    def key(self, s, f, weight: float = 1.0, clip=None) -> None:
+        """Key the arm's rotations at frame f, blended with the clip's (clip: role -> quaternion) by weight."""
+        for role in ('arm', 'fore', 'hand'):
+            pb = self.arm.pose.bones[ROLES[f'{role}_{s}']]
+            if clip is not None and weight < 1.0:
+                pb.rotation_quaternion = clip[role].slerp(pb.rotation_quaternion.copy(), weight)
+            pb.keyframe_insert('rotation_quaternion', frame=f)
+
+
+def clip_quats(arm, s) -> dict:
+    return {r: arm.pose.bones[ROLES[f'{r}_{s}']].rotation_quaternion.copy() for r in ('arm', 'fore', 'hand')}
+
+
+def thumbs_up(arm) -> dict:
+    """Keep the thumbs-up hand off the face: while the clip raises it (weight by the wrist's height between the
+    chest and the shoulder), the hand is held in front of the chest and out to the side, thumb up, fist facing
+    forward. Blended with the clip's own arm at the ends of the gesture."""
+    sc = bpy.context.scene
+    fr = list(frames(arm))
+    Mw = arm.matrix_world
+    wz = {s: [] for s in 'LR'}
+    for f in fr:
+        sc.frame_set(f)
+        for s in 'LR':
+            wz[s].append((Mw @ arm.pose.bones[ROLES[f'hand_{s}']].head).z)
+    s = max('LR', key=lambda k: max(wz[k]))
+    sx = 1 if s == 'L' else -1
+    P = ArmPoser(arm, s)
+    peak = 0.0
+    for k, f in enumerate(fr):
+        sc.frame_set(f)
+        sh = P.head('arm', s)
+        chest = Mw @ arm.pose.bones[ROLES['spine3']].head
+        w = min(1.0, max(0.0, (wz[s][k] - chest.z) / max(1e-3, (sh.z - chest.z) * 0.8)))
+        w = w * w * (3 - 2 * w)
+        if w <= 0.0:
+            continue
+        q = clip_quats(arm, s)
+        wrist = sh + Vector((sx * 0.07, -0.22, -0.07))
+        fwd = Vector((-sx * 0.25, -1, 0.15)).normalized()
+        P.reach(s, wrist, Vector((sx, 0.3, -0.6)), fwd, (Vector((0, -1, 0)), Vector((0, 0, 1))))
+        P.key(s, f, w, q)
+        peak = max(peak, w)
+    return {'thumbs_side': s, 'thumbs_blend_peak': round(peak, 2)}
+
+
+PROPS = {
+    'book': dict(size=(0.15, 0.03, 0.2), cover='#2f5f8a', pages='#efe8d6', hands='pinch'),
+    'box': dict(size=(0.3, 0.24, 0.22), cover='#b98a55', tape='#d9c39a', hands='cupped'),
+}
+
+
+def prop_mesh(kind: str, tag: str) -> bpy.types.Object:
+    """A closed book (cover, cream page block on three sides) or a cardboard box with a tape strip, centred on
+    the origin, width along x, depth along y, height along z."""
+    import bmesh
+    spec = PROPS[kind]
+    w, d, h = spec['size']
+    bm = bmesh.new()
+    bmesh.ops.create_cube(bm, size=1.0, matrix=Matrix.Diagonal((w, d, h, 1)))
+    for f in bm.faces:
+        f.material_index = 0
+    if kind == 'book':  # the page block: inset slightly on the open sides, cream
+        blk = bmesh.ops.create_cube(bm, size=1.0, matrix=Matrix.Translation((0.004, 0, 0)) @
+                                    Matrix.Diagonal((w - 0.004, d * 0.8, h - 0.01, 1)))
+        for v in blk['verts']:
+            for f in v.link_faces:
+                f.material_index = 1
+    else:  # a tape strip over the top and down the front and back
+        t = bmesh.ops.create_cube(bm, size=1.0, matrix=Matrix.Diagonal((0.06, d + 0.004, h + 0.004, 1)))
+        for v in t['verts']:
+            for f in v.link_faces:
+                f.material_index = 1
+    me = bpy.data.meshes.new(f'{tag}_{kind}')
+    bm.to_mesh(me)
+    bm.free()
+    for key, colour in (('cover', spec['cover']), ('pages' if kind == 'book' else 'tape', spec.get('pages') or spec['tape'])):
+        m = bpy.data.materials.get(f'prop_{kind}_{key}') or bpy.data.materials.new(f'prop_{kind}_{key}')
+        m.use_nodes = True
+        b = m.node_tree.nodes['Principled BSDF']
+        b.inputs['Base Color'].default_value = palette.lin(colour)
+        b.inputs['Roughness'].default_value = 0.7 if kind == 'box' else 0.45
+        me.materials.append(m)
+    o = bpy.data.objects.new(me.name, me)
+    bpy.context.scene.collection.objects.link(o)
+    return o
+
+
+def hold(arm, parts, tag: str, kind: str, centre, tilt_deg: float = 0.0) -> list:
+    """Hold a book or box in both hands. centre(f) gives the prop's world centre per frame (in front of the body);
+    the prop rides on the root bone (placed at the middle frame) and each frame the wrists are posed onto its
+    sides, fingers forward, palms facing it."""
+    sc = bpy.context.scene
+    fr = list(frames(arm))
+    w, d, h = PROPS[kind]['size']
+    prop = prop_mesh(kind, tag)
+    P = ArmPoser(arm)
+    Mw = arm.matrix_world
+    hand = {s: next(p for p in parts if '_hand_' in p.name and p.name.endswith(f'_{s}')) for s in 'LR'}
+    half = {s: 0.75 * min(hand[s].dimensions) for s in 'LR'}  # the hand's half-thickness across the palm, and a margin
+    tilt = Matrix.Rotation(math.radians(tilt_deg), 4, 'X')
+    for f in fr:
+        sc.frame_set(f)
+        c = centre(f)
+        for s in 'LR':
+            sx = 1 if s == 'L' else -1
+            side = (tilt @ Vector((sx, 0, 0)).to_4d()).to_3d()
+            wrist = c + side * (w / 2 + half[s]) + (tilt @ Vector((0, d * 0.1, -h * 0.1)).to_4d()).to_3d()
+            fwd = (tilt @ Vector((0, -1, 0)).to_4d()).to_3d()
+            P.reach(s, wrist, Vector((sx, 0.4, -0.5)), fwd, (ArmPoser.DOWN, -side))
+            P.key(s, f)
+    mid = fr[len(fr) // 2]
+    sc.frame_set(mid)
+    prop.matrix_world = Matrix.Translation(centre(mid)) @ tilt
+    mw = prop.matrix_world.copy()
+    prop.parent, prop.parent_type, prop.parent_bone = arm, 'BONE', ROLES['root']
+    bpy.context.view_layer.update()
+    prop.matrix_world = mw
+    return [prop]
+
+
 def build_sheet(arm, parts, tag: str) -> list:
     """The 'sheet' pose: a pinch hand on each side and a modelled sheet of paper held between them. At the clip's
     middle frame the left hand and the paper are frozen relative to the right hand and ride on its bone."""
@@ -569,11 +749,11 @@ def attach(arm, tag: str, hand_pose: str | None = None) -> list:
         parts.append(ob)
 
     # hands first, at rest (T-pose): canonical hands sit at the wrist, fingers along the arm
-    hands = append(HANDS, [f'hand_{"pinch" if pose == "sheet" else pose}_{s}' for s in 'LR'])
-    if pose == 'sheet':
-        for s in 'LR':
-            hands[f'hand_sheet_{s}'] = hands.pop(f'hand_pinch_{s}')
-    for s in ('R',) if pose in TWO_HANDED else ('L', 'R'):
+    model = 'pinch' if pose == 'sheet' else HELD.get(pose, pose)
+    hands = append(HANDS, [f'hand_{model}_{s}' for s in 'LR'])
+    for s in 'LR':
+        hands[f'hand_{pose}_{s}'] = hands.pop(f'hand_{model}_{s}')
+    for s in ('L', 'R'):
         h = hands[f'hand_{pose}_{s}']
         h.name = f'{tag}_hand_{pose}_{s}'
         h.matrix_world = Matrix.Translation(arm.matrix_world @ arm.data.bones[ROLES[f'hand_{s}']].head_local)
