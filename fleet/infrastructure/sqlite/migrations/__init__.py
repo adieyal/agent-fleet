@@ -38,4 +38,9 @@ MIGRATIONS = (
         )""",
         "CREATE TABLE attention_import (path TEXT PRIMARY KEY)",
     ),
+    (
+        "ALTER TABLE attention_item ADD COLUMN acknowledged_at TEXT",
+        "ALTER TABLE attention_item ADD COLUMN resolved_at TEXT",
+        "ALTER TABLE attention_item ADD COLUMN stream_context TEXT",
+    ),
 )

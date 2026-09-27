@@ -102,3 +102,35 @@ def test_invalid_commands_leave_item_unchanged(attention):
         facade.acknowledge(item.id, actor="")
     assert facade.get(item.id) == item
     assert len(repo.history) == 1
+
+
+@pytest.mark.parametrize("tool", ["AskUserQuestion", "ExitPlanMode"])
+def test_waiting_observations_are_durable_occurrences(attention, tool):
+    facade, repo, now = attention
+    session = {"id": "s1", "project": "demo", "project_id": None, "agent": "claude",
+               "activity": {"kind": "tool", "name": tool, "summary": "Choose", "ts": 100}}
+    host = {"name": "worker", "ok": True, "jobs": [], "sessions": [session]}
+    facade.observe(host)
+    first, = facade.list()
+    assert first.kind == "decision"
+    assert first.source_reference == f"session:worker:s1:{tool}@100"
+    facade.acknowledge(first.id, actor="user")
+    now[0] += timedelta(seconds=1)
+    facade.observe(host)
+    assert len(facade.list()) == 1
+    assert facade.get(first.id).state == "acknowledged"
+    seen = facade.get(first.id).last_seen
+    history = list(repo.history)
+    now[0] += timedelta(seconds=1)
+    facade.observe({**host, "ok": False, "sessions": []})
+    assert facade.get(first.id).last_seen == seen
+    assert repo.history == history
+    session["activity"] = {"kind": "text", "summary": "Continuing", "ts": 200}
+    facade.observe(host)
+    assert facade.get(first.id).state == "resolved"
+    assert facade.get(first.id).resolution_details
+    assert facade.get(first.id).resolved_at == now[0]
+    session["activity"] = {"kind": "tool", "name": tool, "summary": "Next choice", "ts": 300}
+    facade.observe(host)
+    assert len(facade.list()) == 2
+    assert len(facade.list(state="open")) == 1
