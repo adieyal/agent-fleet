@@ -93,9 +93,10 @@ PROPS: dict[str, Prop] = {
     'podium': Prop('podium', (0.9, 0.65, 1.1), doc="the orchestrator's podium"),
     'whiteboard': Prop('whiteboard', (1.5, 0.5, 1.9), 'h', doc='the briefing board, on castors'),
     'question-desk': Prop('question-desk', (1.2, 0.7, 0.9), doc='with its "?" tent card; the lantern hangs over it',
-                          slots={'lantern': [0, 0.1, 2.25], 'card': [0.1, 0.05, 0.85]}),
+                          slots={'lantern': [0, 0.1, 2.0], 'card': [0.1, 0.05, 0.85]}),
     'crate': Prop('crate', (0.7, 0.7, 0.7), doc='the waiting crate, hourglass on its front'),
-    'lantern': Prop('lantern', (0.24, 0.24, 0.44), base=-0.22, shadow=0, doc='the attention lantern: magenta only here; '
+    # (l2's diamond is ~70 px wide at its 171.5 px/m)
+    'lantern': Prop('lantern', (0.36, 0.36, 0.66), base=-0.33, shadow=0, doc='the attention lantern: magenta only here; '
                     'anchor at the diamond centre, cable above; the front facet is blank for the glyph',
                     slots={'glyph': [0, -0.1, 0.0], 'cable_top': [0, 0, 1.2]}),
 }
@@ -266,15 +267,15 @@ SRC = 300  # px per metre in the flat drawings
 def footprints(angle: float) -> Image.Image:
     """A pair of robot footprints in the floor plane, walking along `angle` (degrees from +x, anticlockwise
     seen from above), centred on the drawing's centre. l2's dark grey prints, soft."""
-    side = int(0.6 * SRC)
+    side = int(0.8 * SRC)
     img = Image.new('L', (side, side), 0)
     g = ImageDraw.Draw(img)
-    for sx, sy in ((-0.075, -0.09), (0.075, 0.09)):   # left foot back, right foot ahead
+    for sx, sy in ((-0.1, -0.13), (0.1, 0.13)):   # left foot back, right foot ahead; l2's prints are ~25 cm long
         cx, cy = side / 2 + sx * SRC, side / 2 - sy * SRC
-        g.rounded_rectangle((cx - 0.05 * SRC, cy - 0.09 * SRC, cx + 0.05 * SRC, cy + 0.09 * SRC), radius=0.045 * SRC, fill=255)
+        g.rounded_rectangle((cx - 0.065 * SRC, cy - 0.125 * SRC, cx + 0.065 * SRC, cy + 0.125 * SRC), radius=0.06 * SRC, fill=255)
     img = img.rotate(angle - 90, resample=Image.Resampling.BICUBIC).filter(ImageFilter.GaussianBlur(2))
     out = Image.new('RGBA', img.size, (70, 72, 82, 0))
-    out.putalpha(img.point(lambda v: int(v * 0.42)))
+    out.putalpha(img.point(lambda v: int(v * 0.5)))
     return out
 
 

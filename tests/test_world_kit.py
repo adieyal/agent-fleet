@@ -76,7 +76,7 @@ def test_the_lift_has_door_states_and_the_lantern_a_glyph_slot() -> None:
     assert "indicator" in lift["slots"]
     assert "glyph" in SPRITES["lantern"]["slots"]
     tiles = SPRITES["plan-wall"]["slots"]["tiles"]
-    assert (tiles["cols"], tiles["rows"]) == (10, 5)
+    assert (tiles["cols"], tiles["rows"]) == (10, 6)  # l2's grid
     assert len(SPRITES["plan-wall"]["slots"]["lights"]) == 5
     assert all(SPRITES[g]["layer"] == "light" for g in SPRITES if g.startswith("glow-"))
 

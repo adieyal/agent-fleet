@@ -97,6 +97,15 @@ export class World {
     Object.assign(it, patch);
     this.changed(id, 'at' in patch || 'sprite' in patch || 'attach' in patch || 'visible' in patch);
   }
+  // load sprites that nothing shows yet but soon will (robots about to arrive), so they appear without a delay
+  use(...ids) {
+    for (const id of ids) {
+      const s = this.sprites.get(id);
+      if (!s) throw new Error('no sprite ' + id);
+      s.used = true;
+    }
+    this.request();
+  }
   remove(id) {
     const it = this.items.get(id);
     if (!it) return;
@@ -169,13 +178,16 @@ export class World {
         s.shown = show;
         this.dirtySprite(s);
       }
-      if (s.shown >= 0 && fadeAlpha(s.since, now) < 1) { fading = true; this.dirtySprite(s); }
-      else s.prev = -1;
+      if (s.shown >= 0 && fadeAlpha(s.since, now) < 1) { fading = true; s.fading = true; this.dirtySprite(s); }
+      else {
+        if (s.fading) this.dirtySprite(s);   // the fade's last frame: repaint it at full strength
+        s.fading = false; s.prev = -1;
+      }
     }
     return fading;
   }
   dirtySprite(s) {
-    for (const it of this.items.values()) if (it.sprite === s.id) { if (it.layer === 'ground') this.dirty.ground = true; else this.dirtyItem(it); }
+    for (const it of this.items.values()) if (it.sprite === s.id) { if (it.layer === 'ground') this.dirty.groundTier = true; else this.dirtyItem(it); }
   }
   async fetchTier(s, i) {
     if (s.loading.has(i)) return;
@@ -211,7 +223,8 @@ export class World {
           const i = pickTier(s.tiers, need, s.want);
           return s.used && !s.loaded.has(i) && !s.failed.has(i);
         });
-        if (!pending && this.stats.frames > 0 && !this.raf) ok(); else setTimeout(check, 30);
+        // (not waiting for the loop to go idle: a scene with walking robots never does)
+        if (!pending && this.stats.frames > 0 && !this.ground.building) ok(); else setTimeout(check, 30);
       };
       check();
     });
@@ -262,6 +275,7 @@ export class World {
     }
     // the ground snapshot follows the view once the zoom holds still; until then the old one is scaled
     if (this.dirty.ground) this.ground.invalidate();
+    else if (this.dirty.groundTier) this.ground.invalidate({ content: false });
     this.ground.base({ ...this.camera.min, W: view.W, H: view.H }, this.dpr);
     const zooming = this.camera.goal.ppm !== view.ppm || (this.lastView && this.lastView.ppm !== view.ppm);
     const groundChanged = !zooming && this.ground.update(view, this.dpr, { now: !this.ground.snap });
@@ -319,8 +333,16 @@ export class World {
         g.fillStyle = p.color; g.fill();
       }
     }
-    const flat = [...this.items.values()].filter(it => it.layer === 'ground' && it.visible).sort((a, b) => depth(a.at) - depth(b.at));
-    for (const it of flat) this.drawItem(g, it, view, Infinity);   // (no crossfades in a snapshot)
+    // far to near; light on the ground (a wall washer's scallop, the lantern's halo) last, added over what it lights
+    const lit = it => (this.sprites.get(it.sprite).blend === 'lighter' ? 1 : 0);
+    const flat = [...this.items.values()].filter(it => it.layer === 'ground' && it.visible && (it.intensity ?? 1) > 0)
+      .sort((a, b) => lit(a) - lit(b) || depth(a.at) - depth(b.at));
+    for (const it of flat) {   // (no crossfades in a snapshot)
+      g.save();
+      if (lit(it)) g.globalCompositeOperation = 'lighter';
+      this.drawItem(g, it, view, Infinity);
+      g.restore();
+    }
   }
 
   // clip: a screen rectangle to repaint, or null for everything
@@ -337,7 +359,7 @@ export class World {
     }
     g.fillStyle = this.background;
     g.fillRect(0, 0, view.W, view.H);
-    this.ground.draw(g, view);
+    this.ground.draw(g, view, { partial: !!clip });
     for (const it of this.sorted()) {
       if (clip && !meets(this.screenRect(this.planeRect(it), view), clip)) continue;
       this.drawItem(g, it, view, now);
@@ -361,7 +383,8 @@ export class World {
     const s = this.sprites.get(it.sprite);
     if (s.shown < 0) return;
     const fade = fadeAlpha(s.since, now);
-    if (s.prev >= 0 && fade < 1) this.drawTier(g, it, s, s.prev, view, 1);
+    // the old tier stays whole beneath the new one, except for additive light, which would then count twice
+    if (s.prev >= 0 && fade < 1) this.drawTier(g, it, s, s.prev, view, it.layer === 'light' ? 1 - fade : 1);
     this.drawTier(g, it, s, s.shown, view, fade);
   }
   drawTier(g, it, s, i, view, alpha) {
@@ -370,8 +393,11 @@ export class World {
     let dx = x - t.anchor_px[0] * k, dy = y - t.anchor_px[1] * k;
     const w = t.fw * k, h = t.fh * k, frame = it.frame || 0;
     // at a steady zoom, blit a copy pre-scaled to it at whole device pixels; while zooming, scale on the fly
-    const pre = this.steady ? this.prescaled(s, i, it.tint, frame, k) : null;
-    if (pre) { dx = Math.round(dx * this.dpr) / this.dpr; dy = Math.round(dy * this.dpr) / this.dpr; }
+    // while zooming, the copy made for the last resting zoom, scaled: a few screen pixels rather than a large tier
+    const pre = this.steady ? this.prescaled(s, i, it.tint, frame, k, true) : this.prescaled(s, i, it.tint, frame, k, false);
+    const z = this.steady ? 1 : view.ppm / this.scaledPpm;
+    const usePre = pre && z > 0.25 && z < 4;   // (softer mid-zoom; the frame at rest is sharp)
+    if (usePre && this.steady) { dx = Math.round(dx * this.dpr) / this.dpr; dy = Math.round(dy * this.dpr) / this.dpr; }
     g.save();
     g.globalAlpha = alpha * (it.intensity ?? 1);
     if (it.cut && t.cut) {   // keep one side of the desk-top line through (cut.x, cut.y) in tier pixels
@@ -380,22 +406,23 @@ export class World {
       g.beginPath(); g.moveTo(dx, line(dx)); g.lineTo(dx + w, line(dx + w)); g.lineTo(dx + w, edge); g.lineTo(dx, edge); g.closePath();
       g.clip();
     }
-    if (pre) g.drawImage(pre, dx, dy, pre.width / this.dpr, pre.height / this.dpr);
+    if (usePre) g.drawImage(pre, dx, dy, pre.width / this.dpr * z, pre.height / this.dpr * z);
     else g.drawImage(this.bitmap(s, i, it.tint), frame * t.fw, 0, t.fw, t.fh, dx, dy, w, h);
     g.restore();
   }
-  // one frame of a tier, tinted and scaled to the screen; cached until the zoom changes
-  prescaled(s, i, tint, frame, k) {
-    const key = `${s.id}|${i}|${tint || ''}|${frame}`;
-    let c = this.scaled.get(key);
-    if (!c) {
-      const t = s.tiers[i], d = this.dpr;
-      c = canvas(Math.max(1, Math.round(t.fw * k * d)), Math.max(1, Math.round(t.fh * k * d)));
-      const g = c.getContext('2d');
-      g.imageSmoothingQuality = 'high';
-      g.drawImage(this.bitmap(s, i, tint), frame * t.fw, 0, t.fw, t.fh, 0, 0, c.width, c.height);
-      this.scaled.set(key, c);
-    }
+  // One frame of a sprite, tinted and scaled to the screen at the resting zoom (scaledPpm), from tier i; cached
+  // until the zoom rests somewhere else. `build` makes it (or remakes it from a new tier); without, only a lookup.
+  prescaled(s, i, tint, frame, k, build) {
+    const key = `${s.id}|${tint || ''}|${frame}`;
+    const had = this.scaled.get(key);
+    if (!build) return had ? had.c : null;
+    if (had && had.i === i) return had.c;
+    const t = s.tiers[i], d = this.dpr;
+    const c = canvas(Math.max(1, Math.round(t.fw * k * d)), Math.max(1, Math.round(t.fh * k * d)));
+    const g = c.getContext('2d');
+    g.imageSmoothingQuality = 'high';
+    g.drawImage(this.bitmap(s, i, tint), frame * t.fw, 0, t.fw, t.fh, 0, 0, c.width, c.height);
+    this.scaled.set(key, { c, i });
     return c;
   }
 

@@ -140,27 +140,35 @@ chair  →  robot.under  →  bench  →  robot.over  →  bench.front-N
 Both are one layout seen at two zooms. l2's order along the wall wins where they disagree, because l2 is the reference for the workarea and its footprints show the arrival path the PRD asks for (*Run starts*). So the floor is l1 mirrored in one respect: the lift is at the left end of the back wall, the library at the right.
 
 ```
- back wall (y = 14.4)
- x=0      3.6              10.8             18.0             25.2            32.4
- ┌────────┬────────────────┬────────────────┬────────────────┬───────────────┐
- │ LIFT   │ ?  PLAN WALL   │ ?  PLAN WALL   │ ?  PLAN WALL   │ LIBRARY       │  ← wall bays
- │ brief- │    bench       │    bench       │    bench       │ shelves, cart │
- │ ing    │                │                │                │ archive shelf │
- ├────────┴────────────────┴────────────────┴────────────────┴───────────────┤  y ≈ 9.6
- │  aisle           podium                                                   │
- │   [board] bench       [board] bench       [board] bench                   │  ← open-floor lanes
- │   [board] bench       [board] bench       [board] bench                   │
- └───────────────────────────────────────────────────────────────────────────┘  y = 0 (front edge, cut away)
+ back wall (y = 10.8)
+ x=0   2.1   3.6                      11.4                     19.2               25.2
+ ┌─────┬─────┬────────────────────────┬────────────────────────┬──────────────────┐
+ │brief│LIFT │ ?  PLAN WALL           │    PLAN WALL           │ LIBRARY  shelves │  ← wall lanes
+ │board│     │ lantern  bench (3 desks│ shelf  bench (3 desks) │ cart, desk, crate│
+ │   podium  │                        │                        │                  │
+ ├───────────┴────────────────────────┴────────────────────────┴──────────────────┤  aisle
+ │   bench (3 terminal desks)     bench                     bench                 │  ← open floor
+ │   bench                        bench                     bench                 │
+ └────────────────────────────────────────────────────────────────────────────────┘  y = 0 (front edge, cut away)
    left wall (x = 0)                                                  right edge cut away
 ```
 
-- **The floor** is 32.4 × 14.4 m (54 × 24 tiles), with a 3.2 m back wall and a left wall; the near and right walls are cut away to their plinth. That frames at about 42 px/m on a 1672 × 941 screen with margin, matching l1's proportions.
-- **The lift core** fills the first bay (x 0–3.6): lift doors and call buttons (a Blender piece with open-door frames), with the briefing board beside the doors (PRD: *briefing board by the lift doors*). Every robot arrives and leaves through it.
-- **Wall lanes.** Each workstream (lane) gets a workarea: one bench, its plan wall, a question desk with the lantern hook, and a report tray. Three lanes fit along the back wall, one per 7.2 m double bay: question desk at the bay's left, plan wall between the pilasters, a pier with a poster or shelf at the right. The bench stands about 2.2 m in front of the wall with its seats on the far side, facing the viewer, as in l2.
-- **Open-floor lanes.** Up to six more lanes stand in two rows on the open floor. Their plan wall is a freestanding board on castors behind the bench (l1's whiteboard stand), low enough (1.5 m) not to hide the row behind it.
+As built in `layout.js` (a pure function of the room from `workarea-model.js`), after three rounds of side-by-sides against l1 and l2 (`art/scripts/shoot_floor.py`):
+
+- **The floor** is 25.2 × 10.8 m (seven bays by three), with a 3.2 m back wall and a left wall; the near and right walls are cut away to the slab. A first cut at 32.4 × 14.4 m made everything read small against l1.
+- **The lift** is at x 2.1, with the briefing board and the orchestrator's podium in front of it (PRD: *briefing board by the lift doors*). Every robot arrives and leaves through it.
+- **Wall lanes.** Two, each 7.8 m wide with its bench, plan wall, three lamps and desk props; the first also has the room's question desk and the lantern. Their proportions are measured from l2 (through the bake-off's l2 layout): relative to the bench's centre, the lift stands 5.4 m to the left and the question desk 2.5 m to the left, 0.45 m off the wall. The plan wall is 0.35 m to the right of the bench's centre, and the bench is 1.75 m from the wall. The plan wall is l2's 10 × 6 grid of 30 cm tiles.
+- **Desks for jobs.** A bench has three desks and each job the room shows takes one. Active jobs fill the first wall lane's desks, then the next lane's. Recently finished jobs take the next empty lane, and the rest of the benches stand idle. Each desk's row on the plan wall shows its job's steps, and the criteria lights show steps done out of all steps.
+- **Open floor.** Six idle benches of three terminal desks in two rows, standing in for l1's rows of monitors. Freestanding plan boards for open-floor lanes are not built yet.
 - **Rooms** (epics) are clusters of lanes: consecutive lane slots with a shared floor plaque and a DOM headline, and optional low dividers, per the PRD's first L1 layout decision.
-- **Role stations** have fixed slots: the library, book cart and archive shelf at the right end of the wall, the orchestrator's podium in the aisle in front of the wall lanes.
-- **The l2 framing** is the frame of the first wall lane (x 3.6–10.8) with the lift's edge in view. Bake-off scene coordinates map onto the floor by translation (bake-off wall `y = 6.0` → `14.4`); the prototype fits the x offset so its l2 framing reproduces the bake-off frame.
+- **Stations.** The library (two shelves, the book cart, the librarian's desk) is at the wall's right end. A waiting crate appears when a live session in the project is waiting on its human.
+- **The l2 framing** is fixed relative to a bench's centre, so clicking any bench zooms to the same composition.
+
+The remaining differences, largest first (`floor-sbs/round-3` in the job outbox):
+1. l2 is lit warmer throughout, and l1 lights every bench's lamps, whereas here only desks with active runs glow (PRD: warmth is activity).
+2. l2 is not a single projection: its question desk sits further from the bench's end than a real layout allows.
+3. l1 has a thicker plinth, and its lift is about twice the size its benches imply.
+4. The robots are placeholders: bake-off B2 seated frames and a Blender Walking clip rendered from the robot job's glb (`art/scripts/build_walker.py`).
 
 **Places are stable.** Lane slots are assigned when a lane first appears and stored with the floor's layout; they never change with state or focus. A lane's bench persists and resets for each new slice (PRD: *the bench resets for the next slice*). Done, active and next slices read on the lane's plan wall (ticked, lit and blank columns), and finished slices leave as dossiers to the archive shelf. More lanes than slots (nine per floor) is a rearrange-mode decision, not an automatic reflow.
 
@@ -228,10 +236,23 @@ Under `fleet/web/js/world/`, plain ES modules with no dependencies and no build 
 | `paint.js` | Tinting through a mask, glow discs, hit masks, affine texture fill |
 | `ground.js` | The ground snapshot |
 | `engine.js` | `World`: manifests, items, the frame loop, dirty rectangles, budget, picking |
+| `layout.js` | The floor from a room: shell, lanes, desks for jobs, stations, runs' seats, trails, framings |
+| `nav.js` | The walking grid from footprints, A* with string-pulling, walking along a route |
 
-Planned: `layout.js` (floor layout: slots, bays, places, spots, frames), `glow.js` (warmth per workarea), `nav.js` (navigation grid and routes), `behaviour.js` (renderer-agnostic agent behaviour, extracted from `motion.js`), `actors.js` (robot poses to sprites) and the DOM overlay.
+Planned: `glow.js` (warmth fading per workarea), `behaviour.js` (renderer-agnostic agent behaviour, extracted from `motion.js`), `actors.js` (robot poses to sprites) and the rest of the DOM overlay (the lantern's glyph is the first piece).
 
-`/prototype/world` runs the engine over the bake-off's l2 scene (`art/bakeoff/world.json`: B2 bench, robots and lantern, B1 plants for their three tiers), from the whole room to l2's framing. The floor-kit prototype replaces it.
+`/prototype/world` runs the engine over the bake-off's l2 scene, `/prototype/kit` lays out the floor kit, and `/prototype/floor` builds the Restoke floor from the recorded fixture. On the floor, robots leave the lift one by one, walk around the furniture to their desks and sit. Clicking a bench zooms to it, and Escape zooms out.
+
+**Measured** (`art/scripts/perf_floor.py`: 1440 × 900, three robots walking, frame rate uncapped, median of three fresh-browser runs; GPU is the Intel Meteor Lake iGPU through ANGLE GL, no GPU is SwiftShader):
+
+| Mode | DPR | Whole floor | Bench (l2) | Zooming between them |
+|---|---|---|---|---|
+| no GPU | 1 | 1.0 ms (1044 fps) | 1.9 ms (536 fps) | 10.3 ms (97 fps), p95 17.5 |
+| no GPU | 2 | 2.3 ms (442 fps) | 6.8 ms (148 fps) | 66 ms (15 fps), p95 211 |
+| GPU | 1 | 0.7 ms (1516 fps) | 0.7 ms (1463 fps) | 1.9 ms (520 fps) |
+| GPU | 2 | 2.4 ms (411 fps) | 2.7 ms (377 fps) | 8.2 ms (123 fps) |
+
+Walking robots stay far above 50 fps everywhere. The open case is zooming at a pixel ratio of 2 without a GPU, where every frame rescales a 5-megapixel canvas in software (between 25 and 15 fps from run to run). Rendering at a pixel ratio of 1 while the zoom moves would close it.
 
 ## Open questions
 

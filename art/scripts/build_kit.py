@@ -31,7 +31,7 @@ TIERS = (0.5, 1, 2)
 WALL_H, WALL_T = 3.2, 0.25      # back and left walls
 BAY = 3.6                       # structural bay: pilaster spacing, and the length of repeating pieces
 SLAB = 0.35                     # floor slab thickness shown at the cut edges
-TILE, PITCH_T, COLS, ROWS = 0.34, 0.38, 10, 5  # plan-wall tiles
+TILE, PITCH_T, COLS, ROWS = 0.27, 0.3, 10, 6   # plan-wall tiles: l2's 10 x 6 grid, sized to its bench
 
 PAL = {  # docs/design/art-direction.md, rendered targets; albedo a little lower
     # wall and slab: albedo that renders near the wall texture's mean (#c7c2bf), so wall ends meet the texture
@@ -295,9 +295,9 @@ def lift():
 def plan_wall():
     """The plan wall's board: a light bezel around a recessed grey backing for COLS x ROWS tiles, and a strip
     of five criteria-light housings above it. Tiles and lights are separate sprites, placed on the slots.
-    Anchor: the foot of the wall below the board's centre (the board's bottom edge is 0.55 m up)."""
+    Anchor: the foot of the wall below the board's centre (the board's bottom edge is 0.75 m up)."""
     gw, gh = COLS * PITCH_T + 0.06, ROWS * PITCH_T + 0.06
-    z0 = 0.55   # the light strip then tops out at 3.06 m, under the 3.2 m wall's cap
+    z0 = 0.75   # the light strip then tops out at 3.1 m, under the 3.2 m wall's cap
     A.box('bezel', (gw + 0.16, 0.06, gh + 0.16), (0, -0.03, z0), M('bezel', rough=0.5), bevel=0.012)
     A.box('backing', (gw, 0.02, gh), (0, -0.065, z0 + 0.08), M('backing', rough=0.8), bevel=0.0)
     A.box('lights_strip', (1.3, 0.05, 0.24), (0, -0.025, z0 + gh + 0.26), M('bezel', rough=0.5), bevel=0.01)
@@ -317,8 +317,10 @@ def tile(state):
     face = emissive('amber', 0.7) if state == 'running' else M('tile', rough=0.5)
     A.box('tile', (TILE, 0.03, TILE), (0, -0.015, -TILE / 2), face, bevel=0.01, rot=(0, 0, 0))
     ink = M('ink', rough=0.6) if state != 'failed' else M('fail', rough=0.6)
+    k = TILE / 0.34   # the marks were drawn for a 34 cm tile
+
     def stroke(n, length, cx, cz, angle):
-        A.box(n, (length, 0.006, 0.026), (cx, -0.033, cz - 0.013), ink, bevel=0.003, rot=(0, angle, 0))
+        A.box(n, (length * k, 0.006, 0.026 * k), (cx * k, -0.033, (cz - 0.013) * k), ink, bevel=0.003, rot=(0, angle, 0))
     if state in ('done', 'running'):
         # (a positive turn about y lowers a stroke's +x end): down to the heel, then up to the right
         stroke('tick_a', 0.1, -0.06, -0.02, math.radians(45))

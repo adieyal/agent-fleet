@@ -15,8 +15,14 @@ export class GroundCache {
     this.paint = paint;
     this.snap = null; this.next = null;
     this.version = 0;   // bumped by every change to the ground; a snapshot is current only at the latest version
+    this.content = 0;   // bumped only when what is on the ground changes, not when a sprite swaps its tier
   }
-  invalidate() { this.version++; this.baseStale = true; }
+  // content: false when only a ground sprite's tier changed: the overview (at the widest zoom) stays, and an older
+  // snapshot still shows the right things meanwhile
+  invalidate({ content = true } = {}) {
+    this.version++;
+    if (content) { this.content++; this.baseStale = true; }
+  }
   get building() { return !!this.next; }
 
   // does the snapshot serve this view exactly (current, same zoom, view inside it)?
@@ -31,7 +37,7 @@ export class GroundCache {
     const target = this.next;
     if (!target || target.version !== this.version || target.ppm !== view.ppm || !covers(target, view)) {
       const W = Math.ceil(view.W * (1 + 2 * MARGIN)), H = Math.ceil(view.H * (1 + 2 * MARGIN));
-      this.next = { u: view.u, v: view.v, ppm: view.ppm, W, H, dpr, c: canvas(Math.ceil(W * dpr), Math.ceil(H * dpr)), row: 0, version: this.version };
+      this.next = { u: view.u, v: view.v, ppm: view.ppm, W, H, dpr, c: canvas(Math.ceil(W * dpr), Math.ceil(H * dpr)), row: 0, version: this.version, content: this.content };
     }
     return this.step(now ? Infinity : 6);
   }
@@ -67,17 +73,31 @@ export class GroundCache {
   }
 
   // blit the snapshots for a view (clipped by the caller): the overview beneath, the current one over it
-  draw(g, view) {
-    // an out-of-date snapshot is left out while the overview (repainted at once on every change) is current
-    const old = this.snap && this.snap.version !== this.version && this.overview && !this.baseStale;
-    if (this.overview && (!this.snap || old || this.snap.ppm !== view.ppm || !covers(this.snap, view))) this.blit(g, this.overview, view);
+  draw(g, view, { partial = false } = {}) {
+    // an out-of-date snapshot is left out while the overview (repainted at once on every change) is current; but a
+    // partial repaint must match the rest of the screen, which was painted from that snapshot
+    const old = !partial && this.snap && this.snap.content !== this.content && this.overview && !this.baseStale;
+    // the overview only where the snapshot, as scaled now, doesn't reach (a full-screen blit is costly in software)
+    if (this.overview && (!this.snap || old || !this.fills(this.snap, view))) this.blit(g, this.overview, view);
     if (this.snap && !old) this.blit(g, this.snap, view);
   }
-  blit(g, s, view) {
+  place(s, view) {
     const k = view.ppm / s.ppm, dpr = s.dpr;
     let x = view.W / 2 + (s.u - view.u) * view.ppm - s.W / 2 * k, y = view.H / 2 + (s.v - view.v) * view.ppm - s.H / 2 * k;
     if (k === 1) { x = Math.round(x * dpr) / dpr; y = Math.round(y * dpr) / dpr; }   // whole pixels: a plain copy
-    g.drawImage(s.c, x, y, s.c.width / dpr * k, s.c.height / dpr * k);
+    return { x, y, w: s.c.width / dpr * k, h: s.c.height / dpr * k };
+  }
+  fills(s, view) {
+    const r = this.place(s, view);
+    return r.x <= 0 && r.y <= 0 && r.x + r.w >= view.W && r.y + r.h >= view.H;
+  }
+  // only the part that lands on the screen: at a high pixel ratio the whole snapshot is ~12 megapixels
+  blit(g, s, view) {
+    const r = this.place(s, view);
+    const x0 = Math.max(0, r.x), y0 = Math.max(0, r.y), x1 = Math.min(view.W, r.x + r.w), y1 = Math.min(view.H, r.y + r.h);
+    if (x1 <= x0 || y1 <= y0) return;
+    const sx = s.c.width / r.w, sy = s.c.height / r.h;   // source pixels per CSS pixel
+    g.drawImage(s.c, (x0 - r.x) * sx, (y0 - r.y) * sy, (x1 - x0) * sx, (y1 - y0) * sy, x0, y0, x1 - x0, y1 - y0);
   }
 }
 
