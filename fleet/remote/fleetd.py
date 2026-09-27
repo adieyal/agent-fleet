@@ -534,8 +534,11 @@ def job_documents(job: JsonObject) -> List[JsonObject]:
     directory = JOBS_DIRECTORY / job["id"]
     documents: List[JsonObject] = []
 
-    def describe(document_id: str, path: Path, kind: str, name: str, step: Optional[int]) -> None:
+    def describe(document_id: str, path: Path, root: Path, kind: str, name: str,
+                 step: Optional[int]) -> None:
         with contextlib.suppress(OSError):
+            if not path.resolve().is_relative_to(root.resolve()):
+                return
             stat = path.stat()
             if stat.st_size and path.is_file():
                 documents.append({"id": document_id, "kind": kind, "name": name, "step": step, "path": str(path),
@@ -545,15 +548,17 @@ def job_documents(job: JsonObject) -> List[JsonObject]:
         report = directory / f"result-{step['index']}.md"
         with contextlib.suppress(OSError):
             if report.stat().st_size >= REPORT_MINIMUM_BYTES:
-                describe(f"report-{step['index']}", report, "report", f"Step {step['index'] + 1}: {step['title']}",
-                         step["index"])
+                describe(f"report-{step['index']}", report, directory, "report",
+                         f"Step {step['index'] + 1}: {step['title']}", step["index"])
     for index, entry in enumerate(job.get("written_documents", [])):
-        describe(f"file-{index}", Path(entry["path"]), "file", os.path.basename(entry["path"]), entry.get("step"))
+        describe(f"file-{index}", Path(entry["path"]), Path(job["cwd"]), "file",
+                 os.path.basename(entry["path"]), entry.get("step"))
     outbox = directory / "outbox"
     if outbox.exists():
         for path in sorted(outbox.rglob("*")):
             if is_markdown(path.name):
-                describe(f"outbox-{path.relative_to(outbox)}", path, "outbox", str(path.relative_to(outbox)), None)
+                describe(f"outbox-{path.relative_to(outbox)}", path, outbox, "outbox",
+                         str(path.relative_to(outbox)), None)
     return documents
 
 

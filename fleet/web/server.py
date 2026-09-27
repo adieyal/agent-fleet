@@ -18,6 +18,8 @@ from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from fleet import building, projects, transport
+from fleet.composition import open_store
+from fleet.infrastructure.sqlite import Store
 from fleet.attention import AttentionBoard, ItemResolved
 from fleet.building import DEFAULT_CAPACITY, NoVacancy
 from fleet.workspace import FOCUSES, AlreadyShuttered, NotShuttered, WorkspaceStore
@@ -67,7 +69,8 @@ class FleetState(LiveWorkspace):
                  load_registry: Callable[[], Registry] | None = None,
                  workspace: WorkspaceStore | None = None,
                  load_capacity: Callable[[], int] | None = None,
-                 pipelines: dict[str, dict[str, str]] | None = None) -> None:
+                 pipelines: dict[str, dict[str, str]] | None = None,
+                 store: Store | None = None) -> None:
         self.hosts = hosts
         self.project_labels = project_labels or {}
         self.load_registry = load_registry or Registry
@@ -78,12 +81,24 @@ class FleetState(LiveWorkspace):
         self.board = AttentionBoard(self.workspace)
         self.changed = threading.Condition()
         self.version = 0
+        self.store = store
+        self.history_cursor = store.latest_sequence() if store is not None else 0
         self.by_host: dict[str, dict[str, Any]] = {
             host.name: {"name": host.name, "ok": False, "error": "connecting…", "jobs": {}, "sessions": {}}
             for host in hosts}
         self.pipeline_config = pipelines or {}
         self.pipeline_runs = {}
         self.pipeline_seq = 0
+
+    def follow_history(self, stop: threading.Event) -> None:
+        if self.store is None:
+            return
+        while not stop.is_set():
+            changes = self.store.history_after(self.history_cursor)
+            if changes:
+                self.history_cursor = int(changes[-1]["sequence"])
+                self.bump()
+            stop.wait(0.25)
 
     def update(self, host_name: str, mutate: Any) -> None:
         with self.changed:
@@ -464,7 +479,8 @@ def serve(hosts: list[Host], *, port: int, bind: str, open_browser: bool = False
           libraries: dict[str, str] | None = None, project_labels: dict[str, str] | None = None,
           pipelines: dict[str, dict[str, str]] | None = None) -> None:
     state = FleetState(hosts, project_labels, projects.load_registry, WorkspaceStore(workspace_path()),
-                       building.load_capacity, pipelines)
+                       building.load_capacity, pipelines, open_store())
+    threading.Thread(target=state.follow_history, args=(threading.Event(),), daemon=True).start()
     for host in hosts:
         threading.Thread(target=follow_host, args=(state, host), daemon=True).start()
     run_server(make_handler(state, ProjectLibrary(libraries or {})), port=port, bind=bind, open_browser=open_browser)
