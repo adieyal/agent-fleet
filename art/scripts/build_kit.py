@@ -3,7 +3,7 @@
     blender -b --factory-startup -P art/scripts/build_kit.py -- OUT_DIR
 
 Each piece is modelled at real size and rendered in Cycles with the sprite world's camera (orthographic, pitch
-44.5 deg, yaw 21.25 deg) at 85.75, 171.5 and 343 px/m, on transparent film with shadow catchers for its contact
+28 deg, yaw 33 deg: the image model's, so AI furniture matches) at 85.75, 171.5 and 343 px/m, on transparent film with shadow catchers for its contact
 shadows. OUT_DIR gets <piece>@<ppm>.png and pieces.json (per piece: tiers with size and the pixel its anchor
 lands on, footprint, slots). art/kit/finish.py turns them into the kit. Only Blender 4.2+ and the GPU are
 needed: no downloaded sources.
@@ -25,7 +25,9 @@ import bpy  # noqa: E402
 import numpy as np  # noqa: E402
 from mathutils import Vector  # noqa: E402
 
-PITCH, YAW = 44.5, 21.25
+# The world camera: the image model's own (measured from the AI furniture's silhouettes, and l1's and l2's), so
+# rendered architecture and generated furniture share one projection (floor review 1, point 1)
+PITCH, YAW = 28.0, 33.0
 PPM_1X = 941 / 5.486            # l2's framing: 171.528 px/m
 TIERS = (0.5, 1, 2)
 WALL_H, WALL_T = 3.2, 0.45      # back and left walls: l1's thick cut-away walls
@@ -213,14 +215,15 @@ def pilaster():
 def cap_x():
     """The back wall's top for one bay: cap face and its front lip, repeatable along x; anchor: the bay's
     left end on the wall face at floor level."""
-    A.box('cap', (BAY, WALL_T + 0.04, 0.1), (BAY / 2, WALL_T / 2 - 0.02, WALL_H - 0.02), M('cap', rough=0.6), bevel=0.0)
+    # (no end faces: bays butt into one continuous cap)
+    A.box('cap', (BAY, WALL_T + 0.04, 0.1), (BAY / 2, WALL_T / 2 - 0.02, WALL_H - 0.02), M('cap', rough=0.6), bevel=0.0, drop=('-x', '+x'))
     return Vector((0, 0, 0)), [0, -0.02, WALL_H - 0.02, BAY, WALL_T + 0.02, WALL_H + 0.08], {}, [], 0.02
 
 
 def cap_y():
     """The left wall's top for one bay along y (the wall's room face is x = 0); anchor: its front end at the
     face, floor level."""
-    A.box('cap', (WALL_T + 0.04, BAY, 0.1), (-WALL_T / 2 + 0.02, BAY / 2, WALL_H - 0.02), M('cap', rough=0.6), bevel=0.0)
+    A.box('cap', (WALL_T + 0.04, BAY, 0.1), (-WALL_T / 2 + 0.02, BAY / 2, WALL_H - 0.02), M('cap', rough=0.6), bevel=0.0, drop=('-y', '+y'))
     return Vector((0, 0, 0)), [-WALL_T - 0.02, 0, WALL_H - 0.02, 0.02, BAY, WALL_H + 0.08], {}, [], 0.02
 
 
@@ -253,8 +256,8 @@ def slab_front():
     """The floor slab's cut edge along the front for one bay; anchor: the bay's left end at the floor's edge."""
     # only the cut face, a thin plate (no top shows over the floor texture), under a pale rim that stands out a
     # little, as l1's plinth: the floor reads as a solid slab
-    A.box('slab', (BAY, 0.01, SLAB - RIM), (BAY / 2, 0.005, -SLAB), M('slab', rough=0.7), bevel=0.0)
-    A.box('rim', (BAY, 0.06, RIM), (BAY / 2, -0.02, -RIM), M('cap', rough=0.5), bevel=0.0)
+    A.box('slab', (BAY, 0.01, SLAB - RIM), (BAY / 2, 0.005, -SLAB), M('slab', rough=0.7), bevel=0.0, drop=('-x', '+x'))
+    A.box('rim', (BAY, 0.06, RIM), (BAY / 2, -0.02, -RIM), M('cap', rough=0.5), bevel=0.0, drop=('-x', '+x'))
     catcher('catcher_slab', (0, 0.01, 0), (math.pi / 2, 0, 0))
     return Vector((0, 0, 0)), [0, -0.05, -SLAB, BAY, 0.01, 0], {}, [], 0.03
 
@@ -262,8 +265,8 @@ def slab_front():
 def slab_side():
     """The slab's cut edge along the right side for one bay (the floor ends at x = 0 here); anchor: the bay's
     front end. Its front end meets slab-front's right end, so the corner needs no piece of its own."""
-    A.box('slab', (0.01, BAY, SLAB - RIM), (-0.005, BAY / 2, -SLAB), M('slab', rough=0.7), bevel=0.0)
-    A.box('rim', (0.06, BAY, RIM), (0.02, BAY / 2, -RIM), M('cap', rough=0.5), bevel=0.0)
+    A.box('slab', (0.01, BAY, SLAB - RIM), (-0.005, BAY / 2, -SLAB), M('slab', rough=0.7), bevel=0.0, drop=('-y', '+y'))
+    A.box('rim', (0.06, BAY, RIM), (0.02, BAY / 2, -RIM), M('cap', rough=0.5), bevel=0.0, drop=('-y', '+y'))
     catcher('catcher_slab', (-0.01, 0, 0), (0, math.pi / 2, 0))
     return Vector((0, 0, 0)), [-0.01, 0, -SLAB, 0.05, BAY, 0], {}, [], 0.03
 

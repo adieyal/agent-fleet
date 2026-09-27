@@ -8,7 +8,7 @@ import { Camera } from './camera.js';
 import { GroundCache } from './ground.js';
 import { pickAt } from './hit.js';
 import { alphaOf, affineFill, canvas, glowDisc, hitMask, loadImage, tinted } from './paint.js';
-import { PITCH, YAW, depth, fromScreen, plane, toScreen } from './projection.js';
+import { EDGE_SLOPE, PITCH, YAW, depth, fromScreen, plane, toScreen } from './projection.js';
 import { sortEntries } from './sort.js';
 import { drawableTier, fadeAlpha, pickTier } from './tiers.js';
 
@@ -356,7 +356,12 @@ export class World {
         g.beginPath();
         pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
         g.closePath();
-        g.fillStyle = p.color; g.fill();
+        if (p.gradient) {   // a radial gradient centred on a world point, radius in metres (light falling off)
+          const [cx, cy] = toScreen(view, p.gradient.at), gr = g.createRadialGradient(cx, cy, 0, cx, cy, p.gradient.radius * view.ppm);
+          for (const [o, c] of p.gradient.stops) gr.addColorStop(o, c);
+          g.fillStyle = gr;
+        } else g.fillStyle = p.color;
+        g.fill();
       }
     }
     // far to near; light on the ground (a wall washer's scallop, the lantern's halo) last, added over what it lights
@@ -436,15 +441,28 @@ export class World {
     if (usePre && this.steady) { dx = Math.round(dx * this.dpr) / this.dpr; dy = Math.round(dy * this.dpr) / this.dpr; }
     g.save();
     g.globalAlpha = alpha * (it.intensity ?? 1);
-    if (it.cut && t.cut) {   // keep one side of the desk-top line through (cut.x, cut.y) in tier pixels
-      const c = t.cut, line = sx => dy + k * (c.y + c.slope * ((sx - dx) / k - c.x));
-      const edge = it.cut === 'over' ? dy - 1 : dy + h + 1;
-      g.beginPath(); g.moveTo(dx, line(dx)); g.lineTo(dx + w, line(dx + w)); g.lineTo(dx + w, edge); g.lineTo(dx, edge); g.closePath();
+    const cut = it.cut && this.cutLines(it, t, view, dx, dy, k);
+    if (cut) {   // keep one side of the desk-top line (the under part also stops at the desk's near edge)
+      const x0 = dx - 1, x1 = dx + w + 1;
+      const [top, bottom] = it.cut === 'over' ? [() => dy - 1, cut.split] : [cut.split, cut.floor || (() => dy + h + 1)];
+      g.beginPath(); g.moveTo(x0, top(x0)); g.lineTo(x1, top(x1)); g.lineTo(x1, bottom(x1)); g.lineTo(x0, bottom(x0)); g.closePath();
       g.clip();
     }
     if (usePre) g.drawImage(pre, dx, dy, pre.width / this.dpr * z, pre.height / this.dpr * z);
     else g.drawImage(this.bitmap(s, i, it.tint), frame * t.fw, 0, t.fw, t.fh, dx, dy, w, h);
     g.restore();
+  }
+  // A seated item's cut lines on screen, as functions of x: `split`, the desk-top line between its under and over
+  // parts, and `floor`, below which its under part is not drawn. An item gives them as world points on the desk
+  // (cutAt, cutFloor), each a line along the desk's long edges; otherwise the sprite's own fixed line (tier px).
+  cutLines(it, t, view, dx, dy, k) {
+    if (it.cutAt) {
+      const through = p => { const [x, y] = toScreen(view, p); return sx => y + EDGE_SLOPE * (sx - x); };
+      return { split: through(it.cutAt), floor: it.cutFloor ? through(it.cutFloor) : null };
+    }
+    if (!t.cut) return null;
+    const c = t.cut;
+    return { split: sx => dy + k * (c.y + c.slope * ((sx - dx) / k - c.x)), floor: null };
   }
   // One frame of a sprite, tinted and scaled to the screen at the resting zoom (scaledPpm), from tier i; cached
   // until the zoom rests somewhere else. `build` makes it (or remakes it from a new tier); without, only a lookup.
@@ -470,10 +488,8 @@ export class World {
     const entries = this.sorted().filter(it => it.hit !== false && this.sprites.get(it.sprite).hit !== 'none').map(it => {
       const s = this.sprites.get(it.sprite), r = this.screenRect(this.planeRect(it), view), t = s.tiers[Math.max(0, s.shown)];
       let keep = null;
-      if (it.cut && t.cut && t.fw) {
-        const k = r.w / t.fw, line = sx => r.y + k * (t.cut.y + t.cut.slope * ((sx - r.x) / k - t.cut.x));
-        keep = it.cut === 'over' ? (px, py) => py < line(px) : (px, py) => py >= line(px);
-      }
+      const cut = it.cut && t.fw && this.cutLines(it, t, view, r.x, r.y, r.w / t.fw);
+      if (cut) keep = it.cut === 'over' ? (px, py) => py < cut.split(px) : (px, py) => py >= cut.split(px) && (!cut.floor || py < cut.floor(px));
       return { item: it, rect: r, mask: s.mask, keep, hit: s.hit || 'alpha' };
     });
     const it = pickAt(entries, x, y);

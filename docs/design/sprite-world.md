@@ -20,18 +20,18 @@
 
 **World space** is metres on one floor: `x` runs along the back wall from the left wall, `y` runs from the front edge of the floor towards the back wall, `z` is up. This is the bake-off's orientation (Blender, Z up), so bake-off scenes drop in by translation.
 
-**One camera for every sprite and every zoom.** Orthographic, pitch 44.5°, yaw 21.25°: the l2 fit from `art/scripts/fit_camera.py`, already used to render B1 and to lay out B2. Changing it means re-rendering every Blender piece and regenerating every prop, so it is fixed. The camera never turns; the prototype's ±15° turn is a 3D-only feature and is dropped.
+**One camera for every sprite and every zoom.** Orthographic, pitch 28°, yaw 33°: the image model's own camera, measured from the AI furniture's silhouettes and matching l1 and l2 (floor review 1 below). Blender pieces and the walker are rendered with it, and the AI props need no correction. Changing it means re-rendering every Blender piece, so it is fixed. (It was pitch 44.5°, yaw 21.25° until floor review 1: the l2 landmark fit, which the AI furniture never matched.) The camera never turns; the prototype's ±15° turn is a 3D-only feature and is dropped.
 
 With `c = (cx, cy, cz)` the view centre and `ppm` the zoom in screen pixels per metre, a world point `p` lands at:
 
 ```
 d  = p − c
-sx = W/2 + ppm · ( 0.9320·dx + 0.3624·dy          )
-sy = H/2 + ppm · ( 0.2540·dx − 0.6533·dy − 0.7133·dz)
-depth(p) = 0.2585·x − 0.6648·y + 0.7009·z         (larger is nearer the viewer)
+sx = W/2 + ppm · ( 0.8387·dx + 0.5446·dy          )
+sy = H/2 + ppm · ( 0.2557·dx − 0.3937·dy − 0.8829·dz)
+depth(p) = 0.4809·x − 0.7405·y + 0.4695·z         (larger is nearer the viewer)
 ```
 
-So one metre along `x` goes right and slightly down (slope 0.2726, the desk-edge slope in l2), along `y` up and right, and up the screen by 0.71 m per metre of height. The inverse onto the floor plane (`z = 0`) is a 2×2 solve, used for picking and for placing things under the pointer.
+So one metre along `x` goes right and slightly down (slope 0.305, the long edges of a desk and the foot of the back wall), along `y` up and right, and up the screen by 0.88 m per metre of height. The inverse onto the floor plane (`z = 0`) is a 2×2 solve, used for picking and for placing things under the pointer.
 
 **Zoom is continuous.** The whole floor at 1672 × 941 is about 42 px/m; l2's framing is 171.5 px/m (941 px / 5.486 m); the close limit is 2× l2 (343 px/m). Every place has a *frame*, a world-space box; entering a place eases the camera to fit that box. There is no scene swap between levels.
 
@@ -59,7 +59,7 @@ Each asset family has a `manifest.json` beside its files under `fleet/web/assets
 ```jsonc
 {
   "version": 1,
-  "camera": { "pitch": 44.5, "yaw": 21.25 },
+  "camera": { "pitch": 28, "yaw": 33 },
   "sprites": {
     "bench-3": {
       "source": "ai",                          // ai | blender | procedural
@@ -185,6 +185,49 @@ The remaining differences, largest first (`floor-sbs/round-8` in the job outbox)
 | L3 workarea | > 130 | a lane's bench and plan wall (l2) | 1× or 2×; tile ticks, criteria lights, action glyph bubbles | Short tile titles |
 
 Crossing a band crossfades its overlay text over 200 ms; sprites never pop, since the tier switch happens only when the zoom settles.
+
+### Floor review 1: root causes
+
+Each point was reproduced in `/prototype/floor` at `e2a1601` before any change (`art/scripts/shoot_review.py`, before views in `floor-sbs/review-1/`). The preview on port 8792 had been running since 02:27, before round 7. The server reads `/js` once at startup, so the review saw round-6 code (the old bench and seats) over newer assets. The causes below hold at `e2a1601` as well.
+
+1. **Walls not aligned with the furniture.** The scene mixed two projections.
+   - **The walls' camera:** everything Blender renders (walls, caps, pilasters, slab, lift, plan wall, alcove), the procedural sprites and the affine floor and wall textures use the world camera. That camera is pitch 44.5°, yaw 21.25°, fitted to l2's landmarks.
+   - **The furniture's camera:** every AI sprite (benches, desks, shelves, podium, board, crate, chairs, robots) comes out at the image model's own camera. Measured from the silhouettes of eight box-shaped props, that is pitch 24–32° (median 28°) and yaw 23–39° (median 31°). l2's own bench measures about pitch 27°, yaw 31°, and l1 about 28°, 24°.
+   - **What round 7 fixed, and didn't:** it sheared the bench pieces so their long edges matched the walls (slope 0.27). Their depth edges still ran at a slope of −0.70 against the walls' −1.80, and no other prop was corrected. The concept images and every AI sprite share one camera; our architecture did not.
+2. **Robots sitting on the tables.**
+   - **The split line:** a seated robot is a bake-off B2 sprite that carries its own chair. It is split into under-desk and over-desk parts at a fixed line in its own pixels, measured against the bake-off's B2 bench.
+   - **Why it failed:** the floor's benches are different pieces at a different depth. The split no longer met the desk's far edge on screen, so knees and shins above the line drew after the bench, on top of it.
+   - **The seat:** it was only 0.14 m behind the desk's far edge, so the feet projected below the desk's near edge and showed under it.
+3. **Surfaces made of segments.**
+   - **Caps and slab:** the wall caps and the slab's rim and face are one Blender box per 3.6 m bay. Each box's end face is visible at every joint.
+   - **Floor texture:** a 0.6 m AI tile of 2 × 2 stone tiles, each shaded differently, so the floor repeats as a grid of shading steps.
+   - **Wall texture:** the bake-off's 2 m wall tile doesn't wrap cleanly (its seams sit 1.65 m and 2.21 m in), so it repeats with visible edges.
+   - **Floor sheen:** one sprite per bay, a regular grid of soft blobs.
+4. **Flat lighting.**
+   - **What light exists:** each sprite's own soft studio light, one uniform floor tone and grade, and additive lamp pools at low strength.
+   - **What is missing:** nothing darkens where walls meet the floor, and under the benches there are only small contact shadows. Light doesn't fall off across the room, and there is no daylight source to set against the warm lamps.
+5. **No lift numbers.** The lift's indicator display was left blank for the runtime, and nothing was drawn there. Only the floor-button column had DOM digits, scaled with zoom: about 6 px at the whole-floor framing, too small to read.
+6. **No area for crates.** The floor had a single crate, in the alcove, shown only while a session waits on its human. There was no storage area, and nothing a robot could walk to.
+
+**Fixes** (before and after for each point in `floor-sbs/review-1/`):
+
+1. **One camera:** the world camera is now the image model's, pitch 28°, yaw 33°. Every Blender piece and the walker were re-rendered with it, and the affine textures and procedural sprites follow it through `projection.js` and `finish.py`. The bench pieces' remaining difference (long edges 0.34 against 0.305) is sheared as before. Wall feet, bench edges and every prop's edges now run parallel.
+2. **Seating:**
+   - **Seats:** 0.3 m behind the desk's far edge.
+   - **Split lines:** the split between lower and upper body is a line per robot, through a point on its own desk top 15 cm in from the far edge (`cutAt`), so hands and a laptop stay above it. The lower body stops at the desk's near edge (`cutFloor`), so nothing shows under the desk.
+   - **Order:** chair and lower body, then the desk module, then the upper body. `test_every_seated_robot_sits_behind_its_desk` checks order and geometry for every seat.
+3. **Continuous surfaces:**
+   - **Caps and slab:** these are flat, so they are drawn as projected planes the length of the floor in the ground snapshot, using colours sampled from the Blender renders. Removing the end faces alone still left a step at every bay, because each sprite is anti-aliased separately.
+   - **Textures:** the floor and walls are seamless procedural materials (4.8 m and 4 m repeats of soft, wrapping noise) with no tile grid.
+4. **Lighting:**
+   - **Occlusion:** bands on the floor along both walls and at each wall's foot, and deeper bench shadows.
+   - **Lamps:** larger, warmer pools, dim when idle and full at work.
+   - **Falloff and daylight:** a radial falloff over the floor (warmer at the back, darker at the front corners), and cool daylight from the cut-away front wall's windows.
+   - **Tone:** a darker warm-grey floor tone for contrast.
+
+   All of it is baked sprites or canvas fills in the ground snapshot, so it costs nothing per frame.
+5. **Lift number:** the floor's number glows on the lift's indicator over the doors (DOM, over the rendered display). The floor buttons' numbers keep a legible minimum size.
+6. **Storage corner:** two stacks of plain crates on pallets (one AI generation, logged) stand in and beside the alcove, as furniture. In front of them go the hourglass crates, one per thing waiting on its human, up to three. A store spot in front is on the walking grid, reachable from the lift (tested).
 
 ## Glow: activity as light
 

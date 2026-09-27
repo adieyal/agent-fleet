@@ -191,3 +191,48 @@ def test_motion_draws_at_ratio_one_and_rests_sharp(browser: Browser, base_url: s
         assert page.evaluate("floor.engine.wasLow") is False  # the frame at rest was drawn at full ratio
     finally:
         page.close()
+
+
+SEATS = """(async () => {
+  const p = await import('/js/world/projection.js'), e = floor.engine, order = e.sorted().map(it => it.id), v = e.camera.view;
+  return floor.layout.runs.map(r => {
+    const under = order.indexOf(r.key + ':under'), bench = order.indexOf(r.module), over = order.indexOf(r.key + ':over');
+    const lines = e.cutLines(e.items.get(r.key + ':under'), {}, v, 0, 0, 1);
+    // (each line is compared at the screen x of the desk point it should pass near)
+    const far = p.toScreen(v, [r.seat[0], r.farEdge, 0.74]), near = p.toScreen(v, [r.seat[0], r.nearEdge, 0.74]);
+    return { key: r.key, under, bench, over, seat: r.seat, far: r.farEdge, near: r.nearEdge,
+      split: lines.split(far[0]), floor: lines.floor(near[0]), farY: far[1], nearY: near[1],
+      splitAtNear: lines.split(near[0]) };
+  });
+})()"""
+
+
+def test_every_seated_robot_sits_behind_its_desk(floor: Page) -> None:
+    floor.wait_for_function("floor.seated.length === floor.walkers.length", timeout=60_000)
+    seats = floor.evaluate(SEATS)
+    assert len(seats) == 3
+    for s in seats:
+        # drawn chair and lower body first, then the desk, then the upper body
+        assert 0 <= s["under"] < s["bench"] < s["over"], s
+        # the seat is well behind the desk's far edge, so the legs are under the top
+        assert s["seat"][1] >= s["far"] + 0.25, s
+        # the split runs along the desk top, just in from the far edge; the lower body stops at the near edge
+        assert s["farY"] < s["split"], s          # below the far edge where it passes it: on the desk top
+        assert s["splitAtNear"] < s["nearY"], s   # and above the near edge where it passes that
+        assert s["floor"] == pytest.approx(s["nearY"], abs=0.5), s
+
+
+def test_robots_can_walk_to_the_storage_corner(page: Page, state: dict[str, Any]) -> None:
+    # the store spot is on the walking grid, reachable from the lift (built as the floor page builds it)
+    out = page.evaluate("""([state, kit]) => Promise.all([import('/js/world/layout.js'), import('/js/workarea-model.js'), import('/js/world/nav.js')])
+      .then(([L, W, N]) => {
+        const room = W.workareaOf(state, 'restoke', state.time);
+        const lay = L.floorLayout(room, kit, () => '#888888');
+        const blocks = lay.items.filter(it => kit[it.sprite] && kit[it.sprite].layer !== 'light' && !/^(footprints|slab|chair|floor-sheen|shadow|ao-|glow)/.test(it.sprite))
+          .map(it => { const f = kit[it.sprite].footprint; return [it.at[0] + f[0], it.at[1] + f[1], it.at[0] + f[3], it.at[1] + f[4], it.at[2] + f[2]]; })
+          .filter(b => b[4] <= 1.8).map(b => b.slice(0, 4));
+        const g = N.navGrid({ x0: 0, y0: 0, x1: lay.size.w, y1: lay.size.d }, blocks);
+        const pts = N.route(g, [lay.lift.at[0], lay.lift.at[1] - 0.15], lay.store.spot);
+        return { reachable: !!pts, free: N.walkable(g, lay.store.spot), stacks: lay.items.filter(it => it.sprite === 'crate-stack').length };
+      })""", [state, KIT["sprites"]])
+    assert out == {"reachable": True, "free": True, "stacks": 2}

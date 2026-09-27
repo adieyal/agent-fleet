@@ -26,6 +26,7 @@ REQUIRED = [
     "tile-failed", "criteria-on", "criteria-off", "question-desk", "crate", "lantern", "lift",
     "alcove", "lift-panel", "monitor", "floor-sheen", "bench-left", "bench-mid", "bench-right",
     "shadow-bench-3", "shadow-bench-4", "shadow-seat",
+    "crate-stack", "ao-floor-x", "ao-floor-y", "ao-wall-x", "ao-wall-y", "glow-window",
     "pilaster", "wall-cap-x", "wall-cap-y", "wall-corner", "wall-end-back", "wall-end-left", "slab-front", "slab-side",
     *[f"footprints-{a:03d}" for a in range(0, 360, 45)],
 ]
@@ -37,7 +38,7 @@ def test_every_piece_asked_for_is_in_the_kit() -> None:
 
 
 def test_it_is_made_for_the_sprite_worlds_camera_and_records_its_scale() -> None:
-    assert MANIFEST["camera"] == {"pitch": 44.5, "yaw": 21.25}
+    assert MANIFEST["camera"] == {"pitch": 28.0, "yaw": 33.0}   # the image model's camera (floor review 1)
     scale = MANIFEST["scale"]
     assert scale["px_per_m_1x"] == pytest.approx(941 / 5.486, abs=0.01)
     assert {"l1", "l2"} <= set(scale["measured"])
@@ -80,7 +81,8 @@ def test_the_lift_has_door_states_and_the_lantern_a_glyph_slot() -> None:
     tiles = SPRITES["plan-wall"]["slots"]["tiles"]
     assert (tiles["cols"], tiles["rows"]) == (10, 6)  # l2's grid
     assert len(SPRITES["plan-wall"]["slots"]["lights"]) == 5
-    assert all(SPRITES[g]["layer"] == "light" for g in SPRITES if g.startswith("glow-"))
+    # glow is additive: drawn as light, or (daylight on the floor) added into the ground snapshot
+    assert all(SPRITES[g]["layer"] == "light" or SPRITES[g].get("blend") == "lighter" for g in SPRITES if g.startswith("glow-"))
 
 
 def test_the_kit_is_within_budget() -> None:

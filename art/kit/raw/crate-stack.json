@@ -1,0 +1,26 @@
+{
+  "description": "a low wooden pallet with plain pale-pine shipping crates stacked on it, like the crate in the \\\nreference but without any symbol: two crates side by side on the pallet and a third crate on top of them, all with \\\ndiagonal braces on their faces. Seen from the same angle as the reference.",
+  "prompt": "Generate a single game sprite: a low wooden pallet with plain pale-pine shipping crates stacked on it, like the crate in the \\\nreference but without any symbol: two crates side by side on the pallet and a third crate on top of them, all with \\\ndiagonal braces on their faces. Seen from the same angle as the reference.\n\nStyle: match the attached reference crops from the concept art exactly. Soft, clean, slightly stylised 3D render of an isometric office, three-quarter view from above at the same camera angle as the references (about 30 degrees down). Warm soft key light from the upper left, gentle ambient occlusion, no harsh shadows. Pale, desaturated palette. Render only the object, centred, whole and uncropped, on a fully transparent background: no floor, no ground shadow, no backdrop, no text, no border.",
+  "instructions": "You are a sprite generator. Always answer by calling the image_generation tool exactly once. Do not reply with text.",
+  "references": [
+    {
+      "path": "docs/images/concept/l1.png@285,165,100,105",
+      "sha256": "a524a70bce138fd0cc2e590cfcdb334ff0f95d46236ee1a5c874c6ad1a11b1f5"
+    },
+    {
+      "path": "art/kit/raw/crate.png",
+      "sha256": "a0f37c851d4749b12061ac06159276284357022eec509b422e74ada04824a7ce"
+    }
+  ],
+  "model": "gpt-5.5",
+  "image_model": "gpt-image-2-codex",
+  "quality_requested": "high",
+  "quality": "medium",
+  "size": "1254x1254",
+  "revised_prompt": "Generate a single game sprite asset on a fully transparent background: a low wooden pallet with three plain pale-pine shipping crates stacked on it. Composition: two crates side by side on the pallet at the bottom, with a third crate centered on top spanning them slightly. All crates are unmarked, with no symbols, no text, no labels. Each visible crate face has wooden plank construction, thick frame edges, corner posts, subtle dark metal nail heads, and diagonal braces forming simple slash/Z-style bracing like the reference crate, including visible diagonal bracing on top and side faces. The pallet is low, made of matching pale pine slats and blocks, visible underneath the bottom crates.\n\nCamera/style: match the attached concept art reference closely: soft, clean, slightly stylised 3D render for an isometric office/game sprite, three-quarter view from above, about 30 degrees downward, showing front, right side, and top surfaces. Warm soft key light from upper left, gentle ambient occlusion in creases, no harsh shadows. Pale desaturated warm pine palette with subtle wood grain and knots, rounded bevels, clean stylized edges, mild hand-painted look. Object centered, whole, uncropped, isolated. Transparent background only: no floor, no ground shadow, no backdrop, no border.",
+  "response_id": "resp_07d1a1fc16c6a8ff016ab925e70c0487d29eafe6dbe8d8cfb0",
+  "request_sha256": "23de40715673c8c7c03924925e15b10d8d22acfd5ed32d58950764aab67c791d",
+  "output_sha256": "54d85257b1dbeb58a344421fe4b9df33e93ab059439c6047e3b3ec5128aacf23",
+  "timestamp": "2026-09-27T14:20:18Z",
+  "seconds": 61.2
+}

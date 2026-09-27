@@ -88,7 +88,11 @@ async function main() {
   add('terminal-desk', 'terminal-desk', [4.4, 3.0, 0]);
   add('terminal-chair', 'chair-back', plus([4.4, 3.0, 0], S['terminal-desk'].slots.seat.map((v, i) => (i === 2 ? 0 : v))));
   add('alcove', 'alcove', [0, D, 0], { place: 'waiting' });
-  add('crate', 'crate', [1.2, D - 0.6, 0], { place: 'waiting' });
+  add('crate', 'crate', [2.2, D - 1.9, 0], { place: 'waiting' });
+  add('crate-stack', 'crate-stack', [1.2, D - 0.72, 0], { place: 'store' });
+  for (let x = 0; x < W - 0.01; x += 3.6) { add(`ao-fx-${x}`, 'ao-floor-x', [x, D, 0]); add(`ao-wx-${x}`, 'ao-wall-x', [x, D, 0]); }
+  for (let y = 0; y < D - 0.01; y += 3.6) { add(`ao-fy-${y}`, 'ao-floor-y', [0, y, 0]); add(`ao-wy-${y}`, 'ao-wall-y', [0, y, 0]); }
+  add('window', 'glow-window', [11.5, 1.5, 0], { intensity: 0.8 });
   add('monitor', 'monitor', [8.0, 3.1, 0.74]);
   add('monitor-desk', 'terminal-desk', [7.8, 3.0, 0]);
 

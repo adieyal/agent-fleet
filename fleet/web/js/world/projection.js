@@ -1,12 +1,16 @@
-// The sprite world's one camera: orthographic, pitch 44.5°, yaw 21.25° (the l2 fit every sprite is rendered from).
+// The sprite world's one camera: orthographic, pitch 28°, yaw 33°.
 // World space is metres: x along the back wall, y towards it, z up. "Plane" coordinates (u, v) are screen axes in
 // metres, so a view is just a centre (u, v) and a zoom in pixels per metre (ppm); see docs/design/sprite-world.md.
 
-export const PITCH = 44.5, YAW = 21.25;
+// The image model's own camera, measured from the AI furniture and the concept images (sprite-world.md, floor review
+// 1): rendered architecture uses it too, so walls and furniture share one projection.
+export const PITCH = 28, YAW = 33;
 const P = PITCH * Math.PI / 180, Y = YAW * Math.PI / 180;
 const RIGHT = [Math.cos(Y), Math.sin(Y), 0];
 const DOWN = [Math.sin(P) * Math.sin(Y), -Math.sin(P) * Math.cos(Y), -Math.cos(P)];
 const TOWARDS = [Math.sin(Y) * Math.cos(P), -Math.cos(Y) * Math.cos(P), Math.sin(P)];
+// the screen slope (down per right) of any line along x: the back wall's foot, a bench's long edges
+export const EDGE_SLOPE = DOWN[0] / RIGHT[0];
 
 // a world point on the screen plane, in metres (u right, v down)
 export function plane(p) {

@@ -12,15 +12,19 @@ const BAY = 3.6;
 // benches: the workarea first (against the wall, under its plan wall), then l1's five on the open floor, back to front
 const BENCHES = [[10.9, 9.05], [4.3, 7.1], [17.6, 6.6], [10.7, 4.6], [3.7, 3.4], [17.3, 2.2]];   // centres
 const SEATS = 3, DESK_D = 0.8, DESK_Z = 0.74;
-const IDLE_LAMP = 0.3;   // an idle desk's lamp pool, against 1 where a run is at work
+const IDLE_LAMP = 0.3;
+// the storage corner, metres from the left wall (x) and the back wall (y): crate stacks, the places for waiting
+// crates, and the spot in front a robot walks to
+const STORE = { stacks: [[1.2, 0.72], [0.85, 2.6]], waiting: [[2.1, 1.95], [2.15, 2.85], [2.2, 3.75]], spot: [2.9, 2.4] };
+const WINDOWS = [2.2, 6.4, 10.6, 14.8, 19.0];   // windows along the cut-away front wall   // an idle desk's lamp pool, against 1 where a run is at work
 // the workarea as l2 draws it, relative to its bench's centre: the question desk and lantern to the left, the plan
 // wall just right of centre on the back wall (measured against the bake-off's l2 layout, rounds 1-3)
 const WORK = { qdesk: [-2.55, 0], board: 0.35 };
 const LIFT_X = 18.6, PANEL_X = 20.25;
 const PILASTERS = [7.45, 13.3, 16.95];
 // a veil over the floor texture: l1's floor is a warm mid grey, which the lamps' warm light shows up on
-const FLOOR_TONE = 'rgba(104, 94, 90, 0.13)';
-const NEAR = { offset: [-0.231, -0.121, 1.698], height: 5.486 };   // l2's framing, relative to its bench's centre
+const FLOOR_TONE = 'rgba(96, 88, 86, 0.19)';
+const NEAR = { offset: [-0.231, -0.121, 1.698], height: 5.0 };   // l2's framing, relative to its bench's centre (refitted for pitch 28°)
 const MARK = { check: 'done', glow: 'running', cross: 'failed', dash: 'blank', blank: 'blank' };
 const ACTIVE = new Set(['running', 'queued', 'stalled']);
 const SMALL = ['pen-pot', 'paper-stack', 'sketch', 'mug', 'desk-plant', 'books', 'paper-tray'];
@@ -32,6 +36,26 @@ const POSES = ['b2/robot-typing', 'b2/robot-pencil', 'b2/robot-tube'];
 const WALL = 'ground';
 
 const plus = (a, b) => a.map((v, i) => v + (b[i] || 0));
+// the caps and the slab's edges as planes (see floorLayout): quads, back to front
+function box(W, D, H) {
+  const T = WALL_T, C = 0.1, cz = H - 0.02, top = cz + C;
+  return [
+    { quad: [[0, D - 0.04, top], [W, D - 0.04, top], [W, D + T, top], [0, D + T, top]], color: CAP.top },         // back cap
+    { quad: [[0, D - 0.04, cz], [W, D - 0.04, cz], [W, D - 0.04, top], [0, D - 0.04, top]], color: CAP.lip },
+    { quad: [[-T, 0, top], [0.04, 0, top], [0.04, D + T, top], [-T, D + T, top]], color: CAP.top },            // left cap
+    { quad: [[0.04, 0, cz], [0.04, D, cz], [0.04, D, top], [0.04, 0, top]], color: CAP.side },
+    { quad: [[0, 0, -SLAB], [W, 0, -SLAB], [W, 0, -RIM], [0, 0, -RIM]], color: SLAB_C.front },                   // slab
+    { quad: [[W, 0, -SLAB], [W, D, -SLAB], [W, D, -RIM], [W, 0, -RIM]], color: SLAB_C.side },
+    { quad: [[0, -0.05, -RIM], [W + 0.05, -0.05, -RIM], [W + 0.05, -0.05, 0], [0, -0.05, 0]], color: SLAB_C.rim },   // its rim
+    { quad: [[W + 0.05, -0.05, -RIM], [W + 0.05, D, -RIM], [W + 0.05, D, 0], [W + 0.05, -0.05, 0]], color: SLAB_C.rimSide },
+    { quad: [[0, -0.05, 0], [W + 0.05, -0.05, 0], [W + 0.05, 0, 0], [0, 0, 0]], color: CAP.top },
+    { quad: [[W, 0, 0], [W + 0.05, -0.05, 0], [W + 0.05, D, 0], [W, D, 0]], color: CAP.top },
+  ];
+}
+const WALL_T = 0.45, SLAB = 0.9, RIM = 0.14;   // as build_kit.py
+const CAP = { top: '#f0eeea', lip: '#dcd8d2', side: '#e6e2dc' };
+const SLAB_C = { front: '#9ca0a9', side: '#838c98', rim: '#dcd6d0', rimSide: '#c4c0bc' };
+
 function hash(s) { let h = 2166136261; for (const ch of s) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
 
 // room: from workareaOf(state, label, now); kit: the kit manifest's sprites (for slots); colour(host): host colour
@@ -44,24 +68,42 @@ export function floorLayout(room, kit, colour) {
   const planes = [
     { quad: [[0, 0, 0], [W, 0, 0], [W, D, 0], [0, D, 0]], texture: 'floor-tile', origin: [0, D, 0], u: [1, 0, 0], v: [0, -1, 0] },
     { quad: [[0, 0, 0], [W, 0, 0], [W, D, 0], [0, D, 0]], color: FLOOR_TONE },
+    // light falling off across the room: a little warmer and brighter at the back, darker towards the front corners
+    { quad: [[0, 0, 0], [W, 0, 0], [W, D, 0], [0, D, 0]], gradient: { at: [W * 0.5, D * 0.7, 0], radius: W * 0.62,
+      stops: [[0, 'rgba(255, 238, 214, 0.10)'], [0.55, 'rgba(255, 238, 214, 0)'], [1, 'rgba(24, 28, 44, 0.28)']] } },
     { quad: [[0, D, 0], [W, D, 0], [W, D, H], [0, D, H]], texture: 'wall-tile', origin: [0, D, H], u: [1, 0, 0], v: [0, 0, -1] },
     { quad: [[0, 0, 0], [0, D, 0], [0, D, H], [0, 0, H]], texture: 'wall-tile', origin: [0, 0, H], u: [0, 1, 0], v: [0, 0, -1] },
+    // the walls' caps and the slab's cut faces are flat, so they are planes the full length of the floor: exact under
+    // the camera and without joints (repeated per-bay sprites left a line at every bay). Colours sampled from the
+    // Blender renders of those pieces, so the corner and cut-end pieces meet them.
+    ...box(W, D, H),
   ];
-  for (let x = 0; x < W - 0.01; x += BAY) { add(`cap-x-${x}`, 'wall-cap-x', [x, D, 0]); add(`slab-f-${x}`, 'slab-front', [x, 0, 0]); }
-  for (let y = 0; y < D - 0.01; y += BAY) { add(`cap-y-${y}`, 'wall-cap-y', [0, y, 0]); add(`slab-s-${y}`, 'slab-side', [W, y, 0]); }
   add('corner', 'wall-corner', [0, D, 0]);
   add('end-back', 'wall-end-back', [W, D, 0]);
   add('end-left', 'wall-end-left', [0, 0, 0]);
   for (const x of PILASTERS) add(`pilaster-${x}`, 'pilaster', [x, D, 0]);
   for (let x = BAY / 2; x < W; x += BAY) for (let y = BAY / 2; y < D; y += BAY) add(`sheen-${x}-${y}`, 'floor-sheen', [x, y, 0]);
+  // occlusion where the walls meet the floor, one bay at a time (the bands are even along their length: no seams)
+  for (let x = 0; x < W - 0.01; x += BAY) { add(`ao-floor-x-${x}`, 'ao-floor-x', [x, D, 0]); add(`ao-wall-x-${x}`, 'ao-wall-x', [x, D, 0]); }
+  for (let y = 0; y < D - 0.01; y += BAY) { add(`ao-floor-y-${y}`, 'ao-floor-y', [0, y, 0]); add(`ao-wall-y-${y}`, 'ao-wall-y', [0, y, 0]); }
+  // daylight through the windows of the cut-away front wall: cool patches reaching into the room
+  for (const x of WINDOWS) add(`window-${x}`, 'glow-window', [x, 1.5, 0], { intensity: 0.35 });
 
   // --- the lift, its floor buttons, the alcove, the library, the orchestrator, the briefing board ---------------
   const lift = [LIFT_X, D, 0];
   add('lift', 'lift', lift, { cell: 0, place: 'lift' });
   add('lift-panel', 'lift-panel', [PANEL_X, D, 0], { place: 'lift' });
   const liftThreshold = plus(lift, kit.lift.slots.threshold);
-  add('alcove', 'alcove', [0, D, 0], { place: 'waiting' });
-  if (room && room.waiting && room.waiting.length) add('crate', 'crate', plus([0, D, 0], plus(kit.alcove.slots.inside, [0, 0.1, 0])), { place: 'waiting' });
+  // the storage corner, as l1's alcove: stacked crates (furniture) in and beside the alcove, and in front of them one
+  // hourglass crate per thing waiting on its human; robots can walk to the store spot in front
+  add('alcove', 'alcove', [0, D, 0], { place: 'store' });
+  STORE.stacks.forEach(([x, y], i) => add(`crate-stack-${i}`, 'crate-stack', [x, D - y, 0], { place: 'store' }));
+  const waiting = room && room.waiting ? room.waiting.length : 0;
+  for (let i = 0; i < Math.min(waiting, STORE.waiting.length); i++) {
+    const [x, y] = STORE.waiting[i];
+    add(i ? `crate-${i}` : 'crate', 'crate', [x, D - y, 0], { place: 'waiting' });
+  }
+  const store = { spot: [STORE.spot[0], D - STORE.spot[1]], frame: { target: [1.8, D - 1.8, 1.0], height: 4.2 } };
   add('shelf-a', 'shelf', [3.6, D - 0.3, 0], { place: 'library' });
   add('shelf-b', 'shelf', [4.95, D - 0.3, 0], { place: 'library' });
   add('book-cart', 'book-cart', [6.4, D - 1.1, 0], { place: 'library' });
@@ -122,8 +164,11 @@ export function floorLayout(room, kit, colour) {
         add(`prop-${bi}-${d}-${k}`, SMALL[(h >>> (3 * k)) % SMALL.length], [top[0] + dx, by + dy, DESK_Z]);
       }
       if (on) {
+        // seated behind the desk: split into lower and upper body along the desk top (15 cm in from its far edge,
+        // so hands and a laptop on the desk stay above the line), and nothing of the lower body below its near edge
         runs.push({ key: job.key, host: job.host, agent: job.agent, bench: key, module, desk: d, seat,
-          chair: bi === 0 ? `chair-far-${bi}-${d}` : null, sprite: POSES[runs.length % POSES.length], tint: colour(job.host) });
+          chair: bi === 0 ? `chair-far-${bi}-${d}` : null, sprite: POSES[runs.length % POSES.length], tint: colour(job.host),
+          cutAt: [seat[0], m[1] - 0.15, DESK_Z], cutFloor: [seat[0], m[1] - DESK_D, DESK_Z], farEdge: m[1], nearEdge: m[1] - DESK_D });
       }
     }
   });
@@ -163,6 +208,7 @@ export function floorLayout(room, kit, colour) {
   return {
     size: FLOOR, planes, items, runs, benches, trails, lift: { id: 'lift', at: lift, threshold: liftThreshold },
     panel: { at: [PANEL_X, D, 0], buttons: kit['lift-panel'].slots.buttons },
+    indicator: plus(lift, kit.lift.slots.indicator), store,
     frames: { far: { box: [0, 0, -0.9, W, D, H], margin: 0.02 }, near: benches[0].frame },   // (-0.9: the slab)
     moduleM: M,
     bounds: [0, 0, 0, W, D, H],

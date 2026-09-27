@@ -92,7 +92,8 @@ async function main() {
     const { run } = w;
     if (w.state === 'walking') world.remove(w.id);
     if (run.chair) world.set(run.chair, { visible: false });
-    world.seat(run.key, { sprite: run.sprite, at: run.seat, on: run.module, tint: run.tint, ambient: true, place: `run:${run.key}` });
+    world.seat(run.key, { sprite: run.sprite, at: run.seat, on: run.module, tint: run.tint, ambient: true, place: `run:${run.key}`,
+      cutAt: run.cutAt, cutFloor: run.cutFloor });
     world.add({ id: `seat-shadow-${run.key}`, sprite: 'shadow-seat', at: [run.seat[0], run.seat[1] + 0.05, 0] });   // its contact shadow
     w.state = 'seated';
     floor.seated.push(run.key);
@@ -142,6 +143,11 @@ async function main() {
     overlay.append(el);
     return { el, at: [layout.panel.at[0] + b[0], layout.panel.at[1] + b[1], b[2]] };
   });
+  // the lift's indicator over its doors: this floor's number, as in the concept art
+  const indicator = document.createElement('div');
+  indicator.className = 'lift-number';
+  indicator.textContent = here ?? '–';
+  overlay.append(indicator);
   // what each working robot is doing, as a glyph in a bubble over its head (l2), once zoomed in enough to read it
   const jobs = new Map((state.hosts || []).flatMap(h => (h.jobs || []).map(j => [`${h.name}:${j.id}`, j])));
   const bubbles = layout.runs.map(run => {
@@ -158,7 +164,10 @@ async function main() {
   world.onView = view => {
     if (glyph) place(glyph, view, glyphAt);
     const scale = view.ppm / world.camera.max.ppm;
-    for (const b of buttons) { place(b.el, view, b.at); b.el.style.transform = `translate(-50%, -50%) scale(${scale})`; }
+    // (text over the world scales with it, but never below a legible size)
+    for (const b of buttons) { place(b.el, view, b.at); b.el.style.transform = `translate(-50%, -50%) scale(${Math.max(0.6, scale)})`; }
+    place(indicator, view, layout.indicator);
+    indicator.style.transform = `translate(-50%, -50%) scale(${Math.max(0.7, scale)})`;
     const near = world.camera.zoomLevel(view.ppm) >= BUBBLES_FROM;
     for (const b of bubbles) {
       b.el.hidden = !near || !floor.seated.includes(b.run.key);

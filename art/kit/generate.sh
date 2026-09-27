@@ -146,3 +146,10 @@ and depth, the desk tops at the same height, so they butt together into one long
 to the lower right as in the reference. Empty desk tops: no lamps, no computers, no papers. No chairs." \
   "$L2_BENCH" "art/bakeoff/B2/bench.webp"
 wait
+
+# Round 5 (floor review 1, point 6): a storage corner needs stacked crates. Plain crates (furniture, like the
+# shelves); the hourglass crate stays the one that means waiting.
+gen crate-stack 'a low wooden pallet with plain pale-pine shipping crates stacked on it, like the crate in the \
+reference but without any symbol: two crates side by side on the pallet and a third crate on top of them, all with \
+diagonal braces on their faces. Seen from the same angle as the reference.' "$L1_CRATE" "art/kit/raw/crate.png"
+wait

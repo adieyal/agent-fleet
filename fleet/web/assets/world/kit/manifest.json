@@ -2,8 +2,8 @@
  "version": 1,
  "about": "The floor kit: see art/kit/README.md. Sprites are anchored at their base centre unless their doc says otherwise; footprints and slots are metres from the anchor (x along the back wall, y towards it, z up). layer is a hint: ground (in the ground snapshot), standing (sorted), light (additive).",
  "camera": {
-  "pitch": 44.5,
-  "yaw": 21.25
+  "pitch": 28.0,
+  "yaw": 33.0
  },
  "scale": {
   "px_per_m_1x": 171.528,
@@ -42,7 +42,7 @@
    ],
    "scale": {
     "fit": "w",
-    "source_px_per_m": 280.7
+    "source_px_per_m": 300.9
    },
    "footprint": [
     -2.7,
@@ -58,36 +58,36 @@
      "ppm": 85.764,
      "file": "bench@86.webp",
      "size": [
-      513,
-      274
+      483,
+      255
      ],
      "anchor_px": [
-      256.25,
-      165.96
+      241.89,
+      157.84
      ]
     },
     {
      "ppm": 171.528,
      "file": "bench@172.webp",
      "size": [
-      1025,
-      546
+      966,
+      511
      ],
      "anchor_px": [
-      512.5,
-      331.92
+      482.78,
+      315.68
      ]
     },
     {
-     "ppm": 280.68,
-     "file": "bench@281.webp",
+     "ppm": 300.935,
+     "file": "bench@301.webp",
      "size": [
-      1678,
-      895
+      1694,
+      896
      ],
      "anchor_px": [
-      839.0,
-      543.14
+      847.0,
+      553.85
      ]
     }
    ],
@@ -156,7 +156,7 @@
    ],
    "scale": {
     "fit": "w",
-    "source_px_per_m": 644.5
+    "source_px_per_m": 645.8
    },
    "footprint": [
     -0.8,
@@ -172,48 +172,48 @@
      "ppm": 85.764,
      "file": "terminal-desk@86.webp",
      "size": [
-      209,
-      149
+      210,
+      147
      ],
      "anchor_px": [
-      104.38,
-      82.58
+      105.23,
+      91.12
      ]
     },
     {
      "ppm": 171.528,
      "file": "terminal-desk@172.webp",
      "size": [
-      418,
-      297
+      419,
+      294
      ],
      "anchor_px": [
-      208.76,
-      165.16
+      209.45,
+      182.25
      ]
     },
     {
      "ppm": 343.055,
      "file": "terminal-desk@343.webp",
      "size": [
-      836,
-      595
+      838,
+      588
      ],
      "anchor_px": [
-      417.52,
-      330.32
+      418.9,
+      364.5
      ]
     },
     {
-     "ppm": 644.523,
-     "file": "terminal-desk@645.webp",
+     "ppm": 645.82,
+     "file": "terminal-desk@646.webp",
      "size": [
-      1570,
-      1116
+      1578,
+      1107
      ],
      "anchor_px": [
-      785.0,
-      620.6
+      789.0,
+      686.18
      ]
     }
    ],
@@ -241,7 +241,7 @@
    ],
    "scale": {
     "fit": "h",
-    "source_px_per_m": 541.0
+    "source_px_per_m": 539.1
    },
    "footprint": [
     -0.32,
@@ -257,48 +257,48 @@
      "ppm": 85.764,
      "file": "chair-back@86.webp",
      "size": [
-      127,
-      137
+      133,
+      136
      ],
      "anchor_px": [
-      64.06,
-      86.07
+      66.21,
+      93.55
      ]
     },
     {
      "ppm": 171.528,
      "file": "chair-back@172.webp",
      "size": [
-      255,
-      274
+      266,
+      272
      ],
      "anchor_px": [
-      127.12,
-      172.14
+      133.41,
+      187.1
      ]
     },
     {
      "ppm": 343.055,
      "file": "chair-back@343.webp",
      "size": [
-      509,
-      548
+      532,
+      545
      ],
      "anchor_px": [
-      254.24,
-      344.28
+      265.83,
+      374.19
      ]
     },
     {
-     "ppm": 540.994,
-     "file": "chair-back@541.webp",
+     "ppm": 539.051,
+     "file": "chair-back@539.webp",
      "size": [
-      803,
-      865
+      836,
+      856
      ],
      "anchor_px": [
-      401.0,
-      542.93
+      418.0,
+      587.98
      ]
     }
    ],
@@ -314,7 +314,7 @@
    ],
    "scale": {
     "fit": "h",
-    "source_px_per_m": 585.0
+    "source_px_per_m": 582.9
    },
    "footprint": [
     -0.32,
@@ -330,48 +330,48 @@
      "ppm": 85.764,
      "file": "chair-front@86.webp",
      "size": [
-      127,
-      137
+      133,
+      136
      ],
      "anchor_px": [
-      64.11,
-      86.07
+      66.24,
+      93.55
      ]
     },
     {
      "ppm": 171.528,
      "file": "chair-front@172.webp",
      "size": [
-      255,
-      274
+      266,
+      272
      ],
      "anchor_px": [
-      127.22,
-      172.14
+      133.47,
+      187.1
      ]
     },
     {
      "ppm": 343.055,
      "file": "chair-front@343.webp",
      "size": [
-      509,
-      548
+      532,
+      545
      ],
      "anchor_px": [
-      254.44,
-      344.28
+      265.94,
+      374.19
      ]
     },
     {
-     "ppm": 585.046,
-     "file": "chair-front@585.webp",
+     "ppm": 582.945,
+     "file": "chair-front@583.webp",
      "size": [
-      868,
-      935
+      904,
+      925
      ],
      "anchor_px": [
-      434.5,
-      587.14
+      452.5,
+      635.85
      ]
     }
    ],
@@ -387,7 +387,7 @@
    ],
    "scale": {
     "fit": "h",
-    "source_px_per_m": 2154.8
+    "source_px_per_m": 2048.4
    },
    "footprint": [
     -0.1,
@@ -403,48 +403,48 @@
      "ppm": 85.764,
      "file": "lamp@86.webp",
      "size": [
-      78,
-      70
+      81,
+      71
      ],
      "anchor_px": [
-      39.04,
-      35.92
+      40.87,
+      40.4
      ]
     },
     {
      "ppm": 171.528,
      "file": "lamp@172.webp",
      "size": [
-      157,
-      140
+      162,
+      141
      ],
      "anchor_px": [
-      78.08,
-      71.84
+      80.75,
+      80.81
      ]
     },
     {
      "ppm": 343.055,
      "file": "lamp@343.webp",
      "size": [
-      314,
-      279
+      323,
+      283
      ],
      "anchor_px": [
-      157.16,
-      143.68
+      161.49,
+      161.61
      ]
     },
     {
      "ppm": 686.11,
      "file": "lamp@686.webp",
      "size": [
-      627,
-      558
+      647,
+      566
      ],
      "anchor_px": [
-      313.32,
-      287.36
+      322.99,
+      323.23
      ]
     }
    ],
@@ -467,7 +467,7 @@
    ],
    "scale": {
     "fit": "w",
-    "source_px_per_m": 1266.5
+    "source_px_per_m": 1220.3
    },
    "footprint": [
     -0.275,
@@ -483,48 +483,48 @@
      "ppm": 85.764,
      "file": "monitor@86.webp",
      "size": [
-      113,
-      88
+      116,
+      89
      ],
      "anchor_px": [
-      56.51,
-      43.73
+      58.59,
+      50.7
      ]
     },
     {
      "ppm": 171.528,
      "file": "monitor@172.webp",
      "size": [
-      226,
-      175
+      233,
+      178
      ],
      "anchor_px": [
-      113.02,
-      87.46
+      116.18,
+      101.39
      ]
     },
     {
      "ppm": 343.055,
      "file": "monitor@343.webp",
      "size": [
-      453,
-      351
+      465,
+      354
      ],
      "anchor_px": [
-      226.04,
-      175.92
+      232.36,
+      202.78
      ]
     },
     {
      "ppm": 686.11,
      "file": "monitor@686.webp",
      "size": [
-      906,
-      702
+      930,
+      708
      ],
      "anchor_px": [
-      453.07,
-      350.85
+      464.71,
+      405.56
      ]
     }
    ],
@@ -540,7 +540,7 @@
    ],
    "scale": {
     "fit": "w",
-    "source_px_per_m": 1008.7
+    "source_px_per_m": 976.7
    },
    "footprint": [
     -0.165,
@@ -556,48 +556,48 @@
      "ppm": 85.764,
      "file": "laptop@86.webp",
      "size": [
-      90,
-      73
+      92,
+      65
      ],
      "anchor_px": [
-      44.92,
-      36.24
+      46.47,
+      31.96
      ]
     },
     {
      "ppm": 171.528,
      "file": "laptop@172.webp",
      "size": [
-      180,
-      146
+      184,
+      130
      ],
      "anchor_px": [
-      89.84,
-      72.49
+      91.95,
+      64.92
      ]
     },
     {
      "ppm": 343.055,
      "file": "laptop@343.webp",
      "size": [
-      360,
-      291
+      368,
+      260
      ],
      "anchor_px": [
-      179.68,
-      145.98
+      183.89,
+      129.84
      ]
     },
     {
      "ppm": 686.11,
      "file": "laptop@686.webp",
      "size": [
-      720,
-      583
+      737,
+      519
      ],
      "anchor_px": [
-      360.35,
-      290.96
+      367.79,
+      259.67
      ]
     }
    ]
@@ -612,7 +612,7 @@
    ],
    "scale": {
     "fit": "h",
-    "source_px_per_m": 1373.1
+    "source_px_per_m": 1310.4
    },
    "footprint": [
     -0.045,
@@ -628,48 +628,48 @@
      "ppm": 85.764,
      "file": "pen-pot@86.webp",
      "size": [
-      66,
-      59
+      68,
+      55
      ],
      "anchor_px": [
-      33.34,
-      29.74
+      33.64,
+      27.65
      ]
     },
     {
      "ppm": 171.528,
      "file": "pen-pot@172.webp",
      "size": [
-      132,
-      118
+      136,
+      109
      ],
      "anchor_px": [
-      66.68,
-      59.47
+      68.29,
+      54.3
      ]
     },
     {
      "ppm": 343.055,
      "file": "pen-pot@343.webp",
      "size": [
-      265,
-      237
+      271,
+      218
      ],
      "anchor_px": [
-      132.36,
-      118.94
+      135.57,
+      109.61
      ]
     },
     {
      "ppm": 686.11,
      "file": "pen-pot@686.webp",
      "size": [
-      530,
-      474
+      542,
+      437
      ],
      "anchor_px": [
-      264.72,
-      236.89
+      271.14,
+      218.21
      ]
     }
    ]
@@ -684,7 +684,7 @@
    ],
    "scale": {
     "fit": "w",
-    "source_px_per_m": 899.6
+    "source_px_per_m": 874.4
    },
    "footprint": [
     -0.15,
@@ -700,48 +700,48 @@
      "ppm": 85.764,
      "file": "paper-stack@86.webp",
      "size": [
-      87,
-      71
+      89,
+      63
      ],
      "anchor_px": [
-      43.25,
-      34.92
+      44.69,
+      31.9
      ]
     },
     {
      "ppm": 171.528,
      "file": "paper-stack@172.webp",
      "size": [
-      173,
-      141
+      177,
+      126
      ],
      "anchor_px": [
-      86.51,
-      70.84
+      88.39,
+      62.8
      ]
     },
     {
      "ppm": 343.055,
      "file": "paper-stack@343.webp",
      "size": [
-      347,
-      282
+      354,
+      253
      ],
      "anchor_px": [
-      173.01,
-      140.68
+      176.77,
+      126.61
      ]
     },
     {
      "ppm": 686.11,
      "file": "paper-stack@686.webp",
      "size": [
-      694,
-      564
+      708,
+      506
      ],
      "anchor_px": [
-      347.03,
-      282.36
+      353.55,
+      253.21
      ]
     }
    ]
@@ -756,7 +756,7 @@
    ],
    "scale": {
     "fit": "w",
-    "source_px_per_m": 912.7
+    "source_px_per_m": 888.7
    },
    "footprint": [
     -0.16,
@@ -772,48 +772,48 @@
      "ppm": 85.764,
      "file": "sketch@86.webp",
      "size": [
-      89,
-      72
+      90,
+      64
      ],
      "anchor_px": [
-      44.21,
-      35.71
+      45.65,
+      31.74
      ]
     },
     {
      "ppm": 171.528,
      "file": "sketch@172.webp",
      "size": [
-      177,
-      143
+      181,
+      128
      ],
      "anchor_px": [
-      88.42,
-      71.43
+      90.29,
+      64.49
      ]
     },
     {
      "ppm": 343.055,
      "file": "sketch@343.webp",
      "size": [
-      354,
-      286
+      362,
+      256
      ],
      "anchor_px": [
-      176.83,
-      142.86
+      180.59,
+      127.98
      ]
     },
     {
      "ppm": 686.11,
      "file": "sketch@686.webp",
      "size": [
-      709,
-      572
+      723,
+      512
      ],
      "anchor_px": [
-      354.67,
-      285.71
+      361.17,
+      255.95
      ]
     }
    ]
@@ -828,7 +828,7 @@
    ],
    "scale": {
     "fit": "w",
-    "source_px_per_m": 1802.1
+    "source_px_per_m": 1744.9
    },
    "footprint": [
     -0.055,
@@ -844,48 +844,48 @@
      "ppm": 85.764,
      "file": "mug@86.webp",
      "size": [
-      67,
-      59
+      69,
+      55
      ],
      "anchor_px": [
-      33.64,
-      29.74
+      34.82,
+      26.99
      ]
     },
     {
      "ppm": 171.528,
      "file": "mug@172.webp",
      "size": [
-      135,
-      118
+      138,
+      109
      ],
      "anchor_px": [
-      67.28,
-      59.49
+      68.65,
+      54.99
      ]
     },
     {
      "ppm": 343.055,
      "file": "mug@343.webp",
      "size": [
-      270,
-      236
+      275,
+      219
      ],
      "anchor_px": [
-      134.56,
-      117.98
+      137.3,
+      108.97
      ]
     },
     {
      "ppm": 686.11,
      "file": "mug@686.webp",
      "size": [
-      540,
-      473
+      550,
+      437
      ],
      "anchor_px": [
-      270.12,
-      235.96
+      274.6,
+      218.95
      ]
     }
    ]
@@ -900,7 +900,7 @@
    ],
    "scale": {
     "fit": "w",
-    "source_px_per_m": 1707.3
+    "source_px_per_m": 1597.6
    },
    "footprint": [
     -0.05,
@@ -916,48 +916,48 @@
      "ppm": 85.764,
      "file": "desk-plant@86.webp",
      "size": [
-      67,
-      60
+      69,
+      55
      ],
      "anchor_px": [
-      33.55,
-      29.98
+      34.93,
+      27.11
      ]
     },
     {
      "ppm": 171.528,
      "file": "desk-plant@172.webp",
      "size": [
-      135,
-      120
+      138,
+      110
      ],
      "anchor_px": [
-      67.1,
-      59.96
+      68.86,
+      55.21
      ]
     },
     {
      "ppm": 343.055,
      "file": "desk-plant@343.webp",
      "size": [
-      269,
-      240
+      276,
+      221
      ],
      "anchor_px": [
-      134.2,
-      119.91
+      137.73,
+      110.42
      ]
     },
     {
      "ppm": 686.11,
      "file": "desk-plant@686.webp",
      "size": [
-      538,
-      480
+      552,
+      441
      ],
      "anchor_px": [
-      269.41,
-      239.83
+      275.46,
+      220.84
      ]
     }
    ]
@@ -972,7 +972,7 @@
    ],
    "scale": {
     "fit": "w",
-    "source_px_per_m": 1126.9
+    "source_px_per_m": 1098.4
    },
    "footprint": [
     -0.125,
@@ -988,48 +988,48 @@
      "ppm": 85.764,
      "file": "books@86.webp",
      "size": [
-      81,
-      67
+      83,
+      61
      ],
      "anchor_px": [
-      40.63,
-      33.3
+      41.96,
+      30.69
      ]
     },
     {
      "ppm": 171.528,
      "file": "books@172.webp",
      "size": [
-      163,
-      134
+      166,
+      122
      ],
      "anchor_px": [
-      81.27,
-      67.6
+      82.92,
+      60.38
      ]
     },
     {
      "ppm": 343.055,
      "file": "books@343.webp",
      "size": [
-      326,
-      269
+      332,
+      243
      ],
      "anchor_px": [
-      162.53,
-      134.21
+      165.85,
+      121.76
      ]
     },
     {
      "ppm": 686.11,
      "file": "books@686.webp",
      "size": [
-      652,
-      538
+      664,
+      486
      ],
      "anchor_px": [
-      326.07,
-      268.42
+      331.69,
+      243.52
      ]
     }
    ]
@@ -1044,7 +1044,7 @@
    ],
    "scale": {
     "fit": "w",
-    "source_px_per_m": 827.0
+    "source_px_per_m": 796.7
    },
    "footprint": [
     -0.17,
@@ -1060,48 +1060,48 @@
      "ppm": 85.764,
      "file": "paper-tray@86.webp",
      "size": [
-      91,
-      74
+      94,
+      66
      ],
      "anchor_px": [
-      45.63,
-      37.2
+      47.3,
+      33.33
      ]
     },
     {
      "ppm": 171.528,
      "file": "paper-tray@172.webp",
      "size": [
-      183,
-      148
+      187,
+      132
      ],
      "anchor_px": [
-      91.26,
-      74.4
+      93.6,
+      65.66
      ]
     },
     {
      "ppm": 343.055,
      "file": "paper-tray@343.webp",
      "size": [
-      366,
-      297
+      375,
+      263
      ],
      "anchor_px": [
-      182.52,
-      148.79
+      187.2,
+      131.32
      ]
     },
     {
      "ppm": 686.11,
      "file": "paper-tray@686.webp",
      "size": [
-      732,
-      594
+      750,
+      526
      ],
      "anchor_px": [
-      366.04,
-      296.58
+      374.4,
+      263.63
      ]
     }
    ]
@@ -1116,7 +1116,7 @@
    ],
    "scale": {
     "fit": "h",
-    "source_px_per_m": 597.1
+    "source_px_per_m": 549.6
    },
    "footprint": [
     -0.225,
@@ -1132,48 +1132,48 @@
      "ppm": 85.764,
      "file": "plant-tall@86.webp",
      "size": [
-      106,
-      147
+      111,
+      156
      ],
      "anchor_px": [
-      52.97,
-      103.15
+      54.9,
+      118.55
      ]
     },
     {
      "ppm": 171.528,
      "file": "plant-tall@172.webp",
      "size": [
-      212,
-      293
+      221,
+      311
      ],
      "anchor_px": [
-      105.94,
-      206.29
+      110.81,
+      237.09
      ]
     },
     {
      "ppm": 343.055,
      "file": "plant-tall@343.webp",
      "size": [
-      425,
-      587
+      442,
+      624
      ],
      "anchor_px": [
-      211.88,
-      412.59
+      220.62,
+      474.19
      ]
     },
     {
-     "ppm": 597.087,
-     "file": "plant-tall@597.webp",
+     "ppm": 549.606,
+     "file": "plant-tall@550.webp",
      "size": [
-      739,
-      1021
+      708,
+      999
      ],
      "anchor_px": [
-      369.5,
-      718.11
+      354.5,
+      759.69
      ]
     }
    ],
@@ -1189,7 +1189,7 @@
    ],
    "scale": {
     "fit": "h",
-    "source_px_per_m": 586.6
+    "source_px_per_m": 558.7
    },
    "footprint": [
     -0.21,
@@ -1205,48 +1205,48 @@
      "ppm": 85.764,
      "file": "plant-bush@86.webp",
      "size": [
-      103,
-      117
+      107,
+      120
      ],
      "anchor_px": [
-      51.29,
-      74.45
+      53.85,
+      83.64
      ]
     },
     {
      "ppm": 171.528,
      "file": "plant-bush@172.webp",
      "size": [
-      206,
-      234
+      214,
+      240
      ],
      "anchor_px": [
-      102.58,
-      148.91
+      106.7,
+      167.27
      ]
     },
     {
      "ppm": 343.055,
      "file": "plant-bush@343.webp",
      "size": [
-      411,
-      468
+      428,
+      481
      ],
      "anchor_px": [
-      206.15,
-      297.81
+      213.41,
+      334.54
      ]
     },
     {
-     "ppm": 586.596,
-     "file": "plant-bush@587.webp",
+     "ppm": 558.675,
+     "file": "plant-bush@559.webp",
      "size": [
-      703,
-      800
+      697,
+      782
      ],
      "anchor_px": [
-      352.0,
-      509.24
+      348.0,
+      544.81
      ]
     }
    ]
@@ -1261,7 +1261,7 @@
    ],
    "scale": {
     "fit": "h",
-    "source_px_per_m": 889.8
+    "source_px_per_m": 854.8
    },
    "footprint": [
     -0.1,
@@ -1277,48 +1277,48 @@
      "ppm": 85.764,
      "file": "plant-small@86.webp",
      "size": [
-      78,
+      81,
       68
      ],
      "anchor_px": [
-      38.92,
-      33.47
+      40.45,
+      37.37
      ]
     },
     {
      "ppm": 171.528,
      "file": "plant-small@172.webp",
      "size": [
-      157,
-      136
+      162,
+      135
      ],
      "anchor_px": [
-      78.83,
-      67.95
+      80.89,
+      74.75
      ]
     },
     {
      "ppm": 343.055,
      "file": "plant-small@343.webp",
      "size": [
-      314,
+      323,
       271
      ],
      "anchor_px": [
-      156.66,
-      135.89
+      161.78,
+      149.5
      ]
     },
     {
      "ppm": 686.11,
      "file": "plant-small@686.webp",
      "size": [
-      627,
+      647,
       542
      ],
      "anchor_px": [
-      313.33,
-      270.78
+      323.56,
+      298.99
      ]
     }
    ]
@@ -1333,7 +1333,7 @@
    ],
    "scale": {
     "fit": "h",
-    "source_px_per_m": 783.2
+    "source_px_per_m": 705.6
    },
    "footprint": [
     -0.6,
@@ -1349,48 +1349,48 @@
      "ppm": 85.764,
      "file": "shelf@86.webp",
      "size": [
-      165,
-      185
+      162,
+      201
      ],
      "anchor_px": [
-      82.72,
-      134.39
+      80.75,
+      156.22
      ]
     },
     {
      "ppm": 171.528,
      "file": "shelf@172.webp",
      "size": [
-      329,
-      370
+      324,
+      402
      ],
      "anchor_px": [
-      164.43,
-      268.77
+      162.49,
+      312.43
      ]
     },
     {
      "ppm": 343.055,
      "file": "shelf@343.webp",
      "size": [
-      658,
-      739
+      648,
+      804
      ],
      "anchor_px": [
-      328.86,
-      537.54
+      323.99,
+      624.86
      ]
     },
     {
      "ppm": 686.11,
      "file": "shelf@686.webp",
      "size": [
-      1316,
-      1478
+      1297,
+      1607
      ],
      "anchor_px": [
-      658.72,
-      1075.08
+      647.98,
+      1249.73
      ]
     }
    ],
@@ -1406,7 +1406,7 @@
    ],
    "scale": {
     "fit": "h",
-    "source_px_per_m": 837.6
+    "source_px_per_m": 798.1
    },
    "footprint": [
     -0.45,
@@ -1422,48 +1422,48 @@
      "ppm": 85.764,
      "file": "book-cart@86.webp",
      "size": [
-      142,
-      135
+      143,
+      139
      ],
      "anchor_px": [
-      70.62,
-      86.64
+      71.78,
+      96.98
      ]
     },
     {
      "ppm": 171.528,
      "file": "book-cart@172.webp",
      "size": [
-      284,
-      270
+      286,
+      278
      ],
      "anchor_px": [
-      142.24,
-      173.28
+      142.55,
+      193.95
      ]
     },
     {
      "ppm": 343.055,
      "file": "book-cart@343.webp",
      "size": [
-      569,
-      540
+      571,
+      557
      ],
      "anchor_px": [
-      284.48,
-      346.56
+      286.11,
+      387.91
      ]
     },
     {
      "ppm": 686.11,
      "file": "book-cart@686.webp",
      "size": [
-      1137,
-      1081
+      1143,
+      1114
      ],
      "anchor_px": [
-      568.96,
-      693.12
+      571.22,
+      775.82
      ]
     }
    ],
@@ -1479,7 +1479,7 @@
    ],
    "scale": {
     "fit": "w",
-    "source_px_per_m": 659.3
+    "source_px_per_m": 664.3
    },
    "footprint": [
     -0.75,
@@ -1496,23 +1496,23 @@
      "file": "librarian-desk@86.webp",
      "size": [
       198,
-      141
+      139
      ],
      "anchor_px": [
-      98.83,
-      78.91
+      99.29,
+      85.73
      ]
     },
     {
      "ppm": 171.528,
      "file": "librarian-desk@172.webp",
      "size": [
-      396,
-      282
+      395,
+      277
      ],
      "anchor_px": [
-      197.66,
-      157.82
+      197.59,
+      171.46
      ]
     },
     {
@@ -1520,23 +1520,23 @@
      "file": "librarian-desk@343.webp",
      "size": [
       791,
-      563
+      555
      ],
      "anchor_px": [
-      395.32,
-      315.65
+      395.18,
+      342.91
      ]
     },
     {
-     "ppm": 659.313,
-     "file": "librarian-desk@659.webp",
+     "ppm": 664.327,
+     "file": "librarian-desk@664.webp",
      "size": [
-      1521,
-      1084
+      1531,
+      1075
      ],
      "anchor_px": [
-      760.5,
-      606.64
+      765.5,
+      664.05
      ]
     }
    ],
@@ -1552,7 +1552,7 @@
    ],
    "scale": {
     "fit": "w",
-    "source_px_per_m": 855.4
+    "source_px_per_m": 828.8
    },
    "footprint": [
     -0.45,
@@ -1568,48 +1568,48 @@
      "ppm": 85.764,
      "file": "podium@86.webp",
      "size": [
-      148,
-      128
+      152,
+      130
      ],
      "anchor_px": [
-      74.07,
-      73.76
+      76.55,
+      84.19
      ]
     },
     {
      "ppm": 171.528,
      "file": "podium@172.webp",
      "size": [
-      297,
-      255
+      304,
+      260
      ],
      "anchor_px": [
-      148.14,
-      147.51
+      152.1,
+      168.38
      ]
     },
     {
      "ppm": 343.055,
      "file": "podium@343.webp",
      "size": [
-      593,
-      512
+      609,
+      519
      ],
      "anchor_px": [
-      296.29,
-      295.03
+      304.19,
+      336.75
      ]
     },
     {
      "ppm": 686.11,
      "file": "podium@686.webp",
      "size": [
-      1187,
-      1023
+      1218,
+      1038
      ],
      "anchor_px": [
-      593.58,
-      590.06
+      608.39,
+      673.5
      ]
     }
    ],
@@ -1625,7 +1625,7 @@
    ],
    "scale": {
     "fit": "h",
-    "source_px_per_m": 441.1
+    "source_px_per_m": 403.0
    },
    "footprint": [
     -0.75,
@@ -1641,48 +1641,36 @@
      "ppm": 85.764,
      "file": "whiteboard@86.webp",
      "size": [
-      192,
-      203
+      188,
+      218
      ],
      "anchor_px": [
-      95.95,
-      146.57
+      93.7,
+      168.77
      ]
     },
     {
      "ppm": 171.528,
      "file": "whiteboard@172.webp",
      "size": [
-      383,
-      406
+      377,
+      437
      ],
      "anchor_px": [
-      191.89,
-      293.14
+      188.4,
+      337.53
      ]
     },
     {
      "ppm": 343.055,
      "file": "whiteboard@343.webp",
      "size": [
-      767,
-      812
+      753,
+      873
      ],
      "anchor_px": [
-      383.78,
-      586.29
-     ]
-    },
-    {
-     "ppm": 441.136,
-     "file": "whiteboard@441.webp",
-     "size": [
-      986,
-      1045
-     ],
-     "anchor_px": [
-      492.5,
-      753.91
+      376.79,
+      675.06
      ]
     }
    ],
@@ -1698,7 +1686,7 @@
    ],
    "scale": {
     "fit": "w",
-    "source_px_per_m": 752.1
+    "source_px_per_m": 743.7
    },
    "footprint": [
     -0.6,
@@ -1714,48 +1702,48 @@
      "ppm": 85.764,
      "file": "question-desk@86.webp",
      "size": [
-      174,
+      176,
       141
      ],
      "anchor_px": [
-      86.84,
-      81.92
+      88.51,
+      90.92
      ]
     },
     {
      "ppm": 171.528,
      "file": "question-desk@172.webp",
      "size": [
-      348,
+      352,
       281
      ],
      "anchor_px": [
-      173.68,
-      163.84
+      176.01,
+      181.84
      ]
     },
     {
      "ppm": 343.055,
      "file": "question-desk@343.webp",
      "size": [
-      696,
+      705,
       563
      ],
      "anchor_px": [
-      347.36,
-      327.67
+      352.02,
+      363.68
      ]
     },
     {
      "ppm": 686.11,
      "file": "question-desk@686.webp",
      "size": [
-      1391,
-      1126
+      1409,
+      1125
      ],
      "anchor_px": [
-      695.71,
-      655.34
+      704.04,
+      727.36
      ]
     }
    ],
@@ -1783,7 +1771,7 @@
    ],
    "scale": {
     "fit": "w",
-    "source_px_per_m": 1003.2
+    "source_px_per_m": 938.7
    },
    "footprint": [
     -0.35,
@@ -1799,52 +1787,125 @@
      "ppm": 85.764,
      "file": "crate@86.webp",
      "size": [
-      134,
-      114
+      140,
+      119
      ],
      "anchor_px": [
-      66.86,
-      60.31
+      70.52,
+      74.06
      ]
     },
     {
      "ppm": 171.528,
      "file": "crate@172.webp",
      "size": [
-      268,
-      227
+      280,
+      237
      ],
      "anchor_px": [
-      133.71,
-      120.62
+      140.05,
+      148.12
      ]
     },
     {
      "ppm": 343.055,
      "file": "crate@343.webp",
      "size": [
-      536,
-      455
+      561,
+      473
      ],
      "anchor_px": [
-      267.42,
-      241.23
+      280.09,
+      296.24
      ]
     },
     {
      "ppm": 686.11,
      "file": "crate@686.webp",
      "size": [
-      1071,
-      910
+      1121,
+      946
      ],
      "anchor_px": [
-      535.85,
-      482.47
+      560.19,
+      592.47
      ]
     }
    ],
    "doc": "the waiting crate, hourglass on its front"
+  },
+  "crate-stack": {
+   "source": "ai",
+   "from": "art/kit/raw/crate-stack.png",
+   "size_m": [
+    1.4,
+    1.1,
+    1.55
+   ],
+   "scale": {
+    "fit": "w",
+    "source_px_per_m": 614.7
+   },
+   "footprint": [
+    -0.7,
+    -0.55,
+    0.0,
+    0.7,
+    0.55,
+    1.55
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "crate-stack@86.webp",
+     "size": [
+      209,
+      191
+     ],
+     "anchor_px": [
+      105.04,
+      132.53
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "crate-stack@172.webp",
+     "size": [
+      418,
+      383
+     ],
+     "anchor_px": [
+      209.08,
+      265.06
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "crate-stack@343.webp",
+     "size": [
+      837,
+      765
+     ],
+     "anchor_px": [
+      418.16,
+      530.11
+     ]
+    },
+    {
+     "ppm": 614.693,
+     "file": "crate-stack@615.webp",
+     "size": [
+      1499,
+      1371
+     ],
+     "anchor_px": [
+      750.0,
+      949.87
+     ]
+    }
+   ],
+   "doc": "plain crates on a pallet: storage furniture (the hourglass crate means waiting)"
   },
   "lantern": {
    "source": "ai",
@@ -1856,7 +1917,7 @@
    ],
    "scale": {
     "fit": "w",
-    "source_px_per_m": 1319.7
+    "source_px_per_m": 1235.0
    },
    "footprint": [
     -0.18,
@@ -1872,48 +1933,48 @@
      "ppm": 85.764,
      "file": "lantern@86.webp",
      "size": [
-      40,
-      84
+      43,
+      90
      ],
      "anchor_px": [
-      19.98,
-      49.64
+      21.35,
+      54.57
      ]
     },
     {
      "ppm": 171.528,
      "file": "lantern@172.webp",
      "size": [
-      80,
-      168
+      85,
+      179
      ],
      "anchor_px": [
-      39.97,
-      99.28
+      42.71,
+      109.14
      ]
     },
     {
      "ppm": 343.055,
      "file": "lantern@343.webp",
      "size": [
-      160,
-      335
+      171,
+      358
      ],
      "anchor_px": [
-      79.93,
-      198.55
+      85.42,
+      218.29
      ]
     },
     {
      "ppm": 686.11,
      "file": "lantern@686.webp",
      "size": [
-      320,
-      671
+      342,
+      717
      ],
      "anchor_px": [
-      159.86,
-      397.11
+      170.84,
+      436.57
      ]
     }
    ],
@@ -1948,36 +2009,36 @@
      "ppm": 85.764,
      "file": "pilaster@86.webp",
      "size": [
-      110,
-      276
+      109,
+      318
      ],
      "anchor_px": [
-      58.35,
-      230.98
+      59.94,
+      277.61
      ]
     },
     {
      "ppm": 171.528,
      "file": "pilaster@172.webp",
      "size": [
-      219,
-      551
+      218,
+      636
      ],
      "anchor_px": [
-      116.7,
-      461.95
+      119.88,
+      555.22
      ]
     },
     {
      "ppm": 343.055,
      "file": "pilaster@343.webp",
      "size": [
-      437,
-      1102
+      435,
+      1272
      ],
      "anchor_px": [
-      233.4,
-      923.91
+      239.76,
+      1110.43
      ]
     }
    ],
@@ -2001,36 +2062,36 @@
      "ppm": 85.764,
      "file": "wall-cap-x@86.webp",
      "size": [
-      307,
-      116
+      286,
+      107
      ],
      "anchor_px": [
-      2.96,
-      227.57
+      3.58,
+      265.29
      ]
     },
     {
      "ppm": 171.528,
      "file": "wall-cap-x@172.webp",
      "size": [
-      613,
-      231
+      571,
+      213
      ],
      "anchor_px": [
-      5.92,
-      455.14
+      7.17,
+      530.58
      ]
     },
     {
      "ppm": 343.055,
      "file": "wall-cap-x@343.webp",
      "size": [
-      1226,
-      462
+      1142,
+      426
      ],
      "anchor_px": [
-      11.83,
-      910.27
+      14.33,
+      1061.15
      ]
     }
    ],
@@ -2054,36 +2115,36 @@
      "ppm": 85.764,
      "file": "wall-cap-y@86.webp",
      "size": [
-      155,
-      222
+      207,
+      144
      ],
      "anchor_px": [
-      37.68,
-      413.85
+      34.08,
+      381.53
      ]
     },
     {
      "ppm": 171.528,
      "file": "wall-cap-y@172.webp",
      "size": [
-      310,
-      444
+      414,
+      287
      ],
      "anchor_px": [
-      75.37,
-      827.7
+      68.17,
+      763.05
      ]
     },
     {
      "ppm": 343.055,
      "file": "wall-cap-y@343.webp",
      "size": [
-      619,
-      888
+      828,
+      574
      ],
      "anchor_px": [
-      150.74,
-      1655.41
+      136.33,
+      1526.1
      ]
     }
    ],
@@ -2107,36 +2168,36 @@
      "ppm": 85.764,
      "file": "wall-corner@86.webp",
      "size": [
-      106,
-      303
+      110,
+      336
      ],
      "anchor_px": [
-      62.94,
-      261.39
+      59.96,
+      299.17
      ]
     },
     {
      "ppm": 171.528,
      "file": "wall-corner@172.webp",
      "size": [
-      212,
-      605
+      220,
+      671
      ],
      "anchor_px": [
-      125.88,
-      522.77
+      119.93,
+      598.34
      ]
     },
     {
      "ppm": 343.055,
      "file": "wall-corner@343.webp",
      "size": [
-      424,
-      1209
+      439,
+      1342
      ],
      "anchor_px": [
-      251.77,
-      1045.54
+      239.86,
+      1196.68
      ]
     }
    ],
@@ -2160,36 +2221,36 @@
      "ppm": 85.764,
      "file": "wall-end-back@86.webp",
      "size": [
-      48,
-      296
+      54,
+      347
      ],
      "anchor_px": [
-      29.51,
-      236.68
+      27.73,
+      274.44
      ]
     },
     {
      "ppm": 171.528,
      "file": "wall-end-back@172.webp",
      "size": [
-      96,
-      592
+      107,
+      694
      ],
      "anchor_px": [
-      59.02,
-      473.35
+      55.47,
+      548.88
      ]
     },
     {
      "ppm": 343.055,
      "file": "wall-end-back@343.webp",
      "size": [
-      192,
-      1184
+      213,
+      1387
      ],
      "anchor_px": [
-      118.05,
-      946.71
+      110.94,
+      1097.76
      ]
     }
    ],
@@ -2214,35 +2275,35 @@
      "file": "wall-end-left@86.webp",
      "size": [
       58,
-      291
+      345
      ],
      "anchor_px": [
-      40.26,
-      231.54
+      36.66,
+      272.66
      ]
     },
     {
      "ppm": 171.528,
      "file": "wall-end-left@172.webp",
      "size": [
-      115,
-      582
+      116,
+      690
      ],
      "anchor_px": [
-      80.52,
-      463.08
+      73.31,
+      545.33
      ]
     },
     {
      "ppm": 343.055,
      "file": "wall-end-left@343.webp",
      "size": [
-      229,
-      1163
+      232,
+      1380
      ],
      "anchor_px": [
-      161.03,
-      926.16
+      146.62,
+      1090.66
      ]
     }
    ],
@@ -2266,36 +2327,36 @@
      "ppm": 85.764,
      "file": "slab-front@86.webp",
      "size": [
-      295,
-      140
+      267,
+      153
      ],
      "anchor_px": [
-      4.13,
-      3.13
+      4.91,
+      2.91
      ]
     },
     {
      "ppm": 171.528,
      "file": "slab-front@172.webp",
      "size": [
-      590,
-      279
+      534,
+      306
      ],
      "anchor_px": [
-      8.25,
-      6.27
+      9.82,
+      5.82
      ]
     },
     {
      "ppm": 343.055,
      "file": "slab-front@343.webp",
      "size": [
-      1180,
-      557
+      1068,
+      611
      ],
      "anchor_px": [
-      16.51,
-      12.53
+      19.63,
+      11.64
      ]
     }
    ],
@@ -2319,36 +2380,36 @@
      "ppm": 85.764,
      "file": "slab-side@86.webp",
      "size": [
-      122,
-      263
+      178,
+      196
      ],
      "anchor_px": [
-      3.37,
-      204.48
+      3.29,
+      124.36
      ]
     },
     {
      "ppm": 171.528,
      "file": "slab-side@172.webp",
      "size": [
-      244,
-      525
+      356,
+      391
      ],
      "anchor_px": [
-      6.74,
-      408.96
+      6.58,
+      248.71
      ]
     },
     {
      "ppm": 343.055,
      "file": "slab-side@343.webp",
      "size": [
-      488,
-      1049
+      711,
+      781
      ],
      "anchor_px": [
-      13.49,
-      817.93
+      13.17,
+      497.43
      ]
     }
    ],
@@ -2372,12 +2433,12 @@
      "ppm": 85.764,
      "file": "lift@86.webp",
      "size": [
-      209,
-      281
+      195,
+      323
      ],
      "anchor_px": [
-      99.61,
-      231.14
+      94.42,
+      275.66
      ],
      "frames": 5
     },
@@ -2385,12 +2446,12 @@
      "ppm": 171.528,
      "file": "lift@172.webp",
      "size": [
-      417,
-      561
+      390,
+      645
      ],
      "anchor_px": [
-      199.23,
-      462.27
+      188.84,
+      551.33
      ],
      "frames": 5
     },
@@ -2398,12 +2459,12 @@
      "ppm": 343.055,
      "file": "lift@343.webp",
      "size": [
-      834,
-      1121
+      779,
+      1289
      ],
      "anchor_px": [
-      398.45,
-      924.55
+      377.69,
+      1102.66
      ],
      "frames": 5
     }
@@ -2430,6 +2491,158 @@
     "open"
    ]
   },
+  "lift-panel": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -0.29,
+    -0.38,
+    0,
+    0.29,
+    0,
+    3.28
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "lift-panel@86.webp",
+     "size": [
+      111,
+      316
+     ],
+     "anchor_px": [
+      63.99,
+      273.87
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "lift-panel@172.webp",
+     "size": [
+      221,
+      631
+     ],
+     "anchor_px": [
+      127.98,
+      547.74
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "lift-panel@343.webp",
+     "size": [
+      441,
+      1261
+     ],
+     "anchor_px": [
+      255.96,
+      1095.47
+     ]
+    }
+   ],
+   "layer": "ground",
+   "slots": {
+    "buttons": [
+     [
+      0,
+      -0.365,
+      0.95
+     ],
+     [
+      0,
+      -0.365,
+      1.21
+     ],
+     [
+      0,
+      -0.365,
+      1.47
+     ],
+     [
+      0,
+      -0.365,
+      1.73
+     ],
+     [
+      0,
+      -0.365,
+      1.99
+     ],
+     [
+      0,
+      -0.365,
+      2.25
+     ]
+    ]
+   },
+   "doc": "The lift's floor-button column beside its doors, as l1: a box column with a round button per floor, faces"
+  },
+  "alcove": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    0,
+    -1.4,
+    0,
+    2.85,
+    0,
+    3.28
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "alcove@86.webp",
+     "size": [
+      445,
+      493
+     ],
+     "anchor_px": [
+      152.09,
+      297.67
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "alcove@172.webp",
+     "size": [
+      890,
+      986
+     ],
+     "anchor_px": [
+      304.18,
+      595.34
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "alcove@343.webp",
+     "size": [
+      1780,
+      1972
+     ],
+     "anchor_px": [
+      608.37,
+      1190.69
+     ]
+    }
+   ],
+   "layer": "standing",
+   "slots": {
+    "lamp": [
+     1.2,
+     -0.8499999999999999,
+     2.05
+    ],
+    "inside": [
+     1.2,
+     -0.7,
+     0
+    ]
+   },
+   "doc": "l1's alcove in the back-left corner: a wall fin projecting from the back wall, a lintel across the opening"
+  },
   "plan-wall": {
    "source": "blender",
    "from": "art/scripts/build_kit.py",
@@ -2447,36 +2660,36 @@
      "ppm": 85.764,
      "file": "plan-wall@86.webp",
      "size": [
-      302,
-      239
+      277,
+      272
      ],
      "anchor_px": [
-      151.62,
-      225.29
+      139.63,
+      270.66
      ]
     },
     {
      "ppm": 171.528,
      "file": "plan-wall@172.webp",
      "size": [
-      603,
-      478
+      553,
+      544
      ],
      "anchor_px": [
-      303.25,
-      450.58
+      279.26,
+      541.32
      ]
     },
     {
      "ppm": 343.055,
      "file": "plan-wall@343.webp",
      "size": [
-      1206,
-      955
+      1106,
+      1088
      ],
      "anchor_px": [
-      606.5,
-      901.15
+      558.52,
+      1082.64
      ]
     }
    ],
@@ -2548,36 +2761,36 @@
      "ppm": 85.764,
      "file": "tile-blank@86.webp",
      "size": [
-      31,
-      32
+      29,
+      35
      ],
      "anchor_px": [
-      15.7,
-      14.93
+      15.05,
+      16.93
      ]
     },
     {
      "ppm": 171.528,
      "file": "tile-blank@172.webp",
      "size": [
-      61,
-      64
+      58,
+      70
      ],
      "anchor_px": [
-      31.4,
-      29.85
+      30.1,
+      33.86
      ]
     },
     {
      "ppm": 343.055,
      "file": "tile-blank@343.webp",
      "size": [
-      122,
-      127
+      115,
+      140
      ],
      "anchor_px": [
-      62.8,
-      59.71
+      60.21,
+      67.73
      ]
     }
    ],
@@ -2600,36 +2813,36 @@
      "ppm": 85.764,
      "file": "tile-done@86.webp",
      "size": [
-      31,
-      32
+      29,
+      35
      ],
      "anchor_px": [
-      15.7,
-      14.93
+      15.05,
+      16.93
      ]
     },
     {
      "ppm": 171.528,
      "file": "tile-done@172.webp",
      "size": [
-      61,
-      64
+      58,
+      70
      ],
      "anchor_px": [
-      31.4,
-      29.85
+      30.1,
+      33.86
      ]
     },
     {
      "ppm": 343.055,
      "file": "tile-done@343.webp",
      "size": [
-      122,
-      127
+      115,
+      140
      ],
      "anchor_px": [
-      62.8,
-      59.71
+      60.21,
+      67.73
      ]
     }
    ],
@@ -2652,36 +2865,36 @@
      "ppm": 85.764,
      "file": "tile-running@86.webp",
      "size": [
-      31,
-      32
+      29,
+      35
      ],
      "anchor_px": [
-      15.7,
-      14.93
+      15.05,
+      16.93
      ]
     },
     {
      "ppm": 171.528,
      "file": "tile-running@172.webp",
      "size": [
-      61,
-      64
+      58,
+      70
      ],
      "anchor_px": [
-      31.4,
-      29.85
+      30.1,
+      33.86
      ]
     },
     {
      "ppm": 343.055,
      "file": "tile-running@343.webp",
      "size": [
-      122,
-      127
+      115,
+      140
      ],
      "anchor_px": [
-      62.8,
-      59.71
+      60.21,
+      67.73
      ]
     }
    ],
@@ -2704,36 +2917,36 @@
      "ppm": 85.764,
      "file": "tile-failed@86.webp",
      "size": [
-      31,
-      32
+      29,
+      35
      ],
      "anchor_px": [
-      15.7,
-      14.93
+      15.05,
+      16.93
      ]
     },
     {
      "ppm": 171.528,
      "file": "tile-failed@172.webp",
      "size": [
-      61,
-      64
+      58,
+      70
      ],
      "anchor_px": [
-      31.4,
-      29.85
+      30.1,
+      33.86
      ]
     },
     {
      "ppm": 343.055,
      "file": "tile-failed@343.webp",
      "size": [
-      122,
-      127
+      115,
+      140
      ],
      "anchor_px": [
-      62.8,
-      59.71
+      60.21,
+      67.73
      ]
     }
    ],
@@ -2756,36 +2969,36 @@
      "ppm": 85.764,
      "file": "criteria-off@86.webp",
      "size": [
-      26,
-      24
+      25,
+      26
      ],
      "anchor_px": [
-      13.27,
-      10.98
+      13.02,
+      12.22
      ]
     },
     {
      "ppm": 171.528,
      "file": "criteria-off@172.webp",
      "size": [
-      52,
-      48
+      50,
+      51
      ],
      "anchor_px": [
-      26.54,
-      21.97
+      26.04,
+      24.43
      ]
     },
     {
      "ppm": 343.055,
      "file": "criteria-off@343.webp",
      "size": [
-      103,
-      95
+      99,
+      102
      ],
      "anchor_px": [
-      53.09,
-      43.93
+      52.08,
+      48.86
      ]
     }
    ],
@@ -2808,192 +3021,40 @@
      "ppm": 85.764,
      "file": "criteria-on@86.webp",
      "size": [
-      26,
-      24
+      25,
+      26
      ],
      "anchor_px": [
-      13.27,
-      10.98
+      13.02,
+      12.22
      ]
     },
     {
      "ppm": 171.528,
      "file": "criteria-on@172.webp",
      "size": [
-      52,
-      48
+      50,
+      51
      ],
      "anchor_px": [
-      26.54,
-      21.97
+      26.04,
+      24.43
      ]
     },
     {
      "ppm": 343.055,
      "file": "criteria-on@343.webp",
      "size": [
-      103,
-      95
+      99,
+      102
      ],
      "anchor_px": [
-      53.09,
-      43.93
+      52.08,
+      48.86
      ]
     }
    ],
    "layer": "standing"
-  },
-  "lift-panel": {
-   "source": "blender",
-   "from": "art/scripts/build_kit.py",
-   "footprint": [
-    -0.29,
-    -0.38,
-    0,
-    0.29,
-    0,
-    3.28
-   ],
-   "hit": "alpha",
-   "tiers": [
-    {
-     "ppm": 85.764,
-     "file": "lift-panel@86.webp",
-     "size": [
-      110,
-      276
-     ],
-     "anchor_px": [
-      60.41,
-      227.23
-     ]
-    },
-    {
-     "ppm": 171.528,
-     "file": "lift-panel@172.webp",
-     "size": [
-      219,
-      552
-     ],
-     "anchor_px": [
-      120.82,
-      454.47
-     ]
-    },
-    {
-     "ppm": 343.055,
-     "file": "lift-panel@343.webp",
-     "size": [
-      437,
-      1103
-     ],
-     "anchor_px": [
-      241.64,
-      908.93
-     ]
-    }
-   ],
-   "layer": "ground",
-   "slots": {
-    "buttons": [
-     [
-      0,
-      -0.365,
-      0.95
-     ],
-     [
-      0,
-      -0.365,
-      1.21
-     ],
-     [
-      0,
-      -0.365,
-      1.47
-     ],
-     [
-      0,
-      -0.365,
-      1.73
-     ],
-     [
-      0,
-      -0.365,
-      1.99
-     ],
-     [
-      0,
-      -0.365,
-      2.25
-     ]
-    ]
-   },
-   "doc": "The lift's floor-button column beside its doors, as l1: a box column with a round button per floor, faces"
-  },
-  "alcove": {
-   "source": "blender",
-   "from": "art/scripts/build_kit.py",
-   "footprint": [
-    0,
-    -1.4,
-    0,
-    2.85,
-    0,
-    3.28
-   ],
-   "hit": "alpha",
-   "tiers": [
-    {
-     "ppm": 85.764,
-     "file": "alcove@86.webp",
-     "size": [
-      446,
-      462
-     ],
-     "anchor_px": [
-      129.9,
-      235.11
-     ]
-    },
-    {
-     "ppm": 171.528,
-     "file": "alcove@172.webp",
-     "size": [
-      891,
-      923
-     ],
-     "anchor_px": [
-      259.81,
-      470.22
-     ]
-    },
-    {
-     "ppm": 343.055,
-     "file": "alcove@343.webp",
-     "size": [
-      1782,
-      1845
-     ],
-     "anchor_px": [
-      519.61,
-      940.45
-     ]
-    }
-   ],
-   "layer": "standing",
-   "slots": {
-    "lamp": [
-     1.2,
-     -0.8499999999999999,
-     2.05
-    ],
-    "inside": [
-     1.2,
-     -0.7,
-     0
-    ]
-   },
-   "doc": "l1's alcove in the back-left corner: a wall fin projecting from the back wall, a lintel across the opening"
   },
   "bench-left": {
    "source": "ai",
@@ -3011,31 +3072,31 @@
      "ppm": 85.764,
      "file": "bench-left@86.webp",
      "size": [
-      211,
-      160
+      181,
+      140
      ],
      "anchor_px": [
-      84.07,
-      5.46
+      66.94,
+      5.23
      ]
     },
     {
      "ppm": 171.528,
      "file": "bench-left@172.webp",
      "size": [
-      422,
-      320
+      362,
+      280
      ],
      "anchor_px": [
-      168.13,
-      10.92
+      133.89,
+      10.47
      ]
     }
    ],
    "scale": {
     "fit": "far edge = one module",
-    "source_px_per_m": 212.4,
-    "sheared_to_camera": 0.2726
+    "source_px_per_m": 246.6,
+    "sheared_to_camera": 0.3049
    },
    "anchor": "desk top, far edge, at the module's left seam",
    "footprint": [
@@ -3049,7 +3110,7 @@
    "slots": {
     "seat": [
      0.8,
-     0.14,
+     0.3,
      -0.27
     ],
     "lamp": [
@@ -3086,31 +3147,31 @@
      "ppm": 85.764,
      "file": "bench-mid@86.webp",
      "size": [
-      195,
-      154
+      166,
+      135
      ],
      "anchor_px": [
-      67.91,
-      0.98
+      51.99,
+      0.95
      ]
     },
     {
      "ppm": 171.528,
      "file": "bench-mid@172.webp",
      "size": [
-      389,
-      309
+      332,
+      269
      ],
      "anchor_px": [
-      135.82,
-      1.96
+      103.98,
+      1.91
      ]
     }
    ],
    "scale": {
     "fit": "far edge = one module",
-    "source_px_per_m": 212.4,
-    "sheared_to_camera": 0.2726
+    "source_px_per_m": 246.6,
+    "sheared_to_camera": 0.3049
    },
    "anchor": "desk top, far edge, at the module's left seam",
    "footprint": [
@@ -3124,7 +3185,7 @@
    "slots": {
     "seat": [
      0.8,
-     0.14,
+     0.3,
      -0.27
     ],
     "lamp": [
@@ -3161,31 +3222,31 @@
      "ppm": 85.764,
      "file": "bench-right@86.webp",
      "size": [
-      216,
-      162
+      182,
+      143
      ],
      "anchor_px": [
-      67.91,
-      0.87
+      51.99,
+      0.5
      ]
     },
     {
      "ppm": 171.528,
      "file": "bench-right@172.webp",
      "size": [
-      433,
-      325
+      364,
+      286
      ],
      "anchor_px": [
-      135.82,
-      1.74
+      103.98,
+      1.01
      ]
     }
    ],
    "scale": {
     "fit": "far edge = one module",
-    "source_px_per_m": 212.4,
-    "sheared_to_camera": 0.2726
+    "source_px_per_m": 246.6,
+    "sheared_to_camera": 0.3049
    },
    "anchor": "desk top, far edge, at the module's left seam",
    "footprint": [
@@ -3199,7 +3260,7 @@
    "slots": {
     "seat": [
      0.8,
-     0.14,
+     0.3,
      -0.27
     ],
     "lamp": [
@@ -3220,6 +3281,272 @@
    },
    "doc": "one seat module of the long bench: tile the left end, middles and right end MODULE apart"
   },
+  "ao-floor-x": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    0,
+    -1.1,
+    0,
+    3.6,
+    0,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "ao-floor-x@86.webp",
+     "size": [
+      311,
+      117
+     ],
+     "anchor_px": [
+      52.0,
+      0.0
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "ao-floor-x@172.webp",
+     "size": [
+      621,
+      233
+     ],
+     "anchor_px": [
+      103.0,
+      0.0
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "ao-floor-x@343.webp",
+     "size": [
+      1242,
+      465
+     ],
+     "anchor_px": [
+      206.0,
+      0.0
+     ]
+    }
+   ],
+   "doc": "occlusion on the floor along the back wall, one bay"
+  },
+  "ao-floor-y": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    0,
+    0,
+    0,
+    1.1,
+    3.6,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "ao-floor-y@86.webp",
+     "size": [
+      249,
+      146
+     ],
+     "anchor_px": [
+      0.84,
+      121.56
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "ao-floor-y@172.webp",
+     "size": [
+      496,
+      292
+     ],
+     "anchor_px": [
+      0.69,
+      243.13
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "ao-floor-y@343.webp",
+     "size": [
+      990,
+      583
+     ],
+     "anchor_px": [
+      0.37,
+      486.26
+     ]
+    }
+   ],
+   "doc": "occlusion on the floor along the left wall, one bay"
+  },
+  "ao-wall-x": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    0,
+    -0.01,
+    0,
+    3.6,
+    0,
+    0.7
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "ao-wall-x@86.webp",
+     "size": [
+      259,
+      132
+     ],
+     "anchor_px": [
+      0.0,
+      53.01
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "ao-wall-x@172.webp",
+     "size": [
+      518,
+      264
+     ],
+     "anchor_px": [
+      0.0,
+      106.01
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "ao-wall-x@343.webp",
+     "size": [
+      1036,
+      528
+     ],
+     "anchor_px": [
+      0.0,
+      212.03
+     ]
+    }
+   ],
+   "doc": "occlusion at the foot of the back wall, one bay"
+  },
+  "ao-wall-y": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    0,
+    0,
+    0,
+    0.01,
+    3.6,
+    0.7
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "ao-wall-y@86.webp",
+     "size": [
+      169,
+      176
+     ],
+     "anchor_px": [
+      0.0,
+      175.01
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "ao-wall-y@172.webp",
+     "size": [
+      337,
+      351
+     ],
+     "anchor_px": [
+      0.0,
+      350.01
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "ao-wall-y@343.webp",
+     "size": [
+      673,
+      700
+     ],
+     "anchor_px": [
+      0.0,
+      699.03
+     ]
+    }
+   ],
+   "doc": "occlusion at the foot of the left wall, one bay"
+  },
+  "glow-window": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    -0.65,
+    -1.4,
+    0,
+    0.65,
+    1.4,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "glow-window@86.webp",
+     "size": [
+      225,
+      124
+     ],
+     "anchor_px": [
+      112.36,
+      61.53
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "glow-window@172.webp",
+     "size": [
+      450,
+      247
+     ],
+     "anchor_px": [
+      224.72,
+      123.06
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "glow-window@343.webp",
+     "size": [
+      899,
+      493
+     ],
+     "anchor_px": [
+      449.43,
+      246.12
+     ]
+    }
+   ],
+   "doc": "daylight through a window of the cut-away front wall, on the floor",
+   "blend": "lighter"
+  },
   "footprints-000": {
    "source": "procedural",
    "from": "art/kit/finish.py",
@@ -3238,36 +3565,36 @@
      "ppm": 85.764,
      "file": "footprints-000@86.webp",
      "size": [
-      89,
-      63
+      96,
+      45
      ],
      "anchor_px": [
-      44.54,
-      31.13
+      48.09,
+      22.28
      ]
     },
     {
      "ppm": 171.528,
      "file": "footprints-000@172.webp",
      "size": [
-      178,
-      125
+      191,
+      90
      ],
      "anchor_px": [
-      89.08,
-      62.25
+      95.17,
+      44.56
      ]
     },
     {
      "ppm": 343.055,
      "file": "footprints-000@343.webp",
      "size": [
-      356,
-      250
+      381,
+      179
      ],
      "anchor_px": [
-      178.16,
-      124.5
+      190.35,
+      89.12
      ]
     }
    ],
@@ -3291,36 +3618,36 @@
      "ppm": 85.764,
      "file": "footprints-045@86.webp",
      "size": [
-      89,
-      63
+      96,
+      45
      ],
      "anchor_px": [
-      44.54,
-      31.13
+      48.09,
+      22.28
      ]
     },
     {
      "ppm": 171.528,
      "file": "footprints-045@172.webp",
      "size": [
-      178,
-      125
+      191,
+      90
      ],
      "anchor_px": [
-      89.08,
-      62.25
+      95.17,
+      44.56
      ]
     },
     {
      "ppm": 343.055,
      "file": "footprints-045@343.webp",
      "size": [
-      356,
-      250
+      381,
+      179
      ],
      "anchor_px": [
-      178.16,
-      124.5
+      190.35,
+      89.12
      ]
     }
    ],
@@ -3344,36 +3671,36 @@
      "ppm": 85.764,
      "file": "footprints-090@86.webp",
      "size": [
-      89,
-      63
+      96,
+      45
      ],
      "anchor_px": [
-      44.54,
-      31.13
+      48.09,
+      22.28
      ]
     },
     {
      "ppm": 171.528,
      "file": "footprints-090@172.webp",
      "size": [
-      178,
-      125
+      191,
+      90
      ],
      "anchor_px": [
-      89.08,
-      62.25
+      95.17,
+      44.56
      ]
     },
     {
      "ppm": 343.055,
      "file": "footprints-090@343.webp",
      "size": [
-      356,
-      250
+      381,
+      179
      ],
      "anchor_px": [
-      178.16,
-      124.5
+      190.35,
+      89.12
      ]
     }
    ],
@@ -3397,36 +3724,36 @@
      "ppm": 85.764,
      "file": "footprints-135@86.webp",
      "size": [
-      89,
-      63
+      96,
+      45
      ],
      "anchor_px": [
-      44.54,
-      31.13
+      48.09,
+      22.28
      ]
     },
     {
      "ppm": 171.528,
      "file": "footprints-135@172.webp",
      "size": [
-      178,
-      125
+      191,
+      90
      ],
      "anchor_px": [
-      89.08,
-      62.25
+      95.17,
+      44.56
      ]
     },
     {
      "ppm": 343.055,
      "file": "footprints-135@343.webp",
      "size": [
-      356,
-      250
+      381,
+      179
      ],
      "anchor_px": [
-      178.16,
-      124.5
+      190.35,
+      89.12
      ]
     }
    ],
@@ -3450,36 +3777,36 @@
      "ppm": 85.764,
      "file": "footprints-180@86.webp",
      "size": [
-      89,
-      63
+      96,
+      45
      ],
      "anchor_px": [
-      44.54,
-      31.13
+      48.09,
+      22.28
      ]
     },
     {
      "ppm": 171.528,
      "file": "footprints-180@172.webp",
      "size": [
-      178,
-      125
+      191,
+      90
      ],
      "anchor_px": [
-      89.08,
-      62.25
+      95.17,
+      44.56
      ]
     },
     {
      "ppm": 343.055,
      "file": "footprints-180@343.webp",
      "size": [
-      356,
-      250
+      381,
+      179
      ],
      "anchor_px": [
-      178.16,
-      124.5
+      190.35,
+      89.12
      ]
     }
    ],
@@ -3503,36 +3830,36 @@
      "ppm": 85.764,
      "file": "footprints-225@86.webp",
      "size": [
-      89,
-      63
+      96,
+      45
      ],
      "anchor_px": [
-      44.54,
-      31.13
+      48.09,
+      22.28
      ]
     },
     {
      "ppm": 171.528,
      "file": "footprints-225@172.webp",
      "size": [
-      178,
-      125
+      191,
+      90
      ],
      "anchor_px": [
-      89.08,
-      62.25
+      95.17,
+      44.56
      ]
     },
     {
      "ppm": 343.055,
      "file": "footprints-225@343.webp",
      "size": [
-      356,
-      250
+      381,
+      179
      ],
      "anchor_px": [
-      178.16,
-      124.5
+      190.35,
+      89.12
      ]
     }
    ],
@@ -3556,36 +3883,36 @@
      "ppm": 85.764,
      "file": "footprints-270@86.webp",
      "size": [
-      89,
-      63
+      96,
+      45
      ],
      "anchor_px": [
-      44.54,
-      31.13
+      48.09,
+      22.28
      ]
     },
     {
      "ppm": 171.528,
      "file": "footprints-270@172.webp",
      "size": [
-      178,
-      125
+      191,
+      90
      ],
      "anchor_px": [
-      89.08,
-      62.25
+      95.17,
+      44.56
      ]
     },
     {
      "ppm": 343.055,
      "file": "footprints-270@343.webp",
      "size": [
-      356,
-      250
+      381,
+      179
      ],
      "anchor_px": [
-      178.16,
-      124.5
+      190.35,
+      89.12
      ]
     }
    ],
@@ -3609,36 +3936,36 @@
      "ppm": 85.764,
      "file": "footprints-315@86.webp",
      "size": [
-      89,
-      63
+      96,
+      45
      ],
      "anchor_px": [
-      44.54,
-      31.13
+      48.09,
+      22.28
      ]
     },
     {
      "ppm": 171.528,
      "file": "footprints-315@172.webp",
      "size": [
-      178,
-      125
+      191,
+      90
      ],
      "anchor_px": [
-      89.08,
-      62.25
+      95.17,
+      44.56
      ]
     },
     {
      "ppm": 343.055,
      "file": "footprints-315@343.webp",
      "size": [
-      356,
-      250
+      381,
+      179
      ],
      "anchor_px": [
-      178.16,
-      124.5
+      190.35,
+      89.12
      ]
     }
    ],
@@ -3650,11 +3977,11 @@
    "layer": "light",
    "hit": "none",
    "footprint": [
-    -0.45,
-    -0.45,
+    -0.575,
+    -0.575,
     0,
-    0.45,
-    0.45,
+    0.575,
+    0.575,
     0.01
    ],
    "tiers": [
@@ -3662,36 +3989,36 @@
      "ppm": 85.764,
      "file": "glow-desk-pool@86.webp",
      "size": [
-      100,
-      71
+      137,
+      65
      ],
      "anchor_px": [
-      49.98,
-      35.02
+      68.5,
+      32.03
      ]
     },
     {
      "ppm": 171.528,
      "file": "glow-desk-pool@172.webp",
      "size": [
-      200,
-      141
+      274,
+      129
      ],
      "anchor_px": [
-      99.96,
-      70.03
+      137.0,
+      64.05
      ]
     },
     {
      "ppm": 343.055,
      "file": "glow-desk-pool@343.webp",
      "size": [
-      400,
-      281
+      546,
+      257
      ],
      "anchor_px": [
-      199.93,
-      140.06
+      273.0,
+      128.1
      ]
     }
    ],
@@ -3716,36 +4043,36 @@
      "ppm": 85.764,
      "file": "glow-floor-spill@86.webp",
      "size": [
-      356,
-      250
+      381,
+      179
      ],
      "anchor_px": [
-      178.16,
-      124.5
+      190.35,
+      89.12
      ]
     },
     {
      "ppm": 171.528,
      "file": "glow-floor-spill@172.webp",
      "size": [
-      711,
-      499
+      760,
+      357
      ],
      "anchor_px": [
-      355.32,
-      249.0
+      379.7,
+      178.23
      ]
     },
     {
      "ppm": 343.055,
      "file": "glow-floor-spill@343.webp",
      "size": [
-      1422,
-      997
+      1519,
+      713
      ],
      "anchor_px": [
-      710.63,
-      498.0
+      759.39,
+      356.46
      ]
     }
    ],
@@ -3770,36 +4097,36 @@
      "ppm": 85.764,
      "file": "shadow-bench-3@86.webp",
      "size": [
-      506,
-      213
+      484,
+      179
      ],
      "anchor_px": [
-      253.25,
-      106.35
+      242.09,
+      89.17
      ]
     },
     {
      "ppm": 171.528,
      "file": "shadow-bench-3@172.webp",
      "size": [
-      1011,
-      426
+      968,
+      357
      ],
      "anchor_px": [
-      505.5,
-      212.71
+      484.18,
+      178.35
      ]
     },
     {
      "ppm": 343.055,
      "file": "shadow-bench-3@343.webp",
      "size": [
-      2020,
-      851
+      1936,
+      714
      ],
      "anchor_px": [
-      1010.0,
-      425.41
+      968.37,
+      356.7
      ]
     }
    ],
@@ -3823,36 +4150,36 @@
      "ppm": 85.764,
      "file": "shadow-bench-4@86.webp",
      "size": [
-      634,
-      248
+      600,
+      214
      ],
      "anchor_px": [
-      317.2,
-      123.78
+      299.63,
+      106.72
      ]
     },
     {
      "ppm": 171.528,
      "file": "shadow-bench-4@172.webp",
      "size": [
-      1267,
-      496
+      1199,
+      427
      ],
      "anchor_px": [
-      633.39,
-      247.57
+      599.27,
+      213.44
      ]
     },
     {
      "ppm": 343.055,
      "file": "shadow-bench-4@343.webp",
      "size": [
-      2532,
-      991
+      2397,
+      854
      ],
      "anchor_px": [
-      1265.79,
-      495.13
+      1198.54,
+      426.87
      ]
     }
    ],
@@ -3876,36 +4203,36 @@
      "ppm": 85.764,
      "file": "shadow-seat@86.webp",
      "size": [
-      143,
-      99
+      153,
+      71
      ],
      "anchor_px": [
-      71.53,
-      49.18
+      76.56,
+      35.36
      ]
     },
     {
      "ppm": 171.528,
      "file": "shadow-seat@172.webp",
      "size": [
-      286,
-      197
+      305,
+      142
      ],
      "anchor_px": [
-      143.06,
-      98.36
+      152.12,
+      70.72
      ]
     },
     {
      "ppm": 343.055,
      "file": "shadow-seat@343.webp",
      "size": [
-      572,
-      394
+      609,
+      283
      ],
      "anchor_px": [
-      286.11,
-      196.71
+      304.24,
+      141.44
      ]
     }
    ],
@@ -3929,36 +4256,36 @@
      "ppm": 85.764,
      "file": "floor-sheen@86.webp",
      "size": [
-      204,
-      123
+      210,
+      92
      ],
      "anchor_px": [
-      102.17,
-      61.0
+      105.23,
+      45.57
      ]
     },
     {
      "ppm": 171.528,
      "file": "floor-sheen@172.webp",
      "size": [
-      408,
-      245
+      419,
+      183
      ],
      "anchor_px": [
-      204.35,
-      122.01
+      209.46,
+      91.13
      ]
     },
     {
      "ppm": 343.055,
      "file": "floor-sheen@343.webp",
      "size": [
-      815,
-      489
+      838,
+      365
      ],
      "anchor_px": [
-      407.69,
-      244.02
+      418.92,
+      182.27
      ]
     }
    ],
@@ -3983,36 +4310,36 @@
      "ppm": 85.764,
      "file": "glow-wall-wash@86.webp",
      "size": [
-      104,
-      139
+      94,
+      165
      ],
      "anchor_px": [
-      51.96,
-      14.16
+      46.75,
+      14.25
      ]
     },
     {
      "ppm": 171.528,
      "file": "glow-wall-wash@172.webp",
      "size": [
-      208,
-      277
+      188,
+      330
      ],
      "anchor_px": [
-      103.91,
-      28.32
+      93.51,
+      28.51
      ]
     },
     {
      "ppm": 343.055,
      "file": "glow-wall-wash@343.webp",
      "size": [
-      416,
-      554
+      375,
+      660
      ],
      "anchor_px": [
-      207.82,
-      56.65
+      187.01,
+      57.02
      ]
     }
    ],
@@ -4037,36 +4364,36 @@
      "ppm": 85.764,
      "file": "glow-lantern-halo@86.webp",
      "size": [
-      80,
-      83
+      72,
+      98
      ],
      "anchor_px": [
-      39.97,
-      41.48
+      35.96,
+      48.83
      ]
     },
     {
      "ppm": 171.528,
      "file": "glow-lantern-halo@172.webp",
      "size": [
-      160,
-      166
+      144,
+      196
      ],
      "anchor_px": [
-      79.93,
-      82.96
+      71.93,
+      97.65
      ]
     },
     {
      "ppm": 343.055,
      "file": "glow-lantern-halo@343.webp",
      "size": [
-      320,
-      332
+      288,
+      391
      ],
      "anchor_px": [
-      159.87,
-      165.92
+      143.86,
+      195.31
      ]
     }
    ],
@@ -4091,36 +4418,36 @@
      "ppm": 85.764,
      "file": "glow-shade@86.webp",
      "size": [
-      24,
-      25
+      22,
+      30
      ],
      "anchor_px": [
-      11.99,
-      12.44
+      10.79,
+      14.65
      ]
     },
     {
      "ppm": 171.528,
      "file": "glow-shade@172.webp",
      "size": [
-      48,
-      50
+      44,
+      59
      ],
      "anchor_px": [
-      23.98,
-      24.89
+      21.58,
+      29.3
      ]
     },
     {
      "ppm": 343.055,
      "file": "glow-shade@343.webp",
      "size": [
-      96,
-      100
+      87,
+      118
      ],
      "anchor_px": [
-      47.96,
-      49.77
+      43.16,
+      58.59
      ]
     }
    ],
@@ -4131,15 +4458,17 @@
  "textures": {
   "floor-tile": {
    "file": "floor-tile.webp",
-   "metres": 0.6,
-   "source": "ai",
-   "from": "art/bakeoff/B2/floor-tile.webp (bake-off generation, reused)"
+   "metres": 4.8,
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "doc": "seamless: wraps left to right and top to bottom; no tile grid"
   },
   "wall-tile": {
    "file": "wall-tile.webp",
-   "metres": 2.0,
-   "source": "ai",
-   "from": "art/bakeoff/B2/wall-tile.webp (bake-off generation, reused)"
+   "metres": 4.0,
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "doc": "seamless: wraps left to right and top to bottom; no tile grid"
   }
  }
 }

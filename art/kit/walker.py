@@ -14,6 +14,8 @@ from pathlib import Path
 
 from PIL import Image
 
+from finish import PITCH, YAW   # the world camera the walker was rendered with (build_kit.py)
+
 REPO = Path(__file__).resolve().parent.parent.parent
 SRC = REPO / 'art' / 'build' / 'walker'
 OUT = REPO / 'fleet' / 'web' / 'assets' / 'world' / 'robot-placeholder'
@@ -54,7 +56,7 @@ def main() -> None:
                                 'footprint': [-0.25, -0.25, 0, 0.25, 0.25, info['height_m']], 'hit': 'alpha', 'tiers': tiers,
                                 'doc': f'placeholder: Walking, heading {45 * int(h)}° anticlockwise from +x; anchor between the feet'}
     manifest = {'version': 1, 'about': 'Placeholder robot: Walking in 8 headings, until the robot job\'s sprites land.',
-                'camera': {'pitch': 44.5, 'yaw': 21.25}, 'sprites': sprites}
+                'camera': {'pitch': PITCH, 'yaw': YAW}, 'sprites': sprites}
     (OUT / 'manifest.json').write_text(json.dumps(manifest, indent=1))
     print(f'walker: {len(sprites)} headings, {sum(f.stat().st_size for f in OUT.iterdir()) / 1e6:.2f} MB')
 

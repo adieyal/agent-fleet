@@ -28,7 +28,7 @@ BLENDER = REPO / 'art' / 'build' / 'kit'
 OUT = REPO / 'fleet' / 'web' / 'assets' / 'world' / 'kit'
 B2 = REPO / 'art' / 'bakeoff' / 'B2'
 
-PITCH, YAW = 44.5, 21.25
+PITCH, YAW = 28.0, 33.0   # the world camera (build_kit.py): the image model's, measured
 _p, _y = math.radians(PITCH), math.radians(YAW)
 # a world offset (x, y, z) in metres to screen metres (right, down): the engine's projection.js
 PX = (math.cos(_y), math.sin(_y), 0.0)
@@ -96,6 +96,7 @@ PROPS: dict[str, Prop] = {
     'question-desk': Prop('question-desk', (1.2, 0.7, 0.9), doc='with its "?" tent card; the lantern hangs over it',
                           slots={'lantern': [0, 0.1, 2.0], 'card': [0.1, 0.05, 0.85]}),
     'crate': Prop('crate', (0.7, 0.7, 0.7), doc='the waiting crate, hourglass on its front'),
+    'crate-stack': Prop('crate-stack', (1.4, 1.1, 1.55), doc='plain crates on a pallet: storage furniture (the hourglass crate means waiting)'),
     # (l2's diamond is ~70 px wide at its 171.5 px/m)
     'lantern': Prop('lantern', (0.36, 0.36, 0.66), base=-0.33, shadow=0, doc='the attention lantern: magenta only here; '
                     'anchor at the diamond centre, cable above; the front facet is blank for the glyph',
@@ -208,7 +209,7 @@ def fit_prop(name: str, p: Prop) -> dict:
 # --- bench pieces: one generation of a left end, a middle module and a right end, cut to tile -----------------------
 
 DEPTH, TOP_Z, TOP_T = 0.8, 0.74, 0.04   # the desk top's depth, height and thickness, metres
-_n = (0.653, 0.362)                      # screen normal to the desk's depth direction (0.362, -0.653): across a seam
+BAY_M = 3.6                              # a structural bay, the length of repeating pieces
 
 
 def _wood(im: Image.Image):
@@ -339,7 +340,8 @@ def bench_pieces() -> tuple[dict, float]:
                      # module sits at x 0..MODULE, the top's far edge at y 0, its surface at z 0)
                      'anchor': 'desk top, far edge, at the module\'s left seam',
                      'footprint': [0, -DEPTH - 0.02, -TOP_Z, MODULE, 0, 0],
-                     'slots': {'seat': [MODULE / 2, 0.14, 0.47 - TOP_Z], 'lamp': [0.18, -0.12, 0],
+                     # the seat 0.3 m behind the far edge: a seated robot's legs are under the top (floor review 1)
+                     'slots': {'seat': [MODULE / 2, 0.3, 0.47 - TOP_Z], 'lamp': [0.18, -0.12, 0],
                                'desk_top': [MODULE / 2, -DEPTH / 2, 0], 'floor_centre': [MODULE / 2, -DEPTH / 2, -TOP_Z]},
                      'doc': 'one seat module of the long bench: tile the left end, middles and right end MODULE apart'}
     return out, MODULE
@@ -459,9 +461,51 @@ def procedural(module: float) -> dict:
                      'footprint': [-w_m / 2, -0.01, top_m - img.height / SRC, w_m / 2, 0, top_m], 'tiers': tiers, 'doc': doc,
                      'blend': 'lighter'}
 
+    def plane_sprite(name, img, origin, u, v, footprint, doc, layer='ground', extra=None):
+        """An image drawn flat in any plane (its pixel (0, 0) at `origin`, x along `u`, y along `v`)."""
+        tiers = []
+        for ppm in TIERS:
+            spr, anchor = on_plane(img, SRC, origin, u, v, ppm)
+            tiers.append(save(name, ppm, spr, anchor))
+        out[name] = {'source': 'procedural', 'from': 'art/kit/finish.py', 'layer': layer, 'hit': 'none',
+                     'footprint': footprint, 'tiers': tiers, 'doc': doc, **(extra or {})}
+
+    def band(length_m, depth_m, strength, power=1.6):
+        """A dark gradient, darkest along its top edge (y = 0) and fading over depth_m; uniform along its length,
+        so bays placed end to end join without a seam."""
+        w, h = int(length_m * SRC), int(depth_m * SRC)
+        a = Image.new('L', (w, h))
+        a.putdata([int(strength * (1 - y / h) ** power) for y in range(h) for _ in range(w)])
+        img = Image.new('RGBA', (w, h), (40, 44, 60, 0))
+        img.putalpha(a)
+        return img
+
+    # ambient occlusion where the walls meet the floor (floor review 1, point 4): on the floor along the back wall
+    # (anchor: the wall's foot at the bay's left end) and along the left wall (anchor: its foot at the bay's front
+    # end); and on each wall's foot, fading upwards
+    ao = band(BAY_M, 1.1, 120)
+    plane_sprite('ao-floor-x', ao, (0, 0, 0), (1, 0, 0), (0, -1, 0), [0, -1.1, 0, BAY_M, 0, 0.01],
+                 'occlusion on the floor along the back wall, one bay')
+    plane_sprite('ao-floor-y', ao.rotate(0), (0, BAY_M, 0), (0, -1, 0), (1, 0, 0), [0, 0, 0, 1.1, BAY_M, 0.01],
+                 'occlusion on the floor along the left wall, one bay')
+    foot = band(BAY_M, 0.7, 95).transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+    plane_sprite('ao-wall-x', foot, (0, 0, 0.7), (1, 0, 0), (0, 0, -1), [0, -0.01, 0, BAY_M, 0, 0.7],
+                 'occlusion at the foot of the back wall, one bay')
+    plane_sprite('ao-wall-y', foot, (0, 0, 0.7), (0, 1, 0), (0, 0, -1), [0, 0, 0, 0.01, BAY_M, 0.7],
+                 'occlusion at the foot of the left wall, one bay')
+    # daylight from the windows of the cut-away front wall: long soft patches on the floor, cool against the lamps
+    wl, wd = int(1.3 * SRC), int(2.8 * SRC)
+    m = Image.new('L', (wl, wd), 0)
+    ImageDraw.Draw(m).rectangle((0.2 * SRC, 0.2 * SRC, 1.1 * SRC, 2.6 * SRC), fill=255)
+    m = m.filter(ImageFilter.GaussianBlur(0.16 * SRC)).point(lambda v: int(v * 0.5))
+    win = Image.new('RGBA', (wl, wd), (236, 242, 255, 0))
+    win.putalpha(m)
+    floor_sprite('glow-window', win, 'daylight through a window of the cut-away front wall, on the floor', 'ground',
+                 {'blend': 'lighter', 'hit': 'none'})
+
     for a in range(0, 360, 45):
         floor_sprite(f'footprints-{a:03d}', footprints(a), f'a pair of prints walking {a}° from +x (anticlockwise from above)', 'ground')
-    floor_sprite('glow-desk-pool', radial(int(0.9 * SRC), hexrgb('#fee095'), 0.75),
+    floor_sprite('glow-desk-pool', radial(int(1.15 * SRC), hexrgb('#ffcf73'), 0.9),
                  'warm pool under a desk lamp, on the desk top (place at desk height)', 'light', {'blend': 'lighter'})
     floor_sprite('glow-floor-spill', radial(int(3.2 * SRC), hexrgb('#fee095'), 0.28),
                  'low warm spill on the floor in front of an active bench', 'light', {'blend': 'lighter'})
@@ -478,7 +522,7 @@ def procedural(module: float) -> dict:
         out_img.putalpha(a)
         return out_img
     for n in (3, 4):
-        a = ImageChops.lighter(soft_rect(n * module + 0.1, 0.78, 0.05, 0.035, 150), soft_rect(n * module + 0.3, 1.0, 0.2, 0.12, 80))
+        a = ImageChops.lighter(soft_rect(n * module + 0.1, 0.78, 0.05, 0.035, 195), soft_rect(n * module + 0.4, 1.1, 0.25, 0.15, 115))
         floor_sprite(f'shadow-bench-{n}', shadow(a), f'the soft contact shadow of a {n}-seat bench, as one piece', 'ground', {'hit': 'none'})
     a = ImageChops.lighter(soft_rect(0.5, 0.45, 0.2, 0.04, 140), soft_rect(0.7, 0.62, 0.3, 0.1, 70))
     floor_sprite('shadow-seat', shadow(a), 'a seated robot and its chair\'s contact shadow', 'ground', {'hit': 'none'})
@@ -513,14 +557,61 @@ def procedural(module: float) -> dict:
 
 # --- textures ---------------------------------------------------------------------------------------
 
+def _tileable_noise(size: int, cells: int, seed: int) -> Image.Image:
+    """Smooth value noise that wraps: random values on a coarse grid, upscaled bicubically from a 3 x 3 tiling and
+    cropped to the middle, so the left edge continues into the right and the top into the bottom."""
+    import random
+    rnd = random.Random(seed)
+    small = Image.new('L', (cells, cells))
+    small.putdata([rnd.randrange(256) for _ in range(cells * cells)])
+    big = Image.new('L', (cells * 3, cells * 3))
+    for i in range(3):
+        for j in range(3):
+            big.paste(small, (i * cells, j * cells))
+    big = big.resize((size * 3, size * 3), Image.Resampling.BICUBIC)
+    return big.crop((size, size, 2 * size, 2 * size))
+
+
+def _surface(size: int, base: tuple[int, int, int], octaves, seed: int) -> Image.Image:
+    """A continuous material: a base colour moved by a few octaves of wrapping noise (cells across, strength)."""
+    lum = Image.new('F', (size, size), 0.0)
+    for k, (cells, strength) in enumerate(octaves):
+        n = _tileable_noise(size, cells, seed + k).point(lambda v, s=strength: (v - 128) / 128 * s, 'F')
+        lum = _add_f(lum, n)
+    px = lum.load()
+    out = Image.new('RGB', (size, size))
+    op = out.load()
+    for y in range(size):
+        for x in range(size):
+            f = 1 + px[x, y]
+            op[x, y] = tuple(max(0, min(255, round(c * f))) for c in base)
+    return out
+
+
+def _add_f(a: Image.Image, b: Image.Image) -> Image.Image:
+    pa, pb = a.load(), b.load()
+    out = Image.new('F', a.size)
+    po = out.load()
+    for y in range(a.height):
+        for x in range(a.width):
+            po[x, y] = pa[x, y] + pb[x, y]
+    return out
+
+
 def textures() -> dict:
-    sprites = json.loads((B2 / 'sprites.json').read_text())['textures']
+    """The floor and the walls as continuous materials (floor review 1, point 3): no tiles or grid, only soft
+    large-scale variation and a fine grain, generated to wrap seamlessly over a large repeat (4.8 m of floor, 4 m of
+    wall) so the repeat isn't seen. Colours: the concept images' floor and plaster."""
     out = {}
-    for name in ('floor-tile', 'wall-tile'):
-        t = sprites[name]
-        shutil.copyfile(B2 / t['file'], OUT / t['file'])
-        out[name] = {'file': t['file'], 'metres': t['metres'], 'source': 'ai',
-                     'from': f'art/bakeoff/B2/{t["file"]} (bake-off generation, reused)'}
+    for name, size, metres, base, octaves, seed in (
+        ('floor-tile', 512, 4.8, (224, 222, 228), [(3, 0.022), (9, 0.016), (48, 0.010), (170, 0.008)], 11),
+        ('wall-tile', 512, 4.0, (206, 200, 196), [(2, 0.030), (7, 0.014), (60, 0.008), (200, 0.010)], 23),
+    ):
+        img = _surface(size, base, octaves, seed)
+        file = f'{name}.webp'
+        img.save(OUT / file, 'WEBP', quality=90, method=4)
+        out[name] = {'file': file, 'metres': metres, 'source': 'procedural', 'from': 'art/kit/finish.py',
+                     'doc': 'seamless: wraps left to right and top to bottom; no tile grid'}
     return out
 
 

@@ -1,6 +1,7 @@
 """The sprite engine's pure parts (fleet/web/js/world/): depth sorting by footprint, hit testing and level-of-detail
 selection, run in the browser against the modules the deck serves."""
 
+import math
 from collections.abc import Iterator
 from typing import Any
 
@@ -156,7 +157,8 @@ def test_projection_round_trips_and_matches_the_l2_camera(page: Page) -> None:
       return { back, slope: x[1] / x[0], y, z, nearer: m.depth([0, -1, 0]) > m.depth([0, 0, 0]) };
     }""")
     assert out["back"] == pytest.approx([3.2, -1.7, 0])
-    assert out["slope"] == pytest.approx(0.2726, abs=1e-4)  # l2's desk-edge slope
-    assert out["y"] == pytest.approx([0.3624, -0.6533], abs=1e-4)
-    assert out["z"] == pytest.approx([0, -0.7133], abs=1e-4)
+    # pitch 28, yaw 33: the image model's camera (floor review 1)
+    assert out["slope"] == pytest.approx(math.sin(math.radians(28)) * math.tan(math.radians(33)), abs=1e-4)
+    assert out["y"] == pytest.approx([math.sin(math.radians(33)), -math.sin(math.radians(28)) * math.cos(math.radians(33))], abs=1e-4)
+    assert out["z"] == pytest.approx([0, -math.cos(math.radians(28))], abs=1e-4)
     assert out["nearer"]
