@@ -5,7 +5,7 @@ from dataclasses import asdict
 from datetime import datetime
 from typing import Callable
 
-from fleet.modules.execution import Action, Claim, Delivery, Run
+from fleet.modules.execution import Action, Claim, Delivery, Run, Usage
 from fleet.modules.attention import AttentionFacade
 from .repository import Repository
 from .store import Store, UnitOfWork
@@ -13,6 +13,8 @@ from .store import Store, UnitOfWork
 
 def decode_run(payload: str) -> Run:
     values = json.loads(payload)
+    if values.get("usage") is not None:
+        values["usage"] = Usage(**values["usage"])
     for key in ("start", "end", "last_observed"):
         if values[key] is not None:
             values[key] = datetime.fromisoformat(values[key])

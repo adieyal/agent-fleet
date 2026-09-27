@@ -33,7 +33,7 @@ def observe(repository: ExecutionRepository, host: str, observation: JobObservat
             return None
         updated = replace(run, status=observation.run_status(), reason="lost" if observation.status == "lost" else None,
                           runtime=observation.runtime, start=observation.start, end=observation.end,
-                          last_observed=observation.observed_at)
+                          last_observed=observation.observed_at, usage=observation.usage)
         if updated != run:
             transaction.update(updated, "fleetd")
         if updated.status in ("succeeded", "failed", "stopped"):

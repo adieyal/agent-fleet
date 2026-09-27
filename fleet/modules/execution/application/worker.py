@@ -7,7 +7,7 @@ from collections.abc import Callable
 from fleet.errors import FleetError
 from . import observe
 from .ports import ExecutionRepository
-from ..domain import JobObservation, Run
+from ..domain import JobObservation, Run, Usage
 
 
 def deliver(repository: ExecutionRepository, run: Run, call: Callable, push: Callable, *, reconcile: bool) -> dict:
@@ -23,7 +23,7 @@ def deliver(repository: ExecutionRepository, run: Run, call: Callable, push: Cal
                 or job["schema_version"] != 3 or job["fingerprint"] != digest):
             raise FleetError("worker returned a different run; run outcome is unknown")
         observe(repository, run.host, JobObservation(job["id"], job["status"], run.runtime,
-                                                    run.start, run.end, run.last_observed))
+                                                    run.start, run.end, run.last_observed, Usage.from_worker(job)))
         return job
 
     def recover() -> dict:

@@ -23,6 +23,7 @@ from rich.text import Text
 from rich.tree import Tree
 
 from fleet import transport
+from fleet.remote.fleetd import _runtime
 from fleet.modules import workspace as projects
 from fleet.composition import open_attention, open_decisions, open_execution, open_library, open_records, open_store, open_work, open_workspace
 from fleet.projections.project import project_status
@@ -45,7 +46,6 @@ STEP_STYLE = {
 TODO_STYLE = {"in_progress": ("▸", "cyan"), "pending": ("·", "dim"), "completed": ("✓", "dim green")}
 TOOL_ICON = {"bash": "$", "edit": "✎", "read": "📖", "search": "🔍", "web": "🌐", "think": "💭",
              "delegate": "👥", "plan": "📝", "other": "⚙"}
-DEFAULT_PERMISSION = {"claude": "acceptEdits", "codex": "workspace-write"}
 LIST_ITEM = re.compile(r"^\s*(?:[-*]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+)(.+)$")
 
 
@@ -260,7 +260,10 @@ def command_dispatch(arguments: argparse.Namespace) -> None:
     steps = read_steps(arguments)
     if not steps:
         raise FleetError("give at least one --step or a --steps-file")
-    permission = arguments.permission or DEFAULT_PERMISSION[arguments.agent]
+    try:
+        permission = _runtime(arguments.agent).dispatch_permission(arguments.permission, arguments.allow, arguments.add_dir)
+    except ValueError as error:
+        raise FleetError(str(error)) from error
     fleetd_arguments = ["create", "--project", arguments.project, "--description", arguments.description,
                         "--agent", arguments.agent, "--cwd", arguments.cwd, "--permission", permission,
                         "--steps-file", "/dev/stdin", "--hold"]
@@ -268,11 +271,7 @@ def command_dispatch(arguments: argparse.Namespace) -> None:
         if value:
             fleetd_arguments += [flag, value]
     if arguments.allow:
-        if arguments.agent != "claude":
-            raise FleetError("--allow applies to claude jobs only (codex uses its sandbox)")
         fleetd_arguments += ["--allowed-tools", json.dumps(arguments.allow)]
-    if arguments.add_dir and arguments.agent != "claude":
-        raise FleetError("--add-dir applies to claude jobs only")
     for directory in arguments.add_dir or []:
         fleetd_arguments += ["--add-dir", directory]
     for pair in arguments.env or []:
@@ -814,7 +813,7 @@ def print_status_item(item: dict[str, Any], depth: int = 0) -> None:
     print(f"{indent}  Runs:")
     for run in item["runs"]:
         print(f"{indent}    {run['id']} on {run['host']} ({run['remote_job_id']}): {run['status']}")
-        for field in ("runtime", "reason", "start", "end", "last_observed"):
+        for field in ("runtime", "reason", "start", "end", "last_observed", "usage"):
             value = "unknown" if run[field] is None else run[field]
             print(f"{indent}      {field.replace('_', ' ').capitalize()}: {value}")
     print(f"{indent}  Library:")
