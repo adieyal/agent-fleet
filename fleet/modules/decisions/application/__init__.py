@@ -15,12 +15,12 @@ def record_decision(repository, clock, records, authorization, source_run: str,
     decision = Decision(str(uuid4()), None, question, answer, authorization.actor, context,
                         (authorization.work_item,), clock(), authorization.id,
                         authorization.mandate_version, source_run)
+    body = json.dumps(asdict(decision), default=str)
     with repository.transaction() as transaction:
         transaction.insert(decision)
-    result = records.write(authorization.project, f'decisions/{decision.id}.json',
-        json.dumps(asdict(decision), default=str), key=decision.id, actor=authorization.actor, source_run=source_run)
-    if result['state'] != 'confirmed':
-        raise ValueError(result['error'])
+        intent = transaction.records.prepare(authorization.project, f'decisions/{decision.id}.json',
+            body, key=decision.id, actor=authorization.actor, source_run=source_run)
+    records.publish(intent, body)
     return decision
 
 

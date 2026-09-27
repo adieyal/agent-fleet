@@ -124,6 +124,64 @@ def test_facades_are_shared_per_store(orchestration):
     assert composition.open_execution(store).work is work
 
 
+def test_decision_commit_failure_keeps_atomic_intent(orchestration, monkeypatch):
+    commands, store, _, _, _, _, run, _ = orchestration
+    records = composition.open_records(store)
+    def fail(root, intent, body):
+        reopened = composition.facades(composition.open_store(store.path))
+        decision, = reopened.decisions.list()
+        pending = next(entry for entry in reopened.records.intents() if entry['key'] == decision.id)
+        assert pending['state'] == 'pending'
+        raise ValueError('commit refused')
+    monkeypatch.setattr(records.writer, 'commit', fail)
+    decision = commands.execute('decide', dict(question='Q', answer='A', context='C'))
+    intent = next(entry for entry in records.intents() if entry['key'] == decision.id)
+    assert intent['state'] == 'failed' and intent['error'] == 'commit refused'
+    assert intent['source_run'] == run.id
+
+
+def test_orchestrator_queries_own_run_without_scans(orchestration, monkeypatch):
+    commands, store, _, _, _, _, run, _ = orchestration
+    def no_scan():
+        raise AssertionError('full scan')
+    execution = composition.open_execution(store)
+    monkeypatch.setattr(execution, 'actions', no_scan)
+    monkeypatch.setattr(execution, 'runs', no_scan)
+    decision = commands.execute('decide', dict(question='Q', answer='A', context='C'))
+    assert decision.source_run == run.id
+    with pytest.raises(LookupError):
+        execution.activation_run('another-activation', commands.activation.id)
+
+
+def test_decision_rolls_back_when_intent_cannot_be_saved(orchestration, monkeypatch):
+    from fleet.infrastructure.sqlite.records import RecordsRepository
+    commands, store, _, _, _, _, _, _ = orchestration
+    before = store.latest_sequence()
+    def fail(self, intent):
+        raise ValueError('intent refused')
+    monkeypatch.setattr(RecordsRepository, 'save', fail)
+    with pytest.raises(ValueError, match='intent refused'):
+        commands.execute('decide', dict(question='Q', answer='A', context='C'))
+    assert composition.open_decisions(store).list() == []
+    assert store.latest_sequence() == before
+
+
+def test_decision_recovery_failure_preserves_commit_error(orchestration, monkeypatch):
+    commands, store, _, _, _, _, _, _ = orchestration
+    records = composition.open_records(store)
+    def commit(*args):
+        raise ValueError('original commit error')
+    def find(*args):
+        raise ValueError('recovery error')
+    monkeypatch.setattr(records.writer, 'commit', commit)
+    monkeypatch.setattr(records.writer, 'find', find)
+    with pytest.raises(ValueError, match='original commit error'):
+        commands.execute('decide', dict(question='Q', answer='A', context='C'))
+    decision, = composition.open_decisions(store).list()
+    intent = next(entry for entry in records.intents() if entry['key'] == decision.id)
+    assert intent['state'] == 'failed' and intent['error'] == 'original commit error'
+
+
 def test_complete_requires_separate_accept_authority(orchestration):
     commands, store, item, judged, accepted, checked, _, _ = orchestration
     work = composition.open_work(store)

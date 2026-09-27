@@ -25,15 +25,18 @@ def decode(payload: str) -> Decision:
 class DecisionRepository(Repository):
     def __init__(self, store: Store, attention: Callable[[UnitOfWork], AttentionFacade],
                  work: Callable[[UnitOfWork], WorkFacade],
-                 execution: Callable[[UnitOfWork], ExecutionFacade]) -> None:
+                 execution: Callable[[UnitOfWork], ExecutionFacade], *, records=None) -> None:
         super().__init__(store)
         self.attention_factory, self.work_factory = attention, work
         self.execution_factory = execution
+        self.records_factory = records
 
     def bind(self, unit: UnitOfWork) -> None:
         self.attention = self.attention_factory(unit)
         self.work = self.work_factory(unit)
         self.execution = self.execution_factory(unit)
+        if self.records_factory is not None:
+            self.records = self.records_factory(unit)
 
     def insert(self, decision: Decision) -> None:
         if self.unit is None:

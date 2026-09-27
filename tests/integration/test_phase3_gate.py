@@ -16,13 +16,17 @@ def test_phase3_gate_from_persisted_slice(tmp_path, monkeypatch, capsys):
     def no_hosts(*args, **kwargs):
         raise AssertionError('scenario must use faked hosts')
     monkeypatch.setattr(transport, 'call', no_hosts)
+    before = store.latest_sequence()
+    attention = composition.open_attention(store).list()
     report = run_scenario(store, item.id, tmp_path)
+    assert store.latest_sequence() == before
+    assert composition.open_attention(store).list() == attention
     assert set(report) == {'working_on', 'complete', 'next', 'failed', 'needs_user'}
     assert report['complete'] == {'basis': 'criteria', 'complete': 1, 'total': 3}
     assert len(report['needs_user']) == 2
     cli.main(['status', 'p', '--json'])
     node = json.loads(capsys.readouterr().out)['work_items'][0]
-    assert node['interruptions'] == 2
+    assert node['interruptions'] == 0
 
 
 def test_status_counts_unique_user_items_for_slice_subtree(capsys):
@@ -68,5 +72,5 @@ def test_operator_runner_targets_supplied_slice(tmp_path, monkeypatch, capsys):
     main()
     assert 'PASS: Phase 3 gate' in capsys.readouterr().out
     children = [entry for entry in composition.open_work(store).list() if entry.parent == item.id]
-    assert len(children) == 1 and children[0].title == 'Phase 3 gate'
+    assert children == []
     assert composition.open_work(store).get(item.id) == item

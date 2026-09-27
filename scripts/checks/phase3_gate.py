@@ -1,9 +1,10 @@
-"""Operator-run Phase 3 scenario beneath a real slice, with faked hosts."""
+"""Operator-run Phase 3 scenario in a throwaway store, with faked hosts."""
 
 import argparse
 import json
 from pathlib import Path
 import tempfile
+import subprocess
 from uuid import uuid4
 
 from fleet import composition
@@ -18,7 +19,13 @@ def run_scenario(store, slice_id: str, directory: Path) -> dict:
     parent = services.work.get(slice_id)
     if parent.kind != 'milestone':
         raise ValueError('the slice must be a milestone')
-    item = services.work.add(project=parent.project, parent=parent.id, kind='milestone',
+    store = composition.open_store(directory / 'gate.db')
+    composition.open_workspace(store, initial={})
+    services = composition.facades(store)
+    root = directory / 'gate-records'
+    subprocess.run(['git', 'init', str(root)], check=True, capture_output=True, timeout=10)
+    services.records.register('phase3-gate', root, actor='user')
+    item = services.work.add(project='phase3-gate', kind='milestone',
         title='Phase 3 gate', goal='Verify delegated acceptance', actor='user')
     judged = services.work.add_criterion(item.id, text='Routine review', verification='judged', actor='user')
     accepted = services.work.add_criterion(item.id, text='User acceptance', verification='accepted', actor='user')
@@ -98,11 +105,9 @@ def run_scenario(store, slice_id: str, directory: Path) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Run the scripted Phase 3 gate against a real slice. '
-        'Persists a Phase 3 gate milestone beneath it, a gate-specific mandate and routine decision in its '
-        'registered management repository, two proposals for the user, and faked host outcomes. '
-        'Requires a writable store and clean management repository. Does not contact hosts or run an AI agent. '
-        'Gate records remain for review; each invocation adds a new gate milestone. No M3 baseline exists yet.')
+    parser = argparse.ArgumentParser(description='Validate a real slice and run the scripted Phase 3 gate '
+        'in a temporary store and management repository. The real slice and its attention stay unchanged. '
+        'Does not contact hosts or run an AI agent. No M3 baseline exists yet.')
     parser.add_argument('slice', help='real milestone work-item ID in the configured Fleet store')
     args = parser.parse_args()
     store = composition.open_store()
