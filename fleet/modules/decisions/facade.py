@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Callable
 from fleet.modules.execution import ExecutionFacade
 
-from .application import answer_question
+from .application import answer_question, propose
 from .application.ports import DecisionRepository
 from .domain import Decision
 
@@ -28,3 +28,9 @@ class DecisionsFacade:
 
     def list(self) -> list[Decision]:
         return self.repository.list()
+
+    def propose(self, activation, *, question: str, change: str, reason: str):
+        return propose(self.repository, self.clock, activation, question=question, change=change, reason=reason)
+
+    def proposals(self):
+        return self.repository.proposals()

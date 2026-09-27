@@ -53,3 +53,12 @@ class RecordsFacade:
         if body is None:
             raise LookupError('mandate is not recorded')
         return Mandate.parse(body)
+
+    def mandate_version(self, project: str, path: str, *, revision: str | None = None) -> tuple[str, Mandate]:
+        if revision is None:
+            record = self.repository.current(project, path)
+            if record is None:
+                raise LookupError('mandate is not recorded')
+            revision = record['revision']
+        body = self.writer.read(self.workspace.management_repository(project), path, revision)
+        return revision, Mandate.parse(body)

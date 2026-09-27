@@ -8,6 +8,7 @@ from .domain import Action, Claim, Delivery, DispatchResult, JobObservation, Run
 from fleet.modules.attention import AttentionItem
 from .application.dispatch import dispatch, retry, resolve_unknown
 from fleet.modules.work import WorkFacade
+from fleet.modules.authority import AuthorityRejected
 
 if TYPE_CHECKING:
     from fleet.modules.decisions import Decision
@@ -15,10 +16,12 @@ if TYPE_CHECKING:
 
 class ExecutionFacade:
     def __init__(self, repository: ExecutionRepository, work: WorkFacade,
-                 prepare_dispatch: Callable[[], object] | None = None, *, send: InputSender | None = None) -> None:
+                 prepare_dispatch: Callable[[], object] | None = None, *, send: InputSender | None = None,
+                 authority=None) -> None:
         self.repository, self.work = repository, work
         self.send = send
         self.prepare_dispatch = prepare_dispatch
+        self.authority = authority
 
     def queue_answer(self, item: AttentionItem, decision: "Decision") -> None:
         queue(self.repository, item, decision)
@@ -37,7 +40,14 @@ class ExecutionFacade:
     def actions(self) -> list[Action]:
         return self.repository.actions()
 
-    def dispatch(self, work_item: str | None, **arguments) -> DispatchResult:
+    def dispatch(self, work_item: str | None, *, activation: str | None = None, **arguments) -> DispatchResult:
+        if 'authorization' in arguments:
+            raise AuthorityRejected('supply an activation ID')
+        if activation is not None:
+            if self.authority is None:
+                raise AuthorityRejected('activation authority is not configured')
+            arguments['authorization'] = self.authority().require('dispatch', work_item,
+                actor=arguments['actor'], activation=activation)
         if self.prepare_dispatch is not None:
             self.prepare_dispatch()
         return dispatch(self.repository, work_item, **arguments)
