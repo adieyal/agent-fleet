@@ -353,13 +353,17 @@ export function demoSource() {
     ['node-c', 'agent-fleet', 'Unit tests for the fleetd parsers', 'codex', 'gpt-5-codex', ['Claude stream fixtures', 'Codex exec fixtures', 'Runner lock tests'], 0, 'queued'],
     ['node-b', 'demo-docs', 'Refresh the onboarding guide screenshots', 'claude', 'claude-opus-5-5', ['List stale screenshots', 'Capture new ones', 'Update the markdown'], 1, 'stalled'],
     ['node-a', 'demo-docs', 'Support article: PAR by weekday', 'claude', 'claude-opus-5-5', ['Read the feature PR', 'Draft the article', 'Tighten the copy'], 3, 'done'],
+    // a batch of six at the comms dish, checking links: more than five at one station gather into a group figure
+    ...[1, 2, 3, 4, 5, 6].map(n => [['node-a', 'node-b', 'node-c'][n % 3], 'demo-docs', `Check the links in guide chapter ${n}`, 'claude', 'claude-opus-5-5',
+      ['Collect the links', 'Fetch each one', 'List the dead ones'], 1, 'running']),
   ];
   const t0 = now();
+  const focusOf = project => project === 'demo-parser' ? 'background' : 'priority';   // lit warm while its parse runs
   function newTodos(job) { const start = Math.floor(rand() * 4); job.todos = TODO_POOL.slice(start, start + 3).map((text, i) => ({ text, status: i === 0 ? 'in_progress' : 'pending' })); }
   const jobs = specs.map(([host, project, description, agent, model, titles, cur, status], i) => {
     const id = hash(description).toString(16).padStart(8, '0').slice(0, 6);
     const job = {
-      id, host, project, description, agent, model, status, cwd: `~/src/${project}`,
+      id, host, project, focus: focusOf(project), description, agent, model, status, cwd: `~/src/${project}`,
       permission: agent === 'claude' ? 'acceptEdits' : 'workspace-write',
       created_at: t0 - 3600 + i * 240, updated_at: t0 - (status === 'stalled' ? 1500 : 20),
       session_id: null, tmux: `tmux -L fleet attach -t fleet-${id}`, todos: [], events: [], activity: null, ticks: 0, documents: [],
@@ -381,18 +385,23 @@ export function demoSource() {
     job.activity = [...job.events].reverse().find(e => e.kind === 'tool' || e.kind === 'text' || e.kind === 'error') || null;
     return job;
   });
+  const batch = new Set(jobs.filter(job => job.description.startsWith('Check the links')));
+  for (const job of batch) push(job, demoTool('web'));
 
-  // interactive CLI sessions, shaped like `fleetd sessions` output: a working Claude, an idle one, a working Codex
+  // interactive CLI sessions, shaped like `fleetd sessions` output: a working Claude, an idle one, a working Codex, and
+  // a Claude idle for an hour (off the deck) that gets back to work soon after the page opens
   const sessionSpecs = [
-    ['node-a', 'agent-fleet', 'claude', 'claude-opus-5-5', '00000000-0000-4000-8000-000000000001', 'Show live CLI sessions on the deck', 'working', 1900],
-    ['node-b', 'demo-store', 'claude', 'claude-opus-5-5', '00000000-0000-4000-8000-000000000002', 'Why does the stocktake import modal re-render twice?', 'idle', 2600],
-    ['node-c', 'demo-parser', 'codex', 'gpt-6-sol', '00000000-0000-4000-8000-000000000003', 'review the unstaged changes are they correct and safe?', 'working', 900],
+    ['node-a', 'agent-fleet', 'claude', 'claude-opus-5-5', '00000000-0000-4000-8000-000000000001', 'Show live CLI sessions on the deck', 'working', 1900, 4],
+    ['node-b', 'demo-store', 'claude', 'claude-opus-5-5', '00000000-0000-4000-8000-000000000002', 'Why does the stocktake import modal re-render twice?', 'idle', 2600, 380],
+    ['node-c', 'demo-parser', 'codex', 'gpt-6-sol', '00000000-0000-4000-8000-000000000003', 'review the unstaged changes are they correct and safe?', 'working', 900, 4],
+    ['node-b', 'demo-store', 'claude', 'claude-opus-5-5', '00000000-0000-4000-8000-000000000004', 'Tidy the supplier import logs', 'idle', 5400, 3600],
   ];
-  const sessions = sessionSpecs.map(([host, project, agent, model, id, title, status, startedAgo], i) => {
+  const dormant = sessionSpecs.length - 1;
+  const sessions = sessionSpecs.map(([host, project, agent, model, id, title, status, startedAgo, quietFor], i) => {
     const cwd = `~/src/${project}`;
     const session = {
-      id, host, agent, cwd, project, title, status, model, started_at: t0 - startedAgo,
-      updated_at: t0 - (status === 'idle' ? 380 : 4), todos: [], events: [], activity: null,
+      id, host, agent, cwd, project, focus: focusOf(project), title, status, model, started_at: t0 - startedAgo,
+      updated_at: t0 - quietFor, todos: [], events: [], activity: null,
       resume: `cd ${cwd} && ${agent === 'codex' ? 'codex resume' : 'claude --resume'} ${id}`,
     };
     for (let k = 0; k < 6; k++) session.events.push({ ...demoTool(pickTool()), ts: t0 - 700 + k * 50 + i });
@@ -413,7 +422,7 @@ export function demoSource() {
     docText.set(`${job.host}:${job.id}:${id}`, markdown);
   }
   function addReport(job, i, mtime) { addDoc(job, `report-${i}`, 'report', `Step ${i + 1}: ${job.steps[i].title}`, i, stepReport(job, i), mtime); }
-  const [suppliers, flaky, , shadow, luc, deck, , , article] = jobs;
+  const [suppliers, flaky, review, shadow, luc, deck, , , article] = jobs;
   addReport(suppliers, 0, t0 - 2400); addReport(suppliers, 1, t0 - 1300);
   addDoc(suppliers, 'file-0', 'file', 'docs/suppliers-v2-parity.md', 1, DEMO_DOCS.deckLayout.replace('Deck layout notes', 'Suppliers V2 parity notes'), t0 - 1250);
   addReport(flaky, 0, t0 - 900);
@@ -511,10 +520,22 @@ export function demoSource() {
     job.updated_at = now();
     if (e.kind === 'tool' || e.kind === 'text' || e.kind === 'error') job.activity = job.events[job.events.length - 1];
   }
+  // failed and stalled jobs are blockers under their room's lantern, as fleet/attention.py derives them
+  function blocker(job) {
+    const step = job.steps.find(s => s.status === (job.status === 'failed' ? 'failed' : 'running'));
+    return { id: `job:${job.host}:${job.id}:${job.status}:${step.index}`, kind: 'blocker', state: 'open', project: job.project,
+      owner: { type: 'job', host: job.host, id: job.id, key: `${job.host}:${job.id}` },
+      summary: `step ${step.index + 1} ${job.status}: ${step.title}`, since: job.updated_at };
+  }
+  function finish(job) { job.status = 'done'; job.ticks = 0; job.todos = []; push(job, { kind: 'job', status: 'done', summary: 'job done' }); }
   function tick() {
     tickCount++;
     if (tickCount === 3) { addDoc(deck, 'file-0', 'file', 'docs/deck-layout.md', 2, DEMO_DOCS.deckLayout); push(deck, { kind: 'tool', tool: 'edit', summary: 'docs/deck-layout.md' }); }
     if (tickCount === 7) addDoc(flaky, 'outbox-root-cause.md', 'outbox', 'root-cause.md', null, DEMO_DOCS.rootCause);
+    if (tickCount === 4 && review.status === 'running') {   // one job finishes soon after the page opens, so its android is seen walking out
+      for (const s of review.steps) if (s.status !== 'done') { s.status = 'done'; s.finished_at = now(); s.result = pick(RESULTS); }
+      finish(review);
+    }
     for (const job of jobs) {
       job.ticks++;
       if (job.status === 'queued' && job.ticks > 7) {
@@ -528,7 +549,7 @@ export function demoSource() {
         push(job, { kind: 'job', status: 'queued', summary: `${job.steps.length} step(s) re-queued` });
         continue;
       }
-      if (job.status !== 'running') continue;
+      if (job.status !== 'running' || batch.has(job)) continue;
       const i = jobs.indexOf(job);
       if (PINS) {
         const seq = PINS[i % PINS.length].split('+'), act = seq[Math.floor(tickCount / 5) % seq.length];   // type+ship: alternate every 10 s
@@ -562,9 +583,10 @@ export function demoSource() {
         addReport(job, i);
         push(job, { kind: 'step', status: 'done', summary: job.steps[i].result });
         if (job.steps[i + 1]) { job.steps[i + 1].status = 'running'; job.steps[i + 1].started_at = now(); newTodos(job); push(job, { kind: 'step', status: 'running', summary: job.steps[i + 1].title }); }
-        else { job.status = 'done'; job.ticks = 0; job.todos = []; push(job, { kind: 'job', status: 'done', summary: 'job done' }); }
+        else finish(job);
       }
     }
+    if (tickCount === 6) { sessions[dormant].status = 'working'; sessions[dormant].updated_at = now(); }
     for (const s of sessions) {
       if (s.status !== 'working' || rand() > 0.5) continue;
       const tool = pickTool();
@@ -575,7 +597,7 @@ export function demoSource() {
       s.updated_at = now();
     }
     stepPipe();
-    const doc = { time: now(), pipelines: [pipeReport()], hosts: [
+    const doc = { time: now(), pipelines: [pipeReport()], attention: jobs.filter(j => j.status === 'failed' || j.status === 'stalled').map(blocker), hosts: [
       ...['node-a', 'node-b', 'node-c'].map(name => ({ name, ok: true, error: null, jobs: jobs.filter(j => j.host === name),
         sessions: sessions.filter(s => s.host === name) })),
       { name: 'node-d', ok: false, error: 'node-d: ssh: connect to host 192.0.2.10 port 22: Connection timed out', jobs: [] },

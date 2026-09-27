@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { BOT_H, RD, RW, WALL_H, canvas, dpr, setDpr, setVh, setVw, vh, vw } from './env.js';
 import { clamp, esc, seeded } from './util.js';
 import { RIGHT, ROBOT, UP, _p, cam, camera, centreFor, renderer } from './scene.js';
-import { ents, selectedKey } from './model.js';
+import { ents, setFanned } from './model.js';
 import { layoutNames, layoutRooms, plates, roomByName, rooms } from './rooms.js';
 import { DOC_KIND, docKey, docMeshes, docMeta, docSlots, hoverDoc, kindOf, setHoverDoc } from './docs3d.js';
 import { closePanel, select } from './panel.js';
@@ -163,8 +163,9 @@ function endPointer(ev) {
     const hit = pick(ev.clientX, ev.clientY);
     if (hit && hit.pipeline) { hideDocTip(); openSankey(hit.pipeline); }
     else if (hit && hit.doc) openReader(hit.e, hit.doc);
+    else if (hit && hit.e.crowd) setFanned(hit.e.crowd.key);
     else if (hit) select(hit.e.key);
-    else if (selectedKey) closePanel();
+    else closePanel();
   }
   if (pointers.size === 0) { drag = null; canvas.classList.remove('dragging'); }
 }
@@ -203,7 +204,7 @@ const proxies = [];
 // the nearest android (an invisible capsule around each), document sheet or pipeline screen under the pointer
 function pick(px, py) {
   proxies.length = 0;
-  for (const e of ents.values()) if (roomByName.has(e.room)) proxies.push(e.proxy);
+  for (const e of ents.values()) if (roomByName.has(e.room) && e.bot.root.visible) proxies.push(e.proxy);
   for (const kind in docMeshes) proxies.push(docMeshes[kind]);
   proxies.push(...screenMeshes);
   _ndc.set(px / vw * 2 - 1, -(py / vh) * 2 + 1);

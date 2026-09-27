@@ -1,7 +1,7 @@
 // Where each android goes and how it moves: targets, pacing, particles and the per-frame update.
 
 import * as THREE from 'three';
-import { PI, REDUCED, SPEED } from './env.js';
+import { PI, RD, REDUCED, SPEED } from './env.js';
 import { angleTo, clamp, mix } from './util.js';
 import {
   ACTS, AGENT_COLOR, AISLES, APART_ACROSS, APART_ALONG, CROSSINGS, FACE_VIEWER, FLOOR, OVERFLOW, SPOTS, apart,
@@ -11,13 +11,17 @@ import { activityFor, activityOf, isActive } from './activity.js';
 import { G, ROBOT, _m4, _m4b, _q, _sc, _v, cam, drawScreen, scene, softDot } from './scene.js';
 import { ents, selectedKey } from './model.js';
 import { PRESS, placer, roomByName, rooms } from './rooms.js';
-import { playClip } from './agents.js';
-import { CALM } from './focus.js';
+import { dropEnt, playClip } from './agents.js';
+import { closePanel } from './panel.js';
 
 export function assignTargets() {
   const now = performance.now() / 1000;
   for (const r of rooms) r.ents = [];
-  for (const e of ents.values()) { const r = roomByName.get(e.room); if (r) r.ents.push(e); }
+  for (const e of ents.values()) {
+    // a finished job heads for the door once its completion moment is over, and gives up its spot
+    if (e.leaving) { if (e.target !== EXIT) { e.target = EXIT; e.path = route(e.local, EXIT); } continue; }
+    const r = roomByName.get(e.room); if (r) r.ents.push(e);
+  }
   for (const r of rooms) {
     r.ents.sort((a, b) => a.key < b.key ? -1 : 1);
     for (const e of r.ents) {
@@ -26,7 +30,7 @@ export function assignTargets() {
       if (want === null) want = e.act === 'init' ? 'type' : e.act;
       if (want !== e.act) {
         // a change of station waits out a minimum dwell once there, so bursts of events don't send androids back and forth
-        const settled = ['dock', 'failed', 'stalled', 'idle', 'await'].includes(want) || e.act === 'init' || stationOf(want) === stationOf(e.act, e.stage);
+        const settled = ['dock', 'idle', 'await'].includes(want) || e.act === 'init' || stationOf(want) === stationOf(e.act, e.stage);
         const dwelt = now - e.actSince > DWELL && (e.slow || (e.arrivedAt != null && now - e.arrivedAt > 1.2));
         if (settled || dwelt) { e.act = want; e.actSince = now; e.anchor = null; e.stage = 0; e.dropped = false; }
       }
@@ -35,6 +39,7 @@ export function assignTargets() {
   }
 }
 const DWELL = 3.5;   // seconds an android stays on an activity before walking off to another station
+const EXIT = { x: 5.5, y: RD + 0.7, prop: 'door' };   // just outside the door, where androids walk in
 
 // React to what happened since the last poll: a test run followed by anything but an error passed (a nod), an error gets
 // a head shake. Seated androids nod or shake just their head; standing ones play the full clip.
@@ -89,7 +94,7 @@ function allocate(r) {
     const p = propOf(e);
     let spot;
     if (p === 'stay') {
-      // stalled or failed: stop where they are if that's clear, keeping the seat they were in
+      // a session waiting on its human: stop where it is if that's clear, keeping the seat it was in
       const here = { x: e.local.x, y: e.local.y };
       spot = !e.fresh && e.target && free(here.x, here.y, e) && (e.target.sit != null || !blocked(here.x, here.y))
         ? { ...here, face: e.facing, sit: e.target.sit, prop: 'stay' }
@@ -164,6 +169,7 @@ function route(a, b) {
 export function stepMotion(dt, now) {
   for (const e of ents.values()) {
     if (!e.path.length) {
+      if (e.leaving) { leave(e); continue; }
       if (e.target) e.facing = e.target.face ?? e.facing;
       e.walking = false;
       if (e.target) { e.fresh = false; if (e.arrivedAt == null) e.arrivedAt = now; }
@@ -171,13 +177,14 @@ export function stepMotion(dt, now) {
       pace(e, now);
       continue;
     }
+    if (e.leaving && now > e.leaveBy) { leave(e); continue; }   // a slow frame rate never keeps it on the deck
     if (now < e.holdUntil) continue;
     // get up before walking off
-    if (!REDUCED && (e.bot.clip === 'Sitting' || e.bot.clip === 'Death')) {
+    if (!REDUCED && e.bot.clip === 'Sitting') {
       e.holdClip = 'Standing'; e.holdUntil = now + ROBOT.clips.Standing.duration * 0.8;
       continue;
     }
-    let remaining = SPEED * dt * (e.slow ? PACE_SPEED : 1) * (e.calm ? CALM : 1);
+    let remaining = SPEED * dt * (e.slow ? PACE_SPEED : 1);
     while (remaining > 0 && e.path.length) {
       const p = e.path[0], dx = p.x - e.local.x, dy = p.y - e.local.y, d = Math.hypot(dx, dy);
       if (d > 0.001) e.facing = Math.atan2(dx, dy);
@@ -203,6 +210,12 @@ export function stepMotion(dt, now) {
   }
 }
 
+function leave(e) {
+  dropEnt(e);
+  ents.delete(e.key);
+  if (selectedKey === e.key) closePanel();
+}
+
 // activities with more than one station move on once the android has spent a moment at the first (a book off the shelf)
 function nextStage(e, now) {
   const s = (ACTS[e.act] || {}).station;
@@ -217,13 +230,12 @@ function clipFor(e, now) {
   if (e.walking) return 'Walking';
   if (!e.target) return 'Idle';
   const st = e.job.status;
-  if (st === 'failed') return 'Death';
-  if (st === 'stalled') return 'Sitting';
+  if (st === 'idle') return 'Sitting';   // an idle session sits and rests
   if (isActive(st) && e.act === 'delegate') return 'Wave';
   return e.target.sit != null ? 'Sitting' : 'Idle';
 }
 
-// ------------------------------------------------------------------ particles: smoke over failed androids, motes over finished ones
+// ------------------------------------------------------------------ particles: motes over finished androids, steam from the kitchen
 const PN = 320;
 const part = {
   pos: new Float32Array(PN * 3), col: new Float32Array(PN * 4), vel: new Float32Array(PN * 3),
@@ -240,11 +252,11 @@ function spawn(x, y, z, kind) {
   if (REDUCED) return;
   const i = part.next; part.next = (part.next + 1) % PN;
   part.pos[i * 3] = x; part.pos[i * 3 + 1] = y; part.pos[i * 3 + 2] = z;
-  const smoke = kind === 0, steam = kind === 2;   // 0 smoke, 1 motes, 2 steam
-  part.vel[i * 3] = (Math.random() - 0.5) * (smoke ? 0.25 : 0.1);
-  part.vel[i * 3 + 1] = smoke ? 0.5 + Math.random() * 0.3 : steam ? 0.3 + Math.random() * 0.15 : 0.35 + Math.random() * 0.2;
-  part.vel[i * 3 + 2] = (Math.random() - 0.5) * (smoke ? 0.25 : 0.1);
-  part.age[i] = 0; part.life[i] = smoke ? 1.8 + Math.random() : steam ? 1.4 + Math.random() * 0.5 : 1.3; part.kind[i] = kind;
+  const steam = kind === 2;   // 1 motes, 2 steam
+  part.vel[i * 3] = (Math.random() - 0.5) * 0.1;
+  part.vel[i * 3 + 1] = steam ? 0.3 + Math.random() * 0.15 : 0.35 + Math.random() * 0.2;
+  part.vel[i * 3 + 2] = (Math.random() - 0.5) * 0.1;
+  part.age[i] = 0; part.life[i] = steam ? 1.4 + Math.random() * 0.5 : 1.3; part.kind[i] = kind;
 }
 export function stepParticles(dt) {
   for (let i = 0; i < PN; i++) {
@@ -253,8 +265,7 @@ export function stepParticles(dt) {
     part.age[i] += dt;
     const k = 1 - Math.min(1, part.age[i] / part.life[i]);
     part.pos[i * 3] += part.vel[i * 3] * dt; part.pos[i * 3 + 1] += part.vel[i * 3 + 1] * dt; part.pos[i * 3 + 2] += part.vel[i * 3 + 2] * dt;
-    if (part.kind[i] === 0) { part.col[c] = 0.5; part.col[c + 1] = 0.52; part.col[c + 2] = 0.58; part.col[c + 3] = 0.35 * k; }
-    else if (part.kind[i] === 2) { part.col[c] = 0.9; part.col[c + 1] = 0.93; part.col[c + 2] = 0.97; part.col[c + 3] = 0.3 * k; }
+    if (part.kind[i] === 2) { part.col[c] = 0.9; part.col[c + 1] = 0.93; part.col[c + 2] = 0.97; part.col[c + 3] = 0.3 * k; }
     else { part.col[c] = 0.29; part.col[c + 1] = 0.87; part.col[c + 2] = 0.5; part.col[c + 3] = 0.9 * k; }
   }
   partGeo.attributes.position.needsUpdate = true;
@@ -265,13 +276,12 @@ export function stepParticles(dt) {
 // ------------------------------------------------------------------ per-frame update of androids and props
 
 function tone(e, t) {
-  // stalled androids dim; finished ones rest with their face light low
+  // finished androids rest with their face light low
   const st = e.job.status, arrived = !e.walking && !!e.target;
-  const key = st === 'stalled' ? 'dim' : ((st === 'done' || st === 'cancelled' || st === 'idle') && arrived ? 'rest' : '');
+  const key = (st === 'done' || st === 'cancelled' || st === 'idle') && arrived ? 'rest' : '';
   if (key === e.tone) return;
   e.tone = key;
-  e.bot.main.color.set(key === 'dim' ? mix(e.look.color, '#475163', 0.55) : e.look.color);
-  const lit = AGENT_COLOR[e.job.agent] || '#cbd5e1', low = mix(lit, '#1b2333', key === 'rest' ? 0.35 : 0.6);
+  const lit = AGENT_COLOR[e.job.agent] || '#cbd5e1', low = mix(lit, '#1b2333', 0.35);
   e.bot.face.color.set(key ? low : lit);
   if (e.bot.eyes) { e.bot.eyes.color.set(key ? low : lit); e.bot.eyes.emissiveIntensity = key ? 0.2 : 1.4; }
 }
@@ -303,13 +313,12 @@ export function updateEnt(e, r, dt, t, now) {
   const bot = e.bot, root = bot.root;
   playClip(e, clipFor(e, now));
   if (bot.clip === 'Walking') bot.actions.Walking.timeScale = e.slow ? 0.6 : 1.25;   // pacing is a slow amble
-  bot.mixer.update(REDUCED ? 0 : e.calm ? dt * CALM : dt);   // a background room's androids are near still
+  bot.mixer.update(REDUCED ? 0 : dt);
   const st = e.job.status, arrived = !e.walking && !!e.target;
-  if (st === 'stalled' && arrived) bot.head.rotation.x += 0.55;   // slumped over
   // on top of the clip: typing forearms, a nod or head shake, eyes down on a printout
   const A = ACTS[e.act] || {}, seated = arrived && bot.clip === 'Sitting' && isActive(st);
-  if (!REDUCED && !e.calm && seated && A.hands) bot.arms.forEach((arm, i) => { arm.rotation.x += Math.sin(t * 15 + i * 2.1) * 0.14; });
-  if (e.nod && now < e.nod.until && !e.calm) {
+  if (!REDUCED && seated && A.hands) bot.arms.forEach((arm, i) => { arm.rotation.x += Math.sin(t * 15 + i * 2.1) * 0.14; });
+  if (e.nod && now < e.nod.until) {
     const k = Math.sin((e.nod.until - now) * 13) * 0.32;
     if (e.nod.yes) bot.head.rotation.x += k; else bot.head.rotation.y += k * 1.3;
   }
@@ -327,11 +336,9 @@ export function updateEnt(e, r, dt, t, now) {
   tone(e, t);
   e.ring.visible = e.key === selectedKey;
   if (e.ring.visible) e.ring.material.opacity = REDUCED ? 0.8 : 0.55 + Math.sin(t * 4) * 0.3;
-  if (e.halo) e.halo.material.opacity = st === 'working' && !REDUCED && !e.calm ? 0.4 + Math.sin(t * 3) * 0.25 : 0.3;
+  if (e.halo) e.halo.material.opacity = st === 'working' && !REDUCED ? 0.4 + Math.sin(t * 3) * 0.25 : 0.3;
   e.glow.visible = st === 'done' && arrived;
-  e.fail.visible = st === 'failed' && arrived;
-  if (e.fail.visible && !e.calm && Math.random() < 0.12) spawn(root.position.x + (Math.random() - 0.5) * 0.3, 0.5, root.position.z + (Math.random() - 0.5) * 0.3, 0);
-  if (e.glow.visible && !e.calm && Math.random() < 0.03) spawn(root.position.x + (Math.random() - 0.5) * 0.8, 0.2, root.position.z + (Math.random() - 0.5) * 0.5, 1);
+  if (e.glow.visible && Math.random() < 0.03) spawn(root.position.x + (Math.random() - 0.5) * 0.8, 0.2, root.position.z + (Math.random() - 0.5) * 0.5, 1);
 }
 
 const WAVE_ON = new THREE.Color('#38bdf8'), WAVE = new THREE.Color();

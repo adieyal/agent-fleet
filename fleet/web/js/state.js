@@ -4,7 +4,8 @@ import { QS, RD, REDUCED } from './env.js';
 import { store } from './util.js';
 import { ROBOT, cam, drawSign } from './scene.js';
 import { fit } from './camera.js';
-import { ents, everLoaded, hosts, live, selectedKey, setEverLoaded, setHosts, setLive } from './model.js';
+import { ents, everLoaded, hosts, live, offFloor, selectedKey, setEverLoaded, setHosts, setLive, workOf } from './model.js';
+import { hostLook } from './looks.js';
 import { layoutRooms, rooms } from './rooms.js';
 import { buildDocs, noteDocs } from './docs3d.js';
 import { createEnt, dropEnt, updateTag } from './agents.js';
@@ -52,36 +53,40 @@ function visibleHosts(doc) {
   if (changed) saveDismissed();
   return out;
 }
-// Finished jobs leave the deck on their own: each room keeps its few most recent for a while, the rest are counted
-// in a header chip that shows them again. Failed and stalled jobs stay until dismissed — they need you.
+// Finished jobs leave the deck: one that finishes while you watch walks out through the door (motion.js), one
+// already finished never shows. A header chip counts them and shows them again. Failed and stalled jobs have no
+// android either: their room's lantern (attention.js) carries them and opens their panel. Nor has any work in a
+// background room: the room is lit warm while it runs (focus.js).
 const FINISHED_STATUSES = new Set(['done', 'cancelled']);
-const FINISHED_LINGER_SECONDS = 10 * 60;
-const FINISHED_PER_ROOM = 3;
-const RETIRE_CHECK_MS = 30000;
+const BLOCKED_STATUSES = new Set(['failed', 'stalled']);
+const LEAVE_WITHIN_SECONDS = 30;
 export let retiredCount = 0, showFinished = false;
 function retireFinished(hostList) {
   retiredCount = 0;
   if (showFinished) return;
-  const finished = [];
-  for (const h of hostList) for (const j of h.jobs) if (FINISHED_STATUSES.has(j.status)) finished.push(j);
-  finished.sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0));
-  const nowSeconds = Date.now() / 1000, keptPerRoom = new Map(), retired = new Set();
-  for (const j of finished) {
-    const kept = keptPerRoom.get(j.project) || 0;
-    if (nowSeconds - (j.updated_at || 0) > FINISHED_LINGER_SECONDS || kept >= FINISHED_PER_ROOM) retired.add(j);
-    else keptPerRoom.set(j.project, kept + 1);
-  }
-  for (const h of hostList) h.jobs = h.jobs.filter(j => !retired.has(j));
-  retiredCount = retired.size;
+  for (const h of hostList) h.jobs = h.jobs.filter(j => {
+    if (!FINISHED_STATUSES.has(j.status)) return true;
+    retiredCount++;
+    const e = ents.get(h.name + ':' + j.id);
+    return !REDUCED && !!e && (e.leaving || !FINISHED_STATUSES.has(e.lastStatus));
+  });
+}
+// An idle live session leaves the deck after half an hour quiet and comes back with its next activity; one waiting
+// on a decision keeps its android. The header still counts it.
+const IDLE_LEAVE_SECONDS = 30 * 60;
+function departed(h, s, doc) {
+  return s.status === 'idle' && Date.now() / 1000 - s.updated_at > IDLE_LEAVE_SECONDS
+    && !(doc.attention || []).some(i => i.kind === 'decision' && i.state !== 'resolved' && i.owner.key === h.name + ':' + s.id);
+}
+export function departIdle() {
+  if (lastDoc && hosts.some(h => h.sessions.some(s => ents.has(h.name + ':' + s.id) && departed(h, s, lastDoc)))) applyState(lastDoc);
 }
 export function toggleFinished() {
   showFinished = !showFinished;
   if (lastDoc) applyState(lastDoc);
 }
-// jobs age out between state updates too
-setInterval(() => { if (lastDoc) applyState(lastDoc); }, RETIRE_CHECK_MS);
 export function dismiss(key) {
-  const e = ents.get(key);
+  const e = workOf(key);
   if (!e || !lastDoc) return;
   dismissed[key] = e.job.updated_at ?? null;
   saveDismissed();
@@ -122,23 +127,31 @@ export function applyState(doc) {
   applyFocus(doc, rooms);
   const seen = new Set();
   const now = performance.now() / 1000;
+  const quiet = new Set(rooms.filter(r => r.focus === 'background').map(r => r.name));
+  offFloor.clear();
   for (const h of hosts) {
     for (const j of h.jobs || []) {
       const key = h.name + ':' + j.id;
+      if (BLOCKED_STATUSES.has(j.status) || quiet.has(j.project)) { offFloor.set(key, { key, kind: 'job', host: h.name, job: j, look: hostLook(h.name) }); continue; }
       seen.add(key);
       let e = ents.get(key);
       const known = !!e;
       if (!e) { e = createEnt(key, h.name, j); ents.set(key, e); }
-      // a job that just finished gives a thumbs-up before heading for the sofa
-      if (known && j.status === 'done' && e.lastStatus !== 'done' && !REDUCED) { e.holdClip = 'ThumbsUp'; e.holdUntil = now + ROBOT.clips.ThumbsUp.duration; }
+      // a job that just finished gives a thumbs-up (a cancelled one waves) before it leaves, or heads for the sofa
+      // while finished jobs are shown
+      if (known && FINISHED_STATUSES.has(j.status) && !FINISHED_STATUSES.has(e.lastStatus) && !REDUCED) {
+        e.holdClip = j.status === 'done' ? 'ThumbsUp' : 'Wave'; e.holdUntil = now + ROBOT.clips[e.holdClip].duration;
+        e.leaving = !showFinished; e.leaveBy = now + LEAVE_WITHIN_SECONDS;
+      }
       e.lastStatus = j.status;
       e.job = j; e.host = h.name;
       noteDocs(e, !known || !everLoaded);
       if (e.room !== j.project) { e.room = j.project; e.local = { x: 5.5, y: RD + 0.7 }; e.path = []; e.target = null; e.fresh = true; }
     }
     for (const s of h.sessions || []) {
-      if (!s.project) continue;
+      if (!s.project || departed(h, s, doc)) continue;
       const key = h.name + ':' + s.id;
+      if (quiet.has(s.project)) { offFloor.set(key, { key, kind: 'session', host: h.name, job: s, look: hostLook(h.name) }); continue; }
       seen.add(key);
       let e = ents.get(key);
       if (!e) { e = createEnt(key, h.name, s, 'session'); ents.set(key, e); }
@@ -147,7 +160,7 @@ export function applyState(doc) {
       if (e.room !== s.project) { e.room = s.project; e.local = { x: 5.5, y: RD + 0.7 }; e.path = []; e.target = null; e.fresh = true; }
     }
   }
-  for (const [k, e] of ents) if (!seen.has(k)) { dropEnt(e); ents.delete(k); if (selectedKey === k) closePanel(); }
+  for (const [k, e] of ents) if (!seen.has(k)) { dropEnt(e); ents.delete(k); if (selectedKey === k && !offFloor.has(k)) closePanel(); }
   setEverLoaded(true);
   applyAttention(rooms, doc);
   patchScene();

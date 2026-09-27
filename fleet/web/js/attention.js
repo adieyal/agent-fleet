@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { BOT_H, RD, REDUCED, RW, vh, vw } from './env.js';
 import { clock, esc } from './util.js';
 import { G, deckGroup, softDot, toScreen } from './scene.js';
-import { ents } from './model.js';
+import { workOf } from './model.js';
 import { select } from './panel.js';
 import { shortId } from './activity.js';
 
@@ -125,7 +125,7 @@ function renderPanel() {
   const room = lanterns.get(openRoom)?.room;
   panel.innerHTML = `<div class="ah"><h3>${esc(room ? room.label : openRoom)}</h3><button data-close aria-label="Close">✕</button></div>
     <ul>${listed.map(i => {
-      const owner = i.owner, present = ents.has(owner.key);
+      const owner = i.owner, present = !!workOf(owner.key);
       const state = i.state === 'snoozed' ? `snoozed until ${esc(clock(i.snoozed_until).slice(0, 5))}` : i.state;
       const actions = i.state === 'open' ? `<button data-act="acknowledge">Acknowledge</button><button data-act="snooze">Snooze 1h</button>`
         : i.state === 'acknowledged' ? `<button data-act="snooze">Snooze 1h</button><button data-act="reopen">Reopen</button>`

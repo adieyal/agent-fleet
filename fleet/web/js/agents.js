@@ -8,7 +8,7 @@ import { AGENT_COLOR, hostLook } from './looks.js';
 import { isSession, mumble, shortId } from './activity.js';
 import { actionOf, glyphHtml } from './glyphs.js';
 import { G, M, ROBOT, _w, botGroup, cam, toScreen } from './scene.js';
-import { ents, everLoaded, selectedKey } from './model.js';
+import { ents, everLoaded, fanned, selectedKey, setFanned } from './model.js';
 import { roomByName, rooms } from './rooms.js';
 import { select } from './panel.js';
 
@@ -78,7 +78,7 @@ export function buildRobot(look, agent) {
   const arms = [bones.LowerArmL, bones.LowerArmR].filter(Boolean);   // (three strips the dots from "LowerArm.L")
   return { root, model, mixer, main, face, eyes, hostMat, head, arms, tagLift, actions: {} };
 }
-const ONCE = new Set(['Death', 'Sitting', 'Standing', 'ThumbsUp', 'Wave']);
+const ONCE = new Set(['Sitting', 'Standing', 'ThumbsUp', 'Wave']);
 export function action(bot, name) {
   let a = bot.actions[name];
   if (!a) {
@@ -130,10 +130,9 @@ export function createEnt(key, hostName, job, kind = 'job') {
   e.ring = new THREE.Mesh(G.ring, new THREE.MeshBasicMaterial({ color: look.color, transparent: true, opacity: 0.8, depthWrite: false }));
   e.ring.visible = false;
   e.glow = new THREE.Mesh(G.disc, M.doneDisc); e.glow.visible = false; e.glow.position.y = 0.01;
-  e.fail = new THREE.Sprite(M.failGlow); e.fail.scale.setScalar(1.3); e.fail.position.y = 0.45; e.fail.visible = false;
   e.proxy = new THREE.Mesh(G.proxy, M.hidden); e.proxy.userData.ent = e;
   const blob = new THREE.Mesh(G.disc, M.blob); blob.position.y = 0.008; blob.scale.setScalar(0.9 * BK);
-  e.bot.root.add(blob, e.ring, e.glow, e.fail, e.proxy);
+  e.bot.root.add(blob, e.ring, e.glow, e.proxy);
   if (isSession(e)) {   // a live session stands in a wide pink halo; it breathes while the agent works
     e.halo = new THREE.Mesh(G.ring, new THREE.MeshBasicMaterial({ color: '#f472b6', transparent: true, opacity: 0.5, depthWrite: false }));
     e.halo.scale.setScalar(1.45 * BK); e.halo.position.y = 0.012;
@@ -163,7 +162,7 @@ function sessionWords(s) {
   if (a) return [mumble(a), ''];
   return ['working…', ''];
 }
-function jobWords(j, done, total, cur) {
+function jobWords(j, done, total) {
   const a = j.activity;
   switch (j.status) {
     case 'running':
@@ -172,8 +171,6 @@ function jobWords(j, done, total, cur) {
       return [a ? mumble(a) : 'warming up…', ''];
     case 'queued': return ['queued · waiting at the door', 'quiet'];
     case 'done': return [`done · ${done}/${total}`, 'done'];
-    case 'failed': return [`step ${cur + 1} failed`, 'bad'];
-    case 'stalled': return ['runner stalled mid-step', 'stall'];
     case 'cancelled': return ['cancelled', 'quiet'];
   }
   return [j.status, 'quiet'];
@@ -202,7 +199,7 @@ export function updateTag(e) {
   const steps = j.steps || [];
   const done = steps.filter(s => s.status === 'done').length;
   const cur = steps.findIndex(s => s.status === 'running' || s.status === 'failed');
-  const [words, cls] = jobWords(j, done, steps.length, cur), action = actionOf(j);
+  const [words, cls] = jobWords(j, done, steps.length), action = actionOf(j);
   let window0 = 0;
   if (steps.length > 12) window0 = clamp((cur < 0 ? done : cur) - 5, 0, steps.length - 12);
   const pips = steps.slice(window0, window0 + 12).map(s => `<i class="pip ${esc(s.status)}"></i>`).join('');
@@ -212,6 +209,46 @@ export function updateTag(e) {
   e.sig = sig;
   e.el.lastChild.innerHTML = `<span class="id">${esc(j.id)}</span>${window0 > 0 ? '<b>…</b>' : ''}${pips}<b>${done}/${steps.length}</b>`;
   e.sizeDirty = true;
+}
+
+// ------------------------------------------------------------------ crowds
+// More than five androids at one station of a room gather into one figure (the first of them) with a count badge in
+// place of their tags. Clicking it fans them out until you click elsewhere or close the panel. The selected android
+// always stands on its own.
+const CROWD = 5;
+export const crowds = new Map();   // "room|station" → { key, room, station, members, el }
+function makeBadge(key) {
+  const el = document.createElement('div');
+  el.className = 'tag crowd';
+  el.innerHTML = '<div class="stack"><b></b></div>';
+  el.addEventListener('click', ev => { ev.stopPropagation(); setFanned(key); });
+  tagsEl.appendChild(el);
+  return el;
+}
+function gatherCrowds() {
+  const at = new Map();
+  for (const e of ents.values()) {
+    e.crowd = null;
+    if (e.leaving || !e.spotProp || e.spotProp === 'stay' || e.spotProp === 'partner') continue;
+    const key = e.room + '|' + e.spotProp;
+    if (!at.has(key)) at.set(key, []);
+    at.get(key).push(e);
+  }
+  for (const [key, c] of crowds) {
+    if ((at.get(key)?.length ?? 0) > CROWD) continue;
+    c.el.remove(); crowds.delete(key);
+    if (fanned === key) setFanned(null);
+  }
+  for (const [key, all] of at) {
+    if (all.length <= CROWD) continue;
+    const members = all.filter(e => e.key !== selectedKey);
+    let c = crowds.get(key);
+    if (!c) { c = { key, room: members[0].room, station: members[0].spotProp, el: makeBadge(key) }; crowds.set(key, c); }
+    c.members = members;
+    c.el.firstChild.firstChild.textContent = members.length;
+    if (fanned !== key) for (const e of members) e.crowd = c;
+  }
+  for (const e of ents.values()) e.bot.root.visible = !e.crowd || e === e.crowd.members[0];
 }
 
 // Tags hang above each android's head, projected from 3D. Nearer androids are placed first and
@@ -231,13 +268,13 @@ function zoomedInto(r) {
 export function positionTags() {
   // the overview stays quiet: speech bubbles appear only in a room you have zoomed into (or for the selected android)
   const tiny = cam.z < TINY_Z;
+  gatherCrowds();
   for (const r of rooms) r.close = zoomedInto(r);
   tagList.length = 0;
   for (const e of ents.values()) {
     const r = roomByName.get(e.room);
     if (!r) continue;
     e.far = !r.close;
-    e.calm = r.focus === 'background';   // a background room's androids keep their chatter to themselves
     if (e.sizeDirty) { e.tw = e.el.offsetWidth; e.th = e.el.offsetHeight; e.sizeDirty = false; }
     // anchor on the head bone, lifted clear of the head and its kit, plus a few pixels at every zoom
     e.bot.head.getWorldPosition(_w);
@@ -252,7 +289,7 @@ export function positionTags() {
   for (const e of tagList) {
     let bottom = e.sy;
     const w = e.tw || 120, h = e.th || 40;
-    if (!tiny) {
+    if (!tiny && !e.crowd) {
       for (let guard = 0, moved = true; moved && guard < 24; guard++) {
         moved = false;
         for (let i = 0; i < n; i++) {
@@ -275,7 +312,17 @@ export function positionTags() {
   for (const e of tagList) {
     const z = ++order + (e.key === selectedKey ? 1000 : 0);
     if (z !== e.qz) { e.qz = z; e.el.style.zIndex = String(z); }
-    const cls = e.tagBase + (e.calm ? ' calm' : '') + (tiny ? ' tiny' : e.key === selectedKey ? ' sel' : e.far ? ' far' : '');
+    // an idle session rests without a word
+    const cls = e.tagBase + (e.job.status === 'idle' ? ' calm' : '') + (e.crowd ? ' gathered' : '')
+      + (tiny ? ' tiny' : e.key === selectedKey ? ' sel' : e.far ? ' far' : '');
     if (e.el.className !== cls) { e.el.className = cls; e.sizeDirty = true; }
+  }
+  // a crowd's badge hangs where its figure's tag would
+  for (const c of crowds.values()) {
+    const e = c.members[0];
+    const cls = 'tag crowd' + (fanned === c.key ? ' fanned' : tiny ? ' tiny' : '');
+    if (c.el.className !== cls) c.el.className = cls;
+    c.el.style.transform = `translate(${Math.round(e.sx)}px,${Math.round(e.sy)}px) translate(-50%,-100%)`;
+    c.el.style.zIndex = String(e.qz);
   }
 }
