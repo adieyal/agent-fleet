@@ -382,6 +382,22 @@ def record_written_documents(job_id: str, cwd: str, paths: List[str], step_index
                 known.add(absolute)
 
 
+def copy_written_documents(job_id: str, cwd: str) -> None:
+    """Keep agent-written Markdown under the job's approved document root."""
+    with locked_job(job_id) as live_job:
+        artifacts = JOBS_DIRECTORY / job_id / "artifacts"
+        for index, entry in enumerate(live_job.get("written_documents", [])):
+            source = Path(entry["path"])
+            if source.is_symlink() or not source.is_file() or not source.resolve().is_relative_to(Path(cwd).resolve()):
+                continue
+            artifacts.mkdir(exist_ok=True)
+            target = artifacts / f"file-{index}{source.suffix}"
+            temporary = artifacts / f"file-{index}.tmp"
+            shutil.copy2(source, temporary)
+            temporary.replace(target)
+            entry["artifact"] = str(target)
+
+
 def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
     job_id = job["id"]
     config = load_config()
@@ -441,6 +457,7 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
         outcome["reported_status"] = reported
         if reported != "done":
             outcome["ok"] = False
+    copy_written_documents(job_id, job["cwd"])
     return outcome
 
 
@@ -534,12 +551,17 @@ def job_documents(job: JsonObject) -> List[JsonObject]:
     directory = JOBS_DIRECTORY / job["id"]
     documents: List[JsonObject] = []
 
-    def describe(document_id: str, path: Path, kind: str, name: str, step: Optional[int]) -> None:
+    def describe(document_id: str, path: Path, kind: str, name: str, step: Optional[int],
+                 display_path: Optional[str] = None) -> None:
         with contextlib.suppress(OSError):
             stat = path.stat()
             if stat.st_size and path.is_file():
-                documents.append({"id": document_id, "kind": kind, "name": name, "step": step, "path": str(path),
-                                  "size": stat.st_size, "mtime": round(stat.st_mtime, 3)})
+                document = {"id": document_id, "kind": kind, "name": name, "step": step,
+                            "path": display_path or str(path), "size": stat.st_size,
+                            "mtime": round(stat.st_mtime, 3)}
+                if display_path is not None:
+                    document["read_path"] = str(path)
+                documents.append(document)
 
     for step in job["steps"]:
         report = directory / f"result-{step['index']}.md"
@@ -548,7 +570,9 @@ def job_documents(job: JsonObject) -> List[JsonObject]:
                 describe(f"report-{step['index']}", report, "report", f"Step {step['index'] + 1}: {step['title']}",
                          step["index"])
     for index, entry in enumerate(job.get("written_documents", [])):
-        describe(f"file-{index}", Path(entry["path"]), "file", os.path.basename(entry["path"]), entry.get("step"))
+        describe(f"file-{index}", Path(entry.get("artifact", entry["path"])), "file",
+                 os.path.basename(entry["path"]), entry.get("step"),
+                 entry["path"] if "artifact" in entry else None)
     outbox = directory / "outbox"
     if outbox.exists():
         for path in sorted(outbox.rglob("*")):
@@ -562,7 +586,11 @@ def command_read(arguments: argparse.Namespace) -> None:
     document = next((item for item in job_documents(job) if item["id"] == arguments.document), None)
     if document is None:
         fail(f"job {arguments.job} has no document {arguments.document}")
-    with open(document["path"], "rb") as handle:
+    path = Path(document.pop("read_path", document["path"])).resolve()
+    roots = [JOBS_DIRECTORY / job["id"], *(Path(root).expanduser() for root in load_config().get("document_roots", []))]
+    if not any(path.is_relative_to(root.resolve()) for root in roots):
+        fail(f"document path outside approved document roots: {document['path']}")
+    with open(path, "rb") as handle:
         raw = handle.read(DOCUMENT_READ_LIMIT + 1)
     document["truncated"] = len(raw) > DOCUMENT_READ_LIMIT
     document["content"] = raw[:DOCUMENT_READ_LIMIT].decode(errors="replace")
