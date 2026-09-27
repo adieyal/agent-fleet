@@ -10,8 +10,13 @@ from .domain import Mandate
 
 class RecordsFacade:
     def __init__(self, repository, writer, workspace, work):
-        self.repository, self.writer, self.workspace, self.work = repository, writer, workspace, work
+        self.repository, self.writer, self.workspace = repository, writer, workspace
+        self._work = work
         self.authoring = Authoring(repository, writer, workspace)
+
+    @property
+    def work(self):
+        return self._work()
 
     def register(self, project: str, path, *, actor: str) -> None:
         root = self.writer.root(path)
@@ -38,9 +43,9 @@ class RecordsFacade:
             return None
         return self.writer.read(self.workspace.management_repository(project), path, record['revision'])
 
-    def write_summary(self, summary, project: str, *, actor: str) -> None:
+    def write_summary(self, summary, project: str, *, actor: str, source_run: str | None = None) -> None:
         result = self.write(project, f'summaries/{summary.id}.json', json.dumps(asdict(summary), default=str),
-                            key=str(uuid4()), actor=actor)
+                            key=str(uuid4()), actor=actor, source_run=source_run)
         if result['state'] != 'confirmed':
             raise ValueError(result['error'])
 

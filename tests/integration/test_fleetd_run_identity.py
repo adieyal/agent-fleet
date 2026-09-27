@@ -22,7 +22,7 @@ def worker(tmp_path, monkeypatch):
     monkeypatch.setattr(fleetd, "JOBS_DIRECTORY", home / "jobs")
     steps = tmp_path / "steps.json"
     steps.write_text('["Ship"]')
-    return argparse.Namespace(id="job", run_id="run", fingerprint="digest", schema_version=3,
+    return argparse.Namespace(id="job", run_id="run", fingerprint="digest", schema_version=4,
         cwd=str(tmp_path), agent="codex", permission="workspace-write", steps_file=str(steps),
         project="p", description="Task", model=None, keep_going=False, allowed_tools=None,
         add_dir=[], env=[], hold=True)
@@ -30,7 +30,7 @@ def worker(tmp_path, monkeypatch):
 
 def start_args(worker):
     return argparse.Namespace(job=worker.id, run_id=worker.run_id,
-                              fingerprint=worker.fingerprint, schema_version=3)
+                              fingerprint=worker.fingerprint, schema_version=4)
 
 
 def test_run_create_start_are_idempotent(worker, monkeypatch, capsys):
@@ -46,7 +46,7 @@ def test_run_create_start_are_idempotent(worker, monkeypatch, capsys):
         fleetd.command_create(worker)
         fleetd.command_start(start_args(worker))
     replies = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-    assert all(reply["run_id"] == "run" and reply["schema_version"] == 3 for reply in replies)
+    assert all(reply["run_id"] == "run" and reply["schema_version"] == 4 for reply in replies)
     assert starts == ["job"]
     before = (fleetd.JOBS_DIRECTORY / "job" / "job.json").read_bytes()
     fleetd.command_start(start_args(worker))
@@ -136,6 +136,30 @@ def test_reconcile_by_run_id_and_wrong_version(worker, capsys):
     with pytest.raises(SystemExit):
         fleetd.command_create(worker)
     assert "schema version" in capsys.readouterr().out
+
+
+def test_one_dispatch_version_and_runtime_permission_defaults(worker, capsys):
+    worker.schema_version = 3
+    with pytest.raises(SystemExit):
+        fleetd.command_create(worker)
+    with pytest.raises(SystemExit):
+        fleetd.command_reconcile(worker)
+    worker.schema_version = 4
+    worker.permission = None
+    fleetd.command_create(worker)
+    assert fleetd.read_job(worker.id)['permission'] == 'workspace-write'
+    worker.run_id = 'absent'
+    capsys.readouterr()
+    fleetd.command_reconcile(worker)
+    assert json.loads(capsys.readouterr().out)['status'] == 'absent'
+
+
+@pytest.mark.parametrize('field,value', [('allowed_tools', '["Bash"]'), ('add_dir', ['/tmp'])])
+def test_worker_refuses_claude_only_flags_for_codex(worker, capsys, field, value):
+    setattr(worker, field, value)
+    with pytest.raises(SystemExit):
+        fleetd.command_create(worker)
+    assert 'claude' in capsys.readouterr().out
 
 
 def test_dead_runner_requires_confirmed_agent_death(worker, monkeypatch):

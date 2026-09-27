@@ -14,10 +14,10 @@ from .domain import KINDS, Criterion, EvidenceSpecification, Progress, Relation,
 
 class WorkFacade:
     def __init__(self, repository: WorkRepository, evidence: EvidenceReader, clock: Callable[[], datetime],
-                 *, authority=None) -> None:
+                 *, authority=None, records=None) -> None:
         self.repository, self.clock = repository, clock
         self.commands = Commands(repository, evidence, clock)
-        self.records = None
+        self.records = records
         self.authority = authority
 
     def add(self, *, project: str, title: str, goal: str, actor: str, kind: str = "task",
@@ -33,8 +33,11 @@ class WorkFacade:
             authorization = self.authority().require('update_progress', identity, actor=actor, activation=activation)
             if changes.keys() - {'next_step', 'condition', 'resume_condition'}:
                 raise AuthorityRejected('unsupported progress fields')
-            if changes.get('condition') == 'complete' and any(c.state != 'met' for c in self.criteria(identity)):
-                raise AuthorityRejected('completion requires met criteria')
+            if changes.get('condition') == 'complete':
+                criteria = self.criteria(identity)
+                if not criteria or any(c.state != 'met' for c in criteria):
+                    raise AuthorityRejected('completion requires met criteria')
+                self.authority().require('accept', identity, actor=actor, activation=activation)
         return self.commands.change(identity, actor, authorization=authorization, **changes)
 
     def apply_answer(self, identity: str, *, actor: str, next_step: str | None) -> WorkItem:
@@ -94,12 +97,19 @@ class WorkFacade:
         return [item for item in self.repository.list("relation") if identity in (item.from_item, item.to_item)]
 
     def set_summary(self, identity: str, *, purpose: str, done: str, doing: str, next: str,
-                    authoring_role: str, actor: str) -> Summary:
+                    authoring_role: str, actor: str, activation: str | None = None,
+                    source_run: str | None = None) -> Summary:
         item = self.get(identity)
+        authorization = None
+        if activation is not None:
+            if self.authority is None:
+                raise AuthorityRejected('activation authority is not configured')
+            authorization = self.authority().require('summary', identity, actor=actor, activation=activation)
         if self.records is None:
             raise ValueError('Records authoring is required')
-        summary = Summary(identity, purpose, done, doing, next, authoring_role, self.clock())
-        self.records.write_summary(summary, item.project, actor=actor)
+        summary = Summary(identity, purpose, done, doing, next, authoring_role, self.clock(), activation,
+                          None if authorization is None else authorization.mandate_version)
+        self.records.write_summary(summary, item.project, actor=actor, source_run=source_run)
         return summary
 
     def summary(self, identity: str) -> Summary | None:

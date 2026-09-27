@@ -3,9 +3,25 @@
 from datetime import datetime
 from typing import Callable
 from uuid import uuid4
+from dataclasses import asdict
+import json
 
 from .ports import DecisionRepository
 from ..domain import Decision, Proposal, selected_answer
+
+
+def record_decision(repository, clock, records, authorization, source_run: str,
+                    question: str, answer: str, context: str) -> Decision:
+    decision = Decision(str(uuid4()), None, question, answer, authorization.actor, context,
+                        (authorization.work_item,), clock(), authorization.id,
+                        authorization.mandate_version, source_run)
+    with repository.transaction() as transaction:
+        transaction.insert(decision)
+    result = records.write(authorization.project, f'decisions/{decision.id}.json',
+        json.dumps(asdict(decision), default=str), key=decision.id, actor=authorization.actor, source_run=source_run)
+    if result['state'] != 'confirmed':
+        raise ValueError(result['error'])
+    return decision
 
 
 def propose(repository, clock, activation, *, question: str, change: str, reason: str) -> Proposal:

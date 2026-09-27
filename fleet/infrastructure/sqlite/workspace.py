@@ -8,8 +8,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from fleet.modules.workspace import WorkspaceState, WorkspaceSnapshot
-from fleet.infrastructure.config.workspace import decode_workspace
-from fleet.projections.workspace import workspace_config
+from fleet.infrastructure.config.workspace import decode_workspace, workspace_config
 from .repository import Repository
 
 

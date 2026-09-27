@@ -16,11 +16,11 @@ def deliver(repository: ExecutionRepository, run: Run, call: Callable, push: Cal
     if payload is None:
         raise ValueError("linked run has no dispatch payload")
     digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
-    identity = ["--run-id", run.id, "--fingerprint", digest, "--schema-version", "3"]
+    identity = ["--run-id", run.id, "--fingerprint", digest, "--schema-version", "4"]
 
     def check(job: dict) -> dict:
         if (job["id"] != run.remote_job_id or job["run_id"] != run.id
-                or job["schema_version"] not in (3, 4) or job["fingerprint"] != digest):
+                or job["schema_version"] != 4 or job["fingerprint"] != digest):
             raise FleetError("worker returned a different run; run outcome is unknown")
         observe(repository, run.host, JobObservation(job["id"], job["status"], run.runtime,
                                                     run.start, run.end, run.last_observed, Usage.from_worker(job)))
