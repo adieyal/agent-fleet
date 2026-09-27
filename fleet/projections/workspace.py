@@ -3,6 +3,7 @@
 from dataclasses import asdict
 
 from fleet.modules.workspace import Project, ProjectReference, Registry, WorkspaceFacade, WorkspaceSnapshot
+from .activity import with_activity
 
 
 def project_config(project: Project) -> dict:
@@ -32,4 +33,4 @@ def resolve(registry: Registry, host: str, item: dict) -> dict:
 
 def annotate(workspace: WorkspaceFacade, item: dict) -> dict:
     reference = ProjectReference(item.get("project"), item.get("project_id"))
-    return {**item, "focus": workspace.focus_of(reference)}
+    return {**with_activity(item), "focus": workspace.focus_of(reference)}

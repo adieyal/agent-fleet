@@ -15,17 +15,19 @@ def observe_runs(execution: ExecutionFacade, library: LibraryFacade, host: dict)
     if not host["ok"]:
         execution.unavailable(host["name"])
         return
-    linked = {run.remote_job_id for run in execution.runs() if run.host == host["name"]}
     actions = {action.id: action for action in execution.actions()}
     for job in host["jobs"].values():
-        if job["id"] not in linked:
+        if execution.find_run(host["name"], job["id"]) is None:
             continue
         starts = [step["started_at"] for step in job["steps"] if step["started_at"] is not None]
         ends = [step["finished_at"] for step in job["steps"] if step["finished_at"] is not None]
         end = max(ends) if ends and job["status"] in ("done", "failed", "cancelled") else None
+        event = job.get("activity")
         observation = JobObservation(job["id"], job["status"], job.get("agent"),
                                      timestamp(min(starts)) if starts else None, timestamp(end),
-                                     timestamp(job.get("updated_at")), Usage.from_worker(job))
+                                     timestamp(job.get("updated_at")), Usage.from_worker(job),
+                                     execution.classify_activity(event),
+                                     timestamp(event.get("ts")) if event is not None else None)
         run = execution.observe(host["name"], observation)
         if run is None or actions[run.action].work_item is None:
             continue

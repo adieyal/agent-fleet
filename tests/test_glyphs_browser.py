@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 from playwright.sync_api import Browser, Page
+from fleet.projections.activity import event_activity
 
 IMPORT = "import('/js/glyphs.js')"
 
@@ -20,7 +21,7 @@ def module_page(browser: Browser, base_url: str) -> Iterator[Page]:
 
 
 def action_of_event(page: Page, event: dict[str, Any] | None) -> str:
-    return page.evaluate(f"event => {IMPORT}.then(glyphs => glyphs.actionOfEvent(event))", event)
+    return page.evaluate(f"event => {IMPORT}.then(glyphs => glyphs.actionOfEvent(event))", event_activity(event))
 
 
 def tool(name: str, summary: str = "", **extra: Any) -> dict[str, Any]:
@@ -68,7 +69,8 @@ def test_tool_events_map_to_actions(module_page: Page, event: dict[str, Any] | N
     ({"status": "cancelled", "activity": None}, "cancelled"),
 ])
 def test_status_comes_before_the_latest_event(module_page: Page, item: dict[str, Any], action: str) -> None:
-    assert module_page.evaluate(f"item => {IMPORT}.then(glyphs => glyphs.actionOf(item))", item) == action
+    projected = {**item, "activity": event_activity(item["activity"])}
+    assert module_page.evaluate(f"item => {IMPORT}.then(glyphs => glyphs.actionOf(item))", projected) == action
 
 
 def test_every_action_has_a_labelled_glyph(module_page: Page) -> None:

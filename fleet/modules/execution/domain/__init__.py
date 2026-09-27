@@ -36,6 +36,8 @@ class JobObservation:
     end: datetime | None
     observed_at: datetime | None
     usage: Usage | None = None
+    current_action: str | None = None
+    action_observed_at: datetime | None = None
 
     def run_status(self) -> str:
         return {"running": "running", "done": "succeeded", "failed": "failed",
@@ -77,6 +79,8 @@ class Run:
     end: datetime | None
     last_observed: datetime | None
     usage: Usage | None = None
+    current_action: str | None = None
+    action_observed_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if not self.host.strip() or not self.remote_job_id.strip():

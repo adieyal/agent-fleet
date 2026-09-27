@@ -57,7 +57,7 @@ def project_status(project: str, work: WorkFacade, attention: AttentionFacade,
             "summary": asdict(summary) if summary is not None else None,
             "attention": [asdict(entry) for entry in open_items if entry.work_item == item.id],
             "decisions": [asdict(answer) for answer in answers if item.id in answer.affected_work_items],
-            "runs": [asdict(run) for run in item_runs],
+            "runs": [{**asdict(run), **execution.run_activity(run)} for run in item_runs],
             "library": [asdict(entry) for entry in entries
                         if entry.project == project and entry.work_item == item.id],
             "no_follow_up_yet": no_follow_up_yet(item, item_runs),

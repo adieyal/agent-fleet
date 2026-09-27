@@ -1,4 +1,4 @@
-// What an agent is doing: event classification and the phrases it mumbles (its glyph bubble's tooltip; see glyphs.js).
+// Render recorded activities and the phrases an agent mumbles (its glyph bubble's tooltip; see glyphs.js).
 
 import { hash, trunc } from './util.js';
 
@@ -19,38 +19,10 @@ export function activityFor(job) {
 }
 export const isActive = status => status === 'running' || status === 'working';
 
-// What an event has an android doing: the coarse tool kind refined with the same parse the mumbling uses (shellClass),
-// so a bubble saying "committing my work" goes with an android carrying a box to the outbox. null (an error): carry on.
-const GIT_ACTS = { commit: 'ship', push: 'ship', diff: 'review', log: 'review', show: 'review', blame: 'review', status: 'review' };
-const SHELL_ACTS = { test: 'test', lint: 'test', typecheck: 'test', install: 'build', build: 'build', serve: 'build', make: 'build',
-  docker: 'build', packages: 'build', curl: 'web', ssh: 'web', copy: 'web', gh: 'web', fleet: 'web', grep: 'search', list: 'search',
-  db: 'search', sleep: 'wait', ps: 'wait' };
-export const DOC_FILE = /\.(md|mdx|markdown|rst|txt)$/i;
-function shellActivity(command) {
-  const c = shellClass(command);
-  return c.cls === 'git' ? GIT_ACTS[c.sub] || 'type' : SHELL_ACTS[c.cls] || 'type';
-}
+// Execution classifies observations before the deck receives them.
 export function activityOf(ev) {
   if (!ev || ev.kind === 'text') return 'think';
-  if (ev.kind !== 'tool') return null;
-  const s = ev.summary || '';
-  switch (ev.name) {
-    case 'Bash': case 'shell': return shellActivity(s);
-    case 'BashOutput': case 'AskUserQuestion': return 'wait';
-    case 'Read': case 'Skill': return 'read';
-    case 'Edit': case 'MultiEdit': case 'Write': case 'NotebookEdit': return DOC_FILE.test(s) ? 'doc' : 'edit';
-    case 'apply_patch': return s && s.split(', ').every(p => DOC_FILE.test(p)) ? 'doc' : 'edit';
-    case 'Grep': case 'Glob': return 'search';
-    case 'WebFetch': case 'WebSearch': case 'web_search': return 'web';
-    case 'TodoWrite': case 'TaskCreate': case 'TaskUpdate': case 'EnterPlanMode': case 'ExitPlanMode': return 'plan';
-    case 'Task': case 'Agent': return 'delegate';
-  }
-  switch (ev.tool) {
-    case 'bash': return shellActivity(s);
-    case 'edit': return DOC_FILE.test(s) ? 'doc' : 'edit';
-    case 'read': case 'search': case 'web': case 'think': case 'plan': case 'delegate': return ev.tool;
-  }
-  return 'type';
+  return ev.activity_class ?? null;
 }
 
 // ------------------------------------------------------------------ mumbling: tool events → what an agent would mutter
@@ -107,8 +79,8 @@ const GIT_PHRASES = { status: "checking what's changed", diff: 'looking over the
   switch: 'switching branches', worktree: 'setting up a worktree', rebase: 'rebasing', merge: 'merging branches', stash: 'stashing changes',
   show: 'looking at a commit', grep: 'searching the repo', blame: 'working out who wrote this', branch: 'looking at branches',
   reset: 'resetting a branch', restore: 'restoring a file', 'cherry-pick': 'cherry-picking a commit', clone: 'cloning a repo' };
-// What a shell command is: { cls, prog, sub, arg, w }. The one parse both the mumbling and the androids' activities use,
-// so what an agent says and what it does agree. For git and npm-style runners `sub` is the subcommand or script.
+// Parse shell commands for tooltip wording. Activity classification belongs to Execution.
+// For git and npm-style runners `sub` is the subcommand or script.
 function shellClass(command) {
   const wrapped = String(command || '').match(/^\s*(?:ba|z)?sh\s+-l?c\s+(['"])([\s\S]*)\1\s*$/);   // codex: bash -lc '…'
   if (wrapped) return shellClass(wrapped[2]);

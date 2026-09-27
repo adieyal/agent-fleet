@@ -1,10 +1,12 @@
 from typing import Callable, TYPE_CHECKING
+from datetime import datetime, timezone
 
 from .application import link, observe, unavailable
 from .application.delivery import queue, retry as retry_delivery
 
 from .application.ports import ExecutionRepository, InputSender
 from .domain import Action, Claim, Delivery, DispatchResult, JobObservation, Run
+from .domain.activity import ACTION_FRESHNESS_SECONDS, classify_activity
 from fleet.modules.attention import AttentionItem
 from .application.dispatch import dispatch, retry, resolve_unknown
 from .application.worker import deliver
@@ -18,11 +20,23 @@ if TYPE_CHECKING:
 class ExecutionFacade:
     def __init__(self, repository: ExecutionRepository, work: WorkFacade,
                  prepare_dispatch: Callable[[], object] | None = None, *, send: InputSender | None = None,
-                 authority=None) -> None:
+                 authority=None, clock: Callable[[], datetime] | None = None) -> None:
         self.repository, self.work = repository, work
         self.send = send
         self.prepare_dispatch = prepare_dispatch
         self.authority = authority
+        self.clock = clock if clock is not None else lambda: datetime.now(timezone.utc)
+
+    classify_activity = staticmethod(classify_activity)
+
+    def run_activity(self, run: Run) -> dict:
+        observed = run.action_observed_at
+        freshness = "unknown"
+        if run.current_action is not None and observed is not None:
+            freshness = "stale" if (self.clock() - observed).total_seconds() > ACTION_FRESHNESS_SECONDS else "current"
+        return {"action_glyph": run.current_action,
+                "action_observed_at": observed.isoformat() if observed is not None else None,
+                "action_freshness": freshness}
 
     def queue_answer(self, item: AttentionItem, decision: "Decision") -> None:
         queue(self.repository, item, decision)
@@ -46,6 +60,9 @@ class ExecutionFacade:
 
     def get_run(self, identity: str) -> Run:
         return self.repository.get_run(identity)
+
+    def find_run(self, host: str, job: str) -> Run | None:
+        return self.repository.find(host, job)
 
     def dispatch(self, work_item: str | None, *, activation: str | None = None, **arguments) -> DispatchResult:
         if 'authorization' in arguments:
