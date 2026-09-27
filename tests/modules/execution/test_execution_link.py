@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from fleet.modules.execution import ExecutionFacade
+from fleet.modules.execution import ExecutionFacade, JobObservation
 
 
 class Repository:
@@ -23,6 +23,13 @@ class Repository:
     def save(self, action, run, actor):
         self.saved.append((action, run, actor))
 
+    def runs(self):
+        return [run for _, run, _ in self.saved]
+
+    def update(self, run, actor):
+        self.saved = [(action, run if previous.id == run.id else previous, actor)
+                      for action, previous, _ in self.saved]
+
 
 def test_link_only_reads_work_and_deduplicates_by_host_and_job():
     reads = []
@@ -37,3 +44,16 @@ def test_link_only_reads_work_and_deduplicates_by_host_and_job():
     assert reads == ["work", "work", "work"]
     with pytest.raises(ValueError, match="actor"):
         execution.link("one", "new", "work", actor="")
+
+
+def test_stalled_runner_is_not_confirmed_lost_and_reconciliation_does_not_call_work():
+    reads = []
+    work = SimpleNamespace(get=lambda identity: reads.append(identity))
+    execution = ExecutionFacade(Repository(), work)
+    linked = execution.link("host", "job", "work", actor="user")
+    stalled = execution.observe("host", JobObservation("job", "stalled", "codex", None, None, None))
+    assert stalled.id == linked.id
+    assert stalled.status == "unknown outcome" and stalled.reason is None
+    assert reads == ["work"]
+    assert execution.observe("other", JobObservation("job", "failed", "codex", None, None, None)) is None
+    assert execution.runs() == [stalled]

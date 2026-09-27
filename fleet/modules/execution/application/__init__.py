@@ -1,9 +1,10 @@
 """Link host-local jobs without changing accepted work."""
 
 from uuid import uuid4
+from dataclasses import replace
 
 from .ports import ExecutionRepository
-from ..domain import Action, Run
+from ..domain import Action, JobObservation, Run
 from fleet.modules.work import WorkFacade
 
 
@@ -23,3 +24,26 @@ def link(repository: ExecutionRepository, work: WorkFacade, host: str, job: str,
         run = Run(str(uuid4()), action.id, host, job, runtime, "unknown outcome", None, None, None, None)
         transaction.save(action, run, actor)
         return run
+
+
+def observe(repository: ExecutionRepository, host: str, observation: JobObservation) -> Run | None:
+    with repository.transaction() as transaction:
+        run = transaction.find(host, observation.job)
+        if run is None:
+            return None
+        updated = replace(run, status=observation.run_status(), reason=None,
+                          runtime=observation.runtime, start=observation.start, end=observation.end,
+                          last_observed=observation.observed_at)
+        if updated != run:
+            transaction.update(updated, "fleetd")
+        return updated
+
+
+def unavailable(repository: ExecutionRepository, host: str) -> bool:
+    changed = False
+    with repository.transaction() as transaction:
+        for run in transaction.runs():
+            if run.host == host and run.status == "running":
+                transaction.update(replace(run, status="unknown outcome", reason=None), "fleetd")
+                changed = True
+    return changed

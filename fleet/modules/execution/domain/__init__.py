@@ -5,6 +5,20 @@ from datetime import datetime
 
 
 @dataclass(frozen=True)
+class JobObservation:
+    job: str
+    status: str
+    runtime: str | None
+    start: datetime | None
+    end: datetime | None
+    observed_at: datetime | None
+
+    def run_status(self) -> str:
+        return {"running": "running", "done": "succeeded", "failed": "failed",
+                "cancelled": "stopped", "queued": "unknown outcome", "stalled": "unknown outcome"}[self.status]
+
+
+@dataclass(frozen=True)
 class Action:
     id: str
     work_item: str

@@ -42,6 +42,7 @@ TMUX_PREFIX = "fleet-"
 TMUX_COMMAND = ["tmux", "-L", "fleet", "-f", "/dev/null"]
 SUMMARY_LENGTH = 160
 TERMINAL_STATUSES = ("done", "failed", "cancelled")
+STREAM_PROTOCOL_VERSION = 2
 
 JsonObject = Dict[str, Any]
 
@@ -539,6 +540,9 @@ def job_summary(job: JsonObject, event_count: int) -> JsonObject:
         "session_id": job.get("session_id"),
         "tmux": f"tmux -L fleet attach -t {tmux_session(job['id'])}",
         "documents": job_documents(job),
+        "trace": {"path": str(JOBS_DIRECTORY / job["id"] / "events.jsonl"),
+                  "availability": "available" if (JOBS_DIRECTORY / job["id"] / "events.jsonl").is_file()
+                  else "unavailable"},
     }
 
 
@@ -1245,7 +1249,8 @@ def command_stream(arguments: argparse.Namespace) -> None:
     pipelines = PipelineTracker()
     last_pipeline_scan = 0.0
     try:
-        emit({"type": "hello", "host": os.uname().nodename, "time": now()})
+        emit({"type": "hello", "host": os.uname().nodename, "time": now(),
+              "protocol_version": STREAM_PROTOCOL_VERSION})
         while True:
             seen = set()
             for path in JOBS_DIRECTORY.glob("*/job.json") if JOBS_DIRECTORY.exists() else []:
