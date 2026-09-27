@@ -40,7 +40,7 @@ def test_silence_deadline_marks_linked_run_unknown(monkeypatch):
     except Finished:
         pass
     assert waits == [server.STREAM_SILENCE_LIMIT]
-    assert "--since-hours" in commands[0] and "inf" in commands[0]
+    assert "--since-hours" not in commands[0]
     assert execution.runs()[0].status == "unknown outcome"
     http = ThreadingHTTPServer(("127.0.0.1", 0), server.make_handler(state))
     thread = threading.Thread(target=http.serve_forever, kwargs={"poll_interval": 0.01})

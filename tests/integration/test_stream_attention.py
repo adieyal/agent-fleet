@@ -35,13 +35,11 @@ def test_recorded_failure_is_stored_once_before_any_read(recorded):
     assert len(attention.list()) == 1
     first = attention.list()[0]
     assert first.kind == 'blocker'
-    sequence, version = store.latest_sequence(), state.version
     for _ in range(3):
         now[0] += timedelta(seconds=1)
         apply_message(state, worker, {'type': 'job', 'job': job})
     assert [item.id for item in attention.list()] == [first.id]
-    assert attention.list()[0].last_seen == first.last_seen
-    assert (store.latest_sequence(), state.version) == (sequence, version)
+    assert attention.list()[0].last_seen == now[0]
     sequence = store.latest_sequence()
     assert state.document()['attention'] == state.document()['attention']
     assert store.latest_sequence() == sequence

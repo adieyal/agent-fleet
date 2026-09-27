@@ -4,8 +4,6 @@ The web-hosted ingester feeds job observations into Execution by host and job ID
 The existing stream silence deadline is 20 seconds. Disconnects and silence mark
 running runs as unknown outcome; known terminal outcomes remain recorded. A hello
 alone does not establish a run outcome: the worker must report the job again.
-Streams include retained jobs beyond the default 24-hour window so a long outage
-does not hide a completed linked job on reconnect.
 
 Execution maps done to succeeded and cancelled to stopped. Queued and stalled
 jobs remain unknown outcome. Fleetd's current stalled status checks only the

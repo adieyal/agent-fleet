@@ -59,6 +59,12 @@ def test_recorded_stream_reconciles_without_changing_work(outcome):
     assert pruned.id == trace.id and pruned.availability == "unavailable"
     sequence, version = store.latest_sequence(), state.version
     apply_message(state, host, final)
-    assert (store.latest_sequence(), state.version) == (sequence, version)
+    if outcome == "failed":
+        attention, = composition.open_attention(store).list()
+        change, = store.history_after(sequence)
+        assert change["subject"] == f"attention:{attention.id}"
+        assert state.version == version + 1
+    else:
+        assert (store.latest_sequence(), state.version) == (sequence, version)
     state.update(host.name, lambda entry: entry.update(ok=False, error="offline", jobs={}))
     assert execution.runs()[0] == reconciled

@@ -114,11 +114,10 @@ class FleetState(LiveWorkspace):
             if ingest:
                 host = self.by_host[host_name]
                 observe_runs(self.execution, self.run_library, host)
-                if previous != host or heartbeat:
-                    reconciled = self.attention.observe({**host,
-                        "jobs": [self.registry.resolve(host_name, job) for job in host["jobs"].values()],
-                        "sessions": [self.registry.resolve(host_name, session) for session in host["sessions"].values()]},
-                        owners=owners, raise_items=not heartbeat)
+                reconciled = self.attention.observe({**host,
+                    "jobs": [self.registry.resolve(host_name, job) for job in host["jobs"].values()],
+                    "sessions": [self.registry.resolve(host_name, session) for session in host["sessions"].values()]},
+                    owners=owners, raise_items=not heartbeat)
             if previous == self.by_host[host_name] and self.store.latest_sequence() == sequence and not reconciled:
                 return
             self.version += 1
@@ -201,7 +200,7 @@ def run_stream(state: FleetState, host: Host) -> str:
         transport.ensure_master(host)
     except subprocess.TimeoutExpired:
         return "ssh connect timed out"
-    process = subprocess.Popen(host.fleetd_command(["stream", "--events", EVENTS_PER_JOB, "--since-hours", "inf"]),
+    process = subprocess.Popen(host.fleetd_command(["stream", "--events", EVENTS_PER_JOB]),
                                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     assert process.stdout is not None and process.stderr is not None
     selector = selectors.DefaultSelector()
