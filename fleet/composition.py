@@ -12,6 +12,9 @@ from fleet.infrastructure.sqlite import Store
 from fleet.infrastructure.sqlite.attention import AttentionRepository
 from fleet.infrastructure.sqlite.attention_import import import_workspace
 from fleet.modules.attention import AttentionFacade
+from fleet.modules.work import WorkFacade
+from fleet.infrastructure.sqlite.work import WorkRepository
+from fleet.infrastructure.documents.evidence import FileEvidenceReader
 
 
 def store_path() -> Path:
@@ -26,3 +29,9 @@ def open_attention(store: Store | None = None, *, workspace_path: Path | None = 
     store = store if store is not None else open_store()
     import_workspace(store, workspace_path if workspace_path is not None else transport.CONFIG_PATH.parent / "workspace.json")
     return AttentionFacade(AttentionRepository(store), store.clock)
+
+
+def open_work(store: Store | None = None) -> WorkFacade:
+    store = store if store is not None else open_store()
+    repository = WorkRepository(store, lambda unit: AttentionFacade(AttentionRepository(store, unit), store.clock))
+    return WorkFacade(repository, FileEvidenceReader(), store.clock)

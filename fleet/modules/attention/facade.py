@@ -16,11 +16,11 @@ class AttentionFacade:
 
     def raise_item(self, *, project: str, kind: str, owner: str, source: str, source_reference: str,
                    headline: str, context_reference: str, actor: str,
-                   work_item: str | None = None, run: str | None = None) -> AttentionItem:
+                   work_item: str | None = None, run: str | None = None, reopen: bool = False) -> AttentionItem:
         return self.commands.raise_item(project=project, kind=kind, owner=owner, source=source,
                                         source_reference=source_reference, headline=headline,
                                         context_reference=context_reference, actor=actor,
-                                        work_item=work_item, run=run)
+                                        work_item=work_item, run=run, reopen=reopen)
 
     def acknowledge(self, item_id: str, *, actor: str) -> AttentionItem:
         return self.commands.change(item_id, "acknowledged", actor)

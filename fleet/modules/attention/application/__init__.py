@@ -16,7 +16,7 @@ class Commands:
 
     def raise_item(self, *, project: str, kind: str, owner: str, source: str, source_reference: str,
                    headline: str, context_reference: str, actor: str,
-                   work_item: str | None = None, run: str | None = None) -> AttentionItem:
+                   work_item: str | None = None, run: str | None = None, reopen: bool = False) -> AttentionItem:
         required(actor, "actor")
         now = self.clock()
         with self.repository.transaction() as repository:
@@ -28,6 +28,8 @@ class Commands:
                 state=previous.state if previous else "open",
                 snooze_until=previous.snooze_until if previous else None,
                 resolution_details=previous.resolution_details if previous else None, last_seen=now)
+            if reopen and previous is not None and previous.state == "resolved":
+                item = replace(item, state="open", snooze_until=None, resolution_details=None)
             if previous is None:
                 action = repository.imported_action(source_reference)
                 if action is not None:
