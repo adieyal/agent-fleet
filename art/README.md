@@ -9,6 +9,7 @@ PREVIEW=1 art/build.sh    # also render art/build/<scene>/preview.png from the s
 uv run --group dev python art/scripts/shoot_bench.py [DIR]   # screenshot /prototype/bench beside l2.png
 blender -b -P art/scripts/shoot_robot.py && uv run --group dev python art/scripts/robot_sheets.py
                           # robot turnaround, faces and accessories, every clip, and a side-by-side with B2
+uv run --group dev python art/scripts/build_robot_sprites.py   # the robot's sprite atlases (after art/build.sh robot)
 ```
 
 Output goes to `fleet/web/assets/world/<scene>/`, and that is the only thing committed. Each scene must stay under 15 MB; `build.sh` fails when one doesn't.
@@ -21,6 +22,7 @@ There are two scenes:
   - It adds arm-only clips `Rest`, `Type`, `Write` and `Hold`, posed on the end of `Sitting`.
   - A pencil and a test tube hang from its right hand.
   - The page plays `Sitting` without its arm tracks, plus one arm clip, and seats the robot using `runtime.seat_point` from the manifest.
+  - `build_robot_sprites.py` renders it into paper-doll sprite atlases for the 2D runtime, in `fleet/web/assets/world/robot/sprites/`: body with tint mask, contact shadow, faces, kits and held items as separate layers, four facings, 1x/2x/4x. The format is in `docs/design/robot-sprites.md`. They are not part of the 15 MB scene budget; the build reports their size.
 
 The prototype page `/prototype/bench` combines them in three.js. It is served by `fleet/web/server.py` and not linked from the deck.
 

@@ -132,7 +132,8 @@ def main() -> None:
     out = p['out']
     out.mkdir(parents=True, exist_ok=True)
     for old in out.glob('*'):
-        old.unlink()
+        if old.is_file():  # a scene's subfolders (the robot's sprites/) are built separately
+            old.unlink()
     layers = {}
     for layer in bake['layers']:
         layers[layer] = encode_lightmap(p['lightmaps'] / f'{layer}.exr', out / f'lightmap-{layer}.webp')
@@ -168,11 +169,11 @@ def main() -> None:
         'built_with': {'blender': bpy.app.version_string, 'bake_device': bake.get('device'),
                        'samples': bake.get('samples')},
         'files': {f.name: {'bytes': f.stat().st_size, 'sha256': hashlib.sha256(f.read_bytes()).hexdigest()}
-                  for f in sorted(out.glob('*'))},
+                  for f in sorted(out.glob('*')) if f.is_file()},
         'glb_summary': summary,
     }
     (out / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
-    total = sum(f.stat().st_size for f in out.glob('*'))
+    total = sum(f.stat().st_size for f in out.glob('*') if f.is_file())
     print(f'EXPORT {scene_name}: {total / 1e6:.1f} MB in {out}')
 
 
