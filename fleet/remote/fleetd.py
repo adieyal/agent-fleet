@@ -1319,14 +1319,20 @@ def start_job(job_id: str, arguments: argparse.Namespace) -> None:
 
 
 def command_reconcile(arguments: argparse.Namespace) -> None:
-    if arguments.schema_version != DISPATCH_SCHEMA_VERSION:
+    if arguments.schema_version not in (DISPATCH_SCHEMA_VERSION, 4):
         fail("unsupported dispatch schema version")
     job = next((job for job in all_jobs() if job.get("run_id") == arguments.run_id), None)
     if job is None:
+        if arguments.schema_version == 4:
+            emit({"schema_version": 4, "run_id": arguments.run_id,
+                  "fingerprint": arguments.fingerprint, "status": "absent"})
+            return
         fail(f"no such run: {arguments.run_id}")
     if job["fingerprint"] != arguments.fingerprint:
         fail("run fingerprint has changed payload")
-    emit(job_summary(job, 0))
+    summary = job_summary(job, 0)
+    summary["schema_version"] = arguments.schema_version
+    emit(summary)
 
 
 def command_deliver(arguments: argparse.Namespace) -> None:
