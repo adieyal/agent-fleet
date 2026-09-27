@@ -390,17 +390,22 @@ class _Runtime:
     def command(self, job: JsonObject, step: JsonObject, session_id: Optional[str]) -> List[str]:
         return _runtime_command(job, step, session_id)
 
-    def parse(self, record: JsonObject) -> List[JsonObject]:
+    def parse(self, record: JsonObject) -> Tuple[List[JsonObject], Optional[JsonObject]]:
         events = self.parser.parse(record)
+        result = None
         if self.name == "codex" and record.get("type") in ("turn.completed", "turn.failed"):
-            events.append({"kind": "result", "ok": record["type"] == "turn.completed",
-                           "summary": "", "text": None})
+            result = {"ok": record["type"] == "turn.completed"}
         for event in events:
             if event["kind"] == "result":
-                tokens = record.get("usage")
-                cost = record.get("total_cost_usd")
-                event["usage"] = None if tokens is None and cost is None else {"tokens": tokens, "cost_usd": cost}
-        return events
+                result = {"ok": event["ok"], "summary": event["summary"], "text": event.pop("text", "")}
+        if result is not None:
+            tokens = record.get("usage")
+            cost = record.get("total_cost_usd")
+            result["usage"] = None if tokens is None and cost is None else {"tokens": tokens, "cost_usd": cost}
+            for event in events:
+                if event["kind"] == "result":
+                    event["usage"] = result["usage"]
+        return events, result
 
     def finish(self, outcome: JsonObject, exit_code: int, last_text: str) -> None:
         if self.name == "codex":
@@ -521,7 +526,11 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
                 if line.strip():
                     append_event(job_id, {"kind": "log", "step": step["index"], "summary": shorten(line)})
                 continue
-            for event in runtime.parse(record):
+            events, result = runtime.parse(record)
+            if result is not None:
+                result_recorded = True
+                outcome.update(result)
+            for event in events:
                 event["step"] = step["index"]
                 if event["kind"] == "session" and event.get("session_id"):
                     with locked_job(job_id) as live_job:
@@ -534,10 +543,6 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
                     record_written_documents(job_id, job["cwd"], event["paths"], step["index"])
                 if event["kind"] == "text":
                     last_text = event.pop("text", None) or event["summary"]
-                if event["kind"] == "result":
-                    result_recorded = True
-                    outcome = {"ok": event["ok"], "summary": event["summary"], "text": event.pop("text", ""),
-                               "usage": event["usage"]}
                 append_event(job_id, event)
         exit_code = process.wait()
     runtime.finish(outcome, exit_code, last_text)

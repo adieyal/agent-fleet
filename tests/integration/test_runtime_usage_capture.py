@@ -38,6 +38,9 @@ def test_recorded_results_reach_durable_run_without_replay_churn(tmp_path, monke
     (tmp_path / "job").mkdir()
     (tmp_path / "job" / "job.json").write_text(json.dumps(job))
     fleetd.run_job("job")
+    if agent == "codex":
+        events = [json.loads(line) for line in (tmp_path / "job" / "events.jsonl").read_text().splitlines()]
+        assert not any(event["kind"] == "result" and not event["summary"] for event in events)
     summary = fleetd.job_summary(fleetd.read_job("job"), 0)
     assert summary["status"] == "done"
     store = composition.open_store()
