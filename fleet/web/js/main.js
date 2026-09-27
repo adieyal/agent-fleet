@@ -46,7 +46,7 @@ function frame(ts) {
     const r = roomByName.get(e.room);
     if (!r) continue;
     updateEnt(e, r, dt, t, now);
-    if (e.walking || !e.target || !isActive(e.job.status) || r.focus === 'background') continue;   // a background room's props rest
+    if (e.walking || !e.target || !isActive(e.job.status)) continue;
     const p = e.target.prop;
     if (p === 'terminal') { r.busyTerm |= 1 << e.target.propIdx; if (e.act === 'test') r.testTerm |= 1 << e.target.propIdx; }
     else if (p === 'cabinet') r.busyCab |= 1 << e.target.propIdx;
@@ -135,7 +135,7 @@ loadAssets().then(() => {
     : _w.set(r.ox + t.out, t.up + b * t.h / 2, r.oy + t.along - a * t.w / 2), { x: 0, y: 0 }));
   window.fleetDeck = Object.freeze({
     rooms: () => rooms.map(r => ({ name: r.name, label: r.label, x: r.ox, y: r.oy,
-      screen: toScreen(_w.set(r.ox + RW / 2, 0, r.oy + RD / 2), { x: 0, y: 0 }), focus: r.focus, dim: r.dimK ?? null,
+      screen: toScreen(_w.set(r.ox + RW / 2, 0, r.oy + RD / 2), { x: 0, y: 0 }), focus: r.focus, dim: r.dimK ?? null, lit: r.lit,
       attention: r.attention?.level ? { kind: r.attention.kind, state: r.attention.level, count: r.attention.shown.length } : null })),
     agents: () => [...ents.values()].map(e => ({ key: e.key, kind: e.kind, room: e.room, status: e.job.status, leaving: !!e.leaving, clip: e.bot.clip })),
     apply: doc => applyState(doc),   // feed a state document as the stream would

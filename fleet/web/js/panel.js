@@ -246,7 +246,8 @@ export function renderLegend() {
 }
 export function renderStats() {
   const count = { running: 0, queued: 0, done: 0 }, live = { working: 0, idle: 0 };
-  for (const e of ents.values()) if (!isSession(e) && count[e.job.status] !== undefined) count[e.job.status]++;
+  // jobs in a background room count too, though they have no android
+  for (const h of hosts) for (const j of h.jobs || []) if (count[j.status] !== undefined) count[j.status]++;
   // every session counts, including idle ones that have left the deck
   for (const h of hosts) for (const s of h.sessions || []) if (s.project && live[s.status] !== undefined) live[s.status]++;
   document.getElementById('stats').innerHTML = `

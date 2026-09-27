@@ -4,7 +4,7 @@ import { QS, RD, REDUCED } from './env.js';
 import { store } from './util.js';
 import { ROBOT, cam, drawSign } from './scene.js';
 import { fit } from './camera.js';
-import { blocked, ents, everLoaded, hosts, live, selectedKey, setEverLoaded, setHosts, setLive, workOf } from './model.js';
+import { ents, everLoaded, hosts, live, offFloor, selectedKey, setEverLoaded, setHosts, setLive, workOf } from './model.js';
 import { hostLook } from './looks.js';
 import { layoutRooms, rooms } from './rooms.js';
 import { buildDocs, noteDocs } from './docs3d.js';
@@ -55,7 +55,8 @@ function visibleHosts(doc) {
 }
 // Finished jobs leave the deck: one that finishes while you watch walks out through the door (motion.js), one
 // already finished never shows. A header chip counts them and shows them again. Failed and stalled jobs have no
-// android either: their room's lantern (attention.js) carries them and opens their panel.
+// android either: their room's lantern (attention.js) carries them and opens their panel. Nor has any work in a
+// background room: the room is lit warm while it runs (focus.js).
 const FINISHED_STATUSES = new Set(['done', 'cancelled']);
 const BLOCKED_STATUSES = new Set(['failed', 'stalled']);
 const LEAVE_WITHIN_SECONDS = 30;
@@ -126,11 +127,12 @@ export function applyState(doc) {
   applyFocus(doc, rooms);
   const seen = new Set();
   const now = performance.now() / 1000;
-  blocked.clear();
+  const quiet = new Set(rooms.filter(r => r.focus === 'background').map(r => r.name));
+  offFloor.clear();
   for (const h of hosts) {
     for (const j of h.jobs || []) {
       const key = h.name + ':' + j.id;
-      if (BLOCKED_STATUSES.has(j.status)) { blocked.set(key, { key, kind: 'job', host: h.name, job: j, look: hostLook(h.name) }); continue; }
+      if (BLOCKED_STATUSES.has(j.status) || quiet.has(j.project)) { offFloor.set(key, { key, kind: 'job', host: h.name, job: j, look: hostLook(h.name) }); continue; }
       seen.add(key);
       let e = ents.get(key);
       const known = !!e;
@@ -149,6 +151,7 @@ export function applyState(doc) {
     for (const s of h.sessions || []) {
       if (!s.project || departed(h, s, doc)) continue;
       const key = h.name + ':' + s.id;
+      if (quiet.has(s.project)) { offFloor.set(key, { key, kind: 'session', host: h.name, job: s, look: hostLook(h.name) }); continue; }
       seen.add(key);
       let e = ents.get(key);
       if (!e) { e = createEnt(key, h.name, s, 'session'); ents.set(key, e); }
@@ -157,7 +160,7 @@ export function applyState(doc) {
       if (e.room !== s.project) { e.room = s.project; e.local = { x: 5.5, y: RD + 0.7 }; e.path = []; e.target = null; e.fresh = true; }
     }
   }
-  for (const [k, e] of ents) if (!seen.has(k)) { dropEnt(e); ents.delete(k); if (selectedKey === k && !blocked.has(k)) closePanel(); }
+  for (const [k, e] of ents) if (!seen.has(k)) { dropEnt(e); ents.delete(k); if (selectedKey === k && !offFloor.has(k)) closePanel(); }
   setEverLoaded(true);
   applyAttention(rooms, doc);
   patchScene();

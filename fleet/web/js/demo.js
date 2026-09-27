@@ -355,11 +355,12 @@ export function demoSource() {
     ['node-a', 'demo-docs', 'Support article: PAR by weekday', 'claude', 'claude-opus-5-5', ['Read the feature PR', 'Draft the article', 'Tighten the copy'], 3, 'done'],
   ];
   const t0 = now();
+  const focusOf = project => project === 'demo-parser' ? 'background' : 'priority';   // lit warm while its parse runs
   function newTodos(job) { const start = Math.floor(rand() * 4); job.todos = TODO_POOL.slice(start, start + 3).map((text, i) => ({ text, status: i === 0 ? 'in_progress' : 'pending' })); }
   const jobs = specs.map(([host, project, description, agent, model, titles, cur, status], i) => {
     const id = hash(description).toString(16).padStart(8, '0').slice(0, 6);
     const job = {
-      id, host, project, description, agent, model, status, cwd: `~/src/${project}`,
+      id, host, project, focus: focusOf(project), description, agent, model, status, cwd: `~/src/${project}`,
       permission: agent === 'claude' ? 'acceptEdits' : 'workspace-write',
       created_at: t0 - 3600 + i * 240, updated_at: t0 - (status === 'stalled' ? 1500 : 20),
       session_id: null, tmux: `tmux -L fleet attach -t fleet-${id}`, todos: [], events: [], activity: null, ticks: 0, documents: [],
@@ -394,7 +395,7 @@ export function demoSource() {
   const sessions = sessionSpecs.map(([host, project, agent, model, id, title, status, startedAgo, quietFor], i) => {
     const cwd = `~/src/${project}`;
     const session = {
-      id, host, agent, cwd, project, title, status, model, started_at: t0 - startedAgo,
+      id, host, agent, cwd, project, focus: focusOf(project), title, status, model, started_at: t0 - startedAgo,
       updated_at: t0 - quietFor, todos: [], events: [], activity: null,
       resume: `cd ${cwd} && ${agent === 'codex' ? 'codex resume' : 'claude --resume'} ${id}`,
     };
