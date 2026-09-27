@@ -44,10 +44,19 @@ HAND_POSE = {
 }
 HELD = {'book': 'pinch', 'box': 'cupped'}  # hand poses that hold a modelled prop (motion_rig.hold): the hands used
 SHEET = dict(paper='#f2efe6', ink='#8f9090', aspect=1.35, curl=0.012)  # the modelled sheet between pinch hands
-# layered clips: a seated base with the arms, neck and head of another clip
-LAYERED = {'reading-seated': ('sitting-idle', 'standing-reading-phone')}
 UPPER = ['Neck', 'Head'] + [f'{s}{b}' for s in ('Left', 'Right') for b in
                               ('Shoulder', 'Arm', 'ForeArm', 'Hand')]
+HEAD = ['Neck', 'Head']
+FACE_ONLY = {'band', 'back_dot'}
+# layered clips (names that are not Mixamo files): (base clip, over clip, bones taken from over, length from 'base'
+# or 'over'). A base may itself be layered. The seated nods and shakes put the standing nod-yes / shake-no head on
+# the seated still, typing and reading bodies.
+LAYERED = {
+    'reading-seated': ('sitting-idle', 'standing-reading-phone', UPPER, 'base'),
+    'sit-nod': ('sitting-idle', 'nod-yes', HEAD, 'over'), 'sit-shake': ('sitting-idle', 'shake-no', HEAD, 'over'),
+    'type-nod': ('typing', 'nod-yes', HEAD, 'over'), 'type-shake': ('typing', 'shake-no', HEAD, 'over'),
+    'read-nod': ('reading-seated', 'nod-yes', HEAD, 'over'), 'read-shake': ('reading-seated', 'shake-no', HEAD, 'over'),
+}
 
 
 def body_meta() -> dict:
@@ -72,6 +81,14 @@ def targets() -> dict:
     return t
 
 
+def behaviour(name: str) -> str:
+    """The clip whose hand pose, posture and arm goals a layered clip takes: its base, unless it overrides the
+    upper body itself (reading-seated)."""
+    while name in LAYERED and LAYERED[name][2] is HEAD:
+        name = LAYERED[name][0]
+    return name
+
+
 def import_armature(path: Path):
     before = set(bpy.data.objects)
     bpy.ops.import_scene.fbx(filepath=str(path))
@@ -83,31 +100,88 @@ def import_armature(path: Path):
     return arm
 
 
-def load_clip(path: Path):
-    """A Mixamo clip, or a layered one (LAYERED, named by a path stem that is not a file): the seated base clip
-    with the other clip's upper-body rotations copied over it, looped to the base's length."""
-    name = path.stem
-    base, over = LAYERED.get(name, (name, None))
-    arm = import_armature(path.with_name(f'{base}.fbx'))
-    if over:
-        src = import_armature(path.with_name(f'{over}.fbx'))
-        act, oact = arm.animation_data.action, src.animation_data.action
-        f0, f1 = (int(f) for f in act.frame_range)
-        o0, o1 = (int(f) for f in oact.frame_range)
-        for b in UPPER:
-            bone = 'mixamorig:' + b
-            for fc in [fc for fc in act.fcurves if fc.data_path.startswith(f'pose.bones["{bone}"].rotation')]:
-                act.fcurves.remove(fc)
-            for ofc in [fc for fc in oact.fcurves if fc.data_path.startswith(f'pose.bones["{bone}"].rotation')]:
-                fc = act.fcurves.new(ofc.data_path, index=ofc.array_index, action_group=bone)
-                vals = [ofc.evaluate(o0 + (f - f0) % (o1 - o0 + 1)) for f in range(f0, f1 + 1)]
-                fc.keyframe_points.add(len(vals))
-                fc.keyframe_points.foreach_set('co', [c for i, v in enumerate(vals) for c in (f0 + i, v)])
-                fc.update()
-        bpy.data.objects.remove(src)
-    arm.name = name
-    arm['clip'] = name
+def build_clip(folder: Path, name: str):
+    """A Mixamo clip's armature, or a layered one (LAYERED): the base with the over clip's rotations on its bones,
+    the over clip looped to the base's length, or the base held (constant) over the over clip's length."""
+    if name not in LAYERED:
+        return import_armature(folder / f'{name}.fbx')
+    base, over, bones, length = LAYERED[name]
+    arm = build_clip(folder, base)
+    src = import_armature(folder / f'{over}.fbx')
+    act, oact = arm.animation_data.action, src.animation_data.action
+    f0, f1 = (int(f) for f in act.frame_range)
+    o0, o1 = (int(f) for f in oact.frame_range)
+    if length == 'over':
+        f1 = f0 + (o1 - o0)
+        act.use_frame_range, act.frame_start, act.frame_end = True, f0, f1
+    for b in bones:
+        bone = 'mixamorig:' + b
+        for fc in [fc for fc in act.fcurves if fc.data_path.startswith(f'pose.bones["{bone}"].rotation')]:
+            act.fcurves.remove(fc)
+        for ofc in [fc for fc in oact.fcurves if fc.data_path.startswith(f'pose.bones["{bone}"].rotation')]:
+            fc = act.fcurves.new(ofc.data_path, index=ofc.array_index, action_group=bone)
+            vals = [ofc.evaluate(o0 + (f - f0) % (o1 - o0 + 1)) for f in range(f0, f1 + 1)]
+            fc.keyframe_points.add(len(vals))
+            fc.keyframe_points.foreach_set('co', [c for i, v in enumerate(vals) for c in (f0 + i, v)])
+            fc.update()
+    bpy.data.objects.remove(src)
     return arm
+
+
+def load_clip(path: Path):
+    name = path.stem
+    arm = build_clip(path.parent, name)
+    arm.name = name
+    arm['clip'] = behaviour(name)
+    return arm
+
+
+def make_loop(arm, tail: float = 0.3) -> None:
+    """Make a loop clip seamless: over the last `tail` of the clip, every curve is eased onto the value its first
+    frame has, so the last frame leads straight back into the first. (Quaternions are renormalised by Blender.)"""
+    act = arm.animation_data.action
+    f0, f1 = (int(f) for f in act.frame_range)
+    t0 = f1 - tail * (f1 - f0)
+    for fc in act.fcurves:
+        if not fc.data_path.startswith('pose.bones'):
+            continue
+        d = fc.evaluate(f0) - fc.evaluate(f1)
+        if abs(d) < 1e-6:
+            continue
+        vals = [(f, fc.evaluate(f)) for f in range(f0, f1 + 1)]
+        fc.keyframe_points.clear()
+        fc.keyframe_points.add(len(vals))
+        co = []
+        for f, v in vals:
+            u = max(0.0, (f - t0) / max(1e-6, f1 - t0))
+            co += [f, v + d * u * u * (3 - 2 * u)]
+        fc.keyframe_points.foreach_set('co', co)
+        for kp in fc.keyframe_points:
+            kp.interpolation = 'LINEAR'
+        fc.update()
+
+
+def slump(arm, spine_deg: float, head_deg: float) -> None:
+    """Curl the spine and drop the head forward (the stalled look), on top of the clip, every frame."""
+    from mathutils import Quaternion
+    act = arm.animation_data.action
+    f0, f1 = (int(f) for f in act.frame_range)
+    for b, deg in (('Spine', spine_deg), ('Spine1', spine_deg), ('Spine2', spine_deg), ('Neck', head_deg * 0.4),
+                   ('Head', head_deg * 0.6)):
+        dp = f'pose.bones["mixamorig:{b}"].rotation_quaternion'
+        fcs = [act.fcurves.find(dp, index=i) or act.fcurves.new(dp, index=i, action_group=f'mixamorig:{b}')
+               for i in range(4)]
+        extra = Quaternion((1, 0, 0), math.radians(deg))
+        rows = []
+        for f in range(f0, f1 + 1):
+            q = Quaternion([fc.evaluate(f) if len(fc.keyframe_points) else (1, 0, 0, 0)[i]
+                            for i, fc in enumerate(fcs)]) @ extra
+            rows.append((f, q))
+        for i, fc in enumerate(fcs):
+            fc.keyframe_points.clear()
+            fc.keyframe_points.add(len(rows))
+            fc.keyframe_points.foreach_set('co', [c for f, q in rows for c in (f, q[i])])
+            fc.update()
 
 
 def frames(arm) -> range:
@@ -285,6 +359,39 @@ def upright(arm, keep: float, hips: float = 1.0) -> None:
                 fc.keyframe_points.insert(f, q[i], options={'FAST'})
         for fc in fcs:
             fc.update()
+
+
+def support(arm, parts, seat_z: float, seat_front_y: float) -> dict:
+    """Per frame, rest the robot on whatever holds it up: the floor (its lowest point on z = 0) or the chair seat
+    (the lowest point of the pelvis, thighs and hip and knee balls behind the seat's front edge, y > seat_front_y,
+    on seat_z), whichever is higher. Seated frames sit on the seat with the legs hanging; standing frames stand;
+    sitting down and standing up pass from one to the other."""
+    sc = bpy.context.scene
+    seat_parts = [p for p in parts if any(k in p.name for k in ('_pelvis', '_thigh_', '_ball_hip', '_ball_knee'))]
+    cos = {}
+    for p in parts:
+        n = len(p.data.vertices)
+        c = np.empty(n * 3)
+        p.data.vertices.foreach_get('co', c)
+        c = c.reshape(-1, 3)[:: max(1, n // 400)]
+        cos[p] = np.c_[c, np.ones(len(c))]
+    root = arm.pose.bones[ROLES['root']]
+    P, shift, on_seat = [], [], 0
+    for f in frames(arm):
+        sc.frame_set(f)
+        floor = -min(float((np.array(p.matrix_world) @ cos[p].T)[2].min()) for p in parts)
+        seat = -1e9
+        for p in seat_parts:
+            w = (np.array(p.matrix_world) @ cos[p].T)[:3].T
+            w = w[w[:, 1] > seat_front_y]
+            if len(w):
+                seat = max(seat, seat_z - float(w[:, 2].min()))
+        z = max(floor, seat)
+        on_seat += seat > floor
+        P.append(arm.matrix_world @ root.head + Vector((0, 0, z)))
+        shift.append(z)
+    write_root(arm, P)
+    return {'support_shift_m': [round(min(shift), 3), round(max(shift), 3)], 'frames_on_seat': on_seat}
 
 
 def seat(arm, parts, seat_z: float, seat_front_y: float) -> dict:
@@ -597,37 +704,305 @@ def prop_mesh(kind: str, tag: str) -> bpy.types.Object:
     return o
 
 
-def hold(arm, parts, tag: str, kind: str, centre, tilt_deg: float = 0.0) -> list:
-    """Hold a book or box in both hands. centre(f) gives the prop's world centre per frame (in front of the body);
-    the prop rides on the root bone (placed at the middle frame) and each frame the wrists are posed onto its
-    sides, fingers forward, palms facing it."""
+def hold(arm, parts, tag: str, kind: str, offset: Vector, tilt_deg: float = 0.0, bone: str = 'spine3') -> tuple:
+    """Hold a book or box in both hands, gripping its sides in every frame. The prop is placed at the clip's middle
+    frame at `offset` (metres, world axes, the robot facing -Y) from the bone's head and rides on that bone; then,
+    each frame, each wrist is solved so the palm's centre lies on the prop's side at mid height, fingers along it
+    and the palm facing it. Returns ([prop], grip report: the palms' largest distance from their side planes)."""
     sc = bpy.context.scene
     fr = list(frames(arm))
     w, d, h = PROPS[kind]['size']
     prop = prop_mesh(kind, tag)
     P = ArmPoser(arm)
     Mw = arm.matrix_world
-    hand = {s: next(p for p in parts if '_hand_' in p.name and p.name.endswith(f'_{s}')) for s in 'LR'}
-    half = {s: 0.75 * min(hand[s].dimensions) for s in 'LR'}  # the hand's half-thickness across the palm, and a margin
-    tilt = Matrix.Rotation(math.radians(tilt_deg), 4, 'X')
-    for f in fr:
-        sc.frame_set(f)
-        c = centre(f)
-        for s in 'LR':
-            sx = 1 if s == 'L' else -1
-            side = (tilt @ Vector((sx, 0, 0)).to_4d()).to_3d()
-            wrist = c + side * (w / 2 + half[s]) + (tilt @ Vector((0, d * 0.1, -h * 0.1)).to_4d()).to_3d()
-            fwd = (tilt @ Vector((0, -1, 0)).to_4d()).to_3d()
-            P.reach(s, wrist, Vector((sx, 0.4, -0.5)), fwd, (ArmPoser.DOWN, -side))
-            P.key(s, f)
+    hand = {s: next(p for p in parts if '_hand_' in p.name and p.name.split('.')[0].endswith(f'_{s}')) for s in 'LR'}
+    # the canonical hands (robot_hands.py): wrist ring at the origin, fingers along local +X (left) or -X (right),
+    # palm down (-Z): the palm's centre is half a hand along the fingers, half a thickness below
+    reach, half = {}, {}
+    for s in 'LR':
+        co = np.array([v.co for v in hand[s].data.vertices])
+        reach[s] = 0.45 * float(np.abs(co[:, 0]).max())
+        half[s] = 0.5 * float(co[:, 2].max() - co[:, 2].min())
     mid = fr[len(fr) // 2]
     sc.frame_set(mid)
-    prop.matrix_world = Matrix.Translation(centre(mid)) @ tilt
+    head = Mw @ arm.pose.bones[ROLES[bone]].head
+    prop.matrix_world = Matrix.Translation(head + offset) @ Matrix.Rotation(math.radians(tilt_deg), 4, 'X')
     mw = prop.matrix_world.copy()
-    prop.parent, prop.parent_type, prop.parent_bone = arm, 'BONE', ROLES['root']
+    prop.parent, prop.parent_type, prop.parent_bone = arm, 'BONE', ROLES[bone]
     bpy.context.view_layer.update()
     prop.matrix_world = mw
-    return [prop]
+    worst = 0.0
+    for f in fr:
+        sc.frame_set(f)
+        M = prop.matrix_world
+        R3 = M.to_3x3().normalized()
+        fwd = (R3 @ Vector((0, -1, 0))).normalized()
+        for s in 'LR':
+            sx = 1 if s == 'L' else -1
+            n = (R3 @ Vector((sx, 0, 0))).normalized()  # the side's outward normal
+            side = M @ Vector((sx * w / 2, 0, 0))
+            wrist = side + n * half[s] - fwd * reach[s]
+            P.reach(s, wrist, Vector((sx, 0.4, -0.5)), fwd, (ArmPoser.DOWN, -n))
+            P.key(s, f)
+            palm = hand[s].matrix_world @ Vector((sx * reach[s] / 0.45 * 0.5, 0, 0))
+            worst = max(worst, abs((palm - side).dot(n)) - half[s])
+    return [prop], {f'{kind}_grip_error_m': round(worst, 3)}
+
+
+# --- work items and host kits ---------------------------------------------------------------------------
+
+def _material(name: str, colour: str, rough: float = 0.5, emit: float = 0.0, alpha: float = 1.0, host=False):
+    m = bpy.data.materials.get(name)
+    if m:
+        return m
+    m = bpy.data.materials.new(name)
+    m.use_nodes = True
+    nt = m.node_tree
+    b = nt.nodes['Principled BSDF']
+    rgb = nt.nodes.new('ShaderNodeRGB')
+    rgb.name = rgb.label = 'host_tint' if host else name
+    rgb.outputs[0].default_value = palette.lin(colour)
+    nt.links.new(rgb.outputs[0], b.inputs['Base Color'])
+    b.inputs['Roughness'].default_value = rough
+    b.inputs['Coat Weight'].default_value = 0.25 if host else 0.0
+    if emit:
+        nt.links.new(rgb.outputs[0], b.inputs['Emission Color'])
+        b.inputs['Emission Strength'].default_value = emit
+    if alpha < 1.0:  # glass: mostly transmissive
+        b.inputs['Transmission Weight'].default_value = 1.0 - alpha
+        b.inputs['Roughness'].default_value = 0.05
+    return m
+
+
+def _mesh(name: str, build) -> bpy.types.Object:
+    import bmesh
+    bm = bmesh.new()
+    mats = build(bm)
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    for m in mats:
+        me.materials.append(m)
+    for f in me.polygons:
+        f.use_smooth = True
+    o = bpy.data.objects.new(name, me)
+    bpy.context.scene.collection.objects.link(o)
+    return o
+
+
+def _box(bm, size, at=(0, 0, 0), mat=0, rot=None):
+    import bmesh
+    M = Matrix.Translation(at) @ (rot or Matrix()) @ Matrix.Diagonal((*size, 1))
+    r = bmesh.ops.create_cube(bm, size=1.0, matrix=M)
+    for v in r['verts']:
+        for f in v.link_faces:
+            f.material_index = mat
+
+
+def _cyl(bm, r, h, at=(0, 0, 0), mat=0, segs=16, rot=None):
+    import bmesh
+    M = Matrix.Translation(at) @ (rot or Matrix())
+    res = bmesh.ops.create_cone(bm, cap_ends=True, segments=segs, radius1=r, radius2=r, depth=h, matrix=M)
+    for v in res['verts']:
+        for f in v.link_faces:
+            f.material_index = mat
+
+
+def _bone_parent(arm, ob, role: str) -> None:
+    bpy.context.view_layer.update()
+    mw = ob.matrix_world.copy()
+    ob.parent, ob.parent_type, ob.parent_bone = arm, 'BONE', ROLES[role]
+    bpy.context.view_layer.update()
+    ob.matrix_world = mw
+
+
+def hand_tip(hand) -> Vector:
+    """World point at the fingertips of a canonical hand: the far end along its local finger axis (x)."""
+    co = np.array([v.co for v in hand.data.vertices])
+    far = co[np.abs(co[:, 0]) > np.abs(co[:, 0]).max() * 0.85]
+    return hand.matrix_world @ Vector(far.mean(0))
+
+
+def hold_flask(arm, parts, tag: str) -> list:
+    """The deck's holding loop: seated, the right fist up in front of the shoulder, thumb up, a glass test tube held
+    upright in it, swaying slightly as if looking at it."""
+    sc = bpy.context.scene
+    fr = list(frames(arm))
+    P = ArmPoser(arm, 'R')
+    n = len(fr)
+    for k, f in enumerate(fr):
+        sc.frame_set(f)
+        sh = P.head('arm', 'R')
+        sway = math.sin(2 * math.pi * k / n)
+        wrist = sh + Vector((-0.02 + 0.015 * sway, -0.2, 0.0 + 0.02 * math.cos(2 * math.pi * k / n)))
+        fwd = Vector((0.35, -1, 0.1)).normalized()
+        P.reach('R', wrist, Vector((-1, 0.3, -0.6)), fwd, (Vector((0, -1, 0)), Vector((0, 0, 1))))
+        P.key('R', f)
+    sc.frame_set(fr[n // 2])
+    hand = next(p for p in parts if '_hand_' in p.name and p.name.split('.')[0].endswith('_R'))
+    grip = hand.matrix_world @ Vector(np.array([v.co for v in hand.data.vertices]).mean(0))
+    # an opaque pale glass above a green liquid (see-through glass all but vanishes on transparent film)
+    glass = _material('item_glass', '#dcecf2', rough=0.08)
+    liquid = _material('item_liquid', '#3fcf7f', rough=0.15, emit=0.6)
+    rim = _material('item_rim', '#f4f8fa', rough=0.2)
+
+    def build(bm):
+        _cyl(bm, 0.02, 0.1, (0, 0, 0.09), 0)
+        _cyl(bm, 0.0205, 0.09, (0, 0, -0.005), 1)
+        _cyl(bm, 0.024, 0.008, (0, 0, 0.142), 2)
+        return [glass, liquid, rim]
+    tube = _mesh(f'{tag}_flask', build)
+    tube.matrix_world = Matrix.Translation(grip)
+    _bone_parent(arm, tube, 'hand_R')
+    return [tube]
+
+
+def desk_work(arm, parts, tag: str, kind: str, desk_z: float, keys: Vector) -> list:
+    """Work items: 'laptop' (open on the desk under the typing hands, screen towards the robot's far side) or
+    'paper' plus 'pencil' (a sheet on the desk under the writing hand, the pencil in the right pinch)."""
+    out = []
+    if kind == 'laptop':
+        body = _material('item_laptop', '#3a3f47', rough=0.35)
+        screen = _material('item_screen', '#9fc4e8', rough=0.15, emit=0.6)
+
+        def build(bm):
+            _box(bm, (0.32, 0.22, 0.016), (0, 0, 0.008), 0)
+            tilt = Matrix.Rotation(math.radians(-15), 4, 'X')
+            _box(bm, (0.32, 0.012, 0.21), (0, -0.115, 0.115), 0, tilt)
+            _box(bm, (0.29, 0.004, 0.18), (0, -0.108, 0.117), 1, tilt)
+            return [body, screen]
+        lap = _mesh(f'{tag}_laptop', build)
+        lap.location = (keys.x, keys.y - 0.02, desk_z)
+        out.append(lap)
+    else:
+        paper = _material('item_paper', '#f2efe6', rough=0.8)
+        ink = _material('item_ink', '#8f9090', rough=0.8)
+
+        def build(bm):
+            _box(bm, (0.21, 0.28, 0.002), (0, 0, 0.001), 0, Matrix.Rotation(math.radians(8), 4, 'Z'))
+            for r in range(6):
+                _box(bm, (0.15 if r % 3 != 2 else 0.08, 0.008, 0.001), (0, -0.1 + r * 0.035, 0.0025), 1,
+                     Matrix.Rotation(math.radians(8), 4, 'Z'))
+            return [paper, ink]
+        sheet = _mesh(f'{tag}_paper', build)
+        sheet.location = (keys.x - 0.06, keys.y + 0.02, desk_z)
+        out.append(sheet)
+        wood = _material('item_pencil', '#e8b640', rough=0.5)
+        lead = _material('item_lead', '#2a2a2a', rough=0.5)
+
+        def pbuild(bm):
+            _cyl(bm, 0.006, 0.15, (0, 0, 0.02), 0, 8)
+            _cyl(bm, 0.003, 0.02, (0, 0, -0.065), 1, 8)
+            return [wood, lead]
+        pencil = _mesh(f'{tag}_pencil', pbuild)
+        fr = list(frames(arm))
+        bpy.context.scene.frame_set(fr[len(fr) // 2])
+        hand = next(p for p in parts if '_hand_' in p.name and p.name.split('.')[0].endswith('_R'))
+        tip = hand_tip(hand)
+        # upright with a lean back towards the robot, its point on the paper
+        pencil.matrix_world = Matrix.Translation(tip) @ Matrix.Rotation(math.radians(-25), 4, 'X')
+        _bone_parent(arm, pencil, 'hand_R')
+        out.append(pencil)
+    return out
+
+
+KIT_KINDS = ('backpack', 'antenna', 'halo', 'crest')
+
+
+def kits(arm, parts, tag: str) -> dict:
+    """The four host kits, modelled for this robot and fixed to its bones: a backpack on the torso's back, an
+    antenna off the helmet's right, a halo floating over the helmet, a crest fin along the helmet's top. Host-
+    coloured parts sit on a 'host_tint' node (tinted through the mask; the halo is emissive and tinted whole), the
+    rest is dark. Built in the rest pose, then the clip is restored."""
+    action = arm.animation_data.action
+    arm.animation_data.action = None
+    saved = {pb.name: pb.matrix_basis.copy() for pb in arm.pose.bones}
+    for pb in arm.pose.bones:
+        pb.matrix_basis = Matrix()
+    bpy.context.view_layer.update()
+    V = lambda key: np.array([p.matrix_world @ v.co for p in parts if p.name.split('.')[0] == f'{tag}_{key}'  # noqa: E731
+                              for v in p.data.vertices])
+    head, torso = V('head'), V('torso')
+    host = _material('kit_host', '#cccccc', rough=0.3, host=True)
+    dark = _material('kit_dark', '#1c2024', rough=0.4)
+    glow = _material('kit_halo', '#cccccc', rough=0.3, emit=2.0, host=True)
+    hx0, hx1 = head[:, 0].min(), head[:, 0].max()
+    hy0, hy1 = head[:, 1].min(), head[:, 1].max()
+    top = head[:, 2].max()
+    cx, cy = (hx0 + hx1) / 2, (hy0 + hy1) / 2
+    out = {}
+
+    def bp(bm):
+        back = torso[:, 1].max()
+        tz = (torso[:, 2].min() + torso[:, 2].max()) / 2 + 0.02
+        _box(bm, (0.2, 0.09, 0.22), (0, back + 0.04, tz), 0)
+        _box(bm, (0.21, 0.095, 0.03), (0, back + 0.04, tz + 0.03), 1)  # the strap across it
+        _box(bm, (0.06, 0.02, 0.05), (0, back + 0.087, tz - 0.05), 1)  # a pocket flap
+        return [host, dark]
+    out['backpack'] = (_mesh(f'{tag}_acc_backpack', bp), 'spine3')
+
+    def ant(bm):
+        x = hx0 + 0.035  # the robot's right (-x), above the ear disc
+        z0 = top - 0.1
+        _cyl(bm, 0.007, 0.16, (x - 0.015, cy + 0.02, z0 + 0.08), 1, 10,
+             Matrix.Rotation(math.radians(-12), 4, 'Y'))
+        import bmesh
+        r = bmesh.ops.create_uvsphere(bm, u_segments=16, v_segments=8, radius=0.028,
+                                      matrix=Matrix.Translation((x - 0.032, cy + 0.02, z0 + 0.165)))
+        for v in r['verts']:
+            for f in v.link_faces:
+                f.material_index = 0
+        return [host, dark]
+    out['antenna'] = (_mesh(f'{tag}_acc_antenna', ant), 'head')
+
+    def halo(bm):
+        import bmesh
+        R, r, segs, tsegs = 0.13, 0.013, 48, 10
+        loops = []
+        for j in range(segs):
+            a = 2 * math.pi * j / segs
+            c = Vector((cx + R * math.cos(a), cy + R * math.sin(a), top + 0.075))
+            radial = Vector((math.cos(a), math.sin(a), 0))
+            loops.append([bm.verts.new(c + (radial * math.cos(b) + Vector((0, 0, 1)) * math.sin(b)) * r)
+                          for b in (2 * math.pi * k / tsegs for k in range(tsegs))])
+        for j in range(segs):
+            A_, B_ = loops[j], loops[(j + 1) % segs]
+            for k in range(tsegs):
+                bm.faces.new((A_[k], B_[k], B_[(k + 1) % tsegs], A_[(k + 1) % tsegs]))
+        del bmesh
+        return [glow]
+    out['halo'] = (_mesh(f'{tag}_acc_halo', halo), 'head')
+
+    def crest(bm):
+        # a fin on the helmet's crown, front to back: its base follows the helmet's top profile at x = 0
+        import bmesh
+        mid = head[np.abs(head[:, 0] - cx) < 0.02]
+        ys = np.linspace(hy0 + 0.08, hy1 - 0.02, 14)
+        base = []
+        for y in ys:
+            near = mid[np.abs(mid[:, 1] - y) < 0.02]
+            base.append((y, float(near[:, 2].max()) if len(near) else top))
+        rise = lambda t: 0.055 * math.sin(math.pi * min(1.0, t * 1.15)) + 0.012  # noqa: E731
+        vs = []
+        for k, (y, z) in enumerate(base):
+            t = k / (len(base) - 1)
+            h = rise(t)
+            vs.append([bm.verts.new((cx + sx * 0.012, y, z + dz)) for sx in (-1, 1) for dz in (-0.01, h)])
+        for a, b in zip(vs, vs[1:]):
+            for q in ((a[0], b[0], b[1], a[1]), (a[2], a[3], b[3], b[2]), (a[1], b[1], b[3], a[3])):
+                bm.faces.new(q)
+        bm.faces.new((vs[0][0], vs[0][1], vs[0][3], vs[0][2]))
+        bm.faces.new((vs[-1][0], vs[-1][2], vs[-1][3], vs[-1][1]))
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        return [host]
+    out['crest'] = (_mesh(f'{tag}_acc_crest', crest), 'head')
+    for k, (ob, role) in out.items():
+        _bone_parent(arm, ob, role)
+    for pb in arm.pose.bones:
+        pb.matrix_basis = saved[pb.name]
+    arm.animation_data.action = action
+    bpy.context.view_layer.update()
+    return {k: ob for k, (ob, _) in out.items()}
 
 
 def build_sheet(arm, parts, tag: str) -> list:
@@ -764,6 +1139,8 @@ def attach(arm, tag: str, hand_pose: str | None = None) -> list:
         ob.name = f'{tag}_{key}'
         role = info['role'] + (f'_{info["side"]}' if info['side'] else '')
         parent(ob, role)
+        if key in FACE_ONLY:  # the Claude band and the agent dot: only the sprite build's face layers show them
+            ob.hide_render = True
     for pb in arm.pose.bones:
         pb.matrix_basis = Matrix()
     arm.animation_data.action = action

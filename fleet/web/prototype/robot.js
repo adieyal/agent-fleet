@@ -1,49 +1,53 @@
 // Robot sprite preview (/prototype/robot): the paper-doll sprite atlases from art/scripts/build_robot_sprites.py
-// composited on one 2D canvas, no WebGL: host tint through the mask, one face and kit, carried items, and a
-// robot walking a path round a bench (in front of it, round its end, behind it) and sitting down to type at it,
-// beside B2's typing robot (desk 1) and a seated sprite robot (desk 3).
-//   ?mode=walk|pose  &clip=Idle&dir=S  &host=%23ff9340&kit=antenna&face=codex&item=item_box  &zoom=0..1  &t=seconds (frozen)  &shot
+// composited on one 2D canvas, no WebGL: host tint through the mask, the agent face coloured, one host kit, the
+// clip's items, and a robot walking round a bench (in front of it, round its end, behind it), sitting down on its
+// raised chair, typing and standing up again, beside two seated robots at the other desks. The bench is drawn from
+// the manifest's seat_furniture with the manifest's own camera.
+//   ?mode=walk|pose  &clip=Idle&dir=S  &host=%23ff9340&kit=antenna&face=codex&look=stalled  &zoom=0..1 | &ppm=171.5
+//   &scene=bench (desk 2 types; the walker only walks, so it passes behind the bench)  &t=seconds (frozen)  &shot
 
 const params = new URLSearchParams(location.search);
 const SPRITES = '/assets/world/robot/sprites/';
-const B2 = '/art/bakeoff/B2/';
 const FROZEN = params.has('t') ? Number(params.get('t')) : null;
-const PITCH = 44.5 * Math.PI / 180, YAW = 21.25 * Math.PI / 180;  // l2, as art/ and the bake-off
-const BENCH = { x0: 3.8, deskW: 1.8, y: 4.35, deskD: 0.8, deskH: 0.74, seatH: 0.47 };
-const seat = d => [BENCH.x0 + (d - 1) * BENCH.deskW + BENCH.deskW / 2 - 0.25, BENCH.y + BENCH.deskD / 2 + 0.34 - 0.2, BENCH.seatH];
 const HOSTS = { orange: '#ff9340', teal: '#2dd4bf', violet: '#a78bfa', yellow: '#facc15', blue: '#2e62dc' };
 const KITS = ['backpack', 'antenna', 'halo', 'crest'];
 const FACES = { codex: 'face_eyes', claude: 'face_band' };
-const CARRIED = ['item_box', 'item_book', 'item_sheet'];
-const WORK = ['item_laptop', 'item_paper', 'item_pencil', 'item_flask'];  // part of the clip they come with
-const FACING = { S: [0, -1], E: [1, 0], N: [0, 1], W: [-1, 0] };
+const AGENT = { codex: '#7ce7ff', claude: '#ff8f6b' };  // looks.js AGENT_COLOR
+const LOOKS = ['normal', 'stalled', 'resting'];  // motion.js tone
 const SPEED = 0.9;  // m/s
 const POSE_AT = [6.4, 2.9];
 
-const RIGHT = [Math.cos(YAW), Math.sin(YAW), 0];
-const UP = [-Math.sin(PITCH) * Math.sin(YAW), Math.sin(PITCH) * Math.cos(YAW), Math.cos(PITCH)];
-const BACK = [Math.sin(YAW) * Math.cos(PITCH), -Math.cos(YAW) * Math.cos(PITCH), Math.sin(PITCH)];  // towards the camera
+let PITCH = 28 * Math.PI / 180, YAW = 33 * Math.PI / 180;  // replaced by the manifest's camera
+let RIGHT, UP, BACK;
+function camera(c) {
+  PITCH = c.pitch_deg * Math.PI / 180;
+  YAW = c.yaw_deg * Math.PI / 180;
+  RIGHT = [Math.cos(YAW), Math.sin(YAW), 0];
+  UP = [-Math.sin(PITCH) * Math.sin(YAW), Math.sin(PITCH) * Math.cos(YAW), Math.cos(PITCH)];
+  BACK = [Math.sin(YAW) * Math.cos(PITCH), -Math.cos(YAW) * Math.cos(PITCH), Math.sin(PITCH)];  // towards the camera
+}
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const depth = p => dot(p, BACK);  // larger is nearer the camera
 
 const canvas = document.getElementById('view');
 const g = canvas.getContext('2d');
-const view = { W: 0, H: 0, target: [6.2, 4.3, 0.6], height: 5, ppm: 1 };  // the bench and the whole path
+const view = { W: 0, H: 0, target: [6.2, 4.3, 0.5], height: 5, ppm: 1 };
 const state = {
   mode: params.get('mode') || 'walk', host: params.get('host') || HOSTS.teal, kit: params.get('kit') || 'antenna',
   face: params.get('face') || 'codex', clip: params.get('clip') || 'Walking', dir: params.get('dir') || 'S',
-  item: params.get('item') || 'none', zoom: params.has('zoom') ? Number(params.get('zoom')) : 0.2, anchors: params.has('anchors'),
+  look: params.get('look') || 'normal', zoom: params.has('zoom') ? Number(params.get('zoom')) : 0.2, anchors: params.has('anchors'),
 };
 function resize() {
   view.W = canvas.width = innerWidth;
   view.H = canvas.height = innerHeight;
   setZoom(state.zoom);
 }
+const BENCH_SCENE = params.get('scene') === 'bench';
 function setZoom(z) {
   state.zoom = z;
-  view.height = Math.exp(Math.log(9) + (Math.log(1.6) - Math.log(9)) * z);  // metres of floor on screen, far to close
+  view.height = Math.exp(Math.log(9) + (Math.log(1.6) - Math.log(9)) * z);  // metres on screen, far to close
   view.ppm = view.H / view.height;
-  floorCache = null;
+  if (params.has('ppm')) view.ppm = Number(params.get('ppm'));  // a fixed density: the floor's 1x is 171.5 px/m
 }
 function screen(p) {
   const d = [p[0] - view.target[0], p[1] - view.target[1], p[2] - view.target[2]];
@@ -54,7 +58,7 @@ function screen(p) {
 
 const image = src => new Promise((ok, fail) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => fail(new Error('missing ' + src)); i.src = src; });
 const json = url => fetch(url).then(r => (r.ok ? r.json() : Promise.reject(new Error('missing ' + url))));
-let man = null, b2 = null;
+let man = null;
 const pages = {};  // res -> { color: [img], mask: [img], shadow: [img] }, loaded on demand
 
 async function ensure(res) {
@@ -68,7 +72,7 @@ async function ensure(res) {
   }
   return pages[res];
 }
-const loaded = {};  // res -> resolved pages, for the draw loop
+const loaded = {};
 function pickRes() {  // the smallest set at least as dense as the screen; 4x only when zoomed in
   const need = view.ppm * devicePixelRatio;
   const ppm1 = man.camera.px_per_m_1x;
@@ -76,20 +80,28 @@ function pickRes() {  // the smallest set at least as dense as the screen; 4x on
   return keys.find(k => ppm1 * man.resolutions[k].scale >= need) || keys[keys.length - 1];
 }
 
-// --- tint: rgb * (1 - mask + mask * host / grey), baked into a copy of each colour page per host ---------
+// --- colour: the shell through its mask, the halo and the faces whole ------------------------------------
 
 const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
-const ri = res => Object.keys(man.resolutions).indexOf(res);  // a layer's entries follow the resolutions' order
-// One layer image tinted for a host, made the first time it is drawn and kept: the cost follows what is shown.
+const mixHex = (a, b, k) => '#' + hex(a).map((v, i) => Math.round(v + (hex(b)[i] - v) * k).toString(16).padStart(2, '0')).join('');
+// motion.js tone: stalled dims the body and face, resting only the face
+function colours(r) {
+  const agent = AGENT[r.face];
+  if (r.look === 'stalled') return { body: mixHex(r.host, '#475163', 0.55), face: mixHex(agent, '#1b2333', 0.6) };
+  if (r.look === 'resting') return { body: r.host, face: mixHex(agent, '#1b2333', 0.35) };
+  return { body: r.host, face: agent };
+}
+const ri = res => Object.keys(man.resolutions).indexOf(res);
+// One layer image coloured for a host (or a face colour), made the first time it is drawn and kept.
 const tintCache = new Map();
-function tintedLayer(res, name, e, host) {
+function tintedLayer(res, name, e, colour, whole, base) {
   const [p, x, y, w, h] = e;
-  const key = `${res}|${p}|${x}|${y}|${host}`;
+  const key = `${res}|${p}|${x}|${y}|${colour}`;
   if (tintCache.has(key)) return tintCache.get(key);
   const { color, mask } = loaded[res];
   const c = new OffscreenCanvas(w, h), o = c.getContext('2d', { willReadFrequently: true });
   let m = null;
-  if (!man.tinted_whole.includes(name)) {  // the mask is stored mask_scale times smaller: stretched over the layer
+  if (!whole) {  // the mask is stored mask_scale times smaller: stretched over the layer
     const ms = man.resolutions[res].mask_scale;
     o.drawImage(mask[p], x / ms, y / ms, w / ms, h / ms, 0, 0, w, h);
     m = o.getImageData(0, 0, w, h).data;
@@ -97,7 +109,7 @@ function tintedLayer(res, name, e, host) {
   }
   o.drawImage(color[p], x, y, w, h, 0, 0, w, h);
   const d = o.getImageData(0, 0, w, h);
-  const grey = hex(man.grey), t = hex(host).map((v, i) => v / grey[i]);
+  const b = hex(base), t = hex(colour).map((v, i) => v / b[i]);
   for (let i = 0; i < d.data.length; i += 4) {
     const k = m ? m[i] / 255 : 1;
     if (!k) continue;
@@ -121,16 +133,20 @@ function frameAt(clip, time) {
 function layersOf(clip, frame, opts) {
   const f = frame.layers;
   const face = FACES[opts.face], kit = 'acc_' + opts.kit;
-  const items = [...(CARRIED.includes(opts.item) ? [opts.item] : []), ...man.clips[clip].items.filter(n => WORK.includes(n))];
-  const below = ['shadow', 'body_low'], above = ['body', 'body_high', face, kit, ...items];
+  const below = ['shadow', 'body_low'], above = ['body', 'body_high', face, kit, ...man.clips[clip].items];
   return [below.filter(n => f[n]), above.filter(n => f[n])];
 }
-function drawLayers(ctx, names, frame, res, host, ox0, oy0, k) {
-  const lp = loaded[res];
+function drawLayers(ctx, names, frame, res, r, ox0, oy0, k) {
+  const lp = loaded[res], col = colours(r);
   for (const n of names) {
+    if (!frame.layers[n]) continue;  // empty in this frame
     const e = frame.layers[n][ri(res)], [p, x, y, w, h, ox, oy] = e;
     if (man.masked.includes(n) || man.tinted_whole.includes(n)) {
-      ctx.drawImage(tintedLayer(res, n, e, host), ox0 + ox * k, oy0 + oy * k, w * k, h * k);
+      ctx.drawImage(tintedLayer(res, n, e, col.body, man.tinted_whole.includes(n), man.grey), ox0 + ox * k, oy0 + oy * k, w * k, h * k);
+      continue;
+    }
+    if (n in man.faces) {  // white emissive: multiplied by the agent's colour
+      ctx.drawImage(tintedLayer(res, n, e, col.face, true, '#ffffff'), ox0 + ox * k, oy0 + oy * k, w * k, h * k);
       continue;
     }
     const src = n === 'shadow' ? lp.shadow[p] : lp.color[p];
@@ -138,16 +154,16 @@ function drawLayers(ctx, names, frame, res, host, ox0, oy0, k) {
     ctx.drawImage(src, x, y, w, h, ox0 + ox * k, oy0 + oy * k, w * s * k, h * s * k);
   }
 }
-// a robot's sprite placed on the floor at `foot` (world), lifted by `lift` metres (a chair)
+// a robot's sprite placed with its `foot` on a floor point (seated frames: the floor under the seat point)
 function robotDraw(r, part) {
   return () => {
     const res = pickRes();
     if (!loaded[res]) return;
     const c = man.clips[r.clip], dd = c.dirs[r.dir], f = dd.frames[r.frame];
     const sc = man.resolutions[res].scale, k = view.ppm / (man.camera.px_per_m_1x * sc);
-    const [sx, sy] = screen([r.foot[0], r.foot[1], r.lift]);
+    const [sx, sy] = screen([r.foot[0], r.foot[1], 0]);
     const [below, above] = layersOf(r.clip, f, r);
-    drawLayers(g, part === 'below' ? below : part === 'above' ? above : [...below, ...above], f, res, r.host,
+    drawLayers(g, part === 'below' ? below : part === 'above' ? above : [...below, ...above], f, res, r,
       sx - dd.foot[0] * sc * k, sy - dd.foot[1] * sc * k, k);
     if (state.anchors && part !== 'below') drawAnchors(r, dd, f, sx, sy, view.ppm / man.camera.px_per_m_1x);
   };
@@ -160,6 +176,8 @@ function drawAnchors(r, dd, f, sx, sy, k) {
   g.beginPath(); g.ellipse(sx, sy, dd.footprint[0] * k, dd.footprint[1] * k, 0, 0, 2 * Math.PI); g.stroke();
   const [hx, hy] = at(f.anchors.head_top);
   g.strokeStyle = '#1d6fe0'; g.beginPath(); g.moveTo(hx - 8, hy); g.lineTo(hx + 8, hy); g.stroke();
+  const kt = f.anchors.kit_top[r.kit];
+  if (kt) { const [x, y] = at(kt); g.strokeStyle = '#9333ea'; g.beginPath(); g.moveTo(x - 6, y); g.lineTo(x + 6, y); g.stroke(); }
   g.strokeStyle = '#f08c00';
   for (const hand of ['hand_l', 'hand_r']) { const [x, y] = at(f.anchors[hand]); g.beginPath(); g.arc(x, y, 4, 0, 2 * Math.PI); g.stroke(); }
   const [bx, by] = at(f.hit);
@@ -167,27 +185,62 @@ function drawAnchors(r, dd, f, sx, sy, k) {
   g.restore();
 }
 
-// --- the walk: along the front of the bench, round its end, behind it, then sit and type at desk 2 --------
+// --- the bench: three desks side by side, a raised chair behind each (manifest seat_furniture) -------------
 
-const SEAT2 = seat(2);
-let seatFoot = null, seatLift = 0;
-function path() {
-  const sp = man.seat_point_m;
-  seatFoot = [SEAT2[0] - sp[0], SEAT2[1] - sp[1]];
-  seatLift = SEAT2[2] - sp[2];
-  const back = 5.55, front = 2.6, left = 2.2, right = 10.1;
-  const pts = [[seatFoot[0], back], [left, back], [left, front], [right, front], [right, back], [seatFoot[0], back], seatFoot];
-  const legs = [];
-  for (let i = 1; i < pts.length; i++) legs.push({ walk: [pts[i - 1], pts[i]] });
-  const sit = (man.clips.Sitting.frames - 1) / man.clips.Sitting.fps;
-  // (no stand-up clip is rendered yet: it stands straight back up)
-  return [{ clip: 'Idle', secs: 0.6, lift: [0, 0], ease: 1 }, ...legs,
-    { clip: 'Sitting', secs: sit + 0.3, lift: [0, 1], ease: sit }, { clip: 'Typing', secs: 5, lift: [1, 1], ease: 1 },
-    { clip: 'Idle', secs: 0.4, lift: [1, 0], ease: 0.2 }]
-    .map(s => (s.walk ? { ...s, secs: Math.hypot(s.walk[1][0] - s.walk[0][0], s.walk[1][1] - s.walk[0][1]) / SPEED } : s));
+const BENCH = { x0: 3.8, deskW: 1.8, y: 4.35, deskD: 0.8, deskH: 0.74, top: 0.03 };
+let SF = null;  // manifest seat_furniture
+// the floor point under desk d's seat (the robots sit on the far side, facing the camera: S)
+const seat = d => [BENCH.x0 + (d - 1) * BENCH.deskW + BENCH.deskW / 2, BENCH.y + BENCH.deskD / 2 + SF.desk_edge_ahead_m];
+function poly(pts, fill, stroke) {
+  g.beginPath();
+  pts.forEach((p, i) => { const [x, y] = screen(p); i ? g.lineTo(x, y) : g.moveTo(x, y); });
+  g.closePath();
+  g.fillStyle = fill; g.fill();
+  if (stroke) { g.strokeStyle = stroke; g.lineWidth = 1; g.stroke(); }
 }
+function boxAt([x0, y0, z0], [x1, y1, z1], top, side, front) {  // the three faces seen from this camera
+  poly([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], top);
+  poly([[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1]], front);
+  poly([[x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]], side);
+}
+function drawDesk() {
+  const { x0, deskW, y, deskD, deskH, top } = BENCH, x1 = x0 + 3 * deskW, ya = y - deskD / 2, yb = y + deskD / 2;
+  for (const lx of [x0 + 0.05, x0 + deskW, x0 + 2 * deskW, x1 - 0.05]) {
+    for (const ly of [ya + 0.05, yb - 0.05]) boxAt([lx - 0.02, ly - 0.02, 0], [lx + 0.02, ly + 0.02, deskH - top], '#5b6270', '#4b515c', '#646b78');
+  }
+  boxAt([x0, ya, deskH - top], [x1, yb, deskH], '#dcc09a', '#b99a73', '#c6a67d');
+}
+function drawChair(d) {
+  const [sx, sy] = seat(d), h = SF.seat_height_m, cy = sy + SF.chair_behind_m;
+  boxAt([sx - 0.012, cy - 0.012, 0.05], [sx + 0.012, cy + 0.012, h - 0.06], '#8a8f99', '#787d86', '#8a8f99');  // the gas lift
+  boxAt([sx - 0.25, cy - 0.24, h - 0.07], [sx + 0.25, cy + 0.24, h], '#2c2f35', '#22252a', '#34373d');  // seat
+  boxAt([sx - 0.23, cy + 0.2, h + 0.08], [sx + 0.23, cy + 0.26, h + 0.58], '#2c2f35', '#22252a', '#34373d');  // back
+}
+function drawFloor() {
+  g.fillStyle = '#e4e8ef';
+  g.fillRect(0, 0, view.W, view.H);
+  g.strokeStyle = 'rgba(120, 130, 150, 0.25)';
+  g.lineWidth = 1;
+  for (let i = -4; i <= 30; i++) {
+    const a = screen([i * 0.6, -4, 0]), b = screen([i * 0.6, 12, 0]), c = screen([-4, i * 0.6, 0]), e = screen([20, i * 0.6, 0]);
+    g.beginPath(); g.moveTo(...a); g.lineTo(...b); g.moveTo(...c); g.lineTo(...e); g.stroke();
+  }
+}
+
+// --- the walk: along the front of the bench, round its end, behind it, then sit, type and stand at desk 2 ---
+
 let legs = null;
-// where the robot is at time t: walking a leg, or at desk 2 (standing at its seat, sitting down, typing)
+function path() {
+  const s2 = seat(2);
+  const back = s2[1] + 0.6, front = 3.0, left = 2.2, right = 10.1;
+  const pts = [[s2[0], back], [left, back], [left, front], [right, front], [right, back], [s2[0], back], s2];
+  const out = [{ clip: 'Idle', secs: 0.6 }];
+  for (let i = 1; i < pts.length; i++) out.push({ walk: [pts[i - 1], pts[i]] });
+  const once = c => man.clips[c].frames / man.clips[c].fps;
+  if (BENCH_SCENE) out.pop();  // it walks the loop only: desk 2 has its own typist
+  else out.push({ clip: 'Sitting', secs: once('Sitting') + 0.2 }, { clip: 'Typing', secs: 5 }, { clip: 'StandUp', secs: once('StandUp') });
+  return out.map(s => (s.walk ? { ...s, secs: Math.hypot(s.walk[1][0] - s.walk[0][0], s.walk[1][1] - s.walk[0][1]) / SPEED } : s));
+}
 function walker(t) {
   const total = legs.reduce((s, l) => s + l.secs, 0);
   let u = ((t % total) + total) % total;
@@ -196,71 +249,39 @@ function walker(t) {
     if (l.walk) {
       const [a, b] = l.walk, k = u / l.secs, dx = b[0] - a[0], dy = b[1] - a[1];
       const dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'E' : 'W') : (dy > 0 ? 'N' : 'S');
-      return { clip: 'Walking', dir, time: t, foot: [a[0] + dx * k, a[1] + dy * k], lift: 0 };
+      return { clip: 'Walking', dir, time: t, foot: [a[0] + dx * k, a[1] + dy * k] };
     }
-    const k = Math.min(1, u / l.ease);  // the chair lift eases in as it sits, out as it stands
-    return { clip: l.clip, dir: 'S', time: u, foot: seatFoot, lift: seatLift * (l.lift[0] + (l.lift[1] - l.lift[0]) * k), atDesk: true };
+    return { clip: l.clip, dir: 'S', time: u, foot: seat(2), atDesk: true };
   }
 }
 
-// --- the scene: floor, bench, B2's robot, two sprite robots; ordered far to near ---------------------------
+// --- the scene, ordered far to near -------------------------------------------------------------------------
 
-let floorCache = null, floorImg = null, benchImg = null, b2Robot = null;
-function drawFloor() {
-  if (!floorCache) {
-    floorCache = new OffscreenCanvas(view.W, view.H);
-    const o = floorCache.getContext('2d');
-    o.fillStyle = '#dcebf8';
-    o.fillRect(0, 0, view.W, view.H);
-    // the floor plane is an affine image of the tile: x and y along the room's axes, one tile per `metres`
-    const tile = b2.textures['floor-tile'], s = tile.metres / tile.size[0];
-    const [ox, oy] = screen([0, 0, 0]), [ax, ay] = screen([1, 0, 0]), [bx, by] = screen([0, 1, 0]);
-    o.setTransform((ax - ox) * s, (ay - oy) * s, (bx - ox) * s, (by - oy) * s, ox, oy);
-    o.fillStyle = o.createPattern(floorImg, 'repeat');
-    o.fillRect(-20 / s, -20 / s, 40 / s, 40 / s);
-  }
-  g.drawImage(floorCache, 0, 0);
-}
-function placeB2(img, s, at, clip = null) {  // a B2 sprite whose ref_px sits on a world point; `clip` keeps one side of its desk cut
-  const k = view.ppm / b2.px_per_m;
-  const [x, y] = screen(at);
-  const dx = x - s.ref_px[0] * k, dy = y - s.ref_px[1] * k;
-  g.save();
-  if (clip) {
-    const c = s.cut, lx0 = dx, lx1 = dx + img.width * k;
-    const ly = sx => dy + k * (c.y + c.slope * ((sx - dx) / k - c.x));
-    const edge = clip === 'above' ? dy - 10 : dy + img.height * k + 10;
-    g.beginPath(); g.moveTo(lx0, ly(lx0)); g.lineTo(lx1, ly(lx1)); g.lineTo(lx1, edge); g.lineTo(lx0, edge); g.closePath();
-    g.clip();
-  }
-  g.drawImage(img, dx, dy, img.width * k, img.height * k);
-  g.restore();
-}
-// the nearest point of the bench's footprint to `p`: a long bench can't be ordered by its centre
-function benchNear(p) {
+function benchNear(p) {  // the nearest point of the bench's footprint: a long bench can't be ordered by its centre
   const x = Math.max(BENCH.x0, Math.min(BENCH.x0 + 3 * BENCH.deskW, p[0]));
   const y = Math.max(BENCH.y - BENCH.deskD / 2, Math.min(BENCH.y + BENCH.deskD / 2, p[1]));
   return [x, y, 0];
 }
 function items(w, t) {
-  const r = { ...w, host: state.host, kit: state.kit, face: state.face, item: state.item };
+  const r = { ...w, host: state.host, kit: state.kit, face: state.face, look: state.look };
   r.frame = frameAt(r.clip, w.time);
   const benchKey = depth(benchNear([r.foot[0], r.foot[1], 0]));
-  const desk3 = seat(3), sp = man.seat_point_m;
-  const still = { clip: 'Typing', dir: 'S', frame: frameAt('Typing', t), foot: [desk3[0] - sp[0], desk3[1] - sp[1]], lift: desk3[2] - sp[2],
-    host: HOSTS.violet, kit: 'crest', face: 'claude', item: 'none' };
+  const sitter = (d, clip, host, kit, face) => ({ clip, dir: 'S', frame: frameAt(clip, t), foot: seat(d), host, kit, face, look: 'normal' });
+  const one = sitter(1, 'Writing', HOSTS.orange, 'backpack', 'claude'), three = sitter(3, 'SitRead', HOSTS.violet, 'crest', 'claude');
+  const two = sitter(2, 'Typing', HOSTS.teal, 'antenna', 'codex');
   const out = [
-    { label: 'bench', key: benchKey, draw: () => placeB2(benchImg, b2.sprites.bench, [BENCH.x0 + 1.5 * BENCH.deskW, BENCH.y + BENCH.deskD / 2, BENCH.deskH]) },
-    { label: 'b2 below', key: benchKey - 0.003, draw: () => placeB2(b2Robot, b2.sprites['robot-typing'], seat(1), 'below') },
-    { label: 'b2 above', key: benchKey + 0.003, draw: () => placeB2(b2Robot, b2.sprites['robot-typing'], seat(1), 'above') },
-    { label: 'desk3 below', key: benchKey - 0.002, draw: robotDraw(still, 'below') },
-    { label: 'desk3 above', key: benchKey + 0.002, draw: robotDraw(still, 'above') },
+    { label: 'chairs', key: benchKey - 0.01, draw: () => [1, 2, 3].forEach(drawChair) },
+    ...(BENCH_SCENE ? [{ label: 'desk2 below', key: benchKey - 0.002, draw: robotDraw(two, 'below') },
+      { label: 'desk2 above', key: benchKey + 0.002, draw: robotDraw(two, 'above') }] : []),
+    { label: 'bench', key: benchKey, draw: drawDesk },
+    { label: 'desk1 below', key: benchKey - 0.002, draw: robotDraw(one, 'below') },
+    { label: 'desk1 above', key: benchKey + 0.002, draw: robotDraw(one, 'above') },
+    { label: 'desk3 below', key: benchKey - 0.002, draw: robotDraw(three, 'below') },
+    { label: 'desk3 above', key: benchKey + 0.002, draw: robotDraw(three, 'above') },
   ];
   if (w.atDesk && man.clips[r.clip].seated) {  // seated: legs under the desk, the rest over it
     out.push({ label: 'robot below', key: benchKey - 0.001, draw: robotDraw(r, 'below') },
       { label: 'robot above', key: benchKey + 0.001, draw: robotDraw(r, 'above') });
-  } else if (w.atDesk) {  // standing at its seat, behind the desk
-    out.push({ label: 'robot', key: benchKey - 0.001, draw: robotDraw(r, 'all') });
   } else {
     out.push({ label: 'robot', key: depth([r.foot[0], r.foot[1], 0]), draw: robotDraw(r, 'all') });
   }
@@ -270,9 +291,8 @@ function items(w, t) {
 function pose(t) {
   const c = man.clips[state.clip];
   const dir = c.dirs[state.dir] ? state.dir : Object.keys(c.dirs)[0];
-  if (!c.seated) return { clip: state.clip, dir, time: t, foot: POSE_AT, lift: 0 };
-  const sp = man.seat_point_m;
-  return { clip: state.clip, dir, time: t, foot: [SEAT2[0] - sp[0], SEAT2[1] - sp[1]], lift: SEAT2[2] - sp[2], atDesk: true };
+  if (!c.seated) return { clip: state.clip, dir, time: t, foot: POSE_AT };
+  return { clip: state.clip, dir, time: t, foot: seat(2), atDesk: true };
 }
 
 // --- loop and measuring ------------------------------------------------------------------------------------
@@ -303,11 +323,11 @@ function frameStats() {
   return { frames: xs.length, interval_mean: mean(iv), interval_p95: q(iv, 0.95), work_mean: mean(work), work_p95: q(work, 0.95) };
 }
 function bytes() {
-  const out = { sprites: 0, b2: 0, files: 0 };
+  const out = { sprites: 0, files: 0 };
   for (const e of performance.getEntriesByType('resource')) {
-    const size = e.encodedBodySize || e.transferSize || 0;
-    if (e.name.includes(SPRITES)) { out.sprites += size; out.files++; }
-    else if (e.name.includes(B2)) { out.b2 += size; out.files++; }
+    if (!e.name.includes(SPRITES)) continue;
+    out.sprites += e.encodedBodySize || e.transferSize || 0;
+    out.files++;
   }
   return out;
 }
@@ -335,9 +355,10 @@ function controls() {
   select('host', Object.entries(HOSTS).map(([k, v]) => [v, k]), state.host, v => { state.host = v; });
   select('kit', KITS.map(k => [k, k]), state.kit, v => { state.kit = v; });
   select('face', Object.keys(FACES).map(k => [k, k]), state.face, v => { state.face = v; });
-  select('clip', Object.keys(man.clips).map(k => [k, k]), state.clip, v => { state.clip = v; state.mode = 'pose'; document.getElementById('mode').value = 'pose'; refreshDirs(); });
+  select('look', LOOKS.map(k => [k, k]), state.look, v => { state.look = v; });
+  select('clip', Object.keys(man.clips).map(k => [k, `${k}${man.clips[k].seated ? ' (seated)' : ''}`]), state.clip,
+    v => { state.clip = v; state.mode = 'pose'; document.getElementById('mode').value = 'pose'; refreshDirs(); });
   refreshDirs();
-  select('item', [['none', 'none'], ...CARRIED.map(k => [k, k.slice(5)])], state.item, v => { state.item = v; });
   const zoom = document.getElementById('zoom');
   zoom.value = state.zoom;
   zoom.oninput = () => setZoom(Number(zoom.value));
@@ -352,23 +373,21 @@ async function composeCanvas(o) {
   loaded[res] = await ensure(res);
   const c = man.clips[o.clip], dd = c.dirs[o.dir], f = dd.frames[o.frame || 0], sc = man.resolutions[res].scale;
   const out = new OffscreenCanvas(dd.canvas[0] * sc, dd.canvas[1] * sc);
-  const names = o.layers || layersOf(o.clip, f, { face: o.face || 'codex', kit: o.kit || 'antenna', item: o.item || 'none' }).flat();
-  drawLayers(out.getContext('2d'), names, f, res, o.host || man.grey, 0, 0, 1);
+  const r = { face: o.face || 'codex', kit: o.kit || 'antenna', host: o.host || man.grey, look: o.look || 'normal' };
+  const names = o.layers || layersOf(o.clip, f, r).flat();
+  drawLayers(out.getContext('2d'), names, f, res, r, 0, 0, 1);
   return out;
 }
-// the draw order, far to near, with the robot standing at `foot` or (seated) typing at desk 2
 function order(foot, seated) {
-  const w = seated ? { clip: 'Typing', dir: 'S', time: 0, foot: seatFoot, lift: seatLift, atDesk: true }
-    : { clip: 'Idle', dir: 'S', time: 0, foot, lift: 0 };
+  const w = seated ? { clip: 'Typing', dir: 'S', time: 0, foot: seat(2), atDesk: true } : { clip: 'Idle', dir: 'S', time: 0, foot };
   return items(w, 0).list.map(i => i.label);
 }
 
 async function main() {
   try {
-    [man, b2] = await Promise.all([json(SPRITES + 'sprites.json'), json(B2 + 'sprites.json')]);
-    [floorImg, benchImg] = await Promise.all([image(B2 + b2.textures['floor-tile'].file), image(B2 + b2.sprites.bench.file)]);
-    const s = b2.sprites['robot-typing'];
-    b2Robot = await b2Tinted(await image(B2 + s.file), await image(B2 + s.mask), HOSTS.teal);
+    man = await json(SPRITES + 'sprites.json');
+    camera(man.camera);
+    SF = man.seat_furniture;
     legs = path();
     if (params.has('shot')) document.body.classList.add('shot');
     resize();
@@ -382,20 +401,6 @@ async function main() {
     window.robotPreview.error = String(err);
     throw err;
   }
-}
-async function b2Tinted(img, mask, host) {  // B2's own recipe: the masked shell times the host colour lifted by 1/0.8
-  const c = new OffscreenCanvas(img.width, img.height), o = c.getContext('2d');
-  o.drawImage(mask, 0, 0);
-  const m = o.getImageData(0, 0, c.width, c.height).data;
-  o.clearRect(0, 0, c.width, c.height);
-  o.drawImage(img, 0, 0);
-  const d = o.getImageData(0, 0, c.width, c.height), t = hex(host).map(v => v / 204);
-  for (let i = 0; i < d.data.length; i += 4) {
-    const k = m[i] / 255;
-    for (let j = 0; j < 3; j++) d.data[i + j] = Math.min(255, d.data[i + j] * (1 - k + k * t[j]));
-  }
-  o.putImageData(d, 0, 0);
-  return c;
 }
 
 window.robotPreview = {

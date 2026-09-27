@@ -84,34 +84,49 @@ def goals(clip: str) -> tuple[dict, float | None]:
     return {}, None
 
 
-def robot(clip: str, tag: str, pin=False, seated=False, hand_pose=None):
+def robot(clip: str, tag: str, pin=False, seated=False, hand_pose=None, loop=False, slump=None, work=None,
+          window=None):
+    """One retargeted robot for a Mixamo (or layered, motion_rig.LAYERED) clip. seated: the pelvis on the raised
+    chair's seat, legs hanging, the clip's own posture and arm goals; loop: the clip is made seamless; slump:
+    (spine, head) degrees of stalled slump; work: 'laptop', 'paper' (with pencil) or 'flask' items; window: use only
+    this many seconds of a long clip (from its reference frame, or its start), so a short loop keeps its pace."""
     ref = 'lowest' if seated else 'first'
     arm, info = R.retarget(MIX / f'{clip}.fbx', pin=pin, ref=ref)
+    base = R.behaviour(clip)
+    if window:
+        act = arm.animation_data.action
+        f0, f1 = (int(f) for f in act.frame_range)
+        start = min(max(f0, f0 + info['ref_frame'] - int(window * 15)), f1 - int(window * 30))
+        act.use_frame_range, act.frame_start, act.frame_end = True, start, start + int(window * 30)
+    if loop:
+        R.make_loop(arm)
     if seated:
-        R.upright(arm, UPRIGHT.get(clip, UPRIGHT_OTHER), UPRIGHT_HIPS.get(clip, 1.0))
+        R.upright(arm, UPRIGHT.get(base, UPRIGHT_OTHER), UPRIGHT_HIPS.get(base, 1.0))
+    if slump:
+        R.slump(arm, *slump)
     parts = R.attach(arm, tag, hand_pose)
-    info |= R.seat(arm, parts, SEAT_H, SEAT_FRONT) if seated else R.ground(arm, parts)
-    g, rest = goals(clip) if seated else ({}, None)
-    if g and clip in DESK_CLIPS:
+    info |= R.support(arm, parts, SEAT_H, SEAT_FRONT) if seated else R.ground(arm, parts)
+    g, rest = goals(base) if seated else ({}, None)
+    if g and base in DESK_CLIPS:
         info |= R.desk_arms(arm, parts, g, W.DESK_H, over_y=-DESK_EDGE + 0.02)
     elif g:
         info |= R.reach(arm, parts, g, rest, over_y=-DESK_EDGE)
     pose = arm['hand_pose']
     k = R.body_meta()['height_m'] / 1.05
-    root = arm.pose.bones[R.ROLES['root']]
-    chest = arm.pose.bones[R.ROLES['spine3']]
-    if pose == 'book':  # held up at chest height, tilted back towards the face, clear of the desk
-        def centre(f, a=arm):
-            c = a.matrix_world @ chest.head
-            return Vector((c.x, c.y - 0.2 * k, max(c.z + 0.08 * k, W.DESK_H + 0.16)))
-        parts += R.hold(arm, parts, tag, 'book', centre, tilt_deg=-20)
-    elif pose == 'box':  # carried in front of the belly
-        def centre(f, a=arm):
-            c = a.matrix_world @ root.head
-            return Vector((c.x, c.y - 0.2 * k, c.z + 0.1 * k))
-        parts += R.hold(arm, parts, tag, 'box', centre)
-    if clip.startswith('thumbs-up'):
+    if pose == 'book':  # held up at chest height, tilted back towards the face, clear of any desk
+        held, grip = R.hold(arm, parts, tag, 'book', Vector((0, -0.21 * k, 0.07 * k)), tilt_deg=-20)
+        parts += held
+        info |= grip
+    elif pose == 'box':  # carried in front of the belly, gripped by its sides
+        held, grip = R.hold(arm, parts, tag, 'box', Vector((0, -0.25 * k, -0.08 * k)))
+        parts += held
+        info |= grip
+    if base.startswith('thumbs-up'):
         info |= R.thumbs_up(arm)
+    if work == 'flask':
+        parts += R.hold_flask(arm, parts, tag)
+    elif work:
+        parts += R.desk_work(arm, parts, tag, work, W.DESK_H, KEYS)
     info['hand_pose'] = pose
     return arm, parts, info
 
@@ -356,4 +371,5 @@ def main() -> None:
     {'fit': cmd_fit, 'review': cmd_review, 'calib': cmd_calib}[args[0]](Path(args[1]))
 
 
-main()
+if __name__ == '__main__':
+    main()

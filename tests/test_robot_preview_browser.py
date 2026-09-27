@@ -81,9 +81,10 @@ def test_layers_composite_into_one_robot(preview: Page) -> None:
     eyes = compose(preview, clip="Idle", dir="S", layers=["body", "face_eyes"], keep=True)["pixels"]
     band = compose(preview, clip="Idle", dir="S", layers=["body", "face_band"], keep=True)["pixels"]
     assert eyes != band
-    # the face layers were rendered with the body as a holdout: from behind there is nothing of them left
-    assert "face_eyes" in frame(preview, "Idle", "S")["layers"]
-    assert "face_eyes" not in frame(preview, "Idle", "N")["layers"]
+    # the face layers were rendered with the body as a holdout: from behind only the agent's back dot is left
+    front = compose(preview, clip="Idle", dir="S", layers=["face_eyes"])["opaque"]
+    back = compose(preview, clip="Idle", dir="N", layers=["face_eyes"])["opaque"]
+    assert 0 < back < 0.5 * front
 
 
 def test_the_shadow_lies_under_the_feet(preview: Page) -> None:
@@ -106,7 +107,8 @@ def test_the_host_colour_tints_the_shell_but_not_the_joints_or_visor(preview: Pa
     changed = [i for i in opaque if abs(red[i] - blue[i]) > 60]
     assert len(changed) > 0.3 * len(opaque)  # the shell
     assert len(same) > 0.1 * len(opaque)  # joints, hands and visor keep their colour
-    assert all(red[i:i + 3] == plain[i:i + 3] for i in same[:500])
+    # (the tint mask is stored blurred at 1/8: a joint's edge may move one level)
+    assert all(max(abs(r - q) for r, q in zip(red[i:i + 3], plain[i:i + 3])) <= 2 for i in same[:500])
 
 
 @pytest.mark.parametrize("clip,d,i", [("Idle", "S", 0), ("Walking", "E", 3), ("Wave", "W", 6), ("Typing", "S", 2)])
@@ -152,6 +154,21 @@ def test_the_path_walks_in_front_of_and_behind_the_bench_and_sits_down(preview: 
     assert {s["dir"] for s in walking} == {"S", "E", "N", "W"}
     assert min(s["foot"][1] for s in walking) < 3.95 and max(s["foot"][1] for s in walking) > 4.75  # either side
     clips = [s["clip"] for s in states]
-    assert "Sitting" in clips and "Typing" in clips
-    typing = next(s for s in states if s["clip"] == "Typing")
-    assert typing["lift"] > 0.1  # on the chair
+    assert {"Sitting", "Typing", "StandUp"} <= set(clips)
+    assert all(s.get("atDesk") for s in states if s["clip"] in ("Sitting", "Typing", "StandUp"))
+
+
+def test_the_stalled_look_dims_the_body_and_face(preview: Page) -> None:
+    normal = compose(preview, clip="Idle", dir="S", host="#2dd4bf", look="normal")["mean"]
+    stalled = compose(preview, clip="Idle", dir="S", host="#2dd4bf", look="stalled")["mean"]
+    assert sum(stalled) < sum(normal) - 30
+
+
+def test_every_clip_is_drawn_in_every_facing_it_lists(preview: Page) -> None:
+    clips = preview.evaluate("Object.fromEntries(Object.entries(robotPreview.manifest().clips).map(([k, c]) => [k, Object.keys(c.dirs)]))")
+    assert {"Walking", "Idle", "Wave", "Yes", "No", "Death", "ThumbsUp", "StandUp", "Sitting", "SitIdle", "Typing",
+            "Writing", "SitRead", "Holding", "SitThumbsUp", "Slump", "SitSlump", "SitNod", "SitShake", "BoxIdle",
+            "BoxWalk", "BookWalk", "SheetWalk"} <= set(clips)
+    for clip, dirs in clips.items():
+        for d in dirs:
+            assert compose(preview, clip=clip, dir=d)["opaque"] > 500, (clip, d)

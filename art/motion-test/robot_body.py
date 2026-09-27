@@ -192,8 +192,11 @@ def overrides(co: np.ndarray, W: np.ndarray) -> np.ndarray:
     # the boot's ankle crease) and where the arms shaded the torso's sides (cream between the arm sockets and the
     # waist band). The sheet has neither.
     black = W[:, 2] > 0.5
+    # the boots: all teal from below the shin shell's top to the black sole (the scan's ankle crease and the shadows
+    # the hands cast read as black smudges on the boots)
     leg_r = np.hypot(np.abs(x) - J_SRC['knee'][0], y - J_SRC['knee'][1])  # distance from the leg's axis
-    shin = black & (z < -0.50) & (z > ANKLE_CREASE[1]) & (leg_r > 0.105) & (np.abs(x) < 0.42)
+    shin = black & (((z < -0.50) & (z > ANKLE_CREASE[1]) & (leg_r > 0.105)) | ((z <= ANKLE_CREASE[1]) & (z > SOLE_TOP))) \
+        & (np.abs(x) < 0.42)
     side = black & (np.abs(x) > 0.16) & (np.abs(x) < 0.30) & (z < 0.05) & (z > WAIST_TOP + 0.03) & (y > -0.3)
     for mask, k in ((shin, 0), (side, 1)):
         W[mask] = 0
@@ -524,7 +527,7 @@ def ear_disc(side: int, bvh: BVHTree, to_m: Matrix) -> bpy.types.Object:
 
 # the sheet's eyes (robot-apose-front.png): rounded capsules 1.73 times as tall as wide, as fractions of the plate:
 # width 0.133 and height 0.343 of the plate's, centres 0.233 of its width either side and 0.05 of its height below
-EYE_SHAPE = dict(w=0.133, h=0.343, dx=0.233, dz=-0.05)
+EYE_SHAPE = dict(w=0.133 * 1.12, h=0.343 * 1.12, dx=0.233, dz=-0.05)  # 12% larger, towards robot-sheet.png's eyes
 
 
 def eyes(bvh: BVHTree, to_m: Matrix) -> bpy.types.Object:
@@ -563,6 +566,68 @@ def eyes(bvh: BVHTree, to_m: Matrix) -> bpy.types.Object:
         f.use_smooth = True
     me.materials.append(flat_material('mat_eye', EYE, emit=2.0))
     o = bpy.data.objects.new('body_eyes', me)
+    bpy.context.scene.collection.objects.link(o)
+    return o
+
+
+# the Claude face: a band across the plate at the eyes' height, as fractions of the plate (width, height)
+BAND = dict(w=0.72, h=0.2)
+
+
+def face_band(bvh: BVHTree, to_m: Matrix) -> bpy.types.Object:
+    """A glowing capsule band across the face plate where the eyes sit (the Claude face layer; the runtime colours
+    it), on the plate's fitted surface, just proud of it."""
+    p, e, b = PLATE, EYE_SHAPE, BAND
+    surf = plate_surface(bvh)
+    half_w, r = b['w'] * p['a'], b['h'] * p['b']
+    cz = p['zc'] + e['dz'] * 2 * p['b']
+    n = 64
+    outline = []
+    for k in range(n):
+        a = 2 * math.pi * k / n
+        x, z = r * math.cos(a), r * math.sin(a)
+        x += (half_w - r) if x >= 0 else -(half_w - r)
+        outline.append((x, z))
+    bm = bmesh.new()
+    rings = []
+    for t in (1.0, 0.7, 0.0):
+        ring = [bm.verts.new(to_m @ Vector((x * t, surf(x * t, z * t + cz - p['zc']) - 0.022 - 0.004 * (1 - t * t),
+                                            cz + z * t))) for x, z in outline]
+        rings.append(ring)
+    for a_, b_ in zip(rings, rings[1:]):
+        for k in range(n):
+            bm.faces.new((a_[k], a_[(k + 1) % n], b_[(k + 1) % n], b_[k]))
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-7)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    me = bpy.data.meshes.new('body_band')
+    bm.to_mesh(me)
+    bm.free()
+    for f in me.polygons:
+        f.use_smooth = True
+    me.materials.append(flat_material('mat_face', '#ffffff', emit=2.0))
+    o = bpy.data.objects.new('body_band', me)
+    bpy.context.scene.collection.objects.link(o)
+    return o
+
+
+def back_dot(bvh: BVHTree, to_m: Matrix) -> bpy.types.Object:
+    """A small glowing dot of the agent's colour on the back of the helmet, so the agent reads from behind; part of
+    both face layers."""
+    z = PLATE['zc'] + 0.06
+    hit, normal, *_ = bvh.ray_cast(Vector((0, 3.0, z)), Vector((0, -1, 0)))
+    c = hit + normal * 0.006
+    bm = bmesh.new()
+    rot = normal.to_track_quat('Z', 'Y').to_matrix().to_4x4()
+    bmesh.ops.create_uvsphere(bm, u_segments=20, v_segments=10, radius=1.0,
+                              matrix=Matrix.Translation(c) @ rot @ Matrix.Diagonal((0.045, 0.045, 0.012, 1)))
+    bm.transform(to_m)
+    me = bpy.data.meshes.new('body_back_dot')
+    bm.to_mesh(me)
+    bm.free()
+    for f in me.polygons:
+        f.use_smooth = True
+    me.materials.append(flat_material('mat_face', '#ffffff', emit=2.0))
+    o = bpy.data.objects.new('body_back_dot', me)
     bpy.context.scene.collection.objects.link(o)
     return o
 
@@ -622,6 +687,8 @@ def main() -> None:
         report['pieces'][k] = r | {'faces': len(o.data.polygons)}
     pieces['faceplate'] = face_plate(bvh, to_m)
     pieces['eyes'] = eyes(bvh, to_m)
+    pieces['band'] = face_band(bvh, to_m)
+    pieces['back_dot'] = back_dot(bvh, to_m)
     for side, name in ((1, 'ear_L'), (-1, 'ear_R')):
         pieces[name] = ear_disc(side, bvh, to_m)
     joints = {k: list(to_m @ srcj(k)) for k in J_SRC}
@@ -652,7 +719,7 @@ def main() -> None:
             pieces[name] = ball(f'body_{name}', c, r)
             balls[name] = {'radius_m': round(r, 4), 'rim_points': len(near)}
     report['balls'] = balls
-    roles = {'head': 'head', 'faceplate': 'head', 'eyes': 'head', 'ear_L': 'head', 'ear_R': 'head',
+    roles = {'head': 'head', 'faceplate': 'head', 'eyes': 'head', 'band': 'head', 'back_dot': 'head', 'ear_L': 'head', 'ear_R': 'head',
              'torso': 'spine3', 'pelvis': 'root', 'ball_neck': 'neck'}
     for key, (_, _, _, role) in SEGMENTS.items():
         for side in 'LR':

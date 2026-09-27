@@ -1,10 +1,11 @@
 """Measure the robot sprite preview (/prototype/robot): frame time in headless Chromium with the GPU disabled
 (SwiftShader, software raster) and enabled, far (1x sprites), mid (2x) and close (4x), with the frame rate
-uncapped so the interval is the real cost. Also screenshots the walk beside B2's robot.
+uncapped so the interval is the real cost. Also screenshots the bench scene (typing, writing and reading robots,
+a walker behind the bench) at the floor's 1x and 2x densities.
 
     uv run --group dev python art/scripts/measure_robot_preview.py [--seconds 4] [--repeat 3]
 
-Writes art/build/robot_sprites/perf.json, perf.md and scene.png.
+Writes art/build/robot_sprites/perf.json, perf.md, bench-1x.png and bench-2x.png.
 """
 import argparse
 import json
@@ -65,11 +66,13 @@ def main() -> int:
                                  'frame_ms_runs': [r['frame_ms'] for r in runs]})
                     print(mode, name, rows[-1]['frame_ms'], 'ms', rows[-1]['res'], flush=True)
             browser = p.chromium.launch(args=MODES['no GPU (SwiftShader)'][:1], env=headless_env())
-            page = browser.new_page(viewport=VIEWPORT)
-            page.goto(f'{url}/prototype/robot?zoom=0.62&t=9&shot')
-            page.wait_for_function('robotPreview.ready')
-            page.wait_for_timeout(1500)
-            page.screenshot(path=str(OUT / 'scene.png'))
+            for mult, size in ((1, {'width': 1100, 'height': 620}), (2, {'width': 2000, 'height': 1180})):
+                page = browser.new_page(viewport=size)
+                page.goto(f'{url}/prototype/robot?scene=bench&ppm={171.528 * mult}&t=2.2&shot')
+                page.wait_for_function('robotPreview.ready')
+                page.wait_for_timeout(2500)
+                page.screenshot(path=str(OUT / f'bench-{mult}x.png'))
+                page.close()
             browser.close()
     finally:
         server.shutdown()

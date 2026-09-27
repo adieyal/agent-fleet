@@ -1,10 +1,28 @@
 # Robot sprites: deck parity
 
-The world is moving to a 2D canvas sprite runtime with no runtime 3D (decided by the bake-off, `art/bakeoff/`). The androids become Blender-rendered sprites of the concept robot: new meshes on RobotExpressive's rig and clips, from `art/scripts/build_robot.py` (`fleet/web/assets/world/robot/robot.glb`), rendered by `art/scripts/build_robot_sprites.py` into `fleet/web/assets/world/robot/sprites/`. They must keep every behaviour and look the deck has today.
+The world is moving to a 2D canvas sprite runtime with no runtime 3D (decided by the bake-off, `art/bakeoff/`). The androids are Blender-rendered sprites of the robot of `robot-sheet.png`, rendered by `art/scripts/build_robot_sprites.py` into `fleet/web/assets/world/robot/sprites/`. They must keep every behaviour and look the deck has today.
 
-This document lists what the deck does (`fleet/web/js/agents.js`, `motion.js`, `looks.js`, `activity.js`, plus the few other places that touch an android) and what the sprite set must provide for each, says what is rendered so far, and fixes the manifest the floor runtime reads (`sprites/sprites.json`).
+**v2 (this version)** renders the robot rebuilt from the whole-body model (`art/motion-test/`, approved at rebuild 3): Mixamo clips retargeted onto rigid pieces cut from the model, with the user's posed hands, at 1.081 m, with the floor's one camera. v1 was the RobotExpressive robot with the B1 camera. `robot.glb` and `robot/manifest.json` (the deck's 3D robot) are unchanged.
+
+This document lists what the deck does (`fleet/web/js/agents.js`, `motion.js`, `looks.js`, `activity.js`, plus the few other places that touch an android) and what the sprite set provides for each, marks each item, and fixes the manifest the floor runtime reads (`sprites/sprites.json`).
 
 Deck units below are room tiles (an android is `BOT_H` = 2.2 tiles tall; `BK` = 2.2 / 1.7 scales the kit). Angles are the deck's `facing`: 0 points towards the door (+y), π towards the back wall.
+
+## Changes for the floor (v1 to v2)
+
+The format is the same (`version` 2); these are the differences a reader of v1 must handle.
+
+| Change | v1 | v2 |
+|---|---|---|
+| Camera | `l2`, pitch 44.5°, yaw 21.25° | `world`, pitch 28°, yaw 33° (the floor's one camera); 171.528 px/m at 1x as before |
+| Robot | RobotExpressive rig, about 1.33 m | the rebuilt robot, 1.081 m (`robot.height_m`) |
+| Seated frames | the robot's frame had its seat at `seat_point_m` = [0, 0.19, 0.21]; the floor lifted the frame onto the chair | the frame is rendered on the floor it will stand on: `foot` is the floor under the seat point, `seat_point_m` = [0, 0, 0.549]. Place a seated frame by its `foot` on the floor point under the chair's seat anchor (or by `seat` on a seat anchor 0.549 m up). |
+| Chair and desk | the kit's chair (seat 0.47 m) and desk (0.74 m) | the kit's desk unchanged; the kit's chair with its gas lift raised to **0.549 m**. `seat_furniture` gives the seat height, the chair's centre behind the seat point (0.244 m) and the desk's far edge ahead of it (0.159 m), fitted so the seated robot matches l2 at this camera (chest emblem 21 px, helmet top 112 px above the desk's far edge at 1x). |
+| `desk_top_m` | 0.4807, in the robot's frame | 0.74, the kit's desk top, in the same frame (floor at 0) |
+| Faces | `face_eyes` / `face_band` | the same names; white emissive, coloured by the runtime. Both carry the agent dot on the back of the helmet, so from behind a face layer is present (the dot only). |
+| Items | `item_box`, `item_book`, `item_sheet` rode on the torso and were drawn over `Walking` and `Idle` | carried items are held in the hands by their own clips: `BoxIdle`, `BoxWalk`, `BookWalk`, `SheetWalk`, `SitRead`. A clip's `items` are the only items drawn with it. `item_paper`, `item_pencil`, `item_laptop` and `item_flask` as before. |
+| Clip names | `Sitting` (sit down), `Typing`, `Writing`, `Holding`, `Walking`, `Idle`, `Wave`, `Yes`, `No`, `Death` | the same, plus `StandUp`, `ThumbsUp`, `SitThumbsUp`, `SitIdle`, `SitRead`, `SitNod`, `SitShake`, `Slump`, `SitSlump`, `BoxIdle`, `BoxWalk`, `BookWalk`, `SheetWalk` |
+| Per clip | | `source`: the Mixamo clip it came from |
 
 ## How the sprites are built
 
@@ -13,129 +31,140 @@ Each drawn android is a stack of layers from the same frame, composited on the c
 | Layer | Holds | Runtime treatment |
 |---|---|---|
 | `shadow` | the contact shadow alone, from a shadow catcher under a soft overhead light; black with alpha, stored at a quarter of its size | drawn first, under everything at floor level, scaled ×4 (`shadow_scale`) |
-| `body` (standing) or `body_low` + `body_high` (seated) | the whole robot but its face lights, kit and items: shell in neutral grey `#cccccc`, joints, visor, hands | the shell tinted by its mask (see *Tint*) |
-| `face_eyes` / `face_band` | the agent face: Codex's cyan eyes, Claude's coral band, emissive | one of the two, per agent; dim with a canvas filter for the stalled and resting looks |
-| `acc_<kind>` | one host kit: `backpack`, `antenna`, `halo`, `crest` | tinted by its mask; the halo is tinted whole |
-| `item_<name>` | a carried item: `box`, `book`, `sheet`, `laptop`, `pencil`, `flask` | as is |
+| `body` (standing) or `body_low` + `body_high` (seated) | the whole robot but its face lights, kit and items: the teal shell rendered in neutral grey `#cccccc`; black joints, visor, hands and neck; cream torso; the glowing ear rings and chest light | the shell tinted by its mask (see *Tint*) |
+| `face_eyes` / `face_band` | the agent face: Codex's eyes (two capsules), Claude's band across the visor, and the back-of-helmet dot; white, emissive | multiplied by the agent colour; dimmed for the stalled and resting looks |
+| `acc_<kind>` | one host kit: `backpack`, `antenna`, `halo`, `crest`, modelled for this robot and fixed to its bones | host parts tinted by their mask; the halo is emissive and tinted whole |
+| `item_<name>` | a carried or work item: `box`, `book`, `sheet`, `laptop`, `paper`, `pencil`, `flask` | as is |
 
 Every layer is a separate Cycles view layer of the same scene. Overlay layers (face, kit, item) see the robot as a holdout, so each comes out already cut where the body passes in front of it, and occlusion is right from every direction when they are drawn after the body in fixed order.
 
-**Tint.** Masked layers carry a tint mask: the shell's coverage times its share of diffuse and emitted light, so specular highlights stay white. Per sRGB channel: `rgb = rgb * (1 - mask + mask * host / grey)`. Masks are stored smaller than their colour layer (`mask_scale`: half at 1x and 4x, a quarter at 2x) in 8 levels.
+**Tint.** Masked layers carry a tint mask: the teal shell's coverage times its share of diffuse and emitted light, so specular highlights stay white. Only the teal is masked: joints, face, hands, eyes, ear rings and the cream torso never tint. Per sRGB channel: `rgb = rgb * (1 - mask + mask * host / grey)`. Masks are stored smaller than their colour layer (`mask_scale`: a quarter at 1x and 4x, an eighth at 2x) in 8 levels.
 
-**Desk split.** Seated frames split the body at the desk top (by world height): draw `body_low`, then the desk, then `body_high`. At the bench (facing S) the desk hides the legs; at a terminal (facing N) the robot is in front of its desk, so both halves go after it.
+**Desk split.** Seated frames split the body at the desk top (world height 0.74 m): draw `body_low`, then the desk, then `body_high`. At the bench (facing S) the desk hides the legs; at a terminal (facing N) the robot is in front of its desk, so both halves go after it.
 
-**Camera and look.** The bake-off B1 camera and studio (`art/scripts/bakeoff.py`): l2's orthographic view, pitch 44.5°, yaw 21.25°, 171.5 px per metre at 1x; a soft disk key from the upper left of the view and a dim `white_studio_06` fill, with ambient occlusion from the path tracing. Cycles on the GPU renders every frame at 4x; 2x and 1x are scaled down from it.
+**Camera and look.** The floor's one world camera: orthographic, pitch 28°, yaw 33° (`docs/design/sprite-world.md` on `renovate/floor`), 171.528 px per metre at 1x, 343 at 2x, 686 at 4x. The studio is the bake-off's (`art/scripts/bakeoff.py`): a soft disk key from the upper left of the view and a dim `white_studio_06` fill. Cycles on the GPU renders every frame at 4x; 2x and 1x are scaled down from it.
 
-**Directions.** Four facings along the room's axes, named by the deck's facing: `S` 0° (towards the door, the camera side), `E` 90°, `N` 180° (the back wall), `W` 270°. All four are rendered: the l2 camera is yawed 21.25°, so a mirrored sprite would face 42.5° off the room's axes, and the robot is not symmetric anyway (the antenna, the waving arm, the flask hand). Seated clips come in the two seat facings, `S` (the bench, sofas, armchair) and `N` (the terminals).
+**Directions.** Four facings along the room's axes, named by the deck's facing: `S` 0° (towards the door, the camera side), `E` 90°, `N` 180° (the back wall), `W` 270°. All four are rendered: the camera is yawed, so a mirror would face off the room's axes, and the robot's motion is not symmetric. Seated clips come in the two seat facings, `S` (the bench, sofas, armchair) and `N` (the terminals), as are `StandUp`, `ThumbsUp` and `BoxIdle` (budget). Eight facings do not fit the 8 MB budget alongside the full clip list (see *Budget*); the manifest's `directions` carries the count.
+
+**The robot.** `art/motion-test/robot_body.py` cuts the whole-body model into rigid pieces with black ball joints, colours it by smoothed colour regions (flat sheet colours), and models the face plate, eyes, Claude band, ear discs and agent dot. `robot_hands.py` makes the posed-hand library. `motion_rig.py` retargets each Mixamo clip by moving the Mixamo skeleton's joints onto the model's, keeping every bone's rest orientation. It also poses the arms directly where a clip needs it: typing and writing on the desk, props gripped by their sides, the thumbs-up hand kept off the visor, the flask. Seated clips keep only a little of Mixamo's lean, so the face stays visible over the desk.
 
 ## Looks
 
-| Deck behaviour | Where | Sprite set must provide |
-|---|---|---|
-| **Host colour tint.** The `Main` material takes the host colour: fixed for `node-a`…`node-d` (`#ff9340`, `#2dd4bf`, `#a78bfa`, `#facc15`), otherwise `hsl(hash, 72%, 62%)`, so any hue can occur. | `looks.js` `hostLook`; `agents.js` `buildRobot` | A `body` layer per frame rendered white and shaded, for runtime multiply. The runtime tints each sheet once per colour into an offscreen canvas and caches it. |
-| **One host accessory**, from `backpack`, `antenna`, `halo`, `crest`, bone-attached so it follows the animation. Backpack: host-coloured box on the torso back with a dark strap. Antenna: dark rod plus host-coloured ball off the head's right. Halo: unlit host-coloured torus above the head. Crest: host-coloured fin along the head. | `agents.js` `buildRobot` | `acc_<kind>` (host-coloured parts, tinted) and `acc_<kind>_dark` for every frame of every clip, 4 kinds. The halo renders emissive so it stays flat and bright. Each kind also gives its `kit_top` (how far it rises above the head) for tag placement. |
-| **Agent face.** Claude: a band across the visor in `#ff8f6b` (coral-orange). Codex: the robot's own eyes glow `#7ce7ff` (emissive 1.4). Both carry a small dot of the agent colour on the back of the head, so the agent reads from behind. Unknown agents get `#cbd5e1` with the band. | `looks.js` `AGENT_COLOR`; `agents.js` | `face_band` (band plus back dot) and `face_eyes` (the concept's two eyes plus back dot), white emissive masks per frame; the runtime colours them. The concept visor stays dark under both. |
-| **Stalled dim.** The body turns to `mix(host, #475163, 0.55)` and the face to `mix(agent, #1b2333, 0.6)`; Codex eyes drop to emissive 0.2. | `motion.js` `tone` | Nothing extra: a second tint colour for `body`/`acc` and a dimmed face colour. |
-| **Resting look.** Done, cancelled and idle-session androids, once arrived, keep the body colour but lower the face to `mix(agent, #1b2333, 0.35)`. | `motion.js` `tone` | Nothing extra: a face colour. |
-| **Panel portraits.** The side panel, host list and lobby key draw a small Idle android (0.5 s into Idle, turned 0.45 rad), and an `off` pose for an unhealthy host: dim body, face and eyes dark. | `panel.js` `portrait`, `miniBot` | A portrait frame: Idle at 0.5 s, the direction nearest 0.45 rad, all layers, at 2× so the 34×44 px canvas stays sharp. |
+| Deck behaviour | Where | Sprite set provides | Status |
+|---|---|---|---|
+| **Host colour tint.** The `Main` material takes the host colour: fixed for `node-a`…`node-d` (`#ff9340`, `#2dd4bf`, `#a78bfa`, `#facc15`), otherwise `hsl(hash, 72%, 62%)`. | `looks.js` `hostLook` | the `body` layers in grey with the teal tint mask; the runtime tints each image once per colour and caches it | ✅ |
+| **One host accessory**: `backpack`, `antenna`, `halo`, `crest`, following the animation. | `agents.js` `buildRobot` | `acc_<kind>` for every frame of every clip, remodelled for this robot: a host-coloured pack with a dark strap on the torso's back; a dark rod and host-coloured ball off the helmet's right; an emissive halo over the helmet; a host-coloured fin along the helmet's crown. `kit_top` anchors where a kit rises above the helmet. | ✅ |
+| **Agent face.** Claude: a coral-orange (`#ff8f6b`) band across the visor. Codex: the eyes glow `#7ce7ff`. Both carry a dot of the agent colour on the back of the head. Unknown agents get `#cbd5e1` with the band. | `looks.js` `AGENT_COLOR` | `face_band` (band plus dot) and `face_eyes` (the sheet's two capsule eyes plus dot), white emissive per frame; the runtime colours them. The visor stays dark under both. | ✅ |
+| **Stalled dim.** The body turns to `mix(host, #475163, 0.55)` and the face to `mix(agent, #1b2333, 0.6)`. | `motion.js` `tone` | nothing extra: a second tint colour and a dimmed face colour (shown in the preview and in `faces-kits.png`) | ✅ |
+| **Resting look.** Face lowered to `mix(agent, #1b2333, 0.35)`. | `motion.js` `tone` | nothing extra | ✅ |
+| **Panel portraits.** A small Idle android (0.5 s in, turned 0.45 rad), and an `off` pose. | `panel.js` | the runtime takes `Idle` frame 0, direction S (the nearest), all layers, at 2x | ✅ (no separate frame: `Idle` S frame 0) |
 
 ## Clips
 
-The deck plays RobotExpressive clips through an `AnimationMixer` with 0.3 s crossfades, plus procedural bone offsets on top. Sprites cannot add bone offsets, so every offset the deck applies becomes its own rendered clip or pose.
+The deck plays RobotExpressive clips through an `AnimationMixer` with 0.3 s crossfades, plus procedural bone offsets on top. Sprites cannot add bone offsets, so every offset the deck applies becomes its own rendered clip or pose. All clips are Mixamo, retargeted (`source` per clip); loops are made seamless (the last 30% of each curve eased onto the first frame).
 
-| Deck behaviour | Where | Sprite set must provide |
-|---|---|---|
-| **Walking** between stations; timescale 1.25, and 0.6 for pacing strolls. | `motion.js` `updateEnt`, `clipFor` | `Walking` loop, 4 directions. The runtime sets the frame rate from the timescale (1.25 normal, 0.6 pacing). |
-| **Idle** when standing at a spot with no seat. | `clipFor` | `Idle` loop, 4 directions. |
-| **Sitting at terminal desks**, facing the back wall (π), seat at the chair in front of each of the 3 terminals. | `looks.js` `SPOTS.terminal`; `clipFor` | `SitDown` (the `Sitting` clip, played once) and `SitIdle` (its last frame held), direction π. |
-| **Sitting at the bench**, worked from the far side, facing the viewer's side of the room (0). | `SPOTS.workbench` | Same clips, direction 0. Also used on the dock sofas and the reading armchair (both face 0). |
-| **Typing** while seated at a `hands` activity (type, edit): lower arms oscillate `sin(t·15 + i·2.1)·0.14`. | `motion.js` `updateEnt` | `SitType` loop, directions π and 0, from the arm-only `Type` clip already in `robot.glb`. |
-| **Standing up** before walking off from a seat or from Death (0.8 of the clip). | `stepMotion` | `StandUp` (the `Standing` clip, once), 4 directions (Death can happen anywhere). |
-| **Wave** while delegating (active, act `delegate`), looping, facing the partner. | `clipFor` | `Wave` loop, 4 directions. |
-| **Yes / No** after a test run passes, or on an error, when standing: the full clip once. | `motion.js` `noteEvents`, `react` | `Yes` and `No`, once, 4 directions. |
-| **Head-only nod / shake when seated**: 1.5 s, head pitch (yes) or yaw ×1.3 (no) by `sin(·13)·0.32`, on top of whatever the arms do. | `react`, `updateEnt` | `SitNod` and `SitShake`, 1.5 s, directions π and 0, for each seated base the deck can combine them with: still, typing, and reading a sheet. That is 6 clips. |
-| **ThumbsUp** once, when a job the page already knew turns done, before walking to the sofa. | `state.js` | `ThumbsUp`, once, 4 directions. |
-| **Death** when failed: the clip once, clamped on its last frame, wherever the android stopped (a seated one falls from its seat). | `clipFor` | `Death`, once, 4 directions. |
-| **Stalled**: the `Sitting` clip wherever the android is, head slumped forward 0.55 rad. On a seat it sits in it; elsewhere it sits on the floor. | `clipFor`, `updateEnt` | `SitSlump` (sit down, then held slumped), 4 directions. |
-| **Reading a printout seated**: head tipped down 0.3 rad while holding a sheet. | `updateEnt` | `SitRead` pose, directions π and 0. |
-| **Reduced motion**: once-clips jump to their last frame, loops hold frame 0, turns are instant, no nods, no pacing. | `playClip`, `react`, `pace` | Nothing extra: each clip's first and last frames. |
-| **Background rooms** (calm): animation and walking run at 0.05×; no typing arms, nods or particles. | `updateEnt`, `stepMotion` | Nothing extra: the runtime slows the frame clock and uses `SitIdle` in place of `SitType`. |
+| Deck behaviour | Where | Sprite set provides | Status |
+|---|---|---|---|
+| **Walking** between stations; timescale 1.25, and 0.6 for pacing. | `motion.js` `updateEnt`, `clipFor` | `Walking` (walk-normal, in place), loop, 4 directions; the runtime sets the rate | ✅ |
+| **Idle** standing at a spot with no seat. | `clipFor` | `Idle` (standing-idle) loop, 4 directions | ✅ |
+| **Sitting at terminal desks**, facing the back wall. | `looks.js` `SPOTS.terminal` | `Sitting` (stand-to-sit, once, held on its last frame) and `SitIdle` (sitting-idle loop), direction N | ✅ |
+| **Sitting at the bench**, facing the viewer's side (also the dock sofas and the reading armchair). | `SPOTS.workbench` | the same, direction S | ✅ |
+| **Typing** while seated at a `hands` activity. | `motion.js` `updateEnt` | `Typing` loop, S and N: typing's arms laid on the desk, fists on a laptop's keys, back straight, head level; `item_laptop` | ✅ |
+| **Standing up** before walking off from a seat or from Death. | `stepMotion` | `StandUp` (sit-to-stand, once), S and N | ◐ S and N only (budget): Death can happen anywhere, so an android standing up facing E or W takes the nearest of S or N |
+| **Wave** while delegating, looping. | `clipFor` | `Wave` (waving, the open hand) loop, 4 directions | ✅ |
+| **Yes / No** after a test run passes or on an error, standing. | `noteEvents`, `react` | `Yes` (nod-yes), `No` (shake-no), once, 4 directions | ✅ |
+| **Head-only nod / shake when seated**, over whatever the arms do. | `react`, `updateEnt` | `SitNod`, `SitShake`: the nod-yes and shake-no heads on the seated still body, S and N | ◐ still base only: the typing and reading bases (motion_rig.LAYERED `type-nod` … `read-shake`) are built but not rendered, for the budget. The runtime plays `SitNod` / `SitShake` for any seated base. |
+| **ThumbsUp** once, when a known job turns done. | `state.js` | `ThumbsUp` (standing) and `SitThumbsUp`, S and N (budget; a standing E or W android turns to the nearest): the hand held in front of the chest and out to the side, never over the visor | ✅ |
+| **Death** when failed: once, clamped on its last frame, wherever the android stopped. | `clipFor` | `Death` (dying-back, once, held), 4 directions; the pieces are rigid on their bones, so limbs stay connected | ✅ |
+| **Stalled**: slumped, on a seat or standing. | `clipFor`, `updateEnt` | `Slump` (sad-idle loop) 4 directions; `SitSlump` (sitting-idle with the spine curled and the head dropped) S and N | ✅ (a stalled android away from a seat stands slumped rather than sitting on the floor) |
+| **Reading a printout / book seated**. | `updateEnt` | `SitRead`: a book held at chest height in both hands, the head lowered just enough, the face visible; S and N | ✅ |
+| **Writing** and **Holding** work loops. | `activity.js` | `Writing` (the pinch hand, a pencil, a sheet of paper on the desk) and `Holding` (a test tube held up in the right fist), S and N | ✅ |
+| **Reduced motion**: once-clips jump to their last frame, loops hold frame 0. | `playClip`, `react` | nothing extra | ✅ |
+| **Background rooms** (calm): 0.05×; no typing arms, nods or particles. | `updateEnt` | nothing extra: `SitIdle` in place of `Typing` | ✅ |
 
 ## Movement
 
 All of this stays in the runtime: it is position, heading and timing, not art. The sprite set only has to be placeable and turnable.
 
-| Deck behaviour | Where | Sprite set must provide |
+| Deck behaviour | Sprite set provides | Status |
 |---|---|---|
-| **Stations**: each activity maps to a station (terminal, workbench, whiteboard, comms, bookshelf then armchair, cabinet, think, lounge, dock, kitchen, mail, rack, press, partner, stay), with an ordered list of spots, some seated. | `looks.js` `ACTS`, `SPOTS`; `motion.js` `allocate` | Root pixel per frame, so an android lands on its spot. |
-| **Walking routes** along the three aisles and two crossings, around furniture. | `motion.js` `route` | Nothing. |
-| **Dwell**: a change of station waits 3.5 s and 1.2 s after arrival, so bursts don't send androids back and forth. Multi-station activities move on after 1.8 s (book off the shelf, then the armchair). | `assignTargets`, `nextStage` | Nothing. |
-| **Pacing**: thinking androids stroll 1.4 tiles and back, idle ones 2.2, at 0.4× speed with the slow walk. | `pace` | The `Walking` loop at the pacing rate. |
-| **Delegates** stand beside their partner, facing them, with a dashed arc between their heads. | `allocate`; `main.js` | Head anchor per frame (below). |
-| **Walkers step around each other** across the view; seated androids lift by the seat height (0 today). | `stepMotion`; `updateEnt` | Nothing. |
-| **Waiting on the human** (idle session): stays put, facing the viewer (π/4). | `allocate` | Nothing beyond the 4 directions. |
-| **Turned to the press** while a document prints, with a dashed beam from 0.3 kit-units below the head to the slit. | `updateEnt`; `docs3d.js` | Head anchor per frame. |
-| **Sitting behind furniture**: at terminals the chair back is between the android and the camera; at the bench the desk is. The deck gets this from the depth buffer. | scene | Sprites render unoccluded, without holdouts. The floor must supply chairs and desks as separate occluder sprites drawn after a seated android. B1 baked the desk in as a holdout; that ties a sprite to one desk and does not scale to every seat. |
+| **Stations** and **spots**, some seated. | `foot` per clip and facing (and `seat` for seated clips), so an android lands on its spot | ✅ |
+| **Walking routes**, **dwell**, **pacing**, **walkers stepping round each other**. | nothing (the `Walking` loop at the pacing rate) | ✅ |
+| **Delegates** facing their partner with an arc between heads; **turned to the press** with a beam from the head. | `head_top` per frame | ✅ |
+| **Waiting on the human**, facing the viewer (π/4). | the nearest of the 4 facings | ✅ |
+| **Sitting behind furniture**. | sprites unoccluded, split at the desk top; the floor draws chair, lower body, desk, upper body | ✅ |
 
 ## Carried items
 
-The deck fixes these items in the android's own frame, not in a hand. The sprites hang them from the torso in front of the chest, so they ride its motion, and render them per frame of the clips that carry them. Positions in the deck are `[x, y, z, tilt]` in deck units.
+v2 holds the items in the hands, so each is drawn with the clips that carry it:
 
-| Item | Carried when | Stance | Sprite set must provide |
-|---|---|---|---|
-| **Box** (`#b98b52` parcel, 0.5 × 0.38 × 0.4) | `ship` (commit/push), from the start until it goes in the outbox 0.6 s after arrival | standing, walking | `item_box`, standing, 4 directions: rendered with Walking and Idle |
-| **Book** (`#b4463c`, tilted −1.0; seated −1.1) | `read`, once off the shelf, to the armchair | standing, walking, seated | `item_book`: rendered with Walking, Idle and Sitting |
-| **Sheet** (`#f4f6fa` printout, tilted −1.1; seated −0.55) | `review`, at the bench, not while walking | standing, seated | `item_sheet`: rendered with Idle and Sitting |
+| Item | Carried when | Clips |
+|---|---|---|
+| **Box** (0.30 × 0.24 × 0.22 m cardboard, tape strip), gripped by its sides in every frame | `ship` | `BoxIdle`, `BoxWalk` |
+| **Book** (0.15 × 0.20 m, blue cover), held up in both hands | `read` | `BookWalk`, `SitRead` |
+| **Sheet** (a curled printout with grey lines, between two pinch hands) | `review` | `SheetWalk` |
+| **Laptop**, **paper and pencil**, **flask** | the seated work loops | `Typing`, `Writing`, `Holding` |
 
-The deck also defines a seated box pose, but no station seats a shipper, so it is left out. Three more items belong to the seated work loops: `item_laptop` (on the desk under the typing hands, with Typing), `item_pencil` (with Writing) and `item_flask` (with Holding), the last two in the right hand.
+A standing android holding a book or sheet without walking uses frame 0 of `BookWalk` / `SheetWalk`; the deck's seated box pose is left out, as before.
 
 ## Effects and overlays
 
-These are drawn by the runtime. The sprite set only supplies anchors.
+Drawn by the runtime; the sprite set supplies anchors.
 
-| Deck behaviour | Where | Sprite set must provide |
+| Deck behaviour | Sprite set provides | Status |
 |---|---|---|
-| **Smoke over failed androids**: grey (0.5, 0.52, 0.58) puffs rising from 0.5 tiles up, at a 12% chance per frame, living 1.8–2.8 s. A red additive glow (1.3 tiles, at 0.45 up) sits on them. | `motion.js` `updateEnt`, `spawn` | Nothing: runtime particles and a soft-dot glow from the root point. |
-| **Motes over finished androids**: green (0.29, 0.87, 0.5) motes rising from near the floor, 3% per frame, over a soft green floor disc (radius 0.62). | same | Nothing, as above. |
-| **Contact shadow**: a soft floor disc, 0.9 BK. | `createEnt` | The `shadow` layer, which replaces the disc with the rendered pose's shadow. |
-| **Selection ring**: host colour, pulsing opacity. **Session halo**: pink `#f472b6` ring, breathing while the session works. | `createEnt`, `updateEnt` | Nothing: floor decals at the root. |
-| **Tags and bubbles** hang from the head bone, lifted by head top + accessory height (`kit_top`) + 0.12 BK, pushed up to avoid overlap, with a lead line back down. | `agents.js` `positionTags` | Per frame, the head anchor in frame pixels; per accessory, `kit_top`. The runtime adds the margin. |
-| **Click hit area**: an invisible upright cylinder, radius 0.42 BK, height `BOT_H`, around the root; the nearest hit wins. | `createEnt`; `camera.js` `pick` | Nothing: the runtime projects the same cylinder and takes the frontmost in draw order. |
-| **Camera focus** centres the android's root plus 0.7 of its height. | `camera.js` `focusOn` | Nothing. |
+| **Smoke** over failed androids, **motes** over finished ones, **selection ring**, **session halo**. | nothing: particles and decals at the root | ✅ |
+| **Contact shadow**. | the `shadow` layer | ✅ |
+| **Tags and bubbles** hang from the head, lifted by the kit. | `head_top` (the helmet's top as seen) per frame; `kit_top` per kit where it rises above it | ✅ |
+| **Click hit area**. | `hit`: the body's bounds per frame | ✅ |
+| **Hands** (held items, the action glyph). | `hand_l`, `hand_r`: the centres of the hand pieces per frame | ✅ |
+| **Camera focus**. | nothing | ✅ |
 
 ## Deliberate differences
 
-- **Crossfades.** The deck blends clips over 0.3 s. Sprites cut at the next frame boundary. A 2-frame cross-dissolve is possible if the cut reads harshly; it is not planned.
-- **Headings** snap to the 4 facings rather than easing through every angle. Diagonal headings (a delegate facing its partner, an idle session facing the viewer at π/4) take the nearest facing.
-- **Death** knocks the head off: RobotExpressive's clip moves the head bone far from the neck.
-- **Nods on other bases.** A seated nod or shake is rendered for the still, typing and reading bases only. Those are the only seated states that receive test verdicts or errors, since stalled and failed androids do not react.
+- **Crossfades.** The deck blends clips over 0.3 s. Sprites cut at the next frame boundary.
+- **Headings** snap to the 4 facings.
+- **Seated nods** are rendered over the still base only (see *Clips*).
+- **Slow idles.** The idle loops are Mixamo's own slow breathing clips, sampled at 6–8 frames (1.5–2 fps); `Typing` and `Writing` loop a 1.2 s and a 2 s window of their clips (6.7 and 4 fps), `Walking` its 1.17 s cycle at 12 frames.
 
 ## What is rendered
 
-| Clip | Source | Frames | Facings | Loop | Items |
+| Clip | Source (Mixamo) | Frames | Facings | Loop | Items |
 |---|---|---|---|---|---|
-| `Walking` | Walking | 12 | S E N W | yes | box, book |
-| `Idle` | Idle | 8 | S E N W | yes | box, book, sheet |
-| `Wave` | Wave | 12 | S E N W | yes | |
-| `Yes`, `No` | Yes, No | 8 each | S E N W | once | |
-| `Death` | Death | 16 | S E N W | once, held on the last frame | |
-| `Sitting` | Sitting (sitting down) | 8 | S N | once, held on the last frame | book, sheet |
-| `Typing`, `Writing`, `Holding` | Type, Write, Hold arm clips over the end of Sitting | 8 each | S N | yes | laptop; pencil and paper; flask |
-
-Still to render for full parity: `ThumbsUp`, `StandUp` (the Standing clip), the seated nod and shake (`SitNod`, `SitShake` over still, typing and reading), `SitSlump` (stalled), `SitRead` (head down over a sheet), and the panel portrait.
+| `Walking` | walk-normal, in place | 12 | S E N W | yes | |
+| `Idle` | standing-idle | 8 | S E N W | yes | |
+| `Wave` | waving | 8 | S E N W | yes | |
+| `Yes`, `No` | nod-yes, shake-no | 8 each | S E N W | once | |
+| `Death` | dying-back | 12 | S E N W | once, held | |
+| `ThumbsUp` | thumbs-up-standing | 8 | S N | once | |
+| `Slump` | sad-idle | 6 | S E N W | yes | |
+| `BoxIdle` | box-idle | 6 | S N | yes | box |
+| `BoxWalk` | box-walk-arc, in place | 8 | S E N W | yes | box |
+| `BookWalk` | walk-normal, in place, book in both hands | 8 | S E N W | yes | book |
+| `SheetWalk` | walking-reading-phone, in place (1.2 s) | 8 | S E N W | yes | sheet |
+| `StandUp` | sit-to-stand | 8 | S N | once | |
+| `Sitting` | stand-to-sit | 8 | S N | once, held | |
+| `SitIdle` | sitting-idle | 8 | S N | yes | |
+| `Typing` | typing (1.2 s), arms on the desk | 8 | S N | yes | laptop |
+| `Writing` | writing-seated (2 s) | 8 | S N | yes | paper, pencil |
+| `SitRead` | sitting-idle, reading upper body, book held | 8 | S N | yes | book |
+| `Holding` | sitting-idle, the flask held up | 8 | S N | yes | flask |
+| `SitThumbsUp` | thumbs-up-sitting | 8 | S N | once | |
+| `SitSlump` | sitting-idle, slumped | 6 | S N | yes | |
+| `SitNod`, `SitShake` | nod-yes, shake-no heads on sitting-idle | 6 each | S N | once | |
 
 ## Budget
 
-320 frames, 2,723 layer images; 2,322 after layers that barely change within a clip and facing are shared.
+23 clips, 536 frames, 4609 layer images; 4308 after layers that barely change within a clip and facing are shared.
 
 | Set | Colour (WebP) | Masks (PNG) | Shadows (WebP) | Total | Loaded |
 |---|---|---|---|---|---|
-| 1x | 3 pages | 3 pages | 1 page | 2.22 MB | eager |
-| 2x | 12 pages | 12 pages | 2 pages | 4.41 MB | eager |
-| 4x | 46 pages | 46 pages | 6 pages | 10.93 MB | on demand, when zoomed close |
-| `sprites.json` | | | | 0.33 MB | eager |
+| 1x | 4 pages | 4 pages | 1 pages | 2.48 MB | eager |
+| 2x | 15 pages | 15 pages | 2 pages | 4.95 MB | eager |
+| 4x | 56 pages | 56 pages | 6 pages | 15.64 MB | on demand, when zoomed close |
+| `sprites.json` | | | | 0.55 MB | eager |
 
-1x + 2x + manifest: 6.96 MB. WebP quality is 72 at 1x, 62 at 2x and 80 at 4x (alpha 60 / 50 / 70); pages are at most 2048².
+1x + 2x + manifest: **7.99 MB**, at the 8 MB limit. To fit the full clip list, v2 stores the tint masks at a quarter (1x, 4x) and an eighth (2x) of their layer's size, WebP quality is 42 at 1x and 31 at 2x (alpha 28 / 22), 80 at 4x; pages are at most 2048². At 2x the lower quality shows only as slight softening on the shell's highlights. `StandUp`, `ThumbsUp` and `BoxIdle` are rendered in S and N only, and eight facings do not fit: every further facing of the standing clips costs about 1.5 MB up front. Rendering took about 20 s a frame on the RTX 3090 (about 3 h).
 
 ## Manifest
 
@@ -143,14 +172,15 @@ Still to render for full parity: `ThumbsUp`, `StandUp` (the Standing clip), the 
 
 ```jsonc
 {
-  "version": 1,
-  "camera": { "name": "l2", "projection": "orthographic", "pitch_deg": 44.5, "yaw_deg": 21.25, "px_per_m_1x": 171.528 },
+  "version": 2,
+  "camera": { "name": "world", "projection": "orthographic", "pitch_deg": 28.0, "yaw_deg": 33.0, "px_per_m_1x": 171.528 },
+  "robot": { "height_m": 1.081, "source": "art/motion-test (whole-body model, Mixamo clips)" },
   "resolutions": {
-    "1x": { "scale": 1, "load": "eager", "mask_scale": 2,     // masks are stored this many times smaller
+    "1x": { "scale": 1, "load": "eager", "mask_scale": 4,     // masks are stored this many times smaller
             "pages": [ { "color": "1x/color-0.webp", "mask": "1x/mask-0.png", "size": [2048, 1990] } ],
             "shadow_pages": [ { "image": "1x/shadow-0.webp", "size": [1204, 840] } ] },
-    "2x": { "scale": 2, "load": "eager", "mask_scale": 4, ... },
-    "4x": { "scale": 4, "load": "on demand", "mask_scale": 2, ... }
+    "2x": { "scale": 2, "load": "eager", "mask_scale": 8, ... },
+    "4x": { "scale": 4, "load": "on demand", "mask_scale": 4, ... }
   },
   "directions": { "S": { "facing_deg": 0 }, "E": { "facing_deg": 90 }, "N": { "facing_deg": 180 }, "W": { "facing_deg": 270 } },
   "grey": "#cccccc",
@@ -159,24 +189,24 @@ Still to render for full parity: `ThumbsUp`, `StandUp` (the Standing clip), the 
   "tinted_whole": ["acc_halo"],
   "shadow_scale": 4,                        // shadows are stored this many times smaller
   "draw_order": ["shadow", "body_low", "(desk)", "body", "body_high", "face_*", "acc_*", "item_*"],
-  "faces": { "face_eyes": "codex", "face_band": "claude" },
+  "faces": { "face_eyes": "codex", "face_band": "claude" },   // white: multiply by the agent colour
   "accessories": ["acc_backpack", "acc_antenna", "acc_halo", "acc_crest"],
   "items": ["item_box", "item_book", "item_sheet", "item_laptop", "item_paper", "item_pencil", "item_flask"],
-  "seat_point_m": [0.0, 0.1879, 0.2107],   // where the seated robot rests on its chair, in its own frame
-  "desk_top_m": 0.4807,                    // the desk split height, in the same frame
+  "seat_point_m": [0.0, 0.0, 0.549],       // the seated robot's seat point in its frame: the floor under it is `foot`
+  "desk_top_m": 0.74,                      // the desk split height, in the same frame
+  "seat_furniture": { "seat_height_m": 0.549, "chair_behind_m": 0.244, "desk_edge_ahead_m": 0.159, "desk_top_m": 0.74 },
   "clips": {
     "Walking": {
-      "fps": 12.5, "loop": true, "hold_last": false, "frames": 12, "seated": false,
-      "items": ["item_box", "item_book"],
+      "fps": 10.29, "loop": true, "hold_last": false, "frames": 12, "seated": false, "source": "walk-normal",
+      "items": [],
       "dirs": {
         "S": {
-          "canvas": [264, 386],            // the frame's size
-          "foot": [131.2, 300.4],          // where the robot's root (its floor point) lands
-          "footprint": [51.46, 36.07],     // radii of the floor ellipse it stands on
-          "seat": [131.2, 250.1],          // seated clips only: where seat_point lands
+          "canvas": [202, 330],            // the frame's size
+          "foot": [101.4, 250.2],          // where the robot's root (its floor point) lands
+          "footprint": [51.46, 24.16],     // radii of the floor ellipse it stands on
+          "seat": [...],                   // seated clips only: where seat_point lands
           "frames": [ {
-            "anchors": { "head_top": [...], "kit_top": { "antenna": [...], ... }, "hand_l": [...], "hand_r": [...] },
-            // head_top: the helmet's top as seen; kit_top: only the kits that rise above it
+            "anchors": { "head_top": [...], "kit_top": { "halo": [...], ... }, "hand_l": [...], "hand_r": [...] },
             "hit": [x, y, w, h],             // the body's bounds
             "layers": {
               "body":  [[page, x, y, w, h, ox, oy], [...], [...]],   // one entry per resolution, in their order
@@ -190,26 +220,31 @@ Still to render for full parity: `ThumbsUp`, `StandUp` (the Standing clip), the 
 }
 ```
 
-A layer has one entry per resolution, in the order of `resolutions`: its page, its rect in that page, and its offset in the frame's canvas, all in that resolution's pixels. Shadows index `shadow_pages` and are drawn `shadow_scale` times their stored size; everything else indexes `pages`. A masked layer's mask is its rect divided by `mask_scale` in the page's mask image (grey, 8 levels), stretched back over the layer. A layer missing from a frame is empty there (the face from behind, for instance). Layers that barely change within a clip and facing share one image (`stats` counts them).
+A layer has one entry per resolution, in the order of `resolutions`: its page, its rect in that page, and its offset in the frame's canvas, all in that resolution's pixels. Shadows index `shadow_pages` and are drawn `shadow_scale` times their stored size; everything else indexes `pages`. A masked layer's mask is its rect divided by `mask_scale` in the page's mask image (grey, 8 levels), stretched back over the layer. A layer missing from a frame is empty there. Layers that barely change within a clip and facing share one image (`stats` counts them).
 
 Rules for the runtime:
-- Place a frame so its `foot` lands on the robot's floor position; a seated frame so its `seat` lands on the chair's seat anchor.
+- Place a frame so its `foot` lands on the robot's floor position. A seated frame's `foot` is the floor under the seat point: put it under the chair's seat (whose seat is at `seat_furniture.seat_height_m`), or equivalently put `seat` on the seat anchor.
 - `loop: false` clips play once; `hold_last` ones stay on their last frame. Under reduced motion, loops show frame 0 and once-clips their last frame.
-- A clip is drawn only in the facings it lists.
+- A clip is drawn only in the facings it lists, with only the items it lists.
+- Faces are white: multiply by the agent colour (dimmed for the stalled and resting looks).
 - Tags hang from the host kit's `kit_top` if the frame lists one for it, else from `head_top`, plus a margin. Items can be anchored to `hand_l` / `hand_r`. `hit` is the click box, frontmost first.
 
 ## Preview
 
-`/prototype/robot` (`fleet/web/prototype/robot.js`, served by the deck, not linked from it) is a reference runtime on one 2D canvas, no WebGL. It tints each layer image through its mask the first time it is drawn for a host (and keeps it), composites the layers in the order above, and walks a robot round the B2 bench: in front of it, round its end, behind it, then down onto a chair to type, drawn under and over the desk by the desk split. B2's typing robot sits at desk 1 for comparison. Its frame time is measured by `art/scripts/measure_robot_preview.py` in headless Chromium at 1672 × 941, frame rate uncapped:
+`/prototype/robot` (`fleet/web/prototype/robot.js`, served by the deck, not linked from it) is a reference runtime on one 2D canvas, no WebGL. It reads the camera from the manifest, tints each layer image through its mask the first time it is drawn for a host (and keeps it), colours the face, composites the layers in the order above, and draws a bench of the kit's size with raised chairs from `seat_furniture`. A robot walks round it (in front, round its end, behind), sits down, types and stands up; desks 1 and 3 hold a writing and a reading robot. Every clip, facing, face, kit and look can be picked. `?scene=bench` puts a typist at desk 2 and keeps the walker walking, so it passes behind the bench. Its frame time is measured by `art/scripts/measure_robot_preview.py` in headless Chromium at 1672 × 941, frame rate uncapped:
 
-| Chromium | Far (1x) | Mid (2x) | Close (4x) |
-|---|---|---|---|
-| GPU disabled (SwiftShader) | 1.22 ms | 3.06 ms | 3.95 ms |
-| GPU (ANGLE GL) | 1.22 ms | 3.07 ms | 3.99 ms |
+| Mode | Zoom | Sprites | Frame ms (mean) | p95 | fps | Draw ms | Runs (ms) |
+|---|---|---|---|---|---|---|---|
+| no GPU (SwiftShader) | far | 1x | 2.41 | 3.2 | 414.9 | 0.171 | 2.07, 2.41, 2.99 |
+| no GPU (SwiftShader) | mid | 2x | 3.49 | 5.1 | 286.5 | 2.767 | 3.17, 3.49, 3.55 |
+| no GPU (SwiftShader) | close | 4x | 4.2 | 3.7 | 238.1 | 3.432 | 2.62, 4.2, 5.14 |
+| GPU (ANGLE GL) | far | 1x | 1.81 | 2.1 | 552.5 | 0.105 | 1.62, 1.81, 1.93 |
+| GPU (ANGLE GL) | mid | 2x | 3.12 | 4.5 | 320.5 | 2.482 | 2.7, 3.12, 3.48 |
+| GPU (ANGLE GL) | close | 4x | 2.76 | 3.7 | 362.3 | 2.25 | 2.62, 2.76, 3.22 |
 
 ## Open
 
-- **Seated height against B2.** At the same bench and pixels per metre, the robots now match B2's in size, but seated their helmets sit a little lower over the desk: RobotExpressive's rig has a short spine and thighs, and the bones are kept so every clip still drives the robot.
-- **Facing.** B2 drew its seated robots turned about 35° towards the viewer's left; the sprites face along the room's axes (S at the bench), so the laptop is seen lid first.
-- **Standing up** cuts from seated to standing: no `StandUp` frames yet.
-
+- **Seated nods over typing and reading** are not rendered (budget); `SitNod` / `SitShake` stand in.
+- **StandUp, ThumbsUp and BoxIdle** exist in S and N only; E and W would add about 1.3 MB up front.
+- **Slump away from a seat** stands slumped (`Slump`) rather than sitting on the floor.
+- **The floor's chair** must be raised to 0.549 m (its gas lift) and spaced by `seat_furniture`; with the kit's 0.47 m chair the seated robot sinks 8 cm into the desk.

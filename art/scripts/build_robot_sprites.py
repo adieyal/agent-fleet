@@ -1,29 +1,31 @@
-"""Paper-doll sprite atlases of the concept robot for the 2D runtime.
+"""Paper-doll sprite atlases of the robot for the 2D runtime (v2: the robot rebuilt from the whole-body model).
 
     uv run --group dev python art/scripts/build_robot_sprites.py           # render (Blender), then pack
     uv run --group dev python art/scripts/build_robot_sprites.py --pack    # pack the last render only
 
 Environment: SPRITES_ONLY=Clip or Clip:S renders just that; SPRITES_DRY=1 frames the cameras without rendering;
-SPRITES_ANCHORS=1 recomputes the anchors of finished clips without rendering; SPRITES_RES=12 packs only those sets.
-A run resumes: each finished clip and facing is kept in art/build/robot_sprites/frames/ (delete it to start over),
-and when the GPU is short of memory (it may be shared) a frame waits for it, then falls back to the CPU.
+SPRITES_RES=12 packs only those sets. A run resumes: each finished clip and facing is kept in
+art/build/robot_sprites/frames/ (delete it to start over), and when the GPU is short of memory (it may be shared) a
+frame waits for it, then falls back to the CPU.
 
-Needs art/build/robot/robot.blend (art/build.sh robot) and the fetched sources (the studio HDRI). The
-script runs itself inside Blender (BLENDER, default ~/.local/bin/blender) to render, then packs with
-Pillow. Output: fleet/web/assets/world/robot/sprites/ (atlases per resolution and sprites.json); the
-format is documented in docs/design/robot-sprites.md.
+The robot: art/motion-test/ (robot_body.py, robot_hands.py, motion_rig.py, render_motion.py), built from the user's
+whole-body Hunyuan3D model and posed hands (outside the repo; their libraries in ~/.cache/fleet-motion-test/), with
+Mixamo clips (~/.local/state/fleet/renovation/mixamo/) retargeted onto it, the per-clip hand poses and held items
+of rebuilds 2 and 3, the seated robot on the floor kit's chair raised to robot_scale.json's seat height. The script
+runs itself inside Blender (BLENDER, default ~/.local/bin/blender) to render, then packs with Pillow. Output:
+fleet/web/assets/world/robot/sprites/ (atlases per resolution and sprites.json); the format is documented in
+docs/design/robot-sprites.md.
 
-Render (Cycles on the GPU, the bake-off B1 camera and studio: l2's orthographic view, pitch 44.5°, yaw
-21.25°, a soft disk key from the upper left and a dim white_studio_06 fill):
-- Every frame is rendered once per layer, each layer a view layer of the same scene: `body` (the robot,
-  shell in neutral light grey, with its tint mask and, seated, a world-height split at the desk top),
-  `shadow` (the contact shadow alone, from a shadow catcher), the faces (`face_eyes`, `face_band`), the
-  host kits (`acc_*`, with tint masks) and the held items (`item_*`). Overlay layers see the robot as a
-  holdout, so each comes out already cut where the body passes in front of it.
-- The tint mask is the body shell's coverage times its share of diffuse and emitted light, so specular
-  highlights stay untinted.
-- Four facings, all rendered: the l2 camera is yawed 21.25°, so a mirrored sprite would face 42.5° off
-  the room's axes, and the robot is not symmetric anyway (the antenna, the waving arm, the flask hand).
+Render (Cycles on the GPU, the floor's one world camera: orthographic, pitch 28°, yaw 33°, 171.5 px/m at 1x, with
+bakeoff.py's studio: a soft disk key from the upper left and a dim white_studio_06 fill):
+- Every frame is rendered once per layer, each layer a view layer of the same scene: `body` (the robot, its teal
+  shell rendered in neutral grey, with its tint mask and, seated, a world-height split at the desk top), `shadow`
+  (the contact shadow alone), the faces (`face_eyes`, `face_band`: white, emissive), the host kits (`acc_*`, with
+  tint masks) and the items (`item_*`). Overlay layers see the robot as a holdout, so each comes out already cut
+  where the body passes in front of it.
+- The tint mask is the teal shell's coverage times its share of diffuse and emitted light, so specular highlights
+  stay untinted; joints, face, hands, eyes and ear rings are never tinted.
+- Four facings, all rendered: the robot is not symmetric in motion (the waving arm, the flask hand).
 - Frames are rendered at 4x and scaled down for 2x and 1x.
 """
 import json
@@ -36,6 +38,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ART = HERE.parent
 REPO = ART.parent
+MOTION = ART / 'motion-test'
 BUILD = ART / 'build' / 'robot_sprites'
 FRAMES_DIR = BUILD / 'frames'
 OUT = REPO / 'fleet' / 'web' / 'assets' / 'world' / 'robot' / 'sprites'
@@ -44,33 +47,55 @@ OUT = REPO / 'fleet' / 'web' / 'assets' / 'world' / 'robot' / 'sprites'
 # the back wall), as a turn of the robot about +Z.
 DIRS = [('S', 0), ('E', 90), ('N', 180), ('W', 270)]
 SEATED_DIRS = ['S', 'N']  # the bench is worked facing out of the room, the terminals facing the back wall
-# clip: (source action, frames, loop, arms over the end of Sitting, items shown)
+ALL = [d for d, _ in DIRS]
+# clip: Mixamo (or motion_rig.LAYERED) source, frames, loop, and options:
+#   hold: played once and held on its last frame; seated: on the chair (seat anchor, desk split); dirs;
+#   pin: walk in place; hand: hand pose; items: item layers; work: work items; slump: (spine, head) degrees;
+#   window: seconds of a long clip to loop (keeps a work loop's pace)
 CLIPS = {
-    'Walking': ('Walking', 12, True, None, ['box', 'book']),
-    'Idle': ('Idle', 8, True, None, ['box', 'book', 'sheet']),
-    'Wave': ('Wave', 12, True, None, []),
-    'Yes': ('Yes', 8, False, None, []),
-    'No': ('No', 8, False, None, []),
-    'Death': ('Death', 16, False, None, []),
-    'Sitting': ('Sitting', 8, False, None, ['book', 'sheet']),
-    'Typing': ('Sitting', 8, True, 'Type', ['laptop']),
-    'Writing': ('Sitting', 8, True, 'Write', ['pencil', 'paper']),
-    'Holding': ('Sitting', 8, True, 'Hold', ['flask']),
+    'Walking': dict(src='walk-normal', frames=12, loop=True, pin=True),
+    'Idle': dict(src='standing-idle', frames=8, loop=True),
+    'Wave': dict(src='waving', frames=8, loop=True),
+    'Yes': dict(src='nod-yes', frames=8),
+    'No': dict(src='shake-no', frames=8),
+    'Death': dict(src='dying-back', frames=12, hold=True),
+    'ThumbsUp': dict(src='thumbs-up-standing', frames=8, dirs=SEATED_DIRS),
+    'Slump': dict(src='sad-idle', frames=6, loop=True),
+    'BoxIdle': dict(src='box-idle', frames=6, loop=True, items=['box'], dirs=SEATED_DIRS),
+    'BoxWalk': dict(src='box-walk-arc', frames=8, loop=True, pin=True, items=['box']),
+    'BookWalk': dict(src='walk-normal', frames=8, loop=True, pin=True, hand='book', items=['book']),
+    'SheetWalk': dict(src='walking-reading-phone', frames=8, loop=True, pin=True, items=['sheet'], window=1.2),
+    'StandUp': dict(src='sit-to-stand', frames=8, seated=True, dirs=SEATED_DIRS),
+    'Sitting': dict(src='stand-to-sit', frames=8, hold=True, seated=True, dirs=SEATED_DIRS),
+    'SitIdle': dict(src='sitting-idle', frames=8, loop=True, seated=True, dirs=SEATED_DIRS),
+    'Typing': dict(src='typing', frames=8, loop=True, seated=True, dirs=SEATED_DIRS, work='laptop', items=['laptop'],
+                   window=1.2),
+    'Writing': dict(src='writing-seated', frames=8, loop=True, seated=True, dirs=SEATED_DIRS, work='paper',
+                    items=['paper', 'pencil'], window=2.0),
+    'SitRead': dict(src='reading-seated', frames=8, loop=True, seated=True, dirs=SEATED_DIRS, items=['book']),
+    'Holding': dict(src='sitting-idle', frames=8, loop=True, seated=True, dirs=SEATED_DIRS, work='flask',
+                    items=['flask']),
+    'SitThumbsUp': dict(src='thumbs-up-sitting', frames=8, seated=True, dirs=SEATED_DIRS),
+    'SitSlump': dict(src='sitting-idle', frames=6, loop=True, seated=True, dirs=SEATED_DIRS, slump=(9, 30)),
+    'SitNod': dict(src='sit-nod', frames=6, seated=True, dirs=SEATED_DIRS),
+    'SitShake': dict(src='sit-shake', frames=6, seated=True, dirs=SEATED_DIRS),
 }
-SEATED = {'Sitting', 'Typing', 'Writing', 'Holding'}
-HOLD_LAST = {'Sitting', 'Death'}  # played once and held on the last frame
+# (the nod and shake on the typing and reading bodies, motion_rig.LAYERED type-/read-nod and -shake, are not in the
+# set: the 8 MB up-front budget; the runtime plays SitNod / SitShake over any seated base)
+SEATED = {c for c, o in CLIPS.items() if o.get('seated')}
+HOLD_LAST = {c for c, o in CLIPS.items() if o.get('hold')}
 ACCESSORIES = ['backpack', 'antenna', 'halo', 'crest']
 ITEMS = ['box', 'book', 'sheet', 'laptop', 'paper', 'pencil', 'flask']
 FACES = {'eyes': 'codex', 'band': 'claude'}
 GREY = '#cccccc'  # the shell's neutral grey; the runtime multiplies masked pixels by host / GREY
 RES = (1, 2, 4)
-SAMPLES = {'body': 48, 'acc': 24, 'other': 16}  # per view layer; OIDN cleans up
-SIT_END = 10  # last frame of Sitting
+SAMPLES = {'body': 32, 'acc': 16, 'other': 12}  # per view layer; OIDN cleans up
 PAGE = 2048  # atlas page size limit
-QUALITY = {1: (72, 60), 2: (62, 50), 4: (80, 70)}  # WebP colour and alpha quality per resolution
+QUALITY = {1: (42, 28), 2: (31, 22), 4: (80, 70)}  # WebP colour and alpha quality per resolution
 SHADOW_SCALE = 4  # shadows are soft blurs: stored at a quarter of their size
 MASK_LEVELS = 8
-MASK_SCALE = {1: 2, 2: 4, 4: 2}  # a tint mask is stored this many times smaller than its colour layer
+MASK_SCALE = {1: 4, 2: 8, 4: 4}  # a tint mask is stored this many times smaller than its colour layer (it is blurred:
+# the shell's colour changes slowly, and the budget needs the bytes)
 SHADOW_OPACITY = 0.55  # B2's contact shadows are soft grey, not black
 DEDUPE_MEAN, DEDUPE_P99 = 1.5, 24  # of 255: a layer this close (mean, and 99th percentile) to one already
 # stored in the same clip and direction is reused; render noise alone differs by less
@@ -78,57 +103,234 @@ DEDUPE_MEAN, DEDUPE_P99 = 1.5, 24  # of 255: a layer this close (mean, and 99th 
 
 # ======================================================================== render (inside Blender)
 
-def render_all() -> None:
-    import bpy
-    sys.path.insert(0, str(HERE))
-    import artlib as A
-    import bakeoff as K  # the B1 camera and studio
-    import build_workbench as W
-    from mathutils import Matrix, Vector
+def clip_scene(bpy, clip: str, opt: dict):
+    """Build one clip's robot in a fresh scene: the retargeted armature with its pieces, hands, held and work items
+    and the four kits, all under a turntable empty (the facing). Returns (arm, turntable, groups) where groups maps
+    each layer to its objects."""
+    sys.path[:0] = [str(MOTION), str(HERE)]
+    import render_motion as RM
+    import motion_rig as R
+    tag = 'r'
+    arm, parts, info = RM.robot(opt['src'], tag, pin=opt.get('pin', False), seated=opt.get('seated', False),
+                                hand_pose=opt.get('hand'), loop=opt.get('loop', False), slump=opt.get('slump'),
+                                work=opt.get('work'), window=opt.get('window'))
+    kit = R.kits(arm, parts, tag)
+    name = lambda o: o.name.split('.')[0]  # noqa: E731
+    dot = next(p for p in parts if name(p) == f'{tag}_back_dot')
+    dot2 = dot.copy()  # each face layer its own dot: an object lives in one layer's collection only
+    bpy.context.scene.collection.objects.link(dot2)
+    dot2.matrix_parent_inverse = dot.matrix_parent_inverse.copy()
+    faces = {'eyes': [p for p in parts if name(p) == f'{tag}_eyes'] + [dot2],
+             'band': [p for p in parts if name(p) == f'{tag}_band'] + [dot]}
+    for p in faces['band'] + faces['eyes']:
+        p.hide_render = False
+    items = {}
+    for k in ITEMS:
+        suffix = {'sheet': 'sheet_paper'}.get(k, k)
+        items[k] = [p for p in parts if name(p) == f'{tag}_{suffix}']
+    carried = {p for v in items.values() for p in v} | {p for v in faces.values() for p in v}
+    body = [p for p in parts if p not in carried]
+    turn = bpy.data.objects.new('turntable', None)
+    bpy.context.scene.collection.objects.link(turn)
+    for o in [arm] + [o for o in bpy.data.objects if o.parent is None and o.type == 'MESH' and o is not arm]:
+        mw = o.matrix_world.copy()
+        o.parent = turn
+        o.matrix_world = mw
+    groups = {'body': body, **{f'face_{k}': v for k, v in faces.items()},
+              **{f'acc_{k}': [o] for k, o in kit.items()}, **{f'item_{k}': v for k, v in items.items() if v}}
+    return arm, turn, groups, info
 
-    A.require_blender()
-    blend = A.BUILD / 'robot' / 'robot.blend'
-    if not blend.exists():
-        sys.exit('sprites: run art/build.sh robot first')
-    bpy.ops.wm.open_mainfile(filepath=str(blend))
-    scene = bpy.context.scene
-    rig, root = bpy.data.objects['RobotArmature'], bpy.data.objects['RootNode']
-    root.rotation_mode = 'XYZ'
-    robot = bpy.data.objects['robot']
-    info = json.loads(scene['fleet_build'])
-    seat = Vector(info['runtime']['seat_point'])
-    desk_top = seat.z + W.DESK_H - W.SEAT_H  # in the robot's frame, seated with seat_point on the chair
-    seat_floor = seat.z - W.SEAT_H
 
-    # --- materials: neutral grey shell; AOVs for the tint mask and the desk split
-    body_mat = bpy.data.materials['robot_body']
-    body_mat.node_tree.nodes['Principled BSDF'].inputs['Base Color'].default_value = A.srgb(GREY)
-    halo = bpy.data.materials['robot_halo']
-    halo.node_tree.nodes['Principled BSDF'].inputs['Emission Strength'].default_value = 2.0
-
-    def aov(mat, name, value_socket=None, value=None):
-        nt = mat.node_tree
-        node = nt.nodes.new('ShaderNodeOutputAOV')
-        node.aov_name = name
-        if value_socket is not None:
-            nt.links.new(value_socket, node.inputs['Value'])
-        else:
-            node.inputs['Value'].default_value = value
-
-    items = make_items(bpy, A, rig, Vector, Matrix)
-
+def sprite_materials(bpy, A) -> None:
+    """Materials as the sprites need them: every 'host_tint' colour in neutral grey with a 'tint' AOV of its shell
+    coverage (the body's teal threshold from its class attribute; flat teal parts whole); hands' teal cuffs black and
+    untinted; faces white; a 'height' AOV everywhere for the desk split."""
+    grey = A.srgb(GREY)
     for mat in bpy.data.materials:
         if not mat.use_nodes:
             continue
         nt = mat.node_tree
+        host = nt.nodes.get('host_tint')
+
+        def aov(name, sock=None, value=None):
+            n = nt.nodes.new('ShaderNodeOutputAOV')
+            n.aov_name = name
+            if sock is not None:
+                nt.links.new(sock, n.inputs['Value'])
+            else:
+                n.inputs['Value'].default_value = value
         geo = nt.nodes.new('ShaderNodeNewGeometry')
         sep = nt.nodes.new('ShaderNodeSeparateXYZ')
         nt.links.new(geo.outputs['Position'], sep.inputs['Vector'])
-        aov(mat, 'height', sep.outputs['Z'])
-        if mat.name in ('robot_body', 'robot_halo'):
-            aov(mat, 'tint', value=1.0)
+        aov('height', sep.outputs['Z'])
+        if host is None:
+            continue
+        if mat.name.startswith('hand_'):  # a posed hand's cuff: never tinted, so black like the mitt
+            host.outputs[0].default_value = A.srgb('#131717')
+            continue
+        host.outputs[0].default_value = grey
+        at = next((n for n in nt.nodes if n.type == 'ATTRIBUTE' and n.attribute_name == 'cls'), None)
+        if at is None:
+            aov('tint', value=1.0)
+            continue
+        # the body: teal where R wins, minus where black or glow are drawn over it (as body_material's mixes)
+        sc = nt.nodes.new('ShaderNodeSeparateColor')
+        nt.links.new(at.outputs['Color'], sc.inputs[0])
 
-    # --- collections, one per layer
+        def sharp(sock):
+            mr = nt.nodes.new('ShaderNodeMapRange')
+            mr.inputs['From Min'].default_value, mr.inputs['From Max'].default_value = 0.47, 0.53
+            nt.links.new(sock, mr.inputs['Value'])
+            return mr.outputs['Result']
+
+        def mul(a, b, invert_b=False):
+            if invert_b:
+                inv = nt.nodes.new('ShaderNodeMath')
+                inv.operation = 'SUBTRACT'
+                inv.inputs[0].default_value = 1.0
+                nt.links.new(b, inv.inputs[1])
+                b = inv.outputs[0]
+            m = nt.nodes.new('ShaderNodeMath')
+            m.operation = 'MULTIPLY'
+            nt.links.new(a, m.inputs[0])
+            nt.links.new(b, m.inputs[1])
+            return m.outputs[0]
+        t = mul(mul(sharp(sc.outputs[0]), sharp(sc.outputs[2]), True), sharp(at.outputs['Alpha']), True)
+        aov('tint', t)
+    for m in ('mat_face', 'mat_eye'):  # the faces: white emissive masks, coloured by the runtime
+        mat = bpy.data.materials.get(m)
+        if mat:
+            b = mat.node_tree.nodes['Principled BSDF']
+            for n in mat.node_tree.nodes:
+                if n.type == 'RGB':
+                    n.outputs[0].default_value = (1, 1, 1, 1)
+            b.inputs['Emission Strength'].default_value = 1.5
+
+
+def render_all() -> None:
+    import bpy
+    sys.path[:0] = [str(HERE), str(MOTION)]
+    import artlib as A
+    import bakeoff as K  # the studio and the framing; the camera angle is the floor's
+    from mathutils import Vector
+    import render_motion as RM
+
+    A.require_blender()
+    only = os.environ.get('SPRITES_ONLY')  # e.g. "Idle:S" while iterating
+    FRAMES_DIR.mkdir(parents=True, exist_ok=True)
+    manifest = {'seat_point': [0.0, 0.0, RM.SEAT_H], 'desk_top': RM.W.DESK_H, 'seat_floor': 0.0,
+                'bench': RM.BENCH, 'height_m': None, 'px_per_m_4x': K.PX_PER_M * 4, 'view': dict(RM.FLOOR_VIEW),
+                'clips': {}}
+    for clip, opt in CLIPS.items():
+        dirs = opt.get('dirs', ALL)
+        count, loop = opt['frames'], opt.get('loop', False)
+        manifest['clips'][clip] = {'loop': loop, 'hold_last': clip in HOLD_LAST, 'count': count,
+                                   'items': opt.get('items', []), 'src': opt['src'], 'dirs': {}}
+        todo = [d for d in dirs if not (only and only not in (clip, f'{clip}:{d}'))]
+        cached = {d: FRAMES_DIR / f'{clip}_{d}.json' for d in dirs}
+        for d in dirs:
+            if cached[d].exists():
+                manifest['clips'][clip]['dirs'][d] = json.loads(cached[d].read_text())
+        redo = os.environ.get('SPRITES_LAYERS')  # re-render only these layers of finished frames, e.g. face_eyes
+        todo = [d for d in todo if not cached[d].exists()] if not redo else [d for d in todo if cached[d].exists()]
+        meta_file = FRAMES_DIR / f'{clip}.meta.json'
+        if not todo:
+            if meta_file.exists():
+                manifest['clips'][clip] |= json.loads(meta_file.read_text())
+            print('cached', clip, flush=True)
+            continue
+        A.reset()
+        K.VIEW.update(pitch=RM.FLOOR_VIEW['pitch'], yaw=RM.FLOOR_VIEW['yaw'])
+        arm, turn, groups, info = clip_scene(bpy, clip, opt)
+        manifest['height_m'] = RM.R.body_meta()['height_m']
+        scene = bpy.context.scene
+        sprite_materials(bpy, A)
+        fr = list(RM.R.frames(arm))
+        f0, f1 = fr[0], fr[-1]
+        if clip in HOLD_LAST or not loop:
+            times = [f0 + (f1 - f0) * i / (count - 1) for i in range(count)]
+        else:
+            times = [f0 + (f1 - f0) * i / count for i in range(count)]
+        fps = (count - 1 if not loop else count) / (max(1, f1 - f0) / 30)  # Mixamo clips are 30 fps
+        meta = {'fps': round(fps, 3), 'info': info}
+        meta_file.write_text(json.dumps(meta, default=str))
+        manifest['clips'][clip] |= meta
+        views, catcher, tmp = setup_layers(bpy, A, K, scene, groups, opt.get('seated', False))
+        right, up, _ = K.axes()
+        watched = groups['body'] + [o for k, v in groups.items() if k.startswith(('acc_', 'item_')) for o in v]
+        for d in todo:
+            turn.rotation_euler.z = math.radians(dict(DIRS)[d])
+            pts = []
+            for t in times:
+                scene.frame_set(int(t), subframe=t - int(t))
+                pts += points(bpy, watched)
+            floor = [Vector((p.x, p.y, 0.0)) for p in pts]
+            ref = Vector((0, 0, 0))
+            cam = K.frame_camera(pts + floor, ref, 4, margin=0.25)
+            w, h = cam['size']
+            w4, h4 = -(-w // 8) * 8, -(-h // 8) * 8  # the crop grid (see collect)
+            scene.render.resolution_x, scene.render.resolution_y = w4, h4
+            cam_ob = bpy.data.objects['sprite_cam']
+            cam_ob.data.ortho_scale = max(w4, h4) / cam['px_per_m']
+            ppm = cam['px_per_m']
+            cam_ob.location += right * ((w4 - w) / 2 / ppm) - up * ((h4 - h) / 2 / ppm)
+            ref_px = cam['ref_px']
+            print('canvas', clip, d, w4, h4, flush=True)
+            if os.environ.get('SPRITES_DRY'):
+                continue
+
+            def to_px(p):
+                return [round(ref_px[0] + (p - ref).dot(right) * ppm, 2), round(ref_px[1] - (p - ref).dot(up) * ppm, 2)]
+
+            frames = []
+            for i, t in enumerate(times):
+                scene.frame_set(int(t), subframe=t - int(t))
+                active = {'body', 'shadow', 'face_eyes', 'face_band', *[f'acc_{k}' for k in ACCESSORIES],
+                          *[f'item_{k}' for k in opt.get('items', [])]}
+                if redo:
+                    active = set(redo.split(','))
+                for name, vl in views.items():
+                    vl.use = name in active
+                here = points(bpy, watched)
+                px = [to_px(q) for q in here + [Vector((q.x, q.y, 0.0)) for q in here]]
+                pad = 0.25 * ppm
+                x0, x1 = min(q[0] for q in px) - pad, max(q[0] for q in px) + pad
+                y0, y1 = min(q[1] for q in px) - pad, max(q[1] for q in px) + pad
+                r = scene.render
+                r.use_border, r.use_crop_to_border = True, False
+                r.border_min_x, r.border_max_x = max(0.0, x0 / w4), min(1.0, x1 / w4)
+                r.border_min_y, r.border_max_y = max(0.0, 1 - y1 / h4), min(1.0, 1 - y0 / h4)
+                render_frame(bpy, scene, tmp)
+                key = f'{clip}_{d}_{i}'
+                split = RM.W.DESK_H if opt.get('seated') else None
+                if redo:  # merge the new layers into the frame's stored ones
+                    import numpy as np
+                    old = dict(np.load(FRAMES_DIR / f'{key}.npz'))
+                    saved = collect(bpy, tmp, views, active, split, tmp / 'redo.npz')
+                    new = dict(np.load(tmp / 'redo.npz'))
+                    for k in [k for k in old if k.split('.')[0] in active]:
+                        del old[k]
+                    np.savez_compressed(FRAMES_DIR / f'{key}.npz', **(old | new))
+                    prev = manifest['clips'][clip]['dirs'][d]['frames'][i]
+                    prev['layers'] = {k: v for k, v in prev['layers'].items() if k not in active} | saved
+                    frames.append(prev)
+                    print('redo', key, list(saved), flush=True)
+                    continue
+                saved = collect(bpy, tmp, views, active, split, FRAMES_DIR / f'{key}.npz')
+                frames.append({'key': key, 'layers': saved, 'anchors': anchors(bpy, arm, groups, to_px)})
+                print('frame', key, len(saved), flush=True)
+            if redo:
+                assert manifest['clips'][clip]['dirs'][d]['canvas'] == [w4, h4], (clip, d)  # same framing as before
+            dd = {'canvas': [w4, h4], 'foot': to_px(ref), 'frames': frames,
+                  **({'seat': to_px(Vector((0, 0, RM.SEAT_H)))} if opt.get('seated') else {})}
+            manifest['clips'][clip]['dirs'][d] = dd
+            cached[d].write_text(json.dumps(dd))
+    (BUILD / 'frames.json').write_text(json.dumps(manifest, default=str))
+    print('RENDERED', BUILD / 'frames.json')
+
+
+def setup_layers(bpy, A, K, scene, groups: dict, seated: bool):
+    """Collections, lights and view layers for one clip's scene (see render_all's notes in the module docstring)."""
     def collection(name, objs):
         c = bpy.data.collections.new(name)
         scene.collection.children.link(c)
@@ -138,33 +340,23 @@ def render_all() -> None:
             c.objects.link(o)
         return c
 
-    layers = {'body': collection('body', [robot])}
-    for k in FACES:
-        layers[f'face_{k}'] = collection(f'face_{k}', [bpy.data.objects[f'robot_{k}']])
-    for k in ACCESSORIES:
-        layers[f'acc_{k}'] = collection(f'acc_{k}', [bpy.data.objects[f'acc_{k}']])
-    for k in ITEMS:
-        layers[f'item_{k}'] = collection(f'item_{k}', [items[k]])
+    layers = {name: collection(name, objs) for name, objs in groups.items()}
+    rest = [o for o in scene.collection.objects if o.type == 'MESH']  # anything left over stays out of the render
+    for o in rest:
+        o.hide_render = True
     K.shadow_catcher()
     catcher = bpy.data.objects['catcher']
     layers['shadow'] = collection('catcher', [catcher])
-
-    K.studio(Vector((0, 0, 0.7)))
-    # the key light shades the robot; the contact shadow comes from a broad soft light straight overhead
-    # instead, so it pools under the feet rather than falling long across the floor
+    K.studio(__import__('mathutils').Vector((0, 0, 0.6)))
     key = collection('key_light', [bpy.data.objects['key']])
     A.light('contact', 'AREA', (0, 0, 10.0), 3000, size=5.0)
     contact = collection('contact_light', [bpy.data.objects['contact']])
     c = scene.cycles
     c.samples = SAMPLES['body']
-    c.use_denoising, c.denoiser = True, 'OPTIX'  # on the GPU, and lighter on its memory than OIDN's GPU path
+    c.use_denoising, c.denoiser = True, 'OPTIX'
     c.adaptive_threshold, c.adaptive_min_samples = 0.02, 4
-    # a studio render: short paths are enough (glass needs a few transmission bounces)
     c.max_bounces, c.diffuse_bounces, c.glossy_bounces, c.transmission_bounces, c.transparent_max_bounces = 6, 2, 2, 4, 4
     scene.render.film_transparent = True
-    scene.render.fps = 24
-
-    # --- view layers
     base = scene.view_layers[0]
     base.name = 'body'
     views = {'body': base}
@@ -175,7 +367,7 @@ def render_all() -> None:
     for name, vl in views.items():
         for coll, shadow_only in ((key, False), (contact, True)):
             vl.layer_collection.children[coll.name].exclude = (name == 'shadow') != shadow_only
-        vl.use_sky = name != 'shadow'  # the studio fill would darken the whole floor around the robot
+        vl.use_sky = name != 'shadow'
         for cname, coll in layers.items():
             lc = vl.layer_collection.children[coll.name]
             lc.exclude, lc.holdout, lc.indirect_only = True, False, False
@@ -184,9 +376,11 @@ def render_all() -> None:
             elif cname == 'body' and name != 'body':
                 lc.exclude = False
                 if name == 'shadow':
-                    lc.indirect_only = True  # casts the shadow, unseen
+                    lc.indirect_only = True
                 else:
-                    lc.holdout = True  # cuts the overlay where the body is in front
+                    lc.holdout = True
+            elif name == 'shadow' and cname.startswith('item_'):
+                lc.exclude, lc.indirect_only = False, True  # held items cast their shadow too
         tinted = name == 'body' or name.startswith('acc_')
         vl.samples = SAMPLES['body'] if name == 'body' else SAMPLES['acc'] if tinted else SAMPLES['other']
         for pname in ('tint', 'height'):
@@ -199,100 +393,12 @@ def render_all() -> None:
     tmp = BUILD / 'tmp'
     tmp.mkdir(parents=True, exist_ok=True)
     compositor(bpy, scene, views, tmp)
-    # a view layer that is never rendered but evaluates everything, for framing and anchors (a layer that
-    # excludes a collection never updates its objects)
     everything = scene.view_layers.new('everything')
     everything.use = False
     everything.layer_collection.children['catcher'].exclude = True
     global EVAL
     EVAL = everything
-
-    # --- per clip and direction: frame the camera on every frame, then render
-    manifest = {'seat_point': list(seat), 'desk_top': desk_top, 'seat_floor': seat_floor,
-                'px_per_m_4x': K.PX_PER_M * 4, 'view': K.VIEW, 'clips': {}}
-    FRAMES_DIR.mkdir(parents=True, exist_ok=True)
-    right, up, _ = K.axes()
-    only = os.environ.get('SPRITES_ONLY')  # e.g. "Idle:S" while iterating
-    for clip, (action, count, loop, arms, clip_items) in CLIPS.items():
-        dirs = SEATED_DIRS if clip in SEATED else [d for d, _ in DIRS]
-        times = sample_times(bpy.data.actions[arms or action], count, loop, clip)
-        manifest['clips'][clip] = {'loop': loop, 'hold_last': clip in HOLD_LAST, 'count': count,
-                                   'fps': round(clip_fps(bpy.data.actions[arms or action], count, clip), 3),
-                                   'items': clip_items, 'dirs': {}}
-        catcher.location.z = seat_floor if clip in SEATED else 0.0
-        for d in dirs:
-            if only and only not in (clip, f'{clip}:{d}'):
-                continue
-            done = FRAMES_DIR / f'{clip}_{d}.json'  # a finished clip and facing: kept, so a failed run resumes
-            redo_anchors = os.environ.get('SPRITES_ANCHORS') and done.exists()  # recompute anchors, no render
-            if done.exists() and not redo_anchors:
-                manifest['clips'][clip]['dirs'][d] = json.loads(done.read_text())
-                print('cached', clip, d, flush=True)
-                continue
-            root.rotation_euler.z = math.radians(dict(DIRS)[d])
-            pts = []
-            for t in times:
-                pose(bpy, rig, clip, action, arms, t)
-                pts += points(bpy, [robot] + [bpy.data.objects[f'acc_{k}'] for k in ACCESSORIES]
-                              + [items[k] for k in clip_items])
-            floor = [Vector((p.x, p.y, catcher.location.z)) for p in pts]
-            ref = Vector((0, 0, 0))
-            cam = K.frame_camera(pts + floor, ref, 4, margin=0.4)
-            w, h = cam['size']
-            w4, h4 = -(-w // 8) * 8, -(-h // 8) * 8  # the crop grid (see collect)
-            scene.render.resolution_x, scene.render.resolution_y = w4, h4
-            bpy.data.objects['sprite_cam'].data.ortho_scale = max(w4, h4) / cam['px_per_m']
-            # keep ref's pixel: frame_camera centred on the unpadded frame
-            cam_ob = bpy.data.objects['sprite_cam']
-            shift = right * ((w4 - w) / 2 / cam['px_per_m']) - up * ((h4 - h) / 2 / cam['px_per_m'])
-            cam_ob.location += shift
-            ppm = cam['px_per_m']
-            ref_px = cam['ref_px']
-            print('canvas', clip, d, w4, h4, flush=True)
-            if os.environ.get('SPRITES_DRY'):
-                continue
-
-            def to_px(p):
-                return [round(ref_px[0] + (p - ref).dot(right) * ppm, 2), round(ref_px[1] - (p - ref).dot(up) * ppm, 2)]
-
-            if redo_anchors:
-                kept = json.loads(done.read_text())
-                assert kept['canvas'] == [w4, h4], (clip, d, kept['canvas'], [w4, h4])
-                for fr, t in zip(kept['frames'], times):
-                    pose(bpy, rig, clip, action, arms, t)
-                    fr['anchors'] = anchors(bpy, rig, robot, to_px, Vector, clip)
-                done.write_text(json.dumps(kept))
-                manifest['clips'][clip]['dirs'][d] = kept
-                print('anchors', clip, d, flush=True)
-                continue
-            frames = []
-            for i, t in enumerate(times):
-                pose(bpy, rig, clip, action, arms, t)
-                active = {'body', 'shadow', 'face_eyes', 'face_band', *[f'acc_{k}' for k in ACCESSORIES],
-                          *[f'item_{k}' for k in clip_items]}
-                for name, vl in views.items():
-                    vl.use = name in active
-                # render only around what this frame holds (and its shadow): sampling and denoising cost area
-                here = points(bpy, [robot] + [bpy.data.objects[f'acc_{k}'] for k in ACCESSORIES]
-                              + [items[k] for k in clip_items])
-                px = [to_px(q) for q in here + [Vector((q.x, q.y, catcher.location.z)) for q in here]]
-                pad = 0.4 * ppm
-                x0, x1 = min(q[0] for q in px) - pad, max(q[0] for q in px) + pad
-                y0, y1 = min(q[1] for q in px) - pad, max(q[1] for q in px) + pad
-                r = scene.render
-                r.use_border, r.use_crop_to_border = True, False
-                r.border_min_x, r.border_max_x = max(0.0, x0 / w4), min(1.0, x1 / w4)
-                r.border_min_y, r.border_max_y = max(0.0, 1 - y1 / h4), min(1.0, 1 - y0 / h4)
-                render_frame(bpy, scene, tmp)
-                key = f'{clip}_{d}_{i}'
-                saved = collect(bpy, tmp, views, active, desk_top if clip in SEATED else None, FRAMES_DIR / f'{key}.npz')
-                frames.append({'key': key, 'layers': saved, 'anchors': anchors(bpy, rig, robot, to_px, Vector, clip)})
-                print('frame', key, len(saved), flush=True)
-            manifest['clips'][clip]['dirs'][d] = {'canvas': [w4, h4], 'foot': to_px(ref), 'frames': frames,
-                                                  **({'seat': to_px(seat)} if clip in SEATED else {})}
-            done.write_text(json.dumps(manifest['clips'][clip]['dirs'][d]))
-    (BUILD / 'frames.json').write_text(json.dumps(manifest))
-    print('RENDERED', BUILD / 'frames.json')
+    return views, catcher, tmp
 
 
 def render_frame(bpy, scene, tmp: Path) -> None:
@@ -321,96 +427,6 @@ def render_frame(bpy, scene, tmp: Path) -> None:
         bpy.ops.render.render(write_still=False)
     finally:
         scene.cycles.device = 'GPU'
-
-
-def make_items(bpy, A, rig, Vector, Matrix) -> dict:
-    """What the robot carries. The box, book and sheet ride on the torso, in front of the chest (the deck holds
-    them in the android's frame, not in its hands); the laptop, paper, pencil and flask are the build's props."""
-    m = {'box': A.material('item_box', '#b98b52', rough=0.85), 'tape': A.material('item_tape', '#d9c08a', rough=0.5),
-         'book': A.material('item_book', '#b4463c', rough=0.6), 'pages': A.material('item_pages', '#f3ecdc', rough=0.8),
-         'sheet': A.material('item_sheet', '#f4f6fa', rough=0.7), 'ink': A.material('item_ink', '#7c8594', rough=0.7)}
-    M = rig.matrix_world
-    torso = M @ rig.data.bones['Torso'].head_local
-    s = json.loads(bpy.context.scene['fleet_build'])['scale']  # metres per model unit
-    front = torso.y - 0.62 * s  # the chest's front
-    made = {}
-
-    def join(objs, name):
-        bpy.ops.object.select_all(action='DESELECT')
-        for o in objs:
-            o.select_set(True)
-        bpy.context.view_layer.objects.active = objs[0]
-        bpy.ops.object.join()
-        ob = bpy.context.view_layer.objects.active
-        ob.name = name
-        return ob
-
-    def hang(ob, bone):
-        bpy.context.view_layer.update()
-        world = ob.matrix_world.copy()
-        ob.parent, ob.parent_type, ob.parent_bone = rig, 'BONE', bone
-        bpy.context.view_layer.update()
-        ob.matrix_world = world
-
-    for p in rig.pose.bones:
-        p.location, p.rotation_quaternion, p.scale = (0, 0, 0), (1, 0, 0, 0), (1, 1, 1)
-    rig.animation_data.action = None
-    bpy.context.view_layer.update()
-    # a parcel against the belly
-    c = Vector((0, front - 0.13, torso.z - 0.02))
-    made['box'] = join([A.box('box', (0.34, 0.26, 0.24), c - Vector((0, 0, 0.12)), m['box'], kind='dynamic', bevel=0.01, tile=None),
-                        A.box('box_tape', (0.06, 0.262, 0.242), c - Vector((0, 0, 0.12)), m['tape'], kind='dynamic', tile=None)], 'item_box')
-    # a book held up at the chest, tipped towards the face
-    c = Vector((0, front - 0.12, torso.z + 0.08))
-    rot = (math.radians(55), 0, 0)
-    made['book'] = join([A.box('book', (0.24, 0.05, 0.31), c, m['book'], kind='dynamic', bevel=0.006, rot=rot, tile=None),
-                         A.box('book_pages', (0.225, 0.052, 0.29), c + Vector((0.012, 0.0, 0.0)), m['pages'], kind='dynamic', rot=rot, tile=None)],
-                        'item_book')
-    # a printout, tipped the same way
-    c = Vector((0, front - 0.1, torso.z + 0.06))
-    made['sheet'] = join([A.box('sheet', (0.21, 0.004, 0.29), c, m['sheet'], kind='dynamic', rot=rot, tile=None),
-                          A.box('sheet_ink', (0.15, 0.006, 0.012), c + Vector((0, -0.004, 0.08)), m['ink'], kind='dynamic', rot=rot, tile=None),
-                          A.box('sheet_ink2', (0.15, 0.006, 0.012), c + Vector((0, -0.01, 0.02)), m['ink'], kind='dynamic', rot=rot, tile=None)],
-                         'item_sheet')
-    for k in ('box', 'book', 'sheet'):
-        hang(made[k], 'Torso')
-    # the model's own work props: the laptop and paper on the desk under its hands, the pencil and flask in its hand
-    made['laptop'] = bpy.data.objects['prop_laptop']
-    made['paper'] = bpy.data.objects['prop_paper']
-    made['pencil'] = bpy.data.objects['prop_pencil']
-    made['flask'] = bpy.data.objects['prop_flask']
-    for ob in made.values():
-        ob.hide_render = False
-    return made
-
-
-def sample_times(action, count: int, loop: bool, clip: str) -> list[float]:
-    f0, f1 = action.frame_range
-    if clip in HOLD_LAST:  # from the first frame to the last, inclusive
-        return [f0 + (f1 - f0) * i / (count - 1) for i in range(count)]
-    return [f0 + (f1 - f0) * i / count for i in range(count)]
-
-
-def clip_fps(action, count: int, clip: str) -> float:
-    f0, f1 = action.frame_range
-    return (count - 1 if clip in HOLD_LAST else count) / (max(1, f1 - f0) / 24)
-
-
-def pose(bpy, rig, clip, action, arms, t) -> None:
-    for pb in rig.pose.bones:  # from rest: a clip leaves the bones it doesn't key as they are
-        pb.location, pb.rotation_quaternion, pb.scale = (0, 0, 0), (1, 0, 0, 0), (1, 1, 1)
-    ad = rig.animation_data
-    ad.action = bpy.data.actions[action]
-    scene = bpy.context.scene
-    if arms:  # the end of Sitting, with the arm clip over it (it keys only the arms)
-        scene.frame_set(SIT_END)
-        held = {pb.name: (pb.location.copy(), pb.rotation_quaternion.copy()) for pb in rig.pose.bones}
-        ad.action = None
-        for pb in rig.pose.bones:
-            pb.location, pb.rotation_quaternion = held[pb.name]
-        ad.action = bpy.data.actions[arms]
-    scene.frame_set(int(t), subframe=t - int(t))
-    bpy.context.view_layer.update()
 
 
 EVAL = None  # the view layer to evaluate positions in; see render_all
@@ -557,30 +573,40 @@ def collect(bpy, tmp: Path, views, active, desk_top, dest: Path) -> dict:
     return rects
 
 
-def anchors(bpy, rig, robot, to_px, Vector, clip) -> dict:
-    """World points of interest, in 4x canvas pixels: the helmet's top and each kit's top as seen (the highest
-    point on screen, not in the world: from above, that is towards the back of the helmet), both palms."""
+def anchors(bpy, arm, groups: dict, to_px) -> dict:
+    """World points of interest, in 4x canvas pixels: the helmet's top and each kit's top as seen (the highest point
+    on screen, not in the world: from above, that is towards the back of the helmet), and both hands' centres."""
     dg = evaluated()
-    ev = robot.evaluated_get(dg)
-    me = ev.to_mesh()
-    head = robot.vertex_groups['Head'].index
-    idx = anchors.head_idx if hasattr(anchors, 'head_idx') else None
-    if idx is None:
-        idx = [v.index for v in robot.data.vertices if any(g.group == head and g.weight > 0.5 for g in v.groups)]
-        anchors.head_idx = idx
-    top = min((to_px(ev.matrix_world @ me.vertices[i].co) for i in idx), key=lambda q: q[1])
-    ev.to_mesh_clear()
+
+    def top_of(objs):
+        best = None
+        for o in objs:
+            ev = o.evaluated_get(dg)
+            me = ev.to_mesh()
+            vs = me.vertices
+            q = min((to_px(ev.matrix_world @ vs[i].co) for i in range(0, len(vs), 3)), key=lambda q: q[1])
+            ev.to_mesh_clear()
+            best = q if best is None or q[1] < best[1] else best
+        return best
+
+    def centre(o):
+        ev = o.evaluated_get(dg)
+        me = ev.to_mesh()
+        vs = me.vertices
+        pts = [ev.matrix_world @ vs[i].co for i in range(0, len(vs), 7)]
+        ev.to_mesh_clear()
+        return to_px(sum(pts, pts[0] * 0) / len(pts))
+
+    name = lambda o: o.name.split('.')[0]  # noqa: E731
+    head = [o for o in groups['body'] if name(o) in ('r_head', 'r_ear_L', 'r_ear_R')]
+    top = top_of(head)
     out = {'head_top': top, 'kit_top': {}}
     for k in ('backpack', 'antenna', 'halo', 'crest'):
-        o = bpy.data.objects[f'acc_{k}'].evaluated_get(dg)
-        m = o.to_mesh()
-        q = min((to_px(o.matrix_world @ v.co) for v in m.vertices), key=lambda q: q[1])
-        o.to_mesh_clear()
+        q = top_of(groups[f'acc_{k}'])
         out['kit_top'][k] = q if q[1] < top[1] else top
-    M = rig.matrix_world
     for side, key in (('L', 'hand_l'), ('R', 'hand_r')):
-        a, b = M @ rig.pose.bones[f'Palm2.{side}'].head, M @ rig.pose.bones[f'Middle1.{side}'].head
-        out[key] = to_px((a + b) / 2)
+        hand = next(o for o in groups['body'] if '_hand_' in o.name and name(o).endswith(f'_{side}'))
+        out[key] = centre(hand)
     return out
 
 
@@ -597,8 +623,13 @@ def pack() -> None:
         if old.is_file():
             old.unlink()
     # every layer image of every frame: (clip, dir, frame, layer, npz, rect at 4x)
+    # a partial render packs what it has; a clip or facing dropped from CLIPS since it was rendered is left out
+    meta['clips'] = {k: c | {'dirs': {d: dd for d, dd in c['dirs'].items() if d in CLIPS[k].get('dirs', ALL)}}
+                     for k, c in meta['clips'].items() if c['dirs'] and k in CLIPS}
     entries = []
     for clip, c in meta['clips'].items():
+        if not c['dirs']:
+            continue
         for d, dd in c['dirs'].items():
             for i, fr in enumerate(dd['frames']):
                 for layer, rect in fr['layers'].items():
@@ -607,9 +638,10 @@ def pack() -> None:
                     entries.append((clip, d, i, layer, FRAMES_DIR / f"{fr['key']}.npz", rect))
     uniq, ref = dedupe(entries)
     manifest = {
-        'version': 1,
-        'camera': {'name': 'l2', 'projection': 'orthographic', 'pitch_deg': meta['view']['pitch'],
+        'version': 2,
+        'camera': {'name': 'world', 'projection': 'orthographic', 'pitch_deg': meta['view']['pitch'],
                    'yaw_deg': meta['view']['yaw'], 'px_per_m_1x': round(ppm1, 3)},
+        'robot': {'height_m': meta['height_m'], 'source': 'art/motion-test (whole-body model, Mixamo clips)'},
         'resolutions': {},
         'directions': {d: {'facing_deg': a} for d, a in DIRS},
         'grey': GREY,
@@ -623,6 +655,10 @@ def pack() -> None:
         'items': [f'item_{k}' for k in ITEMS],
         'seat_point_m': [round(v, 4) for v in meta['seat_point']],
         'desk_top_m': round(meta['desk_top'], 4),
+        # the seated robot's furniture: the kit's chair with its gas lift raised to seat_point_m's height, its centre
+        # chair_behind_m behind the seat point, and the desk's far edge desk_edge_ahead_m ahead of it (robot frame)
+        'seat_furniture': {'seat_height_m': round(meta['seat_point'][2], 4), 'chair_behind_m': meta['bench']['chair_y'],
+                           'desk_edge_ahead_m': meta['bench']['desk_edge'], 'desk_top_m': round(meta['desk_top'], 4)},
         'clips': {},
     }
     footprint_m = 0.3
@@ -633,7 +669,7 @@ def pack() -> None:
 
     for clip, c in meta['clips'].items():
         mc = {'fps': c['fps'], 'loop': c['loop'], 'hold_last': c['hold_last'], 'frames': c['count'],
-              'items': [f'item_{k}' for k in c['items']], 'seated': clip in SEATED, 'dirs': {}}
+              'items': [f'item_{k}' for k in c['items']], 'seated': clip in SEATED, 'source': c['src'], 'dirs': {}}
         for d, dd in c['dirs'].items():
             frames = []
             for fr in dd['frames']:
@@ -706,8 +742,9 @@ def pack() -> None:
                         color.paste(im, (x, y))
                         if layer + '.mask' in z and layer in manifest['masked']:
                             mk = Image.fromarray(z[layer + '.mask'], 'L').filter(ImageFilter.GaussianBlur(2))
-                            mk = np.asarray(mk.resize((w // ms, h // ms), Image.LANCZOS))
-                            mask[y // ms:y // ms + h // ms, x // ms:x // ms + w // ms] = np.round(mk / 255 * (MASK_LEVELS - 1))
+                            mw, mh = -(-w // ms), -(-h // ms)  # rounded up: the packer reserves whole mask cells
+                            mk = np.asarray(mk.resize((mw, mh), Image.LANCZOS))
+                            mask[y // ms:y // ms + mh, x // ms:x // ms + mw] = np.round(mk / 255 * (MASK_LEVELS - 1))
                 if g == 'shadow':
                     sf = cdir / f'shadow-{p}.webp'
                     color.save(sf, 'WEBP', quality=10, alpha_quality=100, method=6)
@@ -750,7 +787,7 @@ class Composer:
         self.scale, self.ms = r['scale'], r['mask_scale']
         self.grey = np.array([int(man['grey'][i:i + 2], 16) for i in (1, 3, 5)], np.float32)
 
-    def frame(self, clip: str, d: str, i: int, host: str, layers: list[str], bg=(0, 0, 0, 0)):
+    def frame(self, clip: str, d: str, i: int, host: str, layers: list[str], bg=(0, 0, 0, 0), face='#7ce7ff'):
         np, Image, man = self.np, self.Image, self.man
         dd = man['clips'][clip]['dirs'][d]
         fr = dd['frames'][i]
@@ -763,7 +800,11 @@ class Composer:
             im = (self.shadow if layer == 'shadow' else self.color)[pg].crop((x, y, x + w, y + h))
             if layer == 'shadow':
                 im = im.resize((w * man['shadow_scale'], h * man['shadow_scale']), Image.BILINEAR)
-            if layer in man['masked'] or layer in man['tinted_whole']:
+            if layer in man['faces']:  # white emissive: multiplied by the agent's colour
+                a = np.asarray(im).astype(np.float32)
+                a[..., :3] *= np.array([int(face[k:k + 2], 16) for k in (1, 3, 5)], np.float32) / 255
+                im = Image.fromarray(a.astype(np.uint8), 'RGBA')
+            elif layer in man['masked'] or layer in man['tinted_whole']:
                 a = np.asarray(im).astype(np.float32)
                 m = 1.0
                 if layer in man['masked']:
@@ -774,44 +815,6 @@ class Composer:
                 im = Image.fromarray(a.astype(np.uint8), 'RGBA')
             canvas.alpha_composite(im, (ox, oy))
         return canvas
-
-
-def compare_b2() -> Path:
-    """The seated work loops beside B2's sprites of the same work, at B2's pixels per metre (both are drawn
-    from the l2 camera), in grey and in teal: compare-b2.png."""
-    from PIL import Image, ImageDraw
-    comp = Composer('2x')
-    b2dir = ART / 'bakeoff' / 'B2'
-    b2 = json.loads((b2dir / 'sprites.json').read_text())
-    k = b2['px_per_m'] / (comp.man['camera']['px_per_m_1x'] * comp.scale)
-    pairs = [('Typing', 'robot-typing'), ('Writing', 'robot-pencil'), ('Holding', 'robot-tube')]
-    rows = []
-    for host, suffix in ((GREY, ''), ('#1fb5b0', '-teal')):
-        ims = []
-        for clip, sprite in pairs:
-            ref = Image.open(b2dir / f'{sprite}{suffix}.webp').convert('RGBA')
-            layers = ['body_low', 'body_high', 'face_eyes'] + comp.man['clips'][clip]['items']
-            ours = comp.frame(clip, 'S', 0, host, layers)
-            ours = ours.crop(ours.getchannel('A').getbbox())
-            ours = ours.resize((round(ours.width * k), round(ours.height * k)), Image.LANCZOS)
-            ims += [(ref, f'B2 {sprite}{suffix}'), (ours, f'sprite {clip} S')]
-        h = max(im.height for im, _ in ims)
-        row = Image.new('RGBA', (sum(im.width + 24 for im, _ in ims) + 24, h + 28), (236, 240, 245, 255))
-        x = 24
-        dr = ImageDraw.Draw(row)
-        for im, label in ims:
-            row.alpha_composite(im, (x, h - im.height + 4))
-            dr.text((x, h + 10), label, fill=(40, 40, 40, 255))
-            x += im.width + 24
-        rows.append(row)
-    sheet = Image.new('RGB', (max(r.width for r in rows), sum(r.height for r in rows)), (236, 240, 245))
-    y = 0
-    for r in rows:
-        sheet.paste(r, (0, y))
-        y += r.height
-    dest = BUILD / 'compare-b2.png'
-    sheet.save(dest)
-    return dest
 
 
 def preview(res: str = '2x', host: str = '#2dd4bf', face: str = 'face_eyes', kit: str = 'acc_antenna') -> Path:
@@ -826,8 +829,9 @@ def preview(res: str = '2x', host: str = '#2dd4bf', face: str = 'face_eyes', kit
         for d, dd in c['dirs'].items():
             for i in (0, c['frames'] // 2):
                 fr = dd['frames'][i]
-                order = ['shadow', 'body_low', 'body', 'body_high', face, kit] + c['items'][:1]
-                canvas = comp.frame(clip, d, i, host, order, bg=(236, 240, 245, 255))
+                order = ['shadow', 'body_low', 'body', 'body_high', face, kit] + c['items']
+                canvas = comp.frame(clip, d, i, host, order, bg=(236, 240, 245, 255),
+                                    face='#7ce7ff' if face == 'face_eyes' else '#ff8f6b')
                 dr = ImageDraw.Draw(canvas)
                 fx, fy = dd['foot'][0] * scale, dd['foot'][1] * scale
                 dr.ellipse((fx - 3, fy - 3, fx + 3, fy + 3), outline=(255, 0, 0))
@@ -853,6 +857,59 @@ def preview(res: str = '2x', host: str = '#2dd4bf', face: str = 'face_eyes', kit
     return dest
 
 
+def _grid(tiles, cols, bg=(236, 240, 245)):
+    from PIL import Image
+    th, tw = max(t.height for t in tiles), max(t.width for t in tiles)
+    rows = -(-len(tiles) // cols)
+    sheet = Image.new('RGB', (cols * tw, rows * th), bg)
+    for n, t in enumerate(tiles):
+        sheet.paste(t, ((n % cols) * tw + (tw - t.width) // 2, (n // cols) * th + th - t.height))
+    return sheet
+
+
+def mix(a: str, b: str, k: float) -> str:
+    ca, cb = [int(a[i:i + 2], 16) for i in (1, 3, 5)], [int(b[i:i + 2], 16) for i in (1, 3, 5)]
+    return '#' + ''.join(f'{round(x + (y - x) * k):02x}' for x, y in zip(ca, cb))
+
+
+def faces_and_kits(res: str = '2x') -> Path:
+    """Idle, facing S and N: both faces with each of the four kits in the four fixed host colours, then the normal,
+    stalled and resting looks (motion.js tone), recomposed from the atlases as the runtime draws them."""
+    from PIL import ImageDraw
+    comp = Composer(res)
+    agents = {'face_eyes': ('codex', '#7ce7ff'), 'face_band': ('claude', '#ff8f6b')}
+    hosts = ['#ff9340', '#2dd4bf', '#a78bfa', '#facc15']
+    tiles = []
+
+    def tile(d, host, face, kit, label, face_col=None, clip='Idle'):
+        order = ['shadow', 'body', face, f'acc_{kit}']
+        im = comp.frame(clip, d, 0, host, order, bg=(236, 240, 245, 255), face=face_col or agents[face][1])
+        ImageDraw.Draw(im).text((4, 4), label, fill=(40, 40, 40))
+        return im
+    for face, (agent, _) in agents.items():
+        for kit, host in zip(ACCESSORIES, hosts):
+            for d in ('S', 'N'):
+                tiles.append(tile(d, host, face, kit, f'{agent} {kit} {d}'))
+    for face, (agent, colour) in agents.items():
+        for look, body, fc in (('normal', '#2dd4bf', colour), ('stalled', mix('#2dd4bf', '#475163', 0.55), mix(colour, '#1b2333', 0.6)),
+                               ('resting', '#2dd4bf', mix(colour, '#1b2333', 0.35))):
+            tiles.append(tile('S', body, face, 'antenna', f'{agent} {look}', fc))
+    dest = BUILD / 'faces-kits.png'
+    _grid(tiles, 8).save(dest)
+    return dest
+
+
+def death_sequence(res: str = '2x') -> Path:
+    """Every frame of Death, in each facing, one row per facing."""
+    comp = Composer(res)
+    c = comp.man['clips']['Death']
+    tiles = [comp.frame('Death', d, i, '#ff9340', ['shadow', 'body', 'face_eyes', 'acc_antenna'], bg=(236, 240, 245, 255))
+             for d in c['dirs'] for i in range(c['frames'])]
+    dest = BUILD / 'death.png'
+    _grid(tiles, c['frames']).save(dest)
+    return dest
+
+
 def dedupe(entries) -> tuple[list, list]:
     """Within a clip and direction, a layer that barely changes between frames (a seated robot's head and legs
     while its arms type, most contact shadows) is stored once. Returns the unique images (npz, layer, rect) and,
@@ -869,15 +926,16 @@ def dedupe(entries) -> tuple[list, list]:
         m = z[layer + '.mask'][::2, ::2].astype(np.int16) if layer + '.mask' in z else None
         return a, m
 
-    def close(x, y):
+    def close(x, y, layer=''):
         diff = np.abs(x - y)
-        return diff.mean() <= DEDUPE_MEAN and np.percentile(diff, 99) <= DEDUPE_P99
+        k = 3 if layer == 'shadow' else 1  # shadows are soft blurs stored at a quarter size: small changes vanish
+        return diff.mean() <= DEDUPE_MEAN * k and np.percentile(diff, 99) <= DEDUPE_P99 * k
 
     for clip, d, i, layer, npz, rect in entries:
         a, m = load(npz, layer)
         match = None
         for n, a2, m2 in seen.get((clip, d, layer), []):
-            if uniq[n][2] == rect and close(a, a2) and (m is None or close(m, m2)):
+            if uniq[n][2] == rect and close(a, a2, layer) and (m is None or close(m, m2)):
                 match = n
                 break
         if match is None:
@@ -933,7 +991,8 @@ def main() -> None:
                 sys.exit(f'sprites: render failed, see {BUILD / "render.log"}')
         pack()
         print('PREVIEW', preview())
-        print('COMPARE', compare_b2())
+        print('FACES', faces_and_kits())
+        print('DEATH', death_sequence())
         return
     render_all()
 
