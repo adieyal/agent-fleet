@@ -24,6 +24,9 @@ from fleet.modules.library import LibraryFacade
 from fleet.modules.decisions import DecisionsFacade
 from fleet.infrastructure.sqlite.decisions import DecisionRepository
 from fleet.infrastructure.input_delivery import send_input
+from fleet.infrastructure.sqlite.records import RecordsRepository
+from fleet.infrastructure.git import RepositoryWriter
+from fleet.modules.records import RecordsFacade
 
 
 def store_path() -> Path:
@@ -43,7 +46,20 @@ def open_attention(store: Store | None = None, *, workspace_path: Path | None = 
 def open_work(store: Store | None = None) -> WorkFacade:
     store = store if store is not None else open_store()
     repository = WorkRepository(store, lambda unit: AttentionFacade(AttentionRepository(store, unit), store.clock))
-    return WorkFacade(repository, FileEvidenceReader(), store.clock)
+    work = WorkFacade(repository, FileEvidenceReader(), store.clock)
+    work.records = open_records(store, work=work)
+    return work
+
+
+def open_records(store: Store | None = None, *, work: WorkFacade | None = None) -> RecordsFacade:
+    store = store if store is not None else open_store()
+    if work is None:
+        repository = WorkRepository(store, lambda unit: AttentionFacade(AttentionRepository(store, unit), store.clock))
+        work = WorkFacade(repository, FileEvidenceReader(), store.clock)
+    records = RecordsFacade(RecordsRepository(store), RepositoryWriter(),
+                            WorkspaceFacade(WorkspaceRepository(store)), work)
+    work.records = records
+    return records
 
 
 def open_workspace(store: Store | None = None, *, initial: dict | None = None,

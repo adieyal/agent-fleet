@@ -53,6 +53,8 @@ class WorkRepository(Repository):
         return [decode(kind, row["record"]) for row in self.rows(f"SELECT record FROM work_{kind} ORDER BY rowid")]
 
     def save(self, kind: str, record: WorkItem | Criterion | Relation | Summary, actor: str) -> None:
+        if kind == 'summary':
+            raise ValueError('summaries must be authored through Records')
         if self.unit is None:
             raise RuntimeError("work writes require a transaction")
         if kind not in RECORDS:
@@ -63,3 +65,11 @@ class WorkRepository(Repository):
             f"INSERT INTO work_{kind} (id, record) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET record = excluded.record",
             (record.id, payload))
         self.unit.record_change(f"work:{kind}:{record.id}", previous[0]["record"] if previous else "", payload, actor)
+
+    def retire_summary(self, identity: str, actor: str) -> None:
+        with self.transaction() as repository:
+            unit = repository.unit
+            unit.connection.execute('DELETE FROM work_summary WHERE id = ?', (identity,))
+            unit.connection.execute('UPDATE state_history SET "from" = ?, "to" = ? WHERE subject = ?',
+                                    ('repository cutover', 'repository cutover', 'work:summary:' + identity))
+            unit.record_change('work:summary:' + identity, 'store-owned', 'repository-owned', actor)

@@ -72,6 +72,11 @@ MIGRATIONS = (
            BEGIN SELECT RAISE(ABORT, 'decisions are immutable'); END""",
     ),
     (
+        'CREATE TABLE workspace_management (project TEXT PRIMARY KEY, path TEXT NOT NULL UNIQUE)',
+        'CREATE TABLE records_intent (id TEXT PRIMARY KEY, project TEXT NOT NULL, key TEXT NOT NULL, record TEXT NOT NULL, UNIQUE(project,key))',
+        'CREATE TABLE records_document (project TEXT NOT NULL, path TEXT NOT NULL, record TEXT NOT NULL, PRIMARY KEY(project,path))',
+    ),
+    (
         "CREATE TABLE execution_delivery (id TEXT PRIMARY KEY, record TEXT NOT NULL)",
     ),
 )
