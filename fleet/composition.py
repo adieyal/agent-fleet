@@ -53,7 +53,14 @@ def open_workspace(store: Store | None = None, *, initial: dict | None = None,
 
 def open_execution(store: Store | None = None) -> ExecutionFacade:
     store = store if store is not None else open_store()
-    return ExecutionFacade(ExecutionRepository(store), open_work(store))
+    open_workspace(store)
+
+    def collaborators(unit):
+        work = WorkFacade(WorkRepository(store, lambda bound: AttentionFacade(AttentionRepository(store, bound), store.clock),
+                                        unit), FileEvidenceReader(), store.clock)
+        return work, WorkspaceFacade(WorkspaceRepository(store, unit))
+
+    return ExecutionFacade(ExecutionRepository(store, collaborators=collaborators), open_work(store))
 
 
 def open_library(store: Store | None = None) -> LibraryFacade:

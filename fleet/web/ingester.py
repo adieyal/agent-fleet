@@ -27,7 +27,7 @@ def observe_runs(execution: ExecutionFacade, library: LibraryFacade, host: dict)
                                      timestamp(min(starts)) if starts else None, timestamp(end),
                                      timestamp(job.get("updated_at")))
         run = execution.observe(host["name"], observation)
-        if run is None:
+        if run is None or actions[run.action].work_item is None:
             continue
         outputs = [(document["kind"], document["name"], document["path"], "available")
                    for document in job["documents"]] if "documents" in job else []

@@ -8,14 +8,16 @@ from contextlib import closing, contextmanager
 from pathlib import Path
 
 from fleet.modules.workspace import WorkspaceState
-from .store import Store, connect
+from .store import Store, UnitOfWork, connect
 
 
 class WorkspaceRepository:
-    def __init__(self, store: Store) -> None:
-        self.store = store
+    def __init__(self, store: Store, unit: UnitOfWork | None = None) -> None:
+        self.store, self.unit = store, unit
 
     def read(self) -> dict:
+        if self.unit is not None:
+            return json.loads(self.unit.connection.execute("SELECT record FROM workspace_state WHERE id = 1").fetchone()[0])
         with closing(connect(self.store.path)) as connection:
             return json.loads(connection.execute("SELECT record FROM workspace_state WHERE id = 1").fetchone()[0])
 

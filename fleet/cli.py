@@ -27,6 +27,7 @@ from fleet.modules import workspace as projects
 from fleet.composition import open_attention, open_execution, open_library, open_store, open_work, open_workspace
 from fleet.projections.project import project_status
 from fleet.modules.work import EvidenceSpecification
+from fleet.modules.execution import Run
 from fleet.transport import FleetError, Host, HostReport
 from fleet.web.server import serve, serve_fixture
 
@@ -246,6 +247,10 @@ def push_context(host: Host, job_id: str, paths: list[str]) -> None:
 
 
 def command_send(arguments: argparse.Namespace) -> None:
+    command_dispatch(arguments)
+
+
+def command_dispatch(arguments: argparse.Namespace) -> None:
     if arguments.work_item is not None:
         try:
             open_work().get(arguments.work_item)
@@ -276,13 +281,23 @@ def command_send(arguments: argparse.Namespace) -> None:
         fleetd_arguments += ["--env", pair]
     if arguments.keep_going:
         fleetd_arguments.append("--keep-going")
-    job = transport.call(host, fleetd_arguments, stdin_text=json.dumps(steps))
-    if arguments.work_item is not None:
-        open_execution().link(host.name, job["id"], arguments.work_item, actor="user", runtime=arguments.agent)
-    if arguments.context:
-        push_context(host, job["id"], arguments.context)
-    if not arguments.hold:
-        job = transport.call(host, ["start", job["id"]])
+    from uuid import uuid4
+
+    execution = open_execution()
+    key = str(uuid4()) if arguments.id is None else arguments.id
+    try:
+        intent = execution.dispatch(arguments.work_item, host=host.name, runtime=arguments.agent,
+            payload={"cwd": arguments.cwd, "arguments": fleetd_arguments, "steps": steps,
+                     "context": arguments.context, "hold": arguments.hold}, project=arguments.project,
+            actor="user", reason=arguments.description, idempotency_key=key, remote_job_id=arguments.id)
+    except (ValueError, LookupError) as error:
+        raise FleetError(str(error)) from error
+    if not intent.created:
+        print(json.dumps({"job": f"{intent.run.host}:{intent.run.remote_job_id}", "status": intent.run.status,
+                          "run": intent.run.id, "action": intent.run.action, "steps": len(steps)}))
+        return
+    action = next(action for action in execution.actions() if action.id == intent.run.action)
+    job = deliver_dispatch(intent.run, action.payload)
     reference = f"{host.name}:{job['id']}"
     if arguments.json:
         print(json.dumps({"job": reference, "status": job["status"], "steps": len(job["steps"])}))
@@ -290,6 +305,56 @@ def command_send(arguments: argparse.Namespace) -> None:
         console.print(f"[bold]{reference}[/] {job['status']} · {len(job['steps'])} step(s) · {job['description']}")
     if arguments.wait:
         wait_for([reference], step=None, timeout=None, as_json=arguments.json)
+
+
+def deliver_dispatch(run: Run, payload: dict) -> dict:
+    host = transport.host_by_name(run.host)
+    arguments = list(payload["arguments"])
+    if "--id" in arguments:
+        index = arguments.index("--id")
+        del arguments[index:index + 2]
+    arguments += ["--id", run.remote_job_id]
+    job = transport.call(host, arguments, stdin_text=json.dumps(payload["steps"]))
+    if job["id"] != run.remote_job_id:
+        raise FleetError("worker returned a different job ID; run outcome is unknown")
+    if payload["context"]:
+        push_context(host, job["id"], payload["context"])
+    if not payload["hold"]:
+        job = transport.call(host, ["start", job["id"]])
+    return job
+
+
+def command_run_retry(arguments: argparse.Namespace) -> None:
+    from uuid import uuid4
+
+    execution = open_execution()
+    try:
+        intent = execution.retry(arguments.run, actor="user", idempotency_key=str(uuid4()))
+    except (ValueError, LookupError) as error:
+        raise FleetError(str(error)) from error
+    if intent.created:
+        action = next(action for action in execution.actions() if action.id == intent.run.action)
+        deliver_dispatch(intent.run, action.payload)
+    print(json.dumps(asdict(intent.run), default=str))
+
+
+def command_dispatch_work(arguments: argparse.Namespace) -> None:
+    try:
+        item = open_work().get(arguments.work_item)
+    except LookupError as error:
+        raise FleetError(str(error)) from error
+    arguments.project = item.project
+    arguments.description = arguments.instruction
+    arguments.step = [arguments.instruction]
+    command_dispatch(arguments)
+
+
+def command_resolve_unknown(arguments: argparse.Namespace) -> None:
+    try:
+        run = open_execution().resolve_unknown(arguments.run, actor="user")
+    except (ValueError, LookupError) as error:
+        raise FleetError(str(error)) from error
+    print(json.dumps(asdict(run), default=str))
 
 
 def command_run_link(arguments: argparse.Namespace) -> None:
@@ -910,6 +975,18 @@ def build_parser() -> argparse.ArgumentParser:
     add_step_options(send)
     send.set_defaults(handler=command_send)
 
+    dispatch = commands.add_parser("dispatch", help="claim and dispatch work to a host")
+    dispatch.add_argument("work_item")
+    dispatch.add_argument("instruction")
+    dispatch.add_argument("--host", required=True)
+    dispatch.add_argument("--runtime", dest="agent", choices=("claude", "codex"), required=True)
+    dispatch.add_argument("--cwd", required=True)
+    dispatch.add_argument("--id")
+    dispatch.add_argument("--json", action="store_true")
+    dispatch.set_defaults(handler=command_dispatch_work, permission=None, model=None, allow=None,
+                          add_dir=None, env=None, keep_going=False, hold=False, wait=False,
+                          context=None, steps_file=None)
+
     run = commands.add_parser("run", help="stored execution runs").add_subparsers(dest="run_command", required=True)
     run_link = run.add_parser("link", help="link an existing host job without fetching it")
     run_link.add_argument("host")
@@ -917,6 +994,12 @@ def build_parser() -> argparse.ArgumentParser:
     run_link.add_argument("work_item")
     run_link.add_argument("--actor", default="user")
     run_link.set_defaults(handler=command_run_link)
+    resolve_unknown = run.add_parser("resolve-unknown", help="explicitly close an unknown run to permit retry")
+    resolve_unknown.add_argument("run")
+    resolve_unknown.set_defaults(handler=command_resolve_unknown)
+    retry = run.add_parser("retry", help="retry an action after its run has a known end")
+    retry.add_argument("run")
+    retry.set_defaults(handler=command_run_retry)
 
     add = commands.add_parser("add", help="append steps to a job (restarts it if idle)")
     add.add_argument("job")
