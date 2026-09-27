@@ -49,4 +49,12 @@ MIGRATIONS = (
         "ALTER TABLE attention_item ADD COLUMN resolved_at TEXT",
         "ALTER TABLE attention_item ADD COLUMN stream_context TEXT",
     ),
+    (
+        "CREATE TABLE execution_action (id TEXT PRIMARY KEY, record TEXT NOT NULL)",
+        """CREATE TABLE execution_run (
+            id TEXT PRIMARY KEY, action TEXT NOT NULL REFERENCES execution_action(id),
+            host TEXT NOT NULL, remote_job_id TEXT NOT NULL, record TEXT NOT NULL,
+            UNIQUE (host, remote_job_id))""",
+        "CREATE TABLE library_entry (id TEXT PRIMARY KEY, record TEXT NOT NULL)",
+    ),
 )
