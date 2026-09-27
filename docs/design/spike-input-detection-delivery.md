@@ -1,5 +1,44 @@
 # FS-003: input detection and delivery spike
 
+## FS-006 implementation
+
+Claude jobs now receive explicit `--settings` hooks for `PermissionRequest` and
+`PostToolUse`. For independently launched interactive sessions, opt in before
+starting Claude with `claude --settings "$(python3 /path/to/fleetd.py input-hook-settings
+--project PROJECT)"` (put the command on one line). This does not edit user settings.
+Discovered sessions without these hooks cannot supply confirmed input transitions.
+
+The hook command retains raw request and resume records atomically beneath
+`FLEET_HOME/input-observations`, with a lock per job/session/step. The version 1
+`input_observation` stream message carries the fields specified below, plus the
+project label. PermissionRequest creates an occurrence; repeated requests with the
+same tool name and input while outstanding reuse it. PostToolUse with matching
+session, step, tool name and input clears it. Notification and Stop do not clear it.
+The correlation is tool/input based because the spike did not establish a common
+request ID in both hooks. This assumes one outstanding identical tool request per
+session/step. Retained occurrences replay when the stream reconnects, including
+cleared occurrences, so a missed clear still resolves the stored item.
+
+Attention owns the accepted item through its facade; the web stream adapter uses
+the configured host alias and resolves the project label through the registry.
+The source is `runtime-input:<host>`; the source reference contains owner type,
+host, job/session ID and occurrence ID. A new occurrence gets a new item. Replays
+cannot reopen resolved occurrences or refresh their last-seen time. A matched
+clear records exactly `answered in session`. Silence, removal, Stop and ordinary
+heartbeats do not resolve hook-sourced items. Raw records remain worker-owned.
+
+Headless permission denial is a request needing attention, **not a suspended job**.
+It remains open unless matching tool execution is later observed or the user
+resolves it manually. This change adds no automatic delivery. Codex remains
+undetectable from the tested notify/turn events: no automatic input observation
+is generated; use `fleet attention add` for Codex questions. Existing legacy
+session activity attention is unchanged.
+
+At the checkpoint run `bash scripts/checks/waiting-for-input.sh PROJECT CARBON_CWD`
+with this fleetd installed on carbon and the web ingester running. It starts a
+real Claude job and describes the separate interactive approval check. The gates
+only check the script syntax; they never start a paid runtime or contact carbon.
+
 Run on home, 2026-09-27, with Claude Code 2.1.281 and codex-cli 0.154.0 (`claude --version`; `codex --version`). These results supersede the initial carbon probes (Claude 2.1.283 / Codex 0.157.1), which verified headless behavior but stopped at onboarding/terminal queries interactively. The probes create temporary homes, copy local authentication/state needed to start the CLIs, and pass Claude hook settings explicitly. They do not edit the user's Claude or Codex settings. Each command below is run from this repository. Session IDs and temporary paths vary; excerpts omit terminal escape sequences and repetitive stream records.
 
 The interactive probes own a 120×40 pseudo-terminal, answer terminal queries, acquire a controlling terminal, and accept trust only for their own temporary directory. Claude's copied onboarding state must live at `$CLAUDE_CONFIG_DIR/.claude.json`. Small input pacing delays let the TUIs finish handling the preceding key. Both probes stop their own processes and delete their temporary homes on completion. Codex prints a warning that helper aliases cannot be created under `/tmp`; this did not prevent these no-tool turns.

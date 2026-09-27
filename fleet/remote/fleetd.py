@@ -19,6 +19,7 @@ import collections
 import contextlib
 import datetime
 import fcntl
+import hashlib
 import json
 import os
 import re
@@ -346,6 +347,7 @@ def agent_command(job: JsonObject, step: JsonObject, session_id: Optional[str]) 
         if session_id:
             command += ["--resume", session_id]
         command += ["--add-dir", str(JOBS_DIRECTORY / job["id"])]
+        command += ["--settings", json.dumps(input_hook_settings(job["project"], job["id"], step["index"]))]
         for directory in job.get("add_dirs", []):
             command += ["--add-dir", directory]
         return command
@@ -1150,6 +1152,68 @@ class PipelineTracker:
 # --------------------------------------------------------------- commands
 
 
+def input_hook_settings(project: str, job_id: Optional[str] = None,
+                        step_index: Optional[int] = None) -> JsonObject:
+    command = [sys.executable, str(Path(__file__).resolve()), "input-hook", "--project", project]
+    if job_id is not None:
+        command += ["--job", job_id, "--step-index", str(step_index)]
+    shell_command = f"FLEET_HOME={shlex.quote(str(FLEET_HOME))} " + shlex.join(command)
+    return {"hooks": {event: [{"hooks": [{"type": "command", "command": shell_command}]}]
+                      for event in ("PermissionRequest", "PostToolUse")}}
+
+
+def record_input_hook(record: JsonObject, *, project: str, job_id: Optional[str] = None,
+                      step_index: Optional[int] = None) -> None:
+    event = record["hook_event_name"]
+    if event not in ("PermissionRequest", "PostToolUse"):
+        return
+    session_id = record["session_id"]
+    owner = [job_id, session_id, step_index]
+    directory = FLEET_HOME / "input-observations"
+    directory.mkdir(parents=True, exist_ok=True)
+    key = hashlib.sha256(json.dumps(owner).encode()).hexdigest()
+    path = directory / f"{key}.json"
+    with open(directory / f"{key}.lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        records = json.loads(path.read_text()) if path.exists() else []
+        match = next((item for item in reversed(records)
+                      if item["kind"] == "input_requested"
+                      and item["raw_request"]["tool_name"] == record["tool_name"]
+                      and item["raw_request"]["tool_input"] == record["tool_input"]), None)
+        if event == "PermissionRequest":
+            if match is not None:
+                return
+            records.append({"type": "input_observation", "schema_version": 1,
+                            "host": os.uname().nodename, "runtime": "claude",
+                            "owner_type": "job" if job_id is not None else "session",
+                            "job_id": job_id, "session_id": session_id, "step_index": step_index,
+                            "project": project, "kind": "input_requested", "reason": "permission",
+                            "source_event": event, "source_event_id": secrets.token_hex(16),
+                            "observed_at": now(), "context_reference": str(path),
+                            "raw_request": record})
+        elif match is not None:
+            match.update(kind="input_cleared", source_event=event, observed_at=now(), raw_resume=record)
+        else:
+            return
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(records))
+        temporary.replace(path)
+
+
+def input_observations() -> List[JsonObject]:
+    observations = []
+    for path in sorted((FLEET_HOME / "input-observations").glob("*.json")):
+        observations.extend({key: value for key, value in record.items()
+                             if key not in ("raw_request", "raw_resume")}
+                            for record in json.loads(path.read_text()))
+    return observations
+
+
+def command_input_hook(arguments: argparse.Namespace) -> None:
+    record_input_hook(json.load(sys.stdin), project=arguments.project,
+                      job_id=arguments.job, step_index=arguments.step_index)
+
+
 def make_step(index: int, prompt: str, title: Optional[str]) -> JsonObject:
     return {"index": index, "title": title or shorten(prompt.splitlines()[0] if prompt.strip() else prompt, 80),
             "prompt": prompt, "status": "pending", "started_at": None, "finished_at": None, "result": None}
@@ -1248,10 +1312,16 @@ def command_stream(arguments: argparse.Namespace) -> None:
     last_session_scan = 0.0
     pipelines = PipelineTracker()
     last_pipeline_scan = 0.0
+    inputs: Dict[str, JsonObject] = {}
     try:
         emit({"type": "hello", "host": os.uname().nodename, "time": now(),
               "protocol_version": STREAM_PROTOCOL_VERSION})
         while True:
+            for observation in input_observations():
+                occurrence = observation["source_event_id"]
+                if inputs.get(occurrence) != observation:
+                    emit(observation)
+                    inputs[occurrence] = observation
             seen = set()
             for path in JOBS_DIRECTORY.glob("*/job.json") if JOBS_DIRECTORY.exists() else []:
                 job_id = path.parent.name
@@ -1506,6 +1576,16 @@ def main() -> None:
     run = commands.add_parser("_run")
     run.add_argument("job")
     run.set_defaults(handler=lambda arguments: run_job(arguments.job))
+
+    hook = commands.add_parser("input-hook", help="receive Claude permission hooks on stdin")
+    hook.add_argument("--project", required=True)
+    hook.add_argument("--job")
+    hook.add_argument("--step-index", type=int)
+    hook.set_defaults(handler=command_input_hook)
+
+    settings = commands.add_parser("input-hook-settings", help="Claude --settings JSON for an interactive session")
+    settings.add_argument("--project", required=True)
+    settings.set_defaults(handler=lambda args: emit(input_hook_settings(args.project)))
 
     arguments = parser.parse_args()
     arguments.handler(arguments)

@@ -6,6 +6,7 @@ from typing import Callable
 from .application import Commands
 from .application.ports import AttentionRepository
 from .application.observations import HostObservation, ingest_attention
+from .application.input_observations import InputObservation, ingest_input
 from .domain import AttentionItem, StreamContext, STATES
 
 
@@ -26,6 +27,9 @@ class AttentionFacade:
 
     def acknowledge(self, item_id: str, *, actor: str) -> AttentionItem:
         return self.commands.change(item_id, "acknowledged", actor)
+
+    def observe_input(self, host: str, observation: InputObservation, *, project_id: str | None = None) -> None:
+        ingest_input(self.repository, host, observation, project_id)
 
     def observe(self, host: HostObservation, *, owners: set[str] | None = None,
                 raise_items: bool = True) -> bool:
