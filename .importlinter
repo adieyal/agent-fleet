@@ -29,6 +29,12 @@ forbidden_modules =
 
 # Each module's descendants are private, including its facade implementation.
 # Add a public-surface contract whenever a new business module is introduced.
+[importlinter:contract:authority-public]
+name = Authority public surface
+type = protected
+protected_modules = fleet.modules.authority.*
+allowed_importers = fleet.modules.authority
+
 [importlinter:contract:attention-public]
 name = Attention public surface
 type = protected

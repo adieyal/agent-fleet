@@ -58,6 +58,8 @@ class WorkItem:
     created: datetime
     updated: datetime
     next_step_recorded_at: datetime | None = None
+    activation: str | None = None
+    mandate_version: str | None = None
 
     def __post_init__(self) -> None:
         for name in ("project", "kind", "title", "goal"):
@@ -84,6 +86,8 @@ class Criterion:
     met_by: str | None = None
     evidence: tuple[str, ...] = ()
     met_at: datetime | None = None
+    activation: str | None = None
+    mandate_version: str | None = None
 
     def __post_init__(self) -> None:
         required(self.text, "criterion text")

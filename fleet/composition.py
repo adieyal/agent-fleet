@@ -27,6 +27,8 @@ from fleet.infrastructure.input_delivery import send_input
 from fleet.infrastructure.sqlite.records import RecordsRepository
 from fleet.infrastructure.git import RepositoryWriter
 from fleet.modules.records import RecordsFacade
+from fleet.modules.authority import AuthorityFacade
+from fleet.infrastructure.sqlite.authority import AuthorityRepository
 
 
 def store_path() -> Path:
@@ -46,7 +48,7 @@ def open_attention(store: Store | None = None, *, workspace_path: Path | None = 
 def open_work(store: Store | None = None) -> WorkFacade:
     store = store if store is not None else open_store()
     repository = WorkRepository(store, lambda unit: AttentionFacade(AttentionRepository(store, unit), store.clock))
-    work = WorkFacade(repository, FileEvidenceReader(), store.clock)
+    work = WorkFacade(repository, FileEvidenceReader(), store.clock, authority=lambda: open_authority(store))
     work.records = open_records(store, work=work)
     return work
 
@@ -81,7 +83,7 @@ def open_execution(store: Store | None = None) -> ExecutionFacade:
 
     return ExecutionFacade(ExecutionRepository(store, attention=attention, collaborators=collaborators),
                            open_work(store), send=send_input,
-                           prepare_dispatch=lambda: open_workspace(store))
+                           prepare_dispatch=lambda: open_workspace(store), authority=lambda: open_authority(store))
 
 
 def open_library(store: Store | None = None) -> LibraryFacade:
@@ -95,3 +97,10 @@ def open_decisions(store: Store | None = None) -> DecisionsFacade:
     work = lambda unit: WorkFacade(WorkRepository(store, attention, unit), FileEvidenceReader(), store.clock)
     execution = lambda unit: ExecutionFacade(ExecutionRepository(store, unit, attention=attention), work(unit), send=send_input)
     return DecisionsFacade(DecisionRepository(store, attention, work, execution), store.clock, open_execution(store))
+
+
+def open_authority(store: Store | None = None) -> AuthorityFacade:
+    store = store if store is not None else open_store()
+    return AuthorityFacade(AuthorityRepository(store), open_records(store), open_work(store),
+                           open_decisions(store), AttentionFacade(AttentionRepository(store), store.clock),
+                           open_execution(store))

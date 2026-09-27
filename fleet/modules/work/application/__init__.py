@@ -35,11 +35,13 @@ class Commands:
             repository.save("item", item, actor)
         return item
 
-    def change(self, identity: str, actor: str, *, ready: bool = False, **changes) -> WorkItem:
+    def change(self, identity: str, actor: str, *, ready: bool = False, authorization=None, **changes) -> WorkItem:
         required(actor, "actor")
         allowed = {"title", "goal", "condition", "resume_condition", "next_step", "focus", "kind", "parent"}
         if changes.keys() - allowed:
             raise ValueError("unknown work fields")
+        changes['activation'] = None if authorization is None else authorization.id
+        changes['mandate_version'] = None if authorization is None else authorization.mandate_version
         with self.repository.transaction() as repository:
             previous = repository.get("item", identity)
             if ready:
@@ -83,12 +85,14 @@ class Commands:
             repository.save("criterion", criterion, actor)
         return criterion
 
-    def meet(self, identity: str, *, actor: str, evidence: tuple[str, ...]) -> Criterion:
+    def meet(self, identity: str, *, actor: str, evidence: tuple[str, ...], authorization=None) -> Criterion:
         required(actor, "actor")
         with self.repository.transaction() as repository:
             criterion = repository.get("criterion", identity)
             records = [record for reference in evidence if (record := self.evidence.get(reference)) is not None]
             criterion = criterion.meet(actor, evidence, records, self.clock())
+            criterion = replace(criterion, activation=None if authorization is None else authorization.id,
+                                mandate_version=None if authorization is None else authorization.mandate_version)
             repository.save("criterion", criterion, actor)
         return criterion
 

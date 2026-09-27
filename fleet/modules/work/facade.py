@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 import json
 from typing import Callable
+from fleet.modules.authority import AuthorityRejected
 
 from .application import Commands
 from .application.ports import EvidenceReader, WorkRepository
@@ -12,18 +13,29 @@ from .domain import KINDS, Criterion, EvidenceSpecification, Progress, Relation,
 
 
 class WorkFacade:
-    def __init__(self, repository: WorkRepository, evidence: EvidenceReader, clock: Callable[[], datetime]) -> None:
+    def __init__(self, repository: WorkRepository, evidence: EvidenceReader, clock: Callable[[], datetime],
+                 *, authority=None) -> None:
         self.repository, self.clock = repository, clock
         self.commands = Commands(repository, evidence, clock)
         self.records = None
+        self.authority = authority
 
     def add(self, *, project: str, title: str, goal: str, actor: str, kind: str = "task",
             parent: str | None = None, focus: str | None = None, next_step: str | None = None) -> WorkItem:
         return self.commands.add(project=project, title=title, goal=goal, actor=actor, kind=kind,
             parent=parent, focus=focus, next_step=next_step, condition="none", resume_condition=None)
 
-    def set(self, identity: str, *, actor: str, **changes) -> WorkItem:
-        return self.commands.change(identity, actor, **changes)
+    def set(self, identity: str, *, actor: str, activation: str | None = None, **changes) -> WorkItem:
+        authorization = None
+        if activation is not None:
+            if self.authority is None:
+                raise AuthorityRejected('activation authority is not configured')
+            authorization = self.authority().require('update_progress', identity, actor=actor, activation=activation)
+            if changes.keys() - {'next_step', 'condition', 'resume_condition'}:
+                raise AuthorityRejected('unsupported progress fields')
+            if changes.get('condition') == 'complete' and any(c.state != 'met' for c in self.criteria(identity)):
+                raise AuthorityRejected('completion requires met criteria')
+        return self.commands.change(identity, actor, authorization=authorization, **changes)
 
     def apply_answer(self, identity: str, *, actor: str, next_step: str | None) -> WorkItem:
         return self.commands.apply_answer(identity, actor=actor, next_step=next_step)
@@ -53,8 +65,24 @@ class WorkFacade:
         return self.commands.add_criterion(identity, text=text, verification=verification,
                                            specification=specification, actor=actor)
 
-    def meet(self, identity: str, *, actor: str, evidence: tuple[str, ...] = ()) -> Criterion:
-        return self.commands.meet(identity, actor=actor, evidence=evidence)
+    def criterion(self, identity: str) -> Criterion:
+        return self.repository.get('criterion', identity)
+
+    def meet(self, identity: str, *, actor: str, evidence: tuple[str, ...] = (),
+             activation: str | None = None) -> Criterion:
+        authorization = None
+        if activation is not None:
+            if self.authority is None:
+                raise AuthorityRejected('activation authority is not configured')
+            criterion = self.criterion(identity)
+            authorization = self.authority().require('meet', criterion.work_item, actor=actor,
+                                                     activation=activation, criterion=criterion)
+        try:
+            return self.commands.meet(identity, actor=actor, evidence=evidence, authorization=authorization)
+        except ValueError as error:
+            if activation is not None:
+                raise AuthorityRejected(str(error)) from error
+            raise
 
     def criteria(self, identity: str) -> list[Criterion]:
         return [item for item in self.repository.list("criterion") if item.work_item == identity]
