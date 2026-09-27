@@ -34,6 +34,9 @@ def bench_state(project: dict, identity: str) -> dict[str, Any]:
             "tasks": tasks, "criteria": node["criteria"], "progress": node["progress"],
             "summary": node["summary"],
             "agents": [{"run": run["id"], "host": run["host"], "status": run["status"],
-                        "action_glyph": None} for item in scope for run in item["runs"]],
+                        "action_glyph": run["action_glyph"],
+                        "action_observed_at": run["action_observed_at"],
+                        "action_freshness": run["action_freshness"]}
+                       for item in scope for run in item["runs"]],
             "attention": [entry for item in scope for entry in item["attention"]],
             "reports": [entry for item in scope for entry in item["library"] if entry["kind"] == "report"]}

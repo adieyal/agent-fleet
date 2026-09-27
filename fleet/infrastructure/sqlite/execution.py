@@ -18,6 +18,8 @@ def decode_run(payload: str) -> Run:
     for key in ("start", "end", "last_observed"):
         if values[key] is not None:
             values[key] = datetime.fromisoformat(values[key])
+    if values.get("action_observed_at") is not None:
+        values["action_observed_at"] = datetime.fromisoformat(values["action_observed_at"])
     return Run(**values)
 
 

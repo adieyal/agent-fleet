@@ -6,7 +6,7 @@ import pytest
 
 from fleet.modules.attention import AttentionFacade, AttentionItem
 from fleet.modules.work import Criterion, EvidenceSpecification, Summary, WorkFacade, WorkItem
-from fleet.modules.execution import Action, Run
+from fleet.modules.execution import Action, ExecutionFacade, Run
 from fleet.modules.library import LibraryEntry
 from fleet.projections.project import project_status
 
@@ -43,7 +43,8 @@ def project(items, criteria=(), summaries=(), attention=(), runs=(), entries=())
     work = WorkFacade(ReadWork(items, criteria, summaries), None, lambda: NOW)
     alerts = AttentionFacade(ReadAttention(attention), lambda: NOW)
     execution = SimpleNamespace(actions=lambda: [Action(run.action, "milestone", "linked") for run in runs],
-                                runs=lambda: runs)
+                                runs=lambda: runs,
+                                run_activity=ExecutionFacade(None, None, clock=lambda: NOW).run_activity)
     library = SimpleNamespace(list=lambda: entries)
     return project_status("p", work, alerts, execution, library, SimpleNamespace(list=lambda: []))
 
@@ -113,12 +114,14 @@ def test_bench_projects_slice_and_orders_tasks_without_host_streams():
                   criteria=[Criterion("c", "milestone", "Approved", "accepted", None)],
                   summaries=[summary], attention=[alert], entries=[report])
     task = doc["work_items"][0]["children"][0]["children"][1]
-    task["runs"] = [{"id": "r", "host": "home", "status": "running"}]
+    task["runs"] = [{"id": "r", "host": "home", "status": "running", "action_glyph": None,
+                     "action_observed_at": None, "action_freshness": "unknown"}]
     result = bench_state(doc, "milestone")
     assert [(t["id"], t["lane"]) for t in result["tasks"]] == [
         ("done", "done"), ("doing", "doing"), ("next", "next")]
     assert result["criteria"][0]["verification"] == "accepted"
-    assert result["agents"] == [{"run": "r", "host": "home", "status": "running", "action_glyph": None}]
+    assert result["agents"] == [{"run": "r", "host": "home", "status": "running", "action_glyph": None,
+                                 "action_observed_at": None, "action_freshness": "unknown"}]
     assert result["attention"][0]["id"] == "a"
     assert result["reports"][0]["id"] == "report"
     assert result["summary"]["purpose"] == "Purpose"
@@ -141,12 +144,26 @@ def test_runs_on_two_hosts_and_unavailable_trace_preserve_work():
     assert [entry["host"] for entry in node["runs"]] == ["host-a", "host-b"]
     assert node["runs"][0] == dict(id="r1", action="r1", host="host-a", remote_job_id="job",
         runtime="codex", status="failed", reason="lost", start=NOW.isoformat(), end=NOW.isoformat(),
-        last_observed=(NOW + timedelta(minutes=1)).isoformat(), usage=None)
+        last_observed=(NOW + timedelta(minutes=1)).isoformat(), usage=None, current_action=None,
+        action_observed_at=None, action_glyph=None, action_freshness="unknown")
     assert node["library"][0]["availability"] == "unavailable"
     assert len(node["library"]) == 1
     assert node["condition"] == "waiting"
     assert node["progress"] == {"basis": "unknown", "complete": None, "total": None}
     assert node["attention"] == result["attention"] == []
+
+
+def test_bench_uses_recorded_actions_through_execution_facade():
+    from fleet.projections.bench import bench_state
+
+    runs = [replace(run("read", "host-a", "running", None), current_action="read", action_observed_at=NOW),
+            replace(run("old", "host-b", "running", None), current_action="test",
+                    action_observed_at=NOW - timedelta(seconds=21)),
+            run("unknown", "host-c", "running", None)]
+    doc = project([item("milestone", kind="milestone")], runs=runs)
+    agents = bench_state(doc, "milestone")["agents"]
+    assert [(agent["action_glyph"], agent["action_freshness"]) for agent in agents] == [
+        ("read", "current"), ("test", "stale"), (None, "unknown")]
 
 
 @pytest.mark.parametrize("status,next_step,recorded,end,expected", [

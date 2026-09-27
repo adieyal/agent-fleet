@@ -2,7 +2,8 @@
 
 import { DEBUG, POLL_MS, QS } from './env.js';
 import { esc, hash, seeded } from './util.js';
-import { DOC_FILE, activityOf } from './activity.js';
+import { activityOf } from './activity.js';
+import { demoEvents } from './demo-events.js';
 
 // Demo only: a small Markdown renderer producing the same shapes as the server's markdown-it
 // (heading ids, tables, task lists, footnotes). Everything is escaped before any tag is added.
@@ -308,27 +309,13 @@ export function demoSource() {
   const rand = seeded(42);
   const pick = arr => arr[Math.floor(rand() * arr.length)];
   const now = () => Date.now() / 1000;
-  const SUMMARIES = {
-    bash: ['pytest tests/invoices/test_upload.py -q', 'npx vitest run src/v2/suppliers', 'git diff --stat', 'ruff check app/suppliers', 'make migrate', 'npm run lint -- --fix', 'git log --oneline -5',
-      'git commit -m "Port supplier filters to the V2 route"', 'git push -u origin HEAD', 'npm install', 'npm run build', 'docker compose up -d db', 'sleep 30',
-      'curl -s https://api.github.com/repos/example/demo-store/pulls', 'ssh node-b fleet ls', 'psql -c "select count(*) from invoices"', 'ls -la fleet/web', 'mypy app/invoices',
-      'git add -A', 'python scripts/export_suppliers.py --dry-run', 'cat package.json', 'git checkout -b fix/upload-poller'],
-    edit: ['frontend/src/v2/routes/suppliers.tsx', 'app/invoices/parser/luc.py', 'fleet/web/index.html', 'docs/guides/onboarding.md', 'app/suppliers/adapters.py', 'tests/test_fleetd_parsers.py'],
-    read: ['app/suppliers/views.py', 'docs/adr/0002-module-refactor.md', 'frontend/src/v2/router.tsx', 'fleet/remote/fleetd.py', 'invoices/sample-0412.json'],
-    search: ['SupplierRow', '**/*.spec.ts', 'luc_tolerance', 'docs/**/*.png'],
-    web: ['https://tanstack.com/router/latest/docs/guide/data-loading', 'https://docs.python.org/3/library/decimal.html', 'https://playwright.dev/docs/screenshots'],
-    think: ['Weighing whether the tolerance should be relative to the line total…', 'The flake only happens when the poller fires twice…', 'Two ways to split the loader; the second keeps parity…'],
-    plan: ['{"todos": […]}'],
-    delegate: ['Find every caller of get_active_restaurants', 'List routes still on the legacy table'],
-  };
+  const SUMMARIES = Object.fromEntries(Object.entries(demoEvents).map(([kind, events]) => [kind, events.map(ev => ev.summary)]));
   // shaped like fleetd's events: the Claude tool name, its main argument, and for shell calls sometimes Claude's description
   const INTENTS = { 'make migrate': 'Run the database migrations', 'git diff --stat': 'Show what changed', 'ruff check app/suppliers': 'Lint the suppliers module',
     'git push -u origin HEAD': 'Push the branch', 'sleep 30': 'Wait for the server to come up' };
   const demoTool = kind => {
-    const summary = pick(SUMMARIES[kind]);
-    const name = { bash: 'Bash', edit: DOC_FILE.test(summary) ? 'Write' : 'Edit', read: 'Read', web: 'WebFetch', think: '', plan: 'TodoWrite', delegate: 'Agent' }[kind]
-      ?? (summary.includes('*') ? 'Glob' : 'Grep');
-    const ev = { kind: 'tool', tool: kind, name, summary };
+    const ev = { ...pick(demoEvents[kind]) };
+    const summary = ev.summary;
     if (kind === 'bash' && INTENTS[summary] && rand() < 0.7) ev.intent = INTENTS[summary];
     return ev;
   };
@@ -531,7 +518,7 @@ export function demoSource() {
   function finish(job) { job.status = 'done'; job.ticks = 0; job.todos = []; push(job, { kind: 'job', status: 'done', summary: 'job done' }); }
   function tick() {
     tickCount++;
-    if (tickCount === 3) { addDoc(deck, 'file-0', 'file', 'docs/deck-layout.md', 2, DEMO_DOCS.deckLayout); push(deck, { kind: 'tool', tool: 'edit', summary: 'docs/deck-layout.md' }); }
+    if (tickCount === 3) { addDoc(deck, 'file-0', 'file', 'docs/deck-layout.md', 2, DEMO_DOCS.deckLayout); push(deck, { kind: 'tool', tool: 'edit', summary: 'docs/deck-layout.md', activity_class: 'doc' }); }
     if (tickCount === 7) addDoc(flaky, 'outbox-root-cause.md', 'outbox', 'root-cause.md', null, DEMO_DOCS.rootCause);
     if (tickCount === 4 && review.status === 'running') {   // one job finishes soon after the page opens, so its android is seen walking out
       for (const s of review.steps) if (s.status !== 'done') { s.status = 'done'; s.finished_at = now(); s.result = pick(RESULTS); }
@@ -555,7 +542,7 @@ export function demoSource() {
       if (PINS) {
         const seq = PINS[i % PINS.length].split('+'), act = seq[Math.floor(tickCount / 5) % seq.length];   // type+ship: alternate every 10 s
         // a pinned test run alternates with its outcome: an error half the time, otherwise the next command
-        if (act === 'test' && job.tested) push(job, rand() < 0.5 ? { kind: 'error', summary: 'exit 1: pytest -q (2 failed, 41 passed)' } : { kind: 'tool', tool: 'bash', name: 'Bash', summary: 'git add -A' });
+        if (act === 'test' && job.tested) push(job, rand() < 0.5 ? { kind: 'error', summary: 'exit 1: pytest -q (2 failed, 41 passed)' } : { ...demoEvents.bash.find(ev => ev.summary === 'git add -A') });
         else push(job, pinned(act));
         job.tested = act === 'test' && !job.tested;
         continue;

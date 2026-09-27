@@ -10,6 +10,7 @@ import pytest
 
 from conftest import FIXTURE
 from fleet.cli import build_parser
+from fleet.modules.execution import ExecutionFacade
 from fleet.web.server import WEB_ROOT
 
 
@@ -28,6 +29,12 @@ def test_state_is_the_recorded_fleet(base_url: str, fixture_data: dict[str, Any]
     state = get(base_url, "/api/state")
     assert {key: state[key] for key in ("time", "project_labels")} == {
         key: fixture_data[key] for key in ("time", "project_labels")}
+    for host in state["hosts"]:
+        for item in host["jobs"] + host["sessions"]:
+            events = [item.get("activity"), *item.get("events", [])]
+            for event in events:
+                if event is not None:
+                    assert event.pop("activity_class") == ExecutionFacade.classify_activity(event)
     added = ("project_id", "focus")
     unresolved = [{**host, "jobs": [{key: value for key, value in job.items() if key not in added}
                                     for job in host["jobs"]],
