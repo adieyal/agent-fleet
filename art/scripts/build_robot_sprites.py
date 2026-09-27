@@ -67,7 +67,7 @@ RES = (1, 2, 4)
 SAMPLES = {'body': 48, 'acc': 24, 'other': 16}  # per view layer; OIDN cleans up
 SIT_END = 10  # last frame of Sitting
 PAGE = 2048  # atlas page size limit
-QUALITY = {1: (64, 50), 2: (50, 40), 4: (78, 70)}  # WebP colour and alpha quality per resolution
+QUALITY = {1: (72, 60), 2: (62, 50), 4: (80, 70)}  # WebP colour and alpha quality per resolution
 SHADOW_SCALE = 4  # shadows are soft blurs: stored at a quarter of their size
 MASK_LEVELS = 8
 MASK_SCALE = {1: 2, 2: 4, 4: 2}  # a tint mask is stored this many times smaller than its colour layer
@@ -733,46 +733,101 @@ def pack() -> None:
     print('PACKED', {k: f'{v / 1e6:.2f} MB' for k, v in sizes.items()}, f'1x+2x+manifest {eager / 1e6:.2f} MB')
 
 
-def preview(res: str = '2x', host: str = '#2dd4bf', face: str = 'face_eyes', kit: str = 'acc_antenna') -> Path:
-    """Recompose frames from the atlases and sprites.json alone, as the runtime would, into a contact sheet:
-    per clip and direction, frames 0 and middle, tinted `host`, with one face and kit and the clip's first item."""
-    import numpy as np
-    from PIL import Image, ImageDraw
+class Composer:
+    """Recomposes frames from the atlases and sprites.json alone, as the runtime does: tint through the mask,
+    shadows scaled up, layers at their offsets in the frame's canvas."""
 
-    man = json.loads((OUT / 'sprites.json').read_text())
-    pages = man['resolutions'][res]['pages']
-    color = [Image.open(OUT / pg['color']).convert('RGBA') for pg in pages]
-    shadow = [Image.open(OUT / pg['image']).convert('RGBA') for pg in man['resolutions'][res]['shadow_pages']]
-    mask = [Image.open(OUT / pg['mask']).convert('L') for pg in pages]
-    scale = man['resolutions'][res]['scale']
-    grey = np.array([int(man['grey'][i:i + 2], 16) for i in (1, 3, 5)], np.float32)
-    tint = np.array([int(host[i:i + 2], 16) for i in (1, 3, 5)], np.float32) / grey
+    def __init__(self, res: str):
+        import numpy as np
+        from PIL import Image
+        self.np, self.Image = np, Image
+        self.man = man = json.loads((OUT / 'sprites.json').read_text())
+        self.res, self.ri = res, list(man['resolutions']).index(res)
+        r = man['resolutions'][res]
+        self.color = [Image.open(OUT / pg['color']).convert('RGBA') for pg in r['pages']]
+        self.mask = [Image.open(OUT / pg['mask']).convert('L') for pg in r['pages']]
+        self.shadow = [Image.open(OUT / pg['image']).convert('RGBA') for pg in r['shadow_pages']]
+        self.scale, self.ms = r['scale'], r['mask_scale']
+        self.grey = np.array([int(man['grey'][i:i + 2], 16) for i in (1, 3, 5)], np.float32)
+
+    def frame(self, clip: str, d: str, i: int, host: str, layers: list[str], bg=(0, 0, 0, 0)):
+        np, Image, man = self.np, self.Image, self.man
+        dd = man['clips'][clip]['dirs'][d]
+        fr = dd['frames'][i]
+        canvas = Image.new('RGBA', (dd['canvas'][0] * self.scale, dd['canvas'][1] * self.scale), bg)
+        tint = np.array([int(host[k:k + 2], 16) for k in (1, 3, 5)], np.float32) / self.grey
+        for layer in layers:
+            if layer not in fr['layers']:
+                continue
+            pg, x, y, w, h, ox, oy = fr['layers'][layer][self.ri]
+            im = (self.shadow if layer == 'shadow' else self.color)[pg].crop((x, y, x + w, y + h))
+            if layer == 'shadow':
+                im = im.resize((w * man['shadow_scale'], h * man['shadow_scale']), Image.BILINEAR)
+            if layer in man['masked'] or layer in man['tinted_whole']:
+                a = np.asarray(im).astype(np.float32)
+                m = 1.0
+                if layer in man['masked']:
+                    ms = self.ms
+                    mk = self.mask[pg].crop((x // ms, y // ms, (x + w) // ms, (y + h) // ms)).resize((w, h), Image.BILINEAR)
+                    m = np.asarray(mk).astype(np.float32)[..., None] / 255
+                a[..., :3] = np.clip(a[..., :3] * (1 - m + m * tint), 0, 255)
+                im = Image.fromarray(a.astype(np.uint8), 'RGBA')
+            canvas.alpha_composite(im, (ox, oy))
+        return canvas
+
+
+def compare_b2() -> Path:
+    """The seated work loops beside B2's sprites of the same work, at B2's pixels per metre (both are drawn
+    from the l2 camera), in grey and in teal: compare-b2.png."""
+    from PIL import Image, ImageDraw
+    comp = Composer('2x')
+    b2dir = ART / 'bakeoff' / 'B2'
+    b2 = json.loads((b2dir / 'sprites.json').read_text())
+    k = b2['px_per_m'] / (comp.man['camera']['px_per_m_1x'] * comp.scale)
+    pairs = [('Typing', 'robot-typing'), ('Writing', 'robot-pencil'), ('Holding', 'robot-tube')]
+    rows = []
+    for host, suffix in ((GREY, ''), ('#1fb5b0', '-teal')):
+        ims = []
+        for clip, sprite in pairs:
+            ref = Image.open(b2dir / f'{sprite}{suffix}.webp').convert('RGBA')
+            layers = ['body_low', 'body_high', 'face_eyes'] + comp.man['clips'][clip]['items']
+            ours = comp.frame(clip, 'S', 0, host, layers)
+            ours = ours.crop(ours.getchannel('A').getbbox())
+            ours = ours.resize((round(ours.width * k), round(ours.height * k)), Image.LANCZOS)
+            ims += [(ref, f'B2 {sprite}{suffix}'), (ours, f'sprite {clip} S')]
+        h = max(im.height for im, _ in ims)
+        row = Image.new('RGBA', (sum(im.width + 24 for im, _ in ims) + 24, h + 28), (236, 240, 245, 255))
+        x = 24
+        dr = ImageDraw.Draw(row)
+        for im, label in ims:
+            row.alpha_composite(im, (x, h - im.height + 4))
+            dr.text((x, h + 10), label, fill=(40, 40, 40, 255))
+            x += im.width + 24
+        rows.append(row)
+    sheet = Image.new('RGB', (max(r.width for r in rows), sum(r.height for r in rows)), (236, 240, 245))
+    y = 0
+    for r in rows:
+        sheet.paste(r, (0, y))
+        y += r.height
+    dest = BUILD / 'compare-b2.png'
+    sheet.save(dest)
+    return dest
+
+
+def preview(res: str = '2x', host: str = '#2dd4bf', face: str = 'face_eyes', kit: str = 'acc_antenna') -> Path:
+    """A contact sheet recomposed from the atlases: per clip and direction, frames 0 and middle, tinted `host`,
+    with one face and kit and the clip's first item, and its anchors drawn over it."""
+    from PIL import ImageDraw
+
+    comp = Composer(res)
+    man, scale = comp.man, comp.scale
     tiles = []
     for clip, c in man['clips'].items():
         for d, dd in c['dirs'].items():
             for i in (0, c['frames'] // 2):
                 fr = dd['frames'][i]
-                W, H = dd['canvas'][0] * scale, dd['canvas'][1] * scale
-                canvas = Image.new('RGBA', (W, H), (236, 240, 245, 255))
                 order = ['shadow', 'body_low', 'body', 'body_high', face, kit] + c['items'][:1]
-                for layer in order:
-                    if layer not in fr['layers']:
-                        continue
-                    pg, x, y, w, h, ox, oy = fr['layers'][layer][list(man['resolutions']).index(res)]
-                    im = (shadow if layer == 'shadow' else color)[pg].crop((x, y, x + w, y + h))
-                    if layer == 'shadow':
-                        im = im.resize((w * man['shadow_scale'], h * man['shadow_scale']), Image.BILINEAR)
-                    if layer in man['masked'] or layer in man['tinted_whole']:
-                        a = np.asarray(im).astype(np.float32)
-                        if layer in man['masked']:
-                            ms = man['resolutions'][res]['mask_scale']
-                            mk = mask[pg].crop((x // ms, y // ms, (x + w) // ms, (y + h) // ms)).resize((w, h), Image.BILINEAR)
-                            m = np.asarray(mk).astype(np.float32)[..., None] / 255
-                        else:
-                            m = 1.0
-                        a[..., :3] = np.clip(a[..., :3] * (1 - m + m * tint), 0, 255)
-                        im = Image.fromarray(a.astype(np.uint8), 'RGBA')
-                    canvas.alpha_composite(im, (ox, oy))
+                canvas = comp.frame(clip, d, i, host, order, bg=(236, 240, 245, 255))
                 dr = ImageDraw.Draw(canvas)
                 fx, fy = dd['foot'][0] * scale, dd['foot'][1] * scale
                 dr.ellipse((fx - 3, fy - 3, fx + 3, fy + 3), outline=(255, 0, 0))
@@ -785,6 +840,7 @@ def preview(res: str = '2x', host: str = '#2dd4bf', face: str = 'face_eyes', kit
                 dr.rectangle((hb[0], hb[1], hb[0] + hb[2], hb[1] + hb[3]), outline=(0, 200, 0))
                 dr.text((4, 4), f'{clip} {d} {i}', fill=(40, 40, 40))
                 tiles.append(canvas)
+    from PIL import Image
     th = max(t.height for t in tiles)
     cols = 8
     rows = -(-len(tiles) // cols)
@@ -877,6 +933,7 @@ def main() -> None:
                 sys.exit(f'sprites: render failed, see {BUILD / "render.log"}')
         pack()
         print('PREVIEW', preview())
+        print('COMPARE', compare_b2())
         return
     render_all()
 

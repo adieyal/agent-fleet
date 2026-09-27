@@ -120,22 +120,22 @@ These are drawn by the runtime. The sprite set only supplies anchors.
 | `Yes`, `No` | Yes, No | 8 each | S E N W | once | |
 | `Death` | Death | 16 | S E N W | once, held on the last frame | |
 | `Sitting` | Sitting (sitting down) | 8 | S N | once, held on the last frame | book, sheet |
-| `Typing`, `Writing`, `Holding` | Type, Write, Hold arm clips over the end of Sitting | 8 each | S N | yes | laptop, pencil, flask |
+| `Typing`, `Writing`, `Holding` | Type, Write, Hold arm clips over the end of Sitting | 8 each | S N | yes | laptop; pencil and paper; flask |
 
 Still to render for full parity: `ThumbsUp`, `StandUp` (the Standing clip), the seated nod and shake (`SitNod`, `SitShake` over still, typing and reading), `SitSlump` (stalled), `SitRead` (head down over a sheet), and the panel portrait.
 
 ## Budget
 
-320 frames, 2,689 layer images; 2,309 after layers that barely change within a clip and facing are shared.
+320 frames, 2,723 layer images; 2,322 after layers that barely change within a clip and facing are shared.
 
 | Set | Colour (WebP) | Masks (PNG) | Shadows (WebP) | Total | Loaded |
 |---|---|---|---|---|---|
-| 1x | 5 pages | 5 pages | 1 page | 2.61 MB | eager |
-| 2x | 18 pages | 18 pages | 2 pages | 5.04 MB | eager |
-| 4x | 70 pages | 70 pages | 9 pages | 13.45 MB | on demand, when zoomed close |
+| 1x | 3 pages | 3 pages | 1 page | 2.22 MB | eager |
+| 2x | 12 pages | 12 pages | 2 pages | 4.41 MB | eager |
+| 4x | 46 pages | 46 pages | 6 pages | 10.93 MB | on demand, when zoomed close |
 | `sprites.json` | | | | 0.33 MB | eager |
 
-1x + 2x + manifest: 7.99 MB. WebP quality is 64 at 1x, 50 at 2x and 78 at 4x (alpha 50 / 40 / 70); pages are at most 2048².
+1x + 2x + manifest: 6.96 MB. WebP quality is 72 at 1x, 62 at 2x and 80 at 4x (alpha 60 / 50 / 70); pages are at most 2048².
 
 ## Manifest
 
@@ -161,9 +161,9 @@ Still to render for full parity: `ThumbsUp`, `StandUp` (the Standing clip), the 
   "draw_order": ["shadow", "body_low", "(desk)", "body", "body_high", "face_*", "acc_*", "item_*"],
   "faces": { "face_eyes": "codex", "face_band": "claude" },
   "accessories": ["acc_backpack", "acc_antenna", "acc_halo", "acc_crest"],
-  "items": ["item_box", "item_book", "item_sheet", "item_laptop", "item_pencil", "item_flask"],
-  "seat_point_m": [0.0, 0.2202, 0.2115],   // where the seated robot rests on its chair, in its own frame
-  "desk_top_m": 0.4815,                    // the desk split height, in the same frame
+  "items": ["item_box", "item_book", "item_sheet", "item_laptop", "item_paper", "item_pencil", "item_flask"],
+  "seat_point_m": [0.0, 0.1879, 0.2107],   // where the seated robot rests on its chair, in its own frame
+  "desk_top_m": 0.4807,                    // the desk split height, in the same frame
   "clips": {
     "Walking": {
       "fps": 12.5, "loop": true, "hold_last": false, "frames": 12, "seated": false,
@@ -204,11 +204,12 @@ Rules for the runtime:
 
 | Chromium | Far (1x) | Mid (2x) | Close (4x) |
 |---|---|---|---|
-| GPU disabled (SwiftShader) | 1.31 ms | 3.78 ms | 4.59 ms |
-| GPU (ANGLE GL) | 1.33 ms | 3.49 ms | 4.20 ms |
+| GPU disabled (SwiftShader) | 1.22 ms | 3.06 ms | 3.95 ms |
+| GPU (ANGLE GL) | 1.22 ms | 3.07 ms | 3.99 ms |
 
 ## Open
 
-- **The atlases predate the refined model.** `style(art): robot proportions` reshaped the robot (slimmer limbs, taller torso, smaller hands, a helmet 0.40 m wide as B2's) and re-aimed the seated loops; the committed sprites were rendered from the model before it. Re-render with `build_robot_sprites.py` after deleting `art/build/robot_sprites/frames/` (about 2 hours on the GPU). Writing then also gets `item_paper`.
+- **Seated height against B2.** At the same bench and pixels per metre, the robots now match B2's in size, but seated their helmets sit a little lower over the desk: RobotExpressive's rig has a short spine and thighs, and the bones are kept so every clip still drives the robot.
+- **Facing.** B2 drew its seated robots turned about 35° towards the viewer's left; the sprites face along the room's axes (S at the bench), so the laptop is seen lid first.
 - **Standing up** cuts from seated to standing: no `StandUp` frames yet.
 
