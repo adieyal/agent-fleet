@@ -46,7 +46,7 @@ def start_deck():
     state.update("home", fill_home)
     state.update("gpu", fill_gpu)
     server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(state))
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
     return server, f"http://127.0.0.1:{server.server_port}"
 
 

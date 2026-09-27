@@ -36,7 +36,7 @@ def test_api_doc_refuses_path_ids_with_an_explicit_error(
 
     monkeypatch.setattr("fleet.web.documents.transport.call", unexpected_call)
     server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(DocumentState()))
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     thread.start()
     try:
         query = urlencode({"host": "host", "job": "job1", "id": document_id})
@@ -81,7 +81,7 @@ def test_api_doc_refuses_recorded_paths_outside_roots(
 
     monkeypatch.setattr("fleet.web.documents.transport.call", refused)
     server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(DocumentState()))
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     thread.start()
     try:
         query = urlencode({"host": "host", "job": "job1", "id": "file-0"})

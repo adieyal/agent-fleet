@@ -88,7 +88,7 @@ def test_a_pipeline_label_moves_in_like_any_visitor(config_path, monkeypatch) ->
 def test_pipeline_reports_stream_as_their_own_event(config_path) -> None:
     state = FleetState([HOME], load_registry=projects.load_registry, pipelines=DECLARED)
     server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(state))
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
     try:
         with urlopen(f"http://127.0.0.1:{server.server_port}/api/stream", timeout=5) as stream:
             first = read_event(stream)

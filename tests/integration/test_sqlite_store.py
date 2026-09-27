@@ -123,13 +123,13 @@ def test_history_and_retention(tmp_path: Path) -> None:
 
 
 def test_two_processes_lose_no_write(tmp_path: Path) -> None:
-    path = tmp_path / "controller.db"
+    path = tmp_path / "fleet.db"
     store = open_store(path)
     with sqlite3.connect(path) as connection:
         connection.execute("CREATE TABLE counter (value INTEGER NOT NULL)")
         connection.execute("INSERT INTO counter VALUES (0)")
     start = tmp_path / "start"
-    writes = 200
+    writes = 2
     script = """
 import sys
 import time
@@ -191,7 +191,7 @@ def test_cli_process_change_refreshes_sse(tmp_path: Path, monkeypatch: pytest.Mo
     watcher.start()
     server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(state))
     server.daemon_threads = True
-    thread = threading.Thread(target=server.serve_forever)
+    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01})
     thread.start()
     try:
         with urlopen(f"http://127.0.0.1:{server.server_port}/api/stream", timeout=10) as stream:

@@ -39,7 +39,7 @@ class Deck:
     def __init__(self):
         self.state = FleetState(HOSTS, {}, projects.load_registry, WorkspaceStore(workspace_path()))
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(self.state))
-        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
         self.url = f"http://127.0.0.1:{self.server.server_port}"
 
     def report(self, host, jobs=(), sessions=(), ok=True):
