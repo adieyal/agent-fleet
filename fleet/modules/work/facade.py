@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import json
 from typing import Callable
 
 from .application import Commands
@@ -14,6 +15,7 @@ class WorkFacade:
     def __init__(self, repository: WorkRepository, evidence: EvidenceReader, clock: Callable[[], datetime]) -> None:
         self.repository, self.clock = repository, clock
         self.commands = Commands(repository, evidence, clock)
+        self.records = None
 
     def add(self, *, project: str, title: str, goal: str, actor: str, kind: str = "task",
             parent: str | None = None, focus: str | None = None, next_step: str | None = None) -> WorkItem:
@@ -65,8 +67,25 @@ class WorkFacade:
 
     def set_summary(self, identity: str, *, purpose: str, done: str, doing: str, next: str,
                     authoring_role: str, actor: str) -> Summary:
-        return self.commands.set_summary(identity, purpose=purpose, done=done, doing=doing, next=next,
-                                          authoring_role=authoring_role, actor=actor)
+        item = self.get(identity)
+        if self.records is None:
+            raise ValueError('Records authoring is required')
+        summary = Summary(identity, purpose, done, doing, next, authoring_role, self.clock())
+        self.records.write_summary(summary, item.project, actor=actor)
+        return summary
 
     def summary(self, identity: str) -> Summary | None:
+        if self.records is not None:
+            body = self.records.read(self.get(identity).project, f'summaries/{identity}.json')
+            if body is not None:
+                fields = json.loads(body)
+                fields['updated'] = datetime.fromisoformat(fields['updated'])
+                return Summary(**fields)
         return next((item for item in self.repository.list("summary") if item.id == identity), None)
+
+    def legacy_summaries(self, project: str) -> list[Summary]:
+        identities = {item.id for item in self.list(project=project)}
+        return [summary for summary in self.repository.list('summary') if summary.id in identities]
+
+    def retire_summary(self, identity: str, *, actor: str) -> None:
+        self.repository.retire_summary(identity, actor)
