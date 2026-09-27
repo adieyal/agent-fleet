@@ -291,6 +291,22 @@ def make_handler(state: FleetState | FixtureState,
                 self.move_in_options()
             elif path == "/api/state":
                 self.respond(200, "application/json", json.dumps(state.document()).encode())
+            elif path == "/api/decision":
+                query = parse_qs(urlsplit(self.path).query)
+                if "id" not in query:
+                    self.error(400, "the item's id is required")
+                    return
+                try:
+                    item = state.attention.get(query["id"][0])
+                    proposal = next((p for p in open_decisions(state.store).proposals()
+                                     if item.source == "proposal" and p.id == item.source_reference), None)
+                    detail = {"id": item.id, "question": item.headline,
+                              "context": item.context_reference, "options": item.options,
+                              "proposal": asdict(proposal) if proposal is not None else None}
+                except LookupError as error:
+                    self.error(404, str(error))
+                    return
+                self.respond(200, "application/json", json.dumps(detail, default=str).encode())
             elif path == "/api/bench":
                 query = parse_qs(urlsplit(self.path).query)
                 if "project" not in query:
@@ -316,7 +332,7 @@ def make_handler(state: FleetState | FixtureState,
         def do_POST(self) -> None:  # noqa: N802 — http.server naming
             path = self.path.split("?", 1)[0]
             action = path.removeprefix("/api/attention/") if path.startswith("/api/attention/") else None
-            if path not in FLOOR_CHANGES + ("/api/focus",) and action not in ATTENTION_ACTIONS:
+            if path not in FLOOR_CHANGES + ("/api/focus", "/api/decision/answer") and action not in ATTENTION_ACTIONS:
                 self.respond(404, "text/plain", b"not found")
             elif not self.same_origin():
                 self.respond(403, "application/json", b'{"error": "cross-origin writes are refused"}')
@@ -328,7 +344,9 @@ def make_handler(state: FleetState | FixtureState,
                 except ValueError:
                     body = None
                 body = body if isinstance(body, dict) else {}
-                if action:
+                if path == "/api/decision/answer":
+                    self.answer(body)
+                elif action:
                     self.attention(action, body)
                 elif path in ("/api/move-in", "/api/link"):
                     self.move_in(path.removeprefix("/api/"), body)
@@ -422,6 +440,21 @@ def make_handler(state: FleetState | FixtureState,
                 self.error(400, str(error))
                 return
             self.respond(200, "application/json", json.dumps(changed).encode())
+
+        def answer(self, body: dict[str, Any]) -> None:
+            if not isinstance(body.get("id"), str) or not isinstance(body.get("answer"), str):
+                self.error(400, "item id and answer are required")
+                return
+            try:
+                decision = open_decisions(state.store).answer(body["id"], body["answer"], actor="user")
+            except LookupError as error:
+                self.error(404, str(error))
+                return
+            except (FleetError, ValueError) as error:
+                self.error(400, str(error))
+                return
+            state.bump()
+            self.respond(200, "application/json", json.dumps(asdict(decision), default=str).encode())
 
         def attention(self, action: str, body: dict[str, Any]) -> None:
             """POST /api/attention/acknowledge|snooze|reopen {"id": item id, "seconds": snooze length}"""

@@ -711,6 +711,70 @@ def attention_on_server(base_url: str) -> dict[str, str]:
         return {item["owner"]["key"]: item["state"] for item in json.load(response)["attention"]}
 
 
+@pytest.mark.parametrize("answer", ["Scenic", "3"])
+def test_decision_reader_choices_and_submission(changed_deck: Deck, answer: str, base_url: str) -> None:
+    from test_web_attention import Deck as ServerDeck
+    from fleet.composition import open_decisions
+    from fleet.projections.attention import attention_display
+
+    server = ServerDeck()
+    page = changed_deck.page
+    question = server.state.attention.raise_item(project="p", kind="decision", owner="user",
+        source="manual", source_reference="reader", headline="Which route?",
+        context_reference="Review the route", actor="author", options=("Direct", "Scenic"))
+    other = server.state.attention.raise_item(project="p", kind="decision", owner="user",
+        source="manual", source_reference="other", headline="When?",
+        context_reference="Schedule", actor="author")
+    def proxy(route):
+        response = route.fetch(url=server.url + "/api/" + route.request.url.split("/api/", 1)[1],
+                               headers={"Content-Type": "application/json"})
+        route.fulfill(response=response)
+    page.route("**/api/decision**", proxy)
+    try:
+        item = server.state.document()["attention"][0]
+        with urlopen(base_url + "/api/state", timeout=5) as response:
+            document = json.load(response)
+        item["project"] = "restoke"
+        document["attention"].append(item)
+        document["attention_display"] = attention_display(document["attention"], document["building"], document["projects"])
+        page.evaluate("doc => fleetDeck.apply(doc)", document)
+        before = page.evaluate("fleetDeck.rooms()")
+        sequence = server.state.store.latest_sequence()
+        page.locator('.lantern[data-room="restoke"]').dispatch_event("click")
+        page.locator(f'[data-context="{question.id}"]').click()
+        expect(page.locator('#reader')).to_be_visible()
+        expect(page.locator('#rdBody')).to_contain_text("Review the route")
+        expect(page.get_by_role("radio", name="Scenic", exact=True)).to_be_visible()
+        assert page.evaluate("fleetDeck.rooms()") == before
+        assert server.state.store.latest_sequence() == sequence
+        if answer == "Scenic":
+            page.get_by_role("radio", name="Scenic", exact=True).check()
+        else:
+            page.get_by_label("Your answer", exact=True).fill(answer)
+        page.get_by_role("button", name="Submit answer", exact=True).click()
+        if answer == "Scenic":
+            expect(page.locator('#rdBody')).to_contain_text("Answer recorded")
+            decision, = open_decisions(server.state.store).list()
+            assert (decision.actor, decision.answer) == ("user", "Scenic")
+            assert server.state.attention.get(question.id).state == "resolved"
+            assert server.state.attention.get(other.id).state == "open"
+            updated = next(row for row in server.state.document()["attention"] if row["id"] == question.id)
+            updated["project"] = "restoke"
+            document["attention"] = [updated if row["id"] == question.id else row for row in document["attention"]]
+            document["attention_display"] = attention_display(document["attention"], document["building"], document["projects"])
+            page.evaluate("doc => fleetDeck.apply(doc)", document)
+            assert rooms_by_name(page)["restoke"]["attention"]["count"] == 2
+        else:
+            expect(page.locator('#rdBody [role="alert"]')).to_contain_text("option number is out of range")
+            assert server.state.attention.get(question.id).state == "open"
+            assert server.state.store.latest_sequence() == sequence
+            expect(page.get_by_label("Your answer", exact=True)).to_have_value(answer)
+            assert page.evaluate("fleetDeck.rooms()") == before
+    finally:
+        page.unroute("**/api/decision**", proxy)
+        server.close()
+
+
 def expect_need_you(page: Page, base_url: str) -> None:
     """The header's count is the open items, the same ones the lanterns stand for."""
     open_items = sum(state == "open" for state in attention_on_server(base_url).values())

@@ -75,6 +75,48 @@ export function openAttentionReader(item) {
   renderReaderHead();
   renderReaderBody();
   rdSheet.focus();
+  if (item.kind === 'decision') loadDecision(item.id, rd.req);
+}
+async function loadDecision(id, req) {
+  try {
+    const res = await fetch('/api/decision?' + new URLSearchParams({ id }));
+    const detail = await res.json();
+    if (!res.ok) throw new Error(detail.error);
+    if (req !== rd.req) return;
+    const prose = rdBody.querySelector('.prose');
+    prose.innerHTML = `<h2>${esc(detail.question)}</h2><p>${esc(detail.context)}</p>
+      ${detail.proposal === null ? '' : `<h3>Proposed change</h3><pre>${esc(detail.proposal.change)}</pre><p>${esc(detail.proposal.reason)}</p>`}
+      <form class="decision-answer">
+        ${detail.options.length ? `<fieldset><legend>Choices</legend>${detail.options.map(option =>
+          `<label><input type="radio" name="choice" value="${esc(option)}"> ${esc(option)}</label>`).join('')}</fieldset>` : ''}
+        <label>Your answer<textarea name="answer" rows="4" required></textarea></label>
+        <button type="submit">Submit answer</button><p role="alert"></p><p role="status"></p>
+      </form>`;
+    const form = prose.querySelector('form');
+    form.addEventListener('change', ev => {
+      if (ev.target.name === 'choice') form.elements.answer.value = ev.target.value;
+    });
+    form.addEventListener('submit', async ev => {
+      ev.preventDefault();
+      const button = form.querySelector('button');
+      button.disabled = true;
+      form.querySelector('[role="alert"]').textContent = '';
+      try {
+        const response = await fetch('/api/decision/answer', { method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, answer: form.elements.answer.value }) });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error);
+        form.querySelector('[role="status"]').textContent = 'Answer recorded';
+        for (const input of form.querySelectorAll('input, textarea')) input.disabled = true;
+      } catch (error) {
+        form.querySelector('[role="alert"]').textContent = error.message;
+        button.disabled = false;
+      }
+    });
+  } catch (error) {
+    if (req === rd.req) rdBody.querySelector('.prose').insertAdjacentHTML('beforeend', `<p role="alert">${esc(error.message)}</p>`);
+  }
 }
 async function loadDoc(req) {
   try {
@@ -278,7 +320,7 @@ document.getElementById('rdDownload').addEventListener('click', () => {
 // keep Tab inside the open reader
 reader.addEventListener('keydown', ev => {
   if (ev.key !== 'Tab') return;
-  const items = [...reader.querySelectorAll('button:not(:disabled),a[href],summary,[tabindex="0"]')].filter(el => el.offsetParent !== null);
+  const items = [...reader.querySelectorAll('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),a[href],summary,[tabindex="0"]')].filter(el => el.offsetParent !== null);
   if (!items.length) return;
   const first = items[0], last = items[items.length - 1];
   if (ev.shiftKey && (document.activeElement === first || document.activeElement === rdSheet)) { ev.preventDefault(); last.focus(); }

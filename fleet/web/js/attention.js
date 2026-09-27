@@ -133,7 +133,7 @@ function renderPanel() {
         <span class="ak">${GLYPH[i.kind]}</span>
         <div class="ab"><b>${esc(i.summary)}</b>
           <small>${KIND[i.kind]} · ${state}${i.stale ? ' · host unreachable' : ''}</small>
-          ${present ? `<button class="owner" data-owner="${esc(owner.key)}" title="${esc(owner.key)}">${owner.type === 'job' ? 'Open job' : 'Open session'} ${esc(ownerName(owner))}</button>`
+          ${i.kind === 'decision' ? `<button class="owner" data-context="${esc(i.id)}">Answer question</button>` : present ? `<button class="owner" data-owner="${esc(owner.key)}" title="${esc(owner.key)}">${owner.type === 'job' ? 'Open job' : 'Open session'} ${esc(ownerName(owner))}</button>`
                     : `<button class="owner" data-context="${esc(i.id)}">Open context</button>`}
           <div class="aa">${actions}</div><em class="err"></em></div>
       </li>`;

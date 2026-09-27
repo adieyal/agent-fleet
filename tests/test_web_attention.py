@@ -11,7 +11,7 @@ import pytest
 
 from fleet import transport
 from fleet.composition import open_workspace
-from fleet.composition import open_attention, open_store
+from fleet.composition import open_attention, open_store, open_decisions, open_work
 from fleet.transport import Host
 from fleet.web.server import FleetState, apply_message, make_handler
 
@@ -88,6 +88,59 @@ def deck(config_path):
 def stored_actions(config_path):
     return {item.id: {"state": item.state} for item in open_attention().list()
             if item.state in ("acknowledged", "snoozed")}
+
+
+def test_decision_reader_and_answer(deck, monkeypatch):
+    from fleet.modules.execution import ExecutionFacade
+    deliveries = []
+    monkeypatch.setattr(ExecutionFacade, "retry_deliveries", lambda self, **kw: deliveries.append(kw))
+    work = open_work(deck.state.store)
+    item = work.add(project="p", title="Ship", goal="Ship", actor="author")
+    work.set(item.id, condition="blocked", actor="author")
+    question = deck.state.attention.raise_item(project="p", work_item=item.id,
+        kind="decision", owner="user", source="manual", source_reference="question",
+        headline="Which route?", context_reference="Review the route", actor="author",
+        options=("Direct", "Scenic"))
+    other = deck.state.attention.raise_item(project="p", kind="decision", owner="user",
+        source="manual", source_reference="other", headline="When?",
+        context_reference="Schedule", actor="author")
+    sequence = deck.state.store.latest_sequence()
+    with urlopen(deck.url + "/api/decision?id=" + question.id, timeout=5) as response:
+        detail = json.load(response)
+    assert detail["question"] == "Which route?"
+    assert detail["context"] == "Review the route"
+    assert detail["options"] == ["Direct", "Scenic"]
+    assert deck.state.store.latest_sequence() == sequence
+    request = Request(deck.url + "/api/decision/answer",
+        data=json.dumps({"id": question.id, "answer": "2", "actor": "impostor"}).encode(),
+        headers={"Content-Type": "application/json"})
+    with urlopen(request, timeout=5) as response:
+        assert response.status == 200
+    decision, = open_decisions(deck.state.store).list()
+    assert (decision.actor, decision.answer, decision.attention_item) == ("user", "Scenic", question.id)
+    assert deck.state.attention.get(question.id).state == "resolved"
+    assert deck.state.attention.get(other.id).state == "open"
+    assert work.get(item.id).condition == "none"
+    assert deliveries == [{"decision": decision.id}]
+    sequence = deck.state.store.latest_sequence()
+    with pytest.raises(HTTPError):
+        urlopen(request, timeout=5)
+    assert deck.state.store.latest_sequence() == sequence
+
+
+def test_decision_reader_shows_proposal_without_writes(deck):
+    from types import SimpleNamespace
+    proposal = open_decisions(deck.state.store).propose(
+        SimpleNamespace(project="p", work_item="w", actor="agent", id="activation", mandate_version="v1"),
+        question="Run migration?", change="fleet migrate <database>", reason="Schema needs updating")
+    item, = deck.state.attention.list()
+    sequence = deck.state.store.latest_sequence()
+    with urlopen(deck.url + "/api/decision?id=" + item.id, timeout=5) as response:
+        detail = json.load(response)
+    assert detail["proposal"]["id"] == proposal.id
+    assert detail["proposal"]["change"] == "fleet migrate <database>"
+    assert detail["proposal"]["reason"] == "Schema needs updating"
+    assert deck.state.store.latest_sequence() == sequence
 
 
 def test_only_genuine_signals_become_items(deck):
