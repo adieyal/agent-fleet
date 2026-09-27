@@ -50,7 +50,7 @@ def run(p, url: str, flags: list[str], dpr: int, zoom: str, seconds: float) -> d
     page.wait_for_function('floor.walkers.filter(w => w.state === "walking").length === floor.walkers.length', timeout=60_000)
     page.wait_for_timeout(1000)   # the ground snapshot settles
     if zoom == 'zooming':   # the click's zoom onto the active bench and back out, while they walk
-        page.evaluate("""setTimeout(() => floor.zoomTo('lane-0'), 50);
+        page.evaluate("""setTimeout(() => floor.zoomTo('bench-0'), 50);
           setTimeout(() => { floor.engine.camera.frame(floor.layout.frames.far, 3.2); floor.engine.request(); }, 1850)""")
         seconds = 3.6
     out = page.evaluate(RECORD, seconds)

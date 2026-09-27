@@ -24,6 +24,7 @@ REQUIRED = [
     "terminal-desk", "chair-back", "chair-front", "plant-tall", "plant-bush", "plant-small", "shelf",
     "book-cart", "librarian-desk", "podium", "whiteboard", "plan-wall", "tile-blank", "tile-done", "tile-running",
     "tile-failed", "criteria-on", "criteria-off", "question-desk", "crate", "lantern", "lift",
+    "alcove", "lift-panel", "monitor", "floor-sheen",
     "pilaster", "wall-cap-x", "wall-cap-y", "wall-corner", "wall-end-back", "wall-end-left", "slab-front", "slab-side",
     *[f"footprints-{a:03d}" for a in range(0, 360, 45)],
 ]

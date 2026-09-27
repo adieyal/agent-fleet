@@ -29,7 +29,7 @@ def main() -> None:
         page.wait_for_function('window.floor && (window.floor.ready || window.floor.error)', timeout=90_000)
         page.wait_for_timeout(3500)   # the first robots are out of the lift
         at = page.evaluate("""import('/js/world/projection.js').then(p => {
-          const b = floor.layout.benches.find(b => b.key === 'lane-0');
+          const b = floor.layout.benches.find(b => b.key === 'bench-0');
           return p.toScreen(floor.engine.camera.view, [b.at[0] + 1.8, b.at[1] - 0.2, 0.74]); })""")
         page.mouse.click(*at)
         page.wait_for_function('floor.seated.length === floor.walkers.length', timeout=60_000)

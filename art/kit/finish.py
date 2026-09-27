@@ -76,6 +76,7 @@ PROPS: dict[str, Prop] = {
     'chair-front': Prop('chairs', (0.64, 0.64, 1.0), 'h', part=1, parts=2, doc='office chair, far side of a desk, facing the viewer'),
     'lamp': Prop('lamp', (0.2, 0.2, 0.46), 'h', shadow=0.2, doc='desk lamp, switched off (its light is glow-* sprites)',
                  slots={'shade': [-0.16, -0.08, 0.36]}),
+    'monitor': Prop('monitor', (0.55, 0.42, 0.45), shadow=0.18, doc='monitor, keyboard and mouse, facing the viewer'),
     'laptop': Prop('desk-props', (0.33, 0.24, 0.22), part=0, parts=8, rows=2, shadow=0.2),
     'pen-pot': Prop('desk-props', (0.09, 0.09, 0.2), 'h', part=1, parts=8, rows=2, shadow=0.2),
     'paper-stack': Prop('desk-props', (0.3, 0.21, 0.05), part=2, parts=8, rows=2, shadow=0.15),
@@ -208,7 +209,8 @@ def save(name: str, ppm: float, im: Image.Image, anchor, frames: int = 1) -> dic
 
 LAYERS = {'pilaster': 'ground', 'wall-cap-x': 'ground', 'wall-cap-y': 'ground', 'wall-corner': 'ground',
           'wall-end-back': 'ground', 'wall-end-left': 'ground', 'slab-front': 'ground', 'slab-side': 'ground',
-          'plan-wall': 'ground'}   # (the lift's doors change, so it stands: a ground change repaints the snapshot)
+          'plan-wall': 'ground', 'lift-panel': 'ground'}
+# (the lift's doors change, so it stands: a ground change repaints the snapshot; the alcove stands too, around its crate)
 
 
 def blender_pieces() -> dict:
@@ -310,6 +312,15 @@ def procedural() -> dict:
                  'warm pool under a desk lamp, on the desk top (place at desk height)', 'light', {'blend': 'lighter'})
     floor_sprite('glow-floor-spill', radial(int(3.2 * SRC), hexrgb('#fee095'), 0.28),
                  'low warm spill on the floor in front of an active bench', 'light', {'blend': 'lighter'})
+    # sheen: the soft reflection of a ceiling light in l1's satin floor, a wide blurred panel of warm white
+    sw, sd = int(2.0 * SRC), int(1.4 * SRC)
+    sheen = Image.new('L', (sw, sd), 0)
+    ImageDraw.Draw(sheen).rounded_rectangle((0.25 * SRC, 0.3 * SRC, 1.75 * SRC, 1.1 * SRC), radius=0.3 * SRC, fill=255)
+    sheen = sheen.filter(ImageFilter.GaussianBlur(0.3 * SRC)).point(lambda v: int(v * 0.07))   # faint: a sheen, not spots
+    img = Image.new('RGBA', (sw, sd), (*hexrgb('#fff4e6'), 0))
+    img.putalpha(sheen)
+    floor_sprite('floor-sheen', img, 'a ceiling light\'s soft reflection in the satin floor; one per bay, idle or not', 'ground',
+                 {'blend': 'lighter', 'hit': 'none'})
     # wall washer: brightest just under the fitting, spreading and fading downwards
     ww, wh = int(1.3 * SRC), int(1.8 * SRC)
     wash = Image.new('RGBA', (ww, wh), (*hexrgb('#fed9a1'), 0))

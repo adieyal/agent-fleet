@@ -11,6 +11,7 @@ import { route, along, length, navGrid } from '/js/world/nav.js';
 import { toScreen } from '/js/world/projection.js';
 import { workareaOf } from '/js/workarea-model.js';
 import { hostLook } from '/js/looks.js';
+import { actionOf, glyphHtml } from '/js/glyphs.js';
 
 const params = new URLSearchParams(location.search);
 const ROOM = params.get('room') || 'restoke';
@@ -20,6 +21,10 @@ const DOORS = 0.5;              // seconds for the lift doors to open or close
 const ZOOM_RATE = 3.2;          // a click's zoom: slower than following the pointer
 const GLYPH = { blocker: '✋', decision: '?', alert: '!' };
 const LOOP = params.has('loop');   // robots walk lift ↔ desk for ever: a steady scene for measuring frame time
+// a warm ambient over everything, so an idle floor looks lived in as l1 does; lamps still carry activity
+const GRADE = { color: '#ffc088', alpha: 0.26, mode: 'soft-light' };
+const PRINTS = 0.5;               // footprint strength: several trails cross a floor where l2 shows one
+const BUBBLES_FROM = 0.75;        // zoom level (0 whole floor .. 1 l2) from which working robots show their action
 
 if (params.has('shot')) document.body.classList.add('shot');
 const panel = document.getElementById('panel'), overlay = document.getElementById('overlay');
@@ -29,12 +34,19 @@ async function main() {
   const state = await fetch('/api/state').then(r => r.json());
   const room = workareaOf(state, ROOM, state.time);
   if (!room) throw new Error(`no room ${ROOM} in the state`);
+  // which floor of the building this is, and which floors have something that needs you
+  const floors = state.building ? state.building.floors : {};
+  const here = room.projectIds.map(id => floors[id]).find(Boolean) ?? null;
+  const ids = Object.fromEntries(Object.entries(state.projects || {}).map(([id, p]) => [p.name, id]));
+  const attentionFloors = new Set((state.attention || []).filter(a => a.state === 'open').map(a => floors[ids[a.project]]).filter(Boolean));
   // a live session idle in this project is waiting on its human: the floor shows a waiting crate
   room.waiting = (state.hosts || []).flatMap(h => h.sessions || []).filter(s => s.project === ROOM && s.status === 'idle');
   const kitManifest = await fetch('/assets/world/kit/manifest.json').then(r => r.json());
   const layout = floor.layout = floorLayout(room, kitManifest.sprites, host => hostLook(host).color);
 
-  const world = floor.engine = new World(document.getElementById('world'), { camera: { far: layout.frames.far, near: layout.frames.near, bounds: layout.bounds } });
+  const world = floor.engine = new World(document.getElementById('world'), {
+    camera: { far: layout.frames.far, near: layout.frames.near, bounds: layout.bounds }, grade: GRADE,
+    motionDpr: params.get('motion') || 'auto' });
   await world.load('/assets/world/kit/manifest.json');
   await world.load('/art/bakeoff/world.json', { prefix: 'b2/' });
   const seatNow = params.has('seated') || world.reduced;   // (no walking: no walker sprites needed)
@@ -48,7 +60,7 @@ async function main() {
   for (const it of layout.items) {
     const s = kitManifest.sprites[it.sprite];
     // (chairs are pushed aside, not walked around: the row behind a bench is how its seats are reached)
-    if (!s || s.layer === 'light' || /^(footprints|slab|chair)/.test(it.sprite)) continue;
+    if (!s || s.layer === 'light' || /^(footprints|slab|chair|floor-sheen)/.test(it.sprite)) continue;
     const f = s.footprint, z0 = it.at[2] + f[2];
     if (z0 > 1.8) continue;   // hanging (the lantern)
     blocks.push([it.at[0] + f[0], it.at[1] + f[1], it.at[0] + f[3], it.at[1] + f[4]]);
@@ -65,7 +77,7 @@ async function main() {
     for (let d = 0.9, k = 0; d < L - 0.9; d += 0.62, k++) {
       const { at, heading } = along(pts, d);
       const deg = ((Math.round(heading / (Math.PI / 4)) % 8) + 8) % 8 * 45;
-      world.add({ id: `steps-${i}-${k}`, sprite: `footprints-${String(deg).padStart(3, '0')}`, at: [at[0], at[1], 0] });
+      world.add({ id: `steps-${i}-${k}`, sprite: `footprints-${String(deg).padStart(3, '0')}`, at: [at[0], at[1], 0], intensity: PRINTS });
     }
   });
 
@@ -78,10 +90,11 @@ async function main() {
   const sit = w => {
     const { run } = w;
     if (w.state === 'walking') world.remove(w.id);
-    world.set(run.chair, { visible: false });
+    if (run.chair) world.set(run.chair, { visible: false });
     world.seat(run.key, { sprite: run.sprite, at: run.seat, on: run.bench, tint: run.tint, ambient: true, place: `run:${run.key}` });
     w.state = 'seated';
     floor.seated.push(run.key);
+    if (world.onView) world.onView(world.camera.view);
   };
   if (seatNow) floor.walkers.forEach(sit);
   function tick() {
@@ -114,15 +127,41 @@ async function main() {
   let glyph = null;
   if (lantern) {
     glyph = document.createElement('div');
-    glyph.className = 'glyph';
+    glyph.className = 'lantern-glyph';   // (not 'glyph': that is the deck's action glyph)
     glyph.textContent = (GLYPH[lantern.lantern.kind] || '!') + (lantern.lantern.count > 1 ? ` ${lantern.lantern.count}` : '');
     overlay.append(glyph);
   }
   const glyphAt = lantern && [lantern.at[0], lantern.at[1] - 0.12, lantern.at[2] + kitManifest.sprites.lantern.slots.glyph[2]];
+  // the lift's floor buttons: this floor lit, floors with something that needs you marked (PRD: the lift panel)
+  const buttons = layout.panel.buttons.map((b, i) => {
+    const el = document.createElement('div');
+    el.className = 'floor-button' + (i + 1 === here ? ' here' : '') + (attentionFloors.has(i + 1) ? ' attention' : '');
+    el.textContent = String(i + 1);
+    overlay.append(el);
+    return { el, at: [layout.panel.at[0] + b[0], layout.panel.at[1] + b[1], b[2]] };
+  });
+  // what each working robot is doing, as a glyph in a bubble over its head (l2), once zoomed in enough to read it
+  const jobs = new Map((state.hosts || []).flatMap(h => (h.jobs || []).map(j => [`${h.name}:${j.id}`, j])));
+  const bubbles = layout.runs.map(run => {
+    const el = document.createElement('div');
+    el.className = 'bubble';
+    el.style.color = run.tint;
+    el.innerHTML = glyphHtml(actionOf(jobs.get(run.key)));
+    el.hidden = true;
+    overlay.append(el);
+    return { el, run, at: [run.seat[0] - 0.1, run.seat[1] - 0.05, run.seat[2] + 1.05] };
+  });
+  floor.bubbles = bubbles;
+  const place = (el, view, at) => { const [x, y] = toScreen(view, at); el.style.left = `${x}px`; el.style.top = `${y}px`; };
   world.onView = view => {
-    if (!glyph) return;
-    const [x, y] = toScreen(view, glyphAt);
-    glyph.style.left = `${x}px`; glyph.style.top = `${y}px`;
+    if (glyph) place(glyph, view, glyphAt);
+    const scale = view.ppm / world.camera.max.ppm;
+    for (const b of buttons) { place(b.el, view, b.at); b.el.style.transform = `translate(-50%, -50%) scale(${scale})`; }
+    const near = world.camera.zoomLevel(view.ppm) >= BUBBLES_FROM;
+    for (const b of bubbles) {
+      b.el.hidden = !near || !floor.seated.includes(b.run.key);
+      if (!b.el.hidden) { place(b.el, view, b.at); b.el.style.transform = `translate(-50%, -100%) scale(${Math.max(1, 1.6 * scale)})`; }
+    }
   };
 
   // clicks: a bench (or anything at it) zooms onto that bench; Escape goes back to the whole floor
@@ -142,6 +181,7 @@ async function main() {
   addEventListener('resize', () => world.resize());
   if (params.get('zoom') === 'near') world.camera.jump(world.camera.max);
 
+  world.onView(world.camera.view);   // (the first frames may have come before the overlay existed)
   await world.whenLoaded();
   floor.ready = true;
   panel.textContent = `${ROOM}: ${room.benches.length} jobs on ${layout.benches.length} benches, ${layout.runs.length} running\n`

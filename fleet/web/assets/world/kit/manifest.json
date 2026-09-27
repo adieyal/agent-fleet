@@ -457,6 +457,79 @@
    },
    "doc": "desk lamp, switched off (its light is glow-* sprites)"
   },
+  "monitor": {
+   "source": "ai",
+   "from": "art/kit/raw/monitor.png",
+   "size_m": [
+    0.55,
+    0.42,
+    0.45
+   ],
+   "scale": {
+    "fit": "w",
+    "source_px_per_m": 1266.5
+   },
+   "footprint": [
+    -0.275,
+    -0.21,
+    0.0,
+    0.275,
+    0.21,
+    0.45
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "monitor@86.webp",
+     "size": [
+      113,
+      88
+     ],
+     "anchor_px": [
+      56.51,
+      43.73
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "monitor@172.webp",
+     "size": [
+      226,
+      175
+     ],
+     "anchor_px": [
+      113.02,
+      87.46
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "monitor@343.webp",
+     "size": [
+      453,
+      351
+     ],
+     "anchor_px": [
+      226.04,
+      175.92
+     ]
+    },
+    {
+     "ppm": 686.11,
+     "file": "monitor@686.webp",
+     "size": [
+      906,
+      702
+     ],
+     "anchor_px": [
+      453.07,
+      350.85
+     ]
+    }
+   ],
+   "doc": "monitor, keyboard and mouse, facing the viewer"
+  },
   "laptop": {
    "source": "ai",
    "from": "art/kit/raw/desk-props.png (object 1 of 8)",
@@ -1919,7 +1992,7 @@
     -0.02,
     3.18,
     3.6,
-    0.27,
+    0.47,
     3.28
    ],
    "hit": "alpha",
@@ -1928,36 +2001,36 @@
      "ppm": 85.764,
      "file": "wall-cap-x@86.webp",
      "size": [
-      301,
-      105
+      307,
+      116
      ],
      "anchor_px": [
       2.96,
-      216.36
+      227.57
      ]
     },
     {
      "ppm": 171.528,
      "file": "wall-cap-x@172.webp",
      "size": [
-      601,
-      209
+      613,
+      231
      ],
      "anchor_px": [
       5.92,
-      432.73
+      455.14
      ]
     },
     {
      "ppm": 343.055,
      "file": "wall-cap-x@343.webp",
      "size": [
-      1201,
-      417
+      1226,
+      462
      ],
      "anchor_px": [
       11.83,
-      865.45
+      910.27
      ]
     }
    ],
@@ -1968,7 +2041,7 @@
    "source": "blender",
    "from": "art/scripts/build_kit.py",
    "footprint": [
-    -0.27,
+    -0.47,
     0,
     3.18,
     0.02,
@@ -1981,36 +2054,36 @@
      "ppm": 85.764,
      "file": "wall-cap-y@86.webp",
      "size": [
-      139,
-      218
+      155,
+      222
      ],
      "anchor_px": [
-      21.7,
-      409.49
+      37.68,
+      413.85
      ]
     },
     {
      "ppm": 171.528,
      "file": "wall-cap-y@172.webp",
      "size": [
-      278,
-      436
+      310,
+      444
      ],
      "anchor_px": [
-      43.4,
-      818.99
+      75.37,
+      827.7
      ]
     },
     {
      "ppm": 343.055,
      "file": "wall-cap-y@343.webp",
      "size": [
-      555,
-      871
+      619,
+      888
      ],
      "anchor_px": [
-      86.79,
-      1637.98
+      150.74,
+      1655.41
      ]
     }
    ],
@@ -2021,11 +2094,11 @@
    "source": "blender",
    "from": "art/scripts/build_kit.py",
    "footprint": [
-    -0.25,
+    -0.45,
     -0.2,
     0,
     0.2,
-    0.25,
+    0.45,
     3.28
    ],
    "hit": "alpha",
@@ -2034,36 +2107,36 @@
      "ppm": 85.764,
      "file": "wall-corner@86.webp",
      "size": [
-      89,
-      287
+      106,
+      303
      ],
      "anchor_px": [
-      46.96,
-      245.82
+      62.94,
+      261.39
      ]
     },
     {
      "ppm": 171.528,
      "file": "wall-corner@172.webp",
      "size": [
-      177,
-      574
+      212,
+      605
      ],
      "anchor_px": [
-      93.91,
-      491.65
+      125.88,
+      522.77
      ]
     },
     {
      "ppm": 343.055,
      "file": "wall-corner@343.webp",
      "size": [
-      354,
-      1147
+      424,
+      1209
      ],
      "anchor_px": [
-      187.82,
-      983.29
+      251.77,
+      1045.54
      ]
     }
    ],
@@ -2076,9 +2149,9 @@
    "footprint": [
     -0.3,
     0,
-    -0.35,
+    -0.9,
     0,
-    0.25,
+    0.45,
     3.28
    ],
    "hit": "alpha",
@@ -2087,36 +2160,36 @@
      "ppm": 85.764,
      "file": "wall-end-back@86.webp",
      "size": [
-      42,
-      251
+      48,
+      296
      ],
      "anchor_px": [
       29.51,
-      225.47
+      236.68
      ]
     },
     {
      "ppm": 171.528,
      "file": "wall-end-back@172.webp",
      "size": [
-      84,
-      502
+      96,
+      592
      ],
      "anchor_px": [
       59.02,
-      450.94
+      473.35
      ]
     },
     {
      "ppm": 343.055,
      "file": "wall-end-back@343.webp",
      "size": [
-      167,
-      1004
+      192,
+      1184
      ],
      "anchor_px": [
       118.05,
-      901.89
+      946.71
      ]
     }
    ],
@@ -2127,9 +2200,9 @@
    "source": "blender",
    "from": "art/scripts/build_kit.py",
    "footprint": [
-    -0.25,
+    -0.45,
     0,
-    -0.35,
+    -0.9,
     0,
     0.3,
     3.28
@@ -2140,36 +2213,36 @@
      "ppm": 85.764,
      "file": "wall-end-left@86.webp",
      "size": [
-      42,
-      253
+      58,
+      291
      ],
      "anchor_px": [
-      24.27,
-      227.18
+      40.26,
+      231.54
      ]
     },
     {
      "ppm": 171.528,
      "file": "wall-end-left@172.webp",
      "size": [
-      83,
-      506
+      115,
+      582
      ],
      "anchor_px": [
-      48.54,
-      454.37
+      80.52,
+      463.08
      ]
     },
     {
      "ppm": 343.055,
      "file": "wall-end-left@343.webp",
      "size": [
-      165,
-      1011
+      229,
+      1163
      ],
      "anchor_px": [
-      97.09,
-      908.73
+      161.03,
+      926.16
      ]
     }
    ],
@@ -2181,8 +2254,8 @@
    "from": "art/scripts/build_kit.py",
    "footprint": [
     0,
-    0,
-    -0.35,
+    -0.05,
+    -0.9,
     3.6,
     0.01,
     0
@@ -2193,36 +2266,36 @@
      "ppm": 85.764,
      "file": "slab-front@86.webp",
      "size": [
-      292,
-      104
+      295,
+      140
      ],
      "anchor_px": [
-      1.72,
-      2.28
+      4.13,
+      3.13
      ]
     },
     {
      "ppm": 171.528,
      "file": "slab-front@172.webp",
      "size": [
-      583,
-      208
+      590,
+      279
      ],
      "anchor_px": [
-      3.43,
-      4.55
+      8.25,
+      6.27
      ]
     },
     {
      "ppm": 343.055,
      "file": "slab-front@343.webp",
      "size": [
-      1166,
-      416
+      1180,
+      557
      ],
      "anchor_px": [
-      6.86,
-      9.1
+      16.51,
+      12.53
      ]
     }
    ],
@@ -2235,8 +2308,8 @@
    "footprint": [
     -0.01,
     0,
-    -0.35,
-    0,
+    -0.9,
+    0.05,
     3.6,
     0
    ],
@@ -2246,36 +2319,36 @@
      "ppm": 85.764,
      "file": "slab-side@86.webp",
      "size": [
-      117,
-      227
+      122,
+      263
      ],
      "anchor_px": [
-      2.51,
-      203.62
+      3.37,
+      204.48
      ]
     },
     {
      "ppm": 171.528,
      "file": "slab-side@172.webp",
      "size": [
-      233,
-      454
+      244,
+      525
      ],
      "anchor_px": [
-      5.03,
-      407.25
+      6.74,
+      408.96
      ]
     },
     {
      "ppm": 343.055,
      "file": "slab-side@343.webp",
      "size": [
-      465,
-      907
+      488,
+      1049
      ],
      "anchor_px": [
-      10.06,
-      814.5
+      13.49,
+      817.93
      ]
     }
    ],
@@ -2769,6 +2842,158 @@
     }
    ],
    "layer": "standing"
+  },
+  "lift-panel": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -0.29,
+    -0.38,
+    0,
+    0.29,
+    0,
+    3.28
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "lift-panel@86.webp",
+     "size": [
+      110,
+      276
+     ],
+     "anchor_px": [
+      60.41,
+      227.23
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "lift-panel@172.webp",
+     "size": [
+      219,
+      552
+     ],
+     "anchor_px": [
+      120.82,
+      454.47
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "lift-panel@343.webp",
+     "size": [
+      437,
+      1103
+     ],
+     "anchor_px": [
+      241.64,
+      908.93
+     ]
+    }
+   ],
+   "layer": "ground",
+   "slots": {
+    "buttons": [
+     [
+      0,
+      -0.365,
+      0.95
+     ],
+     [
+      0,
+      -0.365,
+      1.21
+     ],
+     [
+      0,
+      -0.365,
+      1.47
+     ],
+     [
+      0,
+      -0.365,
+      1.73
+     ],
+     [
+      0,
+      -0.365,
+      1.99
+     ],
+     [
+      0,
+      -0.365,
+      2.25
+     ]
+    ]
+   },
+   "doc": "The lift's floor-button column beside its doors, as l1: a box column with a round button per floor, faces"
+  },
+  "alcove": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    0,
+    -1.4,
+    0,
+    2.85,
+    0,
+    3.28
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "alcove@86.webp",
+     "size": [
+      446,
+      462
+     ],
+     "anchor_px": [
+      129.9,
+      235.11
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "alcove@172.webp",
+     "size": [
+      891,
+      923
+     ],
+     "anchor_px": [
+      259.81,
+      470.22
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "alcove@343.webp",
+     "size": [
+      1782,
+      1845
+     ],
+     "anchor_px": [
+      519.61,
+      940.45
+     ]
+    }
+   ],
+   "layer": "standing",
+   "slots": {
+    "lamp": [
+     1.2,
+     -0.8499999999999999,
+     2.05
+    ],
+    "inside": [
+     1.2,
+     -0.7,
+     0
+    ]
+   },
+   "doc": "l1's alcove in the back-left corner: a wall fin projecting from the back wall, a lintel across the opening"
   },
   "footprints-000": {
    "source": "procedural",
@@ -3300,6 +3525,60 @@
     }
    ],
    "doc": "low warm spill on the floor in front of an active bench",
+   "blend": "lighter"
+  },
+  "floor-sheen": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    -1.0,
+    -0.7,
+    0,
+    1.0,
+    0.7,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "floor-sheen@86.webp",
+     "size": [
+      204,
+      123
+     ],
+     "anchor_px": [
+      102.17,
+      61.0
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "floor-sheen@172.webp",
+     "size": [
+      408,
+      245
+     ],
+     "anchor_px": [
+      204.35,
+      122.01
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "floor-sheen@343.webp",
+     "size": [
+      815,
+      489
+     ],
+     "anchor_px": [
+      407.69,
+      244.02
+     ]
+    }
+   ],
+   "doc": "a ceiling light's soft reflection in the satin floor; one per bay, idle or not",
    "blend": "lighter"
   },
   "glow-wall-wash": {

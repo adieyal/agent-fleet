@@ -61,24 +61,26 @@ def layout(page: Page, state: dict[str, Any]) -> dict[str, Any]:
                          [state, KIT["sprites"]])
 
 
-def test_the_restoke_floor_seats_its_running_jobs_at_the_first_wall_bench(page: Page, state: dict[str, Any]) -> None:
+def test_the_restoke_floor_seats_its_running_jobs_at_the_workarea_bench(page: Page, state: dict[str, Any]) -> None:
     out = layout(page, state)
     running = sorted(f"{h['name']}:{j['id']}" for h in state["hosts"] for j in h["jobs"]
                      if j.get("project") == "restoke" and j["status"] == "running")
     assert len(running) == 3
     assert sorted(r["key"] for r in out["runs"]) == running
-    assert {r["bench"] for r in out["runs"]} == {"lane-0"}
+    assert {r["bench"] for r in out["runs"]} == {"bench-0"}
     assert sorted(r["desk"] for r in out["runs"]) == [0, 1, 2]
-    lane1 = next(b for b in out["benches"] if b["key"] == "lane-1")
+    after = next(b for b in out["benches"] if b["key"] == "bench-1")
     # the done job ran in the last hour; the failed one is older, so only its blocker shows (on the lantern)
-    assert lane1["jobs"] == ["worker:d4f7a2"]
+    assert after["jobs"] == ["worker:d4f7a2"]
+    assert len(out["benches"]) == 6  # the workarea and l1's five on the open floor
 
 
 def test_lamps_glow_only_at_active_runs(page: Page, state: dict[str, Any]) -> None:
     items = {i["id"]: i for i in layout(page, state)["items"]}
     lit = sorted(k for k, i in items.items() if k.startswith("pool-") and i["intensity"] > 0)
     assert lit == ["pool-0-0", "pool-0-1", "pool-0-2"]
-    assert all(items[f"wash-1-{dx}"]["intensity"] == 0 for dx in (-1.4, 0, 1.4))
+    assert all(items[f"wash-{dx}"]["intensity"] == 1 for dx in (-1.4, 0, 1.4))  # the workarea is live
+    assert not any(k.startswith("pool-1-") and i["intensity"] > 0 for k, i in items.items())  # a done job's desk is dark
 
 
 def test_tiles_follow_step_states(page: Page, state: dict[str, Any]) -> None:
@@ -86,12 +88,12 @@ def test_tiles_follow_step_states(page: Page, state: dict[str, Any]) -> None:
     items = {i["id"]: i for i in out["items"]}
     rows = KIT["sprites"]["plan-wall"]["slots"]["tiles"]["rows"]
     jobs = {f"{h['name']}:{j['id']}": j for h in state["hosts"] for j in h["jobs"]}
-    lane1 = next(b for b in out["benches"] if b["key"] == "lane-1")
-    for d, key in enumerate(lane1["jobs"]):
+    work = next(b for b in out["benches"] if b["key"] == "bench-0")
+    for d, key in enumerate(work["jobs"]):
         steps = sorted(jobs[key]["steps"], key=lambda s: s["index"])
         want = [{"done": "tile-done", "running": "tile-running", "failed": "tile-failed"}.get(s["status"], "tile-blank") for s in steps]
-        assert [items[f"tile-1-{c}-{rows - 1 - d}"]["sprite"] for c in range(len(steps))] == want
-    assert any(i["sprite"] == "tile-running" for k, i in items.items() if k.startswith("tile-0-"))
+        assert [items[f"tile-{c}-{rows - 1 - d}"]["sprite"] for c in range(len(steps))] == want
+    assert all(items[f"tile-{c}-0"]["sprite"] == "tile-blank" for c in range(10))  # rows beyond the desks stay blank
 
 
 def test_the_question_desk_has_the_lantern_and_a_waiting_session_a_crate(page: Page, state: dict[str, Any]) -> None:
@@ -127,15 +129,63 @@ def test_robots_walk_from_the_lift_and_sit(floor: Page) -> None:
 
 def test_a_click_on_a_bench_zooms_onto_it(floor: Page) -> None:
     point = floor.evaluate("""import('/js/world/projection.js').then(p => {
-      const e = floor.engine, b = floor.layout.benches.find(b => b.key === 'lane-1');
+      const e = floor.engine, b = floor.layout.benches.find(b => b.key === 'bench-1');
       return p.toScreen(e.camera.view, [b.at[0] + 1.8, b.at[1] - 0.2, 0.74]); })""")
     floor.mouse.click(*point)
     floor.wait_for_function("!floor.engine.camera.moving", timeout=10_000)
     cam = floor.evaluate("({ cur: floor.engine.camera.cur, max: floor.engine.camera.max.ppm })")
     assert cam["cur"]["ppm"] == pytest.approx(cam["max"])
     target = floor.evaluate("""import('/js/world/projection.js').then(p =>
-      p.plane(floor.layout.benches.find(b => b.key === 'lane-1').frame.target))""")
+      p.plane(floor.layout.benches.find(b => b.key === 'bench-1').frame.target))""")
     assert (cam["cur"]["u"], cam["cur"]["v"]) == pytest.approx(tuple(target), abs=0.05)
     floor.keyboard.press("Escape")
     floor.wait_for_function("!floor.engine.camera.moving", timeout=10_000)
     assert floor.evaluate("floor.engine.camera.zoomLevel()") == pytest.approx(0, abs=1e-6)
+
+
+def test_working_robots_show_their_action_only_zoomed_in(floor: Page) -> None:
+    floor.wait_for_function("floor.seated.length === floor.walkers.length", timeout=60_000)
+    floor.evaluate("floor.engine.camera.jump(floor.engine.camera.min); floor.engine.request()")
+    floor.wait_for_timeout(200)
+    assert floor.evaluate("floor.bubbles.every(b => b.el.hidden)")
+    floor.evaluate("floor.zoomTo('bench-0')")
+    floor.wait_for_function("!floor.engine.camera.moving", timeout=10_000)
+    floor.wait_for_timeout(200)
+    shown = floor.evaluate("floor.bubbles.filter(b => !b.el.hidden).map(b => [b.el.querySelector('.glyph').dataset.action, b.el.style.color])")
+    assert len(shown) == 3
+    assert all(action for action, _ in shown)
+    # the glyph takes the robot's host colour, never the attention magenta
+    assert all("166, 14, 155" not in colour and "#a60e9b" not in colour for _, colour in shown)
+
+
+def test_the_lift_panel_numbers_its_floors_and_marks_this_one(floor: Page) -> None:
+    buttons = floor.evaluate("[...document.querySelectorAll('.floor-button')].map(b => [b.textContent, b.className])")
+    assert [b[0] for b in buttons] == [str(i) for i in range(1, 7)]
+    assert sum("here" in b[1] for b in buttons) == 1
+
+
+def test_ambient_throttle_recovers_once_frames_are_cheap_again(browser: Browser, base_url: str) -> None:
+    page = browser.new_page(viewport={"width": 1000, "height": 600})
+    try:
+        page.goto(f"{base_url}/prototype/floor?shot&seated")
+        page.wait_for_function("window.floor && window.floor.ready", timeout=60_000)
+        page.evaluate("floor.engine.budget = 0.001")
+        page.wait_for_function("floor.engine.throttle >= 4", timeout=15_000)
+        page.evaluate("floor.engine.budget = 1000")
+        page.wait_for_function("floor.engine.throttle === 1", timeout=15_000)
+    finally:
+        page.close()
+
+
+def test_motion_draws_at_ratio_one_and_rests_sharp(browser: Browser, base_url: str) -> None:
+    page = browser.new_page(viewport={"width": 1000, "height": 600}, device_scale_factor=2)
+    try:
+        page.goto(f"{base_url}/prototype/floor?shot&seated&motion=low")
+        page.wait_for_function("window.floor && window.floor.ready", timeout=60_000)
+        page.evaluate("""(() => { const e = floor.engine, f = e.paintLow.bind(e); window.lows = 0;
+          e.paintLow = (...a) => { window.lows++; return f(...a); }; floor.zoomTo('bench-0'); })()""")
+        page.wait_for_function("!floor.engine.camera.moving && !floor.engine.raf", timeout=20_000)
+        assert page.evaluate("window.lows") > 0
+        assert page.evaluate("floor.engine.wasLow") is False  # the frame at rest was drawn at full ratio
+    finally:
+        page.close()

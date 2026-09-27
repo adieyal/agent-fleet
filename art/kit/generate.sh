@@ -125,3 +125,9 @@ end panel you can see is its right-hand end, facing the lower right; its left en
 angle as the desks in the reference: the long front runs from the upper left down to the lower right.' \
   "$L2_SHELF" "$L2_BENCH"
 wait
+
+# Round 3 (reviewer, floor round 4): l1's long benches carry a monitor at most desks.
+gen monitor 'one black flat computer monitor on a slim stand, with a black keyboard and a mouse in front of it, \
+as they stand on the desks in the reference, seen from the same angle: the screen faces the lower left of the \
+image, the keyboard in front of it. The screen is dark. No desk, no other items.' "$L1_TERMINALS"
+wait

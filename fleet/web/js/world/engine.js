@@ -15,10 +15,14 @@ import { drawableTier, fadeAlpha, pickTier } from './tiers.js';
 const THROTTLE_MAX = 8;
 
 export class World {
-  // camera: { far, near, bounds } (see Camera); budgetMs: work per frame above which ambient animation slows down
-  constructor(el, { camera, budgetMs = 8, reduced = matchMedia('(prefers-reduced-motion: reduce)').matches, dpr = devicePixelRatio || 1, background = '#dcebf8' }) {
+  // camera: { far, near, bounds } (see Camera); budgetMs: work per frame above which ambient animation slows down;
+  // motionDpr: 'auto' draws camera motion at pixel ratio 1 once it proves too slow at full ratio, 'full' never does;
+  // grade: { color, alpha, mode } a tone laid over the ground (the floor's warm ambient)
+  constructor(el, { camera, budgetMs = 8, reduced = matchMedia('(prefers-reduced-motion: reduce)').matches, dpr = devicePixelRatio || 1,
+    background = '#dcebf8', motionDpr = 'auto', grade = null }) {
     this.el = el; this.g = el.getContext('2d');
     this.dpr = dpr; this.background = background; this.reduced = reduced;
+    this.motionDpr = motionDpr; this.lowMotion = motionDpr === 'low'; this.slowMotion = 0; this.wasLow = false; this.grade = grade;
     this.camera = new Camera({ ...camera, reduced });
     this.sprites = new Map(); this.textures = new Map();
     this.items = new Map(); this.planes = []; this.glows = new Map();
@@ -236,8 +240,10 @@ export class World {
     const t = s.tiers[Math.max(0, s.shown)];
     if (t.frames > 1 && !t.fps) return Math.min(t.frames - 1, it.cell || 0);   // a sheet of states (the lift's doors)
     if (t.frames < 2 || !t.fps || this.reduced || it.still) return 0;
-    const k = it.ambient ? this.throttle : 1, step = Math.floor((now - this.t0) * t.fps / k) * k;
-    return step % t.frames;
+    // throttled, an ambient loop plays slower: skipping frames instead would freeze a 4-frame loop at a throttle of 4
+    // (every update landing on the same frame), and with no frames left to measure the throttle could never recover
+    const k = it.ambient ? this.throttle : 1;
+    return Math.floor((now - this.t0) * t.fps / k) % t.frames;
   }
   // seconds until some animated item shows its next frame; Infinity when nothing animates
   nextFrameIn(now) {
@@ -279,22 +285,31 @@ export class World {
     this.ground.base({ ...this.camera.min, W: view.W, H: view.H }, this.dpr);
     const zooming = this.camera.goal.ppm !== view.ppm || (this.lastView && this.lastView.ppm !== view.ppm);
     const groundChanged = !zooming && this.ground.update(view, this.dpr, { now: !this.ground.snap });
-    let drew = false;
-    if (viewChanged || this.dirty.all || groundChanged) {
-      this.paint(view, now, null);
-      this.stats.full++; drew = true;
+    let drew = false, full = false;
+    // while the camera moves on a machine that can't keep up at a high pixel ratio, frames are drawn at ratio 1 and
+    // scaled up; the frame at rest is drawn sharp again
+    const low = moving && this.dpr > 1 && this.lowMotion;
+    if (viewChanged || this.dirty.all || groundChanged || (this.wasLow && !low)) {
+      if (low) this.paintLow(view, now); else this.paint(view, now, null);
+      this.stats.full++; drew = full = true;
     } else if (this.dirty.rects.length) {
       for (const r of merged(this.dirty.rects)) this.paint(view, now, r);   // robots far apart repaint apart
       this.stats.partial++; drew = true;
     }
+    this.wasLow = low;
     if (viewChanged && this.onView) this.onView(view);   // (a DOM overlay follows the view)
     this.lastView = view;
     this.dirty = { all: false, ground: false, rects: [] };
     // a canvas may rasterise after this returns, so the gap between back-to-back frames counts as well as the work
     const work = performance.now() - start, gap = this.continuous && this.lastFrameAt ? start - this.lastFrameAt - 1000 / 60 : 0;
+    const cost = Math.max(work, gap);
     if (drew) {
       this.stats.frames++;
-      this.pace(Math.max(work, gap), now);
+      // ambient animation answers only to the cost of animation frames: loading, zooming and full repaints are
+      // expensive for other reasons and would keep it throttled long after they end
+      if (!moving && !full) this.pace(cost, now);
+      // three slow frames while moving at a high pixel ratio: draw motion at ratio 1 from then on
+      if (moving && full && !low && this.dpr > 1 && this.motionDpr === 'auto' && cost > this.budget * 1.5 && ++this.slowMotion >= 3) this.lowMotion = true;
     }
     this.lastWork = work; this.lastFrameAt = start;
     // when the zoom comes to rest, one more full frame from bitmaps pre-scaled to it: sharper, and what partial
@@ -313,7 +328,18 @@ export class World {
   pace(ms, now) {
     this.work = this.work ? this.work * 0.8 + ms * 0.2 : ms;
     if (this.work > this.budget && this.throttle < THROTTLE_MAX && now - this.throttleAt > 0.5) { this.throttle *= 2; this.throttleAt = now; }
-    else if (this.work < this.budget / 3 && this.throttle > 1 && now - this.throttleAt > 2) { this.throttle /= 2; this.throttleAt = now; }
+    else if (this.work < this.budget / 2 && this.throttle > 1 && now - this.throttleAt > 1) { this.throttle /= 2; this.throttleAt = now; }
+  }
+  // a full frame at pixel ratio 1 into a side canvas, scaled onto the screen
+  paintLow(view, now) {
+    if (!this.lo || this.lo.width !== view.W || this.lo.height !== view.H) this.lo = canvas(view.W, view.H);
+    const g = this.g, dpr = this.dpr;
+    this.g = this.lo.getContext('2d'); this.dpr = 1;
+    try { this.paint(view, now, null); } finally { this.g = g; this.dpr = dpr; }
+    g.save();
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.drawImage(this.lo, 0, 0, this.el.width, this.el.height);
+    g.restore();
   }
 
   // the ground for a view, into a context already scaled to CSS pixels (see GroundCache)
@@ -341,6 +367,16 @@ export class World {
       g.save();
       if (lit(it)) g.globalCompositeOperation = 'lighter';
       this.drawItem(g, it, view, Infinity);
+      g.restore();
+    }
+    // the grade (a warm ambient) tones the ground: the floor and walls that fill most of the screen. Laid on every
+    // frame instead, a soft-light fill of the whole screen costs a software canvas more than the rest of the frame
+    if (this.grade) {
+      g.save();
+      g.globalCompositeOperation = this.grade.mode || 'soft-light';
+      g.globalAlpha = this.grade.alpha;
+      g.fillStyle = this.grade.color;
+      g.fillRect(0, 0, view.W, view.H);
       g.restore();
     }
   }

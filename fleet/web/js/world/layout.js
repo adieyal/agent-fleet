@@ -1,27 +1,29 @@
-// A project floor laid out from its room (workarea-model.js): the walls and lift, three wall lanes each with a
-// bench, a plan wall and (the first) the question desk and lantern, open-floor benches, the library, the
-// orchestrator's podium, the briefing board and a waiting crate. Pure: returns what to place, where each run sits,
-// and the framings; the page places it in the sprite world. See docs/design/sprite-world.md, "Floor layout".
+// A project floor laid out from its room (workarea-model.js), as l1 arranges it: along the back wall the crate alcove
+// with its lamp, the library, the active workarea as l2 draws it (question desk and lantern, plan wall, bench), the
+// orchestrator's podium, the briefing board and the lift with its floor buttons; on the open floor long benches in
+// staggered rows. Pure: returns what to place, where each run sits, and the framings; the page places it in the
+// sprite world. See docs/design/sprite-world.md, "Floor layout".
 //
-// Places follow l2 where l1 and l2 disagree: the lift is at the left end of the back wall, the first wall lane beside
-// it, the library at the right end. Every job the room shows gets a desk (a bench is three desks): active jobs fill
-// the first wall lane's desks, then the next; recently finished ones the lane after; the rest stand idle.
+// Every job the room shows gets a desk (a bench is three desks): active jobs fill the workarea bench's desks, then
+// the next bench's; recently finished ones the bench after; the rest stand idle.
 
 export const FLOOR = { w: 25.2, d: 10.8, h: 3.2 };   // 7 x 3 bays: l1's proportions at real furniture sizes
 const BAY = 3.6;
-const LANE_W = 7.8;
-const WALL_LANES = [3.6, 11.4];                // wall lanes from these x; the library takes the rest of the wall
-// a wall lane as l2 draws it, relative to its bench's centre (x) and the wall (y): measured against the bake-off's
-// l2 layout, where the bench stands 1.65 m from the wall with the question desk and lantern left of it
-const LANE = { bench: [3.9, -1.75], qdesk: [1.35, -0.45], board: 4.25, pilasters: [-0.5, 2.0] };
-const OPEN_BENCHES = [[4.6, 5.2], [12.6, 5.2], [20.6, 5.2], [4.6, 1.9], [12.6, 1.9], [20.6, 1.9]];  // three desks each
-const LIFT_X = 2.1;
-// a veil over the floor texture: the concepts' floor is a mid grey, which the warm light shows up on
-const FLOOR_TONE = 'rgba(64, 68, 96, 0.13)';
+// benches: the workarea first (against the wall, under its plan wall), then l1's five on the open floor, back to front
+const BENCHES = [[12.3, 9.05], [5.0, 7.0], [19.7, 6.3], [12.9, 4.6], [4.4, 3.2], [20.5, 2.1]];
+// the workarea as l2 draws it, relative to its bench's centre: the question desk and lantern to the left, the plan
+// wall just right of centre on the back wall (measured against the bake-off's l2 layout, rounds 1-3)
+const WORK = { qdesk: [-2.55, 0], board: 0.35 };
+const LIFT_X = 21.7, PANEL_X = 23.35;
+const PILASTERS = [7.95, 10.35, 14.75, 20.2, 24.1];
+// a veil over the floor texture: l1's floor is a warm mid grey, which the lamps' warm light shows up on
+const FLOOR_TONE = 'rgba(104, 94, 90, 0.13)';
 const NEAR = { offset: [-0.231, -0.121, 1.698], height: 5.486 };   // l2's framing, relative to its bench's centre
 const MARK = { check: 'done', glow: 'running', cross: 'failed', dash: 'blank', blank: 'blank' };
 const ACTIVE = new Set(['running', 'queued', 'stalled']);
-const PROPS = ['laptop', 'pen-pot', 'paper-stack', 'sketch', 'mug', 'desk-plant', 'books', 'paper-tray'];
+const SMALL = ['pen-pot', 'paper-stack', 'sketch', 'mug', 'desk-plant', 'books', 'paper-tray'];
+// where small props go on a desk, from its centre (the near half; the monitor and lamp take the back)
+const SPOTS = [[-0.55, -0.2], [-0.1, -0.24], [0.32, -0.18], [0.66, -0.04], [0.72, 0.2], [-0.72, 0.12]];
 const POSES = ['b2/robot-typing', 'b2/robot-pencil', 'b2/robot-tube'];
 // flat on the back wall, so nothing stands behind them: tiles, criteria lights, and the light that falls on the wall
 // are painted with the ground (one snapshot) instead of sorted and drawn every frame
@@ -36,7 +38,7 @@ export function floorLayout(room, kit, colour) {
   const items = [], runs = [], benches = [];
   const add = (id, sprite, at, extra = {}) => { items.push({ id, sprite, at, ...extra }); return id; };
 
-  // --- shell -------------------------------------------------------------------------------------------------
+  // --- shell: floor, walls with their caps and cut ends, the slab's edges, pilasters, sheen --------------------
   const planes = [
     { quad: [[0, 0, 0], [W, 0, 0], [W, D, 0], [0, D, 0]], texture: 'floor-tile', origin: [0, D, 0], u: [1, 0, 0], v: [0, -1, 0] },
     { quad: [[0, 0, 0], [W, 0, 0], [W, D, 0], [0, D, 0]], color: FLOOR_TONE },
@@ -48,115 +50,110 @@ export function floorLayout(room, kit, colour) {
   add('corner', 'wall-corner', [0, D, 0]);
   add('end-back', 'wall-end-back', [W, D, 0]);
   add('end-left', 'wall-end-left', [0, 0, 0]);
-  for (const x of [...WALL_LANES.flatMap(x0 => LANE.pilasters.map(p => x0 + p)), WALL_LANES[1] + LANE_W]) add(`pilaster-${x}`, 'pilaster', [x, D, 0]);
+  for (const x of PILASTERS) add(`pilaster-${x}`, 'pilaster', [x, D, 0]);
+  for (let x = BAY / 2; x < W; x += BAY) for (let y = BAY / 2; y < D; y += BAY) add(`sheen-${x}-${y}`, 'floor-sheen', [x, y, 0]);
+
+  // --- the lift, its floor buttons, the alcove, the library, the orchestrator, the briefing board ---------------
   const lift = [LIFT_X, D, 0];
   add('lift', 'lift', lift, { cell: 0, place: 'lift' });
+  add('lift-panel', 'lift-panel', [PANEL_X, D, 0], { place: 'lift' });
   const liftThreshold = plus(lift, kit.lift.slots.threshold);
-
-  // --- desks for jobs ----------------------------------------------------------------------------------------
-  const jobs = room ? room.benches : [];
-  const active = jobs.filter(b => ACTIVE.has(b.status)), recent = jobs.filter(b => !ACTIVE.has(b.status));
-  const lanes = WALL_LANES.map(() => []);
-  // (more jobs than the wall lanes' nine desks are not shown yet: the floor would need its open benches)
-  const fill = (list, from) => {
-    let lane = from;
-    for (const j of list) {
-      while (lane < lanes.length && lanes[lane].length >= 3) lane++;
-      if (lane < lanes.length) lanes[lane].push(j);
-    }
-  };
-  fill(active, 0);
-  const firstEmpty = lanes.findIndex(l => !l.length);
-  if (firstEmpty >= 0) fill(recent, firstEmpty);
-
-  WALL_LANES.forEach((x0, li) => {
-    const benchAt = [x0 + LANE.bench[0], D + LANE.bench[1], 0], boardAt = [x0 + LANE.board, D, 0];
-    const key = `lane-${li}`;
-    const bench = add(key, 'bench', benchAt, { place: `bench:${key}` });
-    const laneJobs = lanes[li];
-    const live = laneJobs.some(j => j.active);
-    benches.push({ key, at: benchAt, jobs: laneJobs.map(j => j.key), frame: { target: plus(benchAt, NEAR.offset), height: NEAR.height }, live });
-    // the plan wall: a row per desk, one tile per step
-    add(`board-${li}`, 'plan-wall', boardAt, { place: `plan:${key}` });
-    const grid = kit['plan-wall'].slots.tiles;
-    for (let r = 0; r < grid.rows; r++) for (let c = 0; c < grid.cols; c++) {
-      const job = laneJobs[grid.rows - 1 - r];   // the top row is desk 0
-      const tile = job && job.tiles[c];
-      const at = plus(boardAt, plus(grid.first, [grid.col[0] * c, 0, grid.row[2] * r]));
-      add(`tile-${li}-${c}-${r}`, 'tile-' + (tile ? MARK[tile.mark] : 'blank'), at, { place: tile ? `step:${job.key}:${tile.index}` : `plan:${key}`, layer: WALL });
-    }
-    const met = laneJobs.reduce((s, j) => s + j.criteria.met, 0), total = laneJobs.reduce((s, j) => s + j.criteria.total, 0);
-    const lit = total ? Math.round(5 * met / total) : 0;
-    kit['plan-wall'].slots.lights.forEach((p, i) => add(`crit-${li}-${i}`, i < lit ? 'criteria-on' : 'criteria-off', plus(boardAt, p), { layer: WALL }));
-    for (const dx of [-1.4, 0, 1.4]) add(`wash-${li}-${dx}`, 'glow-wall-wash', [boardAt[0] + dx, D - 0.01, 3.05], { intensity: live ? 1 : 0, layer: WALL });
-    add(`spill-${li}`, 'glow-floor-spill', plus(benchAt, [0, -1.3, 0]), { intensity: live ? 0.9 : 0 });
-    const slots = kit.bench.slots;
-    for (let d = 0; d < 3; d++) {
-      const job = laneJobs[d];
-      const seat = plus(benchAt, slots.seats[d]), lampAt = plus(benchAt, slots.lamps[d]);
-      const on = !!(job && job.active);
-      add(`lamp-${li}-${d}`, 'lamp', lampAt);
-      add(`shade-${li}-${d}`, 'glow-shade', plus(lampAt, kit.lamp.slots.shade), { intensity: on ? 1 : 0 });
-      add(`pool-${li}-${d}`, 'glow-desk-pool', plus(lampAt, [0.3, -0.25, 0.005]), { intensity: on ? 1 : 0 });
-      add(`chair-far-${li}-${d}`, 'chair-front', [seat[0], seat[1] + 0.12, 0], { place: `bench:${key}` });
-      add(`chair-near-${li}-${d}`, 'chair-back', plus(benchAt, [slots.seats[d][0] + 0.1, -0.6, 0]), { place: `bench:${key}` });
-      const h = hash(`${key}:${d}`), n = job ? 2 + (h % 2) : h % 2;
-      for (let k = 0; k < n; k++) {
-        const p = PROPS[(h >>> (3 * k)) % PROPS.length];
-        add(`prop-${li}-${d}-${k}`, p, plus(benchAt, [slots.desk_top[d][0] - 0.55 + k * 0.5 + ((h >>> 9) % 3) * 0.05, -0.22 + ((h >>> (5 + k)) % 3) * 0.06, 0.74]));
-      }
-      if (job && job.active) {
-        runs.push({ key: job.key, host: job.host, agent: job.agent, bench: key, desk: d, seat, chair: `chair-far-${li}-${d}`,
-          sprite: POSES[runs.length % POSES.length], tint: colour(job.host) });
-      }
-    }
-    if (li === 0) {   // the room's question desk, with the lantern over it when something needs you
-      const q = [x0 + LANE.qdesk[0], D + LANE.qdesk[1], 0];
-      add('question-desk', 'question-desk', q, { place: 'question-desk' });
-      if (room && room.desk.lantern) {
-        const at = plus(q, kit['question-desk'].slots.lantern);
-        add('lantern', 'lantern', at, { place: 'attention', lantern: room.desk.lantern });
-        add('lantern-halo', 'glow-lantern-halo', [at[0], D - 0.01, at[2] - 0.1], { layer: WALL });
-      }
-      add('plant-qdesk', 'desk-plant', plus(q, [0.35, 0.1, 0.9]));
-      add('plant-lift', 'plant-bush', [x0 - 0.1, D - 0.45, 0]);
-    } else add(`shelf-lane-${li}`, 'shelf', [x0 + 1.0, D - 0.3, 0]);
-  });
-
-  // --- open floor: benches of three terminal desks, idle ------------------------------------------------------
-  OPEN_BENCHES.forEach(([x, y], i) => {
-    for (let d = 0; d < 3; d++) {
-      const at = [x - 1.6 + d * 1.6, y, 0];
-      add(`term-${i}-${d}`, 'terminal-desk', at, { place: `bench:open-${i}` });
-      add(`term-chair-${i}-${d}`, 'chair-back', [at[0] + 0.05, y - 0.62, 0], { place: `bench:open-${i}` });
-      if ((hash(`open${i}${d}`) & 3) === 0) add(`term-prop-${i}-${d}`, PROPS[hash(`p${i}${d}`) % PROPS.length], [at[0] + 0.5, y - 0.15, 0.74]);
-    }
-    benches.push({ key: `open-${i}`, at: [x, y, 0], jobs: [], frame: { target: plus([x, y, 0], NEAR.offset), height: NEAR.height }, live: false });
-  });
-
-  // --- stations ---------------------------------------------------------------------------------------------
-  const lib = WALL_LANES[1] + LANE_W;   // 19.2: the library, to the wall's cut end
-  add('shelf-a', 'shelf', [lib + 1.0, D - 0.3, 0], { place: 'library' });
-  add('shelf-b', 'shelf', [lib + 2.3, D - 0.3, 0], { place: 'library' });
-  add('book-cart', 'book-cart', [lib + 4.4, D - 1.6, 0], { place: 'library' });
-  add('librarian-desk', 'librarian-desk', [lib + 2.2, D - 3.0, 0], { place: 'library' });
-  add('plant-lib', 'plant-tall', [lib + 5.5, D - 0.45, 0]);
-  add('podium', 'podium', [3.6, 7.0, 0], { place: 'orchestrator' });
-  add('whiteboard', 'whiteboard', [0.9, 7.6, 0], { place: 'briefing' });
-  if (room && room.waiting) add('crate', 'crate', [W - 1.1, D - 1.1, 0], { place: 'waiting' });
+  add('alcove', 'alcove', [0, D, 0], { place: 'waiting' });
+  if (room && room.waiting && room.waiting.length) add('crate', 'crate', plus([0, D, 0], plus(kit.alcove.slots.inside, [0, 0.1, 0])), { place: 'waiting' });
+  add('shelf-a', 'shelf', [3.9, D - 0.3, 0], { place: 'library' });
+  add('shelf-b', 'shelf', [5.25, D - 0.3, 0], { place: 'library' });
+  add('book-cart', 'book-cart', [6.9, D - 1.1, 0], { place: 'library' });
+  add('plant-lib', 'plant-tall', [7.4, D - 0.45, 0]);
+  add('podium', 'podium', [16.1, D - 0.75, 0], { place: 'orchestrator' });
+  add('plant-podium', 'plant-bush', [17.3, D - 0.45, 0]);
+  add('whiteboard', 'whiteboard', [18.8, D - 0.8, 0], { place: 'briefing' });
+  add('plant-lift', 'plant-tall', [24.75, D - 0.5, 0]);
   add('plant-front-l', 'plant-tall', [0.6, 0.7, 0]);
   add('plant-front-r', 'plant-bush', [W - 0.6, 0.7, 0]);
 
+  // --- desks for jobs ------------------------------------------------------------------------------------------
+  const jobs = room ? room.benches : [];
+  const active = jobs.filter(b => ACTIVE.has(b.status)), recent = jobs.filter(b => !ACTIVE.has(b.status));
+  const seated = BENCHES.map(() => []);
+  // (more jobs than the benches' desks are not shown yet)
+  const fill = (list, from) => {
+    let b = from;
+    for (const j of list) {
+      while (b < seated.length && seated[b].length >= 3) b++;
+      if (b < seated.length) seated[b].push(j);
+    }
+  };
+  fill(active, 0);
+  const firstEmpty = seated.findIndex(l => !l.length);
+  if (firstEmpty >= 0) fill(recent, firstEmpty);
+
+  const slots = kit.bench.slots;
+  BENCHES.forEach(([bx, by], bi) => {
+    const at = [bx, by, 0], key = `bench-${bi}`, onBench = seated[bi];
+    const live = onBench.some(j => j.active);
+    add(key, 'bench', at, { place: `bench:${key}` });
+    benches.push({ key, at, jobs: onBench.map(j => j.key), frame: { target: plus(at, NEAR.offset), height: NEAR.height }, live });
+    add(`spill-${bi}`, 'glow-floor-spill', plus(at, [0, -1.3, 0]), { intensity: live ? 0.9 : 0 });
+    for (let d = 0; d < 3; d++) {
+      const job = onBench[d], on = !!(job && job.active), cx = slots.desk_top[d][0];
+      const seat = plus(at, slots.seats[d]), lampAt = plus(at, slots.lamps[d]);
+      add(`lamp-${bi}-${d}`, 'lamp', lampAt);
+      add(`shade-${bi}-${d}`, 'glow-shade', plus(lampAt, kit.lamp.slots.shade), { intensity: on ? 1 : 0 });
+      add(`pool-${bi}-${d}`, 'glow-desk-pool', plus(lampAt, [0.3, -0.25, 0.005]), { intensity: on ? 1 : 0 });
+      add(`chair-near-${bi}-${d}`, 'chair-back', plus(at, [cx + 0.1, -0.6, 0]), { place: `bench:${key}` });
+      if (bi === 0) add(`chair-far-${bi}-${d}`, 'chair-front', [seat[0], seat[1] + 0.12, 0], { place: `bench:${key}` });
+      // a monitor at most desks, as l1's benches; a robot at work brings its own laptop or papers
+      const h = hash(`${key}:${d}`);
+      if (!on && (bi > 0 || d === 2)) add(`monitor-${bi}-${d}`, 'monitor', plus(at, [cx + 0.15, 0.12, 0.74]));
+      // small things on the near half of the desk: more at a busy workarea (l2), a few elsewhere (l1)
+      const n = bi === 0 ? 5 : 1 + (h % 3);
+      for (let k = 0; k < n; k++) {
+        const [dx, dy] = SPOTS[(h + k * 2) % SPOTS.length];
+        add(`prop-${bi}-${d}-${k}`, SMALL[(h >>> (3 * k)) % SMALL.length], plus(at, [cx + dx, dy, 0.74]));
+      }
+      if (on) {
+        runs.push({ key: job.key, host: job.host, agent: job.agent, bench: key, desk: d, seat, chair: bi === 0 ? `chair-far-${bi}-${d}` : null,
+          sprite: POSES[runs.length % POSES.length], tint: colour(job.host) });
+      }
+    }
+  });
+
+  // --- the workarea as l2: plan wall (a row per desk, a tile per step), criteria lights, washers, question desk --
+  const [wx, wy] = BENCHES[0], work = seated[0], live = work.some(j => j.active);
+  const board = [wx + WORK.board, D, 0];
+  add('board', 'plan-wall', board, { place: 'plan:bench-0' });
+  const grid = kit['plan-wall'].slots.tiles;
+  for (let r = 0; r < grid.rows; r++) for (let c = 0; c < grid.cols; c++) {
+    const job = work[grid.rows - 1 - r];   // the top row is desk 0
+    const tile = job && job.tiles[c];
+    const at = plus(board, plus(grid.first, [grid.col[0] * c, 0, grid.row[2] * r]));
+    add(`tile-${c}-${r}`, 'tile-' + (tile ? MARK[tile.mark] : 'blank'), at, { place: tile ? `step:${job.key}:${tile.index}` : 'plan:bench-0', layer: WALL });
+  }
+  const met = work.reduce((s, j) => s + j.criteria.met, 0), total = work.reduce((s, j) => s + j.criteria.total, 0);
+  const lit = total ? Math.round(5 * met / total) : 0;
+  kit['plan-wall'].slots.lights.forEach((p, i) => add(`crit-${i}`, i < lit ? 'criteria-on' : 'criteria-off', plus(board, p), { layer: WALL }));
+  for (const dx of [-1.4, 0, 1.4]) add(`wash-${dx}`, 'glow-wall-wash', [board[0] + dx, D - 0.01, 3.05], { intensity: live ? 1 : 0, layer: WALL });
+  const q = [wx + WORK.qdesk[0], D - 0.45, 0];
+  add('question-desk', 'question-desk', q, { place: 'question-desk' });
+  add('plant-qdesk', 'desk-plant', plus(q, [0.35, 0.1, 0.9]));
+  if (room && room.desk.lantern) {   // over the question desk when something needs you
+    const at = plus(q, kit['question-desk'].slots.lantern);
+    add('lantern', 'lantern', at, { place: 'attention', lantern: room.desk.lantern });
+    add('lantern-halo', 'glow-lantern-halo', [at[0], D - 0.01, at[2] - 0.1], { layer: WALL });
+  }
+
   // footprints: from the lift to every desk where a run happened in the last hour
   const trails = (room ? room.footprints : []).map(f => {
-    const li = lanes.findIndex(l => l.some(j => j.key === f.to));
-    const d = li < 0 ? -1 : lanes[li].findIndex(j => j.key === f.to);
-    return li < 0 ? null : { to: f.to, from: liftThreshold, seat: plus([WALL_LANES[li] + LANE.bench[0], D + LANE.bench[1], 0], kit.bench.slots.seats[d]) };
+    const bi = seated.findIndex(l => l.some(j => j.key === f.to));
+    if (bi < 0) return null;
+    const d = seated[bi].findIndex(j => j.key === f.to);
+    return { to: f.to, from: liftThreshold, seat: plus([...BENCHES[bi], 0], slots.seats[d]) };
   }).filter(Boolean);
 
   return {
     size: FLOOR, planes, items, runs, benches, trails, lift: { id: 'lift', at: lift, threshold: liftThreshold },
-    frames: { far: { box: [0, 0, -0.35, W, D, H], margin: 0.02 }, near: benches[0].frame },
+    panel: { at: [PANEL_X, D, 0], buttons: kit['lift-panel'].slots.buttons },
+    frames: { far: { box: [0, 0, -0.9, W, D, H], margin: 0.02 }, near: benches[0].frame },   // (-0.9: the slab)
     bounds: [0, 0, 0, W, D, H],
   };
 }

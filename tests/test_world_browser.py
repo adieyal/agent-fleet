@@ -178,11 +178,15 @@ def test_animation_repaints_only_the_robots_at_their_frame_rate(world: Page) -> 
 def test_ambient_animation_slows_when_frames_run_over_budget(browser: Browser, base_url: str) -> None:
     page, errors = open_world(browser, base_url, "budget=0.001")
     try:
-        page.wait_for_function("world.engine.throttle >= 4", timeout=10_000)
+        page.wait_for_function("world.engine.throttle === 8", timeout=15_000)   # (its ceiling: no more speed changes)
         settle(page)
-        before = page.evaluate("world.engine.stats.partial")
-        page.wait_for_timeout(1000)
-        assert page.evaluate("world.engine.stats.partial") - before <= 2
+        # count the typing robot's frame changes (other repaints, a late tier fading in, don't count)
+        changes = page.evaluate("""() => new Promise(done => {
+          const it = world.engine.items.get('robot-0:over'); let last = it.frame, n = 0;
+          const t = setInterval(() => { if (it.frame !== last) { n++; last = it.frame; } }, 20);
+          setTimeout(() => { clearInterval(t); done(n); }, 2000);
+        })""")
+        assert changes <= 3  # a 6 fps loop at an eighth of its speed; 12 unthrottled
     finally:
         page.close()
     assert errors == []

@@ -7,7 +7,7 @@ import { World } from '/js/world/engine.js';
 
 const params = new URLSearchParams(location.search);
 const W = 14.4, D = 9.6, H = 3.2;   // the room: four bays along the back wall (y = D), the left wall at x = 0
-const BENCH = [7.9, 6.7, 0], BOARD = [7.9, D, 0], QDESK = [4.55, D - 0.75, 0], LIFT = [1.8, D, 0];
+const BENCH = [7.9, 6.7, 0], BOARD = [7.9, D, 0], QDESK = [6.6, D - 0.75, 0], LIFT = [4.2, D, 0];   // (the alcove takes the corner)
 const FAR = { box: [0, 0, 0, W, D, H], margin: 0.03 };
 const NEAR = { target: [7.2, 7.4, 1.5], height: 5.486 };
 const HOSTS = ['#27b3b8', '#2e62dc', '#7a8a32'];
@@ -34,6 +34,8 @@ async function main() {
   add('end-left', 'wall-end-left', [0, 0, 0]);
   for (const x of [3.6, 10.8]) add('pilaster' + x, 'pilaster', [x, D, 0]);
   add('lift', 'lift', LIFT, { cell: 0, place: 'lift' });
+  add('lift-panel', 'lift-panel', [LIFT[0] + 1.65, D, 0], { place: 'lift' });
+  for (let x = 1.8; x < W; x += 3.6) for (let y = 1.8; y < D; y += 3.6) add(`sheen-${x}-${y}`, 'floor-sheen', [x, y, 0]);
 
   // the l2 bay: question desk and lantern, plan wall with tiles and lights, the bench
   add('question-desk', 'question-desk', QDESK, { place: 'question-desk' });
@@ -79,7 +81,10 @@ async function main() {
   add('whiteboard', 'whiteboard', [12.4, 2.6, 0]);
   add('terminal-desk', 'terminal-desk', [4.4, 3.0, 0]);
   add('terminal-chair', 'chair-back', plus([4.4, 3.0, 0], S['terminal-desk'].slots.seat.map((v, i) => (i === 2 ? 0 : v))));
-  add('crate', 'crate', [1.4, 1.6, 0], { place: 'waiting' });
+  add('alcove', 'alcove', [0, D, 0], { place: 'waiting' });
+  add('crate', 'crate', [1.2, D - 0.6, 0], { place: 'waiting' });
+  add('monitor', 'monitor', [8.0, 3.1, 0.74]);
+  add('monitor-desk', 'terminal-desk', [7.8, 3.0, 0]);
 
   await world.whenLoaded();
   window.kit.ready = true;

@@ -28,9 +28,9 @@ from mathutils import Vector  # noqa: E402
 PITCH, YAW = 44.5, 21.25
 PPM_1X = 941 / 5.486            # l2's framing: 171.528 px/m
 TIERS = (0.5, 1, 2)
-WALL_H, WALL_T = 3.2, 0.25      # back and left walls
+WALL_H, WALL_T = 3.2, 0.45      # back and left walls: l1's thick cut-away walls
 BAY = 3.6                       # structural bay: pilaster spacing, and the length of repeating pieces
-SLAB = 0.35                     # floor slab thickness shown at the cut edges
+SLAB, RIM = 0.9, 0.14           # floor slab thickness shown at the cut edges, and its pale rim (l1's plinth)
 TILE, PITCH_T, COLS, ROWS = 0.27, 0.3, 10, 6   # plan-wall tiles: l2's 10 x 6 grid, sized to its bench
 
 PAL = {  # docs/design/art-direction.md, rendered targets; albedo a little lower
@@ -77,7 +77,8 @@ def studio() -> None:
 
 def clear() -> None:
     for o in list(bpy.data.objects):
-        if o.type == 'MESH' or o.name.startswith('catcher') or o.name == 'kit_cam':
+        # (a piece's own lights go too: the alcove's lamp; the studio's key stays)
+        if o.type == 'MESH' or o.name.startswith('catcher') or o.name == 'kit_cam' or (o.type == 'LIGHT' and o.name != 'key'):
             bpy.data.objects.remove(o)
 
 
@@ -250,16 +251,67 @@ def wall_end_left():
 
 def slab_front():
     """The floor slab's cut edge along the front for one bay; anchor: the bay's left end at the floor's edge."""
-    # only the cut face: a thin plate, so no top shows over the floor texture and nothing hollow shows
-    A.box('slab', (BAY, 0.01, SLAB), (BAY / 2, 0.005, -SLAB), M('slab', rough=0.7), bevel=0.0)
-    return Vector((0, 0, 0)), [0, 0, -SLAB, BAY, 0.01, 0], {}, [], 0.02
+    # only the cut face, a thin plate (no top shows over the floor texture), under a pale rim that stands out a
+    # little, as l1's plinth: the floor reads as a solid slab
+    A.box('slab', (BAY, 0.01, SLAB - RIM), (BAY / 2, 0.005, -SLAB), M('slab', rough=0.7), bevel=0.0)
+    A.box('rim', (BAY, 0.06, RIM), (BAY / 2, -0.02, -RIM), M('cap', rough=0.5), bevel=0.0)
+    catcher('catcher_slab', (0, 0.01, 0), (math.pi / 2, 0, 0))
+    return Vector((0, 0, 0)), [0, -0.05, -SLAB, BAY, 0.01, 0], {}, [], 0.03
 
 
 def slab_side():
     """The slab's cut edge along the right side for one bay (the floor ends at x = 0 here); anchor: the bay's
     front end. Its front end meets slab-front's right end, so the corner needs no piece of its own."""
-    A.box('slab', (0.01, BAY, SLAB), (-0.005, BAY / 2, -SLAB), M('slab', rough=0.7), bevel=0.0)
-    return Vector((0, 0, 0)), [-0.01, 0, -SLAB, 0, BAY, 0], {}, [], 0.02
+    A.box('slab', (0.01, BAY, SLAB - RIM), (-0.005, BAY / 2, -SLAB), M('slab', rough=0.7), bevel=0.0)
+    A.box('rim', (0.06, BAY, RIM), (0.02, BAY / 2, -RIM), M('cap', rough=0.5), bevel=0.0)
+    catcher('catcher_slab', (-0.01, 0, 0), (0, math.pi / 2, 0))
+    return Vector((0, 0, 0)), [-0.01, 0, -SLAB, 0.05, BAY, 0], {}, [], 0.03
+
+
+ALCOVE_W, ALCOVE_D = 2.4, 1.4
+
+
+def alcove():
+    """l1's alcove in the back-left corner: a wall fin projecting from the back wall, a lintel across the opening
+    (both with caps) and a pendant lamp inside, lit. The left wall and back wall close it. Anchor: the inner corner
+    of the back and left walls, at floor level (the room's back-left corner)."""
+    fin = WALL_T
+    A.box('fin', (fin, ALCOVE_D, WALL_H), (ALCOVE_W + fin / 2, -ALCOVE_D / 2, 0), M('wall', rough=0.8), bevel=0.004)
+    A.box('fin_cap', (fin + 0.04, ALCOVE_D + 0.02, 0.1), (ALCOVE_W + fin / 2, -ALCOVE_D / 2, WALL_H - 0.02), M('cap', rough=0.6), bevel=0.0)
+    A.box('lintel', (ALCOVE_W, 0.3, 0.5), (ALCOVE_W / 2, -ALCOVE_D + 0.15, WALL_H - 0.5), M('wall', rough=0.8), bevel=0.004)
+    A.box('lintel_cap', (ALCOVE_W, 0.34, 0.1), (ALCOVE_W / 2, -ALCOVE_D + 0.15, WALL_H - 0.02), M('cap', rough=0.6), bevel=0.0)
+    lamp = (ALCOVE_W / 2, -ALCOVE_D + 0.55, 2.05)   # low and forward enough to show under the lintel
+    A.cylinder('cord', 0.006, WALL_H - lamp[2] - 0.12, (lamp[0], lamp[1], lamp[2] + 0.12), M('dark', rough=0.5))
+    A.cylinder('shade', 0.16, 0.14, (lamp[0], lamp[1], lamp[2]), M('dark', rough=0.4), radius2=0.05, segments=32)
+    A.ball('bulb', 0.045, (lamp[0], lamp[1], lamp[2] + 0.01), emissive('lamp_on', 8.0), kind='baked')
+    lit = bpy.data.collections.new('alcove_lit')   # the lamp lights the alcove's own walls, not the shadow catchers:
+    for n in ('fin', 'fin_cap', 'lintel', 'lintel_cap', 'shade'):   # light on a catcher lands in the sprite as a pale patch
+        lit.objects.link(bpy.data.objects[n])
+    lamp_ob = A.light('alcove_lamp', 'POINT', (lamp[0], lamp[1], lamp[2] - 0.05), 60, '#ffd9a0', shadow_soft_size=0.05, use_shadow=False)
+    lamp_ob.light_linking.receiver_collection = lit
+    floor_catcher(); wall_catcher()
+    slots = {'lamp': list(lamp), 'inside': [ALCOVE_W / 2, -ALCOVE_D / 2, 0]}
+    # (a wide margin: the fin's floor shadow reaches well to its right, and must fade out inside the sprite)
+    return Vector((0, 0, 0)), [0, -ALCOVE_D, 0, ALCOVE_W + fin, 0, WALL_H + 0.08], slots, [], 1.0
+
+
+FLOORS = 6   # the building's default floor count (PRD): one button each
+
+
+def lift_panel():
+    """The lift's floor-button column beside its doors, as l1: a box column with a round button per floor, faces
+    blank (the numbers, the current floor and attention are drawn over it at runtime). Anchor: its base centre on
+    the wall face."""
+    A.box('column', (0.5, 0.32, WALL_H - 0.1), (0, -0.16, 0), M('pilaster', rough=0.6), bevel=0.012)
+    A.box('column_cap', (0.58, 0.38, 0.1), (0, -0.19, WALL_H - 0.1), M('cap', rough=0.6), bevel=0.01)
+    buttons = []
+    for i in range(FLOORS):
+        z = 0.95 + i * 0.26
+        A.cylinder(f'ring_{i}', 0.09, 0.03, (0, -0.32, z), M('steel', rough=0.4, metal=0.5), rot=(math.pi / 2, 0, 0), segments=32)
+        A.cylinder(f'face_{i}', 0.07, 0.03, (0, -0.335, z), M('lamp_off', rough=0.3), rot=(math.pi / 2, 0, 0), segments=32)
+        buttons.append([0, -0.365, round(z, 3)])
+    floor_catcher(); wall_catcher()
+    return Vector((0, 0, 0)), [-0.29, -0.38, 0, 0.29, 0, WALL_H + 0.08], {'buttons': buttons}, [], 0.3
 
 
 LIFT_W, LIFT_H, LEAF = 2.3, 2.75, 0.55
@@ -345,7 +397,7 @@ PIECES = {
     'pilaster': pilaster, 'wall-cap-x': cap_x, 'wall-cap-y': cap_y, 'wall-corner': corner,
     'wall-end-back': wall_end_back, 'wall-end-left': wall_end_left,
     'slab-front': slab_front, 'slab-side': slab_side,
-    'lift': lift, 'plan-wall': plan_wall,
+    'lift': lift, 'lift-panel': lift_panel, 'alcove': alcove, 'plan-wall': plan_wall,
     'tile-blank': lambda: tile('blank'), 'tile-done': lambda: tile('done'),
     'tile-running': lambda: tile('running'), 'tile-failed': lambda: tile('failed'),
     'criteria-off': lambda: criteria(False), 'criteria-on': lambda: criteria(True),
