@@ -1,13 +1,11 @@
 """Atomic action/run links and their state history."""
 
 import json
-from contextlib import closing, contextmanager
 from dataclasses import asdict
 from datetime import datetime
-from typing import Iterator
 
 from fleet.modules.execution import Action, Run
-from .store import Store, UnitOfWork, connect
+from .repository import Repository
 
 
 def decode_run(payload: str) -> Run:
@@ -18,21 +16,7 @@ def decode_run(payload: str) -> Run:
     return Run(**values)
 
 
-class ExecutionRepository:
-    def __init__(self, store: Store, unit: UnitOfWork | None = None) -> None:
-        self.store, self.unit = store, unit
-
-    @contextmanager
-    def transaction(self) -> Iterator["ExecutionRepository"]:
-        with self.store.unit_of_work() as unit:
-            yield ExecutionRepository(self.store, unit)
-
-    def rows(self, query: str, parameters: tuple = ()) -> list:
-        if self.unit is not None:
-            return self.unit.connection.execute(query, parameters).fetchall()
-        with closing(connect(self.store.path)) as connection:
-            return connection.execute(query, parameters).fetchall()
-
+class ExecutionRepository(Repository):
     def find(self, host: str, job: str) -> Run | None:
         rows = self.rows("SELECT record FROM execution_run WHERE host = ? AND remote_job_id = ?", (host, job))
         return decode_run(rows[0]["record"]) if rows else None

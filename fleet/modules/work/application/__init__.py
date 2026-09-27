@@ -62,6 +62,19 @@ class Commands:
             repository.save("item", item, actor)
         return item
 
+    def apply_answer(self, identity: str, *, actor: str, next_step: str | None) -> WorkItem:
+        required(actor, "actor")
+        with self.repository.transaction() as repository:
+            item = repository.get("item", identity)
+            changes = {}
+            if item.condition == "blocked":
+                changes["condition"] = "none"
+            if next_step is not None:
+                changes["next_step"] = next_step
+            if changes:
+                return self.change(identity, actor, **changes)
+            return item
+
     def add_criterion(self, identity: str, *, actor: str, **fields) -> Criterion:
         required(actor, "actor")
         criterion = Criterion(id=str(uuid4()), work_item=identity, **fields)

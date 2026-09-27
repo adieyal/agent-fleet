@@ -45,7 +45,7 @@ def project(items, criteria=(), summaries=(), attention=(), runs=(), entries=())
     execution = SimpleNamespace(actions=lambda: [Action(run.action, "milestone", "linked") for run in runs],
                                 runs=lambda: runs)
     library = SimpleNamespace(list=lambda: entries)
-    return project_status("p", work, alerts, execution, library)
+    return project_status("p", work, alerts, execution, library, SimpleNamespace(list=lambda: []))
 
 
 def test_progress_precedence_counts_only_direct_milestones_and_preserves_unknown():
