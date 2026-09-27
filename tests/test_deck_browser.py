@@ -3,6 +3,7 @@
 import io
 import json
 import re
+import subprocess
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
@@ -13,6 +14,9 @@ from PIL import Image, ImageStat
 from playwright.sync_api import Browser, Page, expect
 
 from browser_clock import advance_until
+from fleet.composition import open_attention, open_execution, open_library, open_records, open_store, open_work
+from fleet.modules.execution import JobObservation
+from fleet.modules.work import EvidenceSpecification
 
 VIEWPORTS = {"desktop": {"width": 1440, "height": 900}, "narrow": {"width": 390, "height": 844}}
 # The deck ages jobs against the browser clock; pin it to the moment the fixture was recorded.
@@ -119,6 +123,63 @@ def test_every_project_gets_a_room(deck: Deck, fixture_data: dict[str, Any]) -> 
     assert deck.errors == []
 
 
+def test_bench_real_endpoint(changed_deck: Deck, deck_state, monkeypatch, tmp_path) -> None:
+    store = open_store()
+    work = open_work(store)
+    monkeypatch.setattr(deck_state, 'store', store)
+    monkeypatch.setattr(deck_state, 'attention', open_attention(store))
+    epic = work.add(project='bench-contract', title='Contract room', goal='Deliver', kind='epic', actor='user')
+    milestone = work.add(project='bench-contract', title='Contract slice', goal='Deliver',
+                         kind='milestone', parent=epic.id, actor='user')
+    for title in ['Gather evidence', 'Review results']:
+        task = work.add(project='bench-contract', title=title, goal=title, parent=milestone.id, actor='user')
+    work.add_criterion(milestone.id, text='checked evidence', verification='checked', actor='user',
+                       specification=EvidenceSpecification('test:bench', 'passed'))
+    for kind in ['judged', 'accepted']:
+        criterion = work.add_criterion(milestone.id, text=f'{kind} evidence', verification=kind, actor='user')
+    work.meet(criterion.id, actor='user')
+    execution = open_execution(store)
+    run = execution.link('worker', 'bench-job', task.id, actor='user')
+    now = store.clock()
+    execution.observe('worker', JobObservation('bench-job', 'running', 'codex', now, None, now,
+                      current_action='read', action_observed_at=now))
+    deck_state.attention.raise_item(project='bench-contract', work_item=milestone.id, kind='decision',
+        owner='user', source='manual', source_reference='bench-question', headline='Accept evidence?',
+        context_reference='work:' + milestone.id, actor='user')
+    open_library(store).index_run(run=run.id, work_item=task.id, kind='report', title='Contract report',
+                                location='fleet://worker/bench-job/report', availability='available')
+    repo = tmp_path / 'management'
+    subprocess.run(['git', 'init', str(repo)], check=True, capture_output=True, timeout=10)
+    open_records(store).register('bench-contract', repo, actor='user')
+    work.set_summary(milestone.id, purpose='Find suppliers', done='Evidence gathered', doing='Review results',
+                     next='Accept results', authoring_role='user', actor='user')
+
+    page = changed_deck.page
+    page.evaluate("fleetDeck.enterFloor('bench-contract')")
+    page.get_by_role('button', name='Contract room', exact=True).click()
+    page.get_by_role('button', name='Contract slice', exact=True).click()
+    bench = page.locator('#benchRoute')
+    expect(bench).to_have_attribute('data-level', 'bench')
+    expect(bench.locator('[data-task]')).to_have_text(['Review results', 'Gather evidence'])
+    assert bench.locator('[data-task]').evaluate_all('(els) => els.map(e => e.dataset.lane)') == ['doing', 'next']
+    for kind, state in [('checked', 'unmet'), ('judged', 'unmet'), ('accepted', 'met')]:
+        light = bench.locator(f'[data-verification="{kind}"]')
+        expect(light).to_have_attribute('data-state', state)
+        expect(light).to_have_attribute('title', f'{kind} evidence')
+    expect(bench.get_by_text('1 / 3', exact=True)).to_be_visible()
+    expect(bench.locator('[data-agent]')).to_have_attribute('data-agent', run.id)
+    expect(bench.locator('[data-agent] .glyph')).to_have_attribute('data-action', 'read')
+    expect(bench.locator('[data-lantern]')).to_be_visible()
+    bench.locator('[data-tray] summary').click()
+    expect(bench.locator('[data-tray]')).to_contain_text('Contract report')
+    expect(bench.locator('[data-tray]')).to_contain_text('fleet://worker/bench-job/report')
+    expect(bench.locator('[data-availability]')).to_have_attribute('data-availability', 'available')
+    bench.locator('[data-briefing]').click()
+    for text in ['Find suppliers', 'Evidence gathered', 'Review results', 'Accept results']:
+        expect(bench.locator('[data-summary]')).to_contain_text(text)
+    page.evaluate('fleetDeck.enterFloor(null)')
+
+
 def test_bench_route_steps_out_one_level(changed_deck: Deck) -> None:
     page = changed_deck.page
     page.locator('#viewToggle [data-view="building"]').click()
@@ -182,7 +243,7 @@ def test_l3_bench_projection(changed_deck: Deck, base_url: str, redact: bool) ->
         assert bench.locator('[data-state="met"]').first.evaluate('(e) => getComputedStyle(e).borderStyle') != bench.locator('[data-state="unmet"]').first.evaluate('(e) => getComputedStyle(e).borderStyle')
         expect(bench.locator('[data-agent]')).to_have_count(5)
         assert bench.locator('[data-agent]').first.evaluate('(e) => e.style.getPropertyValue("--hc")')
-        assert len(set(bench.locator('[data-agent] .glyph svg').evaluate_all('(els) => els.map(e => e.innerHTML)'))) == 4
+        assert len(set(bench.locator('[data-agent] .glyph svg').evaluate_all('(els) => els.map(e => e.innerHTML)'))) == 5
         expect(bench.locator('[data-action="unknown"]')).to_have_count(1)
         expect(bench.locator('[data-desk] [data-lantern]')).to_have_count(1)
         bench.locator('[data-tray] summary').click()
