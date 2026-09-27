@@ -31,8 +31,10 @@ export async function refreshBench() {
     const doc = await read(bench.id);
     if (request !== revision) return;
     const previous = new Map(bench.tasks.map(task => [task.id, task.lane]));
+    const trayOpen = el.querySelector('[data-tray]')?.open === true;
     bench = doc;
     render(new Set(doc.tasks.filter(task => previous.has(task.id) && previous.get(task.id) !== 'done' && task.lane === 'done').map(task => task.id)));
+    el.querySelector('[data-tray]').open = trayOpen;
   } catch (error) {
     if (request === revision) el.innerHTML = `<p role="alert">${esc(error.message)}</p>`;
   }

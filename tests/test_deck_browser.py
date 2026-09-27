@@ -197,6 +197,7 @@ def test_l3_bench_projection(changed_deck: Deck, base_url: str, redact: bool) ->
             assert page.evaluate("fleetDeck.textBudget(document.getElementById('benchRoute'))") == 0
             assert bench.locator('[data-verification] svg').first.evaluate('(e) => getComputedStyle(e).stroke') != 'rgba(0, 0, 0, 0)'
         doc['tasks'][1].update(lane='done', condition='complete')
+        bench.locator('[data-tray] summary').click()
         doc['agents'].append({**doc['agents'][0], 'run': 'six'})
         doc['attention'] = []
         page.evaluate('doc => fleetDeck.apply(doc)', finish_jobs(base_url, {}))
@@ -204,6 +205,7 @@ def test_l3_bench_projection(changed_deck: Deck, base_url: str, redact: bool) ->
         expect(bench.locator('[data-agent-group]')).to_have_attribute('data-count', '6')
         expect(bench.locator('[data-agent]')).to_have_count(0)
         expect(bench.locator('[data-lantern]')).to_have_count(0)
+        expect(bench.locator('[data-tray]')).to_have_attribute('open', '')
         page.evaluate('doc => fleetDeck.apply(doc)', finish_jobs(base_url, {}))
         expect(bench.locator('[data-task="doing"]')).to_have_attribute('data-flipped', 'false')
         for actions in [['web', 'plan', 'delegate', 'type', 'doc'], ['ship', 'review', 'build', 'think', 'search']]:
