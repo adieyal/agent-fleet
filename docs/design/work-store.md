@@ -3,7 +3,7 @@
 Work owns work items, relations, criteria and working summaries. Its public
 contract is `fleet.modules.work.WorkFacade`; `open_work` supplies SQLite and
 local evidence adapters. Read consumers use `get`, `list`, `criteria`,
-`relations`, `summary` and `kinds`, without reading Work tables.
+`relations`, `summary`, `progress` and `kinds`, without reading Work tables.
 
 Each command records the previous and new record as JSON in state history,
 including its actor. Blocking and unblocking use the Attention facade bound
@@ -37,3 +37,18 @@ require an actor but do not require a checked evidence specification.
 --authoring-role ROLE --actor ACTOR` stores a working summary. All commands
 return JSON records. Summary bodies remain store-owned until the planned
 Records cutover. No run completion or time passage changes work or criteria.
+
+`fleet status PROJECT` renders the persisted work tree without contacting hosts.
+Each item shows its goal, condition, next step, criteria and verification kinds,
+open linked attention items, and working summary. Project-level open attention
+appears separately. Attention's read policy handles expired snoozes.
+
+Work's `progress` query counts complete direct milestone children out of all
+direct milestone children. If there are none, it counts met criteria out of all
+criteria. Without either total, progress is unknown, even for a complete item.
+The read-only `fleet.projections.project.project_status` function assembles the
+module records; `fleet status PROJECT --json` emits that document unchanged.
+It contains `project`, nested `work_items`, and project-level `attention`.
+Each work item adds `progress` (basis, complete, total), `criteria`, `summary`,
+`attention`, and `children` to its stored fields. Unknown progress uses null
+counts, absent summaries remain null, and timestamps use ISO 8601 strings.

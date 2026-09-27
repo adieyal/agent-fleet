@@ -7,7 +7,7 @@ from typing import Callable
 
 from .application import Commands
 from .application.ports import EvidenceReader, WorkRepository
-from .domain import KINDS, Criterion, EvidenceSpecification, Relation, Summary, WorkItem
+from .domain import KINDS, Criterion, EvidenceSpecification, Progress, Relation, Summary, WorkItem, accepted_progress
 
 
 class WorkFacade:
@@ -37,6 +37,11 @@ class WorkFacade:
 
     def kinds(self, project: str) -> list[str]:
         return sorted(set(KINDS) | {item.kind for item in self.list(project=project)})
+
+    def progress(self, identity: str) -> Progress:
+        item = self.get(identity)
+        children = [child for child in self.list(project=item.project) if child.parent == identity]
+        return accepted_progress(children, self.criteria(identity))
 
     def add_criterion(self, identity: str, *, text: str, verification: str, actor: str,
                       specification: EvidenceSpecification | None = None) -> Criterion:
