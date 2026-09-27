@@ -2,6 +2,73 @@
 
 This is a throwaway test on branch `renovate/motion-test` that compares clip sources for the robot: Mixamo (motion capture) against HY-Motion 1.0 (Tencent's text-to-motion model). Step 1 generated the HY-Motion clips. Step 2 put both sources on a robot built from the user's 3D parts and rendered them with the floor's camera. The robot sprite pipeline on `renovate/robot` is untouched.
 
+**Decision after step 2:** the user chose Mixamo for every clip; HY-Motion is dropped. `robot-sheet.png` and `robot-poses/` are the style target, replacing B2. The code now handles Mixamo rigs only. The step-2 scripts (`run_step2.sh`, the HY-Motion `clip` command) remain in commit 9005887.
+
+## Robot assembly round 1
+
+This round fixes the user's review of the parts robot. Boards and renders are in the outbox under `robot-assembly-1/`; small WebP copies are in `assembly-1/`. The pipeline is:
+
+```bash
+B=~/.local/bin/blender
+$B -b --factory-startup --python art/motion-test/robot_parts.py -- --report parts_audit.json   # parts library
+$B -b --factory-startup --python art/motion-test/render_motion.py -- calib /tmp/c.png          # colour loop:
+python art/motion-test/calibrate_colours.py /tmp/c.png                                         #  repeat to converge
+$B -b --factory-startup --python art/motion-test/render_motion.py -- seatcheck seat_check.json
+$B -b --factory-startup --python art/motion-test/render_motion.py -- review <dir>
+python art/motion-test/compose.py review <dir> <boards dir> "<context>/robot-poses/teal robot standing.png"
+```
+
+1. **Colour.**
+   - Every part now uses a flat sheet colour instead of the grey baked textures:
+     - teal: helmet and limb shells
+     - cream: chest, pelvis and ear rings
+     - black: face plate, joints, neck, waist band, mitts and soles
+     - cyan glow: eyes and chest light
+   - Two-tone parts (chest, pelvis, ear caps) take their black trims from their texture's dark areas; the boot's black sole is a height band.
+   - Colours were sampled from the teal pose images: the median lit mid-tone per colour class. The albedos were then calibrated in a render loop (`calibrate_colours.py`, `palette.json`) until a B1-studio render reproduced them.
+   - Final match: black #141717 exact, cream #d3c6ba vs #d6c8bc, teal #299eab vs #1d9ba7. The teal keeps a slight red lift from studio reflections that the albedo cannot remove.
+   - Gloss: roughness 0.3, low broad specular, a thin sharp clear coat (small crisp highlights, as on the sheet). A strong specular washed the teal out.
+   - **Tint mask:** every tintable colour is one node named `host_tint` (teal shells and the teal part of the boots). `motion_rig.tint('#rrggbb')` recolours a host without touching cream, black or glow.
+2. **Height and proportions.**
+   - The regular helmet (0.43 m wide) replaces `helmet large`.
+   - The torso is larger: chest 0.36 m, pelvis 0.29 m, with the waist band and pelvis stacked from their measured extents so the torso reads as one piece.
+   - The legs are long enough that **seated feet reach the floor from the 0.47 m chair with no lift**. Each frame is grounded (the lowest point touches the floor), and the seat is then met by the thighs. Seat contact at the most seated frame (`assembly-1/seat_check.json`), with both soles within 4 mm of the floor in every clip:
+
+     | clip | seat contact |
+     |---|---|
+     | typing | 0.000 m |
+     | sitting-idle | −0.001 m |
+     | sitting-waiting | −0.001 m |
+     | stand-to-sit | −0.001 m |
+     | writing-seated | +0.006 m |
+     | sitting-idle-hands-on-thighs | +0.011 m |
+     | sit-to-stand | −0.005 m |
+     | thumbs-up-sitting | +0.038 m (the clip perches forward on the seat) |
+   - **Trade-off to review:** with a 0.47 m seat the robot needs human knee height (shin 0.423 m + ankle 0.10 m). It now stands **1.54 m**, taller than the floor's current robot (1.33 m). The helmet is 21% of its height against 38% on the sheet, and the legs are about half the height against a third. The upper body keeps the sheet's look. Keeping the sheet's short legs would need a lower, robot-sized seat (about 0.35 m).
+3. **Hands.**
+   - `hand back side` is split into three rigid pieces:
+     - palm, on the Hand bone
+     - fingers, on Middle1, so grips and fists curl
+     - thumb, on Thumb1, so thumbs-up shows
+   - The pieces are coarse-voxel-remeshed into one smooth mitten surface each. They are 0.19 m long and 1.8× thicker, to match the sheet's chunky mitts. See `04_close_hands` for Mixamo's thumbs-up at its peak.
+4. **Head seams.**
+   - Cause: the glTF import splits every part's vertices along UV seams (the helmet had 9,176 open boundary edges and 4,760 duplicate vertices). Decimating the split mesh pulled the seams open into the "cracks".
+   - Fix: every part is now welded (merge by distance) before decimation. The helmet is also voxel-remeshed and smoothed into one closed dome.
+   - Result: 0 open, 0 non-manifold, 0 duplicate. Per-part before/after counts are in `assembly-1/parts_audit.json`.
+   - No shading re-bake was needed: the shells are flat colours now.
+5. **Back and "stacks of rings".**
+   - Two parts were broken from behind. `pelvis` is asymmetric (a stray socket on one side of the back), so its clean half is mirrored. `thigh` has socket holes on three sides; **it is unusable, so a smooth tapered capsule substitutes for it**.
+   - Four parts made the ring stacks: the flanged `shoulder joint`, `elbow joint`, `socket joint 1` and `socket joint 2`. They are replaced by the single black `ball joint` at shoulder, elbow, hip and knee.
+   - Other clean-ups:
+     - The forearm's loose floating collar ring is removed.
+     - The upper arm's through-hole is filled.
+     - The shin and boot are remeshed smooth, so the heel and ankle-pin holes are gone.
+     - The waist ring is flattened to one band.
+   - Every part's pivot and parenting was checked from all eight B1 angles (`02_turnaround`, `05_close_back`).
+   - Still visible: a faint moulded ring on the upper-arm bulb and on the heel (shape only, no black), and the robot's legs being longer than the sheet's.
+
+Unused parts: `helmet large`, `hand palm side` (a second complete hand, not half of one), `thigh` (substituted), and the four flanged joints.
+
 ## Step 2 verdict
 
 | clip | recommended source | why |
