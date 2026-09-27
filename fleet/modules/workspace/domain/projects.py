@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
-from fleet.transport import FleetError
+from fleet.errors import FleetError
 
 PROJECT_ID = re.compile(r"^p-[0-9a-f]{8}$")
 

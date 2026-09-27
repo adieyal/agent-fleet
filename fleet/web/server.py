@@ -19,8 +19,7 @@ from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from fleet import transport
-from fleet.composition import open_attention, open_execution, open_library, open_store, open_workspace
-from fleet.infrastructure.sqlite import Store
+from fleet.composition import Store, open_attention, open_execution, open_library, open_store, open_workspace
 from fleet.modules.attention import InputObservation, ItemResolved
 from fleet.modules.workspace import (NoVacancy, FOCUSES, AlreadyShuttered, NotShuttered,
                                      WorkspaceFacade, Registry)
@@ -109,6 +108,7 @@ class FleetState(LiveWorkspace):
             sequence = self.store.latest_sequence()
             mutate(self.by_host[host_name])
             self.by_host[host_name] = deepcopy(self.by_host[host_name])
+            retry_deliveries = self.by_host[host_name]["ok"] and previous != self.by_host[host_name]
             reconciled = False
             if ingest:
                 host = self.by_host[host_name]
@@ -121,6 +121,8 @@ class FleetState(LiveWorkspace):
                 return
             self.version += 1
             self.changed.notify_all()
+        if retry_deliveries:
+            self.execution.retry_deliveries(host_name)
 
     def refresh_registry(self) -> str | None:
         try:

@@ -23,4 +23,5 @@ def answer_question(repository: DecisionRepository, clock: Callable[[], datetime
         transaction.attention.resolve(item.id, details=f"decision:{decision.id}", actor=actor)
         for identity in decision.affected_work_items:
             transaction.work.apply_answer(identity, actor=actor, next_step=next_step)
+        transaction.execution.queue_answer(item, decision)
         return decision

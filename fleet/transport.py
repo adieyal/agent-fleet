@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from fleet.errors import FleetError
+
 REMOTE_FLEETD_PATH = "~/.local/share/fleet/fleetd.py"
 LOCAL_FLEETD_SOURCE = Path(__file__).parent / "remote" / "fleetd.py"
 SSH_OPTIONS = [
@@ -19,10 +21,6 @@ SSH_OPTIONS = [
     "-o", f"ControlPath={Path.home() / '.ssh'}/fleet-%C",
     "-o", "ControlPersist=10m",
 ]
-
-
-class FleetError(Exception):
-    pass
 
 
 @dataclass(frozen=True)

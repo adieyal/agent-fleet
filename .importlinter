@@ -1,0 +1,89 @@
+[importlinter]
+root_package = fleet
+
+[importlinter:contract:layers]
+name = Controller layers
+type = layers
+layers =
+    fleet.cli : fleet.web
+    fleet.composition
+    fleet.projections
+    fleet.modules
+
+[importlinter:contract:infrastructure]
+name = Infrastructure construction
+type = protected
+protected_modules = fleet.infrastructure
+allowed_importers = fleet.composition
+
+[importlinter:contract:module-independence]
+name = Module independence
+type = forbidden
+source_modules = fleet.modules
+forbidden_modules =
+    fleet.infrastructure
+    fleet.web
+    fleet.cli
+    fleet.composition
+    fleet.projections
+
+# Each module's descendants are private, including its facade implementation.
+# Add a public-surface contract whenever a new business module is introduced.
+[importlinter:contract:attention-public]
+name = Attention public surface
+type = protected
+protected_modules = fleet.modules.attention.*
+allowed_importers = fleet.modules.attention
+
+[importlinter:contract:decisions-public]
+name = Decisions public surface
+type = protected
+protected_modules = fleet.modules.decisions.*
+allowed_importers = fleet.modules.decisions
+
+[importlinter:contract:execution-public]
+name = Execution public surface
+type = protected
+protected_modules = fleet.modules.execution.*
+allowed_importers = fleet.modules.execution
+
+[importlinter:contract:library-public]
+name = Library public surface
+type = protected
+protected_modules = fleet.modules.library.*
+allowed_importers = fleet.modules.library
+
+[importlinter:contract:records-public]
+name = Records public surface
+type = protected
+protected_modules = fleet.modules.records.*
+allowed_importers = fleet.modules.records
+
+[importlinter:contract:work-public]
+name = Work public surface
+type = protected
+protected_modules = fleet.modules.work.*
+allowed_importers = fleet.modules.work
+
+[importlinter:contract:workspace-public]
+name = Workspace public surface
+type = protected
+protected_modules = fleet.modules.workspace.*
+allowed_importers = fleet.modules.workspace
+
+[importlinter:contract:module-domain]
+name = Module domain layers
+type = layers
+containers = fleet.modules.*
+layers =
+    application
+    domain
+
+[importlinter:contract:worker]
+name = Standalone worker
+type = forbidden
+source_modules = fleet.remote.fleetd
+forbidden_modules =
+    fleet
+    fleet.**
+as_packages = False
