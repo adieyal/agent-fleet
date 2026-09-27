@@ -11,6 +11,7 @@ def test_bench_records_unknown_and_expired_actions_with_pinned_clock():
     run = Run("r", "a", "worker", "j", "codex", "running", None, None, None, now,
               current_action="read", action_observed_at=now)
     execution = ExecutionFacade(SimpleNamespace(runs=lambda: [run]), None, clock=lambda: now)
+    execution.observe_host('worker', reachable=True)
     for seconds, expected in [(0, "current"), (20, "current"), (21, "stale")]:
         execution.clock = lambda: now + timedelta(seconds=seconds)
         projected = execution.run_activity(run)
@@ -23,3 +24,19 @@ def test_bench_records_unknown_and_expired_actions_with_pinned_clock():
         assert agent["action_observed_at"] == now.isoformat()
     unknown = execution.run_activity(replace(run, current_action=None, action_observed_at=None))
     assert unknown == {"action_glyph": None, "action_observed_at": None, "action_freshness": "unknown"}
+
+
+def test_live_host_keeps_old_action_current(tmp_path):
+    from fleet import composition
+    now = datetime(2026, 9, 28, tzinfo=timezone.utc)
+    store = composition.open_store(tmp_path / 'clock.db', clock=lambda: now)
+    execution = composition.open_execution(store)
+    run = Run('r', 'a', 'worker', 'j', 'codex', 'running', None, None, None, now,
+              current_action='test', action_observed_at=now - timedelta(seconds=30))
+    before = store.latest_sequence()
+    execution.observe_host('worker', reachable=True)
+    execution.observe_host('worker', reachable=True)
+    assert execution.run_activity(run)['action_freshness'] == 'current'
+    assert store.latest_sequence() == before
+    now += timedelta(seconds=21)
+    assert execution.run_activity(run)['action_freshness'] == 'stale'

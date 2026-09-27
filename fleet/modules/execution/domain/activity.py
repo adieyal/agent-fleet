@@ -3,7 +3,7 @@
 import re
 
 
-ACTION_FRESHNESS_SECONDS = 20
+HOST_FRESHNESS_SECONDS = 20
 DOC_FILE = re.compile(r"\.(md|mdx|markdown|rst|txt)$", re.I)
 
 

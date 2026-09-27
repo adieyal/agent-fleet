@@ -31,6 +31,12 @@ class RecordsFacade:
     def write(self, project: str, path: str, body: str, **fields) -> dict:
         return self.authoring.write(project, path, body, **fields)
 
+    def prepare(self, project: str, path: str, body: str, **fields) -> dict:
+        return self.authoring.prepare(project, path, body, **fields)
+
+    def publish(self, intent: dict, body: str) -> dict:
+        return self.authoring.publish(intent, body)
+
     def reconcile(self) -> None:
         self.authoring.reconcile()
 
