@@ -22,8 +22,10 @@ const WINDOWS = [2.2, 6.4, 10.6, 14.8, 19.0];   // windows along the cut-away fr
 const WORK = { qdesk: [-2.55, 0], board: 0.35 };
 const LIFT_X = 18.6, PANEL_X = 20.25;
 const PILASTERS = [7.45, 13.3, 16.95];
+const WALL_LIGHTS = [6.2, 13.95];
 // a veil over the floor texture: l1's floor is a warm mid grey, which the lamps' warm light shows up on
 const FLOOR_TONE = 'rgba(96, 88, 86, 0.19)';
+const LEFT_SHADE = 'rgba(52, 60, 80, 0.2)';
 const NEAR = { offset: [-0.231, -0.121, 1.698], height: 5.0 };   // l2's framing, relative to its bench's centre (refitted for pitch 28°)
 const MARK = { check: 'done', glow: 'running', cross: 'failed', dash: 'blank', blank: 'blank' };
 const ACTIVE = new Set(['running', 'queued', 'stalled']);
@@ -52,6 +54,19 @@ function box(W, D, H) {
     { quad: [[W, 0, 0], [W + 0.05, -0.05, 0], [W + 0.05, D, 0], [W, D, 0]], color: CAP.top },
   ];
 }
+// darkest at the wall, falling off as (1 - t)^1.6 over `reach` metres
+function falloff(alpha) {
+  return [0, 0.25, 0.5, 0.75, 1].map(t => [t, `rgba(40, 44, 60, ${(alpha * (1 - t) ** 1.6).toFixed(3)})`]);
+}
+function occlusion(W, D) {
+  const F = 1.1, U = 0.7;   // reach across the floor and up the wall, metres
+  return [
+    { quad: [[0, D - F, 0], [W, D - F, 0], [W, D, 0], [0, D, 0]], linear: { from: [0, D, 0], to: [0, D - F, 0], along: [1, 0, 0], stops: falloff(0.47) } },
+    { quad: [[0, 0, 0], [F, 0, 0], [F, D, 0], [0, D, 0]], linear: { from: [0, 0, 0], to: [F, 0, 0], along: [0, 1, 0], stops: falloff(0.47) } },
+    { quad: [[0, D, 0], [W, D, 0], [W, D, U], [0, D, U]], linear: { from: [0, D, 0], to: [0, D, U], along: [1, 0, 0], stops: falloff(0.37) } },
+    { quad: [[0, 0, 0], [0, D, 0], [0, D, U], [0, 0, U]], linear: { from: [0, 0, 0], to: [0, 0, U], along: [0, 1, 0], stops: falloff(0.37) } },
+  ];
+}
 const WALL_T = 0.45, SLAB = 0.9, RIM = 0.14;   // as build_kit.py
 const CAP = { top: '#f0eeea', lip: '#dcd8d2', side: '#e6e2dc' };
 const SLAB_C = { front: '#9ca0a9', side: '#838c98', rim: '#dcd6d0', rimSide: '#c4c0bc' };
@@ -62,7 +77,12 @@ function hash(s) { let h = 2166136261; for (const ch of s) { h ^= ch.charCodeAt(
 export function floorLayout(room, kit, colour) {
   const { w: W, d: D, h: H } = FLOOR;
   const items = [], runs = [], benches = [];
-  const add = (id, sprite, at, extra = {}) => { items.push({ id, sprite, at, ...extra }); return id; };
+  // (a prop rendered from a model has its contact shadow as its own ground sprite: it goes down with the prop)
+  const add = (id, sprite, at, extra = {}) => {
+    items.push({ id, sprite, at, ...extra });
+    if (kit[sprite] && kit[sprite].shadow) items.push({ id: `${id}-shadow`, sprite: kit[sprite].shadow, at });
+    return id;
+  };
 
   // --- shell: floor, walls with their caps and cut ends, the slab's edges, pilasters, sheen --------------------
   const planes = [
@@ -73,19 +93,21 @@ export function floorLayout(room, kit, colour) {
       stops: [[0, 'rgba(255, 238, 214, 0.10)'], [0.55, 'rgba(255, 238, 214, 0)'], [1, 'rgba(24, 28, 44, 0.28)']] } },
     { quad: [[0, D, 0], [W, D, 0], [W, D, H], [0, D, H]], texture: 'wall-tile', origin: [0, D, H], u: [1, 0, 0], v: [0, 0, -1] },
     { quad: [[0, 0, 0], [0, D, 0], [0, D, H], [0, 0, H]], texture: 'wall-tile', origin: [0, 0, H], u: [0, 1, 0], v: [0, 0, -1] },
+    // the left wall faces away from the light (as the rendered pieces' sides do): a shade over it, so both agree
+    { quad: [[0, 0, 0], [0, D, 0], [0, D, H], [0, 0, H]], color: LEFT_SHADE },
     // the walls' caps and the slab's cut faces are flat, so they are planes the full length of the floor: exact under
     // the camera and without joints (repeated per-bay sprites left a line at every bay). Colours sampled from the
     // Blender renders of those pieces, so the corner and cut-end pieces meet them.
     ...box(W, D, H),
+    // occlusion where the walls meet the floor: one gradient the length of each wall, on the floor and up the wall's
+    // foot (per-bay sprites left a joint at every bay: floor review 2)
+    ...occlusion(W, D),
   ];
   add('corner', 'wall-corner', [0, D, 0]);
   add('end-back', 'wall-end-back', [W, D, 0]);
   add('end-left', 'wall-end-left', [0, 0, 0]);
   for (const x of PILASTERS) add(`pilaster-${x}`, 'pilaster', [x, D, 0]);
   for (let x = BAY / 2; x < W; x += BAY) for (let y = BAY / 2; y < D; y += BAY) add(`sheen-${x}-${y}`, 'floor-sheen', [x, y, 0]);
-  // occlusion where the walls meet the floor, one bay at a time (the bands are even along their length: no seams)
-  for (let x = 0; x < W - 0.01; x += BAY) { add(`ao-floor-x-${x}`, 'ao-floor-x', [x, D, 0]); add(`ao-wall-x-${x}`, 'ao-wall-x', [x, D, 0]); }
-  for (let y = 0; y < D - 0.01; y += BAY) { add(`ao-floor-y-${y}`, 'ao-floor-y', [0, y, 0]); add(`ao-wall-y-${y}`, 'ao-wall-y', [0, y, 0]); }
   // daylight through the windows of the cut-away front wall: cool patches reaching into the room
   for (const x of WINDOWS) add(`window-${x}`, 'glow-window', [x, 1.5, 0], { intensity: 0.35 });
 
@@ -104,14 +126,25 @@ export function floorLayout(room, kit, colour) {
     add(i ? `crate-${i}` : 'crate', 'crate', [x, D - y, 0], { place: 'waiting' });
   }
   const store = { spot: [STORE.spot[0], D - STORE.spot[1]], frame: { target: [1.8, D - 1.8, 1.0], height: 4.2 } };
-  add('shelf-a', 'shelf', [3.6, D - 0.3, 0], { place: 'library' });
-  add('shelf-b', 'shelf', [4.95, D - 0.3, 0], { place: 'library' });
+  // wall-backed props (bookcases, the whiteboard, the crate shelf, wall lights) are anchored at the middle of their
+  // back, so they go on the wall face itself: flush, and turned to the wall's axis by construction
+  add('shelf-a', 'shelf', [3.65, D, 0], { place: 'library' });
+  add('shelf-b', 'shelf-low', [4.85, D, 0], { place: 'library' });
   add('book-cart', 'book-cart', [6.4, D - 1.1, 0], { place: 'library' });
   add('plant-lib', 'plant-tall', [6.95, D - 0.45, 0]);
-  // (the podium stands clear of the workarea bench's right end: robots reach its seats along the wall behind it)
-  add('podium', 'podium', [14.4, D - 0.75, 0], { place: 'orchestrator' });
-  add('plant-podium', 'plant-bush', [15.35, D - 0.45, 0]);
-  add('whiteboard', 'whiteboard', [16.35, D - 0.8, 0], { place: 'briefing' });
+  add('crate-shelf', 'crate-shelf', [0, D - 5.4, 0], { place: 'store' });
+  // (the podium stands clear of the workarea bench's right end: robots reach its seats along the wall behind it;
+  // the briefing board stands between the pilasters, clear of both)
+  add('podium', 'podium', [14.6, D - 2.2, 0], { place: 'orchestrator' });
+  add('whiteboard', 'whiteboard', [15.2, D, 0], { place: 'briefing' });
+  // wall lights on bare stretches of the back wall, each with a soft warm scallop under it (ambient: dim, so bright
+  // light still means a run at work)
+  for (const x of WALL_LIGHTS) {
+    add(`wall-light-${x}`, 'wall-light', [x, D, 1.85], { layer: WALL });
+    add(`wall-wash-${x}`, 'glow-wall-wash', [x, D - 0.01, 2.3], { intensity: 0.35, layer: WALL });
+  }
+  add('floor-lamp', 'floor-lamp', [W - 0.6, 2.5, 0]);
+  add('floor-lamp-pool', 'glow-desk-pool', [W - 0.75, 2.3, 0.005], { intensity: 0.5 });
   add('plant-lift', 'plant-tall', [21.05, D - 0.5, 0]);
   add('plant-front-l', 'plant-tall', [0.6, 0.7, 0]);
   add('plant-front-r', 'plant-bush', [W - 0.6, 0.7, 0]);

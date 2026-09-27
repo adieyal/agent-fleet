@@ -27,6 +27,7 @@ REQUIRED = [
     "alcove", "lift-panel", "monitor", "floor-sheen", "bench-left", "bench-mid", "bench-right",
     "shadow-bench-3", "shadow-bench-4", "shadow-seat",
     "crate-stack", "ao-floor-x", "ao-floor-y", "ao-wall-x", "ao-wall-y", "glow-window",
+    "shelf-low", "crate-shelf", "wall-light", "floor-lamp",
     "pilaster", "wall-cap-x", "wall-cap-y", "wall-corner", "wall-end-back", "wall-end-left", "slab-front", "slab-side",
     *[f"footprints-{a:03d}" for a in range(0, 360, 45)],
 ]
@@ -83,6 +84,44 @@ def test_the_lift_has_door_states_and_the_lantern_a_glyph_slot() -> None:
     assert len(SPRITES["plan-wall"]["slots"]["lights"]) == 5
     # glow is additive: drawn as light, or (daylight on the floor) added into the ground snapshot
     assert all(SPRITES[g]["layer"] == "light" or SPRITES[g].get("blend") == "lighter" for g in SPRITES if g.startswith("glow-"))
+
+
+# floor review 2: props are rendered from the 3D models with the world camera, so they sit square to the walls; AI
+# sprites remain only where no model exists (and none of them is placed on the floor)
+FROM_MODELS = [
+    "bench-left", "bench-mid", "bench-right", "question-desk", "chair-back", "chair-front", "shelf", "shelf-low",
+    "book-cart", "whiteboard", "podium", "plant-tall", "plant-bush", "plant-small", "floor-lamp", "crate",
+    "crate-stack", "crate-shelf", "wall-light", "monitor", "laptop", "lamp", "pen-pot", "paper-stack", "sketch", "mug",
+    "desk-plant", "books", "paper-tray", "lantern",
+]
+NO_MODEL = {"bench", "terminal-desk", "librarian-desk"}
+# pieces that butt against their neighbours or the shell's planes, so they end at their edge on purpose
+BUTTING = {"slab-front", "slab-side", "wall-cap-x", "wall-cap-y", "wall-end-back", "wall-end-left"}
+
+
+def test_props_are_rendered_from_their_models() -> None:
+    for name in FROM_MODELS:
+        assert SPRITES[name]["source"] == "blender" and SPRITES[name]["from"].startswith("model "), name
+    assert {n for n, s in SPRITES.items() if s["source"] == "ai"} == NO_MODEL
+
+
+def test_a_props_shadow_is_its_own_ground_sprite() -> None:
+    for name, s in SPRITES.items():
+        if "shadow" in s:
+            shadow = SPRITES[s["shadow"]]
+            assert shadow["layer"] == "ground" and shadow["hit"] == "none", name
+
+
+@pytest.mark.parametrize("name", sorted(n for n, s in SPRITES.items() if s["source"] != "ai" and n not in BUTTING))
+def test_sprites_fade_out_inside_their_edges(name: str) -> None:
+    # a sprite that still has alpha at its edge draws a faint line where it stops: the rectangles round the lamps'
+    # glow and the shade steps in the wall of floor review 2
+    for t in SPRITES[name]["tiers"]:
+        with Image.open(KIT / t["file"]) as im:
+            a = im.convert("RGBA").getchannel("A")
+        w, h = a.size
+        border = [a.getpixel((x, y)) for x in range(w) for y in (0, h - 1)] + [a.getpixel((x, y)) for y in range(h) for x in (0, w - 1)]
+        assert max(border) <= 8, (t["file"], max(border))
 
 
 def test_the_kit_is_within_budget() -> None:

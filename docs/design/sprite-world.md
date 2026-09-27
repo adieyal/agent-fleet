@@ -20,7 +20,7 @@
 
 **World space** is metres on one floor: `x` runs along the back wall from the left wall, `y` runs from the front edge of the floor towards the back wall, `z` is up. This is the bake-off's orientation (Blender, Z up), so bake-off scenes drop in by translation.
 
-**One camera for every sprite and every zoom.** Orthographic, pitch 28°, yaw 33°: the image model's own camera, measured from the AI furniture's silhouettes and matching l1 and l2 (floor review 1 below). Blender pieces and the walker are rendered with it, and the AI props need no correction. Changing it means re-rendering every Blender piece, so it is fixed. (It was pitch 44.5°, yaw 21.25° until floor review 1: the l2 landmark fit, which the AI furniture never matched.) The camera never turns; the prototype's ±15° turn is a 3D-only feature and is dropped.
+**One camera for every sprite and every zoom.** Orthographic, pitch 28°, yaw 33°: the image model's own camera, measured from the AI furniture's silhouettes and matching l1 and l2 (floor review 1 below). Blender pieces, the props rendered from 3D models (floor review 2) and the walker are rendered with it; the few AI props left only approximate it. Changing it means re-rendering every Blender piece, so it is fixed. (It was pitch 44.5°, yaw 21.25° until floor review 1: the l2 landmark fit, which the AI furniture never matched.) The camera never turns; the prototype's ±15° turn is a 3D-only feature and is dropped.
 
 With `c = (cx, cy, cz)` the view centre and `ppm` the zoom in screen pixels per metre, a world point `p` lands at:
 
@@ -228,6 +228,34 @@ Each point was reproduced in `/prototype/floor` at `e2a1601` before any change (
    All of it is baked sprites or canvas fills in the ground snapshot, so it costs nothing per frame.
 5. **Lift number:** the floor's number glows on the lift's indicator over the doors (DOM, over the rendered display). The floor buttons' numbers keep a legible minimum size.
 6. **Storage corner:** two stacks of plain crates on pallets (one AI generation, logged) stand in and beside the alcove, as furniture. In front of them go the hourglass crates, one per thing waiting on its human, up to three. A store spot in front is on the walking grid, reachable from the lift (tested).
+
+### Floor review 2: root causes
+
+Reproduced at `e727bad` (`shoot_review.py` views `shelves`, `wall` and `fringe`; before and after in `floor-sbs/review-2/`).
+
+- **(a) Bookcases and cart at an angle to the wall.** Each AI prop comes out at the image model's camera for that one generation, which varies from image to image around 28°/33° (review 1 measured 24–32° pitch, 23–39° yaw). A shelf drawn at yaw 25° shows its front face nearly square to the viewer while the wall runs at 33°, and no amount of scaling fixes that. The shelves were also anchored at their base centre 0.3 m off the wall, not at their back.
+- **(b) The back wall in segments.** Two causes, both in sprites that stop at their edges:
+  - **Cast shadows cut off.** The alcove, the pilasters, the corner post and the lift's button column were rendered with shadow catchers on the wall and floor. A 3.2 m piece's shadow, cast by the key light from the front left, runs well past the sprite's margin and stops at its edge. The alcove left a darker band up to 1 m right of its fin, and every pilaster left a step. The occlusion bands were per-bay sprites too, with a joint every 3.6 m.
+  - **The alcove fin's side.** It faces +x like the room's left wall. The render shades it much darker (142, 150, 156) than the flat wall texture (211, 203, 195), so it read as a separate panel of wall.
+- **(c) Faint rectangles round the seated robots.** Three sprite-edge faults drew them:
+  - **Tint outside the sprite.** `tinted()` in `paint.js` multiplies the host colour over the whole canvas and clips the result only by the tint mask. The pencil robot's mask is non-zero on 1,315 pixels where the sprite is transparent, including its frame edges, so the host colour traced the sheet's frames.
+  - **Glow squares.** Every glow disc came from PIL's `radial_gradient`, which reaches white only in its corners (181 at the sides). The lamp-shade glow was cut off by its square at 14% alpha, and additive, so each lit lamp beside a robot drew a bright rectangle.
+  - **Frame bleed.** A frame drawn scaled straight from its sheet samples its neighbour's edge column. The pencil sheet's frame 2 is opaque down its right edge, so frame 3 showed a thin line down its left.
+
+**Fixes:**
+
+- **(a) Props from 3D models.** Every prop with a model (`~/.cache/agent-fleet-assets/models`, not committed) is rendered in Blender with the world camera (`art/scripts/render_props.py`):
+  - **Setup:** the same studio and tiers as `build_kit.py`. Each model is scaled uniformly to its real size and turned so its front faces the camera. Chairs are turned by their backrest's direction, since the model is not square to its axes.
+  - **Wall-backed props:** bookcases, the whiteboard, the crate shelf and the wall light are anchored at the middle of their back. They are placed on the wall face, flush and turned to its axis. The crate shelf is turned a quarter for the left wall.
+  - **Desks:** the desk model is a long low table (0.34 m high by 2 m), so the bench's desk module and the question desk are exact boxes (oak top, steel legs), with the drawers model as their pedestal.
+  - **Shadows:** each prop's contact shadow is a separate render, with the prop as a holdout. It becomes a ground sprite placed with the prop, or is laid into the sprite for props on a desk.
+  - **Still AI:** only the old whole bench, the terminal desk and the librarian's desk, none of them on the floor. The lift stays Blender-built: its model is squat, would need stretching to 2.75 m, and bakes floor numbers 1–5 that would contradict the runtime indicator.
+- **(b) One continuous wall.** The tall architecture pieces have no shadow catchers. The occlusion at the walls' feet is four planes the length of each wall, with linear gradients held parallel to the wall on screen (`linear.along` in `engine.js`). The left wall has a light shade over it, and the fin's side has a paler skin that renders to that same shade, so faces turned the same way agree. Pilasters stay as geometry, with no shading around them.
+- **(c) Clean edges.**
+  - **Tint:** clipped to the sprite's own alpha (`test_a_tint_stays_inside_its_sprite`).
+  - **Glow and planes:** glow discs reach zero at their radius, and every flat drawing is padded before projection.
+  - **Frames:** each is copied out of its sheet 1:1 before scaling (`cellOf`; `test_a_frame_of_a_sheet_is_drawn_without_its_neighbours_pixels`).
+  - **Guard:** `test_sprites_fade_out_inside_their_edges` checks that every rendered or procedural sprite ends at alpha ≤ 8 on its border. The only exceptions are pieces that butt against their neighbours.
 
 ## Glow: activity as light
 

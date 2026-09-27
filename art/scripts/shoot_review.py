@@ -26,6 +26,10 @@ VIEWS = {
     'surfaces': "({ target: [2.0, 1.2, 0.6], height: 4.2 })",
     'store': "(floor.layout.store ? { target: floor.layout.store.frame.target, height: floor.layout.store.frame.height }"
              " : { target: [1.6, floor.layout.size.d - 1.2, 1.2], height: 4.6 })",
+    # review 2: the library against the back wall, a long run of bare back wall, and the seated robots up close
+    'shelves': "({ target: [4.6, floor.layout.size.d - 0.9, 1.1], height: 3.6 })",
+    'wall': "({ target: [7.5, floor.layout.size.d - 1.5, 1.5], height: 5.2 })",
+    'fringe': "({ target: floor.layout.frames.near.target, height: 2.2 })",
 }
 
 

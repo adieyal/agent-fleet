@@ -16,13 +16,18 @@ const ROBOTS = ['b2/robot-typing', 'b2/robot-pencil', 'b2/robot-tube'];
 if (params.has('shot')) document.body.classList.add('shot');
 const world = new World(document.getElementById('world'), { camera: { far: FAR, near: NEAR, bounds: [0, 0, 0, W, D, H] } });
 window.kit = { engine: world, ready: false, error: null };
-const add = (id, sprite, at, extra = {}) => world.add({ id, sprite, at, ...extra });
+let sprites = {};   // the kit manifest's, once loaded
+// (a prop rendered from a model brings its contact shadow, a ground sprite of its own)
+const add = (id, sprite, at, extra = {}) => {
+  world.add({ id, sprite, at, ...extra });
+  if (sprites[sprite] && sprites[sprite].shadow) world.add({ id: `${id}-shadow`, sprite: sprites[sprite].shadow, at });
+};
 const plus = (a, b) => a.map((v, i) => v + b[i]);
 
 async function main() {
   const m = await world.load('/assets/world/kit/manifest.json');
   await world.load('/art/bakeoff/world.json', { prefix: 'b2/' });
-  const S = m.sprites;
+  const S = sprites = m.sprites;
   // shell: textured floor and walls, then the Blender pieces along them
   world.addPlane({ quad: [[0, 0, 0], [W, 0, 0], [W, D, 0], [0, D, 0]], texture: 'floor-tile', origin: [0, D, 0], u: [1, 0, 0], v: [0, -1, 0] });
   world.addPlane({ quad: [[0, D, 0], [W, D, 0], [W, D, H], [0, D, H]], texture: 'wall-tile', origin: [0, D, H], u: [1, 0, 0], v: [0, 0, -1] });
@@ -77,10 +82,14 @@ async function main() {
   for (let k = 0; k < 5; k++) add('steps' + k, 'footprints-315', [LIFT[0] + 0.4 + k * 0.62, D - 1.0 - k * 0.52, 0]);
 
   // around it: the library, the orchestrator, the briefing board, a terminal desk, a waiting crate, plants
-  add('shelf', 'shelf', [12.6, D - 0.3, 0]);
+  add('shelf', 'shelf', [12.6, D, 0]);   // (wall-backed: anchored at the middle of its back, on the wall face)
+  add('shelf-low', 'shelf-low', [14.0, D, 0]);
+  add('wall-light', 'wall-light', [9.0, D, 1.85]);
+  add('floor-lamp', 'floor-lamp', [14.2, 5.0, 0]);
+  add('crate-shelf', 'crate-shelf', [0, 5.2, 0]);
   add('plant-tall', 'plant-tall', [11.4, D - 0.4, 0]);
   add('plant-bush', 'plant-bush', [3.1, D - 0.45, 0]);
-  add('plant-small', 'plant-small', [13.8, D - 0.3, 0]);
+  add('plant-small', 'plant-small', [13.6, 6.2, 0]);
   add('book-cart', 'book-cart', [12.9, 7.2, 0]);
   add('librarian-desk', 'librarian-desk', [11.6, 5.4, 0]);
   add('podium', 'podium', [9.8, 3.6, 0]);

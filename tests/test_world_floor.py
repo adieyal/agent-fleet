@@ -222,13 +222,33 @@ def test_every_seated_robot_sits_behind_its_desk(floor: Page) -> None:
         assert s["floor"] == pytest.approx(s["nearY"], abs=0.5), s
 
 
+def test_a_frame_of_a_sheet_is_drawn_without_its_neighbours_pixels(floor: Page) -> None:
+    # the pencil robot's frame 2 is opaque down its right edge; frame 3, scaled up, must not show that column down its
+    # left edge (the thin line beside a seated robot, floor review 2)
+    out = floor.evaluate("""(() => {
+      const e = floor.engine, s = e.sprites.get('b2/robot-pencil'), t = s.tiers[0];
+      const c = document.createElement('canvas'); c.width = t.fw * 4; c.height = t.fh * 4;
+      const g = c.getContext('2d');
+      g.drawImage(e.cellOf(s, 0, null, 3), 0, 0, c.width, c.height);
+      const col = g.getImageData(0, 0, 1, c.height).data;
+      let max = 0; for (let i = 3; i < col.length; i += 4) max = Math.max(max, col[i]);
+      const own = document.createElement('canvas'); own.width = 1; own.height = t.fh;
+      own.getContext('2d').drawImage(s.img[0], 3 * t.fw, 0, 1, t.fh, 0, 0, 1, t.fh);
+      const src = own.getContext('2d').getImageData(0, 0, 1, t.fh).data;
+      let srcMax = 0; for (let i = 3; i < src.length; i += 4) srcMax = Math.max(srcMax, src[i]);
+      return { drawn: max, own: srcMax };
+    })()""")
+    # the left column of the drawn frame is no stronger than the frame's own left column
+    assert out["drawn"] <= out["own"] + 2, out
+
+
 def test_robots_can_walk_to_the_storage_corner(page: Page, state: dict[str, Any]) -> None:
     # the store spot is on the walking grid, reachable from the lift (built as the floor page builds it)
     out = page.evaluate("""([state, kit]) => Promise.all([import('/js/world/layout.js'), import('/js/workarea-model.js'), import('/js/world/nav.js')])
       .then(([L, W, N]) => {
         const room = W.workareaOf(state, 'restoke', state.time);
         const lay = L.floorLayout(room, kit, () => '#888888');
-        const blocks = lay.items.filter(it => kit[it.sprite] && kit[it.sprite].layer !== 'light' && !/^(footprints|slab|chair|floor-sheen|shadow|ao-|glow)/.test(it.sprite))
+        const blocks = lay.items.filter(it => kit[it.sprite] && kit[it.sprite].layer !== 'light' && !/^(footprints|slab|chair|floor-sheen|shadow|ao-|glow)|-shadow$/.test(it.sprite))
           .map(it => { const f = kit[it.sprite].footprint; return [it.at[0] + f[0], it.at[1] + f[1], it.at[0] + f[3], it.at[1] + f[4], it.at[2] + f[2]]; })
           .filter(b => b[4] <= 1.8).map(b => b.slice(0, 4));
         const g = N.navGrid({ x0: 0, y0: 0, x1: lay.size.w, y1: lay.size.d }, blocks);

@@ -37,7 +37,7 @@ TILE, PITCH_T, COLS, ROWS = 0.27, 0.3, 10, 6   # plan-wall tiles: l2's 10 x 6 gr
 
 PAL = {  # docs/design/art-direction.md, rendered targets; albedo a little lower
     # wall and slab: albedo that renders near the wall texture's mean (#c7c2bf), so wall ends meet the texture
-    'wall': '#a39e9b', 'cap': '#dcd2c8', 'pilaster': '#a39897', 'cut': '#b9b0ab', 'slab': '#9d989a',
+    'wall': '#a39e9b', 'fin_side': '#dac0b0', 'cap': '#dcd2c8', 'pilaster': '#a39897', 'cut': '#b9b0ab', 'slab': '#9d989a',
     'steel': '#6f6d74', 'door': '#75737a', 'frame': '#8d8a90', 'dark': '#1d1f24', 'bezel': '#d8d6da',
     'backing': '#9e9aa0', 'tile': '#e2dfe2', 'ink': '#55535a', 'fail': '#a4473f', 'amber': '#fcb957',
     'lamp_off': '#4a4a50', 'lamp_on': '#fed9a1', 'car': '#3a3a40',
@@ -208,8 +208,9 @@ def pilaster():
     """A pilaster on the back wall's face, with its capping block; anchor: base centre on the wall face."""
     A.box('pilaster', (0.45, 0.18, WALL_H - 0.12), (0, -0.09, 0), M('pilaster', rough=0.7), bevel=0.012)
     A.box('pilaster_cap', (0.53, 0.24, 0.12), (0, -0.12, WALL_H - 0.12), M('cap', rough=0.6), bevel=0.01)
-    floor_catcher(); wall_catcher()
-    return Vector((0, 0, 0)), [-0.27, -0.24, 0, 0.27, 0, WALL_H], {}, [], 0.35
+    # (no shadow catchers: a tall piece's cast shadow ran past the sprite's edge and stopped there, a shade step in
+    # the wall; the continuous occlusion planes at the walls' feet ground it instead: floor review 2)
+    return Vector((0, 0, 0)), [-0.27, -0.24, 0, 0.27, 0, WALL_H], {}, [], 0.03
 
 
 def cap_x():
@@ -233,8 +234,9 @@ def corner():
     A.box('corner_cap', (WALL_T + 0.04, WALL_T + 0.04, 0.1), (-WALL_T / 2 + 0.02, WALL_T / 2 - 0.02, WALL_H - 0.02),
           M('cap', rough=0.6), bevel=0.0)
     A.box('corner_post', (0.2, 0.2, WALL_H - 0.02), (0.1, -0.1, 0), M('pilaster', rough=0.7), bevel=0.01)
-    floor_catcher(); wall_catcher()
-    return Vector((0, 0, 0)), [-WALL_T, -0.2, 0, 0.2, WALL_T, WALL_H + 0.08], {}, [], 0.3
+    # (no shadow catchers: a tall piece's cast shadow ran past the sprite's edge and stopped there, a shade step in
+    # the wall; the continuous occlusion planes at the walls' feet ground it instead: floor review 2)
+    return Vector((0, 0, 0)), [-WALL_T, -0.2, 0, 0.2, WALL_T, WALL_H + 0.08], {}, [], 0.03
 
 
 def wall_end_back():
@@ -281,6 +283,10 @@ def alcove():
     fin = WALL_T
     A.box('fin', (fin, ALCOVE_D, WALL_H), (ALCOVE_W + fin / 2, -ALCOVE_D / 2, 0), M('wall', rough=0.8), bevel=0.004)
     A.box('fin_cap', (fin + 0.04, ALCOVE_D + 0.02, 0.1), (ALCOVE_W + fin / 2, -ALCOVE_D / 2, WALL_H - 0.02), M('cap', rough=0.6), bevel=0.0)
+    # the fin's room-facing side turns away from the key light and rendered much darker than the left wall, which faces
+    # the same way but is a flat texture: a paler skin on it renders it to the left wall's shade (floor review 2)
+    A.panel('fin_side', ALCOVE_D, WALL_H - 0.02, (ALCOVE_W + fin + 0.001, -ALCOVE_D / 2, 0),
+            A.material('kit_fin_side', PAL['fin_side'], rough=0.8), rot=(0, 0, math.pi / 2))
     A.box('lintel', (ALCOVE_W, 0.3, 0.5), (ALCOVE_W / 2, -ALCOVE_D + 0.15, WALL_H - 0.5), M('wall', rough=0.8), bevel=0.004)
     A.box('lintel_cap', (ALCOVE_W, 0.34, 0.1), (ALCOVE_W / 2, -ALCOVE_D + 0.15, WALL_H - 0.02), M('cap', rough=0.6), bevel=0.0)
     lamp = (ALCOVE_W / 2, -ALCOVE_D + 0.55, 2.05)   # low and forward enough to show under the lintel
@@ -288,14 +294,14 @@ def alcove():
     A.cylinder('shade', 0.16, 0.14, (lamp[0], lamp[1], lamp[2]), M('dark', rough=0.4), radius2=0.05, segments=32)
     A.ball('bulb', 0.045, (lamp[0], lamp[1], lamp[2] + 0.01), emissive('lamp_on', 8.0), kind='baked')
     lit = bpy.data.collections.new('alcove_lit')   # the lamp lights the alcove's own walls, not the shadow catchers:
-    for n in ('fin', 'fin_cap', 'lintel', 'lintel_cap', 'shade'):   # light on a catcher lands in the sprite as a pale patch
+    for n in ('fin', 'fin_side', 'fin_cap', 'lintel', 'lintel_cap', 'shade'):   # light on a catcher lands in the sprite as a pale patch
         lit.objects.link(bpy.data.objects[n])
     lamp_ob = A.light('alcove_lamp', 'POINT', (lamp[0], lamp[1], lamp[2] - 0.05), 60, '#ffd9a0', shadow_soft_size=0.05, use_shadow=False)
     lamp_ob.light_linking.receiver_collection = lit
-    floor_catcher(); wall_catcher()
+    # (no shadow catchers: a tall piece's cast shadow ran past the sprite's edge and stopped there, a shade step in
+    # the wall; the continuous occlusion planes at the walls' feet ground it instead: floor review 2)
     slots = {'lamp': list(lamp), 'inside': [ALCOVE_W / 2, -ALCOVE_D / 2, 0]}
-    # (a wide margin: the fin's floor shadow reaches well to its right, and must fade out inside the sprite)
-    return Vector((0, 0, 0)), [0, -ALCOVE_D, 0, ALCOVE_W + fin, 0, WALL_H + 0.08], slots, [], 1.0
+    return Vector((0, 0, 0)), [0, -ALCOVE_D, 0, ALCOVE_W + fin, 0, WALL_H + 0.08], slots, [], 0.03
 
 
 FLOORS = 6   # the building's default floor count (PRD): one button each
@@ -313,8 +319,9 @@ def lift_panel():
         A.cylinder(f'ring_{i}', 0.09, 0.03, (0, -0.32, z), M('steel', rough=0.4, metal=0.5), rot=(math.pi / 2, 0, 0), segments=32)
         A.cylinder(f'face_{i}', 0.07, 0.03, (0, -0.335, z), M('lamp_off', rough=0.3), rot=(math.pi / 2, 0, 0), segments=32)
         buttons.append([0, -0.365, round(z, 3)])
-    floor_catcher(); wall_catcher()
-    return Vector((0, 0, 0)), [-0.29, -0.38, 0, 0.29, 0, WALL_H + 0.08], {'buttons': buttons}, [], 0.3
+    # (no shadow catchers: a tall piece's cast shadow ran past the sprite's edge and stopped there, a shade step in
+    # the wall; the continuous occlusion planes at the walls' feet ground it instead: floor review 2)
+    return Vector((0, 0, 0)), [-0.29, -0.38, 0, 0.29, 0, WALL_H + 0.08], {'buttons': buttons}, [], 0.03
 
 
 LIFT_W, LIFT_H, LEAF = 2.3, 2.75, 0.55
@@ -344,7 +351,7 @@ def lift():
         return pose
     frames = [opener(k) for k in (0, 0.25, 0.5, 0.75, 1.0)]
     slots = {'indicator': [0, -0.17, LIFT_H + 0.18], 'threshold': [0, -0.4, 0]}
-    return Vector((0, 0, 0)), [-1.1, -0.2, 0, 1.1, 0.05, LIFT_H + 0.3], slots, [], 0.3, frames
+    return Vector((0, 0, 0)), [-1.1, -0.2, 0, 1.1, 0.05, LIFT_H + 0.3], slots, [], 0.6, frames
 
 
 def plan_wall():

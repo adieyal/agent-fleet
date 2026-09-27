@@ -37,6 +37,9 @@ export function tinted(img, alpha, hex) {
   s.fillRect(0, 0, img.width, img.height);
   s.globalCompositeOperation = 'destination-in';
   s.drawImage(alpha, 0, 0, img.width, img.height);
+  // (the multiply fill made the whole canvas opaque; keep the tint only where the sprite itself is, or a mask that
+  // is not exactly zero outside the sprite draws the host colour as a faint rectangle round it: floor review 2)
+  s.drawImage(img, 0, 0);
   const out = canvas(img.width, img.height), o = out.getContext('2d');
   o.drawImage(img, 0, 0);
   o.drawImage(shell, 0, 0);

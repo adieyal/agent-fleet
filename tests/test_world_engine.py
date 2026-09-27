@@ -113,6 +113,20 @@ def test_masks_come_from_alpha(page: Page) -> None:
     assert out == [[1, 0, 0, 1], True, False, True, False, [128, 72], [60, 40]]
 
 
+def test_a_tint_stays_inside_its_sprite(page: Page) -> None:
+    # a sprite opaque on the left, transparent on the right, under a mask that is (wrongly) white everywhere: the host
+    # colour must not show where the sprite isn't (floor review 2: faint rectangles round the seated robots)
+    out = run(page, "paint", """m => {
+      const img = m.canvas(2, 1), g = img.getContext('2d');
+      g.fillStyle = 'rgb(128,128,128)'; g.fillRect(0, 0, 1, 1);
+      const mask = m.canvas(2, 1), mg = mask.getContext('2d');
+      mg.fillStyle = '#000'; mg.fillRect(0, 0, 2, 1);
+      const t = m.tinted(img, mask, '#20a0c0'), d = t.getContext('2d').getImageData(0, 0, 2, 1).data;
+      return [d[3], d[7]];
+    }""")
+    assert out == [255, 0]
+
+
 # --- level of detail -------------------------------------------------------------------------------------------------
 
 TIERS = [{"ppm": 85.75}, {"ppm": 171.5}, {"ppm": 343}]

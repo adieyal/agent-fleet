@@ -65,7 +65,7 @@ export class World {
     for (const [id, s] of Object.entries(m.sprites || {})) {
       const tiers = s.tiers.map(t => ({ ...t, url: new URL(t.file, base).href, maskUrl: t.mask && new URL(t.mask, base).href, frames: t.frames || 1 }))
         .sort((a, b) => a.ppm - b.ppm);
-      this.sprites.set(prefix + id, { ...s, id: prefix + id, tiers, img: [], alpha: [], tints: new Map(), loading: new Set(), loaded: new Set(), failed: new Set(),
+      this.sprites.set(prefix + id, { ...s, id: prefix + id, tiers, img: [], alpha: [], tints: new Map(), cells: new Map(), loading: new Set(), loaded: new Set(), failed: new Set(),
         want: -1, shown: -1, prev: -1, since: 0, mask: null, used: false });
     }
     await Promise.all(Object.entries(m.textures || {}).map(async ([id, t]) => {
@@ -75,7 +75,8 @@ export class World {
   }
 
   // a flat quad on the ground layer: quad is four world points; texture (id) tiles from `origin` along unit axes
-  // `u` and `v`, or `color` fills it
+  // `u` and `v`, or `color` fills it, or a `gradient` (radial: { at, radius, stops }) or `linear` ({ from, to, along,
+  // stops }: world points, and the world direction its colour is constant along) does
   addPlane(p) { this.planes.push(p); this.dirty.ground = true; this.request(); }
 
   // item: { id, sprite, at: [x, y, z], layer?: 'standing' | 'ground' | 'light' (default: the sprite's layer, else
@@ -219,6 +220,19 @@ export class World {
     if (!s.tints.has(key)) s.tints.set(key, tinted(s.img[i], s.alpha[i], tint));
     return s.tints.get(key);
   }
+  // one frame of that bitmap as its own bitmap: drawn scaled straight from a sheet, a frame picks up its neighbour's
+  // edge pixels (a thin line beside a seated robot: floor review 2); copied out 1:1 first, it can't
+  cellOf(s, i, tint, frame) {
+    const t = s.tiers[i], sheet = this.bitmap(s, i, tint);
+    if (t.frames === 1) return sheet;
+    const key = `${i}|${tint || ''}|${frame}`;
+    if (!s.cells.has(key)) {
+      const c = canvas(t.fw, t.fh);
+      c.getContext('2d').drawImage(sheet, frame * t.fw, 0, t.fw, t.fh, 0, 0, t.fw, t.fh);
+      s.cells.set(key, c);
+    }
+    return s.cells.get(key);
+  }
   whenLoaded() {
     return new Promise(ok => {
       const check = () => {
@@ -360,6 +374,15 @@ export class World {
           const [cx, cy] = toScreen(view, p.gradient.at), gr = g.createRadialGradient(cx, cy, 0, cx, cy, p.gradient.radius * view.ppm);
           for (const [o, c] of p.gradient.stops) gr.addColorStop(o, c);
           g.fillStyle = gr;
+        } else if (p.linear) {   // a linear gradient between two world points (occlusion fading off a wall's foot)
+          // canvas keeps a linear gradient constant across its screen direction; turn that to run along the world
+          // direction `along` (the wall), so the shading stays parallel to the wall under the camera
+          const [x0, y0] = toScreen(view, p.linear.from), [x1, y1] = toScreen(view, p.linear.to);
+          const [ax, ay] = toScreen(view, p.linear.from.map((v, i) => v + p.linear.along[i])), al = Math.hypot(ax - x0, ay - y0);
+          const ux = (ax - x0) / al, uy = (ay - y0) / al, t = (x1 - x0) * ux + (y1 - y0) * uy;
+          const gr = g.createLinearGradient(x0, y0, x1 - t * ux, y1 - t * uy);
+          for (const [o, c] of p.linear.stops) gr.addColorStop(o, c);
+          g.fillStyle = gr;
         } else g.fillStyle = p.color;
         g.fill();
       }
@@ -449,7 +472,7 @@ export class World {
       g.clip();
     }
     if (usePre) g.drawImage(pre, dx, dy, pre.width / this.dpr * z, pre.height / this.dpr * z);
-    else g.drawImage(this.bitmap(s, i, it.tint), frame * t.fw, 0, t.fw, t.fh, dx, dy, w, h);
+    else g.drawImage(this.cellOf(s, i, it.tint, frame), dx, dy, w, h);
     g.restore();
   }
   // A seated item's cut lines on screen, as functions of x: `split`, the desk-top line between its under and over
@@ -475,7 +498,7 @@ export class World {
     const c = canvas(Math.max(1, Math.round(t.fw * k * d)), Math.max(1, Math.round(t.fh * k * d)));
     const g = c.getContext('2d');
     g.imageSmoothingQuality = 'high';
-    g.drawImage(this.bitmap(s, i, tint), frame * t.fw, 0, t.fw, t.fh, 0, 0, c.width, c.height);
+    g.drawImage(this.cellOf(s, i, tint, frame), 0, 0, c.width, c.height);
     this.scaled.set(key, { c, i });
     return c;
   }

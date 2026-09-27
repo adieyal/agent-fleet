@@ -60,7 +60,7 @@ async function main() {
   for (const it of layout.items) {
     const s = kitManifest.sprites[it.sprite];
     // (chairs are pushed aside, not walked around: the row behind a bench is how its seats are reached)
-    if (!s || s.layer === 'light' || /^(footprints|slab|chair|floor-sheen|shadow)/.test(it.sprite)) continue;   // (flat on the floor)
+    if (!s || s.layer === 'light' || /^(footprints|slab|chair|floor-sheen|shadow)|-shadow$/.test(it.sprite)) continue;   // (flat on the floor)
     const f = s.footprint, z0 = it.at[2] + f[2];
     if (z0 > 1.8) continue;   // hanging (the lantern)
     blocks.push([it.at[0] + f[0], it.at[1] + f[1], it.at[0] + f[3], it.at[1] + f[4]]);
