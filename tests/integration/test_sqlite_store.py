@@ -13,6 +13,7 @@ from urllib.request import urlopen
 import pytest
 
 from fleet.composition import open_store
+from fleet.infrastructure.sqlite import store as sqlite_store
 from fleet.web.server import FleetState, make_handler
 
 
@@ -33,6 +34,43 @@ def test_store_path_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     with open_store() as store:
         assert store.path == path
     assert path.is_file()
+
+
+def test_pending_migrations_run_in_order(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = tmp_path / "controller.db"
+    open_store(path)
+    monkeypatch.setattr(sqlite_store, "MIGRATIONS", sqlite_store.MIGRATIONS + (
+        ("CREATE TABLE sample (value TEXT)",),
+        ("INSERT INTO sample VALUES ('migrated')",),
+    ))
+    for _ in range(2):
+        store = open_store(path)
+        assert store.schema_version() == 3
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("SELECT value FROM sample").fetchall() == [("migrated",)]
+
+
+def test_store_closes_connections(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    connections = []
+    connect = sqlite_store.connect
+
+    def track_connection(path: Path) -> sqlite3.Connection:
+        connection = connect(path)
+        connections.append(connection)
+        return connection
+
+    monkeypatch.setattr(sqlite_store, "connect", track_connection)
+    store = open_store(tmp_path / "controller.db")
+    store.schema_version()
+    store.history_after(0)
+    store.latest_sequence()
+    try:
+        for connection in connections:
+            with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+                connection.execute("SELECT 1")
+    finally:
+        for connection in connections:
+            connection.close()
 
 
 def test_rollback_includes_history(tmp_path: Path) -> None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
@@ -57,7 +58,7 @@ class Store:
         self.path = path
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         path.parent.mkdir(parents=True, exist_ok=True)
-        with connect(path) as connection:
+        with closing(connect(path)) as connection:
             connection.execute("PRAGMA journal_mode = WAL")
             connection.execute("BEGIN IMMEDIATE")
             try:
@@ -82,14 +83,14 @@ class Store:
         return UnitOfWork(self)
 
     def schema_version(self) -> int:
-        with connect(self.path) as connection:
+        with closing(connect(self.path)) as connection:
             return connection.execute("PRAGMA user_version").fetchone()[0]
 
     def history_after(self, sequence: int) -> list[dict[str, object]]:
-        with connect(self.path) as connection:
+        with closing(connect(self.path)) as connection:
             rows = connection.execute("SELECT * FROM state_history WHERE sequence > ? ORDER BY sequence", (sequence,))
             return [dict(row) for row in rows]
 
     def latest_sequence(self) -> int:
-        with connect(self.path) as connection:
+        with closing(connect(self.path)) as connection:
             return connection.execute("SELECT COALESCE(MAX(sequence), 0) FROM state_history").fetchone()[0]
