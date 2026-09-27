@@ -55,6 +55,18 @@ class ExecutionRepository(Repository):
     def actions(self) -> list[Action]:
         return [Action(**json.loads(row["record"])) for row in self.rows("SELECT record FROM execution_action ORDER BY rowid")]
 
+    def get_action(self, identity: str) -> Action:
+        rows = self.rows("SELECT record FROM execution_action WHERE id = ?", (identity,))
+        if not rows:
+            raise LookupError(f"no action '{identity}'")
+        return Action(**json.loads(rows[0]["record"]))
+
+    def get_run(self, identity: str) -> Run:
+        rows = self.rows("SELECT record FROM execution_run WHERE id = ?", (identity,))
+        if not rows:
+            raise LookupError(f"no run '{identity}'")
+        return decode_run(rows[0]["record"])
+
     def runs(self) -> list[Run]:
         return [decode_run(row["record"]) for row in self.rows("SELECT record FROM execution_run ORDER BY rowid")]
 

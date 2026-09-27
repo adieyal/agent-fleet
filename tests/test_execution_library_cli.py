@@ -34,12 +34,15 @@ def test_send_links_created_job(monkeypatch, capsys, start_fails):
 
     def call(host, arguments, **kwargs):
         calls.append(arguments[0])
-        if arguments[0] == "start" and start_fails:
+        if arguments[0] in ("start", "reconcile") and start_fails:
             raise cli.FleetError("start unavailable")
         run, = composition.open_execution().runs()
         if arguments[0] == "create":
             assert arguments[arguments.index("--id") + 1] == run.remote_job_id
-        return {"id": run.remote_job_id, "status": "queued", "steps": [{}], "description": "Task"}
+        return {"id": run.remote_job_id, "run_id": run.id, "schema_version": 3,
+                "fingerprint": arguments[arguments.index("--fingerprint") + 1],
+                "start_requested": arguments[0] == "start",
+                "status": "queued", "steps": [{}], "description": "Task"}
 
     monkeypatch.setattr(cli.transport, "host_by_name", lambda name: SimpleNamespace(name=name))
     monkeypatch.setattr(cli.transport, "call", call)
@@ -53,4 +56,4 @@ def test_send_links_created_job(monkeypatch, capsys, start_fails):
     run, = composition.open_execution().runs()
     assert (run.host, run.remote_job_id, run.runtime) == ("fake", run.id, "claude")
     assert composition.open_execution().actions()[0].work_item == item.id
-    assert calls == ["create", "start"]
+    assert calls == (["create", "start", "reconcile"] if start_fails else ["create", "start"])

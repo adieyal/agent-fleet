@@ -44,6 +44,28 @@ def test_dispatch_deduplicates_and_parallel_actions_serve_one_epic():
     assert len(execution.runs()) == 2
 
 
+def test_execution_gets_run_and_action_by_identity(monkeypatch):
+    store, _, item, execution = setup_dispatch()
+    first = dispatch(execution, item).run
+    second = dispatch(execution, item, "other").run
+    action = execution.actions()[0]
+    sequence = store.latest_sequence()
+
+    def no_scan():
+        raise AssertionError("identity lookup must not scan all records")
+
+    monkeypatch.setattr(execution.repository, "runs", no_scan)
+    monkeypatch.setattr(execution.repository, "actions", no_scan)
+    assert execution.get_run(first.id) == first
+    assert execution.get_run(second.id) == second
+    assert execution.get_action(first.action) == action
+    with pytest.raises(LookupError, match="missing"):
+        execution.get_run("missing")
+    with pytest.raises(LookupError, match="missing"):
+        execution.get_action("missing")
+    assert store.latest_sequence() == sequence
+
+
 @pytest.mark.parametrize("status", ["done", "failed", "cancelled", "lost"])
 def test_claim_released_at_known_end_and_observations_do_not_churn(status):
     store, _, item, execution = setup_dispatch()
