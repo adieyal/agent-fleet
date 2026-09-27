@@ -19,7 +19,7 @@ class DashboardHTTPTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(FleetState([])))
-        cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
+        cls.thread = threading.Thread(target=cls.server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
         cls.thread.start()
         cls.base_url = f"http://127.0.0.1:{cls.server.server_port}"
 
@@ -61,7 +61,7 @@ class DashboardHTTPTests(unittest.TestCase):
             (root / "private.md").symlink_to(base / "private.md")
             (base / "private.md").write_text("# Secret\n")
             server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(FleetState([]), ProjectLibrary({"example": str(root)})))
-            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
             thread.start()
             base_url = f"http://127.0.0.1:{server.server_port}"
             try:

@@ -4,6 +4,7 @@ Tests that change a fleet (moving a project in) start their own with serve_fixtu
 """
 
 import json
+import shutil
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -13,6 +14,7 @@ from typing import Any
 
 import pytest
 
+from fleet.composition import open_store
 from fleet.web.fixture import FixtureLibrary, FixtureState
 from fleet.web.server import make_handler
 
@@ -23,9 +25,18 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption("--shots", default=None, help="a directory browser tests leave screenshots in, for reviewing the look")
 
 
+@pytest.fixture(scope="session")
+def empty_store(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    path = tmp_path_factory.mktemp("store-template") / "fleet.db"
+    open_store(path)
+    return path
+
+
 @pytest.fixture(autouse=True)
-def isolated_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("FLEET_STORE", str(tmp_path / "fleet.db"))
+def isolated_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, empty_store: Path) -> None:
+    path = tmp_path / "fleet.db"
+    shutil.copyfile(empty_store, path)
+    monkeypatch.setenv("FLEET_STORE", str(path))
 
 
 @pytest.fixture(scope="session")
@@ -39,7 +50,7 @@ def serve_fixture(path: Path) -> Iterator[str]:
     state = FixtureState.load(path)
     server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(state, FixtureLibrary(state.fixture)))
     server.daemon_threads = True
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     thread.start()
     try:
         yield f"http://127.0.0.1:{server.server_port}"
