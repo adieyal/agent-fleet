@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from typing import Callable, TypeVar
 
-from fleet.transport import FleetError
+from fleet.errors import FleetError
 from . import Repository, WorkspaceState
 from ..domain.projects import Registry
 from ..domain.choices import Choices, NotShuttered, AlreadyHoused
