@@ -6,7 +6,7 @@ from .application.delivery import queue, retry as retry_delivery
 
 from .application.ports import ExecutionRepository, InputSender
 from .domain import Action, Claim, Delivery, DispatchResult, JobObservation, Run
-from .domain.activity import ACTION_FRESHNESS_SECONDS, classify_activity
+from .domain.activity import HOST_FRESHNESS_SECONDS, classify_activity
 from fleet.modules.attention import AttentionItem
 from .application.dispatch import dispatch, retry, resolve_unknown
 from .application.worker import deliver
@@ -26,14 +26,27 @@ class ExecutionFacade:
         self.prepare_dispatch = prepare_dispatch
         self.authority = authority
         self.clock = clock if clock is not None else lambda: datetime.now(timezone.utc)
+        self.host_observed: dict[str, datetime] = {}
+        self.unreachable_hosts: set[str] = set()
 
     classify_activity = staticmethod(classify_activity)
+
+    def observe_host(self, host: str, *, reachable: bool) -> None:
+        if reachable:
+            self.host_observed[host] = self.clock()
+            self.unreachable_hosts.discard(host)
+        else:
+            self.unreachable_hosts.add(host)
 
     def run_activity(self, run: Run) -> dict:
         observed = run.action_observed_at
         freshness = "unknown"
+        host_seen = self.host_observed.get(run.host)
         if run.current_action is not None and observed is not None:
-            freshness = "stale" if (self.clock() - observed).total_seconds() > ACTION_FRESHNESS_SECONDS else "current"
+            if run.host in self.unreachable_hosts:
+                freshness = "stale"
+            elif host_seen is not None:
+                freshness = "stale" if (self.clock() - host_seen).total_seconds() > HOST_FRESHNESS_SECONDS else "current"
         return {"action_glyph": run.current_action,
                 "action_observed_at": observed.isoformat() if observed is not None else None,
                 "action_freshness": freshness}
@@ -63,6 +76,9 @@ class ExecutionFacade:
 
     def find_run(self, host: str, job: str) -> Run | None:
         return self.repository.find(host, job)
+
+    def activation_run(self, activation: str, idempotency_key: str) -> Run:
+        return self.repository.activation_run(activation, idempotency_key)
 
     def dispatch(self, work_item: str | None, *, activation: str | None = None, **arguments) -> DispatchResult:
         if 'authorization' in arguments:

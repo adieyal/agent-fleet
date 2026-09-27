@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fleet import composition
@@ -8,7 +8,8 @@ from fleet.web.server import FleetState, apply_message
 
 
 def test_stream_records_actions_without_duplicate_history_or_push():
-    store = composition.open_store()
+    now = datetime(2026, 9, 28, tzinfo=timezone.utc)
+    store = composition.open_store(clock=lambda: now)
     work = composition.open_work(store)
     item = work.add(project="p", title="Task", goal="Ship", actor="user")
     execution = composition.open_execution(store)
@@ -40,4 +41,10 @@ def test_stream_records_actions_without_duplicate_history_or_push():
         assert (store.latest_sequence(), state.version) == (sequence, version)
         assert state.document()["hosts"][0]["jobs"][0]["activity"]["activity_class"] == action
     assert transport_calls
+    now += timedelta(seconds=30)
+    sequence, version = store.latest_sequence(), state.version
+    apply_message(state, state.hosts[0], {'type': 'heartbeat'})
+    assert execution.run_activity(recorded)['action_freshness'] == 'current'
+    apply_message(state, state.hosts[0], {'type': 'heartbeat'})
+    assert (store.latest_sequence(), state.version) == (sequence, version)
     assert composition.open_execution(composition.open_store()).get_run(run.id) == recorded

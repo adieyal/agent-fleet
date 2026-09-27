@@ -377,6 +377,11 @@ def test_sessions_idle_for_half_an_hour_leave_unless_a_decision_waits(changed_de
 
 
 def test_bubbles_show_action_glyphs_and_the_words_stay_a_click_away(deck: Deck) -> None:
+    phrase = deck.page.evaluate("""async () => {
+      const { mumble } = await import('/js/activity.js');
+      return mumble({kind: 'tool', name: 'shell', summary: 'git status', activity_class: 'test'});
+    }""")
+    assert 'tests' in phrase
     page = deck.page
     expected = {"a1c3e9": "test", "b7d042": "edit", "Why does the st": "ask", "f20a6d": "edit", "c90e11": "think"}
     for agent, action in expected.items():

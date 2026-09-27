@@ -12,6 +12,7 @@ def timestamp(value: float | None) -> datetime | None:
 
 
 def observe_runs(execution: ExecutionFacade, library: LibraryFacade, host: dict) -> None:
+    execution.observe_host(host['name'], reachable=host['ok'])
     if not host["ok"]:
         execution.unavailable(host["name"])
         return

@@ -56,6 +56,15 @@ class ExecutionRepository(Repository):
         rows = self.rows("SELECT record FROM execution_run WHERE host = ? AND remote_job_id = ?", (host, job))
         return decode_run(rows[0]["record"]) if rows else None
 
+    def activation_run(self, activation: str, idempotency_key: str) -> Run:
+        rows = self.rows('SELECT r.record FROM execution_request q '
+            'JOIN execution_run r ON r.id = q.run JOIN execution_action a ON a.id = r.action '
+            "WHERE q.key = ? AND json_extract(a.record, '$.activation') = ?",
+            (idempotency_key, activation))
+        if not rows:
+            raise LookupError(f'no run for activation {activation} and request {idempotency_key}')
+        return decode_run(rows[0]['record'])
+
     def actions(self) -> list[Action]:
         return [Action(**json.loads(row["record"])) for row in self.rows("SELECT record FROM execution_action ORDER BY rowid")]
 

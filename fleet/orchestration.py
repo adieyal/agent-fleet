@@ -52,9 +52,7 @@ class ControllerCommands:
         if command == 'dispatch':
             return services.execution.dispatch(activation.work_item, **context, **payload)
         if command in ('summary', 'decide'):
-            actions = {action.id for action in services.execution.actions()
-                       if action.activation == activation.id and action.idempotency_key == activation.id}
-            run, = [run for run in services.execution.runs() if run.action in actions]
+            run = services.execution.activation_run(activation.id, activation.id)
             if command == 'summary':
                 return services.work.set_summary(activation.work_item, **context, source_run=run.id,
                                                  authoring_role=activation.role, **payload)

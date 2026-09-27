@@ -61,7 +61,7 @@ class Facades:
 
     @cached_property
     def records(self):
-        return RecordsFacade(RecordsRepository(self.store), RepositoryWriter(), self.workspace, lambda: self.work)
+        return RecordsFacade(RecordsRepository(self.store, self.unit), RepositoryWriter(), self.workspace, lambda: self.work)
 
     @cached_property
     def work(self):
@@ -75,12 +75,13 @@ class Facades:
             attention=lambda unit: self.bound(unit).attention,
             collaborators=lambda unit: (self.bound(unit).work, self.bound(unit).workspace))
         return ExecutionFacade(repository, self.work, send=send_input,
-            prepare_dispatch=lambda: open_workspace(self.store), authority=lambda: self.authority)
+            prepare_dispatch=lambda: open_workspace(self.store), authority=lambda: self.authority, clock=self.store.clock)
 
     @cached_property
     def decisions(self):
         repository = DecisionRepository(self.store, lambda unit: self.bound(unit).attention,
-            lambda unit: self.bound(unit).work, lambda unit: self.bound(unit).execution)
+            lambda unit: self.bound(unit).work, lambda unit: self.bound(unit).execution,
+            records=lambda unit: self.bound(unit).records)
         return DecisionsFacade(repository, self.store.clock, self.execution,
                                records=self.records, authority=lambda: self.authority)
 

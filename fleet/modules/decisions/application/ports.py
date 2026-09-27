@@ -7,6 +7,7 @@ from typing import ContextManager, Protocol
 from fleet.modules.attention import AttentionFacade
 from fleet.modules.work import WorkFacade
 from fleet.modules.execution import ExecutionFacade
+from fleet.modules.records import RecordsFacade
 from ..domain import Decision, Proposal
 
 
@@ -14,6 +15,7 @@ class DecisionRepository(Protocol):
     attention: AttentionFacade
     work: WorkFacade
     execution: ExecutionFacade
+    records: RecordsFacade
 
     def transaction(self) -> ContextManager["DecisionRepository"]: ...
     def insert(self, decision: Decision) -> None: ...
