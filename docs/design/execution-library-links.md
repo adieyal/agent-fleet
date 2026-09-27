@@ -12,7 +12,7 @@ status. A later upload or start failure leaves the link intact.
 
 `fleet library link <url> --work-item <id>` indexes an HTTP(S) reference in the
 work item's project. Without a work item, supply `--project <id>`. An optional
-`--title` supplies a label; otherwise the URL itself is displayed. Entries are
+`--title` supplies a label; omitted titles are stored and returned as JSON `null`. Entries are
 current external references, with no associated run. Nothing is fetched,
 copied or granted access. Existing local `library add` and `library rm` remain
 separate commands.

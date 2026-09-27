@@ -20,3 +20,12 @@ def test_external_index_requires_scope_and_never_needs_a_fetch_port():
     with pytest.raises(ValueError, match="HTTP"):
         library.link("file:///private", project="p", actor="user")
     assert len(saved) == 1
+
+
+def test_omitted_title_stays_unknown():
+    saved = []
+    repository = SimpleNamespace(save=lambda entry, actor: saved.append((entry, actor)))
+    library = LibraryFacade(repository, SimpleNamespace())
+    entry = library.link("https://example.org/doc", project="p", actor="user")
+    assert entry.title is None
+    assert saved == [(entry, "user")]

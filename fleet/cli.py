@@ -1011,7 +1011,7 @@ def build_parser() -> argparse.ArgumentParser:
     library_link.add_argument("url")
     library_link.add_argument("--project", help="required when no work item is supplied")
     library_link.add_argument("--work-item")
-    library_link.add_argument("--title", help="display label; otherwise display the URL itself")
+    library_link.add_argument("--title", help="optional display label; omitted titles remain unknown")
     library_link.add_argument("--actor", default="user")
     library_link.set_defaults(handler=command_library_link)
     library_add = library.add_parser("add")

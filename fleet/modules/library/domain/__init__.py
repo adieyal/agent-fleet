@@ -11,14 +11,14 @@ class LibraryEntry:
     work_item: str | None
     run: str | None
     kind: str
-    title: str
+    title: str | None
     source: str
     canonical_location: str
     availability: str
     current: bool
 
     def __post_init__(self) -> None:
-        for field in ("project", "kind", "title", "source", "canonical_location"):
+        for field in ("project", "kind", "source", "canonical_location"):
             if not getattr(self, field).strip():
                 raise ValueError(f"{field} is required")
         if self.availability not in ("available", "unavailable", "external"):

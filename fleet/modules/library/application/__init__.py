@@ -18,6 +18,6 @@ def link(repository: LibraryRepository, work: WorkFacade, url: str, *, project: 
     if project is None:
         raise ValueError("project or work item is required")
     entry = LibraryEntry(str(uuid4()), project, work_item, None, "reference",
-                         url if title is None else title, "linked", url, "external", True)
+                         title, "linked", url, "external", True)
     repository.save(entry, actor)
     return entry

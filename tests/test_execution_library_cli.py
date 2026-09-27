@@ -20,6 +20,8 @@ def test_run_and_library_link_fetch_nothing(monkeypatch, capsys):
     cli.main(["library", "link", "https://example.org/private", "--work-item", item.id])
     entry = json.loads(capsys.readouterr().out)
     assert entry["availability"] == "external"
+    assert entry["title"] is None
+    assert composition.open_library().list()[0].title is None
     assert entry["canonical_location"] == "https://example.org/private"
     cli.main(["library", "link", "https://example.org/project", "--project", "p"])
     assert json.loads(capsys.readouterr().out)["work_item"] is None
