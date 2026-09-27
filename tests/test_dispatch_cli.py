@@ -47,6 +47,34 @@ def test_dispatch_requires_explicit_cwd():
         cli.main(["dispatch", "work", "Ship", "--host", "fake", "--runtime", "codex"])
 
 
+@pytest.mark.parametrize("refused", ["create", "start"])
+def test_dispatch_preserves_refusal_when_reconcile_fails(monkeypatch, capsys, refused):
+    calls = []
+
+    def call(host, arguments, **kwargs):
+        calls.append(arguments[0])
+        if arguments[0] == refused:
+            raise cli.FleetError("fake: working directory does not exist")
+        if arguments[0] == "reconcile":
+            raise cli.FleetError("no such run")
+        run, = composition.open_execution().runs()
+        return {"id": run.remote_job_id, "run_id": run.id, "schema_version": 3,
+                "fingerprint": arguments[arguments.index("--fingerprint") + 1],
+                "start_requested": False, "status": "queued"}
+
+    monkeypatch.setattr(cli.transport, "host_by_name", lambda name: SimpleNamespace(name=name))
+    monkeypatch.setattr(cli.transport, "call", call)
+    with pytest.raises(SystemExit):
+        cli.main(["send", "--project", "p", "--description", "Task", "--step", "Ship",
+                  "--host", "fake", "--cwd", "/repo", "--id", "request"])
+    captured = capsys.readouterr()
+    assert "working directory does not exist" in captured.out + captured.err
+    assert calls == (["create", "reconcile"] if refused == "create" else ["create", "start", "reconcile"])
+    execution = composition.open_execution()
+    assert execution.runs()[0].status == "unknown outcome"
+    assert execution.claims()[0].active
+
+
 def test_send_without_work_keeps_unknown_intent_after_lost_create_reply(monkeypatch):
     calls = []
 

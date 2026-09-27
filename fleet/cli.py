@@ -295,7 +295,7 @@ def command_dispatch(arguments: argparse.Namespace) -> None:
     if not intent.created:
         if intent.run.status == "unknown outcome":
             deliver_dispatch(intent.run, reconcile=True)
-        current = next(run for run in execution.runs() if run.id == intent.run.id)
+        current = execution.get_run(intent.run.id)
         print(json.dumps({"job": f"{intent.run.host}:{intent.run.remote_job_id}", "status": current.status,
                           "run": intent.run.id, "action": intent.run.action, "steps": len(steps)}))
         return

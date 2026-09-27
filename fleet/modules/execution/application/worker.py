@@ -11,7 +11,7 @@ from ..domain import JobObservation, Run
 
 
 def deliver(repository: ExecutionRepository, run: Run, call: Callable, push: Callable, *, reconcile: bool) -> dict:
-    action = next(action for action in repository.actions() if action.id == run.action)
+    action = repository.get_action(run.action)
     payload = action.payload
     if payload is None:
         raise ValueError("linked run has no dispatch payload")
@@ -39,14 +39,20 @@ def deliver(repository: ExecutionRepository, run: Run, call: Callable, push: Cal
         arguments += ["--id", run.remote_job_id, *identity]
         try:
             job = check(call(arguments, json.dumps(payload["steps"])))
-        except FleetError:
-            job = recover()
+        except FleetError as error:
+            try:
+                job = recover()
+            except FleetError:
+                raise error
     if job["status"] == "queued" and job["start_requested"] is False:
         if payload["context"]:
             push(job["id"], payload["context"])
         if not payload["hold"]:
             try:
                 job = check(call(["start", job["id"], *identity], None))
-            except FleetError:
-                job = recover()
+            except FleetError as error:
+                try:
+                    job = recover()
+                except FleetError:
+                    raise error
     return job

@@ -41,6 +41,12 @@ class ExecutionFacade:
     def actions(self) -> list[Action]:
         return self.repository.actions()
 
+    def get_action(self, identity: str) -> Action:
+        return self.repository.get_action(identity)
+
+    def get_run(self, identity: str) -> Run:
+        return self.repository.get_run(identity)
+
     def dispatch(self, work_item: str | None, *, activation: str | None = None, **arguments) -> DispatchResult:
         if 'authorization' in arguments:
             raise AuthorityRejected('supply an activation ID')
