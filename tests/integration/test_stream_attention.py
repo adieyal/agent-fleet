@@ -34,6 +34,7 @@ def test_recorded_failure_is_stored_once_before_any_read(recorded):
     attention = open_attention(store)
     assert len(attention.list()) == 1
     first = attention.list()[0]
+    assert first.kind == 'blocker'
     for _ in range(3):
         now[0] += timedelta(seconds=1)
         apply_message(state, worker, {'type': 'job', 'job': job})
@@ -42,6 +43,19 @@ def test_recorded_failure_is_stored_once_before_any_read(recorded):
     sequence = store.latest_sequence()
     assert state.document()['attention'] == state.document()['attention']
     assert store.latest_sequence() == sequence
+
+
+def test_unchanged_heartbeat_does_not_write_or_notify(recorded):
+    state, worker, job, store, now = recorded
+    report(state, worker, job)
+    sequence = store.latest_sequence()
+    version = state.version
+    first, = open_attention(store).list()
+    now[0] += timedelta(seconds=5)
+    apply_message(state, worker, {'type': 'heartbeat'})
+    assert store.latest_sequence() == sequence
+    assert state.version == version
+    assert open_attention(store).get(first.id) == first
 
 
 @pytest.mark.parametrize('clearing', ['retry', 'removed', 'absent-on-reconnect'])
@@ -55,7 +69,11 @@ def test_reachable_clear_records_resolution(recorded, clearing):
         apply_message(state, worker, {'type': 'removed', 'id': job['id']})
     else:
         apply_message(state, worker, {'type': 'hello'})
+        sequence = store.latest_sequence()
+        version = state.version
         apply_message(state, worker, {'type': 'heartbeat'})
+        assert store.latest_sequence() == sequence + 1
+        assert state.version == version + 1
     item, = open_attention(store).list()
     assert item.state == 'resolved'
     assert item.resolution_details

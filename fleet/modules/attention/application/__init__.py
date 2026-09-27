@@ -43,13 +43,16 @@ class Commands:
         return item.effective(now)
 
     def reconcile(self, source: str, references: set[str], *, actor: str,
-                  owners: set[str] | None = None) -> None:
+                  owners: set[str] | None = None) -> bool:
+        changed = False
         for item in self.repository.list():
             if (item.source == source and item.source_reference not in references
                     and item.state != "resolved" and (owners is None or item.owner in owners)):
                 details = ("answered in session or session removed" if item.kind == "decision"
                            else "job retried, finished or removed")
                 self.change(item.id, "resolved", actor, details=details)
+                changed = True
+        return changed
 
     def change(self, item_id: str, state: str, actor: str, *, until: datetime | None = None,
                details: str | None = None) -> AttentionItem:

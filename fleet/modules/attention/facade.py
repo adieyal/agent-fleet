@@ -27,16 +27,18 @@ class AttentionFacade:
     def acknowledge(self, item_id: str, *, actor: str) -> AttentionItem:
         return self.commands.change(item_id, "acknowledged", actor)
 
-    def observe(self, host: HostObservation, *, owners: set[str] | None = None) -> None:
-        ingest_attention(self, host, owners=owners)
+    def observe(self, host: HostObservation, *, owners: set[str] | None = None,
+                raise_items: bool = True) -> bool:
+        """Ingest observations and report whether any cleared items were resolved."""
+        return ingest_attention(self, host, owners=owners, raise_items=raise_items)
 
     def reopen(self, item_id: str, *, actor: str) -> AttentionItem:
         return self.commands.change(item_id, "open", actor)
 
     def reconcile(self, source: str, references: set[str], *, actor: str,
-                  owners: set[str] | None = None) -> None:
+                  owners: set[str] | None = None) -> bool:
         """Resolve cleared occurrences after a reachable source reports its current state."""
-        self.commands.reconcile(source, references, actor=actor, owners=owners)
+        return self.commands.reconcile(source, references, actor=actor, owners=owners)
 
     def snooze(self, item_id: str, *, until: datetime, actor: str) -> AttentionItem:
         return self.commands.change(item_id, "snoozed", actor, until=until)

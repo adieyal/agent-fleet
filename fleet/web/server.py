@@ -100,15 +100,18 @@ class FleetState(LiveWorkspace):
             stop.wait(0.25)
 
     def update(self, host_name: str, mutate: Any, *, owners: set[str] | None = None,
-               ingest: bool = True) -> None:
+               ingest: bool = True, heartbeat: bool = False) -> None:
         with self.changed:
             mutate(self.by_host[host_name])
+            reconciled = False
             if ingest:
                 host = self.by_host[host_name]
-                self.attention.observe({**host,
+                reconciled = self.attention.observe({**host,
                     "jobs": [self.registry.resolve(host_name, job) for job in host["jobs"].values()],
                     "sessions": [self.registry.resolve(host_name, session) for session in host["sessions"].values()]},
-                    owners=owners)
+                    owners=owners, raise_items=not heartbeat)
+            if heartbeat and not reconciled:
+                return
             self.version += 1
             self.changed.notify_all()
 
@@ -234,7 +237,7 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
         state.update(host.name, lambda entry: entry["sessions"].pop(message["id"], None),
                      owners={f"session:{host.name}:{message['id']}"})
     elif kind == "heartbeat":
-        state.update(host.name, lambda entry: None)
+        state.update(host.name, lambda entry: None, heartbeat=True)
     elif kind == "pipeline" and isinstance(message.get("pipeline"), str):
         state.report_pipeline(host.name, message["pipeline"], message.get("run"), message.get("baseline"))
     elif kind == "error":

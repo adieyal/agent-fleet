@@ -50,9 +50,9 @@ WAITING_TOOLS = {"AskUserQuestion": "is asking you a question", "ExitPlanMode": 
 
 
 def ingest_attention(attention: "AttentionFacade", host: HostObservation, *,
-                     owners: set[str] | None = None) -> None:
+                     owners: set[str] | None = None, raise_items: bool = True) -> bool:
     if not host["ok"]:
-        return
+        return False
     source = f"stream:{host['name']}"
     references = set()
 
@@ -61,7 +61,7 @@ def ingest_attention(attention: "AttentionFacade", host: HostObservation, *,
         owner_reference = f"{owner_type}:{host['name']}:{work['id']}"
         reference = f"{owner_reference}:{occurrence}"
         references.add(reference)
-        if owners is not None and owner_reference not in owners:
+        if not raise_items or (owners is not None and owner_reference not in owners):
             return
         context = StreamContext(host["name"], owner_type, work["id"], work["project"],
                                 work.get("project_id"), reason, summary, since)
@@ -88,4 +88,4 @@ def ingest_attention(attention: "AttentionFacade", host: HostObservation, *,
             summary += f": {activity['summary']}"
         record(session, "session", f"{activity['name']}@{activity.get('ts')}", "decision",
                f"session tool {activity['name']}", summary, activity.get("ts"))
-    attention.reconcile(source, references, owners=owners, actor="host-stream")
+    return attention.reconcile(source, references, owners=owners, actor="host-stream")
