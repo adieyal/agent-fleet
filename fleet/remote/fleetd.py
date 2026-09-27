@@ -562,7 +562,11 @@ def command_read(arguments: argparse.Namespace) -> None:
     document = next((item for item in job_documents(job) if item["id"] == arguments.document), None)
     if document is None:
         fail(f"job {arguments.job} has no document {arguments.document}")
-    with open(document["path"], "rb") as handle:
+    path = Path(document["path"]).resolve()
+    roots = [JOBS_DIRECTORY / job["id"], *(Path(root).expanduser() for root in load_config().get("document_roots", []))]
+    if not any(path.is_relative_to(root.resolve()) for root in roots):
+        fail(f"document path outside approved document roots: {document['path']}")
+    with open(path, "rb") as handle:
         raw = handle.read(DOCUMENT_READ_LIMIT + 1)
     document["truncated"] = len(raw) > DOCUMENT_READ_LIMIT
     document["content"] = raw[:DOCUMENT_READ_LIMIT].decode(errors="replace")
