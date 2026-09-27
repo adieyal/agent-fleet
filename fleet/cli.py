@@ -23,13 +23,14 @@ from rich.text import Text
 from rich.tree import Tree
 
 from fleet import transport
-from fleet.remote.fleetd import _runtime
 from fleet.modules import workspace as projects
 from fleet.composition import open_attention, open_decisions, open_execution, open_library, open_records, open_store, open_work, open_workspace
 from fleet.projections.project import project_status
 from fleet.modules.work import EvidenceSpecification
 from fleet.modules.execution import Run
 from fleet.transport import FleetError, Host, HostReport
+from fleet.orchestration import ControllerCommands, orchestrator_prompt
+from fleet.composition import open_authority
 from fleet.web.server import serve, serve_fixture
 
 console = Console()
@@ -260,13 +261,11 @@ def command_dispatch(arguments: argparse.Namespace) -> None:
     steps = read_steps(arguments)
     if not steps:
         raise FleetError("give at least one --step or a --steps-file")
-    try:
-        permission = _runtime(arguments.agent).dispatch_permission(arguments.permission, arguments.allow, arguments.add_dir)
-    except ValueError as error:
-        raise FleetError(str(error)) from error
     fleetd_arguments = ["create", "--project", arguments.project, "--description", arguments.description,
-                        "--agent", arguments.agent, "--cwd", arguments.cwd, "--permission", permission,
+                        "--agent", arguments.agent, "--cwd", arguments.cwd,
                         "--steps-file", "/dev/stdin", "--hold"]
+    if arguments.permission is not None:
+        fleetd_arguments += ['--permission', arguments.permission]
     for flag, value in (("--model", arguments.model), ("--id", arguments.id)):
         if value:
             fleetd_arguments += [flag, value]
@@ -313,6 +312,46 @@ def deliver_dispatch(run: Run, *, reconcile: bool = False) -> dict:
     return open_execution().deliver(run,
         lambda arguments, stdin: transport.call(host, arguments, stdin_text=stdin),
         lambda job, context: push_context(host, job, context), reconcile=reconcile)
+
+
+def command_orchestrate(arguments: argparse.Namespace) -> None:
+    host = transport.host_by_name(arguments.host)
+    if not host.is_local:
+        raise FleetError('orchestrator must run on the controller machine')
+    store = open_store()
+    try:
+        activation = open_authority(store).activate(arguments.work_item, actor='orchestrator',
+            role='orchestrator', mandate_path=arguments.mandate)
+        records = open_records(store)
+        _, mandate = records.mandate_version(activation.project, activation.mandate_path,
+                                             revision=activation.mandate_version)
+        prompt = orchestrator_prompt(activation, mandate)
+        worker = ['create', '--project', activation.project, '--description', 'Orchestrate work item',
+                  '--agent', arguments.agent, '--cwd', arguments.cwd, '--steps-file', '/dev/stdin', '--hold']
+        if arguments.permission is not None:
+            worker += ['--permission', arguments.permission]
+        for name in ('FLEET_STORE', 'FLEET_CONFIG', 'FLEET_HOME'):
+            if name in os.environ:
+                worker += ['--env', name + '=' + os.environ[name]]
+        intent = open_execution(store).dispatch(activation.work_item, actor=activation.actor,
+            activation=activation.id, host=host.name, runtime=arguments.agent,
+            payload=dict(cwd=arguments.cwd, arguments=worker, steps=[dict(prompt=prompt, title='Orchestrate')],
+                         context=None, hold=False), reason='Orchestrate work item', idempotency_key=activation.id)
+        deliver_dispatch(intent.run)
+    except (ValueError, LookupError) as error:
+        raise FleetError(str(error)) from error
+    print(json.dumps(dict(activation=activation.id, run=intent.run.id, mandate_version=activation.mandate_version)))
+
+
+def command_control(arguments: argparse.Namespace) -> None:
+    try:
+        result = ControllerCommands(open_store(), arguments.activation).execute(arguments.operation,
+                                                                              json.loads(arguments.payload))
+        if arguments.operation == 'dispatch':
+            deliver_dispatch(result.run, reconcile=not result.created)
+        print(json.dumps(result if isinstance(result, dict) else asdict(result), default=str))
+    except (ValueError, LookupError, TypeError) as error:
+        raise FleetError(str(error)) from error
 
 
 def command_run_retry(arguments: argparse.Namespace) -> None:
@@ -532,6 +571,7 @@ def command_notify(arguments: argparse.Namespace) -> None:
 
 
 def command_host_add(arguments: argparse.Namespace) -> None:
+    open_workspace()
     config = transport.load_config()
     config.setdefault("hosts", {})[arguments.name] = {"ssh": None if arguments.local else (arguments.ssh or arguments.name),
                                                       "python": arguments.python}
@@ -540,6 +580,7 @@ def command_host_add(arguments: argparse.Namespace) -> None:
 
 
 def command_host_remove(arguments: argparse.Namespace) -> None:
+    open_workspace()
     config = transport.load_config()
     config.get("hosts", {}).pop(arguments.name, None)
     transport.save_config(config)
@@ -556,6 +597,7 @@ def command_library_add(arguments: argparse.Namespace) -> None:
     root = Path(arguments.path).expanduser().resolve()
     if not root.is_dir():
         raise FleetError(f"not a directory: {root}")
+    open_workspace()
     config = transport.load_config()
     config.setdefault("libraries", {})[arguments.project] = str(root)
     transport.save_config(config)
@@ -563,6 +605,7 @@ def command_library_add(arguments: argparse.Namespace) -> None:
 
 
 def command_library_remove(arguments: argparse.Namespace) -> None:
+    open_workspace()
     config = transport.load_config()
     config.get("libraries", {}).pop(arguments.project, None)
     transport.save_config(config)
@@ -1010,6 +1053,20 @@ def build_parser() -> argparse.ArgumentParser:
     dispatch.set_defaults(handler=command_dispatch_work, permission=None, model=None, allow=None,
                           add_dir=None, env=None, keep_going=False, hold=False, wait=False,
                           context=None, steps_file=None)
+
+    orchestrate = commands.add_parser('orchestrate', help='start a controller-local orchestrator')
+    orchestrate.add_argument('work_item')
+    orchestrate.add_argument('--mandate', required=True, help='recorded mandate path')
+    orchestrate.add_argument('--host', required=True, help='configured local controller host')
+    orchestrate.add_argument('--runtime', dest='agent', choices=('claude', 'codex'), required=True)
+    orchestrate.add_argument('--cwd', required=True)
+    orchestrate.add_argument('--permission', help='runtime permission, as for fleet send')
+    orchestrate.set_defaults(handler=command_orchestrate)
+    control = commands.add_parser('control', help='activation-bound controller command')
+    control.add_argument('activation')
+    control.add_argument('operation', choices=('state', 'progress', 'meet', 'attention', 'dispatch', 'decide', 'summary', 'propose'))
+    control.add_argument('payload', help='JSON object of command fields')
+    control.set_defaults(handler=command_control)
 
     run = commands.add_parser("run", help="stored execution runs").add_subparsers(dest="run_command", required=True)
     run_link = run.add_parser("link", help="link an existing host job without fetching it")

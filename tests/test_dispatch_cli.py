@@ -15,7 +15,7 @@ def test_cli_dispatch_commits_before_transport_and_send_wraps_it(monkeypatch, ca
         run = composition.open_execution().runs()[-1]
         assert composition.open_execution().claims()[-1].run == run.id
         calls.append(arguments)
-        return {"id": run.remote_job_id, "run_id": run.id, "schema_version": 3,
+        return {"id": run.remote_job_id, "run_id": run.id, "schema_version": 4,
                 "fingerprint": arguments[arguments.index("--fingerprint") + 1],
                 "start_requested": any(call[0] == "start" for call in calls),
                 "status": "queued", "steps": [{}], "description": "Task"}
@@ -58,7 +58,7 @@ def test_dispatch_preserves_refusal_when_reconcile_fails(monkeypatch, capsys, re
         if arguments[0] == "reconcile":
             raise cli.FleetError("no such run")
         run, = composition.open_execution().runs()
-        return {"id": run.remote_job_id, "run_id": run.id, "schema_version": 3,
+        return {"id": run.remote_job_id, "run_id": run.id, "schema_version": 4,
                 "fingerprint": arguments[arguments.index("--fingerprint") + 1],
                 "start_requested": False, "status": "queued"}
 
@@ -107,7 +107,7 @@ def test_dropped_dispatch_reply_reconciles_by_run_id(monkeypatch, dropped):
             raise cli.FleetError("reply lost")
         if arguments[0] == "reconcile":
             assert arguments[1] == run.id
-        return {"id": run.remote_job_id, "run_id": run.id, "schema_version": 3,
+        return {"id": run.remote_job_id, "run_id": run.id, "schema_version": 4,
                 "fingerprint": arguments[arguments.index("--fingerprint") + 1],
                 "start_requested": dropped == "start" and arguments[0] == "reconcile",
                 "status": "running" if arguments[0] == "reconcile" and dropped == "start" else "queued", "steps": [{}],

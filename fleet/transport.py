@@ -91,9 +91,6 @@ def load_config() -> dict[str, Any]:
 
 def save_config(config: dict[str, Any]) -> None:
     import tempfile
-    from fleet.composition import open_workspace
-
-    open_workspace()
     path = config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     settings = {key: value for key, value in config.items() if key not in ("projects", "capacity")}
