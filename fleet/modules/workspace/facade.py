@@ -50,6 +50,12 @@ class WorkspaceFacade:
     def shuttered_snapshot(self) -> dict:
         return self.application.shuttered_snapshot()
 
+    def require_claims_allowed(self, project: str, host: str) -> None:
+        linked = self.registry().project_for(host, project)
+        shuttered = self.shuttered_snapshot()
+        if project in shuttered or (linked is not None and linked.id in shuttered):
+            raise ValueError(f"project '{project}' is shuttered")
+
     def focus_of(self, item: dict) -> str:
         return self.application.focus_of(item)
 

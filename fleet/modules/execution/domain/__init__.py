@@ -26,14 +26,27 @@ class JobObservation:
 
     def run_status(self) -> str:
         return {"running": "running", "done": "succeeded", "failed": "failed",
-                "cancelled": "stopped", "queued": "unknown outcome", "stalled": "unknown outcome"}[self.status]
+                "cancelled": "stopped", "lost": "failed", "queued": "unknown outcome", "stalled": "unknown outcome"}[self.status]
 
 
 @dataclass(frozen=True)
 class Action:
     id: str
-    work_item: str
+    work_item: str | None
     source: str
+    dispatch_reason: str | None = None
+    actor: str | None = None
+    idempotency_key: str | None = None
+    payload_fingerprint: str | None = None
+    project: str | None = None
+    payload: dict | None = None
+
+
+@dataclass(frozen=True)
+class Claim:
+    action: str
+    run: str
+    active: bool
 
 
 @dataclass(frozen=True)
@@ -54,3 +67,9 @@ class Run:
             raise ValueError("host and remote job ID are required")
         if self.status not in ("running", "succeeded", "failed", "stopped", "unknown outcome"):
             raise ValueError("unknown run status")
+
+
+@dataclass(frozen=True)
+class DispatchResult:
+    run: Run
+    created: bool

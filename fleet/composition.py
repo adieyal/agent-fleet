@@ -73,7 +73,15 @@ def open_workspace(store: Store | None = None, *, initial: dict | None = None,
 def open_execution(store: Store | None = None) -> ExecutionFacade:
     store = store if store is not None else open_store()
     attention = lambda unit: AttentionFacade(AttentionRepository(store, unit), store.clock)
-    return ExecutionFacade(ExecutionRepository(store, attention=attention), open_work(store), send_input)
+
+    def collaborators(unit):
+        work = WorkFacade(WorkRepository(store, lambda bound: AttentionFacade(AttentionRepository(store, bound), store.clock),
+                                        unit), FileEvidenceReader(), store.clock)
+        return work, WorkspaceFacade(WorkspaceRepository(store, unit))
+
+    return ExecutionFacade(ExecutionRepository(store, attention=attention, collaborators=collaborators),
+                           open_work(store), send=send_input,
+                           prepare_dispatch=lambda: open_workspace(store))
 
 
 def open_library(store: Store | None = None) -> LibraryFacade:
@@ -85,5 +93,5 @@ def open_decisions(store: Store | None = None) -> DecisionsFacade:
     store = store if store is not None else open_store()
     attention = lambda unit: AttentionFacade(AttentionRepository(store, unit), store.clock)
     work = lambda unit: WorkFacade(WorkRepository(store, attention, unit), FileEvidenceReader(), store.clock)
-    execution = lambda unit: ExecutionFacade(ExecutionRepository(store, unit, attention), work(unit), send_input)
+    execution = lambda unit: ExecutionFacade(ExecutionRepository(store, unit, attention=attention), work(unit), send=send_input)
     return DecisionsFacade(DecisionRepository(store, attention, work, execution), store.clock, open_execution(store))
