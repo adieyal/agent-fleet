@@ -38,13 +38,17 @@ def item(identity, **changes):
                             None, None, None, NOW, NOW), **changes)
 
 
-def project(items, criteria=(), summaries=(), attention=(), runs=(), entries=()):
+def project(items, criteria=(), summaries=(), attention=(), runs=(), entries=(), host_observations=()):
     # These ports expose reads only; any attempted write fails.
     work = WorkFacade(ReadWork(items, criteria, summaries), None, lambda: NOW)
     alerts = AttentionFacade(ReadAttention(attention), lambda: NOW)
+    activity = ExecutionFacade(None, None, clock=lambda: NOW)
+    for host, observed in host_observations:
+        activity.clock = lambda: observed
+        activity.observe_host(host, reachable=True)
+    activity.clock = lambda: NOW
     execution = SimpleNamespace(actions=lambda: [Action(run.action, "milestone", "linked") for run in runs],
-                                runs=lambda: runs,
-                                run_activity=ExecutionFacade(None, None, clock=lambda: NOW).run_activity)
+                                runs=lambda: runs, run_activity=activity.run_activity)
     library = SimpleNamespace(list=lambda: entries)
     return project_status("p", work, alerts, execution, library, SimpleNamespace(list=lambda: []))
 
@@ -160,7 +164,8 @@ def test_bench_uses_recorded_actions_through_execution_facade():
             replace(run("old", "host-b", "running", None), current_action="test",
                     action_observed_at=NOW - timedelta(seconds=21)),
             run("unknown", "host-c", "running", None)]
-    doc = project([item("milestone", kind="milestone")], runs=runs)
+    doc = project([item("milestone", kind="milestone")], runs=runs,
+                  host_observations=[('host-a', NOW), ('host-b', NOW - timedelta(seconds=21))])
     agents = bench_state(doc, "milestone")["agents"]
     assert [(agent["action_glyph"], agent["action_freshness"]) for agent in agents] == [
         ("read", "current"), ("test", "stale"), (None, "unknown")]
