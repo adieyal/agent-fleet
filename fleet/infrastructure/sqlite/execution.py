@@ -5,9 +5,10 @@ from dataclasses import asdict
 from datetime import datetime
 from typing import Callable
 
-from fleet.modules.execution import Action, Claim, Run
-from .store import Store, UnitOfWork
+from fleet.modules.execution import Action, Claim, Delivery, Run
+from fleet.modules.attention import AttentionFacade
 from .repository import Repository
+from .store import Store, UnitOfWork
 
 
 def decode_run(payload: str) -> Run:
@@ -20,15 +21,32 @@ def decode_run(payload: str) -> Run:
 
 class ExecutionRepository(Repository):
     def __init__(self, store: Store, unit: UnitOfWork | None = None,
-                 collaborators: Callable | None = None) -> None:
+                 collaborators: Callable | None = None,
+                 attention: Callable[[UnitOfWork], AttentionFacade] | None = None) -> None:
         super().__init__(store, unit)
+        self.attention_factory = attention
         self.collaborators = collaborators
         if unit is not None:
             self.bind(unit)
 
     def bind(self, unit: UnitOfWork) -> None:
+        if self.attention_factory is not None:
+            self.attention = self.attention_factory(unit)
         if self.collaborators is not None:
             self.work, self.workspace = self.collaborators(unit)
+
+    def deliveries(self) -> list[Delivery]:
+        return [Delivery(**json.loads(row["record"])) for row in self.rows("SELECT record FROM execution_delivery ORDER BY rowid")]
+
+    def save_delivery(self, delivery: Delivery, actor: str) -> None:
+        if self.unit is None:
+            raise RuntimeError("delivery writes require a transaction")
+        rows = self.rows("SELECT record FROM execution_delivery WHERE id = ?", (delivery.key,))
+        previous = rows[0]["record"] if rows else ""
+        payload = json.dumps(asdict(delivery), sort_keys=True)
+        self.unit.connection.execute("INSERT INTO execution_delivery (id, record) VALUES (?, ?) "
+            "ON CONFLICT(id) DO UPDATE SET record = excluded.record", (delivery.key, payload))
+        self.unit.record_change(f"execution:delivery:{delivery.key}", previous, payload, actor)
 
     def find(self, host: str, job: str) -> Run | None:
         rows = self.rows("SELECT record FROM execution_run WHERE host = ? AND remote_job_id = ?", (host, job))

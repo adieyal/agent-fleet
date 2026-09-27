@@ -1,16 +1,22 @@
 import json
 from pathlib import Path
 import runpy
+import sys
+
+import pytest
 
 from fleet import cli
 from fleet.composition import open_store, open_work
 
 
 SCRIPT = Path(__file__).parents[2] / "scripts/seed_supplier_slice.py"
+# Story fields copied from first-stories/sources/v2-suppliers-slice6/prd.json.
 
 
-def seed():
-    runpy.run_path(str(SCRIPT), run_name="__main__")
+def seed(prd=None):
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(sys, "argv", [str(SCRIPT)] + (["--prd", str(prd)] if prd else []))
+        runpy.run_path(str(SCRIPT), run_name="__main__")
 
 
 def test_supplier_seed_is_repeatable_and_updates(capsys):
@@ -52,7 +58,7 @@ def test_supplier_seed_status_and_sources(capsys, monkeypatch):
     assert active["title"] == "Slice 6: supplier imports"
     assert active["progress"] == {"basis": "unknown", "complete": None, "total": None}
     assert active["criteria"] == active["children"] == []
-    assert active["next_step"] == "Draft the slice 6 PRD and questions"
+    assert active["next_step"] == "Answer slice 6 questions.md and start its loop"
     tasks = [item for item in supplier["children"] if item["kind"] == "task"]
     assert len(tasks) == 9 + 21 + 47
     assert all(item["condition"] == "none" for item in tasks)
@@ -64,3 +70,77 @@ def test_supplier_seed_status_and_sources(capsys, monkeypatch):
     output = capsys.readouterr().out
     assert "Slice 6: supplier imports" in output and "Progress: unknown" in output
     assert "complete" in output and "Development experience" in output
+
+
+def test_slice6_prd_progress_and_repeatability(tmp_path, capsys):
+    prd = tmp_path / "prd.json"
+    content = json.loads((SCRIPT.parents[1] / "tests/fixtures/supplier_slice6_prd.json").read_text())
+    prd.write_text(json.dumps(content))
+    seed()
+    work = open_work()
+    original = work.list(project="Restoke V2")
+    seed(prd)
+    milestone = next(item for item in work.list() if item.title == "Slice 6: supplier imports")
+    tasks = [item for item in work.list() if item.parent == milestone.id]
+    assert len(tasks) == 15
+    assert {item.title: item.goal for item in tasks} == {
+        story["title"]: story["description"] + "\nSource: " + str(prd)
+        for story in content["userStories"]
+    }
+    assert all(item.kind == "task" for item in tasks)
+    assert all(work.get(item.id) == item for item in original)
+    criteria = work.criteria(milestone.id)
+    assert len(criteria) == 15
+    assert {item.text for item in criteria} == {story["id"] + " passes" for story in content["userStories"]}
+    assert all(item.verification == "checked" and item.specification.result == "passes == true"
+               and item.specification.reference.startswith(str(prd) + "#") for item in criteria)
+    for count in (0, 2):
+        if count:
+            for story in content["userStories"][:2]:
+                story["passes"] = True
+            prd.write_text(json.dumps(content))
+            seed(prd)
+        capsys.readouterr()
+        cli.main(["status", "Restoke V2", "--json"])
+        tree = json.loads(capsys.readouterr().out)
+        supplier = tree["work_items"][0]["children"][0]
+        active = next(item for item in supplier["children"] if item["id"] == milestone.id)
+        assert active["progress"] == {"basis": "criteria", "complete": count, "total": 15}
+        cli.main(["status", "Restoke V2"])
+        assert f"Progress: {count}/15" in capsys.readouterr().out
+        before = work.list()
+        criteria = work.criteria(milestone.id)
+        sequence = open_store().latest_sequence()
+        seed(prd)
+        assert work.list() == before
+        assert work.criteria(milestone.id) == criteria
+        assert open_store().latest_sequence() == sequence
+
+
+@pytest.mark.parametrize("case, reason", [
+    ("false", "evidence does not match"), ("other-story", "evidence does not match"),
+    ("missing-story", "US-091.*missing"), ("missing-file", "file.*missing"),
+    ("missing-passes", "passes.*missing"), ("string", "evidence does not match"),
+])
+def test_prd_criterion_requires_named_true_story(tmp_path, case, reason):
+    from fleet.modules.work import EvidenceSpecification
+
+    prd = tmp_path / "prd.json"
+    story = {"id": "US-091", "passes": False}
+    stories = [story, {"id": "US-092", "passes": True}]
+    if case == "missing-story":
+        stories.remove(story)
+    elif case == "missing-passes":
+        del story["passes"]
+    elif case == "string":
+        story["passes"] = "true"
+    if case != "missing-file":
+        prd.write_text(json.dumps({"userStories": stories}))
+    work = open_work()
+    item = work.add(project="test", title="Slice", goal="Import", actor="test")
+    reference = str(prd) + "#US-091"
+    criterion = work.add_criterion(item.id, text="US-091 passes", verification="checked",
+        specification=EvidenceSpecification(reference, "passes == true"), actor="test")
+    with pytest.raises(ValueError, match=reason):
+        work.meet(criterion.id, actor="test", evidence=(reference,))
+    assert work.criteria(item.id)[0].state == "unmet"

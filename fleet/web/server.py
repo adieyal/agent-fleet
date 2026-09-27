@@ -110,6 +110,7 @@ class FleetState(LiveWorkspace):
             sequence = self.store.latest_sequence()
             mutate(self.by_host[host_name])
             self.by_host[host_name] = deepcopy(self.by_host[host_name])
+            retry_deliveries = self.by_host[host_name]["ok"] and previous != self.by_host[host_name]
             reconciled = False
             if ingest:
                 host = self.by_host[host_name]
@@ -122,6 +123,8 @@ class FleetState(LiveWorkspace):
                 return
             self.version += 1
             self.changed.notify_all()
+        if retry_deliveries:
+            self.execution.retry_deliveries(host_name)
 
     def refresh_registry(self) -> str | None:
         try:
