@@ -1,6 +1,7 @@
 // Applying fleet state from the server stream: entities, dismissals and finished-job retirement.
 
 import { QS, RD, REDUCED } from './env.js';
+import { animationNow } from './clock.js';
 import { store } from './util.js';
 import { ROBOT, cam, drawSign } from './scene.js';
 import { fit } from './camera.js';
@@ -126,7 +127,7 @@ export function applyState(doc) {
   for (const room of rooms) room.label = doc.project_labels?.[room.name] || room.name;
   applyFocus(doc, rooms);
   const seen = new Set();
-  const now = performance.now() / 1000;
+  const now = animationNow() / 1000;
   const quiet = new Set(rooms.filter(r => r.focus === 'background').map(r => r.name));
   offFloor.clear();
   for (const h of hosts) {

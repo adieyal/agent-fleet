@@ -2,6 +2,7 @@
 
 import { BK, DEBUG, DEMO, POLL_MS, QS, RD, REDUCED, RW, WARP, canvas, vh, vw } from './env.js';
 import { esc } from './util.js';
+import { advanceClock, animationNow, isStepping } from './clock.js';
 import { hostLook } from './looks.js';
 import { isActive } from './activity.js';
 import { M, _p, _w, applyCamera, cam, camera, centreFor, loadAssets, renderer, scene, toScreen } from './scene.js';
@@ -18,20 +19,55 @@ import { miniBot, panelScrollUntil, renderLive } from './panel.js';
 import './library.js';
 import { reader } from './reader.js';
 import { demoSource } from './demo.js';
-import { buildingReady, buildingShown } from './building.js';
-import { sankeyPane } from './sankey.js';
+import { buildingReady, buildingShown, stepBuilding } from './building.js';
+import { sankeyPane, stepSankey } from './sankey.js';
 import { glowOf, keyOf, pipelines, screenOf, stepScreens } from './pipelines.js';
 
 // ------------------------------------------------------------------ frame loop
 let lastT = 0;
+let needsFrame = true;
+for (const event of ['pointermove', 'pointerup', 'click', 'keydown', 'wheel', 'resize']) {
+  window.addEventListener(event, () => { needsFrame = true; });
+}
+let demoTick = null, demoElapsed = 0;
+function advanceTime(seconds, draw = true) {
+  if (!Number.isFinite(seconds) || seconds < 0) throw new Error('Expected non-negative seconds');
+  advanceClock(0);
+  for (let remaining = seconds; remaining > 0;) {
+    const dt = Math.min(0.1, remaining);
+    advanceClock(dt);
+    demoElapsed += dt;
+    if (demoTick && demoElapsed >= POLL_MS / 1000) {
+      demoElapsed -= POLL_MS / 1000;
+      applyState(demoTick());
+    }
+    const now = animationNow() / 1000;
+    updateFrame(dt * WARP, now, now, false);
+    remaining -= dt;
+  }
+  departIdle();
+  const now = animationNow() / 1000;
+  updateFrame(0, now, now, draw);
+  stepSankey();
+  if (draw) stepBuilding();
+}
 function frame(ts) {
   requestAnimationFrame(frame);
   if (document.hidden || !reader.hidden || !sankeyPane.hidden) { lastT = 0; return; }   // a sheet covers the deck; don't render under it
   if (buildingShown) { lastT = 0; return; }                      // the building has the screen and draws itself
   if (ts < panelScrollUntil) { lastT = 0; return; }             // hold the deck still while the panel scrolls, so the scroll gets the frame
-  const t = ts / 1000, now = performance.now() / 1000;
+  if (isStepping()) {
+    const now = animationNow() / 1000;
+    if (needsFrame) updateFrame(0, now, now, true);
+    needsFrame = false;
+    return;
+  }
+  const t = ts / 1000, now = animationNow() / 1000;
   const dt = Math.min(0.1, lastT ? t - lastT : 0.016) * WARP;
   lastT = t;
+  updateFrame(dt, t, now, true);
+}
+function updateFrame(dt, t, now, draw) {
   stepMotion(dt, now);
   if (cam.tween) {
     const k = REDUCED ? 1 : Math.min(1, dt * 7);
@@ -73,7 +109,8 @@ function frame(ts) {
   if (!REDUCED) for (const tex of edgeStrips) tex.offset.x = -t * 0.35;
   M.beacon.color.set(REDUCED || Math.sin(t * 2.4) > 0.6 ? 0xf87171 : 0x5a1d1d);
   stepParticles(dt);
-  renderer.render(scene, camera);
+  if (draw) renderer.render(scene, camera);
+  else scene.updateMatrixWorld();
   positionTags();
   positionSwitches();
   positionLanterns();
@@ -134,6 +171,7 @@ loadAssets().then(() => {
     ? _w.set(r.ox + t.along + a * t.w / 2, t.up + b * t.h / 2, r.oy + t.out)
     : _w.set(r.ox + t.out, t.up + b * t.h / 2, r.oy + t.along - a * t.w / 2), { x: 0, y: 0 }));
   window.fleetDeck = Object.freeze({
+    advanceTime,   // seconds; switches to a manual animation clock until reload
     rooms: () => rooms.map(r => ({ name: r.name, label: r.label, x: r.ox, y: r.oy,
       screen: toScreen(_w.set(r.ox + RW / 2, 0, r.oy + RD / 2), { x: 0, y: 0 }), focus: r.focus, dim: r.dimK ?? null, lit: r.lit,
       attention: r.attention?.level ? { kind: r.attention.kind, state: r.attention.level, count: r.attention.shown.length } : null })),
@@ -154,23 +192,26 @@ loadAssets().then(() => {
       if (zoom) cam.z = zoom;
       cam.c.copy(centreFor(s.mesh.getWorldPosition(_w), vw / 2, vh / 2, cam.z)); cam.userMoved = true; cam.tween = null;
       applyCamera(); camera.updateMatrixWorld();
+      needsFrame = true;
     },
     lookAtRoom: (name, zoom) => {   // bring a room's middle to the middle of the view; no zoom fits the whole deck again
       const r = rooms.find(r => r.name === name);
       if (!zoom) fit();
       else if (r) { cam.z = zoom; cam.c.copy(centreFor(_w.set(r.ox + RW / 2, 0, r.oy + RD / 2), vw / 2, vh / 2, zoom)); cam.userMoved = true; cam.tween = null; }
       applyCamera(); camera.updateMatrixWorld();
+      needsFrame = true;
     },
   });
   if (DEMO) {
     const tick = demoSource();
+    demoTick = tick;
     applyState(tick());
-    setInterval(() => applyState(tick()), POLL_MS);
+    setInterval(() => { if (!isStepping()) applyState(tick()); }, POLL_MS);
   } else {
     stream();
   }
   setInterval(renderLive, 1000);
-  setInterval(departIdle, 1000);
+  setInterval(() => { if (!isStepping()) departIdle(); }, 1000);
   requestAnimationFrame(frame);
 }, err => {
   const hint = document.getElementById('hint');

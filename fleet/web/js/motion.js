@@ -1,6 +1,7 @@
 // Where each android goes and how it moves: targets, pacing, particles and the per-frame update.
 
 import * as THREE from 'three';
+import { animationNow } from './clock.js';
 import { PI, RD, REDUCED, SPEED } from './env.js';
 import { angleTo, clamp, mix } from './util.js';
 import {
@@ -15,7 +16,7 @@ import { dropEnt, playClip } from './agents.js';
 import { closePanel } from './panel.js';
 
 export function assignTargets() {
-  const now = performance.now() / 1000;
+  const now = animationNow() / 1000;
   for (const r of rooms) r.ents = [];
   for (const e of ents.values()) {
     // a finished job heads for the door once its completion moment is over, and gives up its spot

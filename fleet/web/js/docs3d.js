@@ -1,6 +1,7 @@
 // Documents agents produced: their 3D paper trays, link lines, and bookkeeping.
 
 import * as THREE from 'three';
+import { animationNow } from './clock.js';
 import { BK, PI, REDUCED } from './env.js';
 import { age, hash, mix, rr } from './util.js';
 import { G, M, _col, _m4, _m4b, _q, _sc, _v, _w, canvasTex, scene } from './scene.js';
@@ -231,7 +232,7 @@ export function docMeta(doc) { return [doc.step != null ? `step ${doc.step + 1}`
 
 // remember every document; ones that appear on a job we already knew about get printed
 export function noteDocs(e, quiet) {
-  const now = performance.now() / 1000;
+  const now = animationNow() / 1000;
   let delay = 0;
   for (const doc of docsOf(e.job)) {
     const k = docKey(e, doc);
