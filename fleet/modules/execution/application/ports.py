@@ -3,8 +3,9 @@ from typing import Callable, ContextManager, Protocol
 from fleet.modules.attention import AttentionFacade
 
 from ..domain import Action, Delivery, Run
+from .dtos import InputResult
 
-InputSender = Callable[[Run, Delivery], str | None]
+InputSender = Callable[[Run, Delivery], InputResult]
 
 
 class ExecutionRepository(Protocol):

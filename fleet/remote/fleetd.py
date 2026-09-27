@@ -1272,7 +1272,8 @@ def command_deliver(arguments: argparse.Namespace) -> None:
                 if not job["session_id"]:
                     fail("job has no session to resume")
                 if runner_alive(job):
-                    fail("session turn is still running; retry after it exits")
+                    emit({"schema_version": 1, "key": arguments.key, "status": "busy"})
+                    return
                 if job["cancelled"]:
                     fail("job is cancelled")
                 step = make_step(len(job["steps"]), answer, "Answer")
@@ -1283,7 +1284,8 @@ def command_deliver(arguments: argparse.Namespace) -> None:
             launch_runner(arguments.job)
         step = next(step for step in read_job(arguments.job)["steps"] if step.get("delivery_key") == arguments.key)
         if step["status"] == "pending":
-            fail("answer step has not started; retry delivery")
+            emit({"schema_version": 1, "key": arguments.key, "status": "busy"})
+            return
     emit({"schema_version": 1, "key": arguments.key, "status": "applied"})
 
 

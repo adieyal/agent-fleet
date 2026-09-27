@@ -4,6 +4,7 @@ from fleet.web.server import FleetState, apply_message
 from fleet.modules.attention import StreamContext
 from fleet.infrastructure.sqlite.execution import ExecutionRepository
 import pytest
+from concurrent.futures import ThreadPoolExecutor
 
 
 def question(monkeypatch):
@@ -64,6 +65,63 @@ def test_offline_decision_survives_restart_and_delivers_on_reconnect(monkeypatch
     apply_message(state, state.hosts[0], {"type": "heartbeat"})
     assert len(calls) == 1
     assert open_execution(store).deliveries()[0].status == "applied"
+
+
+def test_delivery_transport_does_not_hold_stream_state_lock(monkeypatch):
+    store, run, item = question(monkeypatch)
+    monkeypatch.setattr(transport, "call", lambda *args, **kwargs:
+        {"schema_version": 1, "key": "wrong", "status": "applied"})
+    open_decisions(store).answer(item.id, "Proceed", actor="adi")
+    state = FleetState([transport.Host("carbon", None)], store=store)
+    calls = []
+
+    def acquire_lock():
+        acquired = state.changed.acquire(blocking=False)
+        if acquired:
+            state.changed.release()
+        return acquired
+
+    def send(host, arguments, **kwargs):
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            assert executor.submit(acquire_lock).result(timeout=2)
+        calls.append(arguments)
+        return {"schema_version": 1, "key": arguments[arguments.index("--key") + 1], "status": "applied"}
+
+    monkeypatch.setattr(transport, "call", send)
+    apply_message(state, state.hosts[0], {"type": "hello"})
+    assert len(calls) == 1
+    assert open_execution(store).deliveries()[0].status == "applied"
+
+
+def test_busy_delivery_stays_pending_without_failures_or_history_then_applies(monkeypatch):
+    store, run, item = question(monkeypatch)
+    outcome = "busy"
+    calls = []
+
+    def send(host, arguments, **kwargs):
+        key = arguments[arguments.index("--key") + 1]
+        calls.append(key)
+        return {"schema_version": 1, "key": key, "status": outcome}
+
+    monkeypatch.setattr(transport, "call", send)
+    open_decisions(store).answer(item.id, "Proceed", actor="adi")
+    execution = open_execution(store)
+    delivery, = execution.deliveries()
+    assert (delivery.status, delivery.failures, delivery.error) == ("pending", 0, None)
+    state = FleetState([transport.Host("carbon", None)], store=store)
+    sequence = store.latest_sequence()
+    for index in range(4):
+        state.update("carbon", lambda entry: entry.update(ok=True, revision=index), ingest=False)
+    version = state.version
+    state.update("carbon", lambda entry: entry.update(ok=True, revision=3), ingest=False)
+    assert state.version == version
+    assert store.latest_sequence() == sequence
+    assert execution.deliveries() == [delivery]
+    assert not [item for item in open_attention(store).list() if item.kind == "alert"]
+    assert calls == [delivery.key] * 5
+    outcome = "applied"
+    state.update("carbon", lambda entry: entry.update(revision=4), ingest=False)
+    assert execution.deliveries()[0].status == "applied"
 
 
 def test_lasting_failure_raises_one_alert_without_repeated_history(monkeypatch):

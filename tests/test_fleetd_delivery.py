@@ -52,7 +52,23 @@ def test_delivery_does_not_acknowledge_a_runner_that_never_started(tmp_path, mon
     from io import StringIO
     for _ in range(2):
         monkeypatch.setattr(sys, "stdin", StringIO("Proceed"))
-        with pytest.raises(SystemExit):
-            fleetd.command_deliver(argparse.Namespace(job="job1", key="k", schema_version=1))
-        assert "not started" in capsys.readouterr().out
+        fleetd.command_deliver(argparse.Namespace(job="job1", key="k", schema_version=1))
+        assert json.loads(capsys.readouterr().out) == {"schema_version": 1, "key": "k", "status": "busy"}
     assert len(fleetd.read_job("job1")["steps"]) == 1
+
+
+def test_delivery_while_runner_alive_is_busy_and_adds_no_step(tmp_path, monkeypatch, capsys):
+    directory = tmp_path / "job1"
+    directory.mkdir()
+    monkeypatch.setattr(fleetd, "JOBS_DIRECTORY", tmp_path)
+    job = {"id": "job1", "session_id": "session1", "steps": [], "cancelled": False}
+    (directory / "job.json").write_text(json.dumps(job))
+    monkeypatch.setattr(fleetd, "runner_alive", lambda job: True)
+    from io import StringIO
+    for _ in range(4):
+        monkeypatch.setattr(sys, "stdin", StringIO("Proceed"))
+        fleetd.command_deliver(argparse.Namespace(job="job1", key="k", schema_version=1))
+        assert json.loads(capsys.readouterr().out) == {"schema_version": 1, "key": "k", "status": "busy"}
+    result = fleetd.read_job("job1")
+    assert result["steps"] == []
+    assert result["session_id"] == "session1"

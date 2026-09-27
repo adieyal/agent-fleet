@@ -32,13 +32,15 @@ def retry(repository: ExecutionRepository, work: WorkFacade, send: InputSender,
             continue
         if decision is not None and delivery.decision != decision:
             continue
-        error = send(run, delivery)
+        result = send(run, delivery)
+        if result.status == "busy":
+            continue
         with repository.transaction() as transaction:
             current = next(item for item in transaction.deliveries() if item.key == delivery.key)
             if current.status == "applied":
                 continue
-            updated = (replace(current, status="applied", error=None) if error is None else
-                       replace(current, failures=min(3, current.failures + 1), error=error))
+            updated = (replace(current, status="applied", error=None) if result.status == "applied" else
+                       replace(current, failures=min(3, current.failures + 1), error=result.error))
             if updated != current:
                 transaction.save_delivery(updated, "delivery")
             if current.failures < 3 and updated.failures == 3:
@@ -48,7 +50,7 @@ def retry(repository: ExecutionRepository, work: WorkFacade, send: InputSender,
                     kind="alert", owner=f"run:{run.id}", source="input-delivery",
                     source_reference=delivery.key, headline="Answer delivery keeps failing",
                     context_reference=f"decision:{delivery.decision}", actor="delivery")
-            if error is None:
+            if result.status == "applied":
                 for item in transaction.attention.list():
                     if item.source == "input-delivery" and item.source_reference == delivery.key and item.state != "resolved":
                         transaction.attention.resolve(item.id, details="Answer delivered", actor="delivery")
