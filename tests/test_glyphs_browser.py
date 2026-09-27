@@ -84,3 +84,13 @@ def test_every_action_has_a_labelled_glyph(module_page: Page) -> None:
     assert {row[0] for row in glyphs} >= {"search", "edit", "test", "shell", "think", "ask"}
     for action, data_action, role, label, drawn, text in glyphs:
         assert data_action == action and role == "img" and label and drawn and text == ""
+
+
+def test_server_activity_classes_have_glyphs(module_page: Page) -> None:
+    classes = ['read', 'search', 'edit', 'test', 'wait', 'web', 'plan', 'delegate',
+               'type', 'doc', 'ship', 'review', 'build', 'think', 'unknown']
+    assert module_page.evaluate(f"""classes => {IMPORT}.then(glyphs => classes.every(action => {{
+        const box = document.createElement('div');
+        box.innerHTML = glyphs.glyphHtml(action);
+        return box.firstChild.dataset.action === action && box.querySelector('svg') !== null;
+    }}))""", classes)

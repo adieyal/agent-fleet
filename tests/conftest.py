@@ -72,9 +72,9 @@ def fixture_data() -> dict[str, Any]:
 
 
 @contextmanager
-def serve_fixture(path: Path) -> Iterator[str]:
+def serve_fixture(path: Path | FixtureState) -> Iterator[str]:
     """A deck server over a recorded fleet; what the browser changes stays in this server's memory."""
-    state = FixtureState.load(path)
+    state = path if isinstance(path, FixtureState) else FixtureState.load(path)
     server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(state, FixtureLibrary(state.fixture)))
     server.daemon_threads = True
     thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
@@ -88,6 +88,11 @@ def serve_fixture(path: Path) -> Iterator[str]:
 
 
 @pytest.fixture(scope="session")
-def base_url() -> Iterator[str]:
-    with serve_fixture(FIXTURE) as url:
+def deck_state() -> FixtureState:
+    return FixtureState.load(FIXTURE)
+
+
+@pytest.fixture(scope="session")
+def base_url(deck_state: FixtureState) -> Iterator[str]:
+    with serve_fixture(deck_state) as url:
         yield url
