@@ -31,6 +31,7 @@
 // swings), so the deck's frame loop and input stay as they were; it reuses the deck's furniture, lighting and palette.
 
 import * as THREE from 'three';
+import { animationNow, isStepping } from './clock.js';
 import { DESK_TOP, HALF, PI, QS, REDUCED, vh, vw } from './env.js';
 import { esc, mix, store } from './util.js';
 import { THEMES, hostLook, projectLook, themeFor } from './looks.js';
@@ -234,7 +235,7 @@ function applyLanterns(state) {
       byPlace.get(place).push(item);
     }
   }
-  const now = performance.now() / 1000;
+  const now = animationNow() / 1000;
   for (const place of lanterns.keys()) if (!byPlace.has(place)) lanterns.delete(place);
   for (const [place, items] of byPlace) {
     const l = lanterns.get(place) || { swingFrom: null };
@@ -577,13 +578,14 @@ function draw() {
   requestAnimationFrame(() => {
     drawPending = false;
     if (sized !== `${vw}x${vh}`) resize();
-    const swinging = stepLanterns(performance.now() / 1000);
+    const swinging = stepLanterns(animationNow() / 1000);
     renderer.render(scene, camera);
     placeUi();
-    if (swinging) draw();
+    if (swinging && !isStepping()) draw();
   });
 }
 // one swing on arrival, then still; true while any lantern is still swinging
+export { draw as stepBuilding };
 function stepLanterns(now) {
   let swinging = false;
   for (const [place, l] of lanterns) {
@@ -615,7 +617,7 @@ function renderUi() {
         title="Merge with a project registered for the same work by mistake">⇄</button>
     </div>`;
   }).join('');
-  const now = performance.now() / 1000;
+  const now = animationNow() / 1000;
   const lamps = [...lanterns].map(([place, l]) => {
     const where = place === 'lobby' ? 'the front desk' : place === 'store' ? 'the storehouse' : floors.find(f => f.floor === place)?.name;
     const label = `${where}: ${l.count > 1 ? `${l.count} things need you` : 'something needs you'}${l.level === 'acknowledged' ? ' (acknowledged)' : ''}`;

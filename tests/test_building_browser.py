@@ -108,13 +108,19 @@ def page(still: BrowserContext) -> Iterator[Page]:
     yield from page_in(still)
 
 
+@pytest.fixture(scope="module")
+def reading_page(still: BrowserContext) -> Iterator[Page]:
+    yield from page_in(still)
+
+
 @pytest.fixture
 def moving_page(moving: BrowserContext) -> Iterator[Page]:
     yield from page_in(moving)
 
 
 def open_building(page: Page, url: str) -> list[dict[str, Any]]:
-    page.goto(url + "/")
+    if page.url != url + "/":
+        page.goto(url + "/")
     page.locator('#viewToggle [data-view="building"]').click()
     page.wait_for_function("fleetBuilding.floors().length > 0 && fleetBuilding.floors().every(floor => floor.built)")
     settle(page)
@@ -168,7 +174,8 @@ def test_the_deck_stays_the_default_and_the_choice_is_remembered(page: Page, res
 
 
 # ------------------------------------------------------------------ the building at L0
-def test_ten_floors_and_the_lobby_fit_one_desktop_screen(page: Page, ten_floors_url: str) -> None:
+def test_ten_floors_and_the_lobby_fit_one_desktop_screen(reading_page: Page, ten_floors_url: str) -> None:
+    page = reading_page
     floors = open_building(page, ten_floors_url)
     assert [floor["floor"] for floor in floors] == list(range(1, 11))
     lobby = page.evaluate("fleetBuilding.lobby().screen")
@@ -199,7 +206,8 @@ def floor_pixels(page: Page, floor: dict[str, Any]) -> tuple[float, float, float
     return tuple(ImageStat.Stat(image).mean)
 
 
-def test_priority_floors_are_open_and_background_floors_windowed(page: Page, ten_floors_url: str) -> None:
+def test_priority_floors_are_open_and_background_floors_windowed(reading_page: Page, ten_floors_url: str) -> None:
+    page = reading_page
     fixture = json.loads(TEN_FLOORS.read_text())
     background = set(fixture["focus"]["projects"])
     floors = open_building(page, ten_floors_url)
@@ -236,7 +244,8 @@ def test_priority_floors_are_open_and_background_floors_windowed(page: Page, ten
     assert len(heights) == 1
 
 
-def test_open_floors_show_their_projects_rooms(page: Page, ten_floors_url: str) -> None:
+def test_open_floors_show_their_projects_rooms(reading_page: Page, ten_floors_url: str) -> None:
+    page = reading_page
     floors = {floor["floor"]: floor for floor in open_building(page, ten_floors_url)}
     # Agent Fleet (floor 3) has two rooms on the deck: agent-fleet, working, and agent-fleet-docs, idle
     rooms = floors[3]["built"]["rooms"]
@@ -249,7 +258,8 @@ def test_open_floors_show_their_projects_rooms(page: Page, ten_floors_url: str) 
     assert len({room["theme"] for floor in open_floors for room in floor["built"]["rooms"]}) > 1
 
 
-def test_free_floors_are_to_let(page: Page, restoke_url: str) -> None:
+def test_free_floors_are_to_let(reading_page: Page, restoke_url: str) -> None:
+    page = reading_page
     floors = open_building(page, restoke_url)
     document = state(restoke_url)
     assert document["building"]["capacity"] == 6 and len(floors) == 6
@@ -278,7 +288,8 @@ def visible_texts(page: Page) -> list[str]:
 
 
 @pytest.mark.parametrize("fixture", ["ten_floors_url", "restoke_url"])
-def test_the_building_keeps_to_its_text_budget(page: Page, fixture: str, request: pytest.FixtureRequest) -> None:
+def test_the_building_keeps_to_its_text_budget(reading_page: Page, fixture: str, request: pytest.FixtureRequest) -> None:
+    page = reading_page
     open_building(page, request.getfixturevalue(fixture))
     names = page.locator(".plate b").all_inner_texts()
     assert names and all(len(WORD.findall(name)) <= 3 for name in names)
@@ -292,7 +303,8 @@ def test_the_building_keeps_to_its_text_budget(page: Page, fixture: str, request
     expect(page.locator("#world")).to_be_hidden()
 
 
-def test_work_without_a_floor_waits_in_the_lobby(page: Page, ten_floors_url: str) -> None:
+def test_work_without_a_floor_waits_in_the_lobby(reading_page: Page, ten_floors_url: str) -> None:
+    page = reading_page
     open_building(page, ten_floors_url)
     visitors = page.locator(".lobby .visitor")
     expect(visitors).to_have_count(2)

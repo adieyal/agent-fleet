@@ -12,6 +12,7 @@ import pytest
 from playwright.sync_api import Browser, Page, expect
 
 from conftest import serve_fixture
+from browser_clock import advance_until
 
 FIXTURE = Path(__file__).parent / "fixtures" / "pipelines.json"
 VIEWPORTS = {"desktop": {"width": 1440, "height": 900}, "narrow": {"width": 390, "height": 844}}
@@ -69,7 +70,7 @@ def open_screen(deck: Deck, key: str, hover_shot: str | None = None) -> None:
     page.mouse.move(screen["x"], screen["y"])
     expect(page.locator("#docTip")).to_contain_text("click to open")
     if hover_shot:
-        page.wait_for_timeout(100)   # a frame to light the hovered screen's frame
+        page.evaluate("fleetDeck.advanceTime(0)")
         deck.shot(hover_shot)
     page.mouse.click(screen["x"], screen["y"])
     expect(page.locator("#sankey")).to_be_visible()
@@ -89,7 +90,7 @@ def test_declared_pipelines_get_rooms_even_without_work(deck: Deck) -> None:
     deck.shot("room")
     if deck.shots:
         deck.page.evaluate("fleetDeck.lookAt('home:sample-training', 90)")
-        deck.page.wait_for_timeout(300)
+        deck.page.evaluate("fleetDeck.advanceTime(0)")
         deck.shot("screen")
         deck.page.keyboard.press("f")   # fit the deck again
     assert deck.errors == []
@@ -347,9 +348,9 @@ def test_on_a_phone_the_chart_scrolls_to_every_column(deck: Deck) -> None:
     expect(more).to_contain_text("more column")
     while more.is_visible():   # it goes once every column is in view
         more.click()
-        page.wait_for_timeout(500)
+        page.evaluate("new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))")
     page.evaluate("(c => { c.scrollLeft = c.scrollWidth; })(document.getElementById('skChart'))")   # the rest of the labels
-    page.wait_for_timeout(100)
+    page.evaluate("new Promise(done => requestAnimationFrame(done))")
     deck.shot("sankey-end")
     in_view = page.evaluate("""(() => { const c = document.getElementById('skChart').getBoundingClientRect();
       return [...document.querySelectorAll('#skSvg .sk-node')].filter(g => g.getBoundingClientRect().left >= c.left)
@@ -563,23 +564,24 @@ def test_the_demo_pipeline_moves_while_the_sankey_is_open(browser: Browser, pipe
     page.wait_for_function("window.fleetDeck && fleetDeck.pipelines().some(p => p.screen)")
     deck = Deck(page, f"demo-{motion}", request.config.getoption("--shots"))
     glow = "fleetDeck.pipelines().find(p => p.key === 'node-a:demo-training').glow"
-    glows = [page.evaluate(glow), page.wait_for_timeout(400), page.evaluate(glow)][::2]
+    glows = [page.evaluate(glow), page.evaluate("fleetDeck.advanceTime(0.4)"), page.evaluate(glow)][::2]
     assert (glows[0] != glows[1]) == (motion == "no-preference")   # a live run's frame pulses, unless motion is reduced
     open_screen(deck, "node-a:demo-training")
     expect(page.locator("#skMeta")).to_contain_text("demo run 1 (synthetic)")
     first = int(page.locator('#skSvg .sk-node[data-node="items"] text .ct').first.text_content().replace(",", ""))
     assert "waiting" not in page.locator('#skSvg .sk-node[data-node="items"] text').text_content()
-    page.wait_for_function(f"""Number(document.querySelector('#skSvg .sk-node[data-node="items"] text .ct')
-        .textContent.replace(/,/g, '')) > {first}""", timeout=8000)
-    page.wait_for_timeout(250)   # mid-way through an update: bands easing, dots on their way
+    advance_until(page, f"""Number(document.querySelector('#skSvg .sk-node[data-node="items"] text .ct')
+        .textContent.replace(/,/g, '')) > {first}""")
+    page.evaluate("fleetDeck.advanceTime(0.25)")   # bands easing, dots on their way
+    page.evaluate("new Promise(done => requestAnimationFrame(done))")
     deck.shot("sankey-live")
     # every node and label is in the chart's view, off every node and band, and no two labels overlap: now, mid-way
     # through an update, and again after the next
     count = lambda: int(page.locator('#skSvg .sk-node[data-node="items"] text .ct').first.text_content().replace(",", ""))
     for moment in range(2):
         if moment:
-            page.wait_for_function(f"""Number(document.querySelector('#skSvg .sk-node[data-node="items"] text .ct')
-                .textContent.replace(/,/g, '')) > {count()}""", timeout=8000)
+            advance_until(page, f"""Number(document.querySelector('#skSvg .sk-node[data-node="items"] text .ct')
+                .textContent.replace(/,/g, '')) > {count()}""")
         fit, placed = page.evaluate(ALL_IN_VIEW), page.evaluate(LABELS_ON_BANDS)
         assert fit == {"out": [], "onNodes": []} and placed["crowded"] == [], (moment, fit, placed)
         assert [hit for hit in placed["hits"] if not hit[2] or hit[1] == "stub"] == [], (moment, placed)
