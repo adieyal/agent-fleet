@@ -7,6 +7,22 @@ KINDS = ("epic", "workstream", "milestone", "task")
 CONDITIONS = ("none", "waiting", "ready for review", "blocked", "on hold", "complete")
 
 
+@dataclass(frozen=True)
+class Progress:
+    basis: str
+    complete: int | None
+    total: int | None
+
+
+def accepted_progress(children: list["WorkItem"], criteria: list["Criterion"]) -> Progress:
+    milestones = [item for item in children if item.kind == "milestone"]
+    if milestones:
+        return Progress("milestones", sum(item.condition == "complete" for item in milestones), len(milestones))
+    if criteria:
+        return Progress("criteria", sum(item.state == "met" for item in criteria), len(criteria))
+    return Progress("unknown", None, None)
+
+
 def required(value: str, name: str) -> None:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{name} is required")
