@@ -1,0 +1,94 @@
+{
+  "userStories": [
+    {
+      "id": "US-091",
+      "title": "Slice 6 parity checklist for the imports and add or update from file",
+      "description": "Inventory every control, condition, wording, state and action of the legacy import modals into a new frontend/src/v2/features/supplier-import/parity.yaml (accounting and Gmail), and of #uploadSupplierBasketModal into frontend/src/v2/features/supplier-items/parity.yaml. Both are ready: false. The 'Slice 6 —' entries in suppliers/parity.yaml:121-129 and supplier-detail/parity.yaml:390-396 stay where they are and point at the new items.",
+      "passes": false
+    },
+    {
+      "id": "US-092",
+      "title": "InvoiceFileInput moves to platform/ui",
+      "description": "The bootstrap-fileinput look-alike InvoiceFileInput (frontend/src/v2/features/suppliers/ui/invoice-file-input.tsx) moves to frontend/src/v2/platform/ui so that features/supplier-items can use it for Upload Invoice (US-103). Features cannot import each other (Q36).",
+      "passes": false
+    },
+    {
+      "id": "US-093",
+      "title": "GET the accounting connection, and Import from Accounting opens as a V2 dialog",
+      "description": "The header 'Import from <logo>' and the '+ New' 'Import Suppliers from Your Accounting System' (today LegacyLinks, features/suppliers/ui/page-actions.tsx:28-46, 91-98) open a V2 Dialog in #importSuppliersFromXeroModal's markup at /app/suppliers?dialog=import-accounting. The dialog is loaded from a new dialog-owned read of the connection behind a port. Get Suppliers does not fetch yet.",
+      "passes": false
+    },
+    {
+      "id": "US-094",
+      "title": "Choose the Xero tenant, and GET the accounting supplier candidates",
+      "description": "'Get Suppliers' fetches the provider's supplier candidates through the port and shows legacy's candidate list, and the tenant picker stores the chosen tenant with a write instead of legacy's GET write (Q17).",
+      "passes": false
+    },
+    {
+      "id": "US-095",
+      "title": "Create suppliers from the accounting system, and cancel the flow",
+      "description": "'Create Selected' starts legacy's import of the chosen accounting suppliers through POST /api/v2/suppliers/import/accounting/create/, and closing the dialog clears the import flow as legacy's × means to (Q20).",
+      "passes": false
+    },
+    {
+      "id": "US-096",
+      "title": "Import from Gmail opens as a V2 dialog and scans the inbox",
+      "description": "The header 'Import from <Gmail logo>' and the '+ New' 'Import Suppliers from Your Inbox' (today LegacyLinks, page-actions.tsx:48-61, 100-106) open a V2 Dialog in gmail_import_modal.html's markup at /app/suppliers?dialog=import-gmail. It shows the connection state and, when connected, scans the inbox with a POST fired once on open (Q10).",
+      "passes": false
+    },
+    {
+      "id": "US-097",
+      "title": "Reject a Gmail candidate, and the background consent toggle",
+      "description": "The trash rejects a candidate through POST /api/v2/suppliers/import/gmail/candidates/<id>/reject/, and the 'Keep checking my email…' checkbox saves through POST /api/v2/suppliers/import/gmail/consent/, with its info popup.",
+      "passes": false
+    },
+    {
+      "id": "US-098",
+      "title": "Create suppliers from the chosen Gmail candidates",
+      "description": "'Create Selected' in the Gmail dialog creates suppliers from the chosen candidates through POST /api/v2/suppliers/import/gmail/accept/, as inbox_accept_candidates does.",
+      "passes": false
+    },
+    {
+      "id": "US-099",
+      "title": "OAuth returns and legacy import deep links open the V2 dialogs",
+      "description": "With V2_SUPPLIERS on, legacy suppliers() sends the Xero, QuickBooks and Gmail OAuth returns (/u/suppliers/ with a flow preference set) and the legacy deep links ?modal=importSuppliersFromXeroModal / importSuppliersFromGmailModal to /app/suppliers with the matching dialog open, as it already does for newSupplierModal (Q8).",
+      "passes": false
+    },
+    {
+      "id": "US-100",
+      "title": "Add or update from file opens as a V2 dialog, also for an empty basket",
+      "description": "'Add or update from file' on the items card (today <a href={legacyPage}>, features/supplier-items/ui/supplier-items-cards.tsx:502-510) opens a V2 Dialog in #uploadSupplierBasketModal's markup with legacy's chooser; it also opens on page load for an empty basket; 'Add items manually' starts an Add item row. The two upload paths do not run yet.",
+      "passes": false
+    },
+    {
+      "id": "US-101",
+      "title": "Analyse a CSV/XLSX file and map its fields",
+      "description": "'Upload CSV/XLSX' uploads the file to POST /api/v2/suppliers/<id>/items/import/analyse/, which stores it and auto-maps its columns as analyze_supplier_document does, and the dialog shows legacy's 'Map Your Fields' step. The analysis travels as an upload id, not the session (Q32). 'Yes, let's go' does not send yet.",
+      "passes": false
+    },
+    {
+      "id": "US-102",
+      "title": "Apply the field mapping to the supplier's items",
+      "description": "'Yes, let's go' sends the upload id and the mapping to POST /api/v2/suppliers/<id>/items/import/, which applies the file as update_supplier_basket does, in one transaction (Q34).",
+      "passes": false
+    },
+    {
+      "id": "US-103",
+      "title": "Upload an invoice to add or update items",
+      "description": "'Upload Invoice' shows legacy's invoice picker (platform InvoiceFileInput from US-092), and 'Analyze' posts the files to POST /api/v2/suppliers/<id>/items/import/invoice/, which runs analyze_supplier_invoice's extraction behind a port.",
+      "passes": false
+    },
+    {
+      "id": "US-104",
+      "title": "Slice 6 goes live under V2_SUPPLIERS",
+      "description": "With V2_SUPPLIERS on, no slice-6 control on /app/suppliers or /app/suppliers/<id> links to a legacy page any more, and the flag's registry names the legacy URLs slice 6 replaces.",
+      "passes": false
+    },
+    {
+      "id": "US-105",
+      "title": "Browser smoke test for slice 6, manual external checks, and ready parity checklists",
+      "description": "Extend the existing e2e files (test_suppliers_list_e2e.py, test_supplier_detail_e2e.py and their fixtures; no second helper) to cover slice 6 with the external services faked, write the manual OAuth checklist, then make the checklists ready.",
+      "passes": false
+    }
+  ]
+}
