@@ -7,22 +7,23 @@ from typing import Protocol, ContextManager
 from ..domain.projects import Registry
 from ..domain.choices import Choices
 from ..domain.building import capacity_of
+from ..domain.records import WorkspaceSnapshot
 
 
 class WorkspaceState:
-    def __init__(self, record: dict) -> None:
-        self.registry = Registry.from_config(record)
+    def __init__(self, record: WorkspaceSnapshot) -> None:
+        self.registry = Registry(record.projects)
         self.choices = Choices(record)
-        self.capacity = capacity_of(record)
+        self.capacity = capacity_of(record.capacity)
 
-    def snapshot(self) -> dict:
-        return {"projects": self.registry.to_config(), "capacity": self.capacity,
-                "focus": self.choices.focus_snapshot(), "floors": self.choices.floors_snapshot(),
-                "shuttered": self.choices.shuttered_snapshot()}
+    def snapshot(self) -> WorkspaceSnapshot:
+        return WorkspaceSnapshot(list(self.registry.projects.values()), self.capacity,
+                                 self.choices.focus_snapshot(), self.choices.floors_snapshot(),
+                                 self.choices.shuttered_snapshot())
 
 
 class Repository(Protocol):
-    def read(self) -> dict: ...
+    def read(self) -> WorkspaceSnapshot: ...
     def transaction(self, actor: str) -> ContextManager[WorkspaceState]: ...
     def management_repository(self, project: str) -> str: ...
     def register_management_repository(self, project: str, path: str, actor: str) -> None: ...

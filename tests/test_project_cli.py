@@ -7,6 +7,7 @@ from rich.console import Console
 
 from fleet import cli, transport
 from fleet.composition import open_workspace
+from fleet.projections.workspace import registry_config
 from fleet.transport import HostReport
 
 
@@ -30,7 +31,7 @@ def fleet(monkeypatch):
 
 
 def stored_projects(config_path):
-    return open_workspace().registry().to_config()
+    return registry_config(open_workspace().registry())
 
 
 def only_id(config_path):

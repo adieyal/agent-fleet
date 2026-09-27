@@ -11,6 +11,7 @@ import pytest
 from fleet import transport
 from fleet.composition import open_workspace
 from fleet.modules.workspace import Registry
+from fleet.infrastructure.config.workspace import decode_workspace
 from workspace_support import persist_registry
 from fleet.transport import FleetError, Host
 from fleet.web.server import FleetState, make_handler
@@ -32,7 +33,7 @@ def set_config(path, **changes):
     if "capacity" in changes:
         open_workspace().set_capacity(changes.pop("capacity"))
     if "projects" in changes:
-        persist_registry(Registry.from_config({"projects": changes.pop("projects")}))
+        persist_registry(Registry(decode_workspace({"projects": changes.pop("projects")}).projects))
     if changes:
         path.write_text(json.dumps({**json.loads(path.read_text()), **changes}))
 
@@ -361,7 +362,7 @@ def test_shuttering_frees_the_floor_and_keeps_the_project(deck, config_path):
     assert project["links"] == [{"host": "home", "label": "restoke"}]                 # same ID, same links
     home = next(host for host in document["hosts"] if host["name"] == "home")
     assert next(job for job in home["jobs"] if job["project"] == "restoke")["project_id"] == restoke   # runs still belong
-    assert open_workspace().shuttered_snapshot()[restoke]["floor"] == 1
+    assert open_workspace().shuttered_snapshot()[restoke].floor == 1
 
     # the free floor is not handed back by itself: a new project moves into it instead
     agent_fleet = register("Agent Fleet", ("home", "agent-fleet"))
