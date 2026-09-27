@@ -1,37 +1,38 @@
 // Focus: the user's choice of priority or background for each room's work, set with the room's two-position switch.
 // Work is focused through its registered project when linked and through its label otherwise; the server resolves
 // each job's and session's `focus`, with priority for anything never chosen. A room is in the background when all its
-// work is. A background room is dimmed and desaturated, its androids drop their speech bubbles and move to near
-// still however busy they are, and its props stop animating. Nothing moves or resizes when focus changes.
+// work is. A background room is dimmed and desaturated and has no androids (state.js); while any of its work runs it
+// is lit warm instead. Nothing moves or resizes when focus changes.
 
 import * as THREE from 'three';
 import { RD, RW } from './env.js';
 import { toScreen } from './scene.js';
 import { setDimmed } from './dim.js';
+import { applyState, lastDoc } from './state.js';
 
 const FADE_S = 0.4;
-export const CALM = 0.05;   // how fast androids in a background room move and animate, relative to normal
 const floorUi = document.getElementById('floorUi');
 
 // ------------------------------------------------------------------ focus from the state document
 // A switch flipped here waits for the server to confirm it, so a document sent before the change landed doesn't
 // flick the room back.
 const pending = new Map();   // "project:<id>" | "label:<label>" → focus asked for
-let current = [];            // rooms as of the last state document
 const keyOf = item => item.project_id ? 'project:' + item.project_id : 'label:' + item.project;
 
 export function applyFocus(doc, rooms) {
-  current = rooms;
   const byRoom = new Map();   // room name → key → focus the server resolved
+  const busy = new Set();     // rooms with a job running or a session working
   for (const h of doc.hosts || []) for (const item of [...(h.jobs || []), ...(h.sessions || [])]) {
     if (!item.project) continue;
     if (!byRoom.has(item.project)) byRoom.set(item.project, new Map());
     byRoom.get(item.project).set(keyOf(item), item.focus);
+    if (item.status === 'running' || item.status === 'working') busy.add(item.project);
   }
   for (const keys of byRoom.values()) for (const [key, focus] of keys) if (pending.get(key) === focus) pending.delete(key);
   for (const r of rooms) {
     r.focusKeys = byRoom.get(r.name) || new Map();
     resolveRoom(r);
+    r.lit = r.focus === 'background' && busy.has(r.name);
     if (r.dimK == null) r.dimK = r.focus === 'background' ? 1 : 0;   // a room appears as it is; only a switch fades
     renderSwitch(r);
   }
@@ -49,13 +50,13 @@ export function carryFocus(before, rooms) {
   for (const r of rooms) {
     const o = old.get(r.name);
     if (!o || o.dimK == null) continue;
-    Object.assign(r, { focusKeys: o.focusKeys, focus: o.focus, dimK: o.dimK });
+    Object.assign(r, { focusKeys: o.focusKeys, focus: o.focus, dimK: o.dimK, lit: o.lit });
     renderSwitch(r);
   }
-  current = rooms;
 }
 
 // ------------------------------------------------------------------ the switch, on the room's front corner
+// Flipping it applies the last state document again, so the room's androids leave or come back at once.
 const switches = new Map();   // room name → element
 function renderSwitch(r) {
   let el = switches.get(r.name);
@@ -85,8 +86,7 @@ async function setFocus(r, focus) {
   const keys = [...r.focusKeys.keys()], el = switches.get(r.name);
   for (const key of keys) pending.set(key, focus);
   delete el.dataset.error;
-  const touched = () => current.filter(room => [...room.focusKeys.keys()].some(key => keys.includes(key)));
-  for (const room of touched()) { resolveRoom(room); renderSwitch(room); }
+  applyState(lastDoc);
   const body = { focus, projects: [], labels: [] };
   for (const key of keys) {
     const [kind, name] = [key.slice(0, key.indexOf(':')), key.slice(key.indexOf(':') + 1)];
@@ -98,7 +98,7 @@ async function setFocus(r, focus) {
   } catch (err) {
     for (const key of keys) pending.delete(key);
     el.dataset.error = err.message;
-    for (const room of touched()) { resolveRoom(room); renderSwitch(room); }
+    applyState(lastDoc);
   }
 }
 
@@ -109,7 +109,7 @@ export function stepFocus(rooms, dt) {
     if (r.dimK == null) continue;   // not yet placed by a state document
     const want = r.focus === 'background' ? 1 : 0;
     r.dimK = want > r.dimK ? Math.min(want, r.dimK + dt / FADE_S) : Math.max(want, r.dimK - dt / FADE_S);
-    if (r.dimK > 0) rects.push([r.ox - 0.15, r.oy - 0.15, r.ox + RW + 0.15, r.oy + RD + 0.15, r.dimK]);
+    if (r.dimK > 0) rects.push([r.ox - 0.15, r.oy - 0.15, r.ox + RW + 0.15, r.oy + RD + 0.15, r.dimK, r.lit ? 1 : 0]);
   }
   setDimmed(rects);
 }

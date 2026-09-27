@@ -234,7 +234,6 @@ export function positionTags() {
     const r = roomByName.get(e.room);
     if (!r) continue;
     e.far = !r.close;
-    e.calm = r.focus === 'background';   // a background room's androids keep their chatter to themselves
     if (e.sizeDirty) { e.tw = e.el.offsetWidth; e.th = e.el.offsetHeight; e.sizeDirty = false; }
     // anchor on the head bone, lifted clear of the head and its kit, plus a few pixels at every zoom
     e.bot.head.getWorldPosition(_w);
@@ -273,7 +272,7 @@ export function positionTags() {
     const z = ++order + (e.key === selectedKey ? 1000 : 0);
     if (z !== e.qz) { e.qz = z; e.el.style.zIndex = String(z); }
     // an idle session rests without a word
-    const cls = e.tagBase + (e.calm || e.job.status === 'idle' ? ' calm' : '') + (tiny ? ' tiny' : e.key === selectedKey ? ' sel' : e.far ? ' far' : '');
+    const cls = e.tagBase + (e.job.status === 'idle' ? ' calm' : '') + (tiny ? ' tiny' : e.key === selectedKey ? ' sel' : e.far ? ' far' : '');
     if (e.el.className !== cls) { e.el.className = cls; e.sizeDirty = true; }
   }
 }

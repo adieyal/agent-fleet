@@ -24,12 +24,15 @@ FINISHED = {"done", "cancelled"}
 BLOCKED = {"failed", "stalled"}
 ASKING = "home:8e1f0c42-2b7d-4a55-9c1e-7f3a2d6b9e10"     # idle two minutes, with a decision waiting
 REVIEWING = "worker:019a7c3e-55d1-7b20-a8f4-3c9e0d1b2a67"  # idle about eighteen minutes
+BACKGROUND = {"invoice-parser"}                            # the fixture's one room in the background
 
 
 def on_the_floor(fixture_data: dict[str, Any]) -> set[str]:
-    """Every job and session the deck draws: finished jobs have left, blocked ones are under their lantern."""
+    """Every job and session the deck draws: finished jobs have left, blocked ones are under their lantern, and a
+    background room has no crew."""
     return {f"{host['name']}:{item['id']}" for host in fixture_data["hosts"]
-            for item in host["jobs"] + host["sessions"] if item["status"] not in FINISHED | BLOCKED}
+            for item in host["jobs"] + host["sessions"]
+            if item["status"] not in FINISHED | BLOCKED and item["project"] not in BACKGROUND}
 
 
 @dataclass
@@ -188,8 +191,7 @@ def test_sessions_idle_for_half_an_hour_leave_unless_a_decision_waits(browser: B
 
 def test_bubbles_show_action_glyphs_and_the_words_stay_a_click_away(deck: Deck) -> None:
     page = deck.page
-    expected = {"a1c3e9": "test", "b7d042": "edit", "Why does the st": "ask", "f20a6d": "edit", "c90e11": "think",
-                "0a9e3b": "queued"}
+    expected = {"a1c3e9": "test", "b7d042": "edit", "Why does the st": "ask", "f20a6d": "edit", "c90e11": "think"}
     for agent, action in expected.items():
         bubble = page.locator("#tags .tag", has_text=agent).locator(".bubble")
         expect(bubble).to_have_attribute("data-action", action)
@@ -280,6 +282,9 @@ def test_demo_mode_fills_the_deck_without_errors(browser: Browser, base_url: str
     expect(page.locator("#live")).to_contain_text("demo data")
     assert len(page.evaluate("fleetDeck.rooms()")) > 1
     assert not any(agent["status"] in BLOCKED for agent in page.evaluate("fleetDeck.agents()"))
+    parser = rooms_by_name(page)["demo-parser"]                              # in the background, its parse running
+    assert (parser["focus"], parser["lit"]) == ("background", True)
+    assert crew(page, "demo-parser") == set()
     expect(page.locator('.lantern[data-kind="blocker"]')).to_have_count(2)   # the failed job's and the stalled one's
     page.locator('.lantern[data-room="demo-docs"]').dispatch_event("click")
     page.locator("#attnPanel [data-owner]").dispatch_event("click")   # the demo pushes a new state every second
@@ -315,10 +320,11 @@ def test_demo_session_idle_for_an_hour_comes_back_to_work(browser: Browser, base
     page.wait_for_function("window.fleetDeck && fleetDeck.agents().length > 0")
     sessions = page.evaluate("fleetDeck.agents().filter(agent => agent.kind === 'session')")
     assert {agent["status"] for agent in sessions} == {"working", "idle"}
-    expect(page.locator("#stats .chip.sess")).to_have_text(f"{len(sessions) + 1} live · 2 waiting")
+    # the header also counts the dormant session and the one working in the background room
+    expect(page.locator("#stats .chip.sess")).to_have_text(f"{len(sessions) + 2} live · 2 waiting")
     page.wait_for_function(f"fleetDeck.agents().filter(agent => agent.kind === 'session').length === {len(sessions) + 1}",
                            timeout=60_000)
-    expect(page.locator("#stats .chip.sess")).to_have_text(f"{len(sessions) + 1} live · 1 waiting")
+    expect(page.locator("#stats .chip.sess")).to_have_text(f"{len(sessions) + 2} live · 1 waiting")
     context.close()
     assert errors == []
 
@@ -380,54 +386,111 @@ def focus_on_server(base_url: str, room: str) -> set[str]:
     return {item["focus"] for host in hosts for item in host["jobs"] + host["sessions"] if item["project"] == room}
 
 
-def room_colour(page: Page, room: str) -> tuple[float, float]:
-    """Mean brightness and saturation of the rendered floor around a room's centre, with overlays hidden."""
+def room_colour(page: Page, room: str) -> tuple[float, float, float]:
+    """Mean brightness, saturation and warmth (red over blue) of the rendered floor around a room's centre, with
+    overlays hidden."""
     centre = rooms_by_name(page)[room]["screen"]
     viewport = page.viewport_size
     box = {"x": max(0, centre["x"] - 40), "y": max(0, centre["y"] - 30), "width": 80, "height": 60}
     assert box["x"] + 80 <= viewport["width"] and box["y"] + 60 <= viewport["height"]
     style = page.add_style_tag(content="#tags,#floorUi,header,.card,#zoom{visibility:hidden!important}")
     page.wait_for_timeout(100)
-    image = Image.open(io.BytesIO(page.screenshot(clip=box))).convert("HSV")
+    image = Image.open(io.BytesIO(page.screenshot(clip=box))).convert("RGB")
     style.evaluate("tag => tag.remove()")
-    _, saturation, value = ImageStat.Stat(image).mean
-    return value, saturation
+    _, saturation, value = ImageStat.Stat(image.convert("HSV")).mean
+    red, _, blue = ImageStat.Stat(image).mean
+    return value, saturation, red - blue
 
 
 def wait_for_dim(page: Page, room: str, dim: int) -> None:
     page.wait_for_function(f"fleetDeck.rooms().find(room => room.name === '{room}').dim === {dim}")
 
 
-def test_background_rooms_are_dim_and_quiet(deck: Deck) -> None:
+def crew(page: Page, room: str) -> set[str]:
+    """The androids in a room."""
+    return {agent["key"] for agent in page.evaluate("fleetDeck.agents()") if agent["room"] == room}
+
+
+def test_background_rooms_are_dim_with_no_crew(deck: Deck) -> None:
     page = deck.page
     wait_for_dim(page, "invoice-parser", 1)
     rooms = rooms_by_name(page)
-    assert {name: (room["focus"], room["dim"]) for name, room in rooms.items()} == {
-        "restoke": ("priority", 0), "invoice-parser": ("background", 1), "agent-fleet": ("priority", 0)}
+    assert {name: (room["focus"], room["dim"], room["lit"]) for name, room in rooms.items()} == {
+        "restoke": ("priority", 0, False), "invoice-parser": ("background", 1, False), "agent-fleet": ("priority", 0, False)}
     expect(page.locator('.focus-switch[data-room="invoice-parser"]')).to_have_attribute("data-focus", "background")
     expect(page.locator('.focus-switch[data-room="agent-fleet"]')).to_have_attribute("data-focus", "priority")
-    assert tag_is_calm(page, "0a9e3b")
+    assert crew(page, "invoice-parser") == set()
+    expect(page.locator("#tags .tag", has_text="0a9e3b")).to_have_count(0)
     assert not tag_is_calm(page, "c90e11") and not tag_is_calm(page, "f20a6d")
     assert deck.errors == []
 
 
-def test_the_switch_dims_the_room_and_nothing_moves(deck: Deck, base_url: str) -> None:
+def test_a_background_room_is_lit_while_its_work_runs(browser: Browser, base_url: str,
+                                                     fixture_data: dict[str, Any]) -> None:
+    context = browser.new_context(viewport=VIEWPORTS["desktop"], reduced_motion="reduce")
+    context.add_init_script(PIN_CLOCK % fixture_data["time"])
+    page = context.new_page()
+    errors: list[str] = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.goto(base_url + "/")
+    page.wait_for_function(f"window.fleetDeck && fleetDeck.agents().length === {len(on_the_floor(fixture_data))}")
+    assert rooms_by_name(page)["invoice-parser"]["lit"] is False                 # a queued job is not running
+    in_priority = finish_jobs(base_url, {})
+    for host in in_priority["hosts"]:
+        for item in host["jobs"] + host["sessions"]:
+            item["focus"] = "priority"
+    page.evaluate("doc => fleetDeck.apply(doc)", in_priority)
+    wait_for_dim(page, "invoice-parser", 0)
+    bright, vivid, _ = room_colour(page, "invoice-parser")
+    page.evaluate("doc => fleetDeck.apply(doc)", finish_jobs(base_url, {}))
+    wait_for_dim(page, "invoice-parser", 1)
+    dim, grey, cool = room_colour(page, "invoice-parser")
+    assert dim < bright * 0.75 and grey < vivid * 0.6                            # nothing runs: dim and grey
+    page.evaluate("doc => fleetDeck.apply(doc)", finish_jobs(base_url, {"worker:0a9e3b": "running"}))
+    rooms = rooms_by_name(page)
+    assert rooms["invoice-parser"]["lit"] is True
+    dim, _, warm = room_colour(page, "invoice-parser")
+    assert dim < bright * 0.75 and warm > cool + 20                              # its job runs: dim, but lit warm
+    assert rooms["invoice-parser"]["attention"] == {"kind": "blocker", "state": "open", "count": 1}
+    assert crew(page, "invoice-parser") == set()
+    expect(page.locator("#tags .tag", has_text="0a9e3b")).to_have_count(0)
+    expect(page.locator("#stats .chip", has_text="working")).to_have_text("5 working")   # still counted
+    page.evaluate("doc => fleetDeck.apply(doc)", finish_jobs(base_url, {}))
+    assert rooms_by_name(page)["invoice-parser"]["lit"] is False
+    context.close()
+    assert errors == []
+
+
+def test_the_switch_sends_the_crew_away_and_brings_it_back(deck: Deck, base_url: str) -> None:
     page = deck.page
     before = {name: (room["x"], room["y"], room["screen"]) for name, room in rooms_by_name(page).items()}
-    bright, vivid = room_colour(page, "restoke")
+    bright, _, cool = room_colour(page, "restoke")
+    crew_before = crew(page, "restoke")
+    assert {"home:a1c3e9", "worker:c90e11", ASKING} <= crew_before
     switch = page.locator('.focus-switch[data-room="restoke"]')
     switch.locator('[data-set="background"]').dispatch_event("click")
     expect(switch).to_have_attribute("data-focus", "background")
     wait_for_dim(page, "restoke", 1)
     assert focus_on_server(base_url, "restoke") == {"background"}
-    dim, grey = room_colour(page, "restoke")
-    assert dim < bright * 0.75 and grey < vivid * 0.6
-    assert tag_is_calm(page, "c90e11") and tag_is_calm(page, "a1c3e9")
+    dim, _, warm = room_colour(page, "restoke")
+    assert dim < bright * 0.75 and warm > cool + 20                            # its work runs: dim, but lit warm
+    assert crew(page, "restoke") == set()
+    expect(page.locator("#tags .tag", has_text="c90e11")).to_have_count(0)
+    assert rooms_by_name(page)["restoke"]["lit"] is True
+    lantern = page.locator('.lantern[data-room="restoke"]')                    # the lantern is unaffected
+    expect(lantern).to_have_attribute("data-count", "2")
+    lantern.dispatch_event("click")
+    page.locator(f'#attnPanel [data-owner="{ASKING}"]').click()
+    expect(page.locator("#panelHead .chip.sess")).to_contain_text("waiting for you")
+    page.locator("#panel #close").click()
+    page.keyboard.press("Escape")
     assert {name: (room["x"], room["y"], room["screen"]) for name, room in rooms_by_name(page).items()} == before
 
     switch.locator('[data-set="priority"]').dispatch_event("click")
     wait_for_dim(page, "restoke", 0)
     assert focus_on_server(base_url, "restoke") == {"priority"}
+    assert crew(page, "restoke") == crew_before
+    assert rooms_by_name(page)["restoke"]["lit"] is False
     assert not tag_is_calm(page, "c90e11")
     assert {name: (room["x"], room["y"], room["screen"]) for name, room in rooms_by_name(page).items()} == before
     assert deck.errors == []
@@ -439,13 +502,16 @@ def test_focus_of_an_unregistered_room_survives_reload(deck: Deck, base_url: str
     wait_for_dim(page, "agent-fleet", 1)
     assert focus_on_server(base_url, "agent-fleet") == {"background"}
     page.reload()
-    page.wait_for_function(f"window.fleetDeck && fleetDeck.agents().length === {len(on_the_floor(fixture_data))}")
+    crew_of_agent_fleet = {"worker:f20a6d", REVIEWING}
+    page.wait_for_function("window.fleetDeck && fleetDeck.agents().length === "
+                           f"{len(on_the_floor(fixture_data) - crew_of_agent_fleet)}")
     wait_for_dim(page, "agent-fleet", 1)
     expect(page.locator('.focus-switch[data-room="agent-fleet"]')).to_have_attribute("data-focus", "background")
-    assert tag_is_calm(page, "f20a6d")
+    assert crew(page, "agent-fleet") == set()
     page.locator('.focus-switch[data-room="agent-fleet"] [data-set="priority"]').dispatch_event("click")
     wait_for_dim(page, "agent-fleet", 0)
     assert focus_on_server(base_url, "agent-fleet") == {"priority"}
+    assert crew(page, "agent-fleet") == crew_of_agent_fleet
     assert deck.errors == []
 
 
