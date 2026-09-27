@@ -106,7 +106,7 @@
       "/home/adi/Development/agent-fleet-ralph/first-stories/sources/project_v2_suppliers_migration.md"
     ],
     "condition": "none",
-    "next_step": "Draft the slice 6 PRD and questions"
+    "next_step": "Answer slice 6 questions.md and start its loop"
   },
   {
     "key": "proposal1",
