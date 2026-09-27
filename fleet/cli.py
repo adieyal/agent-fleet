@@ -726,7 +726,8 @@ def command_web(arguments: argparse.Namespace) -> None:
 
 def command_status(arguments: argparse.Namespace) -> None:
     store = open_store()
-    projection = project_status(arguments.project, open_work(store), open_attention(store))
+    projection = project_status(arguments.project, open_work(store), open_attention(store),
+                                open_execution(store), open_library(store))
     if arguments.json:
         print(json.dumps(projection))
         return
@@ -749,6 +750,20 @@ def print_status_item(item: dict[str, Any], depth: int = 0) -> None:
     print(f"{indent}  Progress: {mark}; condition: {item['condition']}")
     next_step = "not recorded" if item["next_step"] is None else item["next_step"]
     print(f"{indent}  Next step: {next_step}")
+    if item["no_follow_up_yet"] is True:
+        print(f"{indent}  No follow-up yet")
+    elif item["no_follow_up_yet"] is None:
+        print(f"{indent}  Follow-up timing: unknown")
+    print(f"{indent}  Runs:")
+    for run in item["runs"]:
+        print(f"{indent}    {run['id']} on {run['host']} ({run['remote_job_id']}): {run['status']}")
+        for field in ("runtime", "reason", "start", "end", "last_observed"):
+            value = "unknown" if run[field] is None else run[field]
+            print(f"{indent}      {field.replace('_', ' ').capitalize()}: {value}")
+    print(f"{indent}  Library:")
+    for entry in item["library"]:
+        title = "unknown" if entry["title"] is None else entry["title"]
+        print(f"{indent}    {entry['kind']}: {title} ({entry['availability']}) — {entry['canonical_location']}")
     if item["resume_condition"] is not None:
         print(f"{indent}  Resume condition: {item['resume_condition']}")
     for criterion in item["criteria"]:

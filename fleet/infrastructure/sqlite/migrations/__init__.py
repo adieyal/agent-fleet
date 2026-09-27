@@ -57,4 +57,7 @@ MIGRATIONS = (
             UNIQUE (host, remote_job_id))""",
         "CREATE TABLE library_entry (id TEXT PRIMARY KEY, record TEXT NOT NULL)",
     ),
+    (
+        "UPDATE work_item SET record = json_set(record, '$.next_step_recorded_at', NULL)",
+    ),
 )

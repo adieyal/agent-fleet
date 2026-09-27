@@ -1,8 +1,13 @@
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+
+import pytest
 
 from fleet.modules.attention import AttentionFacade, AttentionItem
 from fleet.modules.work import Criterion, EvidenceSpecification, Summary, WorkFacade, WorkItem
+from fleet.modules.execution import Action, Run
+from fleet.modules.library import LibraryEntry
 from fleet.projections.project import project_status
 
 
@@ -33,11 +38,14 @@ def item(identity, **changes):
                             None, None, None, NOW, NOW), **changes)
 
 
-def project(items, criteria=(), summaries=(), attention=()):
+def project(items, criteria=(), summaries=(), attention=(), runs=(), entries=()):
     # These ports expose reads only; any attempted write fails.
     work = WorkFacade(ReadWork(items, criteria, summaries), None, lambda: NOW)
     alerts = AttentionFacade(ReadAttention(attention), lambda: NOW)
-    return project_status("p", work, alerts)
+    execution = SimpleNamespace(actions=lambda: [Action(run.action, "milestone", "linked") for run in runs],
+                                runs=lambda: runs)
+    library = SimpleNamespace(list=lambda: entries)
+    return project_status("p", work, alerts, execution, library)
 
 
 def test_progress_precedence_counts_only_direct_milestones_and_preserves_unknown():
@@ -89,3 +97,54 @@ def test_tree_summary_and_linked_open_attention_are_read_only():
 
 def test_empty_project_has_no_invented_progress():
     assert project([]) == {"project": "p", "work_items": [], "attention": []}
+
+
+def run(identity, host, status="failed", end=NOW):
+    return Run(identity, identity, host, "job", "codex", status, "lost", NOW,
+               end, NOW + timedelta(minutes=1))
+
+
+def test_runs_on_two_hosts_and_unavailable_trace_preserve_work():
+    milestone = item("milestone", kind="milestone", condition="waiting", resume_condition="Data arrives")
+    runs = [run("r1", "host-a"), run("r2", "host-b", "running", None)]
+    trace = LibraryEntry("trace", "p", "milestone", "r1", "trace", "Run trace", "run",
+                         "fleet://host-a/job/trace", "unavailable", True)
+    result = project([milestone], runs=runs, entries=[trace, replace(trace, id="other", work_item="other")])
+    node, = result["work_items"]
+    assert [entry["host"] for entry in node["runs"]] == ["host-a", "host-b"]
+    assert node["runs"][0] == dict(id="r1", action="r1", host="host-a", remote_job_id="job",
+        runtime="codex", status="failed", reason="lost", start=NOW.isoformat(), end=NOW.isoformat(),
+        last_observed=(NOW + timedelta(minutes=1)).isoformat())
+    assert node["library"][0]["availability"] == "unavailable"
+    assert len(node["library"]) == 1
+    assert node["condition"] == "waiting"
+    assert node["progress"] == {"basis": "unknown", "complete": None, "total": None}
+    assert node["attention"] == result["attention"] == []
+
+
+@pytest.mark.parametrize("status,next_step,recorded,end,expected", [
+    ("failed", None, None, NOW, True),
+    ("failed", "Retry", NOW - timedelta(seconds=1), NOW, True),
+    ("failed", "Retry", NOW, NOW, True),
+    ("failed", "Retry", NOW + timedelta(seconds=1), NOW, False),
+    ("failed", "Retry", None, NOW, None),
+    ("failed", "Retry", NOW, None, None),
+    ("running", None, None, None, False),
+    ("unknown outcome", None, None, None, False),
+    ("succeeded", None, None, NOW, False),
+    ("stopped", None, None, NOW, False),
+])
+def test_follow_up_marker_uses_next_step_time_only(status, next_step, recorded, end, expected):
+    milestone = item("milestone", next_step=next_step, next_step_recorded_at=recorded,
+                     updated=NOW + timedelta(days=1))
+    result = project([milestone], runs=[run("r1", "host-a", status, end)])
+    node, = result["work_items"]
+    assert node["no_follow_up_yet"] is expected
+    assert node["attention"] == result["attention"] == []
+
+
+def test_later_failure_requires_another_next_step():
+    milestone = item("milestone", next_step="Retry", next_step_recorded_at=NOW + timedelta(minutes=1))
+    node, = project([milestone], runs=[run("old", "host-a"),
+        run("new", "host-b", end=NOW + timedelta(minutes=2))])["work_items"]
+    assert node["no_follow_up_yet"] is True

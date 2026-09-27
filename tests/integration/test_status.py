@@ -1,7 +1,7 @@
 import json
 
 from fleet import cli, transport
-from fleet.composition import open_attention, open_store, open_work
+from fleet.composition import open_attention, open_execution, open_library, open_store, open_work
 from fleet.projections.project import project_status
 
 
@@ -28,7 +28,8 @@ def test_phase1_status_after_reopening_store_without_hosts(monkeypatch, capsys):
     monkeypatch.setattr(transport, "load_config", no_hosts)
     monkeypatch.setattr(transport, "call", no_hosts)
     reopened = open_store()
-    expected = project_status("p", open_work(reopened), open_attention(reopened))
+    expected = project_status("p", open_work(reopened), open_attention(reopened),
+                              open_execution(reopened), open_library(reopened))
     cli.main(["status", "p", "--json"])
     assert json.loads(capsys.readouterr().out) == expected
     cli.main(["status", "p"])

@@ -57,6 +57,7 @@ class WorkItem:
     focus: str | None
     created: datetime
     updated: datetime
+    next_step_recorded_at: datetime | None = None
 
     def __post_init__(self) -> None:
         for name in ("project", "kind", "title", "goal"):

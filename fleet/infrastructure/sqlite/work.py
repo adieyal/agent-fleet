@@ -19,7 +19,7 @@ def encode(record: WorkItem | Criterion | Relation | Summary) -> str:
 
 def decode(kind: str, payload: str) -> WorkItem | Criterion | Relation | Summary:
     values = json.loads(payload)
-    for field in ("created", "updated", "met_at"):
+    for field in ("created", "updated", "met_at", "next_step_recorded_at"):
         if field in values and values[field] is not None:
             values[field] = datetime.fromisoformat(values[field])
     if kind == "criterion":
