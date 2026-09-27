@@ -45,6 +45,7 @@ SUMMARY_LENGTH = 160
 TERMINAL_STATUSES = ("done", "failed", "cancelled", "lost")
 STREAM_PROTOCOL_VERSION = 3
 DISPATCH_SCHEMA_VERSION = 3
+USAGE_SCHEMA_VERSION = 1
 
 JsonObject = Dict[str, Any]
 
@@ -347,7 +348,7 @@ def job_preamble(job: JsonObject) -> str:
     )
 
 
-def agent_command(job: JsonObject, step: JsonObject, session_id: Optional[str]) -> List[str]:
+def _runtime_command(job: JsonObject, step: JsonObject, session_id: Optional[str]) -> List[str]:
     config = load_config()
     prompt = step["prompt"]
     if step["index"] == 0:
@@ -377,6 +378,82 @@ def agent_command(job: JsonObject, step: JsonObject, session_id: Optional[str]) 
                 "-c", f'sandbox_mode="{job["permission"]}"', *model_flags, session_id, prompt]
     return [codex, "exec", "--json", "--skip-git-repo-check", *sandbox_flags, *model_flags,
             "-C", job["cwd"], "--add-dir", str(JOBS_DIRECTORY / job["id"]), prompt]
+
+
+class _Runtime:
+    """Worker-local runtime differences, including resumed answer delivery."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.parser = {"claude": ClaudeParser, "codex": CodexParser}[name]()
+
+    def command(self, job: JsonObject, step: JsonObject, session_id: Optional[str]) -> List[str]:
+        return _runtime_command(job, step, session_id)
+
+    def parse(self, record: JsonObject) -> Tuple[List[JsonObject], Optional[JsonObject]]:
+        events = self.parser.parse(record)
+        result = None
+        if self.name == "codex" and record.get("type") in ("turn.completed", "turn.failed"):
+            result = {"ok": record["type"] == "turn.completed"}
+        for event in events:
+            if event["kind"] == "result":
+                result = {"ok": event["ok"], "summary": event["summary"], "text": event.pop("text", "")}
+        if result is not None:
+            tokens = record.get("usage")
+            cost = record.get("total_cost_usd")
+            result["usage"] = None if tokens is None and cost is None else {"tokens": tokens, "cost_usd": cost}
+            for event in events:
+                if event["kind"] == "result":
+                    event["usage"] = result["usage"]
+        return events, result
+
+    def finish(self, outcome: JsonObject, exit_code: int, last_text: str) -> None:
+        if self.name == "codex":
+            outcome.update(ok=exit_code == 0,
+                           summary=shorten(last_text, 400), text=last_text)
+        if not outcome["summary"] and exit_code != 0:
+            outcome["summary"] = f"agent exited with code {exit_code}"
+
+    def usage(self, steps: List[JsonObject]) -> Optional[JsonObject]:
+        reports = [step.get("usage") for step in steps]
+        if not any(report is not None for report in reports):
+            return None
+        source = {"claude": "claude.result", "codex": "codex.turn.completed"}[self.name]
+        return {"source": source, "reports": reports}
+
+    def validate_permission(self, permission: str) -> None:
+        if self.name == "codex" and permission not in ("read-only", "workspace-write", "danger-full-access"):
+            fail("codex permission must be read-only, workspace-write or danger-full-access")
+
+    def dispatch_permission(self, permission: Optional[str], allow: List[str], add_dirs: List[str]) -> str:
+        if self.name != "claude":
+            if allow:
+                raise ValueError("--allow applies to claude jobs only (codex uses its sandbox)")
+            if add_dirs:
+                raise ValueError("--add-dir applies to claude jobs only")
+        if permission is not None:
+            return permission
+        return {"claude": "acceptEdits", "codex": "workspace-write"}[self.name]
+
+    def transcript_parser(self):
+        return {"claude": ClaudeParser, "codex": CodexRolloutParser}[self.name]()
+
+    def transcript_id(self, path: Path) -> str:
+        return path.stem if self.name == "claude" else path.stem[-36:]
+
+    def consume_transcript(self, transcript, record: JsonObject, head: bool) -> None:
+        {"claude": transcript._claude_record, "codex": transcript._codex_record}[self.name](record, head)
+
+    def resume_command(self) -> str:
+        return {"claude": "claude --resume", "codex": "codex resume"}[self.name]
+
+
+def _runtime(name: str) -> _Runtime:
+    return _Runtime(name)
+
+
+def agent_command(job: JsonObject, step: JsonObject, session_id: Optional[str]) -> List[str]:
+    return _runtime(job["agent"]).command(job, step, session_id)
 
 
 STATUS_LINE = re.compile(r"FLEET_STATUS:\s*\**\s*(done|blocked|failed)\b", re.IGNORECASE)
@@ -427,10 +504,10 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
     environment.update(job.get("env", {}))
     environment["FLEET_JOB_ID"] = job_id
     environment["FLEET_JOB_DIR"] = str(JOBS_DIRECTORY / job_id)
-    parser = ClaudeParser() if job["agent"] == "claude" else CodexParser()
+    runtime = _runtime(job["agent"])
     command = agent_command(job, step, job.get("session_id"))
     append_event(job_id, {"kind": "step", "step": step["index"], "status": "running", "summary": step["title"]})
-    outcome: JsonObject = {"ok": False, "summary": "", "text": ""}
+    outcome: JsonObject = {"ok": False, "summary": "", "text": "", "usage": None}
     result_recorded = False
     last_text = ""
     raw_path = JOBS_DIRECTORY / job_id / f"raw-{step['index']}.jsonl"
@@ -449,9 +526,11 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
                 if line.strip():
                     append_event(job_id, {"kind": "log", "step": step["index"], "summary": shorten(line)})
                 continue
-            if job["agent"] == "codex" and record.get("type") in ("turn.completed", "turn.failed"):
+            events, result = runtime.parse(record)
+            if result is not None:
                 result_recorded = True
-            for event in parser.parse(record):
+                outcome.update(result)
+            for event in events:
                 event["step"] = step["index"]
                 if event["kind"] == "session" and event.get("session_id"):
                     with locked_job(job_id) as live_job:
@@ -464,15 +543,9 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
                     record_written_documents(job_id, job["cwd"], event["paths"], step["index"])
                 if event["kind"] == "text":
                     last_text = event.pop("text", None) or event["summary"]
-                if event["kind"] == "result":
-                    result_recorded = True
-                    outcome = {"ok": event["ok"], "summary": event["summary"], "text": event.pop("text", "")}
                 append_event(job_id, event)
         exit_code = process.wait()
-    if job["agent"] == "codex":
-        outcome = {"ok": exit_code == 0, "summary": shorten(last_text, 400), "text": last_text}
-    elif not outcome["summary"] and exit_code != 0:
-        outcome["summary"] = f"agent exited with code {exit_code}"
+    runtime.finish(outcome, exit_code, last_text)
     outcome["exit_code"] = exit_code
     if exit_code < 0 and not result_recorded:
         outcome["reason"] = "lost"
@@ -512,6 +585,7 @@ def run_job(job_id: str) -> None:
                     live_step["status"] = "done" if outcome["ok"] else "failed"
                 live_step["finished_at"] = now()
                 live_step["result"] = outcome["summary"]
+                live_step["usage"] = outcome.get("usage")
                 if "reason" in outcome:
                     live_step["reason"] = outcome["reason"]
                 (JOBS_DIRECTORY / job_id / f"result-{step['index']}.md").write_text(outcome.get("text") or outcome["summary"])
@@ -555,6 +629,7 @@ def job_summary(job: JsonObject, event_count: int) -> JsonObject:
     return {
         "id": job["id"], "host": os.uname().nodename, "project": job["project"],
         "schema_version": DISPATCH_SCHEMA_VERSION, "run_id": job.get("run_id"),
+        "usage_schema_version": USAGE_SCHEMA_VERSION, "usage": _runtime(job["agent"]).usage(job["steps"]),
         "fingerprint": job.get("fingerprint"), "start_requested": job.get("start_requested"),
         "description": job["description"], "agent": job["agent"], "model": job.get("model"),
         "cwd": job["cwd"], "permission": job["permission"], "status": status,
@@ -798,11 +873,12 @@ class Transcript:
     def __init__(self, path: Path, agent: str) -> None:
         self.path = path
         self.agent = agent
+        self.runtime = _runtime(agent)
         self.signature: Optional[tuple] = None
         self.offset = 0
-        self.parser = ClaudeParser() if agent == "claude" else CodexRolloutParser()
+        self.parser = self.runtime.transcript_parser()
         # Codex names rollouts rollout-<local time>-<thread id>.jsonl; session_meta confirms the id.
-        self.id = path.stem if agent == "claude" else path.stem[-36:]
+        self.id = self.runtime.transcript_id(path)
         self.cwd: Optional[str] = None
         self.model: Optional[str] = None
         self.started_at: Optional[float] = None
@@ -845,10 +921,7 @@ class Transcript:
             return
         if not isinstance(record, dict):
             return
-        if self.agent == "claude":
-            self._claude_record(record, head)
-        else:
-            self._codex_record(record, head)
+        self.runtime.consume_transcript(self, record, head)
 
     def _claude_record(self, record: JsonObject, head: bool) -> None:
         if record.get("isSidechain"):
@@ -912,7 +985,7 @@ class Transcript:
 
     def summary(self, status: str, updated_at: float) -> JsonObject:
         title = next((self.titles[key] for key in ("custom", "ai", "summary", "prompt") if self.titles.get(key)), None)
-        resume = {"claude": "claude --resume", "codex": "codex resume"}[self.agent]
+        resume = self.runtime.resume_command()
         return {
             "id": self.id, "host": os.uname().nodename, "agent": self.agent, "cwd": self.cwd,
             "project": repository_name(self.cwd) if self.cwd else None,
@@ -1256,8 +1329,7 @@ def command_create(arguments: argparse.Namespace) -> None:
     cwd = os.path.abspath(os.path.expanduser(arguments.cwd))
     if not os.path.isdir(cwd):
         fail(f"working directory does not exist on {os.uname().nodename}: {cwd}")
-    if arguments.agent == "codex" and arguments.permission not in ("read-only", "workspace-write", "danger-full-access"):
-        fail("codex permission must be read-only, workspace-write or danger-full-access")
+    _runtime(arguments.agent).validate_permission(arguments.permission)
     steps = [make_step(index, item["prompt"], item.get("title"))
              for index, item in enumerate(parse_steps(Path(arguments.steps_file).read_text()))]
     if not steps:

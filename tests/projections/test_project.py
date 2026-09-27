@@ -114,7 +114,7 @@ def test_runs_on_two_hosts_and_unavailable_trace_preserve_work():
     assert [entry["host"] for entry in node["runs"]] == ["host-a", "host-b"]
     assert node["runs"][0] == dict(id="r1", action="r1", host="host-a", remote_job_id="job",
         runtime="codex", status="failed", reason="lost", start=NOW.isoformat(), end=NOW.isoformat(),
-        last_observed=(NOW + timedelta(minutes=1)).isoformat())
+        last_observed=(NOW + timedelta(minutes=1)).isoformat(), usage=None)
     assert node["library"][0]["availability"] == "unavailable"
     assert len(node["library"]) == 1
     assert node["condition"] == "waiting"

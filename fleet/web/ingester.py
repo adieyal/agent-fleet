@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from urllib.parse import quote
 
-from fleet.modules.execution import ExecutionFacade, JobObservation
+from fleet.modules.execution import ExecutionFacade, JobObservation, Usage
 from fleet.modules.library import LibraryFacade
 
 
@@ -25,7 +25,7 @@ def observe_runs(execution: ExecutionFacade, library: LibraryFacade, host: dict)
         end = max(ends) if ends and job["status"] in ("done", "failed", "cancelled") else None
         observation = JobObservation(job["id"], job["status"], job.get("agent"),
                                      timestamp(min(starts)) if starts else None, timestamp(end),
-                                     timestamp(job.get("updated_at")))
+                                     timestamp(job.get("updated_at")), Usage.from_worker(job))
         run = execution.observe(host["name"], observation)
         if run is None or actions[run.action].work_item is None:
             continue

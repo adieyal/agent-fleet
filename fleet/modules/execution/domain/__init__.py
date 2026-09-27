@@ -16,6 +16,18 @@ class Delivery:
 
 
 @dataclass(frozen=True)
+class Usage:
+    source: str
+    reports: list[dict | None]
+
+    @classmethod
+    def from_worker(cls, job: dict) -> "Usage | None":
+        if job.get("usage_schema_version") != 1 or job.get("usage") is None:
+            return None
+        return cls(**job["usage"])
+
+
+@dataclass(frozen=True)
 class JobObservation:
     job: str
     status: str
@@ -23,6 +35,7 @@ class JobObservation:
     start: datetime | None
     end: datetime | None
     observed_at: datetime | None
+    usage: Usage | None = None
 
     def run_status(self) -> str:
         return {"running": "running", "done": "succeeded", "failed": "failed",
@@ -63,6 +76,7 @@ class Run:
     start: datetime | None
     end: datetime | None
     last_observed: datetime | None
+    usage: Usage | None = None
 
     def __post_init__(self) -> None:
         if not self.host.strip() or not self.remote_job_id.strip():
