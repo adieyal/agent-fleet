@@ -252,13 +252,15 @@ def command_send(arguments: argparse.Namespace) -> None:
 
 
 def command_dispatch(arguments: argparse.Namespace) -> None:
-    arguments.project = open_workspace().resolve_project(arguments.project)
     if arguments.work_item is not None:
         try:
             open_work().get(arguments.work_item)
         except LookupError as error:
             raise FleetError(str(error)) from error
     host = transport.host_by_name(arguments.host)
+    workspace = open_workspace()
+    linked_project = workspace.registry().project_for(host.name, arguments.project)
+    project_id = linked_project.id if linked_project is not None else workspace.resolve_project(arguments.project)
     steps = read_steps(arguments)
     if not steps:
         raise FleetError("give at least one --step or a --steps-file")
@@ -287,7 +289,7 @@ def command_dispatch(arguments: argparse.Namespace) -> None:
     try:
         intent = execution.dispatch(arguments.work_item, host=host.name, runtime=arguments.agent,
             payload={"cwd": arguments.cwd, "arguments": fleetd_arguments, "steps": steps,
-                     "context": arguments.context, "hold": arguments.hold}, project=arguments.project,
+                     "context": arguments.context, "hold": arguments.hold}, project=project_id,
             actor="user", reason=arguments.description, idempotency_key=key, remote_job_id=arguments.id)
     except (ValueError, LookupError) as error:
         raise FleetError(str(error)) from error

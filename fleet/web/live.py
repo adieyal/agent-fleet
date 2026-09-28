@@ -131,9 +131,9 @@ class LiveWorkspace:
         work = open_work(self.store)
         execution, library = open_execution(self.store), open_library(self.store)
         decisions = open_decisions(self.store)
-        document['work'] = {project: project_status(project, work, self.attention, execution, library, decisions)
-                            for project in registry.projects}
         return {**document, "building": building,
+                "work": {project: project_status(project, work, self.attention, execution, library, decisions)
+                         for project in registry.projects},
                 "attention_display": attention_display(document["attention"], building, document["projects"])}
 
     def bump(self) -> None:

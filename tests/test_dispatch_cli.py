@@ -47,6 +47,36 @@ def test_dispatch_requires_explicit_cwd():
         cli.main(["dispatch", "work", "Ship", "--host", "fake", "--runtime", "codex"])
 
 
+@pytest.mark.parametrize("linked", [False, True])
+def test_send_preserves_host_label_and_records_workspace_id(monkeypatch, linked):
+    workspace = composition.open_workspace()
+    if linked:
+        identity = workspace.move_in(["fake"], "restoke", name="Restoke V2").project_id
+        workspace.move_in(["other"], "restoke", name="Restoke V2")
+        label = "restoke"
+    else:
+        identity = workspace.edit_registry(lambda registry: registry.create("Restoke V2")).id
+        label = "Restoke V2"
+    calls = []
+
+    def call(host, arguments, **kwargs):
+        calls.append(arguments)
+        run, = composition.open_execution().runs()
+        return {"id": run.remote_job_id, "run_id": run.id, "schema_version": 4,
+                "fingerprint": arguments[arguments.index("--fingerprint") + 1],
+                "start_requested": False, "status": "queued", "steps": [{}], "description": "Task"}
+
+    monkeypatch.setattr(cli.transport, "host_by_name", lambda name: SimpleNamespace(name=name))
+    monkeypatch.setattr(cli.transport, "call", call)
+    cli.main(["send", "--project", label, "--description", "Task", "--step", "Ship",
+              "--host", "fake", "--cwd", "/repo", "--hold", "--json"])
+    create, = calls
+    assert create[0] == "create"
+    assert create[create.index("--project") + 1] == label
+    action, = composition.open_execution().actions()
+    assert action.project == identity
+
+
 @pytest.mark.parametrize("refused", ["create", "start"])
 def test_dispatch_preserves_refusal_when_reconcile_fails(monkeypatch, capsys, refused, project_id):
     calls = []
