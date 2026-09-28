@@ -159,6 +159,12 @@ A change awaiting acceptance: an edit beyond its author's authority, a disputed 
 **Attention item**:
 A decision request, genuine blocker or actionable alert that calls for the user. It has an owner, a source, and a state: open, acknowledged, snoozed or resolved. Reading one does not resolve it. Ordinary agent activity, new reports and met waiting conditions do not become attention items merely by happening.
 
+**Permission refusal**:
+A permission request a job's agent was refused because nobody was at the prompt; the agent carries on without it. A job step's refusals form one attention item, answered by allowing permission rules for the job, which continues the refused step, or by dismissing it. When the job moves on to a later step, or is gone, with the item untouched, it resolves as refused. An interactive session's permission request is a question to the person at its prompt and stays its own item.
+
+**Session question**:
+A question an interactive session asks the person at its terminal, with the options it offers. It is an attention item so it is not missed, but it is answered only in that terminal; the item closes when the session has its answer.
+
 ### Records
 
 **Project home**:

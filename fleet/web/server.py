@@ -22,14 +22,14 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from fleet import transport
 from fleet.composition import (Store, open_attention, open_execution, open_library, open_store,
                                open_workspace, open_work, open_decisions)
-from fleet.modules.attention import InputObservation, ItemResolved
+from fleet.modules.attention import InputObservation, ItemResolved, refusal_rules
 from fleet.modules.workspace import (NoVacancy, FOCUSES, AlreadyShuttered, NotShuttered,
                                      WorkspaceFacade, Registry)
 from fleet.projections.workspace import annotate, resolve, registry_config
 from fleet.projections.project import project_status
 from fleet.projections.bench import bench_rooms, bench_state
 from fleet.transport import FleetError, Host
-from fleet.web.documents import DocumentAccessDenied, fetch_document
+from fleet.web.documents import AssetNotImage, AssetTooLarge, DocumentAccessDenied, fetch_asset, fetch_document
 from fleet.web.fixture import FixtureLibrary, FixtureState
 from fleet.web.library import ProjectLibrary
 from fleet.web.live import AlreadyHoused, LiveWorkspace
@@ -53,7 +53,9 @@ STATIC_TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; char
                 ".glb": "model/gltf-binary", ".gltf": "model/gltf+json",
                 ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".json": "application/json",
                 ".md": "text/markdown; charset=utf-8", ".txt": "text/plain; charset=utf-8"}
+ASSET_POLICY = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox"
 ATTENTION_ACTIONS = ("acknowledge", "snooze", "reopen")
+REFUSAL_ACTIONS = ("allow", "dismiss")   # a job step's permission refusals
 FLOOR_CHANGES = ("/api/move-in", "/api/link", "/api/merge", "/api/shutter", "/api/restore")
 EVENTS_PER_JOB = "15"
 STREAM_SILENCE_LIMIT = 20  # seconds without a heartbeat before the stream is considered dead
@@ -132,6 +134,9 @@ class FleetState(LiveWorkspace):
                     "jobs": [resolve(self.registry, host_name, job) for job in host["jobs"].values()],
                     "sessions": [resolve(self.registry, host_name, session) for session in host["sessions"].values()]},
                     owners=owners, raise_items=not heartbeat)
+                # A heartbeat follows a full pass over the host's jobs, so absent jobs are gone.
+                reconciled = self.attention.close_refusals(
+                    {**host, "jobs": list(host["jobs"].values()), "sessions": []}, complete=heartbeat) or reconciled
             if previous == self.by_host[host_name] and self.store.latest_sequence() == sequence and not reconciled:
                 return
             self.version += 1
@@ -194,6 +199,10 @@ class FleetState(LiveWorkspace):
     def read_document(self, host_name: str, job_id: str, document_id: str) -> dict[str, Any]:
         host = next(host for host in self.hosts if host.name == host_name)
         return fetch_document(host, job_id, document_id)
+
+    def read_asset(self, host_name: str, job_id: str, document_id: str, asset_path: str) -> tuple[str, bytes]:
+        host = next(host for host in self.hosts if host.name == host_name)
+        return fetch_asset(host, job_id, document_id, asset_path)
 
 
 def follow_host(state: FleetState, host: Host) -> None:
@@ -273,6 +282,26 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
         state.update(host.name, lambda entry: entry.update(ok=False, error=message.get("error")))
 
 
+def refusal_detail(item) -> dict[str, Any]:
+    context = item.stream_context
+    return {"host": context.host, "job": context.owner_id, "step": context.step, "state": item.state,
+            "resolution": item.resolution_details, "rules": refusal_rules(item.refusals),
+            "requests": [{"tool": refusal.tool, "description": refusal.description, "detail": refusal.detail,
+                          "rules": None if refusal.rules is None else list(refusal.rules),
+                          "denied_by": list(refusal.denied_by)}
+                         for refusal in item.refusals]}
+
+
+def question_detail(item, projects: dict[str, Any]) -> dict[str, Any]:
+    """A session's question, where it waits, and that only its terminal can answer it."""
+    context = item.stream_context
+    project = projects.get(context.project_id) if context.project_id is not None else None
+    return {"host": context.host, "session": context.owner_id, "cwd": context.cwd,
+            "project": project.name if project is not None else None, "label": context.project,
+            "state": item.state, "resolution": item.resolution_details,
+            "questions": [asdict(question) for question in item.questions]}
+
+
 def make_handler(state: FleetState | FixtureState,
                  library: ProjectLibrary | FixtureLibrary | None = None) -> type[BaseHTTPRequestHandler]:
     # Read once so a running server keeps serving the page and code that match its API.
@@ -289,6 +318,10 @@ def make_handler(state: FleetState | FixtureState,
                 self.stream()
             elif path == "/api/doc":
                 self.document()
+            elif path == "/api/doc/asset":
+                self.asset("host", "job")
+            elif path == "/api/library/asset":
+                self.asset("project")
             elif path == "/api/library":
                 try:
                     documents = library.list()
@@ -313,7 +346,11 @@ def make_handler(state: FleetState | FixtureState,
                         item.source, item.source_reference)
                     detail = {"id": item.id, "question": item.headline,
                               "context": item.context_reference, "options": item.options,
-                              "proposal": asdict(proposal) if proposal is not None else None}
+                              "proposal": asdict(proposal) if proposal is not None else None,
+                              # a job step's refused requests, answered with actions rather than words
+                              "refusals": refusal_detail(item) if item.refusals else None,
+                              "session_question": (question_detail(item, state.known_projects())
+                                                   if item.questions else None)}
                 except LookupError as error:
                     self.error(404, str(error))
                     return
@@ -347,7 +384,8 @@ def make_handler(state: FleetState | FixtureState,
         def do_POST(self) -> None:  # noqa: N802 — http.server naming
             path = self.path.split("?", 1)[0]
             action = path.removeprefix("/api/attention/") if path.startswith("/api/attention/") else None
-            if path not in FLOOR_CHANGES + ("/api/focus", "/api/decision/answer") and action not in ATTENTION_ACTIONS:
+            if (path not in FLOOR_CHANGES + ("/api/focus", "/api/decision/answer")
+                    and action not in ATTENTION_ACTIONS + REFUSAL_ACTIONS):
                 self.respond(404, "text/plain", b"not found")
             elif not self.same_origin():
                 self.respond(403, "application/json", b'{"error": "cross-origin writes are refused"}')
@@ -361,6 +399,8 @@ def make_handler(state: FleetState | FixtureState,
                 body = body if isinstance(body, dict) else {}
                 if path == "/api/decision/answer":
                     self.answer(body)
+                elif action in REFUSAL_ACTIONS:
+                    self.refusals(action, body)
                 elif action:
                     self.attention(action, body)
                 elif path in ("/api/move-in", "/api/link"):
@@ -471,6 +511,30 @@ def make_handler(state: FleetState | FixtureState,
             state.bump()
             self.respond(200, "application/json", json.dumps(asdict(decision), default=str).encode())
 
+        def refusals(self, action: str, body: dict[str, Any]) -> None:
+            """POST /api/attention/allow {"id": item id, "scope": "refused" | "bash"} — add permission rules to
+            the job on its worker and continue the refused step there.
+            POST /api/attention/dismiss {"id": item id} — resolve the batch and change nothing."""
+            if not isinstance(body.get("id"), str) or (action == "allow" and not isinstance(body.get("scope"), str)):
+                self.error(400, "the item's id is required" + (", and a scope" if action == "allow" else ""))
+                return
+            try:
+                if action == "allow":
+                    details = open_execution(state.store).grant_permissions(body["id"], body["scope"], actor="web-user")
+                else:
+                    details = state.attention.dismiss_refusals(body["id"], actor="web-user").resolution_details
+            except LookupError as error:
+                self.error(404, str(error.args[0]))
+                return
+            except ItemResolved as error:
+                self.error(409, str(error))
+                return
+            except (FleetError, ValueError, RuntimeError) as error:
+                self.error(400, str(error))
+                return
+            state.bump()
+            self.respond(200, "application/json", json.dumps({"id": body["id"], "resolution": details}).encode())
+
         def attention(self, action: str, body: dict[str, Any]) -> None:
             """POST /api/attention/acknowledge|snooze|reopen {"id": item id, "seconds": snooze length}"""
             if not isinstance(body.get("id"), str):
@@ -526,6 +590,39 @@ def make_handler(state: FleetState | FixtureState,
                 return
             self.respond(200, "application/json", json.dumps(body).encode())
 
+        def asset(self, *owner: str) -> None:
+            """GET /api/doc/asset?host=&job=&id=&path= or /api/library/asset?project=&id=&path= — an image
+            a document links to, resolved beside the document under the document's own roots."""
+            query = {key: values[0] for key, values in parse_qs(urlsplit(self.path).query).items()}
+            if not all(query.get(key) for key in (*owner, "id", "path")) or (
+                    "host" in owner and query["host"] not in state.host_names()):
+                self.error(400, f"{', '.join(owner)}, id and path are required")
+                return
+            try:
+                if "host" in owner:
+                    found = state.read_asset(query["host"], query["job"], query["id"], query["path"])
+                else:
+                    found = library.read_asset(query["project"], query["id"], query["path"])
+            except DocumentAccessDenied as error:
+                self.error(403, str(error))
+                return
+            except AssetNotImage as error:
+                self.error(415, str(error))
+                return
+            except AssetTooLarge as error:
+                self.error(413, str(error))
+                return
+            except FleetError as error:
+                self.error(404, str(error))
+                return
+            if found is None:
+                self.error(404, "image not found")
+                return
+            content_type, content = found
+            # an SVG can carry script: the policy keeps it inert even if opened on its own
+            self.respond(200, content_type, content, headers={"Content-Security-Policy": ASSET_POLICY,
+                                                              "X-Content-Type-Options": "nosniff"})
+
         def library_document(self) -> None:
             """GET /api/library/doc?project=&id= — Markdown under a configured local root."""
             query = {key: values[0] for key, values in parse_qs(urlsplit(self.path).query).items()}
@@ -564,9 +661,12 @@ def make_handler(state: FleetState | FixtureState,
             except (BrokenPipeError, ConnectionResetError):
                 return
 
-        def respond(self, status: int, content_type: str, body: bytes, *, cache_seconds: int = 0) -> None:
+        def respond(self, status: int, content_type: str, body: bytes, *, cache_seconds: int = 0,
+                    headers: dict[str, str] | None = None) -> None:
             self.send_response(status)
             self.send_header("Content-Type", content_type)
+            for name, value in (headers or {}).items():
+                self.send_header(name, value)
             self.send_header("Cache-Control", f"max-age={cache_seconds}" if cache_seconds else "no-store")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
