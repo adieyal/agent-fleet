@@ -55,6 +55,23 @@ export function openLibraryReader(doc) {
   rdSheet.focus();
   loadDoc(rd.req);
 }
+// A copy from a project's document store: a job's document (shown as from the job panel, though the job may have
+// left the floor or its host) or one of the project's working documents (no job).
+export function openStoredReader(url, doc, job) {
+  if (!reader.hidden) saveReaderScroll();
+  rd.req++;
+  rd.key = 'stored:' + url;
+  rd.source = 'stored'; rd.url = url;
+  rd.host = job ? job.host : null;
+  rd.job = job ? { id: job.id, description: job.description, agent: job.agent } : { id: 'working', description: 'working documents' };
+  rd.doc = doc; rd.data = null;
+  if (reader.hidden) rd.lastFocus = document.activeElement;
+  reader.hidden = false;
+  renderReaderHead();
+  renderReaderLoading();
+  rdSheet.focus();
+  loadDoc(rd.req);
+}
 export function closeReader() {
   if (reader.hidden) return;
   saveReaderScroll();
@@ -121,6 +138,7 @@ async function loadDecision(id, req) {
 async function loadDoc(req) {
   try {
     const data = rd.source === 'library' ? await fetchLibraryDoc(rd.doc.project, rd.doc.id)
+      : rd.source === 'stored' ? await fetchJson(rd.url)
       : DEMO ? await demoDoc(rd.host, rd.job.id, rd.doc.id) : await fetchDoc(rd.host, rd.job.id, rd.doc.id);
     if (req !== rd.req) return;
     rd.data = data;
@@ -172,7 +190,10 @@ async function fetchDoc(host, job, id) {
   return body;
 }
 async function fetchLibraryDoc(project, id) {
-  const res = await fetch('/api/library/doc?' + new URLSearchParams({ project, id }));
+  return fetchJson('/api/library/doc?' + new URLSearchParams({ project, id }));
+}
+async function fetchJson(url) {
+  const res = await fetch(url);
   const body = await res.json();
   if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
   return body;
@@ -187,6 +208,7 @@ function renderReaderHead() {
   document.getElementById('rdMeta').innerHTML = [
     rd.source === 'attention' ? `<span>Attention item · ${esc(doc.id)}</span>`
       : rd.source === 'library' ? `<span>${esc(doc.project)} · ${esc(doc.id)}</span>`
+      : rd.source === 'stored' && !rd.host ? `<span>working · ${esc(doc.id)}</span>`
       : `<span title="${esc(d.job_description || rd.job.description)}"><i class="hd" style="background:${hostLook(rd.host).color}"></i>${esc(rd.host)} · ${esc(rd.job.id)} · ${esc(d.agent || rd.job.agent)}</span>`,
     step != null ? `<span>step ${step + 1}</span>` : '',
     d.minutes ? `<span>${d.minutes} min read</span>` : '',

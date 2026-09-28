@@ -451,6 +451,16 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 .lib-doc span{min-width:0}
 .lib-doc b{display:block;color:var(--text);font:500 13.5px/1.35 var(--sans)}
 .lib-doc small{display:block;margin-top:3px;color:var(--dim);font:11px/1.4 var(--mono);overflow-wrap:anywhere}
+.lib-group h4{margin:12px 3px 6px;color:var(--muted);font:600 10.5px var(--mono);letter-spacing:.08em;text-transform:uppercase}
+.lib-job{margin:0 0 10px;padding:8px 6px 4px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.015)}
+.lib-job-head{padding:2px 5px 6px}
+.lib-job-head b{display:block;color:var(--text);font:600 13.5px/1.35 var(--sans)}
+.lib-job-head small{display:block;margin-top:2px;color:var(--dim);font:11px/1.4 var(--mono)}
+.lib-job .where{color:var(--warn)}
+.lib-job.offline .lib-job-head .where{color:var(--bad)}
+.lib-doc i.dk{grid-row:auto;width:26px;height:30px;font-size:12px}
+.lib-doc:disabled{cursor:default;opacity:.6}
+.lib-doc:disabled:hover{background:none;border-color:transparent}
 .lib-empty{padding:18px 10px;color:var(--muted);font:13px/1.6 var(--sans)}
 .lib-empty code{color:var(--text)}
 @media(max-width:760px){.lib-sheet{top:52px;border-left:0}.stats .opt{display:none}}

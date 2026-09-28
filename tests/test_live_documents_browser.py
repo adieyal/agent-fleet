@@ -136,3 +136,38 @@ def test_an_open_reader_refreshes_in_place_when_the_document_changes(
     page.wait_for_timeout(300)
     assert requests == []
     page.keyboard.press("Escape")
+
+
+def test_a_departed_jobs_report_opens_from_the_library(
+        page: Page, deck_state: Any, fixture_data: dict[str, Any], request: pytest.FixtureRequest) -> None:
+    """The job left its host (fleet rm) long ago; its copy in the project's store is all that remains."""
+    store = deck_state.documents
+    project_id = deck_state.registry.project_for("home", "restoke").id
+    report = {"id": "report-0", "kind": "report", "name": "Step 1: Audit the stock counts", "step": 0,
+              "path": "/home/adi/.fleet/jobs/0ld5ob/result-0.md", "size": 120, "mtime": fixture_data["time"] - 86400}
+    job = {"id": "0ld5ob", "project": "restoke", "description": "Audit last month's stock counts", "agent": "claude",
+           "status": "done", "created_at": fixture_data["time"] - 90000, "updated_at": fixture_data["time"] - 86400,
+           "steps": [{"index": 0, "title": "Audit the stock counts", "status": "done"}], "documents": [report]}
+    for document in store.observe(project_id, "worker", job):
+        store.keep(project_id, "worker", job["id"], document, "# Stock count audit\n\nThree counts disagree.\n\nFLEET_STATUS: done")
+
+    page.locator("#libraryOpen").click()
+    departed = page.locator('#libList .lib-job[data-job="worker-0ld5ob"]')
+    expect(departed).to_contain_text("Audit last month's stock counts")
+    expect(departed).to_contain_text("worker · done")
+    expect(departed).to_contain_text("left its host")
+    # a job still on the floor is listed from the store too
+    expect(page.locator('#libList .lib-job[data-job="home-e1b5c8"] .lib-doc')).to_have_count(1)
+    shoot(request, page, "library-job-documents")
+
+    page.locator("#libSearch").fill("stock counts")
+    expect(page.locator("#libList .lib-job")).to_have_count(1)
+    shoot(request, page, "library-job-documents-filtered")
+    departed.locator('.lib-doc[data-id="report-0"]').click()
+    expect(page.locator("#reader")).to_be_visible()
+    expect(page.locator("#rdTitle")).to_have_text("Step 1: Audit the stock counts")
+    expect(page.locator("#rdBody h1")).to_have_text("Stock count audit")
+    expect(page.locator("#rdBody")).not_to_contain_text("FLEET_STATUS")
+    expect(page.locator("#rdMeta")).to_contain_text("worker · 0ld5ob · claude")
+    shoot(request, page, "library-departed-report")
+    page.keyboard.press("Escape")

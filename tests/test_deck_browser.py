@@ -613,8 +613,9 @@ def test_demo_session_idle_for_an_hour_comes_back_to_work(browser: Browser, base
 def test_library_lists_and_opens_documents(deck: Deck) -> None:
     page = deck.page
     page.locator("#libraryOpen").click()
-    expect(page.locator("#libList .lib-doc")).to_have_count(3)
-    expect(page.locator("#libList .lib-group h3")).to_have_text(["agent-fleet", "restoke"])
+    expect(page.locator("#libList .lib-doc[data-project]")).to_have_count(3)
+    # a library key that is a linked label joins its registered project's group
+    expect(page.locator("#libList .lib-group h3")).to_have_text(["agent-fleet", "Restoke"])
     page.locator('#libList .lib-doc[data-id="docs/suppliers-v2.md"]').click()
     expect(page.locator("#reader")).to_be_visible()
     expect(page.locator("#rdBody h1")).to_have_text("Suppliers V2")
