@@ -1324,10 +1324,24 @@ def record_input_hook(record: JsonObject, *, project: str, job_id: Optional[str]
 def input_observations() -> List[JsonObject]:
     observations = []
     for path in sorted((FLEET_HOME / "input-observations").glob("*.json")):
-        observations.extend({key: value for key, value in record.items()
-                             if key not in ("raw_request", "raw_resume")}
+        observations.extend({**{key: value for key, value in record.items()
+                                if key not in ("raw_request", "raw_resume")},
+                             "request": input_request(record["raw_request"])}
                             for record in json.loads(path.read_text()))
     return observations
+
+
+def input_request(raw: JsonObject) -> JsonObject:
+    """What the agent asked to do, in the words a person answering needs."""
+    tool_input = raw.get("tool_input") or {}
+    detail = next((tool_input[key] for key in ("command", "file_path", "url", "pattern", "query", "prompt")
+                   if isinstance(tool_input.get(key), str)), None)
+    if detail is None:
+        detail = json.dumps(tool_input) if tool_input else ""
+    description = tool_input.get("description")
+    return {"tool": raw.get("tool_name") or "a tool",
+            "description": description if isinstance(description, str) else "",
+            "detail": detail[:2000]}
 
 
 def command_input_hook(arguments: argparse.Namespace) -> None:

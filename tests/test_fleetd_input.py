@@ -23,6 +23,7 @@ def test_permission_hooks_are_retained_and_correlated(tmp_path, monkeypatch, job
     assert waiting["job_id"] == job_id
     assert waiting["session_id"] == "session1"
     assert waiting["context_reference"]
+    assert waiting["request"] == {"tool": "Bash", "description": "", "detail": "touch marker"}
     fleetd.record_input_hook({**request, "hook_event_name": "Stop"}, project="example",
                             job_id=job_id, step_index=0)
     fleetd.record_input_hook({**request, "hook_event_name": "PostToolUse",

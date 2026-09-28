@@ -233,7 +233,8 @@ def run_stream(state: FleetState, host: Host) -> str:
 def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> None:
     kind = message.get("type")
     if kind == "input_observation":
-        observation = InputObservation(**{key: message[key] for key in InputObservation.__dataclass_fields__})
+        observation = InputObservation(**{key: message[key] for key in InputObservation.__dataclass_fields__
+                                          if key in message})
         project = resolve(state.registry, host.name, {"project": observation.project})
         state.attention.observe_input(host.name, observation, project_id=project.get("project_id"))
         state.bump()

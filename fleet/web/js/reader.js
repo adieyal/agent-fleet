@@ -84,7 +84,7 @@ async function loadDecision(id, req) {
     if (!res.ok) throw new Error(detail.error);
     if (req !== rd.req) return;
     const prose = rdBody.querySelector('.prose');
-    prose.innerHTML = `<h2>${esc(detail.question)}</h2><p>${esc(detail.context)}</p>
+    prose.innerHTML = `<h2>${esc(detail.question)}</h2><p class="decision-context">${esc(detail.context)}</p>
       ${detail.proposal === null ? '' : `<h3>Proposed change</h3><pre>${esc(detail.proposal.change)}</pre><p>${esc(detail.proposal.reason)}</p>`}
       <form class="decision-answer">
         ${detail.options.length ? `<fieldset><legend>Choices</legend>${detail.options.map(option =>
