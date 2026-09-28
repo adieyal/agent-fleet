@@ -248,4 +248,5 @@ Rules for the runtime:
 - **StandUp, ThumbsUp and BoxIdle** exist in S and N only; E and W would add about 1.3 MB up front.
 - **Slump away from a seat** stands slumped (`Slump`) rather than sitting on the floor.
 - **The floor's chair** is raised to 0.549 m (its gas lift, `art/scripts/render_props.py`) and spaced by `seat_furniture` on `renovate/floor`.
+- **`Holding`'s free hand** (S) rests below the 0.74 m desk top, so at a desk it is hidden but for a sliver of fingertips on the desk, detached from the arm. The rig should lift that hand onto the desk, as `Typing` does.
 - **Seated shadows** are drawn under the chair, not under the seat point: with the robot's feet hanging clear, the floor under the seat showed its shadow below the desk's near edge, detached (fixed in the preview and on the floor; `docs/design/sprite-world.md`, *Robots*).

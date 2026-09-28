@@ -41,7 +41,7 @@ So one metre along `x` goes right and slightly down (slope 0.305, the long edges
 
 A **sprite** is an image, drawn at one of several pixel densities, with an **anchor**: the pixel that lands on a named world point of the object (a footprint centre, the far edge of a desk top, a seat). Placing a sprite projects its world point and subtracts the anchor scaled to the current zoom.
 
-**Density tiers.** Sprites ship at 85.75, 171.5 and 343 px/m (½×, 1× and 2× the l2 density). The renderer picks the smallest tier at or above `ppm × devicePixelRatio`, and 686 px/m (4×) loads on demand for close zoom on high-DPI screens. AI props are generated at about 257 px/m, so their 2× and 4× tiers are the generation itself; they soften past it and that is accepted.
+**Density tiers.** Sprites ship at 85.75, 171.5 and 343 px/m (½×, 1× and 2× the l2 density). The renderer picks the smallest tier at or above `ppm × devicePixelRatio`, and 686 px/m (4×) loads on demand for close zoom on high-DPI screens. An on-demand tier is wanted only once the tier below it would be upscaled by more than 25%: l2 on a pixel-ratio-2 screen needs about 360 px/m, 5% past 2×, and switching every robot to its 15.6 MB 4× set there stalled frames for seconds without a GPU. AI props are generated at about 257 px/m, so their 2× and 4× tiers are the generation itself; they soften past it and that is accepted.
 
 **Footprint.** Every standing object has a box in world space: `[x0, y0, z0, x1, y1, z1]` relative to its anchor point. Footprints drive depth sorting, the navigation grid, contact shadows and the fallback hit box. Objects are rendered in one facing each; a second facing is a second render, never a mirror (with a 21.25° yaw, a mirror shows the wrong side).
 
@@ -127,7 +127,7 @@ Nothing stands behind the back or left wall, so the walls and everything fixed t
 
 **Render on demand.** The loop draws only when something changed: a robot moved or advanced a frame, warmth is fading, the camera is moving, a tier finished loading. Between animation frames it sleeps on a timer until the next frame is due rather than running every display refresh. A still scene draws nothing, which is also the PRD's calm rule. Animation clocks for background places run at the deck's `CALM` rate or stop.
 
-**Budget.** The engine measures each frame's work (and, when frames run back to back, the gap between them, since a canvas can rasterise after the frame returns). When that runs over the budget (8 ms by default), ambient animation (items marked `ambient`, such as working robots' loops) plays at half speed, down to an eighth; it recovers once animation frames cost under half the budget. Only animation frames count: loading, zooming and full repaints are costly for other reasons. Measured on carbon without a GPU at 1672 × 941 with the bake-off scene: zooming 15 ms a frame (median), panning 2.5 ms, an animation step under 1 ms.
+**Budget.** The engine measures each frame's work (and, when frames run back to back, the gap between them, since a canvas can rasterise after the frame returns). When that runs over the budget (8 ms by default), ambient animation (items marked `ambient`, such as working robots' loops) plays at half speed, down to an eighth; it recovers once animation frames cost under half the budget. Only animation frames count: loading, zooming and full repaints are costly for other reasons. Composing a robot frame the first time it is drawn counts as loading, and its time is taken out of the frame's cost. Measured on carbon without a GPU at 1672 × 941 with the bake-off scene: zooming 15 ms a frame (median), panning 2.5 ms, an animation step under 1 ms.
 
 ### Depth sorting
 
@@ -342,6 +342,8 @@ Planned: `glow.js` (warmth fading per workarea), `behaviour.js` (renderer-agnost
 | GPU | 2 | 1.9 ms (531 fps) | 2.2 ms (457 fps) | 7.8 ms (128 fps) |
 
 Walking robots stay far above 50 fps everywhere. Zooming at pixel ratio 2 without a GPU is the open case. After three slow frames of camera motion the engine draws motion at ratio 1 into a side canvas and scales it up, and the frame at rest is sharp again. That took it from 15 to 20 fps (after moving the warm grade out of the per-frame path). What remains is reading sprite copies and a ground snapshot made at ratio 2; ratio-1 copies of both for motion would close it.
+
+**With the v2 robots** (measured on home against `267e451`, before and after alternating under the same load; RTX 3090 for GPU): the whole floor and the bench stay at parity, 1.3–4.3 ms a frame without a GPU with four robots walking instead of three, and repeated zooms match too. The first zoom onto a bench costs more (no GPU, ratio 2: about 100 ms a frame against 80), because each visible robot's 2x frames are composed from their layers the first time they are drawn. Composing them ahead in idle time made frames erratic and was dropped; this is open.
 
 ## Open questions
 
