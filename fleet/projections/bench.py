@@ -1,19 +1,80 @@
 """Bench and wayfinding documents assembled from persisted project work."""
 
+import re
 from typing import Any
+
+UPCOMING = 3
 
 
 def descendants(node: dict) -> list[dict]:
     return [node, *(child for branch in node["children"] for child in descendants(branch))]
 
 
+def own_scope(epic: dict) -> list[dict]:
+    """The epic and its descendants, stopping at child epics, which have their own rooms."""
+    return [epic, *(item for child in epic["children"] if child["kind"] != "epic" for item in own_scope(child))]
+
+
+def headline(goal: str) -> str:
+    line = goal.strip().splitlines()[0]
+    return re.split(r"(?<=[.!?])\s", line, maxsplit=1)[0]
+
+
+def status(item: dict) -> str:
+    """One of complete, blocked, on hold, active or next; recorded condition outranks runs."""
+    condition = item["condition"]
+    if condition in ("complete", "blocked", "on hold"):
+        return condition
+    if condition == "waiting":
+        return "on hold"
+    running = any(run["status"] == "running" for node in descendants(item) for run in node["runs"])
+    return "active" if running or condition == "ready for review" else "next"
+
+
+def line_item(item: dict) -> dict[str, Any]:
+    return {"id": item["id"], "title": item["title"], "headline": headline(item["goal"]),
+            "condition": item["condition"], "status": status(item), "next_step": item["next_step"]}
+
+
+def epic_room(epic: dict, parent: dict | None, depth: int) -> dict[str, Any]:
+    scope = descendants(epic)
+    milestones = [item for item in own_scope(epic) if item["kind"] == "milestone"]
+    return {
+        "id": epic["id"], "title": epic["title"], "depth": depth,
+        "parent": None if parent is None else {"id": parent["id"], "title": parent["title"]},
+        "goal": epic["goal"], "headline": headline(epic["goal"]),
+        "criteria": epic["criteria"], "progress": epic["progress"],
+        "plan": [line_item(item) for item in milestones],
+        "tasks": [line_item(child) for child in epic["children"] if child["kind"] == "task"],
+        "milestones": {"complete": sum(item["condition"] == "complete" for item in milestones),
+                       "total": len(milestones)},
+        "agents": [{"run": run["id"], "host": run["host"], "work_item": item["id"], "title": item["title"]}
+                   for item in scope for run in item["runs"] if run["status"] == "running"],
+        "upcoming": [{"id": item["id"], "title": item["title"], "next_step": item["next_step"]}
+                     for item in milestones if item["condition"] != "complete"][:UPCOMING],
+        "children": [{"id": child["id"], "title": child["title"]}
+                     for child in epic["children"] if child["kind"] == "epic"],
+        "attention": [{"id": entry["id"], "kind": entry["kind"], "headline": entry["headline"],
+                       "work_item": item["id"]}
+                      for item in scope for entry in item["attention"]
+                      if entry["kind"] in ("decision", "blocker")],
+        "benches": [{"id": item["id"], "title": item["title"]} for item in scope if item["kind"] == "milestone"],
+    }
+
+
 def bench_rooms(project: dict) -> dict:
-    nodes = [node for root in project["work_items"] for node in descendants(root)]
-    return {"project": project["project"], "rooms": [
-        {"id": node["id"], "title": node["title"], "benches": [
-            {"id": child["id"], "title": child["title"]}
-            for child in descendants(node) if child["kind"] == "milestone"]}
-        for node in nodes if node["kind"] == "epic"]}
+    rooms = []
+
+    def visit(node: dict, parent: dict | None, depth: int) -> None:
+        if node["kind"] == "epic":
+            rooms.append(epic_room(node, parent, depth))
+            parent, depth = node, depth + 1
+        for child in node["children"]:
+            visit(child, parent, depth)
+
+    for root in project["work_items"]:
+        visit(root, None, 0)
+    return {"project": project["project"], "rooms": rooms}
 
 
 def bench_state(project: dict, identity: str) -> dict[str, Any]:

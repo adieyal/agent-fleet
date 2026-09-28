@@ -17,6 +17,7 @@ import { attentionFor, openCount } from './attention.js';
 import { openAttentionReader, openReader } from './reader.js';
 import { noteTrace, summarySections, traceRows } from './summary.js';
 import { openWorkarea } from './workarea.js';
+import { enterFloor } from './bench.js';
 
 // ------------------------------------------------------------------ portraits for the manifest and the panel
 // Rendered once per look into an offscreen target with the main renderer, then copied into small 2D canvases.
@@ -95,6 +96,18 @@ export function closePanel() {
   panel.classList.remove('open');
   panel.setAttribute('aria-hidden', 'true');
 }
+// The linked work item's ancestry, root first; epics and milestones open the project's bench overlay there.
+function workCrumbs(work) {
+  if (!work) return '';
+  let epic = '';
+  const parts = work.chain.map(node => {
+    if (node.kind === 'epic') epic = node.id;
+    const target = node.kind === 'epic' ? `data-work-epic="${esc(epic)}"`
+      : node.kind === 'milestone' ? `data-work-epic="${esc(epic)}" data-work-milestone="${esc(node.id)}"` : '';
+    return target ? `<button ${target} title="Open ${esc(node.kind)}">${esc(node.title)}</button>` : `<span>${esc(node.title)}</span>`;
+  });
+  return `<nav class="work-crumbs" aria-label="Work item" data-work-project="${esc(work.project)}">${parts.join('<i aria-hidden="true"> > </i>')}</nav>`;
+}
 export function renderPanel() {
   // mid-scroll, updates wait until the scroll settles rather than rewriting content under it
   const wait = panelScrollUntil - performance.now();
@@ -108,7 +121,7 @@ export function renderPanel() {
   const j = e.job;
   const ref = `${e.host}:${j.id}`;
   const headHtml = `<canvas style="width:46px;height:60px"></canvas>
-    <div style="min-width:0;flex:1"><h2>${esc(j.description)}</h2>
+    <div style="min-width:0;flex:1"><h2>${esc(j.description)}</h2>${workCrumbs(j.work)}
       <div class="sub">
         <span class="chip"><i style="background:${e.look.color}"></i><b>${esc(e.host)}</b></span>
         <span class="chip"><i style="background:${AGENT_COLOR[j.agent] || '#ccc'}"></i>${esc(j.agent)}</span>
@@ -220,7 +233,7 @@ function patchPanel(headHtml, extraHtml, panes, e, pose) {
 function renderSessionPanel(e) {
   const s = e.job;
   const headHtml = `<canvas style="width:46px;height:60px"></canvas>
-    <div style="min-width:0;flex:1"><h2>${s.title ? esc(s.title) : '<span class="untitled">no title yet</span>'}</h2>
+    <div style="min-width:0;flex:1"><h2>${s.title ? esc(s.title) : '<span class="untitled">no title yet</span>'}</h2>${workCrumbs(s.work)}
       <div class="sub">
         <span class="chip sess st-${esc(s.status)}"><i></i>live · ${esc(s.status === 'idle' ? 'waiting for you' : s.status)}</span>
         <span class="chip"><i style="background:${e.look.color}"></i><b>${esc(e.host)}</b></span>
@@ -281,6 +294,12 @@ panel.addEventListener('click', ev => {
   if (answer) { const item = attentionFor(selectedKey).find(i => i.id === answer.dataset.answer); if (item) openAttentionReader(item); return; }
   const workarea = ev.target.closest('[data-workarea]');
   if (workarea) { if (!workarea.disabled) openWorkarea(workarea.dataset.workarea); return; }
+  const crumb = ev.target.closest('[data-work-epic]');
+  if (crumb) {
+    enterFloor(crumb.closest('[data-work-project]').dataset.workProject,
+      { epic: crumb.dataset.workEpic || null, milestone: crumb.dataset.workMilestone ?? null });
+    return;
+  }
   const open = ev.target.closest('[data-doc]');
   if (open) {
     const e = workOf(selectedKey), doc =e && (e.job.documents || []).find(d => d.id === open.dataset.doc);

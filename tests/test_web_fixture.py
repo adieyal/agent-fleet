@@ -35,7 +35,8 @@ def test_state_is_the_recorded_fleet(base_url: str, fixture_data: dict[str, Any]
             for event in events:
                 if event is not None:
                     assert event.pop("activity_class") == ExecutionFacade.classify_activity(event)
-    added = ("project_id", "focus")
+    added = ("project_id", "focus", "work")
+    assert all(item["work"] is None for host in state["hosts"] for item in host["jobs"] + host["sessions"])
     unresolved = [{**host, "jobs": [{key: value for key, value in job.items() if key not in added}
                                     for job in host["jobs"]],
                    "sessions": [{key: value for key, value in session.items() if key not in added}

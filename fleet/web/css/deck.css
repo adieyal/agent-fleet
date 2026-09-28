@@ -386,6 +386,10 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 #panel .ph canvas{width:46px;height:60px;flex:none}
 #panel .ph h2{margin:0;font:600 18px/1.3 var(--display)}
 #panel .ph .sub{margin-top:6px;display:flex;gap:6px;flex-wrap:wrap}
+#panel .work-crumbs{margin-top:4px;font-size:12.5px;color:var(--muted);line-height:1.5}
+#panel .work-crumbs i{font-style:normal;opacity:.7}
+#panel .work-crumbs button{all:unset;cursor:pointer;color:var(--text);text-decoration:underline dotted;text-underline-offset:3px}
+#panel .work-crumbs button:hover,#panel .work-crumbs button:focus-visible{text-decoration-style:solid}
 #close{margin-left:auto;background:none;border:1px solid var(--line2);border-radius:8px;width:30px;height:30px;cursor:pointer;flex:none;color:var(--muted)}
 #close:hover{color:#fff}
 #dismiss{margin-left:auto;height:30px;padding:0 10px;background:none;border:1px solid var(--line2);border-radius:8px;cursor:pointer;flex:none;color:var(--muted);font:500 12.5px var(--sans)}
@@ -972,9 +976,31 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 #benchRoute[hidden] { display:none; }
 #benchRoute button { color:inherit; background:#26374c; border:1px solid #64748b; border-radius:6px; padding:10px; margin:4px; cursor:pointer; }
 #benchBreadcrumb { margin-bottom:16px; }
-.bench-cluster { display:flex; flex-wrap:wrap; gap:20px; }
-.bench-cluster button { display:grid; gap:12px; }
-.bench-cluster i { display:block; height:36px; border:6px solid #aa805b; border-top-width:12px; border-bottom:0; }
+.epic-cards { display:grid; gap:12px; }
+[data-epic-card] { margin-left:calc(var(--depth) * 28px); padding:10px 14px; border:1px solid #64748b; border-left:4px solid #38bdf8; border-radius:8px; background:#1b2a3d; }
+[data-epic-card][data-depth="0"] { border-left-color:#a78bfa; }
+[data-epic-head] { display:flex; align-items:baseline; gap:8px; }
+#benchRoute [data-epic-head] button { font-weight:bold; margin:0; }
+[data-epic-card] p, [data-epic-card] [data-next] { margin:6px 0; }
+[data-epic-card] ul { margin:4px 0 0; padding-left:22px; }
+[data-epic-card] small, [data-epic-card] i { color:#94a3b8; }
+[data-epic-card] progress { width:120px; vertical-align:middle; accent-color:#34d399; }
+[data-epic-page] { max-width:720px; }
+[data-epic-page] [data-goal] { white-space:pre-line; }
+[data-epic-page] h3 { margin:16px 0 6px; font-size:14px; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; }
+[data-epic-page] progress { width:160px; vertical-align:middle; accent-color:#34d399; }
+[data-plan-list] { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
+[data-plan-item] { display:flex; gap:10px; align-items:flex-start; }
+[data-plan-item] p { margin:2px 0; }
+[data-plan-item] small { color:#94a3b8; }
+#benchRoute [data-plan-item] button { margin:0; padding:4px 8px; font-weight:bold; }
+[data-glyph] svg { width:22px; height:22px; fill:none; stroke-width:2.5; stroke:currentColor; }
+[data-status="complete"] [data-glyph] { color:#34d399; }
+[data-status="active"] [data-glyph] { color:#38bdf8; }
+[data-status="next"] [data-glyph] { color:#94a3b8; }
+[data-status="blocked"] [data-glyph] { color:#f87171; }
+[data-status="on hold"] [data-glyph] { color:#fbbf24; }
+[data-epic-card] [data-attention-count] svg { width:18px; height:18px; fill:none; stroke:#fbbf24; stroke-width:2; vertical-align:middle; }
 #benchRoute [data-lane] { padding:6px; border-left:4px solid #94a3b8; }
 #benchRoute [data-lane="done"] { border-color:#34d399; text-decoration:line-through; }
 #benchRoute [data-lane="doing"] { border-color:#38bdf8; font-weight:bold; }

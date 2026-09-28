@@ -37,6 +37,22 @@ def no_follow_up_yet(item: WorkItem, runs: list[Run]) -> bool | None:
     return False
 
 
+def run_work(work: WorkFacade, execution: ExecutionFacade) -> dict[tuple[str, str], dict[str, Any]]:
+    """Each run's (host, remote job) mapped to its linked work item's project and root-first ancestor chain."""
+    items = {item.id: item for item in work.list()}
+    actions = {action.id: action.work_item for action in execution.actions()}
+    links = {}
+    for run in execution.runs():  # a job linked twice keeps its latest run's item
+        chain, identity = [], actions.get(run.action)
+        while identity is not None:
+            item = items[identity]
+            chain.insert(0, {"id": item.id, "kind": item.kind, "title": item.title})
+            identity = item.parent
+        if chain:
+            links[run.host, run.remote_job_id] = {"project": items[chain[-1]["id"]].project, "chain": chain}
+    return links
+
+
 def project_status(project: str, work: WorkFacade, attention: AttentionFacade,
                    execution: ExecutionFacade, library: LibraryFacade,
                    decisions: DecisionsFacade) -> dict[str, Any]:

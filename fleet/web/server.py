@@ -203,7 +203,7 @@ class FleetState(LiveWorkspace):
                               sorted(self.by_host[host.name]["sessions"].values(),
                                      key=lambda session: session.get("started_at") or 0)]}
                 for host in self.hosts]})
-        document = self.with_building(document, registry)
+        document = self.with_building(self.with_work(document), registry)
         document["building"]["capacity_error"] = capacity_error
         document["pipelines"] = self.pipelines(registry, self.by_host)
         return document

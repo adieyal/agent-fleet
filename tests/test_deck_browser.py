@@ -206,6 +206,158 @@ def test_bench_real_endpoint(changed_deck: Deck, deck_state, monkeypatch, tmp_pa
     page.evaluate('fleetDeck.enterFloor(null)')
 
 
+@pytest.fixture
+def route_migration(deck_state, monkeypatch) -> dict[str, Any]:
+    """Restoke V2's shape: epic Route migration inside epic V2 frontend overhaul, six milestones, three complete."""
+    store = open_store()
+    work = open_work(store)
+    monkeypatch.setattr(deck_state, 'store', store)
+    monkeypatch.setattr(deck_state, 'attention', open_attention(store))
+    add = lambda title, goal, **fields: work.add(project='restoke-v2', title=title, goal=goal, actor='user', **fields)
+    overhaul = add('V2 frontend overhaul', 'Rebuild the V2 frontend on one design system.', kind='epic')
+    routes = add('Route migration', 'Move every page to the new router. Legacy routes go last.',
+                 kind='epic', parent=overhaul.id)
+    work.add_criterion(routes.id, text='Legacy router deleted', verification='accepted', actor='user')
+    next_steps = {4: 'Port the supplier list', 6: 'Delete router.js'}
+    milestones = [add(f'{n}. Milestone {n}', f'Deliver milestone {n}. Details follow.', kind='milestone',
+                      parent=routes.id, next_step=next_steps.get(n)) for n in range(1, 7)]
+    for milestone in milestones[:3]:
+        work.set(milestone.id, condition='complete', actor='user')
+    work.set(milestones[5].id, condition='blocked', actor='user')
+    task = add('Port supplier list', 'Port it', parent=milestones[3].id)
+    add('Fix redirect loop', 'Fix it', parent=routes.id)
+    parked = add('Tidy styles', 'Tidy them', parent=routes.id, next_step='Wait for tokens')
+    work.set(parked.id, condition='on hold', actor='user')
+    execution = open_execution(store)
+    execution.link('home', 'route-job', task.id, actor='user')
+    now = store.clock()
+    execution.observe('home', JobObservation('route-job', 'running', 'codex', now, None, now))
+    deck_state.attention.raise_item(project='restoke-v2', work_item=milestones[4].id, kind='decision',
+        owner='user', source='manual', source_reference='route-question', headline='Keep order URLs?',
+        context_reference='work:' + milestones[4].id, actor='user')
+    return {'routes': routes, 'milestones': milestones}
+
+
+def test_epic_cards_summarise_nested_route_migration(changed_deck: Deck, route_migration) -> None:
+    routes = route_migration['routes']
+    page = changed_deck.page
+    page.evaluate("fleetDeck.enterFloor('restoke-v2')")
+    cards = page.locator('[data-epic-card]')
+    expect(cards).to_have_count(2)
+    parent, child = cards.nth(0), cards.nth(1)
+    expect(parent.locator('[data-now]')).to_have_text('Now: 1 running: Port supplier list (home)')
+    expect(parent.locator('[data-milestones]')).to_have_text('No milestones recorded')
+    expect(parent.locator('[data-next]')).to_have_text('Next: No milestones recorded')
+    expect(parent.locator('[data-child-epics]')).to_have_text('Epics: Route migration')
+    expect(parent.locator('[data-attention-count]')).to_have_attribute('data-attention-count', '2')
+
+    expect(child.locator('[data-parent-epic]')).to_have_text('in V2 frontend overhaul')
+    assert child.evaluate('e => e.getBoundingClientRect().left') > parent.evaluate('e => e.getBoundingClientRect().left')
+    expect(child.locator('[data-goal]')).to_have_text('Move every page to the new router.')
+    expect(child.locator('[data-goal]')).to_have_attribute('title', routes.goal)
+    expect(child.locator('[data-milestones]')).to_have_text('3 of 6 milestones')
+    expect(child.locator('progress')).to_have_attribute('value', '3')
+    expect(child.locator('[data-upcoming]')).to_have_text([
+        '4. Milestone 4 — Port the supplier list', '5. Milestone 5 — Next step not recorded',
+        '6. Milestone 6 — Delete router.js'])
+    expect(child.locator('[data-now]')).to_have_text('Now: 1 running: Port supplier list (home)')
+    expect(child.locator('[data-attention-count]')).to_have_text('2 open decisions or blockers')
+    card, title = child.bounding_box(), child.locator('[data-epic]').bounding_box()
+    assert card['y'] <= title['y'] and title['y'] + title['height'] <= card['y'] + card['height']
+
+    child.get_by_role('button', name='Route migration', exact=True).click()
+    expect(page.locator('#benchRoute')).to_have_attribute('data-level', 'room')
+    expect(page.locator('[data-slice]')).to_have_count(6)
+    page.evaluate('fleetDeck.enterFloor(null)')
+    assert changed_deck.errors == []
+
+
+def test_epic_page_lists_milestones_tasks_and_child_epics(changed_deck: Deck, route_migration) -> None:
+    routes, milestones = route_migration['routes'], route_migration['milestones']
+    page = changed_deck.page
+    route = page.locator('#benchRoute')
+    page.evaluate("fleetDeck.enterFloor('restoke-v2')")
+    page.get_by_role('button', name='Route migration', exact=True).click()
+    epic = page.locator('[data-epic-page]')
+    expect(route).to_have_attribute('data-level', 'room')
+    expect(epic.get_by_role('heading', level=2)).to_have_text('Route migration')
+    expect(epic.locator('[data-goal]')).to_have_text(routes.goal)
+    expect(epic.locator('[data-epic-criteria] li')).to_have_text(['Legacy router deleted accepted · unmet'])
+    expect(epic.locator('[data-progress]')).to_have_text('3 of 6 milestones')
+    items = epic.locator('[data-plan-item]')
+    assert items.evaluate_all('els => els.map(e => e.dataset.status)') == [
+        'complete', 'complete', 'complete', 'active', 'next', 'blocked', 'next', 'on hold']
+    expect(items.locator('[data-slice]')).to_have_text([f'{n}. Milestone {n}' for n in range(1, 7)])
+    expect(items.nth(3)).to_contain_text('Deliver milestone 4.')
+    expect(items.nth(3)).not_to_contain_text('Details follow')
+    expect(items.locator('[data-next-step]')).to_have_text(
+        ['Next step not recorded'] * 3 + ['Next: Port the supplier list', 'Next step not recorded',
+         'Next: Delete router.js', 'Next step not recorded', 'Next: Wait for tokens'])
+    expect(items.nth(7)).to_contain_text('Tidy styles')
+    expect(items.nth(7).locator('[data-slice]')).to_have_count(0)
+    glyphs = items.locator('[data-glyph] svg').evaluate_all('els => els.map(e => e.innerHTML)')
+    assert len(set(glyphs)) == 5
+    expect(items.nth(5).locator('[data-glyph]')).to_have_attribute('aria-label', 'blocked')
+
+    page.get_by_role('button', name='4. Milestone 4', exact=True).click()
+    expect(route).to_have_attribute('data-level', 'bench')
+    expect(route.locator('[data-task]')).to_have_text(['Port supplier list'])
+    page.keyboard.press('Escape')
+    expect(route).to_have_attribute('data-level', 'room')
+    page.keyboard.press('Escape')
+    expect(route).to_have_attribute('data-level', 'floor')
+    expect(page.locator('[data-epic-card]')).to_have_count(2)
+
+    page.get_by_role('button', name='V2 frontend overhaul', exact=True).click()
+    expect(epic.locator('[data-progress]')).to_have_text('Progress not recorded')
+    expect(epic).to_contain_text('No milestones recorded')
+    epic.locator('[data-child-epics]').get_by_role('button', name='Route migration').click()
+    expect(epic.get_by_role('heading', level=2)).to_have_text('Route migration')
+    page.locator('[data-back-floor]').click()
+    expect(route).to_have_attribute('data-level', 'floor')
+    page.evaluate('fleetDeck.enterFloor(null)')
+    assert changed_deck.errors == []
+
+
+def test_panel_breadcrumb_names_the_linked_work_and_opens_it(changed_deck: Deck, route_migration,
+                                                              base_url: str) -> None:
+    milestone = route_migration['milestones'][2]
+    open_execution(open_store()).link('home', 'a1c3e9', milestone.id, actor='user')
+    with urlopen(base_url + '/api/state', timeout=5) as response:
+        doc = json.load(response)
+    jobs = {(host['name'], item['id']): item for host in doc['hosts'] for item in host['jobs'] + host['sessions']}
+    work = jobs['home', 'a1c3e9']['work']
+    assert work['project'] == 'restoke-v2'
+    assert [(node['kind'], node['title']) for node in work['chain']] == [
+        ('epic', 'V2 frontend overhaul'), ('epic', 'Route migration'), ('milestone', '3. Milestone 3')]
+    assert jobs['home', ASKING.split(':', 1)[1]]['work'] is None
+
+    page = changed_deck.page
+    route = page.locator('#benchRoute')
+    page.evaluate('doc => fleetDeck.apply(doc)', doc)
+    page.evaluate("fleetDeck.select('home:a1c3e9')")
+    crumbs = page.locator('#panel .work-crumbs')
+    expect(crumbs).to_have_text('V2 frontend overhaul > Route migration > 3. Milestone 3')
+    crumbs.get_by_role('button', name='Route migration').click()
+    expect(route).to_have_attribute('data-level', 'room')
+    expect(route.locator('[data-epic-page] h2')).to_have_text('Route migration')
+    crumbs.get_by_role('button', name='3. Milestone 3').click()
+    expect(route).to_have_attribute('data-level', 'bench')
+    expect(route.get_by_role('heading', level=2)).to_have_text('3. Milestone 3')
+    expect(page.locator('#benchBreadcrumb')).to_contain_text('Route migration')
+    page.keyboard.press('Escape')
+    expect(route).to_have_attribute('data-level', 'room')
+    page.evaluate('fleetDeck.enterFloor(null)')
+
+    page.evaluate(f"fleetDeck.select('{ASKING}')")
+    expect(page.locator('#panel .ph h2')).not_to_have_text('')
+    expect(page.locator('#panel .work-crumbs')).to_have_count(0)
+    page.evaluate("fleetDeck.select('home:b7d042')")
+    expect(page.locator('#panel .work-crumbs')).to_have_count(0)
+    page.locator('#panel #close').click()
+    assert changed_deck.errors == []
+
+
 def test_bench_route_steps_out_one_level(changed_deck: Deck) -> None:
     page = changed_deck.page
     page.locator('#viewToggle [data-view="building"]').click()
@@ -250,7 +402,14 @@ def test_l3_bench_projection(changed_deck: Deck, base_url: str, redact: bool) ->
         if 'slice=' in route.request.url:
             route.fulfill(json=doc)
         else:
-            route.fulfill(json={'rooms': [{'id': 'epic', 'title': 'Suppliers',
+            route.fulfill(json={'rooms': [{'id': 'epic', 'title': 'Suppliers', 'depth': 0, 'parent': None,
+                                          'goal': 'Find suppliers', 'headline': 'Find suppliers',
+                                          'milestones': {'complete': 0, 'total': 1}, 'agents': [],
+                                          'upcoming': [], 'children': [], 'attention': [], 'criteria': [],
+                                          'progress': {'basis': 'milestones', 'complete': 0, 'total': 1},
+                                          'plan': [{'id': 'slice', 'title': 'Supplier slice', 'headline': 'Find',
+                                                    'condition': 'none', 'status': 'next', 'next_step': None}],
+                                          'tasks': [],
                                           'benches': [{'id': 'slice', 'title': 'Supplier slice'}]}]})
     page.route('**/api/bench?*', respond)
     try:

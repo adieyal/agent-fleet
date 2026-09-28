@@ -124,7 +124,7 @@ class FixtureState(LiveWorkspace):
                  "sessions": [annotate(self.workspace, resolve(self.registry, host["name"], session))
                               for session in host["sessions"]]}
                 for host in self.fixture["hosts"]]})
-        document = self.with_building(document, self.registry)
+        document = self.with_building(self.with_work(document), self.registry)
         document["building"]["capacity_error"] = None
         document["pipelines"] = self.pipelines(self.registry, {host["name"]: host for host in self.fixture["hosts"]})
         return document
