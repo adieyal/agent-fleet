@@ -8,19 +8,22 @@ from typing import Any
 import pytest
 from playwright.sync_api import Browser, Page, Route, expect
 
-from test_deck_browser import PIN_CLOCK, VIEWPORTS, finish_jobs, on_the_floor
-
+from test_deck_browser import PIN_CLOCK, VIEWPORTS, finish_jobs
+from test_web_focus import post_focus
 
 
 @pytest.fixture
 def page(browser: Browser, base_url: str, fixture_data: dict[str, Any]) -> Iterator[Page]:
+    # other tests may leave the room in the background of the shared fixture server, and then it has no crew
+    assert post_focus(base_url, {"focus": "priority", "labels": ["restoke"]})[0] == 200
     context = browser.new_context(viewport=VIEWPORTS["desktop"], reduced_motion="reduce")
     context.add_init_script(PIN_CLOCK % (fixture_data["time"], fixture_data["time"]))
     page = context.new_page()
     errors: list[str] = []
     page.on("pageerror", lambda error: errors.append(str(error)))
     page.goto(base_url + "/")
-    page.wait_for_function(f"window.fleetDeck && (fleetDeck.advanceTime(0), fleetDeck.agents().length === {len(on_the_floor(fixture_data))})")
+    # only this job's android: other rooms may be in any state
+    page.wait_for_function("window.fleetDeck && (fleetDeck.advanceTime(0), fleetDeck.agents().some(agent => agent.key === 'home:a1c3e9'))")
     yield page
     context.close()
     assert errors == []
