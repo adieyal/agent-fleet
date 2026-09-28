@@ -258,6 +258,9 @@ def command_dispatch(arguments: argparse.Namespace) -> None:
         except LookupError as error:
             raise FleetError(str(error)) from error
     host = transport.host_by_name(arguments.host)
+    workspace = open_workspace()
+    linked_project = workspace.registry().project_for(host.name, arguments.project)
+    project_id = linked_project.id if linked_project is not None else workspace.resolve_project(arguments.project)
     steps = read_steps(arguments)
     if not steps:
         raise FleetError("give at least one --step or a --steps-file")
@@ -286,7 +289,7 @@ def command_dispatch(arguments: argparse.Namespace) -> None:
     try:
         intent = execution.dispatch(arguments.work_item, host=host.name, runtime=arguments.agent,
             payload={"cwd": arguments.cwd, "arguments": fleetd_arguments, "steps": steps,
-                     "context": arguments.context, "hold": arguments.hold}, project=arguments.project,
+                     "context": arguments.context, "hold": arguments.hold}, project=project_id,
             actor="user", reason=arguments.description, idempotency_key=key, remote_job_id=arguments.id)
     except (ValueError, LookupError) as error:
         raise FleetError(str(error)) from error
@@ -395,6 +398,8 @@ def command_run_link(arguments: argparse.Namespace) -> None:
 
 
 def command_library_link(arguments: argparse.Namespace) -> None:
+    if arguments.project is not None:
+        arguments.project = open_workspace().resolve_project(arguments.project)
     try:
         entry = open_library().link(arguments.url, project=arguments.project, work_item=arguments.work_item,
                                     title=arguments.title, actor=arguments.actor)
@@ -825,7 +830,8 @@ def command_web(arguments: argparse.Namespace) -> None:
 
 def command_status(arguments: argparse.Namespace) -> None:
     store = open_store()
-    projection = project_status(arguments.project, open_work(store), open_attention(store),
+    project = open_workspace(store).resolve_project(arguments.project)
+    projection = project_status(project, open_work(store), open_attention(store),
                                 open_execution(store), open_library(store), open_decisions(store))
     if arguments.json:
         print(json.dumps(projection))
@@ -904,6 +910,7 @@ def command_work(arguments: argparse.Namespace) -> None:
         elif command == "relate":
             item = work.relate(identity, fields.pop("to_item"), **fields)
         elif command == "add":
+            fields['project'] = open_workspace().resolve_project(fields['project'])
             item = work.add(**fields)
         else:
             item = getattr(work, command)(identity, **fields)
@@ -967,6 +974,8 @@ def command_answer(arguments: argparse.Namespace) -> None:
 
 
 def command_attention(arguments: argparse.Namespace) -> None:
+    if arguments.attention_command in ('add', 'list') and arguments.project is not None:
+        arguments.project = open_workspace().resolve_project(arguments.project)
     try:
         attention = open_attention()
         command = arguments.attention_command

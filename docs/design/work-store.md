@@ -39,6 +39,10 @@ return JSON records. Summary bodies remain store-owned until the planned
 Records cutover. No run completion or time passage changes work or criteria.
 
 `fleet status PROJECT` renders the persisted work tree without contacting hosts.
+`PROJECT` is a Workspace project ID or an exact, unique display name. Work,
+attention, dispatch and library CLI commands resolve names through Workspace and
+store the ID. Unknown names are rejected; ambiguous names list candidate IDs and
+suggest `fleet project merge`. Module commands take canonical project IDs.
 Each item shows its goal, condition, next step, criteria and verification kinds,
 open linked attention items, and working summary. Project-level open attention
 appears separately. Attention's read policy handles expired snoozes.
@@ -52,3 +56,18 @@ It contains `project`, nested `work_items`, and project-level `attention`.
 Each work item adds `progress` (basis, complete, total), `criteria`, `summary`,
 `attention`, and `children` to its stored fields. Unknown progress uses null
 counts, absent summaries remain null, and timestamps use ISO 8601 strings.
+
+`/api/bench?project=ID` reads that project's bench. `/api/state` includes `work`,
+a mapping from registered project IDs to the same project status documents.
+
+Seed with `uv run --frozen python scripts/seed_supplier_slice.py --project ID`
+(optionally `--prd PATH`). The default project name is `Restoke V2`; ambiguity
+stops the seed before any work is written.
+
+For existing name-keyed records, run
+`uv run --frozen python scripts/migrate_project_ids.py` with `FLEET_STORE` and
+`FLEET_CONFIG` selecting the controller. This explicit migration converts unique
+names in Work, Attention, Execution actions and Library, appends history, and
+prints each conversion. Ambiguous or unknown names are reported unchanged.
+Resolve those registry entries and rerun; already migrated records are untouched.
+Runs retain their action links and original worker payload fingerprints.

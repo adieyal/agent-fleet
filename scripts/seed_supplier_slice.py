@@ -10,11 +10,12 @@ import argparse
 import json
 from pathlib import Path
 
-from fleet.composition import open_work
+from fleet.composition import open_work, open_workspace
+from fleet.errors import FleetError
 from fleet.modules.work import EvidenceSpecification, WorkFacade
 
 
-def seed(work: WorkFacade, prd: Path | None = None) -> None:
+def seed(work: WorkFacade, prd: Path | None = None, *, project: str) -> None:
     records = json.loads(Path(__file__).with_suffix(".json").read_text())
     stories = []
     if prd is not None:
@@ -25,7 +26,7 @@ def seed(work: WorkFacade, prd: Path | None = None) -> None:
             "title": story["title"], "goal": story["description"],
             "sources": [str(prd)], "condition": "none", "next_step": None,
         } for story in stories)
-    existing = work.list(project="Restoke V2")
+    existing = work.list(project=project)
     identities: dict[str, str] = {}
     for record in records:
         parent = identities[record["parent"]] if record["parent"] is not None else None
@@ -37,7 +38,7 @@ def seed(work: WorkFacade, prd: Path | None = None) -> None:
         if matches:
             item = matches[0]
         else:
-            item = work.add(project="Restoke V2", parent=parent, kind=record["kind"],
+            item = work.add(project=project, parent=parent, kind=record["kind"],
                             title=record["title"], goal=goal, next_step=record["next_step"],
                             actor="supplier-slice-seed")
         changes = {name: value for name, value in {
@@ -68,5 +69,10 @@ def seed(work: WorkFacade, prd: Path | None = None) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--prd", type=Path, help="Slice 6 Ralph prd.json to seed and check")
+    parser.add_argument("--project", default="Restoke V2", help="Workspace project ID or unique name")
     args = parser.parse_args()
-    seed(open_work(), args.prd)
+    try:
+        project = open_workspace().resolve_project(args.project)
+    except FleetError as error:
+        parser.error(str(error))
+    seed(open_work(), args.prd, project=project)

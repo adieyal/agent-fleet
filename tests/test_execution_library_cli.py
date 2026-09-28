@@ -6,13 +6,13 @@ import pytest
 from fleet import cli, composition
 
 
-def test_run_and_library_link_fetch_nothing(monkeypatch, capsys):
+def test_run_and_library_link_fetch_nothing(monkeypatch, capsys, project_id):
     def forbidden(*args, **kwargs):
         pytest.fail("linking must not fetch anything")
 
     monkeypatch.setattr(cli.transport, "call", forbidden)
     monkeypatch.setattr("urllib.request.urlopen", forbidden)
-    item = composition.open_work().add(project="p", title="Task", goal="Ship", actor="user")
+    item = composition.open_work().add(project=project_id, title="Task", goal="Ship", actor="user")
     cli.main(["run", "link", "offline", "job", item.id])
     run = json.loads(capsys.readouterr().out)
     cli.main(["run", "link", "offline", "job", item.id])
@@ -28,8 +28,8 @@ def test_run_and_library_link_fetch_nothing(monkeypatch, capsys):
 
 
 @pytest.mark.parametrize("start_fails", [False, True])
-def test_send_links_created_job(monkeypatch, capsys, start_fails):
-    item = composition.open_work().add(project="p", title="Task", goal="Ship", actor="user")
+def test_send_links_created_job(monkeypatch, capsys, start_fails, project_id):
+    item = composition.open_work().add(project=project_id, title="Task", goal="Ship", actor="user")
     calls = []
 
     def call(host, arguments, **kwargs):

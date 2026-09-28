@@ -9,11 +9,11 @@ from fleet.infrastructure.sqlite.store import connect
 from contextlib import closing
 
 
-def test_status_runs_library_and_later_next_step_survive_restart(capsys):
+def test_status_runs_library_and_later_next_step_survive_restart(capsys, project_id):
     now = [datetime(2026, 9, 27, tzinfo=timezone.utc)]
     store = open_store(clock=lambda: now[0])
     work = open_work(store)
-    item = work.add(project="p", title="Milestone", goal="Deliver", kind="milestone",
+    item = work.add(project=project_id, title="Milestone", goal="Deliver", kind="milestone",
                     next_step="Try again", actor="user")
     criterion = work.add_criterion(item.id, text="Approved", verification="accepted", actor="user")
     work.meet(criterion.id, actor="user")

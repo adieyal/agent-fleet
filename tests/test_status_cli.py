@@ -3,14 +3,14 @@ import json
 from fleet import cli
 
 
-def test_json_emits_projection_unchanged(monkeypatch, capsys):
+def test_json_emits_projection_unchanged(monkeypatch, capsys, project_id):
     projection = {"project": "p", "work_items": [], "attention": [], "future": {"unknown": None}}
     monkeypatch.setattr(cli, "project_status", lambda *args: projection)
     cli.main(["status", "p", "--json"])
     assert json.loads(capsys.readouterr().out) == projection
 
 
-def test_unknown_text_never_renders_as_zero_or_percentage(monkeypatch, capsys):
+def test_unknown_text_never_renders_as_zero_or_percentage(monkeypatch, capsys, project_id):
     monkeypatch.setattr(cli, "project_status", lambda *args: {
         "project": "p", "attention": [], "work_items": [{
             "title": "Investigation", "kind": "task", "goal": "Find cause", "condition": "none",
