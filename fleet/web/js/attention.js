@@ -106,17 +106,26 @@ function renderLanterns(rooms) {
 
 // ------------------------------------------------------------------ the list: what needs you in this room, and what to do
 const panel = document.getElementById('attnPanel');
-let openRoom = null;
+const reader = document.getElementById('reader');
+let openRoom = null, opener = null;
 function openPanel(name) {
   openRoom = name;
+  opener = lanterns.get(name);
   renderPanel();
   panel.hidden = false;
-  const at = lanterns.get(name).getBoundingClientRect(), w = panel.offsetWidth, h = panel.offsetHeight;
+  const at = opener.getBoundingClientRect(), w = panel.offsetWidth, h = panel.offsetHeight;
   const x = Math.min(Math.max(8, at.right + 10), vw - w - 8), y = Math.min(Math.max(60, at.top - 20), vh - h - 8);
   panel.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px)`;
+  panel.querySelector('[data-close]')?.focus({ preventScroll: true });
 }
 const ownerName = owner => `${owner.host}:${shortId(owner.id)}`;
-function closePanel() { openRoom = null; panel.hidden = true; }
+// A person closing it gets focus back on the lantern that opened it; an emptied list just goes.
+function closePanel(returnFocus = false) {
+  if (openRoom === null) return;
+  const back = opener;
+  openRoom = null; opener = null; panel.hidden = true;
+  if (returnFocus && back && back.isConnected) back.focus({ preventScroll: true });
+}
 function renderPanel() {
   if (!display.rooms[openRoom]) { closePanel(); return; }
   const listed = display.rooms[openRoom].listed.map(id => items.find(i => i.id === id));
@@ -135,13 +144,14 @@ function renderPanel() {
           <small>${KIND[i.kind]} · ${state}${i.stale ? ' · host unreachable' : ''}</small>
           ${present ? `<button class="owner" data-owner="${esc(owner.key)}" title="${esc(owner.key)}">${owner.type === 'job' ? 'Open job' : 'Open session'} ${esc(ownerName(owner))}</button>`
                     : `<button class="owner" data-context="${esc(i.id)}">Open context</button>`}
-          ${i.kind === 'decision' ? `<button class="owner" data-context="${esc(i.id)}">Answer question</button>` : ''}
+          ${i.refusals ? `<button class="owner" data-context="${esc(i.id)}">Review refused commands</button>`
+            : i.kind === 'decision' ? `<button class="owner" data-context="${esc(i.id)}">Answer question</button>` : ''}
           <div class="aa">${actions}</div><em class="err"></em></div>
       </li>`;
     }).join('')}</ul>`;
 }
 panel.addEventListener('click', async ev => {
-  if (ev.target.closest('[data-close]')) { closePanel(); return; }
+  if (ev.target.closest('[data-close]')) { closePanel(true); return; }
   const context = ev.target.closest('[data-context]');
   if (context) { openAttentionReader(items.find(item => item.id === context.dataset.context)); return; }
   const owner = ev.target.closest('[data-owner]');
@@ -160,7 +170,17 @@ panel.addEventListener('click', async ev => {
   }
   // the new state arrives with the next pushed document
 });
-document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && openRoom) closePanel(); });
+// Captured so this Escape closes only the list, not the job panel too; an open reader takes Escape first.
+document.addEventListener('keydown', ev => {
+  if (ev.key !== 'Escape' || openRoom === null || !reader.hidden) return;
+  ev.stopPropagation();
+  closePanel(true);
+}, true);
+// A click anywhere but the list, its lanterns or the reader it opened closes it; focus goes where the click went.
+document.addEventListener('pointerdown', ev => {
+  if (openRoom === null || panel.contains(ev.target) || reader.contains(ev.target) || ev.target.closest?.('.lantern')) return;
+  closePanel();
+});
 
 // ------------------------------------------------------------------ per frame: one swing on arrival, then still
 const _q = new THREE.Quaternion(), _a = new THREE.Vector3(), _s = { x: 0, y: 0 };

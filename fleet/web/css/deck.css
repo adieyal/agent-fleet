@@ -185,9 +185,10 @@ header{position:fixed;top:0;left:0;right:0;height:52px;display:flex;align-items:
 /* ---------- attention list: opened from a lantern */
 #attnPanel{position:fixed;left:0;top:0;z-index:40;width:320px;max-width:calc(100vw - 16px);max-height:60vh;overflow:auto;
   background:var(--panel-solid);border:1px solid var(--line2);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.5);font-size:13px}
-#attnPanel .ah{display:flex;align-items:center;justify-content:space-between;padding:10px 12px 6px}
+#attnPanel .ah{display:flex;align-items:center;justify-content:space-between;padding:10px 12px 6px;
+  position:sticky;top:0;z-index:1;background:var(--panel-solid)}
 #attnPanel h3{margin:0;font:600 13px var(--display);letter-spacing:.04em}
-#attnPanel .ah button{border:0;background:none;color:var(--muted);cursor:pointer}
+#attnPanel .ah button{border:0;background:none;color:var(--muted);cursor:pointer;padding:4px 6px;font-size:14px}
 #attnPanel ul{list-style:none;margin:0;padding:0 8px 8px}
 .attn-item{display:flex;gap:10px;padding:8px 6px;border-top:1px solid var(--line)}
 .attn-item .ak{flex:none;width:22px;text-align:center;font:800 15px/1.3 var(--sans);color:#ff8fcb}
@@ -516,6 +517,14 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 .rd-actions svg{width:15px;height:15px;flex:none}
 .rd-actions .rd-x{width:34px;padding:0;justify-content:center;font-size:15px}
 .decision-context{white-space:pre-wrap;overflow-wrap:anywhere}
+.refusals{display:grid;gap:8px;padding-left:1.6em;font-size:.9em}
+.refusals li{display:grid;gap:1px}
+.refusals code{white-space:pre-wrap;overflow-wrap:anywhere;justify-self:start}
+.refusals small{color:var(--rd-muted);font-size:.85em}
+.refusal-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
+.refusal-actions button{padding:10px 16px;border:1px solid var(--rd-rule);border-radius:6px;background:var(--rd-bg2);color:var(--rd-text);font:15px var(--sans);cursor:pointer}
+.refusal-actions button:disabled{opacity:.6;cursor:default}
+.prose [role="alert"]:empty,.prose .refusal-done:empty{display:none}
 .decision-answer{display:grid;gap:16px;font:16px/1.5 var(--sans)}
 .decision-answer label{display:block}
 .decision-answer textarea{display:block;box-sizing:border-box;width:100%;padding:10px;resize:vertical}
