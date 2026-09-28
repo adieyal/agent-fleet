@@ -468,7 +468,8 @@ def command_tail(arguments: argparse.Namespace) -> None:
 
 def command_attach(arguments: argparse.Namespace) -> None:
     host, job_id = resolve(arguments.job)
-    command = host.shell_command(f"tmux -L fleet attach -t fleet-{job_id}", interactive=True)
+    job = transport.call(host, ["show", job_id])
+    command = host.shell_command(job["tmux"], interactive=True)
     os.execvp(command[0], command)
 
 

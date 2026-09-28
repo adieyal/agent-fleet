@@ -33,14 +33,16 @@ import time
 from pathlib import Path
 from typing import Any, Deque, Dict, Iterator, List, Optional, Tuple
 
-FLEET_HOME = Path(os.environ.get("FLEET_HOME", Path.home() / ".fleet"))
+FLEET_HOME = Path(os.environ.get("FLEET_HOME", Path.home() / ".fleet")).expanduser().resolve()
 JOBS_DIRECTORY = FLEET_HOME / "jobs"
 CONFIG_PATH = FLEET_HOME / "config.json"
 CLAUDE_PROJECTS_DIRECTORY = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude")) / "projects"
 CODEX_SESSIONS_DIRECTORY = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")) / "sessions"
 TMUX_PREFIX = "fleet-"
 # A private tmux server without the user's config: personal configs can take seconds to load.
-TMUX_COMMAND = ["tmux", "-L", "fleet", "-f", "/dev/null"]
+TMUX_SOCKET = ("fleet" if FLEET_HOME == (Path.home() / ".fleet").resolve() else
+               "fleet-" + hashlib.sha256(str(FLEET_HOME).encode()).hexdigest()[:16])
+TMUX_COMMAND = ["tmux", "-L", TMUX_SOCKET, "-f", "/dev/null"]
 SUMMARY_LENGTH = 160
 TERMINAL_STATUSES = ("done", "failed", "cancelled", "lost")
 STREAM_PROTOCOL_VERSION = 3
@@ -608,13 +610,34 @@ def launch_runner(job_id: str) -> None:
         return
     session = tmux_session(job_id)
     subprocess.run([*TMUX_COMMAND, "kill-session", "-t", session], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    runner_command = f"{shlex.quote(sys.executable)} {shlex.quote(os.path.abspath(__file__))} _run {job_id}"
+    environment = [f"FLEET_HOME={FLEET_HOME}", f"PATH={os.environ['PATH']}"]
+    environment += [f"{key}={os.environ[key]}" for key in ("HOME", "CODEX_HOME", "CLAUDE_CONFIG_DIR")
+                    if key in os.environ]
+    runner_command = shlex.join(["env", *environment, sys.executable, os.path.abspath(__file__), "_run", job_id])
     log_path = JOBS_DIRECTORY / job_id / "runner.log"
     subprocess.run([*TMUX_COMMAND, "new-session", "-d", "-s", session, "-c", job["cwd"],
                     f"{runner_command} 2>&1 | tee -a {shlex.quote(str(log_path))}"], check=True,
                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for _ in range(50):
-        if runner_alive(read_job(job_id)):
+        job = read_job(job_id)
+        if runner_alive(job) or derive_status(job) in TERMINAL_STATUSES:
+            return
+        session_state = subprocess.run([*TMUX_COMMAND, "has-session", "-t", session],
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if session_state.returncode != 0:
+            # The launcher still knows the job even when the runner cannot load it.
+            reason = "runner exited before starting the job"
+            for line in tail_lines(log_path, 40):
+                with contextlib.suppress(ValueError):
+                    record = json.loads(line)
+                    if isinstance(record, dict) and "error" in record:
+                        reason = record["error"]
+            with locked_job(job_id) as job:
+                if derive_status(job) != "queued":
+                    return
+                step = next(step for step in job["steps"] if step["status"] == "pending")
+                step.update(status="failed", finished_at=now(), result=reason, reason=reason)
+            append_event(job_id, {"kind": "job", "status": "failed", "summary": reason})
             return
         time.sleep(0.1)
 
@@ -640,7 +663,7 @@ def job_summary(job: JsonObject, event_count: int) -> JsonObject:
         "activity": activity,
         "events": events[-event_count:] if event_count else [],
         "session_id": job.get("session_id"),
-        "tmux": f"tmux -L fleet attach -t {tmux_session(job['id'])}",
+        "tmux": shlex.join([*TMUX_COMMAND[:3], "attach", "-t", tmux_session(job['id'])]),
         "documents": job_documents(job),
         "trace": {"path": str(JOBS_DIRECTORY / job["id"] / "events.jsonl"),
                   "availability": "available" if (JOBS_DIRECTORY / job["id"] / "events.jsonl").is_file()

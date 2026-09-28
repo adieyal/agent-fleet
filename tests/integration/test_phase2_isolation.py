@@ -173,7 +173,15 @@ def test_gate_checks_and_kill_reconcile_with_local_workers(tmp_path, monkeypatch
         worker_home = Path(environment.homes["local"])
         (worker_home / "exec").write_text("import time\ntime.sleep(60)\n")
         (worker_home / "config.json").write_text(json.dumps({"codex": sys.executable}))
+        calls = []
+        call = environment.call
+        def recording_call(host, arguments, **kwargs):
+            calls.append(arguments)
+            return call(host, arguments, **kwargs)
+        monkeypatch.setattr(environment, "call", recording_call)
         gate.killed_agent(environment, *state)
+        create, = [arguments for arguments in calls if arguments[0] == "create"]
+        assert "--hold" not in create
     finally:
         environment.cleanup()
     assert not worker_home.exists()
