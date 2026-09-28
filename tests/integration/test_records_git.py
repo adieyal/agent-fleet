@@ -113,7 +113,7 @@ def test_summary_cutover_and_new_writes_have_no_stored_body(tmp_path):
 
 def test_mandate_is_validated_and_revision_is_confirmed(tmp_path):
     _, records, repo = setup_records(tmp_path)
-    value = dict(goal='Ship', constraints=['No deploy'], decision_authority=['Plan'],
+    value = dict(goal='Ship', constraints=['No deploy'], decision_authority=['dispatch'],
                  escalation_conditions=['Risk'], criteria_it_may_judge=['c1'])
     result = records.write_mandate('p', 'mandate.json', json.dumps(value), key='m', actor='author')
     mandate = records.mandate('p', 'mandate.json')
