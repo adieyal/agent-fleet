@@ -23,6 +23,7 @@ from fleet.transport import FleetError
 from fleet.composition import open_work, open_execution, open_library, open_decisions
 from fleet.projections.project import project_status
 from fleet.web.job_store import ProjectDocuments
+from fleet.web.overview import Overview
 T = TypeVar("T")
 
 
@@ -162,15 +163,44 @@ class LiveWorkspace:
         registry, hosts = self.registry, self.job_hosts()
         projects = []
         for project_id in self.documents.projects():
-            jobs = self.documents.jobs(project_id)
-            for job in jobs:
-                reachable, listed = hosts.get(job["host"], (False, set()))
-                job["availability"] = ("on host" if reachable and job["id"] in listed
-                                       else "gone from host" if reachable else "host offline")
+            jobs = self.stored_jobs(project_id, hosts)
             project = registry.projects.get(project_id)
             projects.append({"id": project_id, "name": project.name if project else None,
                              "jobs": jobs, "working": self.documents.working(project_id)})
         return projects
+
+    def library_overview(self, library: Any) -> list[dict[str, Any]]:
+        """Each project's overview (see fleet.web.overview): every project with a library root or a document store."""
+        overview = self.__dict__.setdefault("overview", Overview())
+        registry, hosts = self.registry, self.job_hosts()
+        attention = attention_items(self.attention, [{"name": name, "ok": ok} for name, (ok, _) in hosts.items()])
+        documents = library.list()
+        projects: dict[str, dict[str, Any]] = {}
+        for key in sorted(library.roots):
+            project_id = self.library_project_id(key)
+            projects.setdefault(project_id or "library:" + key, {"project_id": project_id, "library": key})
+        for project_id in self.documents.projects():
+            projects.setdefault(project_id, {"project_id": project_id, "library": None})
+        result = []
+        for entry in projects.values():
+            project_id, key = entry["project_id"], entry["library"]
+            project = registry.projects.get(project_id) if project_id else None
+            jobs = self.stored_jobs(project_id, hosts) if project_id else []
+            result.append(overview.build(
+                name=project.name if project else key or project_id, project_id=project_id, library=key,
+                root=library.root(key) if key else None,
+                documents=[document for document in documents if document["project"] == key] if key else [],
+                jobs=jobs, attention=attention,
+                read_job=lambda job_key, document_id, project_id=project_id: self.documents.text(project_id, job_key, document_id)))
+        return result
+
+    def stored_jobs(self, project_id: str, hosts: dict[str, tuple[bool, set[str]]]) -> list[dict[str, Any]]:
+        jobs = self.documents.jobs(project_id)
+        for job in jobs:
+            reachable, listed = hosts.get(job["host"], (False, set()))
+            job["availability"] = ("on host" if reachable and job["id"] in listed
+                                   else "gone from host" if reachable else "host offline")
+        return jobs
 
     def library_project_id(self, key: str) -> str | None:
         """The project a `fleet library add` key names: its ID, its name, or a label linked to it on one project."""

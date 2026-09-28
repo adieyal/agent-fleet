@@ -27,7 +27,7 @@ from fleet.web.documents import STATUS_LINE, render_markdown
 UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
 MARKDOWN_SUFFIXES = (".md", ".markdown", ".mdx")
 READ_LIMIT = 2_000_000
-JOB_FIELDS = ("id", "project", "description", "agent", "model", "status", "created_at", "updated_at")
+JOB_FIELDS = ("id", "project", "description", "agent", "model", "cwd", "status", "created_at", "updated_at")
 STEP_FIELDS = ("index", "title", "status", "started_at", "finished_at")
 DOCUMENT_FIELDS = ("id", "kind", "name", "step", "path", "size", "mtime")
 
@@ -147,7 +147,12 @@ class ProjectDocuments:
                           "key": directory.name, "documents": documents})
         return sorted(found, key=lambda job: job.get("created_at") or 0, reverse=True)
 
-    def read(self, project_id: str, job_key: str, document_id: str) -> dict[str, Any] | None:
+    def text(self, project_id: str, job_key: str, document_id: str) -> str | None:
+        """A stored document's Markdown as the host served it, or None when there is no copy."""
+        found = self._stored(project_id, job_key, document_id)
+        return None if found is None else found[2].decode(errors="replace")
+
+    def _stored(self, project_id: str, job_key: str, document_id: str) -> tuple[dict, dict, bytes] | None:
         if job_key != safe_name(job_key):
             return None
         directory = self.project_directory(project_id) / "jobs" / job_key
@@ -156,8 +161,13 @@ class ProjectDocuments:
         if summary is None or entry is None or not entry.get("file"):
             return None
         raw = self._contained(project_id, directory / entry["file"])
-        if raw is None:
+        return None if raw is None else (summary, entry, raw)
+
+    def read(self, project_id: str, job_key: str, document_id: str) -> dict[str, Any] | None:
+        found = self._stored(project_id, job_key, document_id)
+        if found is None:
             return None
+        summary, entry, raw = found
         markdown = STATUS_LINE.sub("", raw.decode(errors="replace")).strip()
         return {**{key: entry.get(key) for key in DOCUMENT_FIELDS}, "truncated": bool(entry.get("truncated")),
                 "job": summary.get("id"), "host": summary.get("host"), "agent": summary.get("agent"),

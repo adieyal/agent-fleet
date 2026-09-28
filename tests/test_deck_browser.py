@@ -613,14 +613,17 @@ def test_demo_session_idle_for_an_hour_comes_back_to_work(browser: Browser, base
 def test_library_lists_and_opens_documents(deck: Deck) -> None:
     page = deck.page
     page.locator("#libraryOpen").click()
+    page.locator('[data-lib-view="all"]').click()
     expect(page.locator("#libList .lib-doc[data-project]")).to_have_count(3)
     # a library key that is a linked label joins its registered project's group
     expect(page.locator("#libList .lib-group h3")).to_have_text(["agent-fleet", "Restoke"])
+    page.locator('#libList .tree-folder[data-folder="restoke:docs/"] > summary').click()   # folders start folded
     page.locator('#libList .lib-doc[data-id="docs/suppliers-v2.md"]').click()
     expect(page.locator("#reader")).to_be_visible()
     expect(page.locator("#rdBody h1")).to_have_text("Suppliers V2")
     page.keyboard.press("Escape")
     expect(page.locator("#reader")).to_be_hidden()
+    page.locator('[data-lib-view="overview"]').click()   # leave the shared page on the default view
     page.locator(".lib-head [data-lib-close]").click()
     expect(page.locator("#libraryPane")).to_be_hidden()
     assert deck.errors == []

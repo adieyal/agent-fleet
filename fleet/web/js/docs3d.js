@@ -221,6 +221,7 @@ export const DOC_KIND = {
   outbox: { label: 'Outbox', glyph: '⇪' },
   brief:   { label: 'Brief',   glyph: '☰' },
   context: { label: 'Context', glyph: '⧉' },
+  prd:     { label: 'PRD',     glyph: '☰' },   // a Ralph prd.json in a project library, read as a page
 };
 // what the job was given rather than what it produced: listed and readable, but never printed onto the press
 const INPUT_KINDS = new Set(['brief', 'context']);

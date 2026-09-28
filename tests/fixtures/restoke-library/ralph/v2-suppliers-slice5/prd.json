@@ -1,0 +1,334 @@
+{
+  "project": "Restoke V2 suppliers migration: slice 5, bulk actions, selection, merge and copy",
+  "status": "DRAFT \u2014 not reviewed by the human; open questions in questions.md (Q1-Q30, none answered); criteria that depend on one cite it as (Qn)",
+  "branchName": "ralph/v2-suppliers-slice5",
+  "baseBranch": "adi/v2-suppliers",
+  "worktree": "/home/adi/Development/restoke/webapp/worktrees/v2-slice5",
+  "plan": null,
+  "description": "Move the bulk and merge actions of the suppliers list (/app/suppliers) and the supplier page (/app/suppliers/<id>) to V2: supplier selection in the list view (r\u2026",
+  "objectives": [
+    "O1 Slice 5: every 'Slice 5 \u2014' entry and the 'visual gap until slice 5' entry in suppliers/parity.yaml and supplier-detail/parity.yaml is done in V2 under V2_SUP\u2026",
+    "O2 Legacy look: each dialog uses its legacy template's markup and classes (suppliers.html bulk modals, merge_supplier_modal.html, supplier.html's bulk modals, c\u2026",
+    "O3 Safe writes: every V2 endpoint is tenancy-scoped, acts only on the URL supplier's items, and enforces on the server the rules the legacy menus apply when sho\u2026",
+    "O4 Simplicity: the smallest code that meets each story, on the DX API (read/write, useWrite, WriteButton, WriteError, AreYouSureDialog write=); unlikely edge ca\u2026"
+  ],
+  "outOfScope": [
+    "Import suppliers from the accounting system (Xero, QuickBooks) or the Gmail inbox, and Add or update items from a file (uploadSupplierBasketModal): slice 6",
+    "The External Customers view, HQ, the SupplierKey portal and legacy=1 pages: keep legacy and their legacy modals",
+    "Fixing legacy endpoints: the holes in questions.md Q4 (merge_suppliers without role/read-only/self-merge checks, bulk_delete_suppliers ignoring read-only, the i\u2026",
+    "Legacy faults not visible in normal use that the human does not ask to fix (the conversion cache's rate 1 is fixed in V2 per Q26; the missing tag-driven stockta\u2026",
+    "Changing the Lit merge modal's behaviour (survivor choice, stale_order_data wording, the 7-day window): raised with product (Q27)",
+    "A frontend Mixpanel client"
+  ],
+  "userStories": [
+    {
+      "id": "US-073",
+      "objective": "O1",
+      "title": "Slice 5 parity checklist for selection, bulk actions, merge and copy",
+      "priority": 73,
+      "passes": true,
+      "dependsOn": [],
+      "startCommit": "438ab9fb83be1bd393fa75bf160ddeed52b0b507",
+      "attempts": 1,
+      "mergedAt": "01b51d1211fb05fff09ed871ad192a9a3c8b8456",
+      "acceptanceCriteria": [
+        "List selection (suppliers.html:59-62, 81-103; supplier_listing_row.html:6; base.js:6727-6750, 11557-11583; view_utils.py\u2026",
+        "Bulk delete and bulk read only (suppliers.html:128-173; base.js:4506-4557; supplier_views.py:1518-1534): the header, bod\u2026"
+      ]
+    },
+    {
+      "id": "US-074",
+      "objective": "O3",
+      "title": "Slice-4 audit fixes on adi/v2-suppliers",
+      "priority": 74,
+      "passes": true,
+      "dependsOn": [],
+      "startCommit": "438ab9fb83be1bd393fa75bf160ddeed52b0b507",
+      "attempts": 3,
+      "mergedAt": "7909e6dcb3ddd308ad8f88df99dd277111e49b32",
+      "acceptanceCriteria": [
+        "'Create New Supplier' is sent only after a successful create (corrections.md slice 4 [US-071] supervisor note): restoke/\u2026",
+        "'Update Supplier Advanced Settings' (views/v2/supplier_editor.py:395-437) also carries each posted Xero tracking selecti\u2026"
+      ]
+    },
+    {
+      "id": "US-075",
+      "objective": "O2",
+      "title": "Slice-4 UI fixes on adi/v2-suppliers with the DX API",
+      "priority": 75,
+      "passes": true,
+      "dependsOn": [
+        "US-073"
+      ],
+      "startCommit": "7909e6dcb3ddd308ad8f88df99dd277111e49b32",
+      "attempts": 1,
+      "mergedAt": "00b855c5205d5b799f93fc3e593a10aefd676bba",
+      "acceptanceCriteria": [
+        "A failed load of Change in other venues (features/supplier-editor/ui/other-venues-dialog.tsx:39-41) and Advanced Setting\u2026",
+        "advanced-settings-dialog.tsx:103-105's hand-written save error becomes <WriteError write={\u2026}> with the Oops wording as c\u2026"
+      ]
+    },
+    {
+      "id": "US-076",
+      "objective": "O2",
+      "title": "Select suppliers in the list view",
+      "priority": 76,
+      "passes": true,
+      "dependsOn": [
+        "US-075"
+      ],
+      "startCommit": "00b855c5205d5b799f93fc3e593a10aefd676bba",
+      "attempts": 1,
+      "mergedAt": "fd7515992b371d4e1495ee8fec3ffde9e8d7e843",
+      "acceptanceCriteria": [
+        "In list view at md and up only: the select-all 'input.bulk-select-all' in legacy's 'bulk-select' wrapper (suppliers.html\u2026",
+        "Until a row is ticked the Bulk Actions menu shows the note 'Select items using checkboxes first' with its info icon and\u2026"
+      ]
+    },
+    {
+      "id": "US-077",
+      "objective": "O3",
+      "title": "Bulk delete suppliers",
+      "priority": 77,
+      "passes": true,
+      "dependsOn": [
+        "US-074",
+        "US-076"
+      ],
+      "startCommit": "fd7515992b371d4e1495ee8fec3ffde9e8d7e843",
+      "attempts": 1,
+      "mergedAt": "69b670f63c3a0773bd40e1aff98b63e6f7c421f6",
+      "acceptanceCriteria": [
+        "POST /api/v2/suppliers/bulk/ {action: 'delete', supplierIds} runs SupplierManager(supplier).delete_supplier() (supplier_\u2026",
+        "403 unless every chosen supplier is is_supplier_editable for the user (Q8); tests prove the 403 and the admin case; supp\u2026"
+      ]
+    },
+    {
+      "id": "US-078",
+      "objective": "O3",
+      "title": "Bulk mark suppliers read only or editable",
+      "priority": 78,
+      "passes": true,
+      "dependsOn": [
+        "US-077"
+      ],
+      "startCommit": "69b670f63c3a0773bd40e1aff98b63e6f7c421f6",
+      "attempts": 1,
+      "mergedAt": "5deb3bba8bab557c3278952ab3ea2a5896e7178f",
+      "acceptanceCriteria": [
+        "POST /api/v2/suppliers/bulk/ {action: 'markReadOnly' | 'markEditable', supplierIds} sets isReadOnly with one queryset up\u2026",
+        "No audit event, as legacy (Q29); a test proves none is sent"
+      ]
+    },
+    {
+      "id": "US-079",
+      "objective": "O2",
+      "title": "Merge with another Supplier opens as a V2 dialog",
+      "priority": 79,
+      "passes": true,
+      "dependsOn": [
+        "US-078"
+      ],
+      "startCommit": "5deb3bba8bab557c3278952ab3ea2a5896e7178f",
+      "attempts": 1,
+      "mergedAt": "8da54aff06c7b54e458343c134a556ef4396ed08",
+      "acceptanceCriteria": [
+        "GET /api/v2/suppliers/<id>/merge-options/ returns the supplier's name and the restaurant's other suppliers ordered as le\u2026",
+        "The dialog (from the list row, the grid card and the supplier page, through supplier-editor's one open-dialog state) sho\u2026"
+      ]
+    },
+    {
+      "id": "US-080",
+      "objective": "O3",
+      "title": "Merge suppliers",
+      "priority": 80,
+      "passes": true,
+      "dependsOn": [
+        "US-079"
+      ],
+      "startCommit": "8da54aff06c7b54e458343c134a556ef4396ed08",
+      "attempts": 1,
+      "mergedAt": "ce3c804292d541119789c310c510cab38a295365",
+      "acceptanceCriteria": [
+        "The endpoint runs Supplier.merge_supplier (models.py:4185-4193) inside transaction.atomic (Q19): the URL supplier surviv\u2026",
+        "The server enforces the menu's rule on the survivor (not isReadOnly or is_admin, and not an external customer; supplier_\u2026"
+      ]
+    },
+    {
+      "id": "US-081",
+      "objective": "O2",
+      "title": "GET the bulk edit options, and Bulk Edit opens as a V2 dialog",
+      "priority": 81,
+      "passes": true,
+      "dependsOn": [
+        "US-080"
+      ],
+      "startCommit": "ce3c804292d541119789c310c510cab38a295365",
+      "attempts": 3,
+      "mergedAt": "2bac1be63c15488ab2b7fb606f1da7a12df7b363",
+      "acceptanceCriteria": [
+        "GET /api/v2/suppliers/<id>/items/bulk-options/ returns the restaurant's tags and storage areas, every UOM, the accountin\u2026",
+        "The dialog shows 'Bulk Edit Supplier Items', 'This will edit the following supplier items:' with every selected item's n\u2026"
+      ]
+    },
+    {
+      "id": "US-082",
+      "objective": "O3",
+      "title": "Save a bulk edit of items",
+      "priority": 82,
+      "passes": true,
+      "dependsOn": [
+        "US-081"
+      ],
+      "startCommit": "2bac1be63c15488ab2b7fb606f1da7a12df7b363",
+      "attempts": 2,
+      "mergedAt": "2a393f6ce0284df2560048eb325d748c0e1d1f59",
+      "acceptanceCriteria": [
+        "Stored as bulk_edit_supplier_items (supplier_views.py:1676-1771): tags and storage areas replace the item's values and a\u2026",
+        "Only the URL supplier's items are changed; an external customer is 403; the UOM, both-UOMs, discount and orderable field\u2026"
+      ]
+    },
+    {
+      "id": "US-083",
+      "objective": "O3",
+      "title": "The success alert, and bulk add a conversion",
+      "priority": 83,
+      "passes": true,
+      "dependsOn": [
+        "US-082"
+      ],
+      "startCommit": "2a393f6ce0284df2560048eb325d748c0e1d1f59",
+      "attempts": 1,
+      "mergedAt": "7b03c30c81f4df5bfbfcef42c85eaafc1017077d",
+      "acceptanceCriteria": [
+        "frontend/src/v2/platform/ui SuccessAlert renders index.html:324-327 ('restoke-alert restoke-success-alert alert alert-su\u2026",
+        "'Bulk Add Conversion' (supplier.html:138-142, only with can_edit_conversions; today a LegacyBulkEntry) opens a dialog: '\u2026"
+      ]
+    },
+    {
+      "id": "US-084",
+      "objective": "O3",
+      "title": "Bulk create recipes or products from items",
+      "priority": 84,
+      "passes": true,
+      "dependsOn": [
+        "US-083"
+      ],
+      "startCommit": "7b03c30c81f4df5bfbfcef42c85eaafc1017077d",
+      "attempts": 2,
+      "mergedAt": "c9066a558247a903eddf4c516d58cd5ea35dcfdf",
+      "acceptanceCriteria": [
+        "US-081's read also returns the restaurant's active DISH recipe categories (supplier_views.py:522-527), isCentralKitchen\u2026",
+        "The entry reads 'Bulk Create Products' when restaurant.isCentralKitchen, else 'Bulk Create Recipes' (supplier.html:135-1\u2026"
+      ]
+    },
+    {
+      "id": "US-085",
+      "objective": "O3",
+      "title": "V2 endpoints for merging items",
+      "priority": 85,
+      "passes": true,
+      "dependsOn": [
+        "US-084"
+      ],
+      "startCommit": "c9066a558247a903eddf4c516d58cd5ea35dcfdf",
+      "attempts": 1,
+      "mergedAt": "64cafcb2bb652839aa1190031ca729b68eeea24b",
+      "acceptanceCriteria": [
+        "The adapter wraps build_preview_merge (merge/preview.py:300-352) and prepare_merge_execute + SupplierItemMerger.execute\u2026",
+        "2-10 items, all the URL supplier's; is_supplier_editable; and, as the menu (supplier.html:151-158), not a read-only or i\u2026"
+      ]
+    },
+    {
+      "id": "US-086",
+      "objective": "O2",
+      "title": "Merge Items opens legacy's merge modal on V2",
+      "priority": 86,
+      "passes": true,
+      "dependsOn": [
+        "US-085"
+      ],
+      "startCommit": "64cafcb2bb652839aa1190031ca729b68eeea24b",
+      "attempts": 2,
+      "mergedAt": "9737c0b73dde896ef6a1513ade879859b67f70ee",
+      "acceptanceCriteria": [
+        "frontend/src/features/supplier-item-merge gets an optional api override (default: its current @shared/api calls, supplie\u2026",
+        "A @lit/react wrapper in frontend/src/shared/react (as the rs-* wrappers) renders the element; the V2 items card passes t\u2026"
+      ]
+    },
+    {
+      "id": "US-087",
+      "objective": "O2",
+      "title": "GET the copy venues, and Bulk Copy opens as a V2 dialog",
+      "priority": 87,
+      "passes": true,
+      "dependsOn": [
+        "US-086"
+      ],
+      "startCommit": "9737c0b73dde896ef6a1513ade879859b67f70ee",
+      "attempts": 2,
+      "mergedAt": "e1ef431c35714cfebe181440fd5da186d37cbaa1",
+      "acceptanceCriteria": [
+        "The Advanced Copy Options component (multi_restaurant_additional_copy_inputs.html:1-21) moves from features/supplier-edi\u2026",
+        "GET /api/v2/suppliers/<id>/items/copy-venues/ returns the venues of get_restaurants_by_supplier_existance (copy_to_other\u2026"
+      ]
+    },
+    {
+      "id": "US-088",
+      "objective": "O3",
+      "title": "Copy items to other venues",
+      "priority": 88,
+      "passes": true,
+      "dependsOn": [
+        "US-087"
+      ],
+      "startCommit": "e1ef431c35714cfebe181440fd5da186d37cbaa1",
+      "attempts": 1,
+      "mergedAt": "7127dc1af629b5ace45bf5f3ac0741ea70341cd4",
+      "acceptanceCriteria": [
+        "Saves the chosen options as the venue's preferences.supplier_item.additional_copy_settings, also with no venue chosen (s\u2026",
+        "Only venues the GET lists as having the supplier are accepted; any other is 403 (legacy writes into any restaurant, Q4/Q\u2026"
+      ]
+    },
+    {
+      "id": "US-089",
+      "objective": "O1",
+      "title": "Slice 5 goes live under V2_SUPPLIERS",
+      "priority": 89,
+      "passes": true,
+      "dependsOn": [
+        "US-088"
+      ],
+      "startCommit": "7127dc1af629b5ace45bf5f3ac0741ea70341cd4",
+      "attempts": 1,
+      "mergedAt": "ab62a6f834d972f69c83b6c867a63ebaed3f928c",
+      "acceptanceCriteria": [
+        "FLAGGED_PAGES rows list the legacy URL names slice 5 replaces (name the unnamed re_paths first, as US-040 did): bulk_del\u2026",
+        "No slice-5 entry on /app/suppliers or /app/suppliers/<id> (list Bulk Actions, the menus' Merge with another Supplier, th\u2026"
+      ]
+    },
+    {
+      "id": "US-090",
+      "objective": "O1",
+      "title": "Browser smoke test for slices 4 and 5, and ready parity checklists",
+      "priority": 90,
+      "passes": true,
+      "dependsOn": [
+        "US-089"
+      ],
+      "startCommit": "ab62a6f834d972f69c83b6c867a63ebaed3f928c",
+      "attempts": 2,
+      "mergedAt": "c369c8419634be09d0be90ec363a031e0f6e9882",
+      "acceptanceCriteria": [
+        "With V2_SUPPLIERS on, the slice-4 journey: create a supplier with New Supplier and land on its page; edit its details an\u2026",
+        "The slice-5 journey: in list view select two suppliers, as admin bulk mark them read only and back, bulk delete one and\u2026"
+      ]
+    }
+  ],
+  "decisions": [
+    "Carried from slice 4 (ralph/v2-suppliers-slice4/corrections.md): the skill is the authority; one flag V2_SUPPLIERS; server rules are the legacy menu's, nothing\u2026",
+    "Draft (2026-09-26): stories are serialised by dependsOn because they share restoke/main/modules/suppliers (dtos.py, ports.py, facade), persistence/django/suppli\u2026",
+    "Draft (2026-09-26): slice 4's US-071 is re-applied in US-074/US-075 on adi/v2-suppliers with the DX API, not cherry-picked (Q1); its smoke test and ready checkl\u2026"
+  ],
+  "openQuestions": "See questions.md"
+}

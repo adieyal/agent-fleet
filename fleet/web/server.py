@@ -310,6 +310,13 @@ def make_handler(state: FleetState | FixtureState,
                     {"documents": documents, "projects": state.library_projects()}).encode())
             elif path == "/api/library/doc":
                 self.library_document()
+            elif path == "/api/library/overview":
+                try:
+                    projects = state.library_overview(library)
+                except ValueError as error:
+                    self.respond(400, "application/json", json.dumps({"error": str(error)}).encode())
+                    return
+                self.respond(200, "application/json", json.dumps({"projects": projects}).encode())
             elif path in ("/api/library/job", "/api/library/working"):
                 self.stored_document(path.rsplit("/", 1)[1])
             elif path == "/api/move-in":

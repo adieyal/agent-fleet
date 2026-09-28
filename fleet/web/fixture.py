@@ -33,6 +33,7 @@ from fleet.projections.workspace import annotate, resolve, registry_config
 from fleet.transport import FleetError
 from fleet.web.documents import STATUS_LINE, render_markdown
 from fleet.web.job_store import ProjectDocuments
+from fleet.web.library import ProjectLibrary
 from fleet.web.live import LiveWorkspace
 
 
@@ -91,7 +92,10 @@ class FixtureState(LiveWorkspace):
 
     @classmethod
     def load(cls, path: str | Path) -> FixtureState:
-        return cls(json.loads(Path(path).read_text()))
+        fixture = json.loads(Path(path).read_text())
+        fixture["library_roots"] = {project: str(Path(path).parent / folder)
+                                    for project, folder in fixture.get("library_roots", {}).items()}
+        return cls(fixture)
 
     def host_names(self) -> list[str]:
         return [host["name"] for host in self.fixture["hosts"]]
@@ -141,17 +145,26 @@ class FixtureState(LiveWorkspace):
 
 
 class FixtureLibrary:
-    """Same surface as ProjectLibrary, over the fixture's `library` section."""
+    """Same surface as ProjectLibrary, over the fixture's `library` section and any real `library_roots`
+    (folders, relative to the fixture file), which are read as a ProjectLibrary reads them."""
 
     def __init__(self, fixture: dict[str, Any]) -> None:
         self.projects: dict[str, list[dict[str, Any]]] = fixture.get("library", {})
+        self.files = ProjectLibrary(fixture.get("library_roots", {}))
+        self.roots = {**{project: None for project in self.projects}, **self.files.roots}
+
+    def root(self, project: str) -> Path | None:
+        return self.files.root(project)
 
     def list(self) -> list[dict[str, Any]]:
-        return [{"project": project, "id": doc["id"], "name": Path(doc["id"]).name, "title": title(doc),
-                 "kind": "file", "size": len(doc["markdown"].encode()), "mtime": doc["mtime"]}
-                for project, docs in sorted(self.projects.items()) for doc in docs]
+        return sorted([{"project": project, "id": doc["id"], "name": Path(doc["id"]).name, "title": title(doc),
+                        "kind": "file", "size": len(doc["markdown"].encode()), "mtime": doc["mtime"]}
+                       for project, docs in self.projects.items() if project not in self.files.roots for doc in docs]
+                      + self.files.list(), key=lambda doc: doc["project"])
 
     def read(self, project: str, document_id: str) -> dict[str, Any] | None:
+        if project in self.files.roots:
+            return self.files.read(project, document_id)
         doc = next((doc for doc in self.projects.get(project, []) if doc["id"] == document_id), None)
         if doc is None:
             return None

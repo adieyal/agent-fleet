@@ -163,6 +163,16 @@ def test_a_departed_jobs_report_opens_from_the_library(
         store.keep(project_id, "worker", job["id"], document, "# Stock count audit\n\nThree counts disagree.\n\nFLEET_STATUS: done")
 
     page.locator("#libraryOpen").click()
+    # this library has no Ralph folders, so on the overview the job is a done workstream, its report a click away
+    page.locator("#libProjects button", has_text="Restoke").click()
+    page.locator("#libList .ov-done > summary").click()
+    card = page.locator("#libList .ws", has_text="Audit last month's stock counts")
+    card.locator(":scope > summary").click()
+    card.locator(".tr", has_text="step 1: Audit the stock counts — Stock count audit").click()
+    expect(page.locator("#rdBody h1")).to_have_text("Stock count audit")
+    page.keyboard.press("Escape")
+
+    page.locator('[data-lib-view="all"]').click()
     departed = page.locator('#libList .lib-job[data-job="worker-0ld5ob"]')
     expect(departed).to_contain_text("Audit last month's stock counts")
     expect(departed).to_contain_text("worker · done")

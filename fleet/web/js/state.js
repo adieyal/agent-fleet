@@ -15,6 +15,7 @@ import {
   closePanel, collectEvents, renderFeed, renderLegend, renderLive, renderPanel, renderStats, updateHint,
 } from './panel.js';
 import { followDoc, openReader, readerTarget } from './reader.js';
+import { refreshLibrary } from './library.js';
 import { applyFocus } from './focus.js';
 import { applyAttention } from './attention.js';
 import { patchScene } from './dim.js';
@@ -177,6 +178,7 @@ export function applyState(doc) {
   for (const p of pipelines) updateSankey(p);
   openLinkedDoc();
   followDoc(workOf(readerTarget()));
+  refreshLibrary();
 }
 
 // ?open=<host>:<job>:<docId> opens that document in the reader once it shows up on the deck (a link to a document)
