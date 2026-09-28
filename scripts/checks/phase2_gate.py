@@ -302,14 +302,13 @@ def killed_agent(environment, store, work, item, execution, payload):
     if auth.exists():
         shutil.copyfile(auth, codex_home / "auth.json")
     request = payload(str(home))
+    request["hold"] = False
+    request["arguments"].remove("--hold")
     request["arguments"] += ["--env", f"CODEX_HOME={codex_home}", "--env", f"HOME={home}"]
     request["steps"] = ["Think carefully about a plan for a large database migration. Do not use tools or write files."]
     run = execution.dispatch(item.id, host=host.name, runtime="codex", payload=request,
         actor="user", reason="real killed agent", idempotency_key="killed-agent").run
     execution.deliver(run, lambda args, stdin: environment.call(host, args, stdin_text=stdin), lambda *args: None)
-    # A foreground runner avoids touching the user's tmux server.
-    runner = subprocess.Popen(host.fleetd_command(["_run", run.remote_job_id]),
-                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         deadline = time.monotonic() + 20
         while time.monotonic() < deadline:
@@ -317,11 +316,13 @@ def killed_agent(environment, store, work, item, execution, payload):
             if pid is not None:
                 os.kill(pid, signal.SIGKILL)
                 break
-            assert runner.poll() is None, "runner exited before recording an agent pid"
             time.sleep(0.01)
         else:
             raise AssertionError("agent pid was not recorded")
-        assert runner.wait(timeout=20) == 0
+        deadline = time.monotonic() + 20
+        while json.loads((home / "jobs" / run.remote_job_id / "job.json").read_text())["runner_pid"] is not None:
+            assert time.monotonic() < deadline, "runner did not finish after agent was killed"
+            time.sleep(0.01)
         execution.deliver(run, lambda args, stdin: environment.call(host, args, stdin_text=stdin),
                           lambda *args: None, reconcile=True)
         ended = execution.get_run(run.id)
@@ -333,14 +334,8 @@ def killed_agent(environment, store, work, item, execution, payload):
                           lambda *args: None, reconcile=True)
         assert store.latest_sequence() == sequence
     finally:
-        if runner.poll() is None:
-            environment.call(host, ["cancel", run.remote_job_id, "--all-steps"])
-            try:
-                runner.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                runner.kill()
-                runner.wait(timeout=10)
-    print("6. Real killed agent: recorded PID only, failed/lost after reconciliation, claim released.")
+        environment.call(host, ["cancel", run.remote_job_id, "--all-steps"])
+    print("6. Started job on isolated tmux: recorded PID killed, failed/lost after reconciliation, claim released.")
 
 
 def main():
@@ -348,9 +343,10 @@ def main():
 Each host gets unique ~/.local/share/fleet-m5-ID/fleetd.py and ~/.fleet-m5-ID
 (FLEET_HOME). The controller uses a temporary store/config and creates its own
 project and epic. Four held-job checks plus a real dedicated SSH ControlMaster
-disconnect and a real killed Codex agent verify dispatch recovery. Codex runs
+disconnect and a started job with a real killed Codex agent verify dispatch recovery.
+The side-by-side worker starts its runner on its own tmux socket. Codex runs
 locally in the copy's directory with isolated HOME/CODEX_HOME; existing auth is
-copied if present. Requires python3, SSH access and local codex on PATH.
+copied if present. Requires python3, tmux, SSH access and local codex on PATH.
 No live Fleet installation, store, config, tmux server or SSH socket is changed.
 Jobs are cancelled and both host directories removed on exit, including SIGTERM.
 If interrupted by SIGKILL or a host outage, use the printed paths on EACH host:
