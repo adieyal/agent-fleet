@@ -467,32 +467,93 @@ def reported_status(text: str) -> Optional[str]:
     return matches[-1].lower() if matches else None
 
 
-def record_written_documents(job_id: str, cwd: str, paths: List[str], step_index: int) -> None:
-    """Remember Markdown files the agent wrote so the orchestrator and the deck can find them."""
+def record_written_documents(job_id: str, cwd: str, paths: List[str], step_index: int) -> List[Tuple[int, str]]:
+    """Remember Markdown files the agent wrote so the orchestrator and the deck can find them.
+
+    Returns the (index, absolute path) of every given path, whether new or already known.
+    """
+    recorded = []
     with locked_job(job_id) as live_job:
         written = live_job.setdefault("written_documents", [])
-        known = {entry["path"] for entry in written}
+        known = {entry["path"]: index for index, entry in enumerate(written)}
         for path in paths:
             absolute = os.path.normpath(os.path.join(cwd, os.path.expanduser(path)))
             if absolute not in known:
                 written.append({"path": absolute, "step": step_index})
-                known.add(absolute)
+                known[absolute] = len(written) - 1
+            recorded.append((known[absolute], absolute))
+    return recorded
+
+
+def safe_document_source(source: Path, cwd: str) -> bool:
+    """Only a regular file inside the job's working directory may be copied out, never a symlink."""
+    return not source.is_symlink() and source.is_file() and source.resolve().is_relative_to(Path(cwd).resolve())
+
+
+def copy_document(job_id: str, index: int, source: Path) -> Path:
+    artifacts = JOBS_DIRECTORY / job_id / "artifacts"
+    artifacts.mkdir(exist_ok=True)
+    target = artifacts / f"file-{index}{source.suffix}"
+    temporary = artifacts / f"file-{index}.tmp"
+    shutil.copy2(source, temporary)
+    temporary.replace(target)
+    return target
 
 
 def copy_written_documents(job_id: str, cwd: str) -> None:
     """Keep agent-written Markdown under the job's approved document root."""
     with locked_job(job_id) as live_job:
-        artifacts = JOBS_DIRECTORY / job_id / "artifacts"
         for index, entry in enumerate(live_job.get("written_documents", [])):
             source = Path(entry["path"])
-            if source.is_symlink() or not source.is_file() or not source.resolve().is_relative_to(Path(cwd).resolve()):
+            if safe_document_source(source, cwd):
+                entry["artifact"] = str(copy_document(job_id, index, source))
+
+
+class DocumentMirror:
+    """Copies recorded Markdown into the job's artifacts whenever the agent changes it, so it reads live mid-step."""
+
+    def __init__(self, job_id: str, cwd: str) -> None:
+        self.job_id, self.cwd = job_id, cwd
+        self.watched: Dict[int, Path] = {}
+        self.copied: Dict[int, tuple] = {}
+        self.announced: set = set()
+
+    def watch(self, recorded: List[Tuple[int, str]]) -> None:
+        for index, path in recorded:
+            self.watched[index] = Path(path)
+
+    def sync(self) -> None:
+        """Stats the watched files; copies only those whose mtime or size changed since the last copy."""
+        fresh: Dict[int, str] = {}
+        for index, source in self.watched.items():
+            try:
+                stat = source.lstat()
+            except OSError:
                 continue
-            artifacts.mkdir(exist_ok=True)
-            target = artifacts / f"file-{index}{source.suffix}"
-            temporary = artifacts / f"file-{index}.tmp"
-            shutil.copy2(source, temporary)
-            temporary.replace(target)
-            entry["artifact"] = str(target)
+            signature = (stat.st_mtime_ns, stat.st_size)
+            if signature == self.copied.get(index) or not safe_document_source(source, self.cwd):
+                continue
+            try:
+                target = copy_document(self.job_id, index, source)
+            except OSError:
+                continue
+            self.copied[index] = signature
+            if index not in self.announced:
+                fresh[index] = str(target)
+        if fresh:
+            with locked_job(self.job_id) as live_job:
+                written = live_job.get("written_documents", [])
+                for index, target in fresh.items():
+                    written[index]["artifact"] = target
+            self.announced.update(fresh)
+
+
+def write_briefs(job_id: str, steps: List[JsonObject]) -> None:
+    """Each step's prompt as a readable document, there from the moment the step exists."""
+    for step in steps:
+        path = JOBS_DIRECTORY / job_id / f"brief-{step['index']}.md"
+        if not path.exists():
+            path.write_text(step["prompt"])
 
 
 def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
@@ -512,6 +573,7 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
     outcome: JsonObject = {"ok": False, "summary": "", "text": "", "usage": None}
     result_recorded = False
     last_text = ""
+    mirror = DocumentMirror(job_id, job["cwd"])
     raw_path = JOBS_DIRECTORY / job_id / f"raw-{step['index']}.jsonl"
     with open(raw_path, "a") as raw_file:
         process = subprocess.Popen(command, cwd=job["cwd"], env=environment, stdin=subprocess.DEVNULL,
@@ -542,10 +604,12 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
                     with locked_job(job_id) as live_job:
                         live_job["todos"] = event["todos"]
                 if event.get("paths"):
-                    record_written_documents(job_id, job["cwd"], event["paths"], step["index"])
+                    mirror.watch(record_written_documents(job_id, job["cwd"], event["paths"], step["index"]))
                 if event["kind"] == "text":
                     last_text = event.pop("text", None) or event["summary"]
                 append_event(job_id, event)
+            # A Claude write lands after its tool_use line, so every later line checks again.
+            mirror.sync()
         exit_code = process.wait()
     runtime.finish(outcome, exit_code, last_text)
     outcome["exit_code"] = exit_code
@@ -672,7 +736,8 @@ def job_summary(job: JsonObject, event_count: int) -> JsonObject:
 
 
 def job_documents(job: JsonObject) -> List[JsonObject]:
-    """Markdown the job produced: step reports, files the agent wrote, and outbox files.
+    """Markdown the job was given (step briefs, context files) and produced (step reports,
+    files the agent wrote, outbox files).
 
     Only these can be read back with `fleetd read`, so the deck can never be used
     to fetch arbitrary files from the host.
@@ -692,6 +757,14 @@ def job_documents(job: JsonObject) -> List[JsonObject]:
                     document["read_path"] = str(path)
                 documents.append(document)
 
+    for step in job["steps"]:
+        describe(f"brief-{step['index']}", directory / f"brief-{step['index']}.md", "brief",
+                 f"Step {step['index'] + 1} brief", step["index"])
+    context = directory / "context"
+    if context.exists():
+        for path in sorted(context.rglob("*")):
+            if is_markdown(path.name):
+                describe(f"context-{path.relative_to(context)}", path, "context", str(path.relative_to(context)), None)
     for step in job["steps"]:
         report = directory / f"result-{step['index']}.md"
         with contextlib.suppress(OSError):
@@ -1406,6 +1479,7 @@ def command_create(arguments: argparse.Namespace) -> None:
             (directory / "context").mkdir(parents=True)
             (directory / "outbox").mkdir()
             (directory / "job.json").write_text(json.dumps(job, indent=1))
+            write_briefs(job_id, steps)
             append_event(job_id, {"kind": "job", "status": "queued", "summary": f"job created: {arguments.description}"})
     if not arguments.hold:
         start_job(job_id, arguments)
@@ -1473,6 +1547,7 @@ def command_deliver(arguments: argparse.Namespace) -> None:
                 step = make_step(len(job["steps"]), answer, "Answer")
                 step["delivery_key"] = arguments.key
                 job["steps"].append(step)
+                write_briefs(arguments.job, [step])
             pending = step["status"] == "pending"
         if pending:
             launch_runner(arguments.job)
@@ -1493,6 +1568,7 @@ def command_add(arguments: argparse.Namespace) -> None:
             for step in job["steps"]:
                 if step["status"] in ("failed", "cancelled"):
                     step["status"] = "pending"
+        write_briefs(arguments.job, job["steps"])
     append_event(arguments.job, {"kind": "job", "status": "queued", "summary": f"{len(new_steps)} step(s) added"})
     if not arguments.hold:
         launch_runner(arguments.job)
@@ -1513,14 +1589,35 @@ def command_list(arguments: argparse.Namespace) -> None:
           "jobs": [job_summary(job, arguments.events) for job in jobs]})
 
 
-def job_signature(directory: Path) -> tuple:
-    """Changes whenever the job definition or its activity changes."""
-    signature = []
-    for name in ("job.json", "events.jsonl", "outbox"):
+def job_signature(directory: Path, documents: bool = True) -> tuple:
+    """Changes whenever the job definition, its activity or (with documents) one of its documents changes.
+
+    Document folders are stat-ed, never read. Without documents only the outbox folder itself is
+    stat-ed, which is enough to wake a long-finished job the stream no longer follows.
+    """
+    signature: List[Any] = []
+    for name in ("job.json", "events.jsonl") if documents else ("job.json", "events.jsonl", "outbox"):
         with contextlib.suppress(OSError):
             stat = (directory / name).stat()
             signature += [stat.st_mtime_ns, stat.st_size]
+    if documents:
+        signature += [tree_signature(directory / name) for name in ("outbox", "context", "artifacts")]
     return tuple(signature)
+
+
+def tree_signature(root: Path) -> tuple:
+    """(file count, newest mtime, total size) of the regular files under root."""
+    count = newest = total = 0
+    pending = [root]
+    while pending:
+        for entry in scan_directory(pending.pop()):
+            with contextlib.suppress(OSError):
+                if entry.is_dir(follow_symlinks=False):
+                    pending.append(Path(entry.path))
+                elif entry.is_file(follow_symlinks=False):
+                    stat = entry.stat(follow_symlinks=False)
+                    count, newest, total = count + 1, max(newest, stat.st_mtime_ns), total + stat.st_size
+    return count, newest, total
 
 
 def command_stream(arguments: argparse.Namespace) -> None:
@@ -1554,9 +1651,9 @@ def command_stream(arguments: argparse.Namespace) -> None:
             seen = set()
             for path in JOBS_DIRECTORY.glob("*/job.json") if JOBS_DIRECTORY.exists() else []:
                 job_id = path.parent.name
-                signature = job_signature(path.parent)
-                if ignored.get(job_id) == signature:
+                if job_id in ignored and ignored[job_id] == job_signature(path.parent, documents=False):
                     continue
+                signature = job_signature(path.parent)
                 # Recheck processes until both runner and agent have ended.
                 if signature == signatures.get(job_id) and not runner_states.get(job_id):
                     seen.add(job_id)
@@ -1567,7 +1664,7 @@ def command_stream(arguments: argparse.Namespace) -> None:
                     continue
                 status = derive_status(job)
                 if status in TERMINAL_STATUSES and job.get("updated_at", 0) < now() - horizon_seconds:
-                    ignored[job_id] = signature
+                    ignored[job_id] = job_signature(path.parent, documents=False)
                     continue
                 seen.add(job_id)
                 alive = runner_alive(job) or process_alive(job.get("agent_pid"))
