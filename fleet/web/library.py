@@ -8,11 +8,22 @@ from typing import Any
 from fleet.web.documents import render_markdown
 
 READ_LIMIT = 2_000_000
+SKIPPED_DIRECTORIES = {"node_modules", "worktrees", "__pycache__", "venv"}
+
+
+def skipped(relative: Path) -> bool:
+    """Hidden files and folders, and bulky tool folders, never enter a recursive library."""
+    return any(part.startswith(".") for part in relative.parts) or any(
+        part in SKIPPED_DIRECTORIES for part in relative.parts[:-1])
 
 
 class ProjectLibrary:
-    def __init__(self, roots: dict[str, str]) -> None:
-        self.roots = {project: Path(path).expanduser().resolve() for project, path in roots.items()}
+    def __init__(self, roots: dict[str, str | dict[str, Any]]) -> None:
+        """Each root is a path, or {"path": ..., "recursive": true} to read every folder under it."""
+        self.roots = {project: Path(entry if isinstance(entry, str) else entry["path"]).expanduser().resolve()
+                      for project, entry in roots.items()}
+        self.recursive = {project for project, entry in roots.items()
+                          if isinstance(entry, dict) and entry.get("recursive")}
 
     def list(self) -> list[dict[str, Any]]:
         documents = []
@@ -21,10 +32,13 @@ class ProjectLibrary:
                 continue
             order, hidden, show_unlisted = self._display(root)
             position = {document_id: index for index, document_id in enumerate(order)}
-            paths = sorted(root.glob("*.md"))
-            docs_dir = root / "docs"
-            if docs_dir.is_dir():
-                paths.extend(sorted(docs_dir.rglob("*.md")))
+            if project in self.recursive:
+                paths = sorted(path for path in root.rglob("*.md") if not skipped(path.relative_to(root)))
+            else:
+                paths = sorted(root.glob("*.md"))
+                docs_dir = root / "docs"
+                if docs_dir.is_dir():
+                    paths.extend(sorted(docs_dir.rglob("*.md")))
             paths.sort(key=lambda path: (position.get(path.relative_to(root).as_posix(), len(position)),
                                          path.relative_to(root).as_posix().lower()))
             for path in paths:
@@ -77,9 +91,12 @@ class ProjectLibrary:
         if not path.is_relative_to(root) or not path.is_file():
             return None
         relative = path.relative_to(root)
-        if len(relative.parts) != 1 and relative.parts[0] != "docs":
+        if project in self.recursive:
+            if skipped(relative):
+                return None
+        elif len(relative.parts) != 1 and relative.parts[0] != "docs":
             return None
-        if len(relative.parts) == 1 and relative.name.startswith("."):
+        elif len(relative.parts) == 1 and relative.name.startswith("."):
             return None
         with path.open("rb") as handle:
             raw = handle.read(READ_LIMIT + 1)
