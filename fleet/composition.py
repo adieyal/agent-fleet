@@ -25,6 +25,7 @@ from fleet.modules.library import LibraryFacade
 from fleet.modules.decisions import DecisionsFacade
 from fleet.infrastructure.sqlite.decisions import DecisionRepository
 from fleet.infrastructure.input_delivery import send_input
+from fleet.infrastructure.permission_grants import send_grant
 from fleet.infrastructure.sqlite.records import RecordsRepository
 from fleet.infrastructure.git import RepositoryWriter
 from fleet.modules.records import RecordsFacade
@@ -74,7 +75,7 @@ class Facades:
         repository = ExecutionRepository(self.store, self.unit,
             attention=lambda unit: self.bound(unit).attention,
             collaborators=lambda unit: (self.bound(unit).work, self.bound(unit).workspace))
-        return ExecutionFacade(repository, self.work, send=send_input,
+        return ExecutionFacade(repository, self.work, send=send_input, grant=send_grant,
             prepare_dispatch=lambda: open_workspace(self.store), authority=lambda: self.authority, clock=self.store.clock)
 
     @cached_property

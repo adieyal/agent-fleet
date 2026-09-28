@@ -30,6 +30,7 @@ import signal
 import subprocess
 import sys
 import time
+import urllib.parse
 from pathlib import Path
 from typing import Any, Deque, Dict, Iterator, List, Optional, Tuple
 
@@ -1341,7 +1342,67 @@ def input_request(raw: JsonObject) -> JsonObject:
     description = tool_input.get("description")
     return {"tool": raw.get("tool_name") or "a tool",
             "description": description if isinstance(description, str) else "",
-            "detail": detail[:2000]}
+            "detail": detail[:2000], "rules": permission_rules(raw.get("tool_name"), tool_input)}
+
+
+SUBCOMMAND_PROGRAMS = {"git", "npm", "pnpm", "yarn", "npx", "uv", "cargo", "docker", "kubectl", "gh", "go",
+                       "pip", "poetry", "systemctl"}
+FILE_TOOLS = ("Read", "Edit", "Write", "MultiEdit", "NotebookEdit")
+RULE = re.compile(r"[A-Za-z_][\w-]*(\(.+\))?")
+
+
+def permission_rules(tool: Optional[str], tool_input: JsonObject) -> List[str]:
+    """Claude permission rules that would have allowed this request; empty when none can be named."""
+    if not tool:
+        return []
+    if tool == "Bash":
+        command = tool_input.get("command")
+        return bash_rules(command) if isinstance(command, str) else []
+    path = tool_input.get("file_path") or tool_input.get("notebook_path")
+    if tool in FILE_TOOLS:
+        if not isinstance(path, str) or not path:
+            return []
+        # `//` anchors an absolute path; a single `/` means relative to a settings file.
+        return [f"{tool}(/{path})" if path.startswith("/") else f"{tool}({path})"]
+    if tool == "WebFetch":
+        host = urllib.parse.urlsplit(tool_input.get("url") or "").hostname
+        return [f"WebFetch(domain:{host})"] if host else []
+    return [tool] if RULE.fullmatch(tool) else []
+
+
+def bash_rules(command: str) -> List[str]:
+    """One `Bash(prefix:*)` per simple command, as Claude checks each part of a compound command."""
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    try:
+        tokens = list(lexer)
+    except ValueError:
+        return []
+    rules: List[str] = []
+    segment: List[str] = []
+    redirect = False
+    for token in tokens + [";"]:
+        if redirect:
+            redirect = False
+            continue
+        if token and set(token) <= set("<>&") and set(token) & set("<>"):
+            redirect = True   # the next word is the redirect's target, not a command
+            continue
+        if token and set(token) <= set("&|;()"):
+            words = segment
+            while words and re.fullmatch(r"[A-Za-z_]\w*=.*", words[0]):
+                words = words[1:]   # leading VAR=value assignments
+            segment = []
+            if not words:
+                continue
+            prefix = words[:2] if words[0] in SUBCOMMAND_PROGRAMS and len(words) > 1 and not words[1].startswith("-") \
+                else words[:1]
+            rule = f"Bash({' '.join(prefix)}:*)"
+            if rule not in rules:
+                rules.append(rule)
+        else:
+            segment.append(token)
+    return rules
 
 
 def command_input_hook(arguments: argparse.Namespace) -> None:
@@ -1481,6 +1542,47 @@ def command_deliver(arguments: argparse.Namespace) -> None:
             emit({"schema_version": 1, "key": arguments.key, "status": "busy"})
             return
     emit({"schema_version": 1, "key": arguments.key, "status": "applied"})
+
+
+def command_grant(arguments: argparse.Namespace) -> None:
+    """Add Claude permission rules to a job and queue a step that continues the refused one.
+
+    Idempotent by key: a repeated grant reports the first result and queues nothing more.
+    """
+    if arguments.schema_version != 1:
+        fail("unsupported grant schema version")
+    rules = json.loads(sys.stdin.read() or "null")
+    if (not arguments.key.strip() or not isinstance(rules, list) or not rules
+            or not all(isinstance(rule, str) and RULE.fullmatch(rule) for rule in rules)):
+        fail("grant key and a JSON list of permission rules are required")
+    with locked_job(arguments.job) as job:
+        grant = next((grant for grant in job.get("permission_grants", []) if grant["key"] == arguments.key), None)
+        if grant is None:
+            if job["agent"] != "claude":
+                fail("permission rules apply to claude jobs only")
+            if not 0 <= arguments.step < len(job["steps"]):
+                fail(f"job has no step {arguments.step}")
+            allowed = job.setdefault("allowed_tools", [])   # jobs created before --allowed-tools lack it
+            added = [rule for rule in dict.fromkeys(rules) if rule not in allowed]
+            allowed += added
+            step = make_step(len(job["steps"]),
+                             f"Continue step {arguments.step + 1}: the commands you were refused are now allowed "
+                             f"({', '.join(rules)}). Retry what was refused, then finish that step's work.",
+                             f"Continue step {arguments.step + 1}")
+            job["steps"].append(step)
+            job["cancelled"] = False
+            grant = {"key": arguments.key, "step": arguments.step, "rules": rules, "added": added,
+                     "continuation": step["index"], "at": now()}
+            job.setdefault("permission_grants", []).append(grant)
+            fresh = True
+        else:
+            fresh = False
+    if fresh:
+        append_event(arguments.job, {"kind": "job", "status": "queued",
+                                     "summary": f"allowed {', '.join(rules)}; step {arguments.step + 1} continues"})
+        launch_runner(arguments.job)
+    emit({"schema_version": 1, "key": arguments.key, "status": "applied", "added": grant["added"],
+          "continuation": grant["continuation"]})
 
 
 def command_add(arguments: argparse.Namespace) -> None:
@@ -1718,6 +1820,13 @@ def main() -> None:
     deliver.add_argument("--key", required=True)
     deliver.add_argument("--schema-version", type=int, required=True)
     deliver.set_defaults(handler=command_deliver)
+
+    grant = commands.add_parser("grant", help="allow Claude permission rules (JSON list on stdin) for a job")
+    grant.add_argument("job")
+    grant.add_argument("--step", type=int, required=True, help="the step whose refusals these rules answer")
+    grant.add_argument("--key", required=True)
+    grant.add_argument("--schema-version", type=int, required=True)
+    grant.set_defaults(handler=command_grant)
 
     create = commands.add_parser("create")
     create.add_argument("--id")

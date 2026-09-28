@@ -4,7 +4,7 @@ from dataclasses import asdict
 from datetime import datetime
 import json
 
-from fleet.modules.attention import AttentionItem, ImportedAction, StreamContext
+from fleet.modules.attention import AttentionItem, ImportedAction, Refusal, StreamContext
 
 from .repository import Repository
 
@@ -12,6 +12,8 @@ from .repository import Repository
 def decode(row) -> AttentionItem:
     values = dict(row)
     values["options"] = tuple(json.loads(values["options"]))
+    values["refusals"] = tuple(Refusal(**{**refusal, "rules": None if refusal["rules"] is None else tuple(refusal["rules"])})
+                               for refusal in json.loads(values["refusals"]))
     if values["stream_context"] is not None:
         values["stream_context"] = StreamContext(**json.loads(values["stream_context"]))
     for name in ("last_seen", "snooze_until", "acknowledged_at", "resolved_at"):
@@ -48,6 +50,7 @@ class AttentionRepository(Repository):
             raise RuntimeError("attention writes require a transaction")
         values = asdict(item)
         values["options"] = json.dumps(values["options"])
+        values["refusals"] = json.dumps(values["refusals"])
         if values["stream_context"] is not None:
             values["stream_context"] = json.dumps(values["stream_context"])
         for name in ("last_seen", "snooze_until", "acknowledged_at", "resolved_at"):

@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 
 import pytest
 
@@ -23,7 +24,8 @@ def test_permission_hooks_are_retained_and_correlated(tmp_path, monkeypatch, job
     assert waiting["job_id"] == job_id
     assert waiting["session_id"] == "session1"
     assert waiting["context_reference"]
-    assert waiting["request"] == {"tool": "Bash", "description": "", "detail": "touch marker"}
+    assert waiting["request"] == {"tool": "Bash", "description": "", "detail": "touch marker",
+                                  "rules": ["Bash(touch:*)"]}
     fleetd.record_input_hook({**request, "hook_event_name": "Stop"}, project="example",
                             job_id=job_id, step_index=0)
     fleetd.record_input_hook({**request, "hook_event_name": "PostToolUse",
@@ -78,3 +80,37 @@ def test_hook_command_receives_runtime_stdin(tmp_path, monkeypatch):
     assert result.stdout == ""
     [observation] = fleetd.input_observations()
     assert observation["project"] == "project with spaces"
+
+
+@pytest.mark.parametrize("tool, tool_input, rules", [
+    ("Bash", {"command": "cd /srv && FOO=1 git status --short | head -5 > out.txt 2>&1"},
+     ["Bash(cd:*)", "Bash(git status:*)", "Bash(head:*)"]),
+    ("Bash", {"command": "npm run build; python3 -c 'print(1)'"}, ["Bash(npm run:*)", "Bash(python3:*)"]),
+    ("Bash", {"command": "git -C /srv log"}, ["Bash(git:*)"]),
+    ("Bash", {"command": "echo 'unbalanced"}, []),
+    ("Read", {"file_path": "/etc/hosts"}, ["Read(//etc/hosts)"]),
+    ("Edit", {"file_path": "notes.md"}, ["Edit(notes.md)"]),
+    ("WebFetch", {"url": "https://docs.example.com/a"}, ["WebFetch(domain:docs.example.com)"]),
+    ("mcp__docs__read", {}, ["mcp__docs__read"]),
+])
+def test_each_refused_request_names_the_rules_that_would_allow_it(tool, tool_input, rules):
+    assert fleetd.permission_rules(tool, tool_input) == rules
+
+
+@pytest.mark.parametrize("agent, stdin, error", [
+    ("claude", "[]", "a JSON list of permission rules"),
+    ("claude", '["Bash(ls:*)", "rm -rf /"]', "a JSON list of permission rules"),
+    ("codex", '["Bash"]', "claude jobs only"),
+])
+def test_a_grant_that_cannot_apply_changes_nothing(tmp_path, monkeypatch, capsys, agent, stdin, error):
+    import io
+    monkeypatch.setattr(fleetd, "FLEET_HOME", tmp_path)
+    monkeypatch.setattr(fleetd, "JOBS_DIRECTORY", tmp_path / "jobs")
+    (tmp_path / "jobs" / "j1").mkdir(parents=True)
+    job = {"id": "j1", "agent": agent, "allowed_tools": [], "steps": [{"index": 0}]}
+    (tmp_path / "jobs" / "j1" / "job.json").write_text(json.dumps(job))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(stdin))
+    with pytest.raises(SystemExit):
+        fleetd.command_grant(argparse.Namespace(job="j1", step=0, key="k", schema_version=1))
+    assert error in capsys.readouterr().out
+    assert json.loads((tmp_path / "jobs" / "j1" / "job.json").read_text()) == job

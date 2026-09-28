@@ -22,7 +22,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from fleet import transport
 from fleet.composition import (Store, open_attention, open_execution, open_library, open_store,
                                open_workspace, open_work, open_decisions)
-from fleet.modules.attention import InputObservation, ItemResolved
+from fleet.modules.attention import InputObservation, ItemResolved, refusal_rules
 from fleet.modules.workspace import (NoVacancy, FOCUSES, AlreadyShuttered, NotShuttered,
                                      WorkspaceFacade, Registry)
 from fleet.projections.workspace import annotate, resolve, registry_config
@@ -44,6 +44,7 @@ STATIC_TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; char
                 ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".json": "application/json",
                 ".md": "text/markdown; charset=utf-8", ".txt": "text/plain; charset=utf-8"}
 ATTENTION_ACTIONS = ("acknowledge", "snooze", "reopen")
+REFUSAL_ACTIONS = ("allow", "dismiss")   # a job step's permission refusals
 FLOOR_CHANGES = ("/api/move-in", "/api/link", "/api/merge", "/api/shutter", "/api/restore")
 EVENTS_PER_JOB = "15"
 STREAM_SILENCE_LIMIT = 20  # seconds without a heartbeat before the stream is considered dead
@@ -122,6 +123,9 @@ class FleetState(LiveWorkspace):
                     "jobs": [resolve(self.registry, host_name, job) for job in host["jobs"].values()],
                     "sessions": [resolve(self.registry, host_name, session) for session in host["sessions"].values()]},
                     owners=owners, raise_items=not heartbeat)
+                # A heartbeat follows a full pass over the host's jobs, so absent jobs are gone.
+                reconciled = self.attention.close_refusals(
+                    {**host, "jobs": list(host["jobs"].values()), "sessions": []}, complete=heartbeat) or reconciled
             if previous == self.by_host[host_name] and self.store.latest_sequence() == sequence and not reconciled:
                 return
             self.version += 1
@@ -263,6 +267,15 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
         state.update(host.name, lambda entry: entry.update(ok=False, error=message.get("error")))
 
 
+def refusal_detail(item) -> dict[str, Any]:
+    context = item.stream_context
+    return {"host": context.host, "job": context.owner_id, "step": context.step, "state": item.state,
+            "resolution": item.resolution_details, "rules": refusal_rules(item.refusals),
+            "requests": [{"tool": refusal.tool, "description": refusal.description, "detail": refusal.detail,
+                          "rules": None if refusal.rules is None else list(refusal.rules)}
+                         for refusal in item.refusals]}
+
+
 def make_handler(state: FleetState | FixtureState,
                  library: ProjectLibrary | FixtureLibrary | None = None) -> type[BaseHTTPRequestHandler]:
     # Read once so a running server keeps serving the page and code that match its API.
@@ -303,7 +316,9 @@ def make_handler(state: FleetState | FixtureState,
                         item.source, item.source_reference)
                     detail = {"id": item.id, "question": item.headline,
                               "context": item.context_reference, "options": item.options,
-                              "proposal": asdict(proposal) if proposal is not None else None}
+                              "proposal": asdict(proposal) if proposal is not None else None,
+                              # a job step's refused requests, answered with actions rather than words
+                              "refusals": refusal_detail(item) if item.refusals else None}
                 except LookupError as error:
                     self.error(404, str(error))
                     return
@@ -333,7 +348,8 @@ def make_handler(state: FleetState | FixtureState,
         def do_POST(self) -> None:  # noqa: N802 — http.server naming
             path = self.path.split("?", 1)[0]
             action = path.removeprefix("/api/attention/") if path.startswith("/api/attention/") else None
-            if path not in FLOOR_CHANGES + ("/api/focus", "/api/decision/answer") and action not in ATTENTION_ACTIONS:
+            if (path not in FLOOR_CHANGES + ("/api/focus", "/api/decision/answer")
+                    and action not in ATTENTION_ACTIONS + REFUSAL_ACTIONS):
                 self.respond(404, "text/plain", b"not found")
             elif not self.same_origin():
                 self.respond(403, "application/json", b'{"error": "cross-origin writes are refused"}')
@@ -347,6 +363,8 @@ def make_handler(state: FleetState | FixtureState,
                 body = body if isinstance(body, dict) else {}
                 if path == "/api/decision/answer":
                     self.answer(body)
+                elif action in REFUSAL_ACTIONS:
+                    self.refusals(action, body)
                 elif action:
                     self.attention(action, body)
                 elif path in ("/api/move-in", "/api/link"):
@@ -456,6 +474,30 @@ def make_handler(state: FleetState | FixtureState,
                 return
             state.bump()
             self.respond(200, "application/json", json.dumps(asdict(decision), default=str).encode())
+
+        def refusals(self, action: str, body: dict[str, Any]) -> None:
+            """POST /api/attention/allow {"id": item id, "scope": "refused" | "bash"} — add permission rules to
+            the job on its worker and continue the refused step there.
+            POST /api/attention/dismiss {"id": item id} — resolve the batch and change nothing."""
+            if not isinstance(body.get("id"), str) or (action == "allow" and not isinstance(body.get("scope"), str)):
+                self.error(400, "the item's id is required" + (", and a scope" if action == "allow" else ""))
+                return
+            try:
+                if action == "allow":
+                    details = open_execution(state.store).grant_permissions(body["id"], body["scope"], actor="web-user")
+                else:
+                    details = state.attention.dismiss_refusals(body["id"], actor="web-user").resolution_details
+            except LookupError as error:
+                self.error(404, str(error.args[0]))
+                return
+            except ItemResolved as error:
+                self.error(409, str(error))
+                return
+            except (FleetError, ValueError, RuntimeError) as error:
+                self.error(400, str(error))
+                return
+            state.bump()
+            self.respond(200, "application/json", json.dumps({"id": body["id"], "resolution": details}).encode())
 
         def attention(self, action: str, body: dict[str, Any]) -> None:
             """POST /api/attention/acknowledge|snooze|reopen {"id": item id, "seconds": snooze length}"""

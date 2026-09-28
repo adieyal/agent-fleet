@@ -41,6 +41,8 @@ def answer_question(repository: DecisionRepository, clock: Callable[[], datetime
         item = transaction.attention.get(identity)
         if item.state == "resolved":
             raise ValueError("attention item is resolved")
+        if item.refusals:
+            raise ValueError("a job's permission refusals are answered by allowing or dismissing them")
         decision = Decision(str(uuid4()), item.id, item.headline,
             selected_answer(answer, item.options), actor, item.context_reference,
             () if item.work_item is None else (item.work_item,), clock())
