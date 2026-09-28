@@ -1,0 +1,22 @@
+"""Work persistence and recorded-evidence ports."""
+
+from typing import ContextManager, Protocol
+
+from fleet.modules.attention import AttentionFacade
+from ..domain import Criterion, Evidence, Relation, Summary, WorkItem
+
+Record = WorkItem | Criterion | Relation | Summary
+
+
+class WorkRepository(Protocol):
+    attention: AttentionFacade
+
+    def transaction(self) -> ContextManager["WorkRepository"]: ...
+    def get(self, kind: str, identity: str) -> Record: ...
+    def list(self, kind: str) -> list[Record]: ...
+    def save(self, kind: str, record: Record, actor: str) -> None: ...
+    def retire_summary(self, identity: str, actor: str) -> None: ...
+
+
+class EvidenceReader(Protocol):
+    def get(self, reference: str) -> Evidence | None: ...

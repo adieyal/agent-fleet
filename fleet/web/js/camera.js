@@ -4,12 +4,14 @@ import * as THREE from 'three';
 import { BOT_H, RD, RW, WALL_H, canvas, dpr, setDpr, setVh, setVw, vh, vw } from './env.js';
 import { clamp, esc, seeded } from './util.js';
 import { RIGHT, ROBOT, UP, _p, cam, camera, centreFor, renderer } from './scene.js';
-import { ents, selectedKey } from './model.js';
+import { ents, setFanned } from './model.js';
 import { layoutNames, layoutRooms, plates, roomByName, rooms } from './rooms.js';
 import { DOC_KIND, docKey, docMeshes, docMeta, docSlots, hoverDoc, kindOf, setHoverDoc } from './docs3d.js';
 import { closePanel, select } from './panel.js';
 import { closeLibrary, libraryPane } from './library.js';
 import { closeReader, openReader, reader } from './reader.js';
+import { hoverScreen, pipelineByKey, screenMeshes } from './pipelines.js';
+import { openSankey, sankeyPane } from './sankey.js';
 
 // ------------------------------------------------------------------ camera: fit, zoom, focus
 export function deckBounds() {
@@ -151,16 +153,19 @@ canvas.addEventListener('pointermove', ev => {
   }
   const hit = pick(ev.clientX, ev.clientY);
   canvas.classList.toggle('hot', !!hit);
-  if (hit && hit.doc && ev.pointerType !== 'touch') showDocTip(hit, ev.clientX, ev.clientY); else hideDocTip();
+  hoverScreen(hit?.pipeline ? hit.key : null);
+  if (hit && (hit.doc || hit.pipeline) && ev.pointerType !== 'touch') showDocTip(hit, ev.clientX, ev.clientY); else hideDocTip();
 });
 function endPointer(ev) {
   pointers.delete(ev.pointerId);
   if (pointers.size < 2) pinch = null;
   if (drag && !drag.moved && ev.type === 'pointerup') {
     const hit = pick(ev.clientX, ev.clientY);
-    if (hit && hit.doc) openReader(hit.e, hit.doc);
+    if (hit && hit.pipeline) { hideDocTip(); openSankey(hit.pipeline); }
+    else if (hit && hit.doc) openReader(hit.e, hit.doc);
+    else if (hit && hit.e.crowd) setFanned(hit.e.crowd.key);
     else if (hit) select(hit.e.key);
-    else if (selectedKey) closePanel();
+    else closePanel();
   }
   if (pointers.size === 0) { drag = null; canvas.classList.remove('dragging'); }
 }
@@ -170,8 +175,15 @@ canvas.addEventListener('pointerleave', hideDocTip);
 
 const docTip = document.getElementById('docTip');
 function showDocTip(hit, px, py) {
-  const { e, doc } = hit, key = docKey(e, doc);
-  if (!hoverDoc || hoverDoc.key !== key) {
+  const { e, doc } = hit, key = hit.pipeline ? 'pipeline:' + hit.key : docKey(e, doc);
+  if (hit.pipeline && hoverDoc?.key !== key) {
+    setHoverDoc({ key });
+    const p = hit.pipeline;
+    docTip.style.setProperty('--hc', '#38bdf8');
+    docTip.innerHTML = `<div class="th"><span class="kb">Pipeline</span><b>${esc(p.pipeline)}</b></div>
+      <div class="tm">${esc(p.run ? (p.run.label || p.run.run_id) : 'no runs yet')}</div><div class="tc">${esc(p.host)} · click to open</div>`;
+    docTip.hidden = false;
+  } else if (!hit.pipeline && (!hoverDoc || hoverDoc.key !== key)) {
     setHoverDoc({ key });
     const K = DOC_KIND[kindOf(doc)];
     docTip.style.setProperty('--hc', e.look.color);
@@ -189,15 +201,20 @@ canvas.addEventListener('wheel', ev => { ev.preventDefault(); zoomAt(ev.clientX,
 const raycaster = new THREE.Raycaster();
 const _ndc = new THREE.Vector2();
 const proxies = [];
-// the nearest android (an invisible capsule around each) or document sheet under the pointer
+// the nearest android (an invisible capsule around each), document sheet or pipeline screen under the pointer
 function pick(px, py) {
   proxies.length = 0;
-  for (const e of ents.values()) if (roomByName.has(e.room)) proxies.push(e.proxy);
+  for (const e of ents.values()) if (roomByName.has(e.room) && e.bot.root.visible) proxies.push(e.proxy);
   for (const kind in docMeshes) proxies.push(docMeshes[kind]);
+  proxies.push(...screenMeshes);
   _ndc.set(px / vw * 2 - 1, -(py / vh) * 2 + 1);
   raycaster.setFromCamera(_ndc, camera);
   const hit = raycaster.intersectObjects(proxies, false)[0];
   if (!hit) return null;
+  if (hit.object.userData.pipeline) {
+    const pipeline = pipelineByKey(hit.object.userData.pipeline);
+    return pipeline ? { pipeline, key: hit.object.userData.pipeline } : null;
+  }
   if (hit.object.isInstancedMesh) {
     const slot = docSlots[hit.object.userData.kind][hit.instanceId];
     return slot ? { e: slot.e, doc: slot.doc } : null;
@@ -214,6 +231,7 @@ document.getElementById('zoom').addEventListener('click', ev => {
 document.addEventListener('keydown', ev => {
   if (ev.target.closest && ev.target.closest('input,textarea')) return;
   if (!reader.hidden) { if (ev.key === 'Escape') closeReader(); return; }
+  if (!sankeyPane.hidden) return;   // the Sankey handles its own keys
   if (ev.key === 'Escape') { if (!libraryPane.hidden) closeLibrary(); else closePanel(); }
   else if (ev.key === '+' || ev.key === '=') zoomAt(vw / 2, vh / 2, 1.2);
   else if (ev.key === '-' || ev.key === '_') zoomAt(vw / 2, vh / 2, 1 / 1.2);

@@ -8,10 +8,14 @@ from urllib.request import Request, urlopen
 
 import pytest
 
-from fleet import building, projects, transport
+from fleet import transport
+from fleet.composition import open_workspace
+from fleet.modules.workspace import Registry
+from fleet.infrastructure.config.workspace import decode_workspace
+from workspace_support import persist_registry
 from fleet.transport import FleetError, Host
-from fleet.web.server import FleetState, make_handler, workspace_path
-from fleet.workspace import WorkspaceStore
+from fleet.web.server import FleetState, make_handler
+
 
 HOSTS = [Host("home", None), Host("gpu", "gpu.example")]
 LABELS = ["agent-fleet", "restoke", "invoices"]
@@ -21,18 +25,23 @@ LABELS = ["agent-fleet", "restoke", "invoices"]
 def config_path(tmp_path, monkeypatch):
     path = tmp_path / "config.json"
     path.write_text(json.dumps({"hosts": {"home": {}, "gpu": {"ssh": "gpu.example"}}}))
-    monkeypatch.setattr(transport, "CONFIG_PATH", path)
+    monkeypatch.setenv("FLEET_CONFIG", str(path))
     return path
 
 
 def set_config(path, **changes):
-    path.write_text(json.dumps({**json.loads(path.read_text()), **changes}))
+    if "capacity" in changes:
+        open_workspace().set_capacity(changes.pop("capacity"))
+    if "projects" in changes:
+        persist_registry(Registry(decode_workspace({"projects": changes.pop("projects")}).projects))
+    if changes:
+        path.write_text(json.dumps({**json.loads(path.read_text()), **changes}))
 
 
 def start_deck():
     """A deck as `fleet web` builds it; home has a job for each label, gpu one `agent-fleet` session."""
-    state = FleetState(HOSTS, {"invoices": "Invoice analysis"}, projects.load_registry,
-                       WorkspaceStore(workspace_path()), building.load_capacity)
+    state = FleetState(HOSTS, {"invoices": "Invoice analysis"}, open_workspace().registry,
+                       open_workspace(), open_workspace().capacity)
 
     def fill_home(entry):
         entry["ok"], entry["error"] = True, None
@@ -46,7 +55,7 @@ def start_deck():
     state.update("home", fill_home)
     state.update("gpu", fill_gpu)
     server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(state))
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
     return server, f"http://127.0.0.1:{server.server_port}"
 
 
@@ -74,22 +83,22 @@ def post(base_url, path, body, **headers):
 
 
 def register(name, *links):
-    registry = projects.load_registry()
+    registry = open_workspace().registry()
     project = registry.create(name)
     for host, label in links:
         registry.link(project.id, host, label)
-    projects.save_registry(registry)
+    persist_registry(registry)
     return project.id
 
 
 def unregister(project_id):
-    registry = projects.load_registry()
+    registry = open_workspace().registry()
     registry.remove(project_id)
-    projects.save_registry(registry)
+    persist_registry(registry)
 
 
 def stored_floors():
-    return json.loads(workspace_path().read_text())["floors"]
+    return open_workspace().floors_snapshot()
 
 
 # ------------------------------------------------------------------ capacity
@@ -102,7 +111,7 @@ def test_capacity_is_six_unless_the_config_says_otherwise(deck, config_path):
 
 @pytest.mark.parametrize("capacity", [0, 11, "6", 6.5, True, None])
 def test_an_invalid_capacity_stops_the_deck_starting(config_path, capacity):
-    set_config(config_path, capacity=capacity)
+    config_path.write_text(json.dumps({"capacity": capacity}))
     with pytest.raises(FleetError, match="capacity is a whole number of floors from 1 to 10"):
         start_deck()
 
@@ -110,10 +119,11 @@ def test_an_invalid_capacity_stops_the_deck_starting(config_path, capacity):
 def test_an_invalid_capacity_edit_keeps_the_last_good_one_and_says_why(deck, config_path):
     set_config(config_path, capacity=8)
     assert fetch_state(deck)["building"]["capacity"] == 8
-    set_config(config_path, capacity=12)
+    with pytest.raises(FleetError, match="capacity is a whole number of floors from 1 to 10, not 12"):
+        set_config(config_path, capacity=12)
     building_state = fetch_state(deck)["building"]
     assert building_state["capacity"] == 8
-    assert "capacity is a whole number of floors from 1 to 10, not 12" in building_state["capacity_error"]
+    assert building_state["capacity_error"] is None
 
 
 # ------------------------------------------------------------------ floor assignment
@@ -176,7 +186,7 @@ def test_moving_in_registers_links_and_takes_the_lowest_free_floor(deck, config_
 
     status, moved = post(deck, "/api/move-in", {"host": "gpu", "label": "agent-fleet"})
     assert status == 200 and moved["floor"] == 1
-    registry = projects.load_registry()
+    registry = open_workspace().registry()
     project = registry.get(moved["project_id"])
     assert project.name == "agent-fleet" and [(link.host, link.label) for link in project.links] == [("gpu", "agent-fleet")]
 
@@ -190,7 +200,7 @@ def test_moving_in_registers_links_and_takes_the_lowest_free_floor(deck, config_
 
 def test_moving_in_uses_the_rooms_display_name(deck):
     status, moved = post(deck, "/api/move-in", {"host": "home", "label": "invoices"})
-    assert status == 200 and projects.load_registry().get(moved["project_id"]).name == "Invoice analysis"
+    assert status == 200 and open_workspace().registry().get(moved["project_id"]).name == "Invoice analysis"
 
 
 def test_moving_in_a_full_building_changes_nothing(deck, config_path):
@@ -199,7 +209,7 @@ def test_moving_in_a_full_building_changes_nothing(deck, config_path):
     fetch_state(deck)
     status, body = post(deck, "/api/move-in", {"host": "home", "label": "agent-fleet"})
     assert status == 409 and "full" in body["error"]
-    assert len(projects.load_registry().projects) == 1
+    assert len(open_workspace().registry().projects) == 1
 
 
 def test_moving_in_refuses_a_linked_label_an_unknown_host_and_other_sites(deck):
@@ -208,13 +218,13 @@ def test_moving_in_refuses_a_linked_label_an_unknown_host_and_other_sites(deck):
     assert post(deck, "/api/move-in", {"host": "nowhere", "label": "restoke"})[0] == 400
     assert post(deck, "/api/move-in", {"host": "home"})[0] == 400
     assert post(deck, "/api/move-in", {"host": "home", "label": "invoices"}, Origin="http://evil.example")[0] == 403
-    assert len(projects.load_registry().projects) == 1
+    assert len(open_workspace().registry().projects) == 1
 
 
 def test_moving_in_a_label_on_several_hosts_makes_one_project(deck):
     status, moved = post(deck, "/api/move-in", {"hosts": ["home", "gpu"], "label": "agent-fleet"})
     assert status == 200 and moved["floor"] == 1
-    project = projects.load_registry().get(moved["project_id"])
+    project = open_workspace().registry().get(moved["project_id"])
     assert sorted((link.host, link.label) for link in project.links) == [("gpu", "agent-fleet"), ("home", "agent-fleet")]
     assert post(deck, "/api/move-in", {"hosts": [], "label": "restoke"})[0] == 400
     assert post(deck, "/api/move-in", {"hosts": ["home", "nowhere"], "label": "restoke"})[0] == 400
@@ -247,9 +257,9 @@ def test_move_in_offers_a_name_match_but_never_links_by_itself(deck):
 
 def test_move_in_offers_a_matching_repository(deck, monkeypatch):
     fleet = register("Fleet")
-    registry = projects.load_registry()
+    registry = open_workspace().registry()
     registry.add_repository(fleet, "git@github.com:adieyal/agent-fleet.git")
-    projects.save_registry(registry)
+    persist_registry(registry)
     asked = []
 
     def remotes(host, directories):
@@ -295,11 +305,11 @@ def test_linking_refuses_what_makes_no_sense(deck, config_path):
 # ------------------------------------------------------------------ merging projects registered by mistake
 def test_merging_keeps_the_older_project_and_frees_the_others_floor(deck):
     older, restoke, newer = housed(deck, "agent-fleet", "restoke", "fleet")
-    registry = projects.load_registry()
+    registry = open_workspace().registry()
     registry.unlink("home", "fleet")
     registry.link(newer, "gpu", "agent-fleet")
     registry.add_repository(newer, "git@github.com:adieyal/agent-fleet.git")
-    projects.save_registry(registry)
+    persist_registry(registry)
     assert post(deck, "/api/focus", {"focus": "background", "projects": [newer]})[0] == 200
 
     assert post(deck, "/api/merge", {"keep": newer, "other": older})[0] == 400   # the newer one isn't kept
@@ -352,7 +362,7 @@ def test_shuttering_frees_the_floor_and_keeps_the_project(deck, config_path):
     assert project["links"] == [{"host": "home", "label": "restoke"}]                 # same ID, same links
     home = next(host for host in document["hosts"] if host["name"] == "home")
     assert next(job for job in home["jobs"] if job["project"] == "restoke")["project_id"] == restoke   # runs still belong
-    assert json.loads(workspace_path().read_text())["shuttered"][restoke]["floor"] == 1
+    assert open_workspace().shuttered_snapshot()[restoke].floor == 1
 
     # the free floor is not handed back by itself: a new project moves into it instead
     agent_fleet = register("Agent Fleet", ("home", "agent-fleet"))
@@ -397,7 +407,7 @@ def test_a_full_building_offers_only_shuttering(deck, config_path):
     assert status == 409 and "full" in body["error"]
     assert post(deck, "/api/move-in", {"host": "gpu", "label": "agent-fleet"})[0] == 409
     assert building_of(deck)["capacity"] == 2 and restoke in building_of(deck)["shuttered"]
-    assert len(projects.load_registry().projects) == 3
+    assert len(open_workspace().registry().projects) == 3
 
     # clearing a floor on the way in is the one way through
     status, body = post(deck, "/api/restore", {"project": restoke, "shutter": invoices})
@@ -438,10 +448,10 @@ def test_the_storehouse_survives_a_restart(deck, config_path):
 def test_capacity_is_set_from_the_cli_only_within_limits(deck, config_path, capsys):
     from fleet import cli
     cli.main(["building", "capacity", "8"])
-    assert json.loads(config_path.read_text())["capacity"] == 8
+    assert open_workspace().capacity() == 8
     assert building_of(deck)["capacity"] == 8
     for bad in ("11", "0"):
         with pytest.raises(SystemExit):
             cli.main(["building", "capacity", bad])
-    assert json.loads(config_path.read_text())["capacity"] == 8
+    assert open_workspace().capacity() == 8
     assert "hosts" in json.loads(config_path.read_text())   # the rest of the config is kept

@@ -1,17 +1,19 @@
-"""Attention items derived from host state, their states, and the endpoints that change them."""
+"""Stored stream attention items, their states, and the endpoints that change them."""
 import json
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 from http.server import ThreadingHTTPServer
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import pytest
 
-from fleet import projects, transport
+from fleet import transport
+from fleet.composition import open_workspace
+from fleet.composition import open_attention, open_store, open_decisions, open_work
 from fleet.transport import Host
-from fleet.web.server import FleetState, make_handler, workspace_path
-from fleet.workspace import WorkspaceStore
+from fleet.web.server import FleetState, apply_message, make_handler
 
 HOSTS = [Host("home", None), Host("gpu", "gpu.example")]
 
@@ -36,10 +38,11 @@ def tool(name, ts=200, summary="Keep the flag?"):
 class Deck:
     """A live deck whose host state the test sets directly, as the host streams would."""
 
-    def __init__(self):
-        self.state = FleetState(HOSTS, {}, projects.load_registry, WorkspaceStore(workspace_path()))
+    def __init__(self, clock=None):
+        self.state = FleetState(HOSTS, {}, open_workspace().registry, open_workspace(),
+                               store=open_store(clock=clock))
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(self.state))
-        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
         self.url = f"http://127.0.0.1:{self.server.server_port}"
 
     def report(self, host, jobs=(), sessions=(), ok=True):
@@ -71,7 +74,7 @@ class Deck:
 def config_path(tmp_path, monkeypatch):
     path = tmp_path / "config.json"
     path.write_text(json.dumps({"hosts": {"home": {}, "gpu": {"ssh": "gpu.example"}}}))
-    monkeypatch.setattr(transport, "CONFIG_PATH", path)
+    monkeypatch.setenv("FLEET_CONFIG", str(path))
     return path
 
 
@@ -83,7 +86,68 @@ def deck(config_path):
 
 
 def stored_actions(config_path):
-    return json.loads((config_path.parent / "workspace.json").read_text())["attention"]
+    return {item.id: {"state": item.state} for item in open_attention().list()
+            if item.state in ("acknowledged", "snoozed")}
+
+
+def test_decision_reader_and_answer(deck, monkeypatch):
+    from fleet.modules.execution import ExecutionFacade
+    deliveries = []
+    monkeypatch.setattr(ExecutionFacade, "retry_deliveries", lambda self, **kw: deliveries.append(kw))
+    work = open_work(deck.state.store)
+    item = work.add(project="p", title="Ship", goal="Ship", actor="author")
+    work.set(item.id, condition="blocked", actor="author")
+    question = deck.state.attention.raise_item(project="p", work_item=item.id,
+        kind="decision", owner="user", source="manual", source_reference="question",
+        headline="Which route?", context_reference="Review the route", actor="author",
+        options=("Direct", "Scenic"))
+    other = deck.state.attention.raise_item(project="p", kind="decision", owner="user",
+        source="manual", source_reference="other", headline="When?",
+        context_reference="Schedule", actor="author")
+    sequence = deck.state.store.latest_sequence()
+    with urlopen(deck.url + "/api/decision?id=" + question.id, timeout=5) as response:
+        detail = json.load(response)
+    assert detail["question"] == "Which route?"
+    assert detail["context"] == "Review the route"
+    assert detail["options"] == ["Direct", "Scenic"]
+    assert deck.state.store.latest_sequence() == sequence
+    request = Request(deck.url + "/api/decision/answer",
+        data=json.dumps({"id": question.id, "answer": "2", "actor": "impostor"}).encode(),
+        headers={"Content-Type": "application/json"})
+    with urlopen(request, timeout=5) as response:
+        assert response.status == 200
+    decision, = open_decisions(deck.state.store).list()
+    assert (decision.actor, decision.answer, decision.attention_item) == ("user", "Scenic", question.id)
+    assert deck.state.attention.get(question.id).state == "resolved"
+    assert deck.state.attention.get(other.id).state == "open"
+    assert work.get(item.id).condition == "none"
+    assert deliveries == [{"decision": decision.id}]
+    sequence = deck.state.store.latest_sequence()
+    with pytest.raises(HTTPError):
+        urlopen(request, timeout=5)
+    assert deck.state.store.latest_sequence() == sequence
+
+
+def test_decision_reader_shows_proposal_without_writes(deck, monkeypatch):
+    from types import SimpleNamespace
+    proposal = open_decisions(deck.state.store).propose(
+        SimpleNamespace(project="p", work_item="w", actor="agent", id="activation", mandate_version="v1"),
+        question="Run migration?", change="fleet migrate <database>", reason="Schema needs updating")
+    item, = deck.state.attention.list()
+    decisions = open_decisions(deck.state.store)
+    assert decisions.proposal_for_attention(item.source, item.source_reference) == proposal
+    assert decisions.proposal_for_attention('manual', proposal.id) is None
+    assert decisions.proposal_for_attention('proposal', 'missing') is None
+    def no_scan(self):
+        raise AssertionError('decision reader must query a proposal directly')
+    monkeypatch.setattr(type(decisions.repository), 'proposals', no_scan)
+    sequence = deck.state.store.latest_sequence()
+    with urlopen(deck.url + "/api/decision?id=" + item.id, timeout=5) as response:
+        detail = json.load(response)
+    assert detail["proposal"]["id"] == proposal.id
+    assert detail["proposal"]["change"] == "fleet migrate <database>"
+    assert detail["proposal"]["reason"] == "Schema needs updating"
+    assert deck.state.store.latest_sequence() == sequence
 
 
 def test_only_genuine_signals_become_items(deck):
@@ -109,6 +173,21 @@ def test_only_genuine_signals_become_items(deck):
     assert deck.items() == items   # reading changes nothing, ids included
 
 
+def test_stored_context_and_display_are_read_only(deck):
+    item = deck.state.attention.raise_item(project="manual", kind="alert", owner="user", source="manual",
+        source_reference="review", headline="Review the release", context_reference="docs/release.md", actor="user")
+    sequence, version = deck.state.store.latest_sequence(), deck.state.version
+    for _ in range(2):
+        with urlopen(deck.url + "/api/state", timeout=5) as response:
+            document = json.load(response)
+        projected = next(row for row in document["attention"] if row["id"] == item.id)
+        assert projected["context_reference"] == "docs/release.md"
+        assert document["attention_display"]["front_desk"] == [item.id]
+        assert document["attention_display"]["places"][0]["glyph"] == "✱"
+    assert deck.state.attention.get(item.id) == item
+    assert (deck.state.store.latest_sequence(), deck.state.version) == (sequence, version)
+
+
 def test_items_resolve_when_their_condition_clears(deck, config_path):
     failing = job("f1", "failed", [("failed", 100)])
     deck.report("home", jobs=[failing, job("gone", "stalled", [("running", 120)])],
@@ -123,7 +202,8 @@ def test_items_resolve_when_their_condition_clears(deck, config_path):
     items = {item["id"]: item for item in deck.items().values()}
     assert {items[first[key]["id"]]["state"] for key in first} == {"resolved"}
     assert all(items[first[key]["id"]]["resolved_at"] for key in first)
-    assert stored_actions(config_path) == {}   # a resolved item's action is dropped
+    assert stored_actions(config_path) == {}   # resolved items no longer carry an active action
+    assert all(item.resolution_details for item in open_attention().list())
 
     deck.report("home", jobs=[job("f1", "failed", [("failed", 300)])], sessions=[answered])
     again = deck.items()["home:f1"]
@@ -137,6 +217,7 @@ def test_an_unreachable_host_leaves_its_items_as_they_were(deck):
     deck.report("gpu", ok=False)
     stale = deck.items()["gpu:f1"]
     assert (stale["state"], stale["stale"], stale["resolved_at"]) == ("acknowledged", True, None)
+    assert stale["last_seen"] == item["last_seen"]
 
 
 def test_acknowledge_snooze_and_reopen(deck, config_path):
@@ -163,32 +244,55 @@ def test_acknowledge_snooze_and_reopen(deck, config_path):
 
 def test_actions_survive_a_restart(config_path):
     first = Deck()
-    first.report("home", jobs=[job("f1", "failed", [("failed", 100)])])
+    first.report("home", jobs=[job("f1", "failed", [("failed", 100)])],
+                 sessions=[session("ask", "idle", tool("AskUserQuestion"))])
     first.act("acknowledge", {"id": first.items()["home:f1"]["id"]})
     first.close()
     second = Deck()
     try:
+        assert second.items()["home:f1"]["state"] == "acknowledged"
+        assert second.items()["home:ask"]["state"] == "open"
         second.report("home", jobs=[job("f1", "failed", [("failed", 100)])])
         assert second.items()["home:f1"]["state"] == "acknowledged"
     finally:
         second.close()
 
 
-def test_changes_and_ending_snoozes_are_pushed(deck):
-    deck.report("home", jobs=[job("f1", "failed", [("failed", 100)])])
-    item_id = deck.items()["home:f1"]["id"]
-    with urlopen(deck.url + "/api/stream", timeout=5) as stream:
-        def next_items():
-            assert stream.readline() == b"event: state\n"
-            items = json.loads(stream.readline().decode().removeprefix("data: "))["attention"]
-            stream.readline()
-            return {item["owner"]["key"]: item["state"] for item in items}
-        next_items()
-        deck.act("snooze", {"id": item_id, "seconds": 1})
-        assert next_items() == {"home:f1": "snoozed"}
-        started = time.time()
-        assert next_items() == {"home:f1": "open"}   # nothing else changed: the snooze's end woke the stream
-        assert time.time() - started < 3
+def test_legacy_action_is_imported_before_workspace_stops_writing_attention(config_path):
+    path = config_path.parent / "workspace.json"
+    path.write_text(json.dumps({"attention": {
+        "job:home:f1:failed:0@100": {"state": "acknowledged", "at": 150}}}))
+    deck = Deck()
+    try:
+        deck.report("home", jobs=[job("f1", "failed", [("failed", 100)])])
+        item = deck.items()["home:f1"]
+        assert item["state"] == "acknowledged" and item["acknowledged_at"] == 150
+        deck.state.set_focus("background", [], ["restoke"])
+        assert "attention" in json.loads(path.read_text())
+        assert json.loads(path.with_suffix(".json.bak").read_text())["attention"]
+    finally:
+        deck.close()
+
+
+def test_changes_and_ending_snoozes_are_pushed(config_path):
+    now = [datetime(2026, 9, 27, tzinfo=timezone.utc)]
+    deck = Deck(clock=lambda: now[0])
+    try:
+        deck.report("home", jobs=[job("f1", "failed", [("failed", 100)])])
+        item_id = deck.items()["home:f1"]["id"]
+        with urlopen(deck.url + "/api/stream", timeout=5) as stream:
+            def next_items():
+                assert stream.readline() == b"event: state\n"
+                items = json.loads(stream.readline().decode().removeprefix("data: "))["attention"]
+                stream.readline()
+                return {item["owner"]["key"]: item["state"] for item in items}
+            next_items()
+            deck.act("snooze", {"id": item_id, "seconds": 1})
+            assert next_items() == {"home:f1": "snoozed"}
+            now[0] += timedelta(seconds=2)
+            assert next_items() == {"home:f1": "open"}
+    finally:
+        deck.close()
 
 
 @pytest.mark.parametrize("action, body, headers, status", [
@@ -214,3 +318,64 @@ def test_a_resolved_item_cannot_be_acted_on(deck):
     deck.report("home", jobs=[])
     assert deck.act("acknowledge", {"id": item_id}) == 409
     assert deck.act("reopen", {"id": item_id}) == 409
+
+
+def test_a_headless_job_refusal_raises_nothing(deck):
+    apply_message(deck.state, HOSTS[0], {"type": "hello"})
+    apply_message(deck.state, HOSTS[0], {
+        "type": "input_observation", "schema_version": 1, "runtime": "claude", "owner_type": "job",
+        "job_id": "j1", "session_id": "s1", "step_index": 0, "project": "restoke",
+        "kind": "input_requested", "reason": "permission", "source_event": "PermissionRequest",
+        "source_event_id": "request1", "observed_at": 200, "context_reference": "/retained/hook.json"})
+    assert deck.state.attention.list() == []
+
+
+@pytest.mark.parametrize("owner_type", ["session"])
+def test_input_observations_deduplicate_resume_and_survive_silence(deck, owner_type):
+    observation = {"type": "input_observation", "schema_version": 1, "host": "worker-hostname",
+                   "runtime": "claude", "owner_type": owner_type, "job_id": "j1",
+                   "session_id": "s1", "step_index": 0, "project": "restoke",
+                   "kind": "input_requested", "reason": "permission",
+                   "source_event": "PermissionRequest", "source_event_id": "request1",
+                   "observed_at": 200, "context_reference": "/retained/hook.json"}
+    apply_message(deck.state, HOSTS[0], {"type": "hello"})
+    for _ in range(10):
+        apply_message(deck.state, HOSTS[0], observation)
+    [item] = deck.items().values()
+    assert item["kind"] == "decision" and item["state"] == "open"
+    assert item["owner"]["host"] == "home"
+    assert item["owner"]["id"] == ("j1" if owner_type == "job" else "s1")
+    assert item["last_seen"] == 200
+    apply_message(deck.state, HOSTS[0], {"type": "heartbeat"})
+    deck.report("home", ok=False)
+    [quiet] = deck.items().values()
+    assert quiet["state"] == "open" and quiet["stale"]
+    assert quiet["last_seen"] == item["last_seen"]
+    apply_message(deck.state, HOSTS[0], {**observation, "kind": "input_cleared",
+                                       "source_event": "PostToolUse", "observed_at": 250})
+    [resumed] = deck.items().values()
+    assert resumed["state"] == "resolved"
+    assert resumed["resolution_details"] == "answered in session"
+    apply_message(deck.state, HOSTS[0], observation)
+    assert next(iter(deck.items().values()))["state"] == "resolved"
+    apply_message(deck.state, HOSTS[0], {**observation, "source_event_id": "request2"})
+    assert len(deck.items()) == 1  # projection helper indexes by owner
+    assert len(deck.state.attention.list()) == 2
+
+
+def test_a_permission_request_says_what_the_agent_wants_to_run(deck):
+    observation = {"type": "input_observation", "schema_version": 1, "runtime": "claude",
+                   "owner_type": "session", "job_id": None, "session_id": "s1", "step_index": None,
+                   "project": "restoke", "kind": "input_requested", "reason": "permission",
+                   "source_event": "PermissionRequest", "source_event_id": "request1",
+                   "observed_at": 200, "context_reference": "/retained/hook.json"}
+    apply_message(deck.state, HOSTS[0], {"type": "hello"})
+    apply_message(deck.state, HOSTS[0], observation)
+    [before] = deck.state.attention.list()
+    assert (before.headline, before.context_reference) == ("Claude needs permission", "/retained/hook.json")
+    request = {"tool": "Bash", "description": "Check worktree state", "detail": "git status --short"}
+    apply_message(deck.state, HOSTS[0], {**observation, "request": request})
+    [item] = deck.state.attention.list()
+    assert item.id == before.id and item.state == "open"
+    assert item.headline == "Claude asks to use Bash"
+    assert item.context_reference == "Check worktree state\n\ngit status --short"

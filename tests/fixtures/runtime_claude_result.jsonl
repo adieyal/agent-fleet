@@ -1,0 +1,2 @@
+{"type":"system","subtype":"init","session_id":"recorded-claude","model":"claude-sonnet-4"}
+{"type":"result","subtype":"success","is_error":false,"result":"FLEET_STATUS: done","session_id":"recorded-claude","total_cost_usd":0.0123,"usage":{"input_tokens":120,"cache_creation_input_tokens":30,"cache_read_input_tokens":50,"output_tokens":24}}

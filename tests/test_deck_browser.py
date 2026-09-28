@@ -3,7 +3,8 @@
 import io
 import json
 import re
-from collections.abc import Iterator
+import subprocess
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.request import urlopen
@@ -12,13 +13,53 @@ import pytest
 from PIL import Image, ImageStat
 from playwright.sync_api import Browser, Page, expect
 
+from browser_clock import advance_until
+from fleet.composition import open_attention, open_execution, open_library, open_records, open_store, open_work
+from fleet.modules.execution import JobObservation
+from fleet.modules.work import EvidenceSpecification
+
 VIEWPORTS = {"desktop": {"width": 1440, "height": 900}, "narrow": {"width": 390, "height": 844}}
 # The deck ages jobs against the browser clock; pin it to the moment the fixture was recorded.
 PIN_CLOCK = """
-const offset = %d * 1000 - Date.now();
+let offset = %d * 1000 - Date.now();
 const realNow = Date.now.bind(Date);
 Date.now = () => realNow() + offset;
+window.advanceClock = seconds => { offset += seconds * 1000; };
+window.resetClock = () => { offset = %d * 1000 - realNow(); };
 """
+FINISHED = {"done", "cancelled"}
+BLOCKED = {"failed", "stalled"}
+ASKING = "home:8e1f0c42-2b7d-4a55-9c1e-7f3a2d6b9e10"     # idle two minutes, with a decision waiting
+REVIEWING = "worker:019a7c3e-55d1-7b20-a8f4-3c9e0d1b2a67"  # idle about eighteen minutes
+BACKGROUND = {"invoice-parser"}                            # the fixture's one room in the background
+
+
+def test_animation_clock_uses_real_time_until_explicitly_stepped(browser: Browser, base_url: str) -> None:
+    page = browser.new_page()
+    page.goto(base_url + "/api/state")
+    assert page.evaluate("""async () => {
+        const clock = await import('/js/clock.js');
+        let real = 100;
+        performance.now = () => real;
+        const readings = [clock.animationNow(), clock.isStepping()];
+        real = 200;
+        readings.push(clock.animationNow());
+        clock.advanceClock(0);
+        real = 900;
+        readings.push(clock.animationNow(), clock.isStepping());
+        clock.advanceClock(1.5);
+        readings.push(clock.animationNow());
+        return readings;
+    }""") == [100, False, 200, 200, True, 1700]
+    page.close()
+
+
+def on_the_floor(fixture_data: dict[str, Any]) -> set[str]:
+    """Every job and session the deck draws: finished jobs have left, blocked ones are under their lantern, and a
+    background room has no crew."""
+    return {f"{host['name']}:{item['id']}" for host in fixture_data["hosts"]
+            for item in host["jobs"] + host["sessions"]
+            if item["status"] not in FINISHED | BLOCKED and item["project"] not in BACKGROUND}
 
 
 @dataclass
@@ -27,21 +68,51 @@ class Deck:
     errors: list[str] = field(default_factory=list)
 
 
+@pytest.fixture(scope="module")
+def loaded_decks(browser: Browser, base_url: str,
+                 fixture_data: dict[str, Any]) -> Iterator[Callable[[str, str], Deck]]:
+    decks: dict[tuple[str, str], Deck] = {}
+
+    def load(viewport: str, motion: str) -> Deck:
+        key = viewport, motion
+        if key not in decks:
+            context = browser.new_context(viewport=VIEWPORTS[viewport], reduced_motion=motion)
+            context.add_init_script(PIN_CLOCK % (fixture_data["time"], fixture_data["time"]))
+            page = context.new_page()
+            deck = decks[key] = Deck(page)
+            page.on("console", lambda message: message.type == "error" and deck.errors.append(message.text))
+            page.on("pageerror", lambda error: deck.errors.append(str(error)))
+            page.goto(base_url + "/")
+            page.wait_for_function(f"window.fleetDeck && (fleetDeck.advanceTime(0), fleetDeck.agents().length === {len(on_the_floor(fixture_data))})")
+        return decks[key]
+
+    yield load
+    for deck in decks.values():
+        deck.page.context.close()
+
+
 @pytest.fixture(scope="module", params=list(VIEWPORTS))
-def deck(request: pytest.FixtureRequest, browser: Browser, base_url: str,
-         fixture_data: dict[str, Any]) -> Iterator[Deck]:
+def deck(request: pytest.FixtureRequest, loaded_decks: Callable[[str, str], Deck]) -> Deck:
     """One page per viewport, loaded once; each test leaves it with nothing open."""
-    context = browser.new_context(viewport=VIEWPORTS[request.param], reduced_motion="reduce")
-    context.add_init_script(PIN_CLOCK % fixture_data["time"])
-    page = context.new_page()
-    deck = Deck(page)
-    page.on("console", lambda message: message.type == "error" and deck.errors.append(message.text))
-    page.on("pageerror", lambda error: deck.errors.append(str(error)))
-    page.goto(base_url + "/")
-    agent_count = sum(len(host["jobs"]) + len(host["sessions"]) for host in fixture_data["hosts"])
-    page.wait_for_function(f"window.fleetDeck && fleetDeck.agents().length === {agent_count}")
-    yield deck
-    context.close()
+    return loaded_decks(request.param, "reduce")
+
+
+@pytest.fixture
+def changed_deck(request: pytest.FixtureRequest, loaded_decks: Callable[[str, str], Deck],
+                 base_url: str) -> Iterator[Deck]:
+    deck = loaded_decks("desktop", getattr(request, "param", "reduce"))
+    original = finish_jobs(base_url, {})
+    try:
+        yield deck
+    finally:
+        deck.page.keyboard.press("Escape")
+        deck.page.keyboard.press("Escape")
+        deck.page.evaluate("""doc => {
+            resetClock();
+            fleetDeck.apply(doc);
+            fleetDeck.lookAtRoom(null);
+            fleetDeck.advanceTime(0);
+        }""", original)
 
 
 def test_every_project_gets_a_room(deck: Deck, fixture_data: dict[str, Any]) -> None:
@@ -52,9 +123,235 @@ def test_every_project_gets_a_room(deck: Deck, fixture_data: dict[str, Any]) -> 
     assert deck.errors == []
 
 
-def test_every_job_and_session_is_an_agent(deck: Deck, fixture_data: dict[str, Any]) -> None:
-    expected = {f"{host['name']}:{item['id']}" for host in fixture_data["hosts"]
-                for item in host["jobs"] + host["sessions"]}
+def test_seeded_project_bench_by_floor_id(changed_deck: Deck, deck_state, monkeypatch) -> None:
+    import runpy
+    import sys
+    from pathlib import Path
+    from fleet.composition import open_workspace
+
+    store = open_store()
+    workspace = open_workspace(store)
+    workspace.move_in(['worker'], 'restoke', name='Restoke V2')
+    project = workspace.resolve_project('Restoke V2')
+    assert project in workspace.floors_snapshot()
+    script = Path(__file__).parents[1] / 'scripts/seed_supplier_slice.py'
+    monkeypatch.setattr(sys, 'argv', [str(script), '--project', project])
+    runpy.run_path(str(script), run_name='__main__')
+    monkeypatch.setattr(deck_state, 'store', store)
+    monkeypatch.setattr(deck_state, 'attention', open_attention(store))
+    page = changed_deck.page
+    page.evaluate('(project) => fleetDeck.enterFloor(project)', project)
+    expect(page.get_by_role('button', name='V2 frontend overhaul', exact=True)).to_be_visible()
+    page.get_by_role('button', name='V2 frontend overhaul', exact=True).click()
+    page.get_by_role('button', name='Slice 6: supplier imports', exact=True).click()
+    expect(page.locator('#benchRoute')).to_have_attribute('data-level', 'bench')
+    expect(page.locator('#benchRoute')).to_contain_text('Slice 6: supplier imports')
+    page.evaluate('fleetDeck.enterFloor(null)')
+
+
+def test_bench_real_endpoint(changed_deck: Deck, deck_state, monkeypatch, tmp_path) -> None:
+    store = open_store()
+    work = open_work(store)
+    monkeypatch.setattr(deck_state, 'store', store)
+    monkeypatch.setattr(deck_state, 'attention', open_attention(store))
+    epic = work.add(project='bench-contract', title='Contract room', goal='Deliver', kind='epic', actor='user')
+    milestone = work.add(project='bench-contract', title='Contract slice', goal='Deliver',
+                         kind='milestone', parent=epic.id, actor='user')
+    for title in ['Gather evidence', 'Review results']:
+        task = work.add(project='bench-contract', title=title, goal=title, parent=milestone.id, actor='user')
+    work.add_criterion(milestone.id, text='checked evidence', verification='checked', actor='user',
+                       specification=EvidenceSpecification('test:bench', 'passed'))
+    for kind in ['judged', 'accepted']:
+        criterion = work.add_criterion(milestone.id, text=f'{kind} evidence', verification=kind, actor='user')
+    work.meet(criterion.id, actor='user')
+    execution = open_execution(store)
+    run = execution.link('worker', 'bench-job', task.id, actor='user')
+    now = store.clock()
+    execution.observe('worker', JobObservation('bench-job', 'running', 'codex', now, None, now,
+                      current_action='read', action_observed_at=now))
+    deck_state.attention.raise_item(project='bench-contract', work_item=milestone.id, kind='decision',
+        owner='user', source='manual', source_reference='bench-question', headline='Accept evidence?',
+        context_reference='work:' + milestone.id, actor='user')
+    open_library(store).index_run(run=run.id, work_item=task.id, kind='report', title='Contract report',
+                                location='fleet://worker/bench-job/report', availability='available')
+    repo = tmp_path / 'management'
+    subprocess.run(['git', 'init', str(repo)], check=True, capture_output=True, timeout=10)
+    open_records(store).register('bench-contract', repo, actor='user')
+    work.set_summary(milestone.id, purpose='Find suppliers', done='Evidence gathered', doing='Review results',
+                     next='Accept results', authoring_role='user', actor='user')
+
+    page = changed_deck.page
+    page.evaluate("fleetDeck.enterFloor('bench-contract')")
+    page.get_by_role('button', name='Contract room', exact=True).click()
+    page.get_by_role('button', name='Contract slice', exact=True).click()
+    bench = page.locator('#benchRoute')
+    expect(bench).to_have_attribute('data-level', 'bench')
+    expect(bench.locator('[data-task]')).to_have_text(['Review results', 'Gather evidence'])
+    assert bench.locator('[data-task]').evaluate_all('(els) => els.map(e => e.dataset.lane)') == ['doing', 'next']
+    for kind, state in [('checked', 'unmet'), ('judged', 'unmet'), ('accepted', 'met')]:
+        light = bench.locator(f'[data-verification="{kind}"]')
+        expect(light).to_have_attribute('data-state', state)
+        expect(light).to_have_attribute('title', f'{kind} evidence')
+    expect(bench.get_by_text('1 / 3', exact=True)).to_be_visible()
+    expect(bench.locator('[data-agent]')).to_have_attribute('data-agent', run.id)
+    expect(bench.locator('[data-agent] .glyph')).to_have_attribute('data-action', 'read')
+    expect(bench.locator('[data-lantern]')).to_be_visible()
+    bench.locator('[data-tray] summary').click()
+    expect(bench.locator('[data-tray]')).to_contain_text('Contract report')
+    expect(bench.locator('[data-tray]')).to_contain_text('fleet://worker/bench-job/report')
+    expect(bench.locator('[data-availability]')).to_have_attribute('data-availability', 'available')
+    bench.locator('[data-briefing]').click()
+    for text in ['Find suppliers', 'Evidence gathered', 'Review results', 'Accept results']:
+        expect(bench.locator('[data-summary]')).to_contain_text(text)
+    page.evaluate('fleetDeck.enterFloor(null)')
+
+
+def test_bench_route_steps_out_one_level(changed_deck: Deck) -> None:
+    page = changed_deck.page
+    page.locator('#viewToggle [data-view="building"]').click()
+    page.evaluate('fleetDeck.advanceTime(0)')
+    page.locator('.plate[data-floor="1"] .enter').click()
+    page.locator('[data-epic]').first.click()
+    expect(page.locator('#benchRoute')).to_have_attribute('data-level', 'room')
+    page.locator('[data-slice]').first.click()
+    expect(page.locator('#benchRoute')).to_have_attribute('data-level', 'bench')
+    expect(page.locator('#benchBreadcrumb')).to_contain_text('Supplier slice')
+    assert page.evaluate("fleetDeck.textBudget(document.getElementById('benchRoute'))") <= 20
+    page.keyboard.press('Escape')
+    expect(page.locator('#benchRoute')).to_have_attribute('data-level', 'room')
+    expect(page.locator('#benchBreadcrumb')).not_to_contain_text('Supplier slice')
+    page.keyboard.press('Escape')
+    expect(page.locator('#benchRoute')).to_have_attribute('data-level', 'floor')
+    page.keyboard.press('Escape')
+    assert page.evaluate('fleetBuilding.current()') is None
+    page.locator('#viewToggle [data-view="deck"]').click()
+
+
+@pytest.mark.parametrize('redact', [False, True])
+def test_l3_bench_projection(changed_deck: Deck, base_url: str, redact: bool) -> None:
+    page = changed_deck.page
+    doc = {
+        'id': 'slice', 'title': 'Supplier slice', 'project': 'p-5e1f0a01',
+        'tasks': [{'id': lane, 'title': lane, 'lane': lane, 'condition': condition}
+                  for lane, condition in [('done', 'complete'), ('doing', 'waiting'), ('next', 'blocked')]],
+        'criteria': [{'verification': kind, 'state': state, 'text': kind}
+                     for kind in ['checked', 'judged', 'accepted'] for state in ['met', 'unmet']],
+        'progress': {'complete': 3, 'total': 6},
+        'agents': [{'run': str(i), 'host': 'home', 'status': 'running',
+                    'action_glyph': action, 'action_freshness': 'current'}
+                   for i, action in enumerate(['read', 'edit', 'test', 'wait', None])],
+        'attention': [{'id': 'attention'}],
+        'reports': [{'id': 'report', 'title': 'Evidence report', 'availability': 'available',
+                     'canonical_location': '/reports/evidence.md'}],
+        'summary': {'purpose': 'Find suppliers', 'done': 'Evidence gathered',
+                    'doing': 'Review evidence', 'next': 'Accept results'},
+    }
+    def respond(route):
+        if 'slice=' in route.request.url:
+            route.fulfill(json=doc)
+        else:
+            route.fulfill(json={'rooms': [{'id': 'epic', 'title': 'Suppliers',
+                                          'benches': [{'id': 'slice', 'title': 'Supplier slice'}]}]})
+    page.route('**/api/bench?*', respond)
+    try:
+        if redact:
+            page.goto(base_url + '/?redact')
+            page.wait_for_function('window.fleetDeck')
+        page.evaluate("fleetDeck.enterFloor('p-5e1f0a01')")
+        page.locator('[data-epic]').click()
+        page.locator('[data-slice]').click()
+        bench = page.locator('#benchRoute')
+        page.evaluate("document.getElementById('benchRoute').style.filter = 'grayscale(1)'")
+        expect(bench.locator('[data-task]')).to_have_count(3)
+        assert bench.locator('[data-task]').evaluate_all('(els) => els.map(e => e.dataset.lane)') == ['done', 'doing', 'next']
+        shapes = bench.locator('[data-verification] svg').evaluate_all('(els) => els.map(e => e.innerHTML)')
+        assert len(set(shapes)) == 3
+        assert bench.locator('[data-state="met"]').first.evaluate('(e) => getComputedStyle(e).borderStyle') != bench.locator('[data-state="unmet"]').first.evaluate('(e) => getComputedStyle(e).borderStyle')
+        expect(bench.locator('[data-agent]')).to_have_count(5)
+        assert bench.locator('[data-agent]').first.evaluate('(e) => e.style.getPropertyValue("--hc")')
+        assert len(set(bench.locator('[data-agent] .glyph svg').evaluate_all('(els) => els.map(e => e.innerHTML)'))) == 5
+        expect(bench.locator('[data-action="unknown"]')).to_have_count(1)
+        expect(bench.locator('[data-desk] [data-lantern]')).to_have_count(1)
+        bench.locator('[data-tray] summary').click()
+        expect(bench.locator('[data-tray]')).to_contain_text('Evidence report')
+        bench.locator('[data-tray] summary').click()
+        expect(bench.locator('[data-summary]')).to_be_hidden()
+        bench.locator('[data-briefing]').click()
+        expect(bench.locator('[data-summary]')).to_contain_text('Find suppliers')
+        bench.locator('[data-briefing]').click()
+        assert page.evaluate("fleetDeck.textBudget(document.getElementById('benchRoute'))") <= 35
+        if redact:
+            assert page.evaluate("fleetDeck.textBudget(document.getElementById('benchRoute'))") == 0
+            assert bench.locator('[data-verification] svg').first.evaluate('(e) => getComputedStyle(e).stroke') != 'rgba(0, 0, 0, 0)'
+        doc['tasks'][1].update(lane='done', condition='complete')
+        bench.locator('[data-tray] summary').click()
+        doc['agents'].append({**doc['agents'][0], 'run': 'six'})
+        doc['attention'] = []
+        page.evaluate('doc => fleetDeck.apply(doc)', finish_jobs(base_url, {}))
+        expect(bench.locator('[data-task="doing"]')).to_have_attribute('data-flipped', 'true')
+        expect(bench.locator('[data-agent-group]')).to_have_attribute('data-count', '6')
+        expect(bench.locator('[data-agent]')).to_have_count(0)
+        expect(bench.locator('[data-lantern]')).to_have_count(0)
+        expect(bench.locator('[data-tray]')).to_have_attribute('open', '')
+        page.evaluate('doc => fleetDeck.apply(doc)', finish_jobs(base_url, {}))
+        expect(bench.locator('[data-task="doing"]')).to_have_attribute('data-flipped', 'false')
+        for actions in [['web', 'plan', 'delegate', 'type', 'doc'], ['ship', 'review', 'build', 'think', 'search']]:
+            doc['agents'] = [{**doc['agents'][0], 'run': str(i), 'action_glyph': action}
+                             for i, action in enumerate(actions)]
+            page.evaluate('doc => fleetDeck.apply(doc)', finish_jobs(base_url, {}))
+            expect(bench.locator(f'[data-action="{actions[0]}"]')).to_have_count(1)
+            expect(bench.locator('[data-agent]')).to_have_count(5)
+        doc['summary'] = None
+        doc['progress'] = {'complete': None, 'total': None}
+        page.evaluate('doc => fleetDeck.apply(doc)', finish_jobs(base_url, {}))
+        expect(bench).to_contain_text('Progress unknown')
+        bench.locator('[data-briefing]').click()
+        expect(bench.locator('[data-summary]')).to_have_text('Summary unknown')
+    finally:
+        page.unroute('**/api/bench?*', respond)
+        page.evaluate('fleetDeck.enterFloor(null)')
+        if redact:
+            page.goto(base_url + '/')
+            page.wait_for_function('window.fleetDeck')
+
+
+def test_text_budget_detects_overflow(deck: Deck) -> None:
+    assert deck.page.evaluate("""async () => {
+        const { assertTextBudget } = await import('/js/text-budget.js');
+        const el = document.body.appendChild(document.createElement('div'));
+        el.textContent = 'one two three';
+        try {
+            assertTextBudget(el, 3);
+            try { assertTextBudget(el, 2); } catch (e) { return /3 > 2/.test(e.message); }
+            return false;
+        } finally { el.remove(); }
+    }""")
+
+
+def test_redact_has_no_visible_text(browser: Browser, base_url: str) -> None:
+    page = browser.new_page()
+    try:
+        page.goto(base_url + '/?redact')
+        page.wait_for_function('window.fleetDeck')
+        page.evaluate("fleetDeck.enterFloor('p-5e1f0a01')")
+        page.locator('[data-epic]').first.click()
+        page.locator('[data-slice]').first.click()
+        assert page.evaluate("fleetDeck.textBudget(document.body)") == 0
+        assert page.evaluate("""() => {
+            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+            while (walker.nextNode()) {
+                const node = walker.currentNode;
+                if (!node.textContent.trim() || !node.parentElement.checkVisibility()) continue;
+                if (getComputedStyle(node.parentElement).color !== 'rgba(0, 0, 0, 0)') return false;
+            }
+            return true;
+        }""")
+    finally:
+        page.close()
+
+
+def test_every_unfinished_job_and_session_is_an_agent(deck: Deck, fixture_data: dict[str, Any]) -> None:
+    expected = on_the_floor(fixture_data)
     agents = deck.page.evaluate("fleetDeck.agents()")
     assert {agent["key"] for agent in agents} == expected
     assert sum(agent["kind"] == "session" for agent in agents) == 2
@@ -64,10 +361,116 @@ def test_every_job_and_session_is_an_agent(deck: Deck, fixture_data: dict[str, A
     assert deck.errors == []
 
 
-def test_bubbles_show_action_glyphs_and_the_words_stay_a_click_away(deck: Deck) -> None:
+def test_finished_jobs_are_off_the_deck_until_the_chip_shows_them(deck: Deck, fixture_data: dict[str, Any]) -> None:
     page = deck.page
-    expected = {"a1c3e9": "test", "b7d042": "edit", "Why does the st": "ask", "f20a6d": "edit", "c90e11": "think",
-                "0a9e3b": "queued", "e1b5c8": "failed", "d4f7a2": "done"}
+    finished = {f"{host['name']}:{job['id']}" for host in fixture_data["hosts"]
+                for job in host["jobs"] if job["status"] in FINISHED}
+    assert finished == {"worker:d4f7a2"}
+    assert not finished & {agent["key"] for agent in page.evaluate("fleetDeck.agents()")}
+    expect(page.locator("#tags .tag", has_text="d4f7a2")).to_have_count(0)
+    chip = page.locator("#toggleFinished")
+    expect(chip).to_have_text("1 finished · show")
+
+    chip.dispatch_event("click")
+    page.wait_for_function("fleetDeck.agents().some(agent => agent.key === 'worker:d4f7a2')")
+    expect(page.locator("#tags .tag", has_text="d4f7a2")).to_have_count(1)
+    expect(chip).to_have_text("hide finished")
+
+    chip.dispatch_event("click")
+    page.wait_for_function("!fleetDeck.agents().some(agent => agent.key === 'worker:d4f7a2')")
+    expect(page.locator("#tags .tag", has_text="d4f7a2")).to_have_count(0)
+    expect(chip).to_have_text("1 finished · show")
+    assert deck.errors == []
+
+
+def finish_jobs(base_url: str, statuses: dict[str, str]) -> dict[str, Any]:
+    """The server's state document with some jobs finished, as the next state update would bring it."""
+    with urlopen(base_url + "/api/state", timeout=5) as response:
+        doc = json.load(response)
+    for host in doc["hosts"]:
+        for job in host["jobs"]:
+            job["status"] = statuses.get(f"{host['name']}:{job['id']}", job["status"])
+    return doc
+
+
+@pytest.mark.parametrize("changed_deck", ["no-preference", "reduce"], indirect=True)
+def test_a_job_that_finishes_walks_out(changed_deck: Deck, base_url: str) -> None:
+    page = changed_deck.page
+    leaving = {"worker:c90e11": "done", "home:b7d042": "cancelled"}
+    page.evaluate("doc => fleetDeck.apply(doc)", finish_jobs(base_url, leaving))
+    gone = f"!fleetDeck.agents().some(agent => {json.dumps(list(leaving))}.includes(agent.key))"
+    if page.evaluate("matchMedia('(prefers-reduced-motion: reduce)').matches"):
+        assert page.evaluate(gone)                                          # removed at once
+    else:
+        agents = {agent["key"]: agent for agent in page.evaluate("fleetDeck.agents()")}
+        assert all(agents[key]["leaving"] for key in leaving)               # a completion moment, then the door
+        assert not agents["home:a1c3e9"]["leaving"]
+        page.evaluate("fleetDeck.advanceTime(0)")
+        assert page.evaluate(gone) is False
+        advance_until(page, gone)
+    expect(page.locator("#tags .tag", has_text="c90e11")).to_have_count(0)
+    expect(page.locator("#toggleFinished")).to_have_text("3 finished · show")
+    assert changed_deck.errors == []
+
+
+def test_idle_sessions_rest_without_a_bubble(deck: Deck) -> None:
+    page = deck.page
+    advance_until(page, f"fleetDeck.agents().filter(agent => [{json.dumps(ASKING)}, {json.dumps(REVIEWING)}]"
+                           ".includes(agent.key) && agent.clip === 'Sitting').length === 2")
+    for room, session, job in [("restoke", "Why does the st", "a1c3e9"), ("agent-fleet", "review the unstaged", "f20a6d")]:
+        rooms_on_screen(page, room)
+        expect(page.locator("#tags .tag", has_text=job).locator(".bubble")).to_be_visible()
+        expect(page.locator("#tags .tag", has_text=session).locator(".bubble")).to_be_hidden()
+    page.evaluate("fleetDeck.lookAtRoom(null)")
+    assert deck.errors == []
+
+
+def session_state(base_url: str, seconds_later: int, drop_decisions: bool = False,
+                  working: str | None = None) -> dict[str, Any]:
+    """The server's state document, optionally without its decision items or with one session back at work."""
+    with urlopen(base_url + "/api/state", timeout=5) as response:
+        doc = json.load(response)
+    if drop_decisions:
+        doc["attention"] = [item for item in doc["attention"] if item["kind"] != "decision"]
+        from fleet.projections.attention import attention_display
+        doc["attention_display"] = attention_display(doc["attention"], doc["building"], doc["projects"])
+    for host in doc["hosts"]:
+        for session in host["sessions"]:
+            if f"{host['name']}:{session['id']}" == working:
+                session.update(status="working", updated_at=doc["time"] + seconds_later)
+    return doc
+
+
+def test_sessions_idle_for_half_an_hour_leave_unless_a_decision_waits(changed_deck: Deck, base_url: str) -> None:
+    page = changed_deck.page
+    live = page.locator("#stats .chip.sess")
+    expect(live).to_have_text("2 live · 2 waiting")
+
+    later = 40 * 60                                                     # both now idle for over half an hour
+    page.evaluate(f"advanceClock({later})")
+    page.evaluate("fleetDeck.advanceTime(0)")
+    page.wait_for_function(f"!fleetDeck.agents().some(agent => agent.key === {json.dumps(REVIEWING)})")
+    assert ASKING in {agent["key"] for agent in page.evaluate("fleetDeck.agents()")}
+    expect(live).to_have_text("2 live · 2 waiting")
+
+    page.evaluate("doc => fleetDeck.apply(doc)", session_state(base_url, later, drop_decisions=True))
+    assert not {ASKING, REVIEWING} & {agent["key"] for agent in page.evaluate("fleetDeck.agents()")}
+    expect(live).to_have_text("2 live · 2 waiting")
+
+    page.evaluate("doc => fleetDeck.apply(doc)", session_state(base_url, later, drop_decisions=True, working=REVIEWING))
+    assert REVIEWING in {agent["key"] for agent in page.evaluate("fleetDeck.agents()")}
+    expect(live).to_have_text("2 live · 1 waiting")
+    assert changed_deck.errors == []
+
+
+def test_bubbles_show_action_glyphs_and_the_words_stay_a_click_away(deck: Deck) -> None:
+    phrase = deck.page.evaluate("""async () => {
+      const { mumble } = await import('/js/activity.js');
+      return mumble({kind: 'tool', name: 'shell', summary: 'git status', activity_class: 'test'});
+    }""")
+    assert 'tests' in phrase
+    page = deck.page
+    expected = {"a1c3e9": "test", "b7d042": "edit", "Why does the st": "wait", "f20a6d": "edit", "c90e11": "think"}
     for agent, action in expected.items():
         bubble = page.locator("#tags .tag", has_text=agent).locator(".bubble")
         expect(bubble).to_have_attribute("data-action", action)
@@ -129,9 +532,11 @@ def test_a_jobs_workarea_shows_its_plan_desk_and_tray(deck: Deck, fixture_data: 
     assert deck.errors == []
 
 
-def test_document_reader_opens_from_an_agent(deck: Deck) -> None:
+def test_document_reader_opens_from_a_failed_jobs_panel(deck: Deck) -> None:
     page = deck.page
-    page.locator("#tags .tag", has_text="e1b5c8").dispatch_event("click")
+    page.locator('.lantern[data-room="restoke"]').dispatch_event("click")
+    page.locator('#attnPanel [data-owner="home:e1b5c8"]').click()
+    page.locator("#attnPanel [data-close]").click()
     expect(page.locator("#panel")).to_have_class("open")
     expect(page.locator("#panelHead h2")).to_have_text("Upgrade Django to 5.2")
     page.locator('#panelBody [data-doc="report-0"]').click()
@@ -155,8 +560,52 @@ def test_demo_mode_fills_the_deck_without_errors(browser: Browser, base_url: str
     page.wait_for_function("window.fleetDeck && fleetDeck.agents().length > 0")
     expect(page.locator("#live")).to_contain_text("demo data")
     assert len(page.evaluate("fleetDeck.rooms()")) > 1
+    assert not any(agent["status"] in BLOCKED for agent in page.evaluate("fleetDeck.agents()"))
+    parser = rooms_by_name(page)["demo-parser"]                              # in the background, its parse running
+    assert (parser["focus"], parser["lit"]) == ("background", True)
+    assert crew(page, "demo-parser") == set()
+    advance_until(page, "fleetDeck.crowds().some(crowd => crowd.room === 'demo-docs' && crowd.count === 6)")
+    expect(page.locator('.lantern[data-kind="blocker"]')).to_have_count(2)   # the failed job's and the stalled one's
+    assert any(room["attention"] and room["attention"]["count"] > 1 for room in page.evaluate("fleetDeck.rooms()"))
+    expect(page.locator('.lantern[data-count="2"] b')).to_have_text("2")
+    page.locator('.lantern[data-room="demo-docs"]').dispatch_event("click")
+    page.locator("#attnPanel [data-owner]").dispatch_event("click")   # the demo pushes a new state every second
+    expect(page.locator("#panelHead h2")).to_have_text("Refresh the onboarding guide screenshots")
+    page.locator("#attnPanel [data-close]").dispatch_event("click")
     page.locator("#tags .tag").first.dispatch_event("click")
     expect(page.locator("#panel")).to_have_class("open")
+    context.close()
+    assert errors == []
+
+
+def test_demo_androids_finish_and_walk_out(browser: Browser, base_url: str) -> None:
+    context = browser.new_context(viewport=VIEWPORTS["desktop"])
+    page = context.new_page()
+    errors: list[str] = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.goto(base_url + "/?demo")
+    page.wait_for_function("window.fleetDeck && fleetDeck.agents().length > 0")
+    assert not any(agent["status"] in FINISHED for agent in page.evaluate("fleetDeck.agents()"))
+    leaving = advance_until(page, "fleetDeck.agents().find(agent => agent.leaving)")
+    assert leaving["status"] == "done"
+    advance_until(page, f"!fleetDeck.agents().some(agent => agent.key === '{leaving['key']}')")
+    context.close()
+    assert errors == []
+
+
+def test_demo_session_idle_for_an_hour_comes_back_to_work(browser: Browser, base_url: str) -> None:
+    context = browser.new_context(viewport=VIEWPORTS["desktop"], reduced_motion="reduce")
+    page = context.new_page()
+    errors: list[str] = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.goto(base_url + "/?demo")
+    page.wait_for_function("window.fleetDeck && fleetDeck.agents().length > 0")
+    sessions = page.evaluate("fleetDeck.agents().filter(agent => agent.kind === 'session')")
+    assert {agent["status"] for agent in sessions} == {"working", "idle"}
+    # the header also counts the dormant session and the one working in the background room
+    expect(page.locator("#stats .chip.sess")).to_have_text(f"{len(sessions) + 2} live · 2 waiting")
+    advance_until(page, f"fleetDeck.agents().filter(agent => agent.kind === 'session').length === {len(sessions) + 1}")
+    expect(page.locator("#stats .chip.sess")).to_have_text(f"{len(sessions) + 2} live · 1 waiting")
     context.close()
     assert errors == []
 
@@ -176,6 +625,114 @@ def test_library_lists_and_opens_documents(deck: Deck) -> None:
     assert deck.errors == []
 
 
+def test_bubbles_appear_only_in_a_room_you_zoom_into(deck: Deck) -> None:
+    page = deck.page
+    agents = page.evaluate("fleetDeck.agents()")
+    room = next(agent["room"] for agent in agents if agent["key"].endswith(":a1c3e9"))
+    none_speak = "[...document.querySelectorAll('#tags .tag')].every(tag => getComputedStyle(tag.firstChild).display === 'none')"
+    page.evaluate("fleetDeck.lookAtRoom(null)")                          # the whole deck: no bubbles
+    advance_until(page, none_speak)
+    on_screen = rooms_on_screen(page, room)                              # zooms into the room
+    far_away = [agent["key"].split(":")[1] for agent in agents if agent["room"] not in on_screen]
+    expect(page.locator("#tags .tag", has_text="a1c3e9").locator(".bubble")).to_be_visible()
+    for job in far_away:
+        expect(page.locator("#tags .tag", has_text=job).locator(".bubble")).to_be_hidden()
+    page.evaluate("fleetDeck.lookAtRoom(null)")
+    advance_until(page, none_speak)
+    assert deck.errors == []
+
+
+def crowded_state(base_url: str, copies: int) -> dict[str, Any]:
+    """The server's state document with worker:f20a6d, editing at the agent-fleet workbench, joined there by copies of
+    itself."""
+    doc = finish_jobs(base_url, {})
+    worker = next(host for host in doc["hosts"] if host["name"] == "worker")
+    job = next(job for job in worker["jobs"] if job["id"] == "f20a6d")
+    worker["jobs"] += [{**job, "id": f"f20a6d-{n}"} for n in range(1, copies + 1)]
+    return doc
+
+
+def crowded_deck(deck: Deck, base_url: str, copies: int) -> Page:
+    """Zoom into agent-fleet with that many more androids at the workbench."""
+    page = deck.page
+    page.evaluate("doc => fleetDeck.apply(doc)", crowded_state(base_url, copies))
+    page.evaluate("fleetDeck.lookAtRoom('agent-fleet', 60)")
+    return page
+
+
+def at_the_workbench(page: Page) -> list[dict[str, Any]]:
+    return [agent for agent in page.evaluate("fleetDeck.agents()")
+            if agent["room"] == "agent-fleet" and agent["station"] == "workbench"]
+
+
+def click_canvas(page: Page, x: int, y: int) -> None:
+    """A click on the 3D view itself, whatever overlay is above that point."""
+    page.evaluate("""([x, y]) => {
+      const opts = { clientX: x, clientY: y, pointerId: 97, pointerType: 'mouse', bubbles: true };
+      for (const type of ['pointerdown', 'pointerup']) document.getElementById('world').dispatchEvent(new PointerEvent(type, opts));
+    }""", [x, y])
+
+
+def test_six_androids_at_one_station_gather_into_a_group_figure(changed_deck: Deck, base_url: str) -> None:
+    page = crowded_deck(changed_deck, base_url, 5)
+    advance_until(page, "fleetDeck.crowds().length === 1")
+    assert len(at_the_workbench(page)) == 6
+    assert page.evaluate("fleetDeck.crowds()") == [
+        {"room": "agent-fleet", "station": "workbench", "count": 6, "fanned": False}]
+    assert all(agent["gathered"] for agent in at_the_workbench(page))
+    badge = page.locator("#tags .crowd")
+    expect(badge).to_have_count(1)
+    expect(badge).to_have_text("6")
+    expect(page.locator("#tags .tag:visible", has_text="f20a6d")).to_have_count(0)
+    assert not any(agent["gathered"] for agent in page.evaluate("fleetDeck.agents()")
+                   if agent["room"] == "agent-fleet" and agent["station"] != "workbench")
+    assert changed_deck.errors == []
+
+
+def test_clicking_the_group_fans_it_out_and_clicking_away_gathers_it(changed_deck: Deck, base_url: str) -> None:
+    page = crowded_deck(changed_deck, base_url, 5)
+    advance_until(page, "fleetDeck.crowds().length === 1")
+    badge = page.locator("#tags .crowd")
+    badge.click()
+    page.wait_for_function("fleetDeck.crowds()[0].fanned")
+    expect(badge).to_be_hidden()
+    expect(page.locator("#tags .tag:visible", has_text="f20a6d")).to_have_count(6)
+    assert not any(agent["gathered"] for agent in at_the_workbench(page))
+
+    click_canvas(page, 5, page.viewport_size["height"] - 5)             # empty floor between the rooms
+    page.wait_for_function("!fleetDeck.crowds()[0].fanned")
+    expect(badge).to_be_visible()
+    expect(page.locator("#tags .tag:visible", has_text="f20a6d")).to_have_count(0)
+
+    badge.click()                                                       # fanned out, one opened: it stands alone
+    page.locator("#tags .tag", has_text="f20a6d-3").click()
+    expect(page.locator("#panel")).to_have_class(re.compile("open"))
+    advance_until(page, "fleetDeck.crowds()[0].count === 5")
+    assert page.evaluate("fleetDeck.crowds()[0].fanned")
+    page.locator("#panel #close").click()                               # closing the panel gathers them again
+    advance_until(page, "!fleetDeck.crowds()[0].fanned && fleetDeck.crowds()[0].count === 6")
+    expect(page.locator("#tags .tag:visible", has_text="f20a6d")).to_have_count(0)
+    assert changed_deck.errors == []
+
+
+def test_five_androids_at_one_station_stand_on_their_own(changed_deck: Deck, base_url: str) -> None:
+    page = crowded_deck(changed_deck, base_url, 4)
+    advance_until(page, "fleetDeck.agents().filter(agent => agent.room === 'agent-fleet' && agent.station === 'workbench').length === 5")
+    assert page.evaluate("fleetDeck.crowds()") == []
+    assert not any(agent["gathered"] for agent in at_the_workbench(page))
+    expect(page.locator("#tags .crowd")).to_have_count(0)
+    expect(page.locator("#tags .tag:visible", has_text="f20a6d")).to_have_count(5)
+    assert changed_deck.errors == []
+
+
+def rooms_on_screen(page: Page, zoomed: str) -> set[str]:
+    """Rooms whose middle would be on screen with the view zoomed into another room."""
+    page.evaluate(f"fleetDeck.lookAtRoom({json.dumps(zoomed)}, 60)")
+    size = page.viewport_size
+    return {name for name, room in rooms_by_name(page).items()
+            if 0 < room["screen"]["x"] < size["width"] and 0 < room["screen"]["y"] < size["height"]}
+
+
 def rooms_by_name(page: Page) -> dict[str, dict[str, Any]]:
     return {room["name"]: room for room in page.evaluate("fleetDeck.rooms()")}
 
@@ -193,54 +750,103 @@ def focus_on_server(base_url: str, room: str) -> set[str]:
     return {item["focus"] for host in hosts for item in host["jobs"] + host["sessions"] if item["project"] == room}
 
 
-def room_colour(page: Page, room: str) -> tuple[float, float]:
-    """Mean brightness and saturation of the rendered floor around a room's centre, with overlays hidden."""
+def room_colour(page: Page, room: str) -> tuple[float, float, float]:
+    """Mean brightness, saturation and warmth (red over blue) of the rendered floor around a room's centre, with
+    overlays hidden."""
     centre = rooms_by_name(page)[room]["screen"]
     viewport = page.viewport_size
     box = {"x": max(0, centre["x"] - 40), "y": max(0, centre["y"] - 30), "width": 80, "height": 60}
     assert box["x"] + 80 <= viewport["width"] and box["y"] + 60 <= viewport["height"]
     style = page.add_style_tag(content="#tags,#floorUi,header,.card,#zoom{visibility:hidden!important}")
-    page.wait_for_timeout(100)
-    image = Image.open(io.BytesIO(page.screenshot(clip=box))).convert("HSV")
+    page.evaluate("fleetDeck.advanceTime(0)")
+    image = Image.open(io.BytesIO(page.screenshot(clip=box))).convert("RGB")
     style.evaluate("tag => tag.remove()")
-    _, saturation, value = ImageStat.Stat(image).mean
-    return value, saturation
+    _, saturation, value = ImageStat.Stat(image.convert("HSV")).mean
+    red, _, blue = ImageStat.Stat(image).mean
+    return value, saturation, red - blue
 
 
 def wait_for_dim(page: Page, room: str, dim: int) -> None:
-    page.wait_for_function(f"fleetDeck.rooms().find(room => room.name === '{room}').dim === {dim}")
+    page.wait_for_function(f"(fleetDeck.advanceTime(0.1), fleetDeck.rooms().find(room => room.name === '{room}').dim === {dim})")
 
 
-def test_background_rooms_are_dim_and_quiet(deck: Deck) -> None:
+def crew(page: Page, room: str) -> set[str]:
+    """The androids in a room."""
+    return {agent["key"] for agent in page.evaluate("fleetDeck.agents()") if agent["room"] == room}
+
+
+def test_background_rooms_are_dim_with_no_crew(deck: Deck) -> None:
     page = deck.page
     wait_for_dim(page, "invoice-parser", 1)
     rooms = rooms_by_name(page)
-    assert {name: (room["focus"], room["dim"]) for name, room in rooms.items()} == {
-        "restoke": ("priority", 0), "invoice-parser": ("background", 1), "agent-fleet": ("priority", 0)}
+    assert {name: (room["focus"], room["dim"], room["lit"]) for name, room in rooms.items()} == {
+        "restoke": ("priority", 0, False), "invoice-parser": ("background", 1, False), "agent-fleet": ("priority", 0, False)}
     expect(page.locator('.focus-switch[data-room="invoice-parser"]')).to_have_attribute("data-focus", "background")
     expect(page.locator('.focus-switch[data-room="agent-fleet"]')).to_have_attribute("data-focus", "priority")
-    assert tag_is_calm(page, "0a9e3b") and tag_is_calm(page, "3c71d5")
+    assert crew(page, "invoice-parser") == set()
+    expect(page.locator("#tags .tag", has_text="0a9e3b")).to_have_count(0)
     assert not tag_is_calm(page, "c90e11") and not tag_is_calm(page, "f20a6d")
     assert deck.errors == []
 
 
-def test_the_switch_dims_the_room_and_nothing_moves(deck: Deck, base_url: str) -> None:
+def test_a_background_room_is_lit_while_its_work_runs(changed_deck: Deck, base_url: str) -> None:
+    page = changed_deck.page
+    assert rooms_by_name(page)["invoice-parser"]["lit"] is False                 # a queued job is not running
+    in_priority = finish_jobs(base_url, {})
+    for host in in_priority["hosts"]:
+        for item in host["jobs"] + host["sessions"]:
+            item["focus"] = "priority"
+    page.evaluate("doc => fleetDeck.apply(doc)", in_priority)
+    wait_for_dim(page, "invoice-parser", 0)
+    bright, vivid, _ = room_colour(page, "invoice-parser")
+    page.evaluate("doc => fleetDeck.apply(doc)", finish_jobs(base_url, {}))
+    wait_for_dim(page, "invoice-parser", 1)
+    dim, grey, cool = room_colour(page, "invoice-parser")
+    assert dim < bright * 0.75 and grey < vivid * 0.6                            # nothing runs: dim and grey
+    page.evaluate("doc => fleetDeck.apply(doc)", finish_jobs(base_url, {"worker:0a9e3b": "running"}))
+    rooms = rooms_by_name(page)
+    assert rooms["invoice-parser"]["lit"] is True
+    dim, _, warm = room_colour(page, "invoice-parser")
+    assert dim < bright * 0.75 and warm > cool + 20                              # its job runs: dim, but lit warm
+    assert rooms["invoice-parser"]["attention"] == {"kind": "blocker", "state": "open", "count": 1}
+    assert crew(page, "invoice-parser") == set()
+    expect(page.locator("#tags .tag", has_text="0a9e3b")).to_have_count(0)
+    expect(page.locator("#stats .chip", has_text="working")).to_have_text("5 working")   # still counted
+    page.evaluate("doc => fleetDeck.apply(doc)", finish_jobs(base_url, {}))
+    assert rooms_by_name(page)["invoice-parser"]["lit"] is False
+    assert changed_deck.errors == []
+
+
+def test_the_switch_sends_the_crew_away_and_brings_it_back(deck: Deck, base_url: str) -> None:
     page = deck.page
     before = {name: (room["x"], room["y"], room["screen"]) for name, room in rooms_by_name(page).items()}
-    bright, vivid = room_colour(page, "restoke")
+    bright, _, cool = room_colour(page, "restoke")
+    crew_before = crew(page, "restoke")
+    assert {"home:a1c3e9", "worker:c90e11", ASKING} <= crew_before
     switch = page.locator('.focus-switch[data-room="restoke"]')
     switch.locator('[data-set="background"]').dispatch_event("click")
     expect(switch).to_have_attribute("data-focus", "background")
     wait_for_dim(page, "restoke", 1)
     assert focus_on_server(base_url, "restoke") == {"background"}
-    dim, grey = room_colour(page, "restoke")
-    assert dim < bright * 0.75 and grey < vivid * 0.6
-    assert tag_is_calm(page, "c90e11") and tag_is_calm(page, "e1b5c8")
+    dim, _, warm = room_colour(page, "restoke")
+    assert dim < bright * 0.75 and warm > cool + 20                            # its work runs: dim, but lit warm
+    assert crew(page, "restoke") == set()
+    expect(page.locator("#tags .tag", has_text="c90e11")).to_have_count(0)
+    assert rooms_by_name(page)["restoke"]["lit"] is True
+    lantern = page.locator('.lantern[data-room="restoke"]')                    # the lantern is unaffected
+    expect(lantern).to_have_attribute("data-count", "2")
+    lantern.dispatch_event("click")
+    page.locator(f'#attnPanel [data-owner="{ASKING}"]').click()
+    expect(page.locator("#panelHead .chip.sess")).to_contain_text("waiting for you")
+    page.locator("#panel #close").click()
+    page.keyboard.press("Escape")
     assert {name: (room["x"], room["y"], room["screen"]) for name, room in rooms_by_name(page).items()} == before
 
     switch.locator('[data-set="priority"]').dispatch_event("click")
     wait_for_dim(page, "restoke", 0)
     assert focus_on_server(base_url, "restoke") == {"priority"}
+    assert crew(page, "restoke") == crew_before
+    assert rooms_by_name(page)["restoke"]["lit"] is False
     assert not tag_is_calm(page, "c90e11")
     assert {name: (room["x"], room["y"], room["screen"]) for name, room in rooms_by_name(page).items()} == before
     assert deck.errors == []
@@ -252,14 +858,16 @@ def test_focus_of_an_unregistered_room_survives_reload(deck: Deck, base_url: str
     wait_for_dim(page, "agent-fleet", 1)
     assert focus_on_server(base_url, "agent-fleet") == {"background"}
     page.reload()
-    agent_count = sum(len(host["jobs"]) + len(host["sessions"]) for host in fixture_data["hosts"])
-    page.wait_for_function(f"window.fleetDeck && fleetDeck.agents().length === {agent_count}")
+    crew_of_agent_fleet = {"worker:f20a6d", REVIEWING}
+    page.wait_for_function("window.fleetDeck && (fleetDeck.advanceTime(0), fleetDeck.agents().length === "
+                           f"{len(on_the_floor(fixture_data) - crew_of_agent_fleet)})")
     wait_for_dim(page, "agent-fleet", 1)
     expect(page.locator('.focus-switch[data-room="agent-fleet"]')).to_have_attribute("data-focus", "background")
-    assert tag_is_calm(page, "f20a6d")
+    assert crew(page, "agent-fleet") == set()
     page.locator('.focus-switch[data-room="agent-fleet"] [data-set="priority"]').dispatch_event("click")
     wait_for_dim(page, "agent-fleet", 0)
     assert focus_on_server(base_url, "agent-fleet") == {"priority"}
+    assert crew(page, "agent-fleet") == crew_of_agent_fleet
     assert deck.errors == []
 
 
@@ -281,6 +889,72 @@ def test_the_deck_log_leaves_every_focus_switch_clear(deck: Deck) -> None:
 def attention_on_server(base_url: str) -> dict[str, str]:
     with urlopen(base_url + "/api/state", timeout=5) as response:
         return {item["owner"]["key"]: item["state"] for item in json.load(response)["attention"]}
+
+
+@pytest.mark.parametrize("answer", ["Scenic", "3"])
+def test_decision_reader_choices_and_submission(changed_deck: Deck, answer: str, base_url: str) -> None:
+    from test_web_attention import Deck as ServerDeck
+    from fleet.composition import open_decisions
+    from fleet.projections.attention import attention_display
+
+    server = ServerDeck()
+    page = changed_deck.page
+    question = server.state.attention.raise_item(project="p", kind="decision", owner="user",
+        source="manual", source_reference="reader", headline="Which route?",
+        context_reference="Review the route", actor="author", options=("Direct", "Scenic"))
+    other = server.state.attention.raise_item(project="p", kind="decision", owner="user",
+        source="manual", source_reference="other", headline="When?",
+        context_reference="Schedule", actor="author")
+    def proxy(route):
+        response = route.fetch(url=server.url + "/api/" + route.request.url.split("/api/", 1)[1],
+                               headers={"Content-Type": "application/json"})
+        route.fulfill(response=response)
+    page.route("**/api/decision**", proxy)
+    try:
+        item = server.state.document()["attention"][0]
+        with urlopen(base_url + "/api/state", timeout=5) as response:
+            document = json.load(response)
+        item["project"] = "restoke"
+        document["attention"].append(item)
+        document["attention_display"] = attention_display(document["attention"], document["building"], document["projects"])
+        page.evaluate("doc => fleetDeck.apply(doc)", document)
+        before = page.evaluate("fleetDeck.rooms()")
+        sequence = server.state.store.latest_sequence()
+        page.locator('.lantern[data-room="restoke"]').dispatch_event("click")
+        row = page.locator(f'#attnPanel .attn-item[data-id="{question.id}"]')
+        expect(row.get_by_role("button", name="Open context", exact=True)).to_be_visible()
+        row.get_by_role("button", name="Answer question", exact=True).click()
+        expect(page.locator('#reader')).to_be_visible()
+        expect(page.locator('#rdBody')).to_contain_text("Review the route")
+        expect(page.get_by_role("radio", name="Scenic", exact=True)).to_be_visible()
+        assert page.evaluate("fleetDeck.rooms()") == before
+        assert server.state.store.latest_sequence() == sequence
+        if answer == "Scenic":
+            page.get_by_role("radio", name="Scenic", exact=True).check()
+        else:
+            page.get_by_label("Your answer", exact=True).fill(answer)
+        page.get_by_role("button", name="Submit answer", exact=True).click()
+        if answer == "Scenic":
+            expect(page.locator('#rdBody')).to_contain_text("Answer recorded")
+            decision, = open_decisions(server.state.store).list()
+            assert (decision.actor, decision.answer) == ("user", "Scenic")
+            assert server.state.attention.get(question.id).state == "resolved"
+            assert server.state.attention.get(other.id).state == "open"
+            updated = next(row for row in server.state.document()["attention"] if row["id"] == question.id)
+            updated["project"] = "restoke"
+            document["attention"] = [updated if row["id"] == question.id else row for row in document["attention"]]
+            document["attention_display"] = attention_display(document["attention"], document["building"], document["projects"])
+            page.evaluate("doc => fleetDeck.apply(doc)", document)
+            assert rooms_by_name(page)["restoke"]["attention"]["count"] == 2
+        else:
+            expect(page.locator('#rdBody [role="alert"]')).to_contain_text("option number is out of range")
+            assert server.state.attention.get(question.id).state == "open"
+            assert server.state.store.latest_sequence() == sequence
+            expect(page.get_by_label("Your answer", exact=True)).to_have_value(answer)
+            assert page.evaluate("fleetDeck.rooms()") == before
+    finally:
+        page.unroute("**/api/decision**", proxy)
+        server.close()
 
 
 def expect_need_you(page: Page, base_url: str) -> None:
@@ -317,6 +991,7 @@ def test_a_room_with_open_items_gets_one_lantern_with_a_count(deck: Deck, base_u
     expect(page.locator('#attnPanel .attn-item[data-kind="decision"] b')).to_contain_text("Keep the double fetch")
     page.locator('#attnPanel [data-owner="home:e1b5c8"]').click()
     expect(page.locator("#panelHead h2")).to_have_text("Upgrade Django to 5.2")
+    expect(page.locator("#panelBody .steps li.failed")).to_contain_text("Bump Django and run the test suite")
     assert attention_on_server(base_url) == before   # reading and opening change nothing
     page.locator("#panel #close").click()
     page.keyboard.press("Escape")
@@ -347,3 +1022,52 @@ def test_acknowledging_dims_the_lantern_and_snoozing_hides_it(deck: Deck, base_u
     page.keyboard.press("Escape")
     assert set(attention_on_server(base_url).values()) == {"open"}
     assert deck.errors == []
+
+
+def test_failed_and_stalled_jobs_leave_the_floor_to_their_lantern(deck: Deck, base_url: str,
+                                                                  fixture_data: dict[str, Any]) -> None:
+    page = deck.page
+    blocked = {f"{host['name']}:{job['id']}" for host in fixture_data["hosts"]
+               for job in host["jobs"] if job["status"] in BLOCKED}
+    assert blocked == {"home:e1b5c8", "worker:3c71d5"}
+    assert not blocked & {agent["key"] for agent in page.evaluate("fleetDeck.agents()")}
+    for key in blocked:
+        expect(page.locator("#tags .tag", has_text=key.split(":")[1])).to_have_count(0)
+    rooms = rooms_by_name(page)
+    assert rooms["restoke"]["attention"] == {"kind": "blocker", "state": "open", "count": 2}
+    assert rooms["invoice-parser"]["attention"] == {"kind": "blocker", "state": "open", "count": 1}
+    expect(page.locator("#needYou b")).to_have_text("3")
+    expect_need_you(page, base_url)
+    assert deck.errors == []
+
+
+@pytest.mark.parametrize("changed_deck", ["no-preference"], indirect=True)
+def test_a_job_that_fails_or_stalls_leaves_the_floor_at_once(changed_deck: Deck, base_url: str) -> None:
+    page = changed_deck.page
+    blocked = {"worker:c90e11": "stalled", "home:b7d042": "failed"}
+    page.evaluate("doc => fleetDeck.apply(doc)", finish_jobs(base_url, blocked))
+    assert not page.evaluate(f"fleetDeck.agents().some(agent => {json.dumps(list(blocked))}.includes(agent.key))")
+    expect(page.locator("#tags .tag", has_text="c90e11")).to_have_count(0)
+    expect(page.locator("#tags .tag", has_text="b7d042")).to_have_count(0)
+    expect(page.locator("#toggleFinished")).to_have_text("1 finished · show")   # blocked is not finished
+    expect(page.locator("#needYou b")).to_have_text("3")
+    assert changed_deck.errors == []
+
+
+@pytest.mark.parametrize("changed_deck", ["no-preference"], indirect=True)
+def test_a_failed_job_can_still_be_dismissed_from_its_panel(changed_deck: Deck) -> None:
+    page = changed_deck.page
+    page.locator('.lantern[data-room="restoke"]').dispatch_event("click")
+    page.locator('#attnPanel [data-owner="home:e1b5c8"]').click()
+    expect(page.locator("#panelHead h2")).to_have_text("Upgrade Django to 5.2")
+    page.locator("#panel #dismiss").click()
+    expect(page.locator("#panel")).not_to_have_class(re.compile("open"))
+    chip = page.locator("#restoreDismissed")
+    expect(chip).to_have_text("1 hidden · show")
+    expect(page.locator('#attnPanel [data-owner="home:e1b5c8"]')).to_have_count(0)   # nothing to open while hidden
+    expect(page.locator('.lantern[data-room="restoke"]')).to_have_attribute("data-count", "2")
+    chip.click()
+    expect(chip).to_have_count(0)
+    page.locator('#attnPanel [data-owner="home:e1b5c8"]').click()
+    expect(page.locator("#panel")).to_have_class(re.compile("open"))
+    assert changed_deck.errors == []

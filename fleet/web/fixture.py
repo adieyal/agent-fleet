@@ -11,26 +11,28 @@ behind them:
      "shuttered": {"p-…": {"at": …, "floor": 2}},   # optional: projects in the storehouse
      "remotes": {"<host>": {"<cwd>": ["git@…"]}},   # optional: repository remotes, for move-in offers
      "job_documents": {"<host>/<job>/<document id>": "markdown", …},
+     "pipelines": {"<pipeline>": {"host": …, "project": "<label>"}},   # optional: as in the Fleet config
+     "pipeline_reports": [{"host": …, "pipeline": …, "run": …, "baseline": …}, …],   # as fleetd streams them
      "library": {"<project>": [{"id": "README.md", "mtime": …, "markdown": "…"}, …]}}
 
-Jobs and sessions gain `project_id` and `focus`, and attention items are derived, as they are live. Timestamps
+Jobs and sessions gain `project_id` and `focus`, and attention items are ingested into an isolated store. Timestamps
 are served as recorded; a browser test pins its clock to `time`. Focus and attention
-actions can be set, in memory only, so the recorded file never changes.
+actions can be set in the temporary store, so the recorded file never changes.
 """
 from __future__ import annotations
 
 import json
 import threading
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, Callable
 
-from fleet.attention import AttentionBoard
-from fleet.building import capacity_of
-from fleet.projects import Registry
+from fleet.composition import open_attention, open_store, open_workspace, open_work
+from fleet.modules.workspace import Registry
+from fleet.projections.workspace import annotate, resolve, registry_config
 from fleet.transport import FleetError
 from fleet.web.documents import STATUS_LINE, render_markdown
 from fleet.web.live import LiveWorkspace
-from fleet.workspace import WorkspaceStore
 
 
 class FixtureState(LiveWorkspace):
@@ -39,13 +41,32 @@ class FixtureState(LiveWorkspace):
     def __init__(self, fixture: dict[str, Any]) -> None:
         self.fixture = fixture
         self.project_labels = fixture.get("project_labels", {})
-        self.registry = Registry.from_config({"projects": fixture.get("projects", {})})
-        self.capacity = capacity_of(fixture)
-        self.workspace = WorkspaceStore(None, {"focus": fixture.get("focus"), "floors": fixture.get("floors"),
-                                               "shuttered": fixture.get("shuttered")})
-        self.board = AttentionBoard(self.workspace)
+        self.attention_directory = TemporaryDirectory(prefix="fleet-fixture-")
+        store = open_store(Path(self.attention_directory.name) / "fleet.db")
+        self.store = store
+        self.workspace = open_workspace(store, initial=fixture, actor="fixture-user")
+        work = open_work(store)
+        identities = {}
+        for item in fixture.get("work_items", []):
+            parent = identities[item["parent"]] if item["parent"] is not None else None
+            identities[item["key"]] = work.add(project=item["project"], title=item["title"],
+                goal=item["goal"], kind=item["kind"], parent=parent, actor="fixture-user").id
+        self.registry = self.workspace.registry()
+        self.capacity = self.workspace.capacity()
+        self.attention = open_attention(store,
+                                        workspace_path=Path(self.attention_directory.name) / "workspace.json")
+        self.woken_until = 0.0
+        for host in fixture["hosts"]:
+            self.attention.observe({**host,
+                "jobs": [resolve(self.registry, host["name"], job) for job in host["jobs"]],
+                "sessions": [resolve(self.registry, host["name"], session) for session in host["sessions"]]})
         self.changed = threading.Condition()
         self.version = 0
+        self.pipeline_config = fixture.get("pipelines", {})
+        self.pipeline_runs = {(report["host"], report["pipeline"]): {"run": report.get("run"),
+                                                                     "baseline": report.get("baseline"), "seq": 1}
+                              for report in fixture.get("pipeline_reports", [])}
+        self.pipeline_seq = 1 if self.pipeline_runs else 0
 
     @classmethod
     def load(cls, path: str | Path) -> FixtureState:
@@ -55,26 +76,34 @@ class FixtureState(LiveWorkspace):
         return [host["name"] for host in self.fixture["hosts"]]
 
     def edit_registry(self, change: Callable[[Registry], Any]) -> Any:
-        return change(self.registry)
+        result = self.workspace.edit_registry(change)
+        self.registry = self.workspace.registry()
+        return result
 
     def repository_remotes(self, host: str, directories: list[str]) -> dict[str, list[str]]:
         recorded = self.fixture.get("remotes", {}).get(host, {})
         return {directory: list(recorded.get(directory, [])) for directory in directories}
 
     def document(self) -> dict[str, Any]:
+        self.registry = self.workspace.registry()
         with self.changed:
             document = self.with_attention({"time": self.fixture["time"], "project_labels": self.project_labels,
-                    "projects": [{"id": project_id, **entry} for project_id, entry in self.registry.to_config().items()],
+                    "projects": [{"id": project_id, **entry} for project_id, entry in registry_config(self.registry).items()],
                     "projects_error": None, "hosts": [
-                {**host, "jobs": [self.workspace.annotate(self.registry.resolve(host["name"], job)) for job in host["jobs"]],
-                 "sessions": [self.workspace.annotate(self.registry.resolve(host["name"], session))
+                {**host, "jobs": [annotate(self.workspace, resolve(self.registry, host["name"], job)) for job in host["jobs"]],
+                 "sessions": [annotate(self.workspace, resolve(self.registry, host["name"], session))
                               for session in host["sessions"]]}
                 for host in self.fixture["hosts"]]})
         document = self.with_building(document, self.registry)
         document["building"]["capacity_error"] = None
+        document["pipelines"] = self.pipelines(self.registry, {host["name"]: host for host in self.fixture["hosts"]})
         return document
 
+    def pipeline_updates(self, after: int) -> list[dict[str, Any]]:
+        return self.pipelines(self.registry, {host["name"]: host for host in self.fixture["hosts"]}, after)
+
     def known_projects(self) -> dict[str, Any]:
+        self.registry = self.workspace.registry()
         return self.registry.projects
 
     def read_document(self, host_name: str, job_id: str, document_id: str) -> dict[str, Any]:

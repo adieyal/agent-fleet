@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import PurePosixPath
 from typing import Any
 
 from markdown_it import MarkdownIt
@@ -10,7 +11,7 @@ from mdit_py_plugins.footnote import footnote_plugin
 from mdit_py_plugins.tasklists import tasklists_plugin
 
 from fleet import transport
-from fleet.transport import Host
+from fleet.transport import FleetError, Host
 
 WORDS_PER_MINUTE = 230
 STATUS_LINE = re.compile(r"^\s*\**FLEET_STATUS:.*$", re.MULTILINE)
@@ -25,6 +26,10 @@ renderer = (
 )
 
 
+class DocumentAccessDenied(FleetError):
+    pass
+
+
 def outline(markdown: str) -> list[dict[str, Any]]:
     """Headings (levels 1–3) with the ids anchors_plugin gives them, for a table of contents."""
     entries = []
@@ -37,7 +42,15 @@ def outline(markdown: str) -> list[dict[str, Any]]:
 
 
 def fetch_document(host: Host, job_id: str, document_id: str) -> dict[str, Any]:
-    document = transport.call(host, ["read", job_id, document_id], timeout=30)
+    path = PurePosixPath(document_id)
+    if path.is_absolute() or ".." in path.parts:
+        raise DocumentAccessDenied(f"document path outside approved document roots: {document_id}")
+    try:
+        document = transport.call(host, ["read", job_id, document_id], timeout=30)
+    except FleetError as error:
+        if "document path outside approved document roots" in str(error):
+            raise DocumentAccessDenied(str(error)) from error
+        raise
     markdown = STATUS_LINE.sub("", document.pop("content")).strip()
     return {**document, "host": host.name, **render_markdown(markdown)}
 

@@ -31,12 +31,15 @@
 // swings), so the deck's frame loop and input stay as they were; it reuses the deck's furniture, lighting and palette.
 
 import * as THREE from 'three';
+import { animationNow, isStepping } from './clock.js';
 import { DESK_TOP, HALF, PI, QS, REDUCED, vh, vw } from './env.js';
 import { esc, mix, store } from './util.js';
 import { THEMES, hostLook, projectLook, themeFor } from './looks.js';
 import { working } from './activity.js';
 import { G, KIT, Placer, canvasTex, softDot } from './scene.js';
 import { enterProject } from './state.js';
+import { openAttentionReader } from './reader.js';
+import { enterFloor } from './bench.js';
 
 // ------------------------------------------------------------------ views: the deck, the building (L0), a floor (L1)
 // Inside, `current` is the floor entered, or 'S' with `crate` the project whose crate is open (read-only).
@@ -58,6 +61,7 @@ function showView(view, where = null) {
   if (crate) enterProject(crate);
   else if (current !== null) enterProject(floors.find(f => f.floor === current).projectId);
   else if (leaving) enterProject(null);
+  enterFloor(view === 'floor' ? floors.find(f => f.floor === current).projectId : null);
   if (!buildingShown) closeDialogs();
   renderLift();
   draw();
@@ -153,7 +157,7 @@ function floorsOf(state) {
   const byFloor = new Map(Object.entries(b.floors).map(([id, floor]) => [floor, id]));
   // a floor's rooms are its project's rooms on the deck: one per label with work, looking as that room does there
   const looks = roomLooks(state), roomsOf = new Map();
-  for (const h of state.hosts || []) for (const item of [...(h.jobs || []), ...(h.sessions || [])]) {
+  for (const h of state.hosts || []) for (const item of roomItems(state, h)) {
     if (!item.project_id || !item.project) continue;
     if (!roomsOf.has(item.project_id)) roomsOf.set(item.project_id, new Map());
     const rooms = roomsOf.get(item.project_id);
@@ -171,11 +175,17 @@ function floorsOf(state) {
       mode: focus === 'background' ? 'windowed' : 'open', active: rooms.some(r => r.active) };
   });
 }
+// What gives a project a room: its jobs and sessions, and a pipeline declared to live there, with work or without.
+function roomItems(state, h) {
+  const declared = (state.pipelines || []).filter(p => p.host === h.name && p.project)
+    .map(p => ({ project: p.project, project_id: p.project_id, status: p.run?.status === 'running' ? 'running' : 'idle' }));
+  return [...(h.jobs || []), ...(h.sessions || []), ...declared];
+}
 // The deck gives each room a colour and a theme in name order (rooms.js layoutRooms); the same here, so a room looks
 // the same on its floor as on the deck.
 function roomLooks(state) {
   const names = new Set();
-  for (const h of state.hosts || []) for (const item of [...(h.jobs || []), ...(h.sessions || [])]) if (item.project) names.add(item.project);
+  for (const h of state.hosts || []) for (const item of roomItems(state, h)) if (item.project) names.add(item.project);
   const hues = new Set(), themes = new Set(), out = new Map();
   for (const name of [...names].sort()) {
     const look = projectLook(name, hues), theme = themeFor(name, themes);
@@ -209,45 +219,33 @@ async function setFocus(projectId, focus) {
 // ------------------------------------------------------------------ attention: one lantern per floor, and one by the lobby
 // Only open and acknowledged items show; an acknowledged-only lantern is dimmer. Items on no floor (visitors' work,
 // projects without a floor) hang theirs by the lobby, so none is ever out of sight.
-const GLYPH = '✱';   // the attention glyph at L0; the kind (✋ a blocker, ? a decision) shows once you're inside
 const SWING_S = 2.6;
 const seen = new Set();                 // open item IDs already announced: each swings its lantern once
 const lanterns = new Map();             // floor number or 'lobby' → { level, count, kind, swingFrom }
 const swings = new Map();               // floor number or 'lobby' → how many times its lantern has swung
 function applyLanterns(state) {
-  const onFloor = new Map(floors.filter(f => f.projectId).map(f => [f.projectId, f.floor]));
-  const shuttered = state.building?.shuttered || {};
-  const byPlace = new Map();
-  for (const item of state.attention || []) {
-    if (item.state !== 'open' && item.state !== 'acknowledged') continue;
-    // a shuttered project's items go to the front desk and the storehouse door, never to the floor it left
-    const places = onFloor.has(item.project_id) ? [onFloor.get(item.project_id)]
-      : item.project_id in shuttered ? ['lobby', 'store'] : ['lobby'];
-    for (const place of places) {
-      if (!byPlace.has(place)) byPlace.set(place, []);
-      byPlace.get(place).push(item);
-    }
-  }
-  const now = performance.now() / 1000;
+  const byPlace = new Map(state.attention_display.places.map(marker => [marker.place, marker]));
+  const now = animationNow() / 1000;
   for (const place of lanterns.keys()) if (!byPlace.has(place)) lanterns.delete(place);
-  for (const [place, items] of byPlace) {
+  const announced = new Set();
+  for (const [place, marker] of byPlace) {
     const l = lanterns.get(place) || { swingFrom: null };
-    Object.assign(l, { count: items.length, level: items.some(i => i.state === 'open') ? 'open' : 'acknowledged',
-      kind: items.some(i => i.kind === 'blocker') ? 'blocker' : 'decision' });
-    const arrived = items.filter(i => i.state === 'open' && !seen.has(i.id));
-    for (const i of arrived) seen.add(i.id);
+    Object.assign(l, marker);
+    const arrived = marker.open_ids.filter(id => !seen.has(id));
+    for (const id of arrived) announced.add(id);
     if (arrived.length && !REDUCED) { l.swingFrom = now; swings.set(place, (swings.get(place) || 0) + 1); }
     lanterns.set(place, l);
   }
+  for (const id of announced) seen.add(id);
 }
 
-// Visitors: labels with jobs or sessions that no project claims, one per label listing the hosts it is unclaimed on.
+// Visitors: labels with jobs, sessions or declared pipelines that no project claims, one per label listing the hosts it is unclaimed on.
 // Registered projects without a floor, and work fleetd couldn't place in a project, are listed too: nothing with work
 // drops out of view.
 function lobbyOf(state) {
   const visitors = new Map();
   const projects = new Map((state.projects || []).map(p => [p.id, p]));
-  for (const h of state.hosts || []) for (const item of [...(h.jobs || []), ...(h.sessions || [])]) {
+  for (const h of state.hosts || []) for (const item of roomItems(state, h)) {
     if (item.project_id) continue;
     const key = item.project ?? '';
     if (!visitors.has(key)) visitors.set(key, { label: item.project ?? null, hosts: [], count: 0, active: false });
@@ -571,21 +569,26 @@ function draw() {
   requestAnimationFrame(() => {
     drawPending = false;
     if (sized !== `${vw}x${vh}`) resize();
-    const swinging = stepLanterns(performance.now() / 1000);
+    const swinging = stepLanterns(animationNow() / 1000);
     renderer.render(scene, camera);
     placeUi();
-    if (swinging) draw();
+    if (swinging && !isStepping()) draw();
   });
 }
 // one swing on arrival, then still; true while any lantern is still swinging
+export { draw as stepBuilding };
 function stepLanterns(now) {
   let swinging = false;
   for (const [place, l] of lanterns) {
     const o = lanternObjs.get(place);
-    if (!o) continue;
     const age = l.swingFrom == null ? SWING_S : now - l.swingFrom;
-    o.pivot.rotation.z = age < SWING_S ? 0.45 * Math.exp(-age * 1.7) * Math.sin(age * 5.5) : 0;
-    o.glow.material.opacity = l.level === 'open' ? 1 : 0.3;
+    const angle = age < SWING_S ? 0.45 * Math.exp(-age * 1.7) * Math.sin(age * 5.5) : 0;
+    if (o) {
+      o.pivot.rotation.z = angle;
+      o.glow.material.opacity = l.level === 'open' ? 1 : 0.3;
+    }
+    const bob = ui.querySelector(`.lantern-hang[data-floor="${place}"] .bob`);
+    if (bob) bob.style.transform = `rotate(${angle}rad)`;
     swinging ||= age < SWING_S;
   }
   return swinging;
@@ -597,6 +600,7 @@ const plateName = name => { const w = name.trim().split(/\s+/); return w.length 
 const RING = `<svg class="ring" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/></svg><i aria-hidden="true">?</i>`;
 const SWITCH = { priority: 'open', background: 'windows' };   // the switch's two positions, as the floor shows them
 function renderUi() {
+  const frontDeskOpen = ui.querySelector('.front-desk')?.open;
   const plates = floors.map(f => {
     if (!f.projectId) return `<div class="plate" data-floor="${f.floor}" data-mode="to-let"><span class="fn">${f.floor}</span><b>To let</b></div>`;
     const error = focusErrors.get(f.projectId);
@@ -609,17 +613,14 @@ function renderUi() {
         title="Merge with a project registered for the same work by mistake">⇄</button>
     </div>`;
   }).join('');
-  const now = performance.now() / 1000;
   const lamps = [...lanterns].map(([place, l]) => {
     const where = place === 'lobby' ? 'the front desk' : place === 'store' ? 'the storehouse' : floors.find(f => f.floor === place)?.name;
     const label = `${where}: ${l.count > 1 ? `${l.count} things need you` : 'something needs you'}${l.level === 'acknowledged' ? ' (acknowledged)' : ''}`;
     const lantern = `<button class="floor-lantern${l.level === 'acknowledged' ? ' ack' : ''}" data-place="${place}" data-state="${l.level}"
-      data-count="${l.count}" data-kind="${l.kind}" aria-label="${esc(label)}" title="${esc(label)}"><span class="lg">${GLYPH}</span><b>${l.count > 1 ? l.count : ''}</b></button>`;
+      data-count="${l.count}" data-kind="${l.kind}" aria-label="${esc(label)}" title="${esc(label)}"><span class="lg">${esc(l.glyph)}</span><b>${l.count > 1 ? l.count : ''}</b></button>`;
     if (typeof place !== 'number') return lantern;
     // a floor's hangs from a bracket on the spine beside its name plate; the one swing picks up where it was on a redraw
-    const age = l.swingFrom == null ? SWING_S : now - l.swingFrom;
-    const swing = age < SWING_S ? ` data-swing style="animation-delay:-${age.toFixed(2)}s"` : '';
-    return `<div class="lantern-hang" data-floor="${place}"><span class="bob"${swing}>${lantern}</span></div>`;
+    return `<div class="lantern-hang" data-floor="${place}"><span class="bob">${lantern}</span></div>`;
   }).join('');
   const L = lobby;
   const visitor = v => `<li class="visitor" data-label="${esc(v.label ?? '')}" data-hosts="${esc(v.hosts.join(' '))}" title="${esc(`${v.label ?? 'no label'} on ${v.hosts.join(', ')} · ${v.count}`)}">
@@ -637,6 +638,10 @@ function renderUi() {
       <div class="hostkey" aria-label="Hosts">${L.hosts.map(h => `<span class="host${h.ok ? '' : ' off'}" data-host="${esc(h.name)}" title="${esc(h.name)}${h.ok ? '' : ': offline'}"><i style="background:${h.ok ? h.color : 'var(--dim)'}"></i>${esc(h.name)}</span>`).join('')}</div>
       ${L.full ? '<div class="novacancy">No vacancies</div>' : ''}
       <div class="visitors"><h3>Visitors</h3>${L.visitors.length ? `<ul>${L.visitors.map(visitor).join('')}</ul>` : '<p class="none">None</p>'}</div>
+      <details class="front-desk"${frontDeskOpen ? ' open' : ''}><summary>Front desk <b>${doc.attention_display.front_desk.length}</b></summary><ul>${doc.attention_display.front_desk.map(id => {
+        const item = doc.attention.find(item => item.id === id);
+        return `<li><button data-attention-context="${esc(id)}">✱ ${esc(item.summary)}</button></li>`;
+      }).join('')}</ul></details>
       ${L.noFloor.length ? `<div class="nofloor"><h3>No floor</h3><ul>${L.noFloor.map(p => `<li data-project="${esc(p.id)}" title="${esc(p.name)}">${esc(plateName(p.name))}</li>`).join('')}</ul></div>` : ''}
     </div>`;
   placeUi();
@@ -649,6 +654,8 @@ async function post(path, body) {
 }
 ui.addEventListener('click', async ev => {
   const t = ev.target;
+  const context = t.closest('[data-attention-context]');
+  if (context) { openAttentionReader(doc.attention.find(item => item.id === context.dataset.attentionContext)); return; }
   const focus = t.closest('.fswitch button');
   if (focus) { setFocus(focus.closest('.plate').dataset.project, focus.dataset.focus); return; }
   const entry = t.closest('[data-enter]');
@@ -753,7 +760,7 @@ function openStorehouse() {
 }
 function closeDialogs() { storehouseOpen = false; vacancy = null; moving = null; merging = null; }
 function storehouseHtml() {
-  const needs = new Set((doc?.attention || []).filter(i => i.state === 'open' || i.state === 'acknowledged').map(i => i.project_id));
+  const needs = new Set(doc.attention_display.front_desk.map(id => doc.attention.find(item => item.id === id).project_id));
   const crateHtml = c => `<li class="crate" data-project="${esc(c.id)}" title="${esc(c.name)}">
       <b>${esc(plateName(c.name))}</b>${needs.has(c.id) ? '<i class="lift-lantern" data-state="open" aria-label="needs you"></i>' : ''}
       ${c.floor ? `<span class="was" title="Left floor ${c.floor}">${c.floor}</span>` : ''}
@@ -923,13 +930,13 @@ function renderLift() {
     const l = lanterns.get(f.floor);
     const label = f.projectId ? `${f.floor}: ${f.name}${l ? ` · ${l.count > 1 ? `${l.count} things need you` : 'something needs you'}` : ''}` : `${f.floor}: to let`;
     return `<button data-lift="${f.floor}"${f.floor === current ? ' aria-current="true"' : ''}${f.projectId ? '' : ' disabled'}
-      aria-label="${esc(label)}" title="${esc(label)}">${f.floor}${l ? `<i class="lift-lantern" data-state="${l.level}" aria-hidden="true"></i>` : ''}</button>`;
+      aria-label="${esc(label)}" title="${esc(label)}">${f.floor}${l ? `<i class="lift-lantern" data-glyph="${l.glyph}" data-state="${l.level}" aria-hidden="true"></i>` : ''}</button>`;
   };
   const storeLamp = lanterns.get('store');
   lift.innerHTML = [...floors].reverse().map(button).join('')
     + '<button data-lift="L" aria-label="Lobby: the whole building" title="Lobby: the whole building">L</button>'
     + `<button data-lift="S"${current === 'S' ? ' aria-current="true"' : ''} aria-label="Storehouse" title="Storehouse">S${
-      storeLamp ? `<i class="lift-lantern" data-state="${storeLamp.level}" aria-hidden="true"></i>` : ''}</button>`;
+      storeLamp ? `<i class="lift-lantern" data-glyph="${storeLamp.glyph}" data-state="${storeLamp.level}" aria-hidden="true"></i>` : ''}</button>`;
 }
 lift.addEventListener('click', ev => {
   const b = ev.target.closest('button[data-lift]');
@@ -958,11 +965,14 @@ canvas.addEventListener('pointerup', ev => {
 canvas.addEventListener('pointermove', ev => { canvas.style.cursor = hitAt(ev) ? 'pointer' : ''; });
 
 // read-only probe for browser tests: the building lives in WebGL, so the tests ask it what it drew and where
+export const lanternState = () => [...lanterns].map(([place, l]) => ({ place, level: l.level, count: l.count,
+  kind: l.kind, glyph: l.glyph, swings: swings.get(place) || 0,
+  swinging: l.swingFrom !== null && animationNow() / 1000 - l.swingFrom < SWING_S }));
 window.fleetBuilding = Object.freeze({
   floors: () => floors.map(f => ({ floor: f.floor, project: f.projectId, name: f.name ?? null, mode: f.mode, active: f.active,
     built: built.get(f.floor) ? { ...built.get(f.floor) } : null, screen: floorRect(baseOf(f.floor), FH) })),
   lobby: () => ({ screen: floorRect(0, LH), hosts: lobby?.hosts ?? [], visitors: lobby?.visitors ?? [] }),
-  lanterns: () => [...lanterns].map(([place, l]) => ({ place, level: l.level, count: l.count, kind: l.kind, swings: swings.get(place) || 0 })),
+  lanterns: lanternState,
   current: () => current,
   crates: () => crates.map(c => ({ ...c })),
   cratesDrawn: () => Math.min(crates.length, CRATE_SLOTS.length),

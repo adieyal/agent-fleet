@@ -376,7 +376,9 @@ export function drawSign(room) {
   const { look } = room;
   const running = room.ents.filter(e => working(e.job)).length, sessions = room.ents.filter(isSession).length;
   const jobs = room.ents.length - sessions;
-  const sub = room.ents.length ? `${running} running · ${jobs} job${jobs === 1 ? '' : 's'}${sessions ? ` · ${sessions} live` : ''}` : 'empty';
+  const lines = room.pipelineCount ? `${room.pipelineCount} pipeline${room.pipelineCount === 1 ? '' : 's'}` : '';
+  const sub = room.ents.length ? `${running} running · ${jobs} job${jobs === 1 ? '' : 's'}${sessions ? ` · ${sessions} live` : ''}${lines ? ' · ' + lines : ''}`
+    : lines || 'empty';
   const key = room.label + sub;
   if (room.signKey === key) return;
   room.signKey = key;

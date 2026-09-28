@@ -10,7 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-CONFIG_PATH = Path(os.environ.get("FLEET_CONFIG", Path.home() / ".config" / "fleet" / "config.json"))
+from fleet.errors import FleetError
+
 REMOTE_FLEETD_PATH = "~/.local/share/fleet/fleetd.py"
 LOCAL_FLEETD_SOURCE = Path(__file__).parent / "remote" / "fleetd.py"
 SSH_OPTIONS = [
@@ -22,34 +23,50 @@ SSH_OPTIONS = [
 ]
 
 
-class FleetError(Exception):
-    pass
-
-
 @dataclass(frozen=True)
 class Host:
     name: str
     ssh_target: str | None
     python: str = "python3"
+    control_path: str | None = None
+
+    @property
+    def ssh_options(self) -> list[str]:
+        return [f"ControlPath={self.control_path}"
+                if self.control_path is not None and option.startswith("ControlPath=") else option
+                for option in SSH_OPTIONS]
 
     @property
     def is_local(self) -> bool:
         return self.ssh_target is None
 
     def fleetd_command(self, arguments: list[str]) -> list[str]:
-        fleetd = [self.python, os.path.expanduser(REMOTE_FLEETD_PATH) if self.is_local else REMOTE_FLEETD_PATH]
+        path = os.environ.get("FLEET_FLEETD_PATH", REMOTE_FLEETD_PATH)
+        home = os.environ.get("FLEET_REMOTE_HOME")
+        fleetd = [self.python, os.path.expanduser(path) if self.is_local else path]
         if self.is_local:
-            return fleetd + arguments
+            prefix = [] if home is None else ["env", f"FLEET_HOME={os.path.expanduser(home)}"]
+            return prefix + fleetd + arguments
+        if "FLEET_FLEETD_PATH" in os.environ:
+            fleetd[1] = _remote_path(path)
         remote_command = " ".join([fleetd[0], fleetd[1]] + [shlex.quote(argument) for argument in arguments])
-        return ["ssh", *SSH_OPTIONS, self.ssh_target, remote_command]
+        if home is not None:
+            remote_command = f"env FLEET_HOME={_remote_path(home)} " + remote_command
+        return ["ssh", *self.ssh_options, self.ssh_target, remote_command]
 
     def shell_command(self, command: str, *, interactive: bool = False) -> list[str]:
         if self.is_local:
             return ["bash", "-c", command]
-        return ["ssh", *(["-t"] if interactive else []), *SSH_OPTIONS, self.ssh_target, command]
+        return ["ssh", *(["-t"] if interactive else []), *self.ssh_options, self.ssh_target, command]
 
     def rsync_target(self, path: str) -> str:
         return path if self.is_local else f"{self.ssh_target}:{path}"
+
+
+def _remote_path(path: str) -> str:
+    if path.startswith("~/"):
+        return '"$HOME"/' + shlex.quote(path[2:])
+    return shlex.quote(path)
 
 
 @dataclass
@@ -59,15 +76,29 @@ class HostReport:
     error: str | None = None
 
 
+def config_path() -> Path:
+    if "FLEET_CONFIG" in os.environ:
+        return Path(os.environ["FLEET_CONFIG"])
+    return Path.home() / ".config" / "fleet" / "config.json"
+
+
 def load_config() -> dict[str, Any]:
-    if CONFIG_PATH.exists():
-        return json.loads(CONFIG_PATH.read_text())
+    path = config_path()
+    if path.exists():
+        return json.loads(path.read_text())
     return {"hosts": {}}
 
 
 def save_config(config: dict[str, Any]) -> None:
-    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG_PATH.write_text(json.dumps(config, indent=2) + "\n")
+    import tempfile
+    path = config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    settings = {key: value for key, value in config.items() if key not in ("projects", "capacity")}
+    with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False) as temporary:
+        temporary.write(json.dumps(settings, indent=2) + "\n")
+        temporary.flush()
+        os.fsync(temporary.fileno())
+    os.replace(temporary.name, path)
 
 
 def configured_hosts() -> list[Host]:
@@ -91,10 +122,10 @@ def ensure_master(host: Host) -> None:
     """
     if host.is_local:
         return
-    control = ["-o", f"ControlPath={Path.home() / '.ssh'}/fleet-%C"]
+    control = ["-o", next(option for option in host.ssh_options if option.startswith("ControlPath="))]
     check = subprocess.run(["ssh", *control, "-O", "check", host.ssh_target], capture_output=True)
     if check.returncode != 0:
-        subprocess.run(["ssh", *SSH_OPTIONS, "-o", "ControlMaster=yes", "-M", "-N", "-f", host.ssh_target],
+        subprocess.run(["ssh", *host.ssh_options, "-o", "ControlMaster=yes", "-M", "-N", "-f", host.ssh_target],
                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
 
 
@@ -172,7 +203,7 @@ def rsync(sources: list[str], destination: str, host: Host) -> None:
     ensure_master(host)
     command = ["rsync", "-a", *sources, destination]
     if not host.is_local:
-        command[1:1] = ["-e", " ".join(["ssh", *SSH_OPTIONS])]
+        command[1:1] = ["-e", " ".join(["ssh", *host.ssh_options])]
     completed = subprocess.run(command, capture_output=True, text=True)
     if completed.returncode != 0:
         raise FleetError(f"rsync failed: {completed.stderr.strip()}")

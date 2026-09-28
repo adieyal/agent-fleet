@@ -7,37 +7,35 @@
 // dimmed. Clicking it opens a small list of the room's items with their actions; reading never changes an item.
 
 import * as THREE from 'three';
+import { animationNow } from './clock.js';
 import { BOT_H, RD, REDUCED, RW, vh, vw } from './env.js';
 import { clock, esc } from './util.js';
 import { G, deckGroup, softDot, toScreen } from './scene.js';
-import { ents } from './model.js';
+import { workOf } from './model.js';
 import { select } from './panel.js';
 import { shortId } from './activity.js';
+import { openAttentionReader } from './reader.js';
 
-const GLYPH = { blocker: '✋', decision: '?' };
-const KIND = { blocker: 'Blocked', decision: 'Needs a decision' };
+const GLYPH = { blocker: '✋', decision: '?', alert: '✱' };
+const KIND = { blocker: 'Blocked', decision: 'Needs a decision', alert: 'Alert' };
 const SNOOZE_S = 3600;
 
 // ------------------------------------------------------------------ items per room, from the state document
 const seen = new Set();   // open item ids already announced: each swings the lantern once
 let items = [];
+let display = { rooms: {}, open_count: 0 };
 export let openCount = 0;   // open items under the lanterns: the header's "need you"
 export function applyAttention(rooms, doc) {
-  if (doc) items = doc.attention || [];
-  const now = performance.now() / 1000;
-  openCount = 0;
+  if (doc) { items = doc.attention; display = doc.attention_display; }
+  const now = animationNow() / 1000;
+  openCount = display.open_count;
   for (const r of rooms) {
-    const mine = items.filter(i => i.project === r.name && i.state !== 'resolved');
-    const shown = mine.filter(i => i.state === 'open' || i.state === 'acknowledged');
-    r.attention = mine.length ? {
-      listed: mine, shown,
-      level: shown.some(i => i.state === 'open') ? 'open' : shown.length ? 'acknowledged' : null,
-      kind: shown.some(i => i.kind === 'blocker') ? 'blocker' : 'decision',   // a blocker outranks a decision
-    } : null;
-    openCount += shown.filter(i => i.state === 'open').length;
-    const arrived = shown.filter(i => i.state === 'open' && !seen.has(i.id));
+    const marker = display.rooms[r.name];
+    r.attention = marker ? { ...marker, listed: marker.listed.map(id => items.find(i => i.id === id)),
+      shown: marker.shown.map(id => items.find(i => i.id === id)) } : null;
+    const arrived = marker ? marker.open_ids.filter(id => !seen.has(id)) : [];
     if (arrived.length && !REDUCED) r.swingFrom = now;
-    for (const i of arrived) seen.add(i.id);
+    for (const id of arrived) seen.add(id);
   }
   renderLanterns(rooms);
   if (openRoom) renderPanel();
@@ -120,12 +118,13 @@ function openPanel(name) {
 const ownerName = owner => `${owner.host}:${shortId(owner.id)}`;
 function closePanel() { openRoom = null; panel.hidden = true; }
 function renderPanel() {
-  const listed = (items.filter(i => i.project === openRoom && i.state !== 'resolved'));
+  if (!display.rooms[openRoom]) { closePanel(); return; }
+  const listed = display.rooms[openRoom].listed.map(id => items.find(i => i.id === id));
   if (!listed.length) { closePanel(); return; }
   const room = lanterns.get(openRoom)?.room;
   panel.innerHTML = `<div class="ah"><h3>${esc(room ? room.label : openRoom)}</h3><button data-close aria-label="Close">✕</button></div>
     <ul>${listed.map(i => {
-      const owner = i.owner, present = ents.has(owner.key);
+      const owner = i.owner, present = !!workOf(owner.key);
       const state = i.state === 'snoozed' ? `snoozed until ${esc(clock(i.snoozed_until).slice(0, 5))}` : i.state;
       const actions = i.state === 'open' ? `<button data-act="acknowledge">Acknowledge</button><button data-act="snooze">Snooze 1h</button>`
         : i.state === 'acknowledged' ? `<button data-act="snooze">Snooze 1h</button><button data-act="reopen">Reopen</button>`
@@ -135,13 +134,16 @@ function renderPanel() {
         <div class="ab"><b>${esc(i.summary)}</b>
           <small>${KIND[i.kind]} · ${state}${i.stale ? ' · host unreachable' : ''}</small>
           ${present ? `<button class="owner" data-owner="${esc(owner.key)}" title="${esc(owner.key)}">${owner.type === 'job' ? 'Open job' : 'Open session'} ${esc(ownerName(owner))}</button>`
-                    : `<span class="owner" title="${esc(owner.key)}">${esc(ownerName(owner))}</span>`}
+                    : `<button class="owner" data-context="${esc(i.id)}">Open context</button>`}
+          ${i.kind === 'decision' ? `<button class="owner" data-context="${esc(i.id)}">Answer question</button>` : ''}
           <div class="aa">${actions}</div><em class="err"></em></div>
       </li>`;
     }).join('')}</ul>`;
 }
 panel.addEventListener('click', async ev => {
   if (ev.target.closest('[data-close]')) { closePanel(); return; }
+  const context = ev.target.closest('[data-context]');
+  if (context) { openAttentionReader(items.find(item => item.id === context.dataset.context)); return; }
   const owner = ev.target.closest('[data-owner]');
   if (owner) { select(owner.dataset.owner); return; }
   const b = ev.target.closest('[data-act]');

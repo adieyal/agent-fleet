@@ -6,6 +6,8 @@ happen and are fanned out to every connected browser.
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
+from copy import deepcopy
 import os
 import selectors
 import subprocess
@@ -17,16 +19,21 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from fleet import building, projects, transport
-from fleet.attention import AttentionBoard, ItemResolved
-from fleet.building import DEFAULT_CAPACITY, NoVacancy
-from fleet.workspace import FOCUSES, AlreadyShuttered, NotShuttered, WorkspaceStore
-from fleet.projects import Registry
+from fleet import transport
+from fleet.composition import (Store, open_attention, open_execution, open_library, open_store,
+                               open_workspace, open_work, open_decisions)
+from fleet.modules.attention import InputObservation, ItemResolved
+from fleet.modules.workspace import (NoVacancy, FOCUSES, AlreadyShuttered, NotShuttered,
+                                     WorkspaceFacade, Registry)
+from fleet.projections.workspace import annotate, resolve, registry_config
+from fleet.projections.project import project_status
+from fleet.projections.bench import bench_rooms, bench_state
 from fleet.transport import FleetError, Host
-from fleet.web.documents import fetch_document
+from fleet.web.documents import DocumentAccessDenied, fetch_document
 from fleet.web.fixture import FixtureLibrary, FixtureState
 from fleet.web.library import ProjectLibrary
 from fleet.web.live import AlreadyHoused, LiveWorkspace
+from fleet.web.ingester import observe_runs
 
 WEB_ROOT = Path(__file__).parent.resolve()
 INDEX_PATH = WEB_ROOT / "index.html"
@@ -68,34 +75,69 @@ class FleetState(LiveWorkspace):
     says why.
 
     Each also gains `focus`, from its project when linked and its label otherwise; the
-    document carries the stored choices under `focus` and the attention items derived
-    from the hosts under `attention` (see fleet.workspace, fleet.attention). The deck
+    document carries the stored choices under `focus` and stored attention items
+    under `attention`. The deck
     writes only the user's choices: focus, and acknowledging or snoozing an item.
     """
 
     def __init__(self, hosts: list[Host], project_labels: dict[str, str] | None = None,
                  load_registry: Callable[[], Registry] | None = None,
-                 workspace: WorkspaceStore | None = None,
-                 load_capacity: Callable[[], int] | None = None) -> None:
+                 workspace: WorkspaceFacade | None = None,
+                 load_capacity: Callable[[], int] | None = None,
+                 pipelines: dict[str, dict[str, str]] | None = None,
+                 store: Store | None = None) -> None:
         self.hosts = hosts
         self.project_labels = project_labels or {}
-        self.load_registry = load_registry or Registry
+        self.store = store if store is not None else open_store()
+        self.workspace = workspace if workspace is not None else open_workspace(self.store, actor="web-user")
+        self.load_registry = load_registry or self.workspace.registry
         self.registry = self.load_registry()
-        self.load_capacity = load_capacity or (lambda: DEFAULT_CAPACITY)
+        self.load_capacity = load_capacity or self.workspace.capacity
         self.capacity = self.load_capacity()
-        self.workspace = workspace or WorkspaceStore(None)
-        self.board = AttentionBoard(self.workspace)
+        self.attention = open_attention(self.store)
+        self.execution = open_execution(self.store)
+        self.run_library = open_library(self.store)
+        self.woken_until = 0.0
         self.changed = threading.Condition()
         self.version = 0
+        self.history_cursor = self.store.latest_sequence()
         self.by_host: dict[str, dict[str, Any]] = {
             host.name: {"name": host.name, "ok": False, "error": "connecting…", "jobs": {}, "sessions": {}}
             for host in hosts}
+        self.pipeline_config = pipelines or {}
+        self.pipeline_runs = {}
+        self.pipeline_seq = 0
 
-    def update(self, host_name: str, mutate: Any) -> None:
+    def follow_history(self, stop: threading.Event) -> None:
+        while not stop.is_set():
+            changes = self.store.history_after(self.history_cursor)
+            if changes:
+                self.history_cursor = int(changes[-1]["sequence"])
+                self.bump()
+            stop.wait(0.25)
+
+    def update(self, host_name: str, mutate: Any, *, owners: set[str] | None = None,
+               ingest: bool = True, heartbeat: bool = False) -> None:
         with self.changed:
+            previous = deepcopy(self.by_host[host_name])
+            sequence = self.store.latest_sequence()
             mutate(self.by_host[host_name])
+            self.by_host[host_name] = deepcopy(self.by_host[host_name])
+            retry_deliveries = self.by_host[host_name]["ok"] and previous != self.by_host[host_name]
+            reconciled = False
+            if ingest:
+                host = self.by_host[host_name]
+                observe_runs(self.execution, self.run_library, host)
+                reconciled = self.attention.observe({**host,
+                    "jobs": [resolve(self.registry, host_name, job) for job in host["jobs"].values()],
+                    "sessions": [resolve(self.registry, host_name, session) for session in host["sessions"].values()]},
+                    owners=owners, raise_items=not heartbeat)
+            if previous == self.by_host[host_name] and self.store.latest_sequence() == sequence and not reconciled:
+                return
             self.version += 1
             self.changed.notify_all()
+        if retry_deliveries:
+            self.execution.retry_deliveries(host_name)
 
     def refresh_registry(self) -> str | None:
         try:
@@ -116,10 +158,8 @@ class FleetState(LiveWorkspace):
         return self.registry.projects
 
     def edit_registry(self, change: Callable[[Registry], Any]) -> Any:
-        registry = self.load_registry()
-        result = change(registry)
-        projects.save_registry(registry)
-        self.registry = registry
+        result = self.workspace.edit_registry(change)
+        self.registry = self.workspace.registry()
         return result
 
     def repository_remotes(self, host: str, directories: list[str]) -> dict[str, list[str]]:
@@ -131,18 +171,22 @@ class FleetState(LiveWorkspace):
         registry = self.registry
         with self.changed:
             document = self.with_attention({"time": time.time(), "project_labels": self.project_labels,
-                    "projects": [{"id": project_id, **entry} for project_id, entry in registry.to_config().items()],
+                    "projects": [{"id": project_id, **entry} for project_id, entry in registry_config(registry).items()],
                     "projects_error": projects_error, "hosts": [
                 {**{key: value for key, value in self.by_host[host.name].items() if key not in ("jobs", "sessions")},
-                 "jobs": [self.workspace.annotate(registry.resolve(host.name, job)) for job in
+                 "jobs": [annotate(self.workspace, resolve(registry, host.name, job)) for job in
                           sorted(self.by_host[host.name]["jobs"].values(), key=lambda job: job["created_at"])],
-                 "sessions": [self.workspace.annotate(registry.resolve(host.name, session)) for session in
+                 "sessions": [annotate(self.workspace, resolve(registry, host.name, session)) for session in
                               sorted(self.by_host[host.name]["sessions"].values(),
                                      key=lambda session: session.get("started_at") or 0)]}
                 for host in self.hosts]})
         document = self.with_building(document, registry)
         document["building"]["capacity_error"] = capacity_error
+        document["pipelines"] = self.pipelines(registry, self.by_host)
         return document
+
+    def pipeline_updates(self, after: int) -> list[dict[str, Any]]:
+        return self.pipelines(self.registry, self.by_host, after)
 
     def host_names(self) -> list[str]:
         return [host.name for host in self.hosts]
@@ -198,18 +242,33 @@ def run_stream(state: FleetState, host: Host) -> str:
 
 def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> None:
     kind = message.get("type")
+    if kind == "input_observation":
+        observation = InputObservation(**{key: message[key] for key in InputObservation.__dataclass_fields__
+                                          if key in message})
+        project = resolve(state.registry, host.name, {"project": observation.project})
+        state.attention.observe_input(host.name, observation, project_id=project.get("project_id"))
+        state.bump()
+        return
     if kind == "hello":
-        state.update(host.name, lambda entry: entry.update(ok=True, error=None, jobs={}, sessions={}))
+        state.update(host.name, lambda entry: entry.update(ok=True, error=None, jobs={}, sessions={}), ingest=False)
     elif kind == "job":
         job = message["job"]
-        state.update(host.name, lambda entry: entry["jobs"].__setitem__(job["id"], job))
+        state.update(host.name, lambda entry: entry["jobs"].__setitem__(job["id"], job),
+                     owners={f"job:{host.name}:{job['id']}"})
     elif kind == "removed":
-        state.update(host.name, lambda entry: entry["jobs"].pop(message["id"], None))
+        state.update(host.name, lambda entry: entry["jobs"].pop(message["id"], None),
+                     owners={f"job:{host.name}:{message['id']}"})
     elif kind == "session":
         session = message["session"]
-        state.update(host.name, lambda entry: entry["sessions"].__setitem__(session["id"], session))
+        state.update(host.name, lambda entry: entry["sessions"].__setitem__(session["id"], session),
+                     owners={f"session:{host.name}:{session['id']}"})
     elif kind == "session_removed":
-        state.update(host.name, lambda entry: entry["sessions"].pop(message["id"], None))
+        state.update(host.name, lambda entry: entry["sessions"].pop(message["id"], None),
+                     owners={f"session:{host.name}:{message['id']}"})
+    elif kind == "heartbeat":
+        state.update(host.name, lambda entry: None, heartbeat=True)
+    elif kind == "pipeline" and isinstance(message.get("pipeline"), str):
+        state.report_pipeline(host.name, message["pipeline"], message.get("run"), message.get("baseline"))
     elif kind == "error":
         state.update(host.name, lambda entry: entry.update(ok=False, error=message.get("error")))
 
@@ -243,6 +302,35 @@ def make_handler(state: FleetState | FixtureState,
                 self.move_in_options()
             elif path == "/api/state":
                 self.respond(200, "application/json", json.dumps(state.document()).encode())
+            elif path == "/api/decision":
+                query = parse_qs(urlsplit(self.path).query)
+                if "id" not in query:
+                    self.error(400, "the item's id is required")
+                    return
+                try:
+                    item = state.attention.get(query["id"][0])
+                    proposal = open_decisions(state.store).proposal_for_attention(
+                        item.source, item.source_reference)
+                    detail = {"id": item.id, "question": item.headline,
+                              "context": item.context_reference, "options": item.options,
+                              "proposal": asdict(proposal) if proposal is not None else None}
+                except LookupError as error:
+                    self.error(404, str(error))
+                    return
+                self.respond(200, "application/json", json.dumps(detail, default=str).encode())
+            elif path == "/api/bench":
+                query = parse_qs(urlsplit(self.path).query)
+                if "project" not in query:
+                    self.error(400, "project is required")
+                    return
+                projection = project_status(query["project"][0], open_work(state.store), state.attention,
+                    open_execution(state.store), open_library(state.store), open_decisions(state.store))
+                try:
+                    result = bench_state(projection, query["slice"][0]) if "slice" in query else bench_rooms(projection)
+                except ValueError as error:
+                    self.error(404, str(error))
+                    return
+                self.respond(200, "application/json", json.dumps(result).encode())
             elif path in ("/", "/index.html"):
                 self.respond(200, "text/html; charset=utf-8", index_page)
             elif path in PROTOTYPES:
@@ -259,7 +347,7 @@ def make_handler(state: FleetState | FixtureState,
         def do_POST(self) -> None:  # noqa: N802 — http.server naming
             path = self.path.split("?", 1)[0]
             action = path.removeprefix("/api/attention/") if path.startswith("/api/attention/") else None
-            if path not in FLOOR_CHANGES + ("/api/focus",) and action not in ATTENTION_ACTIONS:
+            if path not in FLOOR_CHANGES + ("/api/focus", "/api/decision/answer") and action not in ATTENTION_ACTIONS:
                 self.respond(404, "text/plain", b"not found")
             elif not self.same_origin():
                 self.respond(403, "application/json", b'{"error": "cross-origin writes are refused"}')
@@ -271,7 +359,9 @@ def make_handler(state: FleetState | FixtureState,
                 except ValueError:
                     body = None
                 body = body if isinstance(body, dict) else {}
-                if action:
+                if path == "/api/decision/answer":
+                    self.answer(body)
+                elif action:
                     self.attention(action, body)
                 elif path in ("/api/move-in", "/api/link"):
                     self.move_in(path.removeprefix("/api/"), body)
@@ -305,7 +395,7 @@ def make_handler(state: FleetState | FixtureState,
             except FleetError as error:
                 self.error(400, str(error))
                 return
-            self.respond(200, "application/json", json.dumps(state.workspace.focus_snapshot()).encode())
+            self.respond(200, "application/json", json.dumps(asdict(state.workspace.focus_snapshot())).encode())
 
         def move_in_options(self) -> None:
             """GET /api/move-in?label=&host=&host=… — projects the label on those hosts may belong to, to offer
@@ -366,6 +456,21 @@ def make_handler(state: FleetState | FixtureState,
                 return
             self.respond(200, "application/json", json.dumps(changed).encode())
 
+        def answer(self, body: dict[str, Any]) -> None:
+            if not isinstance(body.get("id"), str) or not isinstance(body.get("answer"), str):
+                self.error(400, "item id and answer are required")
+                return
+            try:
+                decision = open_decisions(state.store).answer(body["id"], body["answer"], actor="user")
+            except LookupError as error:
+                self.error(404, str(error))
+                return
+            except (FleetError, ValueError) as error:
+                self.error(400, str(error))
+                return
+            state.bump()
+            self.respond(200, "application/json", json.dumps(asdict(decision), default=str).encode())
+
         def attention(self, action: str, body: dict[str, Any]) -> None:
             """POST /api/attention/acknowledge|snooze|reopen {"id": item id, "seconds": snooze length}"""
             if not isinstance(body.get("id"), str):
@@ -379,7 +484,7 @@ def make_handler(state: FleetState | FixtureState,
             except ItemResolved as error:
                 self.error(409, str(error))
                 return
-            except FleetError as error:
+            except (FleetError, ValueError) as error:
                 self.error(400, str(error))
                 return
             self.respond(200, "application/json", json.dumps({"id": body["id"], "action": action}).encode())
@@ -413,6 +518,9 @@ def make_handler(state: FleetState | FixtureState,
                 return
             try:
                 body = state.read_document(query["host"], query["job"], query["id"])
+            except DocumentAccessDenied as error:
+                self.respond(403, "application/json", json.dumps({"error": str(error)}).encode())
+                return
             except FleetError as error:
                 self.respond(404, "application/json", json.dumps({"error": str(error)}).encode())
                 return
@@ -436,17 +544,22 @@ def make_handler(state: FleetState | FixtureState,
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Accel-Buffering", "no")
             self.end_headers()
-            version = -1
+            version, pipeline_seq = -1, 0
             try:
                 while True:
-                    new_version = state.wait_for_change(version, timeout=SSE_PING_INTERVAL)
-                    if new_version == version:
-                        self.wfile.write(b"event: ping\ndata: {}\n\n")
-                    else:
+                    new_version = state.wait_for_change(version, timeout=SSE_PING_INTERVAL, seen_pipelines=pipeline_seq)
+                    if new_version != version:
                         time.sleep(SSE_COALESCE)
-                        version = state.version
-                        payload = json.dumps(state.document())
+                        version, pipeline_seq = state.version, state.pipeline_seq
+                        payload = json.dumps(state.document())   # carries every pipeline as it is now
                         self.wfile.write(f"event: state\ndata: {payload}\n\n".encode())
+                    elif state.pipeline_seq != pipeline_seq:
+                        updates = state.pipeline_updates(pipeline_seq)
+                        pipeline_seq = max([pipeline_seq] + [update["seq"] for update in updates])
+                        for update in updates:
+                            self.wfile.write(f"event: pipeline\ndata: {json.dumps(update)}\n\n".encode())
+                    else:
+                        self.wfile.write(b"event: ping\ndata: {}\n\n")
                     self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError):
                 return
@@ -465,15 +578,11 @@ def make_handler(state: FleetState | FixtureState,
     return Handler
 
 
-def workspace_path() -> Path:
-    """Live workspace state sits beside the Fleet config, outside Git."""
-    return transport.CONFIG_PATH.parent / "workspace.json"
-
-
 def serve(hosts: list[Host], *, port: int, bind: str, open_browser: bool = False,
-          libraries: dict[str, str] | None = None, project_labels: dict[str, str] | None = None) -> None:
-    state = FleetState(hosts, project_labels, projects.load_registry, WorkspaceStore(workspace_path()),
-                       building.load_capacity)
+          libraries: dict[str, Any] | None = None, project_labels: dict[str, str] | None = None,
+          pipelines: dict[str, dict[str, str]] | None = None) -> None:
+    state = FleetState(hosts, project_labels, pipelines=pipelines)
+    threading.Thread(target=state.follow_history, args=(threading.Event(),), daemon=True).start()
     for host in hosts:
         threading.Thread(target=follow_host, args=(state, host), daemon=True).start()
     run_server(make_handler(state, ProjectLibrary(libraries or {})), port=port, bind=bind, open_browser=open_browser)

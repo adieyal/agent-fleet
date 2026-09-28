@@ -207,6 +207,13 @@ setup runs `ssh-agent -D -a %t/fleet-ssh-agent.sock` as
 
 ## Development
 
+For a review of the intended workspace model, start with the [domain description](CONTEXT.md)
+and its [working design](docs/design/workspace-hierarchy.md). These describe planned
+behaviour as well as concepts already present in Fleet. The proposed
+[execution decision](docs/adr/0007-execution-control.md) and
+[first working workspace plan](docs/design/first-working-workspace-plan.md) describe
+what to build next and what can wait.
+
 ```bash
 uv sync --locked
 uv run --locked python -m unittest discover -s tests -v

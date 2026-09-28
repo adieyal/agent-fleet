@@ -1,0 +1,1047 @@
+[
+  {
+    "key": "v2",
+    "parent": null,
+    "kind": "epic",
+    "title": "V2 frontend overhaul",
+    "goal": "Migrate the Restoke frontend by vertical slice: Django keeps the pages; React owns whole interactive routes. The TanStack stack adds one /app/ shell, /api/v2/, a tenancy gate and v2:new.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/project_v2_frontend_migration.md",
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/reference_v2_migration_docs.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "suppliers",
+    "parent": "v2",
+    "kind": "workstream",
+    "title": "Supplier migration",
+    "goal": "Extend the V2 TanStack app from PAR/order-schedule to the whole suppliers area.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/project_v2_suppliers_migration.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "slice1",
+    "parent": "suppliers",
+    "kind": "milestone",
+    "title": "Slice 1: supplier list",
+    "goal": "32/32 stories passed. /app/suppliers behind enableV2SuppliersList; legacy frame, list markup, view preference and video modal completed.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/project_v2_suppliers_migration.md"
+    ],
+    "condition": "complete",
+    "next_step": null
+  },
+  {
+    "key": "slice2",
+    "parent": "suppliers",
+    "kind": "milestone",
+    "title": "Slice 2: supplier detail",
+    "goal": "All 14 stories passed: supplier detail, items, inline edits, scheduler and order schedules; missing item price stays blank.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/project_v2_suppliers_migration.md"
+    ],
+    "condition": "complete",
+    "next_step": null
+  },
+  {
+    "key": "entity",
+    "parent": "suppliers",
+    "kind": "milestone",
+    "title": "Supplier entity",
+    "goal": "All 11 stories passed: one Supplier/SupplierAccess contract, one entity layer, one SupplierCard with SupplierLink and SupplierActionsMenu.",
+    "sources": [
+      "/home/adi/Development/restoke/webapp/ralph/v2-supplier-entity/REPORT.md"
+    ],
+    "condition": "complete",
+    "next_step": null
+  },
+  {
+    "key": "slice3",
+    "parent": "suppliers",
+    "kind": "milestone",
+    "title": "Slice 3: item editor dialog",
+    "goal": "All 23 stories passed, full gates and e2e green. Merged with supplier-entity work and pushed as 6ff66e20a.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/project_v2_suppliers_migration.md"
+    ],
+    "condition": "complete",
+    "next_step": null
+  },
+  {
+    "key": "slice4",
+    "parent": "suppliers",
+    "kind": "milestone",
+    "title": "Slice 4: supplier create/edit and advanced settings",
+    "goal": "14/15 stories merged and pushed as 438ab9fb8; the remaining US-071 audit and UI fixes were folded into slice 5 and completed by US-074/US-075.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/project_v2_suppliers_migration.md"
+    ],
+    "condition": "complete",
+    "next_step": null
+  },
+  {
+    "key": "slice5",
+    "parent": "suppliers",
+    "kind": "milestone",
+    "title": "Slice 5: bulk actions, selection, merge and copy",
+    "goal": "All 18 stories US-073..090 passed; all 26 final gate stages passed. Merged into adi/v2-suppliers as 39afc88cc and pushed. Follow-ups remain open.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/project_v2_suppliers_migration.md"
+    ],
+    "condition": "complete",
+    "next_step": null
+  },
+  {
+    "key": "slice6",
+    "parent": "suppliers",
+    "kind": "milestone",
+    "title": "Slice 6: supplier imports",
+    "goal": "Move upload from file to V2 last: the legacy supplier list and its flag cannot retire until imports move. External CPK customers still use suppliers.html and need separate handling. Planned pattern: parity checklist first, new /api/v2/ endpoints via v2:new, browser smoke test, own flag.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/project_v2_suppliers_migration.md"
+    ],
+    "condition": "none",
+    "next_step": "Answer slice 6 questions.md and start its loop"
+  },
+  {
+    "key": "proposal1",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "block on infra-only failures",
+    "goal": "Pending loop/gate proposal for slice 6: block on infra-only failures.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/project_v2_suppliers_migration.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "proposal2",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "raw-hex gate",
+    "goal": "Pending loop/gate proposal for slice 6: raw-hex gate.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/project_v2_suppliers_migration.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "proposal3",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "parity test-name check",
+    "goal": "Pending loop/gate proposal for slice 6: parity test-name check.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/project_v2_suppliers_migration.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "proposal4",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "visual time in cost.csv",
+    "goal": "Pending loop/gate proposal for slice 6: visual time in cost.csv.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/project_v2_suppliers_migration.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "proposal5",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "skip post-merge gates when tip unchanged",
+    "goal": "Pending loop/gate proposal for slice 6: skip post-merge gates when tip unchanged.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/project_v2_suppliers_migration.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "proposal6",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "re-inject late corrections",
+    "goal": "Pending loop/gate proposal for slice 6: re-inject late corrections.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/project_v2_suppliers_migration.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "proposal7",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "frontend-only retry skips backend",
+    "goal": "Pending loop/gate proposal for slice 6: frontend-only retry skips backend.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/project_v2_suppliers_migration.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "proposal8",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "tax-setter fix",
+    "goal": "Pending loop/gate proposal for slice 6: tax-setter fix.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/project_v2_suppliers_migration.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "proposal9",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "snapshot/restore visual reset",
+    "goal": "Pending loop/gate proposal for slice 6: snapshot/restore visual reset.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/project_v2_suppliers_migration.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "followup1",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Q9 (c): merge suppliers lists every other supplier for every user and does not check the absorbed supplier, as legacy",
+    "goal": "Q9 (c): merge suppliers lists every other supplier for every user and does not check the absorbed supplier, as legacy. A non-admin can soft-delete a read-only supplier by merging it away. Option (c) — list only suppliers a non-admin may edit, refuse others server-side — closes it. Revisit after slice 5, in V2 and on master together.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/follow-ups.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "followup2",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Q26: bulk add conversion creates the conversion at rate 1 and then patches it, so a MANUAL_PROCESS item's SupplierItemConversionCache stores rate 1 (supplier_views.py:1652-1668; utils.py:106-133)",
+    "goal": "Q26: bulk add conversion creates the conversion at rate 1 and then patches it, so a MANUAL_PROCESS item's SupplierItemConversionCache stores rate 1 (supplier_views.py:1652-1668; utils.py:106-133). V2 creates it with the posted rate. Also on legacy: an item whose ordering UOM equals the chosen UOM is skipped silently while the toast says success; rate <= 0 is accepted; an empty UOM is a 400 with nothing shown (V2 makes UOM required).",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/follow-ups.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "followup3",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Q22: a bulk tag change does not refresh active master stocktakes (supplier_views.py:1762 vs supplier_item_manager.py:1016); the stocktake-UOM refresh is a log-only no-op (supplier_item_manager.py:1056-1066).",
+    "goal": "Q22: a bulk tag change does not refresh active master stocktakes (supplier_views.py:1762 vs supplier_item_manager.py:1016); the stocktake-UOM refresh is a log-only no-op (supplier_item_manager.py:1056-1066).",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/follow-ups.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "followup4",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Q25: legacy bulk create is not atomic and 500s midway on bad input (supplier_views.py:1808-1809).",
+    "goal": "Q25: legacy bulk create is not atomic and 500s midway on bad input (supplier_views.py:1808-1809).",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/follow-ups.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "followup5",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Q19: merge_supplier leaves behind alternative names, departments, order schedules, SupplierKey, MasterStocktake.chosenSuppliers and ETL rows; adding the absorbed supplier's name to alternativeNames would help invoice-name matching.",
+    "goal": "Q19: merge_supplier leaves behind alternative names, departments, order schedules, SupplierKey, MasterStocktake.chosenSuppliers and ETL rows; adding the absorbed supplier's name to alternativeNames would help invoice-name matching.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/follow-ups.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "followup6",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Q24: \"Bulk Create Products\" (central kitchen) creates DISH recipes.",
+    "goal": "Q24: \"Bulk Create Products\" (central kitchen) creates DISH recipes.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/follow-ups.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "followup7",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Q27: merge items keeps the most-ordered item, but the UI lets users click a column as if choosing the survivor; the raw \"stale_order_data\" code can show as the error.",
+    "goal": "Q27: merge items keeps the most-ordered item, but the UI lets users click a column as if choosing the survivor; the raw \"stale_order_data\" code can show as the error.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/follow-ups.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "followup8",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Q28: bulk copy's update path skips gstStatus, fixedDiscount and optimalStock that the create path copies; a read-only target supplier is overwritten.",
+    "goal": "Q28: bulk copy's update path skips gstStatus, fixedDiscount and optimalStock that the create path copies; a read-only target supplier is overwritten.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/follow-ups.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "followup9",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "[US-075] V2 has no frontend Mixpanel client, so the upgrade dialogs send neither \"Upgrade Package Modal Show\" {source} (base.js 10400-10407; slice 4 Q13) nor the Upgrade button's \"Upgrade Plan Click\" {plan: 'Pro' | 'Expert'} (upgrade_package_new.html:277, upgrade_package.html:31; corrections.md [US-071]) — frontend/src/v2/features/supplier-editor (upgrade dialog)",
+    "goal": "[US-075] V2 has no frontend Mixpanel client, so the upgrade dialogs send neither \"Upgrade Package Modal Show\" {source} (base.js 10400-10407; slice 4 Q13) nor the Upgrade button's \"Upgrade Plan Click\" {plan: 'Pro' | 'Expert'} (upgrade_package_new.html:277, upgrade_package.html:31; corrections.md [US-071]) — frontend/src/v2/features/supplier-editor (upgrade dialog)",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/follow-ups.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "followup10",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "The kebab hover token is a raw hex (`#F32A1B`) in colors.semantic.css:77,102, with an unchecked dark-mode twin; add a primitive and check legacy dark mode.",
+    "goal": "The kebab hover token is a raw hex (`#F32A1B`) in colors.semantic.css:77,102, with an unchecked dark-mode twin; add a primitive and check legacy dark mode.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/follow-ups.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "followup11",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "The list row height fix is tuned (2px above, 3px below, supplier.css:41-42) rather than restoring legacy's line box.",
+    "goal": "The list row height fix is tuned (2px above, 3px below, supplier.css:41-42) rather than restoring legacy's line box.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/follow-ups.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "followup12",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "US-075's load-error branches still hand-write `isError ? <div className=\"alert…\">` (advanced-settings-dialog.tsx:108-111, other-venues-dialog.tsx:39-42); allowed by SKILL.md, but WriteError-style reuse would be cleaner.",
+    "goal": "US-075's load-error branches still hand-write `isError ? <div className=\"alert…\">` (advanced-settings-dialog.tsx:108-111, other-venues-dialog.tsx:39-42); allowed by SKILL.md, but WriteError-style reuse would be cleaner.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/follow-ups.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "followup13",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Merge suppliers: writes.py:374-379 re-fetches both suppliers with Supplier.objects.get, so a supplier deleted between the check and the merge gives a 500 instead of a 404/403; an absorbed supplier outside the merge options answers 403 with the message \"Supplier not found.\" (use_cases/edit.py:139).",
+    "goal": "Merge suppliers: writes.py:374-379 re-fetches both suppliers with Supplier.objects.get, so a supplier deleted between the check and the merge gives a 500 instead of a 404/403; an absorbed supplier outside the merge options answers 403 with the message \"Supplier not found.\" (use_cases/edit.py:139).",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/follow-ups.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "followup14",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Bulk edit tax: legacy's server picks the MYOB tax code or the ordinary tax setter (supplier_views.py:1689-1783); V2 lets the client pick (bulk-edit-items-dialog.tsx:70, writes.py:349), so a hand-made request sending gstStatus to a MYOB restaurant calls the wrong setter",
+    "goal": "Bulk edit tax: legacy's server picks the MYOB tax code or the ordinary tax setter (supplier_views.py:1689-1783); V2 lets the client pick (bulk-edit-items-dialog.tsx:70, writes.py:349), so a hand-made request sending gstStatus to a MYOB restaurant calls the wrong setter. The dialog always sends the right field. Fix: the server chooses from the restaurant's accounting provider.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/follow-ups.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "followup15",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "parity.yaml:188 (the 400) and :197 (Oops) name tests that do not cover those entries.",
+    "goal": "parity.yaml:188 (the 400) and :197 (Oops) name tests that do not cover those entries.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/follow-ups.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "followup16",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Bulk conversion: an empty rate is not required in the dialog; it posts NaN -> null -> 400 -> Oops (bulk-conversion-dialog.tsx:51), untested; Q26 says any rate is accepted but not what empty does.",
+    "goal": "Bulk conversion: an empty rate is not required in the dialog; it posts NaN -> null -> 400 -> Oops (bulk-conversion-dialog.tsx:51), untested; Q26 says any rate is accepted but not what empty does.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/follow-ups.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "followup17",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "SuccessAlert dismiss is a <button> (success-alert.tsx:47), legacy is <a data-dismiss=\"alert\">; no parity.yaml entry.",
+    "goal": "SuccessAlert dismiss is a <button> (success-alert.tsx:47), legacy is <a data-dismiss=\"alert\">; no parity.yaml entry.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/follow-ups.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "followup18",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "BulkAddSupplierItemsConversion recomputes can_edit or is_supplier_editable (use_cases/edit.py) instead of sharing read_supplier_items.py:23.",
+    "goal": "BulkAddSupplierItemsConversion recomputes can_edit or is_supplier_editable (use_cases/edit.py) instead of sharing read_supplier_items.py:23.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/follow-ups.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "followup19",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Merge items: a malformed body answers DRF field errors, not legacy's {\"detail\"} wording (supplier_views.py:2321-2331); only in edge-cases.md, never accepted by the human",
+    "goal": "Merge items: a malformed body answers DRF field errors, not legacy's {\"detail\"} wording (supplier_views.py:2321-2331); only in edge-cases.md, never accepted by the human. The editable guard in use_cases/edit.py (~530) has no test that fails when only it is removed.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/follow-ups.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "followup20",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Bulk copy V2 differs from legacy without a parity entry: an empty item list is 400 (allow_empty=False; legacy accepts it), and \"contact-details\" is accepted as a copy option (legacy excludes it for items)",
+    "goal": "Bulk copy V2 differs from legacy without a parity entry: an empty item list is 400 (allow_empty=False; legacy accepts it), and \"contact-details\" is accepted as a copy option (legacy excludes it for items). The \"skip a venue without the supplier\" branch (~writes.py:598) is unreachable behind the 403.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/follow-ups.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "followup21",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "parity.yaml: the \"venue refused\" entry cites the frontend success test and the Q15 entry cites test_sends_no_audit_event.",
+    "goal": "parity.yaml: the \"venue refused\" entry cites the frontend success test and the Q15 entry cites test_sends_no_audit_event.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/follow-ups.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault1",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 1: The first-visit feature video and getting-started banner never show, because `has_seen_feature` always returns True (its query is commented out).",
+    "goal": "The first-visit feature video and getting-started banner never show, because `has_seen_feature` always returns True (its query is commented out). Suggested fix: Restore the query, or delete the video/banner if they are no longer wanted. Needs product: yes",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault2",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 2: A failed `/set_seen_feature/` call is ignored, so the video or banner shows again on the next visit.",
+    "goal": "A failed `/set_seen_feature/` call is ignored, so the video or banner shows again on the next visit. Suggested fix: Retry, or report the failure. Needs product: no",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault3",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 3: Row checkboxes and Bulk Actions exist only in list view at md and wider",
+    "goal": "Row checkboxes and Bulk Actions exist only in list view at md and wider. Card view, the default with the orders feature, and mobile have no bulk actions. Suggested fix: Offer selection in card view and on mobile. Needs product: yes",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault4",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 4: Ticked supplier rows get no highlight: the handler toggles `bg-light` on `.user`/`.item` ancestors, which supplier rows lack.",
+    "goal": "Ticked supplier rows get no highlight: the handler toggles `bg-light` on `.user`/`.item` ancestors, which supplier rows lack. Suggested fix: Highlight ticked rows. Needs product: no",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault5",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 5: Bulk delete is not atomic, so a failure partway leaves the earlier suppliers deleted.",
+    "goal": "Bulk delete is not atomic, so a failure partway leaves the earlier suppliers deleted. Suggested fix: Wrap in `transaction.atomic`. Needs product: no",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault6",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 6: Bulk mark read only / editable sends no audit event, and sets `isReadOnly` with `.update()`, so no timestamp or signal fires.",
+    "goal": "Bulk mark read only / editable sends no audit event, and sets `isReadOnly` with `.update()`, so no timestamp or signal fires. Suggested fix: Audit it (as the branch now does for the single toggle), and save through the model. Needs product: no",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault7",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 7: The merge list offers every other supplier, read-only ones included, and the server does not check the absorbed supplier, so a non-admin can soft-delete a read-only supplier by merging it away.",
+    "goal": "The merge list offers every other supplier, read-only ones included, and the server does not check the absorbed supplier, so a non-admin can soft-delete a read-only supplier by merging it away. Suggested fix: Option (c): list only suppliers a non-admin may edit and refuse the rest on the server, in legacy and V2 together. Needs product: yes",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault8",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 8: Internal (CPK-linked) suppliers can be merged, and merged away",
+    "goal": "Internal (CPK-linked) suppliers can be merged, and merged away. Their orders and incoming-order relations move silently. Suggested fix: Exclude internal suppliers, or warn first. Needs product: yes",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault9",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 9: A merge leaves behind the absorbed supplier's alternative names (and does not add its name as one), departments, order schedules, SupplierKey, `MasterStocktake.chosenSuppliers`, ETL rows, and its soft-deleted items and invoices",
+    "goal": "A merge leaves behind the absorbed supplier's alternative names (and does not add its name as one), departments, order schedules, SupplierKey, `MasterStocktake.chosenSuppliers`, ETL rows, and its soft-deleted items and invoices. Invoices under the old name then no longer match the survivor. Suggested fix: Move this data too, and add the absorbed name to `alternativeNames`. Needs product: yes",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault10",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 10: A destructive merge has no are-you-sure step and no Cancel button",
+    "goal": "A destructive merge has no are-you-sure step and no Cancel button. The menu says \"Merge with another Supplier\", but the current supplier is the one kept. Suggested fix: Add a confirmation that names the supplier to be deleted, and reword the menu entry. Needs product: yes",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault11",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 11: Editing a supplier's details is logged to Mixpanel as \"Create New Supplier\".",
+    "goal": "Editing a supplier's details is logged to Mixpanel as \"Create New Supplier\". Suggested fix: Send a separate \"Update Supplier\" event, and update the Mixpanel reports. Needs product: yes",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault12",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 12: New Supplier's intended validation never runs",
+    "goal": "New Supplier's intended validation never runs. The contact field for the chosen Order Via is never required (a string is compared with numbers), and the duplicate-name warning never shows (the check is async). Suggested fix: Fix the comparison and await the name check, if product wants them enforced. Needs product: yes",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault13",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 13: New Supplier From Invoice fuzzy-matches the vendor (70%) onto an existing supplier without telling the user",
+    "goal": "New Supplier From Invoice fuzzy-matches the vendor (70%) onto an existing supplier without telling the user. It overwrites that supplier's phone, sendVia and createdBy, and appends the items to it. Suggested fix: Show the match and ask before updating, or create a new supplier. Needs product: yes",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault14",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 14: In Advanced Settings the Xero code and Xero contact cannot be cleared, because a blank value is not saved.",
+    "goal": "In Advanced Settings the Xero code and Xero contact cannot be cleared, because a blank value is not saved. Suggested fix: Clear the stored value when the user blanks it. Needs product: no",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault15",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 15: \"Change in other venues\" deactivates the target venue's items that are missing from the source, with no warning.",
+    "goal": "\"Change in other venues\" deactivates the target venue's items that are missing from the source, with no warning. Suggested fix: Warn and list the items first, or make deactivation an option. Needs product: yes",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault16",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 16: A failed other-venues copy is silent (for example, when a same-named supplier changes between opening the dialog and All Done), because the dialog has already closed.",
+    "goal": "A failed other-venues copy is silent (for example, when a same-named supplier changes between opening the dialog and All Done), because the dialog has already closed. Suggested fix: Keep the dialog open until the copy finishes, and show the Oops line on failure. Needs product: no",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault17",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 17: Bad schedule or order data makes the supplier page 500: a schedule with no Schedule row, a schedule type whose first day has `due=None`, or an order with no `createdTimestamp` and no actions.",
+    "goal": "Bad schedule or order data makes the supplier page 500: a schedule with no Schedule row, a schedule type whose first day has `due=None`, or an order with no `createdTimestamp` and no actions. Suggested fix: Handle the missing values explicitly, and fix or clean the bad rows. Needs product: no",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault18",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 18: The schedule line's separator counts advanced days, so a mixed group can print \", Mon\" first.",
+    "goal": "The schedule line's separator counts advanced days, so a mixed group can print \", Mon\" first. Suggested fix: Place separators by position in the printed list. Needs product: no",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault19",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 19: A restaurant whose `xeroSupplierCodes`, `xeroContacts` or `myobTaxCodes` is NULL gets a 500 from the item dialog and Advanced Settings.",
+    "goal": "A restaurant whose `xeroSupplierCodes`, `xeroContacts` or `myobTaxCodes` is NULL gets a 500 from the item dialog and Advanced Settings. Suggested fix: Make the fields non-null with a data migration. Needs product: no",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault20",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 20: Every row save sends the rounded display price",
+    "goal": "Every row save sends the rounded display price. Editing only the description of an item stored at 1.23456 therefore stores 1.23 and runs the price-change handling. Suggested fix: Send only the changed fields. Needs product: no",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault21",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 21: The row-save endpoint updates an internal supplier's row fields without the item editor's rights checks (`is_supplier_editable`, internal non-local fields)",
+    "goal": "The row-save endpoint updates an internal supplier's row fields without the item editor's rights checks (`is_supplier_editable`, internal non-local fields). Only a hand-made request reaches this. Suggested fix: Apply the PATCH's checks to the row save. Needs product: no",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault22",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 22: An internal (CPK) supplier's rows are read only, yet Add item creates new items on it.",
+    "goal": "An internal (CPK) supplier's rows are read only, yet Add item creates new items on it. Suggested fix: Decide whether internal suppliers take new items, and make the rows and Add item agree. Needs product: yes",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault23",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 23: A viewer without `can_edit_stocktake_uom` can still add the missing stocktake or receiving conversion from its red link.",
+    "goal": "A viewer without `can_edit_stocktake_uom` can still add the missing stocktake or receiving conversion from its red link. Suggested fix: Decide the intended rule, then enforce it in both. Needs product: yes",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault24",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 24: Replace with…: typing in the box again after choosing an item keeps the earlier choice, so Replace uses an item that no longer matches the text.",
+    "goal": "Replace with…: typing in the box again after choosing an item keeps the earlier choice, so Replace uses an item that no longer matches the text. Suggested fix: Clear the choice when the text changes. Needs product: no",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault25",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 25: Add new tag closes at once and silently ignores a failed request.",
+    "goal": "Add new tag closes at once and silently ignores a failed request. Suggested fix: Keep the dialog open until the request returns, and show failures. Needs product: no",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault26",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 26: Item type, sales tax status and \"including WET\" accept any integer on save, not only their choices.",
+    "goal": "Item type, sales tax status and \"including WET\" accept any integer on save, not only their choices. Suggested fix: Validate against the choices and answer 400. Needs product: no",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault27",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 27: Connected recipes are listed in random order (a Python set, whose order changes per server process), and two recipes with the same name and category collapse into one.",
+    "goal": "Connected recipes are listed in random order (a Python set, whose order changes per server process), and two recipes with the same name and category collapse into one. Suggested fix: Sort the list, and list recipes by id. Needs product: no",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault28",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 28: The item search matches the word \"none\" against an empty brand, SKU or internal name, because nulls render as \"None\".",
+    "goal": "The item search matches the word \"none\" against an empty brand, SKU or internal name, because nulls render as \"None\". Suggested fix: Render null as empty. Needs product: no",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault29",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 29: Bulk edit replaces tags and storage areas, and an empty choice means \"unchanged\", so they cannot be cleared in bulk.",
+    "goal": "Bulk edit replaces tags and storage areas, and an empty choice means \"unchanged\", so they cannot be cleared in bulk. Suggested fix: Add an explicit \"clear\" choice. Needs product: yes",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault30",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 30: A bulk tag change does not refresh active master stocktakes, although stocktake membership uses tags",
+    "goal": "A bulk tag change does not refresh active master stocktakes, although stocktake membership uses tags. The stocktake-UOM refresh only logs, so a receiving/stocktake UOM change does not refresh stocktake inputs either. Suggested fix: Call the master-stocktake refresh after tag changes, and implement the UOM refresh. Needs product: no",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault31",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 31: The bulk edit Discount field shows min 0 / max 100 but does not enforce it.",
+    "goal": "The bulk edit Discount field shows min 0 / max 100 but does not enforce it. Suggested fix: Validate 0–100 on the client and server. Needs product: no",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault32",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 32: \"Bulk Create Products\" (central kitchen) creates DISH recipes",
+    "goal": "\"Bulk Create Products\" (central kitchen) creates DISH recipes. The menu label keys on `isCentralKitchen`, but the title and body say \"Dishes\"/\"Products\" keyed on `is_internal_supplier`. The toast says \"N items created\" using the client's count. Suggested fix: Product decides the recipe type and wording; key both labels on one fact, and toast the server's count. Needs product: yes",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault33",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 33: Bulk create has no dedupe, so running it twice creates duplicate recipes.",
+    "goal": "Bulk create has no dedupe, so running it twice creates duplicate recipes. Suggested fix: Skip or flag items that already have a recipe. Needs product: yes",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault34",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 34: Bulk add conversion silently skips items whose ordering UOM is the chosen UOM, yet says \"Conversions added successfully\".",
+    "goal": "Bulk add conversion silently skips items whose ordering UOM is the chosen UOM, yet says \"Conversions added successfully\". Suggested fix: Report the skipped items. Needs product: no",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault35",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 35: Bulk add conversion accepts a rate of 0 or below.",
+    "goal": "Bulk add conversion accepts a rate of 0 or below. Suggested fix: Require a rate > 0. Needs product: no",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault36",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 36: The bulk edit, create and conversion dialogs list every selected item name, with no count and no cap.",
+    "goal": "The bulk edit, create and conversion dialogs list every selected item name, with no count and no cap. Suggested fix: Show a count, and cap the names as the slice-3 bulk dialog does. Needs product: no",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault37",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 37: The backend always keeps the most-ordered item",
+    "goal": "The backend always keeps the most-ordered item. Clicking a column header highlights it as if the user were choosing the survivor, and the confirmation never names it. Suggested fix: Let the user pick the survivor, or name it and drop the header highlight. Needs product: yes",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault38",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 38: Closing the merge error modal also closes the whole merge overlay and loses the user's choices.",
+    "goal": "Closing the merge error modal also closes the whole merge overlay and loses the user's choices. Suggested fix: Close only the error. Needs product: no",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault39",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 39: A merge re-points only live data from the last 7 days",
+    "goal": "A merge re-points only live data from the last 7 days. Older draft orders, unsent invoices and pending alerts keep pointing at the soft-deleted items. Suggested fix: Re-point all open drafts, invoices and alerts. Needs product: yes",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault40",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 40: Copy's update path skips gstStatus, fixedDiscount and optimalStock, which the create path copies, so existing target items keep stale values.",
+    "goal": "Copy's update path skips gstStatus, fixedDiscount and optimalStock, which the create path copies, so existing target items keep stale values. Suggested fix: Copy the same fields on update as on create. Needs product: yes",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault41",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 41: Copy overwrites the items of a read-only target supplier.",
+    "goal": "Copy overwrites the items of a read-only target supplier. Suggested fix: Skip or refuse read-only targets. Needs product: yes",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault42",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 42: The copy dialog shows no items or count and asks for no confirmation",
+    "goal": "The copy dialog shows no items or count and asks for no confirmation. Copy closes at once, with no check that a venue is chosen, and an empty post still saves the options as the venue's defaults. Suggested fix: List the items, require a venue, confirm, and save the defaults only on a real copy. Needs product: yes",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault43",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 43: A chosen venue without a same-named supplier is skipped silently, and the menu entry shows even when group rules leave no eligible venue.",
+    "goal": "A chosen venue without a same-named supplier is skipped silently, and the menu entry shows even when group rules leave no eligible venue. Suggested fix: Report the skipped venues, and hide the entry when no venue qualifies. Needs product: no",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault44",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 44: Copying items to other venues sends no audit event.",
+    "goal": "Copying items to other venues sends no audit event. Suggested fix: Add an audit event. Needs product: no",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault45",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 45: The slice-2/3 V2 writes send their Mixpanel event and stamp `lastSeen` before validation, so refused or failed requests are logged as done",
+    "goal": "The slice-2/3 V2 writes send their Mixpanel event and stamp `lastSeen` before validation, so refused or failed requests are logged as done. These are the scheduler toggle, and the item create/PATCH, deactivate, activate and delete. Suggested fix: Move the decorator onto a helper called after success, as slices 4–5 do; fix `audit_action` itself on master. Needs product: no",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault46",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 46: Every audit event's \"Restaurant ID\" is the user's home restaurant, not the venue acted on.",
+    "goal": "Every audit event's \"Restaurant ID\" is the user's home restaurant, not the venue acted on. Suggested fix: Use `request.restaurant`. Needs product: yes (Mixpanel report continuity)",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "fault47",
+    "parent": "suppliers",
+    "kind": "task",
+    "title": "Legacy fault 47: Audit properties are scraped from POST keys ending in \"id\"",
+    "goal": "Audit properties are scraped from POST keys ending in \"id\". A JSON body logs \"Merge Supplier Items\" with only Restaurant ID and time; an item create logs `itemid \"\"`; Advanced Settings logs any Xero tracking choice whose name ends in \"id\". Suggested fix: Give each event explicit properties. Needs product: no",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/legacy-faults-copied-to-v2.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  },
+  {
+    "key": "dx",
+    "parent": "v2",
+    "kind": "workstream",
+    "title": "Development experience",
+    "goal": "Reduce per-feature repetition, backend ceremony, duplicated or misloaded guidance and unenforced gates. Safe DX items built on 2026-09-25; after slice 4, switch read()/write() placeholder arguments to one object with camelCased keys and add a lint/type guard.",
+    "sources": [
+      "/home/adi/Development/agent-fleet-ralph/first-stories/sources/project_v2_dx_audit.md"
+    ],
+    "condition": "none",
+    "next_step": null
+  }
+]

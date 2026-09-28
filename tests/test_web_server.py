@@ -10,16 +10,37 @@ from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
+from fleet.composition import open_store, open_workspace
 from fleet.web.documents import renderer
 from fleet.web.library import ProjectLibrary
 from fleet.web.server import FleetState, make_handler
 
 
+def test_a_recursive_library_reads_every_folder_but_hidden_and_tool_ones(tmp_path):
+    for name in ("top.md", "v2-review/REVIEW.md", "slice/notes/format.md", ".git/x.md",
+                 "a/.hidden/y.md", "node_modules/pkg/README.md"):
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text(f"# {name}\n")
+    recursive = ProjectLibrary({"p": {"path": str(tmp_path), "recursive": True}})
+    assert sorted(document["id"] for document in recursive.list()) == [
+        "slice/notes/format.md", "top.md", "v2-review/REVIEW.md"]
+    assert recursive.read("p", "v2-review/REVIEW.md")["name"] == "REVIEW.md"
+    assert recursive.read("p", ".git/x.md") is None
+    assert recursive.read("p", "node_modules/pkg/README.md") is None
+    shallow = ProjectLibrary({"p": str(tmp_path)})
+    assert [document["id"] for document in shallow.list()] == ["top.md"]
+    assert shallow.read("p", "v2-review/REVIEW.md") is None
+
+
 class DashboardHTTPTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(FleetState([])))
-        cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
+        directory = TemporaryDirectory(prefix="fleet-http-test-")
+        cls.addClassCleanup(directory.cleanup)
+        root = Path(directory.name)
+        state = FleetState([], store=open_store(root / "fleet.db"), workspace=open_workspace(open_store(root / "fleet.db"), initial={}))
+        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(state))
+        cls.thread = threading.Thread(target=cls.server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
         cls.thread.start()
         cls.base_url = f"http://127.0.0.1:{cls.server.server_port}"
 
@@ -61,7 +82,7 @@ class DashboardHTTPTests(unittest.TestCase):
             (root / "private.md").symlink_to(base / "private.md")
             (base / "private.md").write_text("# Secret\n")
             server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(FleetState([]), ProjectLibrary({"example": str(root)})))
-            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
             thread.start()
             base_url = f"http://127.0.0.1:{server.server_port}"
             try:

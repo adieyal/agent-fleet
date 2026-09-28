@@ -19,6 +19,7 @@ import collections
 import contextlib
 import datetime
 import fcntl
+import hashlib
 import json
 import os
 import re
@@ -32,16 +33,21 @@ import time
 from pathlib import Path
 from typing import Any, Deque, Dict, Iterator, List, Optional, Tuple
 
-FLEET_HOME = Path(os.environ.get("FLEET_HOME", Path.home() / ".fleet"))
+FLEET_HOME = Path(os.environ.get("FLEET_HOME", Path.home() / ".fleet")).expanduser().resolve()
 JOBS_DIRECTORY = FLEET_HOME / "jobs"
 CONFIG_PATH = FLEET_HOME / "config.json"
 CLAUDE_PROJECTS_DIRECTORY = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude")) / "projects"
 CODEX_SESSIONS_DIRECTORY = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")) / "sessions"
 TMUX_PREFIX = "fleet-"
 # A private tmux server without the user's config: personal configs can take seconds to load.
-TMUX_COMMAND = ["tmux", "-L", "fleet", "-f", "/dev/null"]
+TMUX_SOCKET = ("fleet" if FLEET_HOME == (Path.home() / ".fleet").resolve() else
+               "fleet-" + hashlib.sha256(str(FLEET_HOME).encode()).hexdigest()[:16])
+TMUX_COMMAND = ["tmux", "-L", TMUX_SOCKET, "-f", "/dev/null"]
 SUMMARY_LENGTH = 160
-TERMINAL_STATUSES = ("done", "failed", "cancelled")
+TERMINAL_STATUSES = ("done", "failed", "cancelled", "lost")
+STREAM_PROTOCOL_VERSION = 3
+DISPATCH_SCHEMA_VERSION = 4
+USAGE_SCHEMA_VERSION = 1
 
 JsonObject = Dict[str, Any]
 
@@ -88,7 +94,10 @@ def locked_job(job_id: str) -> Iterator[JsonObject]:
     with open(directory / ".lock", "w") as lock_file:
         fcntl.flock(lock_file, fcntl.LOCK_EX)
         job = json.loads((directory / "job.json").read_text())
+        before = json.dumps(job, sort_keys=True)
         yield job
+        if json.dumps(job, sort_keys=True) == before:
+            return
         job["updated_at"] = now()
         temporary_path = directory / "job.json.tmp"
         temporary_path.write_text(json.dumps(job, indent=1))
@@ -132,13 +141,18 @@ def tmux_session(job_id: str) -> str:
 
 
 def runner_alive(job: JsonObject) -> bool:
-    process_id = job.get("runner_pid")
+    return process_alive(job.get("runner_pid"))
+
+
+def process_alive(process_id: Optional[int]) -> bool:
     if not process_id:
         return False
     try:
         os.kill(process_id, 0)
-    except OSError:
+    except ProcessLookupError:
         return False
+    except PermissionError:
+        return True
     return True
 
 
@@ -146,8 +160,14 @@ def derive_status(job: JsonObject) -> str:
     if job.get("cancelled"):
         return "cancelled"
     steps = job["steps"]
+    if any(step.get("reason") == "lost" for step in steps):
+        return "lost"
     if any(step["status"] == "running" for step in steps):
-        return "running" if runner_alive(job) else "stalled"
+        if runner_alive(job):
+            return "running"
+        if job.get("agent_pid") is not None and not process_alive(job["agent_pid"]):
+            return "lost"
+        return "stalled"
     if any(step["status"] == "failed" for step in steps):
         return "failed"
     if any(step["status"] == "pending" for step in steps):
@@ -315,6 +335,17 @@ class CodexParser:
 # ---------------------------------------------------------------- the runner
 
 
+# The user reads job documents in the Fleet reader, which renders fenced code and Mermaid inline.
+WRITING_GUIDE = (
+    "Markdown documents you write (reports, reviews, plans, notes) are read by a person in a reader that "
+    "shows fenced code and ```mermaid diagrams inline. Lead with the conclusion, then the evidence. Make every "
+    "claim concrete: name the file and line, quote a short code excerpt in a fenced block with its language, "
+    "and show the command you ran with its relevant output. Give at least one specific example for each "
+    "finding or recommendation. Draw a flow, structure or dependency as a Mermaid diagram rather than "
+    "describing it in prose.\n"
+)
+
+
 def job_preamble(job: JsonObject) -> str:
     directory = JOBS_DIRECTORY / job["id"]
     return (
@@ -323,6 +354,7 @@ def job_preamble(job: JsonObject) -> str:
         f"Job goal: {job['description']}\n"
         f"Context files from the orchestrator (read what is relevant): {directory / 'context'}\n"
         f"Put any files the orchestrator should collect in: {directory / 'outbox'}\n"
+        f"{WRITING_GUIDE}"
         "Finish each step with a short plain summary of what you did and anything left open, then a final line "
         "`FLEET_STATUS: done`, `FLEET_STATUS: blocked — <reason>` (you could not do the work, e.g. tools or "
         "access failed) or `FLEET_STATUS: failed — <reason>` (you tried and it did not work). Never report done "
@@ -330,7 +362,7 @@ def job_preamble(job: JsonObject) -> str:
     )
 
 
-def agent_command(job: JsonObject, step: JsonObject, session_id: Optional[str]) -> List[str]:
+def _runtime_command(job: JsonObject, step: JsonObject, session_id: Optional[str]) -> List[str]:
     config = load_config()
     prompt = step["prompt"]
     if step["index"] == 0:
@@ -345,6 +377,7 @@ def agent_command(job: JsonObject, step: JsonObject, session_id: Optional[str]) 
         if session_id:
             command += ["--resume", session_id]
         command += ["--add-dir", str(JOBS_DIRECTORY / job["id"])]
+        command += ["--settings", json.dumps(input_hook_settings(job["project"], job["id"], step["index"]))]
         for directory in job.get("add_dirs", []):
             command += ["--add-dir", directory]
         return command
@@ -359,6 +392,82 @@ def agent_command(job: JsonObject, step: JsonObject, session_id: Optional[str]) 
                 "-c", f'sandbox_mode="{job["permission"]}"', *model_flags, session_id, prompt]
     return [codex, "exec", "--json", "--skip-git-repo-check", *sandbox_flags, *model_flags,
             "-C", job["cwd"], "--add-dir", str(JOBS_DIRECTORY / job["id"]), prompt]
+
+
+class _Runtime:
+    """Worker-local runtime differences, including resumed answer delivery."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.parser = {"claude": ClaudeParser, "codex": CodexParser}[name]()
+
+    def command(self, job: JsonObject, step: JsonObject, session_id: Optional[str]) -> List[str]:
+        return _runtime_command(job, step, session_id)
+
+    def parse(self, record: JsonObject) -> Tuple[List[JsonObject], Optional[JsonObject]]:
+        events = self.parser.parse(record)
+        result = None
+        if self.name == "codex" and record.get("type") in ("turn.completed", "turn.failed"):
+            result = {"ok": record["type"] == "turn.completed"}
+        for event in events:
+            if event["kind"] == "result":
+                result = {"ok": event["ok"], "summary": event["summary"], "text": event.pop("text", "")}
+        if result is not None:
+            tokens = record.get("usage")
+            cost = record.get("total_cost_usd")
+            result["usage"] = None if tokens is None and cost is None else {"tokens": tokens, "cost_usd": cost}
+            for event in events:
+                if event["kind"] == "result":
+                    event["usage"] = result["usage"]
+        return events, result
+
+    def finish(self, outcome: JsonObject, exit_code: int, last_text: str) -> None:
+        if self.name == "codex":
+            outcome.update(ok=exit_code == 0,
+                           summary=shorten(last_text, 400), text=last_text)
+        if not outcome["summary"] and exit_code != 0:
+            outcome["summary"] = f"agent exited with code {exit_code}"
+
+    def usage(self, steps: List[JsonObject]) -> Optional[JsonObject]:
+        reports = [step.get("usage") for step in steps]
+        if not any(report is not None for report in reports):
+            return None
+        source = {"claude": "claude.result", "codex": "codex.turn.completed"}[self.name]
+        return {"source": source, "reports": reports}
+
+    def validate_permission(self, permission: str) -> None:
+        if self.name == "codex" and permission not in ("read-only", "workspace-write", "danger-full-access"):
+            fail("codex permission must be read-only, workspace-write or danger-full-access")
+
+    def dispatch_permission(self, permission: Optional[str], allow: List[str], add_dirs: List[str]) -> str:
+        if self.name != "claude":
+            if allow:
+                raise ValueError("--allow applies to claude jobs only (codex uses its sandbox)")
+            if add_dirs:
+                raise ValueError("--add-dir applies to claude jobs only")
+        if permission is not None:
+            return permission
+        return {"claude": "acceptEdits", "codex": "workspace-write"}[self.name]
+
+    def transcript_parser(self):
+        return {"claude": ClaudeParser, "codex": CodexRolloutParser}[self.name]()
+
+    def transcript_id(self, path: Path) -> str:
+        return path.stem if self.name == "claude" else path.stem[-36:]
+
+    def consume_transcript(self, transcript, record: JsonObject, head: bool) -> None:
+        {"claude": transcript._claude_record, "codex": transcript._codex_record}[self.name](record, head)
+
+    def resume_command(self) -> str:
+        return {"claude": "claude --resume", "codex": "codex resume"}[self.name]
+
+
+def _runtime(name: str) -> _Runtime:
+    return _Runtime(name)
+
+
+def agent_command(job: JsonObject, step: JsonObject, session_id: Optional[str]) -> List[str]:
+    return _runtime(job["agent"]).command(job, step, session_id)
 
 
 STATUS_LINE = re.compile(r"FLEET_STATUS:\s*\**\s*(done|blocked|failed)\b", re.IGNORECASE)
@@ -382,6 +491,22 @@ def record_written_documents(job_id: str, cwd: str, paths: List[str], step_index
                 known.add(absolute)
 
 
+def copy_written_documents(job_id: str, cwd: str) -> None:
+    """Keep agent-written Markdown under the job's approved document root."""
+    with locked_job(job_id) as live_job:
+        artifacts = JOBS_DIRECTORY / job_id / "artifacts"
+        for index, entry in enumerate(live_job.get("written_documents", [])):
+            source = Path(entry["path"])
+            if source.is_symlink() or not source.is_file() or not source.resolve().is_relative_to(Path(cwd).resolve()):
+                continue
+            artifacts.mkdir(exist_ok=True)
+            target = artifacts / f"file-{index}{source.suffix}"
+            temporary = artifacts / f"file-{index}.tmp"
+            shutil.copy2(source, temporary)
+            temporary.replace(target)
+            entry["artifact"] = str(target)
+
+
 def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
     job_id = job["id"]
     config = load_config()
@@ -393,10 +518,11 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
     environment.update(job.get("env", {}))
     environment["FLEET_JOB_ID"] = job_id
     environment["FLEET_JOB_DIR"] = str(JOBS_DIRECTORY / job_id)
-    parser = ClaudeParser() if job["agent"] == "claude" else CodexParser()
+    runtime = _runtime(job["agent"])
     command = agent_command(job, step, job.get("session_id"))
     append_event(job_id, {"kind": "step", "step": step["index"], "status": "running", "summary": step["title"]})
-    outcome: JsonObject = {"ok": False, "summary": "", "text": ""}
+    outcome: JsonObject = {"ok": False, "summary": "", "text": "", "usage": None}
+    result_recorded = False
     last_text = ""
     raw_path = JOBS_DIRECTORY / job_id / f"raw-{step['index']}.jsonl"
     with open(raw_path, "a") as raw_file:
@@ -414,7 +540,11 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
                 if line.strip():
                     append_event(job_id, {"kind": "log", "step": step["index"], "summary": shorten(line)})
                 continue
-            for event in parser.parse(record):
+            events, result = runtime.parse(record)
+            if result is not None:
+                result_recorded = True
+                outcome.update(result)
+            for event in events:
                 event["step"] = step["index"]
                 if event["kind"] == "session" and event.get("session_id"):
                     with locked_job(job_id) as live_job:
@@ -427,20 +557,18 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
                     record_written_documents(job_id, job["cwd"], event["paths"], step["index"])
                 if event["kind"] == "text":
                     last_text = event.pop("text", None) or event["summary"]
-                if event["kind"] == "result":
-                    outcome = {"ok": event["ok"], "summary": event["summary"], "text": event.pop("text", "")}
                 append_event(job_id, event)
         exit_code = process.wait()
-    if job["agent"] == "codex":
-        outcome = {"ok": exit_code == 0, "summary": shorten(last_text, 400), "text": last_text}
-    elif not outcome["summary"] and exit_code != 0:
-        outcome["summary"] = f"agent exited with code {exit_code}"
+    runtime.finish(outcome, exit_code, last_text)
     outcome["exit_code"] = exit_code
+    if exit_code < 0 and not result_recorded:
+        outcome["reason"] = "lost"
     reported = reported_status(outcome.get("text") or outcome["summary"])
     if reported is not None:
         outcome["reported_status"] = reported
         if reported != "done":
             outcome["ok"] = False
+    copy_written_documents(job_id, job["cwd"])
     return outcome
 
 
@@ -471,6 +599,9 @@ def run_job(job_id: str) -> None:
                     live_step["status"] = "done" if outcome["ok"] else "failed"
                 live_step["finished_at"] = now()
                 live_step["result"] = outcome["summary"]
+                live_step["usage"] = outcome.get("usage")
+                if "reason" in outcome:
+                    live_step["reason"] = outcome["reason"]
                 (JOBS_DIRECTORY / job_id / f"result-{step['index']}.md").write_text(outcome.get("text") or outcome["summary"])
                 job["agent_pid"] = None
                 stop = live_step["status"] != "done" and job.get("stop_on_failure", True)
@@ -491,13 +622,34 @@ def launch_runner(job_id: str) -> None:
         return
     session = tmux_session(job_id)
     subprocess.run([*TMUX_COMMAND, "kill-session", "-t", session], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    runner_command = f"{shlex.quote(sys.executable)} {shlex.quote(os.path.abspath(__file__))} _run {job_id}"
+    environment = [f"FLEET_HOME={FLEET_HOME}", f"PATH={os.environ['PATH']}"]
+    environment += [f"{key}={os.environ[key]}" for key in ("HOME", "CODEX_HOME", "CLAUDE_CONFIG_DIR")
+                    if key in os.environ]
+    runner_command = shlex.join(["env", *environment, sys.executable, os.path.abspath(__file__), "_run", job_id])
     log_path = JOBS_DIRECTORY / job_id / "runner.log"
     subprocess.run([*TMUX_COMMAND, "new-session", "-d", "-s", session, "-c", job["cwd"],
                     f"{runner_command} 2>&1 | tee -a {shlex.quote(str(log_path))}"], check=True,
                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for _ in range(50):
-        if runner_alive(read_job(job_id)):
+        job = read_job(job_id)
+        if runner_alive(job) or derive_status(job) in TERMINAL_STATUSES:
+            return
+        session_state = subprocess.run([*TMUX_COMMAND, "has-session", "-t", session],
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if session_state.returncode != 0:
+            # The launcher still knows the job even when the runner cannot load it.
+            reason = "runner exited before starting the job"
+            for line in tail_lines(log_path, 40):
+                with contextlib.suppress(ValueError):
+                    record = json.loads(line)
+                    if isinstance(record, dict) and "error" in record:
+                        reason = record["error"]
+            with locked_job(job_id) as job:
+                if derive_status(job) != "queued":
+                    return
+                step = next(step for step in job["steps"] if step["status"] == "pending")
+                step.update(status="failed", finished_at=now(), result=reason, reason=reason)
+            append_event(job_id, {"kind": "job", "status": "failed", "summary": reason})
             return
         time.sleep(0.1)
 
@@ -511,6 +663,9 @@ def job_summary(job: JsonObject, event_count: int) -> JsonObject:
     activity = next((event for event in reversed(events) if event.get("kind") in ("tool", "text", "error")), None)
     return {
         "id": job["id"], "host": os.uname().nodename, "project": job["project"],
+        "schema_version": DISPATCH_SCHEMA_VERSION, "run_id": job.get("run_id"),
+        "usage_schema_version": USAGE_SCHEMA_VERSION, "usage": _runtime(job["agent"]).usage(job["steps"]),
+        "fingerprint": job.get("fingerprint"), "start_requested": job.get("start_requested"),
         "description": job["description"], "agent": job["agent"], "model": job.get("model"),
         "cwd": job["cwd"], "permission": job["permission"], "status": status,
         "created_at": job["created_at"], "updated_at": job.get("updated_at"),
@@ -520,8 +675,11 @@ def job_summary(job: JsonObject, event_count: int) -> JsonObject:
         "activity": activity,
         "events": events[-event_count:] if event_count else [],
         "session_id": job.get("session_id"),
-        "tmux": f"tmux -L fleet attach -t {tmux_session(job['id'])}",
+        "tmux": shlex.join([*TMUX_COMMAND[:3], "attach", "-t", tmux_session(job['id'])]),
         "documents": job_documents(job),
+        "trace": {"path": str(JOBS_DIRECTORY / job["id"] / "events.jsonl"),
+                  "availability": "available" if (JOBS_DIRECTORY / job["id"] / "events.jsonl").is_file()
+                  else "unavailable"},
     }
 
 
@@ -534,12 +692,17 @@ def job_documents(job: JsonObject) -> List[JsonObject]:
     directory = JOBS_DIRECTORY / job["id"]
     documents: List[JsonObject] = []
 
-    def describe(document_id: str, path: Path, kind: str, name: str, step: Optional[int]) -> None:
+    def describe(document_id: str, path: Path, kind: str, name: str, step: Optional[int],
+                 display_path: Optional[str] = None) -> None:
         with contextlib.suppress(OSError):
             stat = path.stat()
             if stat.st_size and path.is_file():
-                documents.append({"id": document_id, "kind": kind, "name": name, "step": step, "path": str(path),
-                                  "size": stat.st_size, "mtime": round(stat.st_mtime, 3)})
+                document = {"id": document_id, "kind": kind, "name": name, "step": step,
+                            "path": display_path or str(path), "size": stat.st_size,
+                            "mtime": round(stat.st_mtime, 3)}
+                if display_path is not None:
+                    document["read_path"] = str(path)
+                documents.append(document)
 
     for step in job["steps"]:
         report = directory / f"result-{step['index']}.md"
@@ -548,7 +711,9 @@ def job_documents(job: JsonObject) -> List[JsonObject]:
                 describe(f"report-{step['index']}", report, "report", f"Step {step['index'] + 1}: {step['title']}",
                          step["index"])
     for index, entry in enumerate(job.get("written_documents", [])):
-        describe(f"file-{index}", Path(entry["path"]), "file", os.path.basename(entry["path"]), entry.get("step"))
+        describe(f"file-{index}", Path(entry.get("artifact", entry["path"])), "file",
+                 os.path.basename(entry["path"]), entry.get("step"),
+                 entry["path"] if "artifact" in entry else None)
     outbox = directory / "outbox"
     if outbox.exists():
         for path in sorted(outbox.rglob("*")):
@@ -562,7 +727,11 @@ def command_read(arguments: argparse.Namespace) -> None:
     document = next((item for item in job_documents(job) if item["id"] == arguments.document), None)
     if document is None:
         fail(f"job {arguments.job} has no document {arguments.document}")
-    with open(document["path"], "rb") as handle:
+    path = Path(document.pop("read_path", document["path"])).resolve()
+    roots = [JOBS_DIRECTORY / job["id"], *(Path(root).expanduser() for root in load_config().get("document_roots", []))]
+    if not any(path.is_relative_to(root.resolve()) for root in roots):
+        fail(f"document path outside approved document roots: {document['path']}")
+    with open(path, "rb") as handle:
         raw = handle.read(DOCUMENT_READ_LIMIT + 1)
     document["truncated"] = len(raw) > DOCUMENT_READ_LIMIT
     document["content"] = raw[:DOCUMENT_READ_LIMIT].decode(errors="replace")
@@ -739,11 +908,12 @@ class Transcript:
     def __init__(self, path: Path, agent: str) -> None:
         self.path = path
         self.agent = agent
+        self.runtime = _runtime(agent)
         self.signature: Optional[tuple] = None
         self.offset = 0
-        self.parser = ClaudeParser() if agent == "claude" else CodexRolloutParser()
+        self.parser = self.runtime.transcript_parser()
         # Codex names rollouts rollout-<local time>-<thread id>.jsonl; session_meta confirms the id.
-        self.id = path.stem if agent == "claude" else path.stem[-36:]
+        self.id = self.runtime.transcript_id(path)
         self.cwd: Optional[str] = None
         self.model: Optional[str] = None
         self.started_at: Optional[float] = None
@@ -786,10 +956,7 @@ class Transcript:
             return
         if not isinstance(record, dict):
             return
-        if self.agent == "claude":
-            self._claude_record(record, head)
-        else:
-            self._codex_record(record, head)
+        self.runtime.consume_transcript(self, record, head)
 
     def _claude_record(self, record: JsonObject, head: bool) -> None:
         if record.get("isSidechain"):
@@ -853,7 +1020,7 @@ class Transcript:
 
     def summary(self, status: str, updated_at: float) -> JsonObject:
         title = next((self.titles[key] for key in ("custom", "ai", "summary", "prompt") if self.titles.get(key)), None)
-        resume = {"claude": "claude --resume", "codex": "codex resume"}[self.agent]
+        resume = self.runtime.resume_command()
         return {
             "id": self.id, "host": os.uname().nodename, "agent": self.agent, "cwd": self.cwd,
             "project": repository_name(self.cwd) if self.cwd else None,
@@ -943,7 +1110,255 @@ class SessionTracker:
         return sessions
 
 
+# --------------------------------------------------------------- pipelines
+
+PIPELINES_DIRECTORY = FLEET_HOME / "pipelines"
+PIPELINE_SCAN_INTERVAL = 1.0
+PIPELINE_EMIT_INTERVAL = 1.0
+PIPELINE_RUNS = 2            # the newest run and the one before it, its baseline if it finished
+PIPELINE_RECENT = 25         # items kept per node, for the terminal nodes' drill-down
+PIPELINE_RATE_WINDOW = 10    # seconds of flows behind the items-per-second figure
+PIPELINE_READ_BYTES = 16 * 1024 * 1024  # most read per scan, so catching up on a long run never stalls the stream
+
+
+class PipelineRun:
+    """An aggregate of one run's event file (`pipelines/<pipeline>/<run id>.jsonl`), read incrementally.
+
+    Lines: {"type": "run", nodes, label, total, tones?, ends?, …} once (tones: node → good, warn or muted, how the deck
+    colours the bands into it; ends: the nodes before the last column that items may stop at, so that while the run
+    goes the deck shows what the others hold as waiting), {"type": "flow", item, from, to, ts, attrs?} per item
+    and edge, {"type": "end", status, ts} at the end. Raw events never leave the host; only the summary does.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.offset = 0
+        self.caught_up = False
+        self.modified: Optional[float] = None
+        self.meta: JsonObject = {}
+        self.edges: Dict[Tuple[str, str], int] = {}
+        self.inflow: Dict[str, int] = collections.Counter()
+        self.outflow: Dict[str, int] = collections.Counter()
+        self.recent: Dict[str, Deque[JsonObject]] = {}
+        self.per_second: Dict[str, Dict[int, int]] = {}   # flows out of each node, by the second of their ts
+        self.status: Optional[str] = None
+        self.ended_at: Optional[float] = None
+
+    def refresh(self, size: int, modified: float) -> None:
+        if size < self.offset:  # rewritten from scratch
+            self.__init__(self.path)  # type: ignore[misc]
+        self.modified = modified
+        start = self.offset
+        with open(self.path, "rb") as handle:
+            handle.seek(start)
+            data = handle.read(min(size - start, PIPELINE_READ_BYTES))
+        complete = data.rfind(b"\n") + 1  # a line still being written is read next time
+        self.offset = start + complete
+        self.caught_up = start + len(data) >= size
+        for line in data[:complete].splitlines():
+            self._consume(line)
+
+    def _consume(self, line: bytes) -> None:
+        try:
+            record = json.loads(line)
+        except ValueError:
+            return
+        if not isinstance(record, dict):
+            return
+        kind = record.get("type")
+        if kind == "run":
+            self.meta = record
+        elif kind == "end":
+            self.status = str(record.get("status") or "done")
+            self.ended_at = record.get("ts")
+        elif kind == "flow" and record.get("from") is not None and record.get("to") is not None:
+            source, target = str(record["from"]), str(record["to"])
+            self.edges[(source, target)] = self.edges.get((source, target), 0) + 1
+            self.outflow[source] += 1
+            self.inflow[target] += 1
+            ts = record.get("ts") if isinstance(record.get("ts"), (int, float)) else now()
+            seconds = self.per_second.setdefault(source, collections.Counter())
+            seconds[int(ts)] += 1
+            item: JsonObject = {"item": record.get("item"), "ts": ts}
+            if isinstance(record.get("attrs"), dict):
+                item["attrs"] = record["attrs"]
+            self.recent.setdefault(target, collections.deque(maxlen=PIPELINE_RECENT)).append(item)
+
+    def columns(self) -> List[List[str]]:
+        """The run line's columns, with any node it did not list in the column after its source's."""
+        columns = [[str(node) for node in column] for column in self.meta.get("nodes") or [] if isinstance(column, list)]
+        placed = {node: index for index, column in enumerate(columns) for node in column}
+
+        def place(node: str, index: int) -> None:
+            while len(columns) <= index:
+                columns.append([])
+            columns[index].append(node)
+            placed[node] = index
+
+        for source in self.outflow:
+            if source not in placed and not self.inflow[source]:
+                place(source, 0)  # an unlisted source starts at the left
+        changed = True
+        while changed:  # nodes only reachable through a cycle of unlisted nodes stay out
+            changed = False
+            for source, target in self.edges:
+                if target not in placed and source in placed:
+                    place(target, placed[source] + 1)
+                    changed = True
+        return columns
+
+    def counts(self) -> Dict[str, int]:
+        return {node: max(self.inflow[node], self.outflow[node]) for node in set(self.inflow) | set(self.outflow)}
+
+    def summary(self, clock: float) -> JsonObject:
+        horizon = int(clock) - PIPELINE_RATE_WINDOW
+        for seconds in self.per_second.values():
+            for second in [second for second in seconds if second <= horizon]:
+                del seconds[second]
+        columns = self.columns()
+        entered = sum(sum(self.per_second.get(node, {}).values()) for node in (columns[0] if columns else []))
+        return {
+            "run_id": self.meta.get("run_id") or self.path.stem, "pipeline": self.meta.get("pipeline"),
+            "label": self.meta.get("label"), "started_at": self.meta.get("started_at"), "total": self.meta.get("total"),
+            "tones": self.meta["tones"] if isinstance(self.meta.get("tones"), dict) else None,
+            "ends": [str(node) for node in self.meta["ends"]] if isinstance(self.meta.get("ends"), list) else None,
+            "nodes": columns, "edges": [[source, target, count] for (source, target), count in self.edges.items()],
+            "counts": self.counts(), "flows": sum(self.edges.values()),
+            "recent": {node: list(items) for node, items in self.recent.items() if not self.outflow[node]},
+            "item_rate": round(entered / PIPELINE_RATE_WINDOW, 1), "updated_at": self.modified,
+            "status": self.status or "running", "ended_at": self.ended_at,
+        }
+
+    def baseline(self) -> JsonObject:
+        return {"run_id": self.meta.get("run_id") or self.path.stem, "label": self.meta.get("label"),
+                "started_at": self.meta.get("started_at"), "total": self.meta.get("total"),
+                "edges": [[source, target, count] for (source, target), count in self.edges.items()],
+                "counts": self.counts()}
+
+
+class PipelineTracker:
+    """Follows the newest runs of every pipeline under FLEET_HOME/pipelines and says what changed.
+
+    A pipeline is announced once its runs have been read to the end, then at most once
+    every PIPELINE_EMIT_INTERVAL seconds while its summary keeps changing.
+    """
+
+    def __init__(self, directory: Optional[Path] = None) -> None:
+        self.directory = directory or PIPELINES_DIRECTORY
+        self.runs: Dict[Path, PipelineRun] = {}
+        self.sent: Dict[str, JsonObject] = {}
+        self.sent_at: Dict[str, float] = {}
+
+    def scan(self, clock: Optional[float] = None) -> List[JsonObject]:
+        clock = time.time() if clock is None else clock
+        messages: List[JsonObject] = []
+        live: Dict[Path, PipelineRun] = {}
+        for folder in sorted(scan_directory(self.directory), key=lambda entry: entry.name):
+            if not folder.is_dir():
+                continue
+            names = sorted(entry.name for entry in scan_directory(Path(folder.path)) if entry.name.endswith(".jsonl"))
+            runs = []
+            for name in names[-PIPELINE_RUNS:]:
+                path = Path(folder.path) / name
+                run = live[path] = self.runs.get(path) or PipelineRun(path)
+                try:
+                    stat = path.stat()
+                    modified = round(stat.st_mtime, 3)
+                    if not run.caught_up or stat.st_size != run.offset or modified != run.modified:
+                        run.refresh(stat.st_size, modified)
+                except OSError:
+                    continue
+                runs.append(run)
+            if not runs or not all(run.caught_up for run in runs):
+                continue
+            latest, previous = runs[-1], runs[-2] if len(runs) > 1 else None
+            message = {"type": "pipeline", "pipeline": folder.name, "run": latest.summary(clock),
+                       "baseline": previous.baseline() if previous and previous.status == "done" else None}
+            if message != self.sent.get(folder.name) and clock - self.sent_at.get(folder.name, 0) >= PIPELINE_EMIT_INTERVAL:
+                messages.append(message)
+                self.sent[folder.name] = message
+                self.sent_at[folder.name] = clock
+        self.runs = live
+        return messages
+
+
 # --------------------------------------------------------------- commands
+
+
+def input_hook_settings(project: str, job_id: Optional[str] = None,
+                        step_index: Optional[int] = None) -> JsonObject:
+    command = [sys.executable, str(Path(__file__).resolve()), "input-hook", "--project", project]
+    if job_id is not None:
+        command += ["--job", job_id, "--step-index", str(step_index)]
+    shell_command = f"FLEET_HOME={shlex.quote(str(FLEET_HOME))} " + shlex.join(command)
+    return {"hooks": {event: [{"hooks": [{"type": "command", "command": shell_command}]}]
+                      for event in ("PermissionRequest", "PostToolUse")}}
+
+
+def record_input_hook(record: JsonObject, *, project: str, job_id: Optional[str] = None,
+                      step_index: Optional[int] = None) -> None:
+    event = record["hook_event_name"]
+    if event not in ("PermissionRequest", "PostToolUse"):
+        return
+    session_id = record["session_id"]
+    owner = [job_id, session_id, step_index]
+    directory = FLEET_HOME / "input-observations"
+    directory.mkdir(parents=True, exist_ok=True)
+    key = hashlib.sha256(json.dumps(owner).encode()).hexdigest()
+    path = directory / f"{key}.json"
+    with open(directory / f"{key}.lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        records = json.loads(path.read_text()) if path.exists() else []
+        match = next((item for item in reversed(records)
+                      if item["kind"] == "input_requested"
+                      and item["raw_request"]["tool_name"] == record["tool_name"]
+                      and item["raw_request"]["tool_input"] == record["tool_input"]), None)
+        if event == "PermissionRequest":
+            if match is not None:
+                return
+            records.append({"type": "input_observation", "schema_version": 1,
+                            "host": os.uname().nodename, "runtime": "claude",
+                            "owner_type": "job" if job_id is not None else "session",
+                            "job_id": job_id, "session_id": session_id, "step_index": step_index,
+                            "project": project, "kind": "input_requested", "reason": "permission",
+                            "source_event": event, "source_event_id": secrets.token_hex(16),
+                            "observed_at": now(), "context_reference": str(path),
+                            "raw_request": record})
+        elif match is not None:
+            match.update(kind="input_cleared", source_event=event, observed_at=now(), raw_resume=record)
+        else:
+            return
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(records))
+        temporary.replace(path)
+
+
+def input_observations() -> List[JsonObject]:
+    observations = []
+    for path in sorted((FLEET_HOME / "input-observations").glob("*.json")):
+        observations.extend({**{key: value for key, value in record.items()
+                                if key not in ("raw_request", "raw_resume")},
+                             "request": input_request(record["raw_request"])}
+                            for record in json.loads(path.read_text()))
+    return observations
+
+
+def input_request(raw: JsonObject) -> JsonObject:
+    """What the agent asked to do, in the words a person answering needs."""
+    tool_input = raw.get("tool_input") or {}
+    detail = next((tool_input[key] for key in ("command", "file_path", "url", "pattern", "query", "prompt")
+                   if isinstance(tool_input.get(key), str)), None)
+    if detail is None:
+        detail = json.dumps(tool_input) if tool_input else ""
+    description = tool_input.get("description")
+    return {"tool": raw.get("tool_name") or "a tool",
+            "description": description if isinstance(description, str) else "",
+            "detail": detail[:2000]}
+
+
+def command_input_hook(arguments: argparse.Namespace) -> None:
+    record_input_hook(json.load(sys.stdin), project=arguments.project,
+                      job_id=arguments.job, step_index=arguments.step_index)
 
 
 def make_step(index: int, prompt: str, title: Optional[str]) -> JsonObject:
@@ -957,21 +1372,23 @@ def parse_steps(steps_json: str) -> List[JsonObject]:
 
 
 def command_create(arguments: argparse.Namespace) -> None:
+    validate_dispatch(arguments)
     job_id = arguments.id or secrets.token_hex(3)
     directory = JOBS_DIRECTORY / job_id
-    if directory.exists():
-        fail(f"job already exists: {job_id}")
     cwd = os.path.abspath(os.path.expanduser(arguments.cwd))
     if not os.path.isdir(cwd):
         fail(f"working directory does not exist on {os.uname().nodename}: {cwd}")
-    if arguments.agent == "codex" and arguments.permission not in ("read-only", "workspace-write", "danger-full-access"):
-        fail("codex permission must be read-only, workspace-write or danger-full-access")
+    try:
+        arguments.permission = _runtime(arguments.agent).dispatch_permission(
+            arguments.permission, json.loads(arguments.allowed_tools) if arguments.allowed_tools else [],
+            arguments.add_dir)
+    except ValueError as error:
+        fail(str(error))
+    _runtime(arguments.agent).validate_permission(arguments.permission)
     steps = [make_step(index, item["prompt"], item.get("title"))
              for index, item in enumerate(parse_steps(Path(arguments.steps_file).read_text()))]
     if not steps:
         fail("a job needs at least one step")
-    (directory / "context").mkdir(parents=True)
-    (directory / "outbox").mkdir()
     job = {"id": job_id, "project": arguments.project, "description": arguments.description,
            "agent": arguments.agent, "model": arguments.model, "cwd": cwd, "permission": arguments.permission,
            "stop_on_failure": not arguments.keep_going, "created_at": now(), "updated_at": now(),
@@ -979,11 +1396,103 @@ def command_create(arguments: argparse.Namespace) -> None:
            "add_dirs": [os.path.abspath(os.path.expanduser(directory)) for directory in arguments.add_dir],
            "env": dict(pair.split("=", 1) for pair in arguments.env),
            "steps": steps, "todos": [], "session_id": None, "runner_pid": None, "agent_pid": None}
-    (directory / "job.json").write_text(json.dumps(job, indent=1))
-    append_event(job_id, {"kind": "job", "status": "queued", "summary": f"job created: {arguments.description}"})
+    if arguments.run_id is not None:
+        definition = {key: value for key, value in job.items() if key not in ("created_at", "updated_at")}
+        job.update(run_id=arguments.run_id, fingerprint=arguments.fingerprint,
+                   definition_fingerprint=hashlib.sha256(json.dumps(definition, sort_keys=True).encode()).hexdigest(),
+                   start_requested=False)
+    JOBS_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    with open(JOBS_DIRECTORY / ".create-lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        existing = next((candidate for candidate in all_jobs()
+                         if arguments.run_id is not None and candidate.get("run_id") == arguments.run_id), None)
+        if existing is None and directory.exists():
+            existing = read_job(job_id)
+        if existing is not None:
+            if arguments.run_id is None:
+                fail(f"job already exists: {job_id}")
+            if any(existing.get(key) != job[key] for key in
+                   ("run_id", "fingerprint", "definition_fingerprint")):
+                fail("run fingerprint has changed payload")
+        else:
+            (directory / "context").mkdir(parents=True)
+            (directory / "outbox").mkdir()
+            (directory / "job.json").write_text(json.dumps(job, indent=1))
+            append_event(job_id, {"kind": "job", "status": "queued", "summary": f"job created: {arguments.description}"})
     if not arguments.hold:
-        launch_runner(job_id)
+        start_job(job_id, arguments)
     emit(job_summary(read_job(job_id), 0))
+
+
+def validate_dispatch(arguments: argparse.Namespace) -> None:
+    if arguments.run_id is None and arguments.schema_version is None and arguments.fingerprint is None:
+        return
+    if arguments.schema_version != DISPATCH_SCHEMA_VERSION or not arguments.run_id or not arguments.fingerprint:
+        fail("dispatch requires schema version 4, run ID and fingerprint")
+
+
+def start_job(job_id: str, arguments: argparse.Namespace) -> None:
+    validate_dispatch(arguments)
+    with locked_job(job_id) as job:
+        if job.get("run_id") is not None:
+            if job["run_id"] != arguments.run_id or job["fingerprint"] != arguments.fingerprint:
+                fail("run fingerprint has changed payload")
+            if job["start_requested"]:
+                return
+            job["start_requested"] = True
+        elif arguments.run_id is not None:
+            fail("job has no run fingerprint")
+    launch_runner(job_id)
+
+
+def command_reconcile(arguments: argparse.Namespace) -> None:
+    if arguments.schema_version != DISPATCH_SCHEMA_VERSION:
+        fail("unsupported dispatch schema version")
+    job = next((job for job in all_jobs() if job.get("run_id") == arguments.run_id), None)
+    if job is None:
+        emit({"schema_version": DISPATCH_SCHEMA_VERSION, "run_id": arguments.run_id,
+              "fingerprint": arguments.fingerprint, "status": "absent"})
+        return
+    if job["fingerprint"] != arguments.fingerprint:
+        fail("run fingerprint has changed payload")
+    summary = job_summary(job, 0)
+    summary["schema_version"] = arguments.schema_version
+    emit(summary)
+
+
+def command_deliver(arguments: argparse.Namespace) -> None:
+    if arguments.schema_version != 1:
+        fail("unsupported delivery schema version")
+    answer = sys.stdin.read()
+    if not arguments.key.strip() or not answer.strip():
+        fail("delivery key and answer are required")
+    directory = job_directory(arguments.job)
+    with open(directory / ".delivery-lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        with locked_job(arguments.job) as job:
+            step = next((step for step in job["steps"] if step.get("delivery_key") == arguments.key), None)
+            if step is not None:
+                if step["prompt"] != answer:
+                    fail("delivery key has changed payload")
+            else:
+                if not job["session_id"]:
+                    fail("job has no session to resume")
+                if runner_alive(job):
+                    emit({"schema_version": 1, "key": arguments.key, "status": "busy"})
+                    return
+                if job["cancelled"]:
+                    fail("job is cancelled")
+                step = make_step(len(job["steps"]), answer, "Answer")
+                step["delivery_key"] = arguments.key
+                job["steps"].append(step)
+            pending = step["status"] == "pending"
+        if pending:
+            launch_runner(arguments.job)
+        step = next(step for step in read_job(arguments.job)["steps"] if step.get("delivery_key") == arguments.key)
+        if step["status"] == "pending":
+            emit({"schema_version": 1, "key": arguments.key, "status": "busy"})
+            return
+    emit({"schema_version": 1, "key": arguments.key, "status": "applied"})
 
 
 def command_add(arguments: argparse.Namespace) -> None:
@@ -1003,7 +1512,7 @@ def command_add(arguments: argparse.Namespace) -> None:
 
 
 def command_start(arguments: argparse.Namespace) -> None:
-    launch_runner(arguments.job)
+    start_job(arguments.job, arguments)
     emit(job_summary(read_job(arguments.job), 0))
 
 
@@ -1030,8 +1539,9 @@ def command_stream(arguments: argparse.Namespace) -> None:
     """Push job summaries as they change: hello, then job/removed lines, heartbeat every few seconds.
 
     Interactive sessions follow as session/session_removed lines, rescanned every
-    --session-interval seconds. Watches file signatures rather than using inotify so
-    it stays stdlib-only. A broken pipe (the ssh side went away) ends the process.
+    --session-interval seconds, and pipeline runs as pipeline lines (see PipelineTracker).
+    Watches file signatures rather than using inotify so it stays stdlib-only. A broken
+    pipe (the ssh side went away) ends the process.
     """
     signatures: Dict[str, tuple] = {}
     runner_states: Dict[str, bool] = {}
@@ -1041,16 +1551,25 @@ def command_stream(arguments: argparse.Namespace) -> None:
     tracker = SessionTracker()
     sessions: Dict[str, JsonObject] = {}
     last_session_scan = 0.0
+    pipelines = PipelineTracker()
+    last_pipeline_scan = 0.0
+    inputs: Dict[str, JsonObject] = {}
     try:
-        emit({"type": "hello", "host": os.uname().nodename, "time": now()})
+        emit({"type": "hello", "host": os.uname().nodename, "time": now(),
+              "protocol_version": STREAM_PROTOCOL_VERSION})
         while True:
+            for observation in input_observations():
+                occurrence = observation["source_event_id"]
+                if inputs.get(occurrence) != observation:
+                    emit(observation)
+                    inputs[occurrence] = observation
             seen = set()
             for path in JOBS_DIRECTORY.glob("*/job.json") if JOBS_DIRECTORY.exists() else []:
                 job_id = path.parent.name
                 signature = job_signature(path.parent)
                 if ignored.get(job_id) == signature:
                     continue
-                # Unchanged files only matter while a runner is alive: its death means "stalled".
+                # Recheck processes until both runner and agent have ended.
                 if signature == signatures.get(job_id) and not runner_states.get(job_id):
                     seen.add(job_id)
                     continue
@@ -1063,7 +1582,7 @@ def command_stream(arguments: argparse.Namespace) -> None:
                     ignored[job_id] = signature
                     continue
                 seen.add(job_id)
-                alive = runner_alive(job)
+                alive = runner_alive(job) or process_alive(job.get("agent_pid"))
                 if signature != signatures.get(job_id) or alive != runner_states.get(job_id):
                     emit({"type": "job", "job": job_summary(job, arguments.events)})
                 signatures[job_id] = signature
@@ -1081,6 +1600,10 @@ def command_stream(arguments: argparse.Namespace) -> None:
                 for session_id in set(sessions) - set(current):
                     emit({"type": "session_removed", "id": session_id})
                 sessions = current
+            if now() - last_pipeline_scan >= PIPELINE_SCAN_INTERVAL:
+                last_pipeline_scan = now()
+                for message in pipelines.scan():
+                    emit(message)
             if now() - last_heartbeat >= arguments.heartbeat:
                 emit({"type": "heartbeat", "time": now()})
                 last_heartbeat = now()
@@ -1202,14 +1725,23 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="fleetd")
     commands = parser.add_subparsers(dest="command", required=True)
 
+    deliver = commands.add_parser("deliver")
+    deliver.add_argument("job")
+    deliver.add_argument("--key", required=True)
+    deliver.add_argument("--schema-version", type=int, required=True)
+    deliver.set_defaults(handler=command_deliver)
+
     create = commands.add_parser("create")
     create.add_argument("--id")
+    create.add_argument("--run-id")
+    create.add_argument("--fingerprint")
+    create.add_argument("--schema-version", type=int)
     create.add_argument("--project", required=True)
     create.add_argument("--description", required=True)
     create.add_argument("--agent", choices=("claude", "codex"), required=True)
     create.add_argument("--model")
     create.add_argument("--cwd", required=True)
-    create.add_argument("--permission", required=True)
+    create.add_argument("--permission")
     create.add_argument("--steps-file", required=True)
     create.add_argument("--keep-going", action="store_true")
     create.add_argument("--hold", action="store_true")
@@ -1227,7 +1759,16 @@ def main() -> None:
 
     start = commands.add_parser("start")
     start.add_argument("job")
+    start.add_argument("--run-id")
+    start.add_argument("--fingerprint")
+    start.add_argument("--schema-version", type=int)
     start.set_defaults(handler=command_start)
+
+    reconcile = commands.add_parser("reconcile")
+    reconcile.add_argument("run_id")
+    reconcile.add_argument("--fingerprint", required=True)
+    reconcile.add_argument("--schema-version", type=int, required=True)
+    reconcile.set_defaults(handler=command_reconcile)
 
     listing = commands.add_parser("ls")
     listing.add_argument("--all", action="store_true")
@@ -1294,6 +1835,16 @@ def main() -> None:
     run = commands.add_parser("_run")
     run.add_argument("job")
     run.set_defaults(handler=lambda arguments: run_job(arguments.job))
+
+    hook = commands.add_parser("input-hook", help="receive Claude permission hooks on stdin")
+    hook.add_argument("--project", required=True)
+    hook.add_argument("--job")
+    hook.add_argument("--step-index", type=int)
+    hook.set_defaults(handler=command_input_hook)
+
+    settings = commands.add_parser("input-hook-settings", help="Claude --settings JSON for an interactive session")
+    settings.add_argument("--project", required=True)
+    settings.set_defaults(handler=lambda args: emit(input_hook_settings(args.project)))
 
     arguments = parser.parse_args()
     arguments.handler(arguments)

@@ -1,39 +1,41 @@
 """What the deck writes and derives on top of host state, shared by live and fixture decks.
 
 A state class using LiveWorkspace provides `changed` (a Condition), `version`,
-`workspace` (a WorkspaceStore), `board` (an AttentionBoard), `registry` (the project
+`workspace` (a WorkspaceFacade), `attention` (an AttentionFacade), `registry` (the project
 Registry in use), `project_labels`, `capacity`, `known_projects()`, `host_names()`,
 `edit_registry()` and `repository_remotes()`.
 """
 from __future__ import annotations
 
+from dataclasses import asdict
 import threading
 import time
+from datetime import timedelta
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Container, TypeVar
 
-from fleet.attention import AttentionBoard
-from fleet.building import NoVacancy
-from fleet.projects import Registry
+from fleet.modules.attention import AttentionFacade
+from fleet.projections.attention import attention_display, attention_items
+from fleet.projections.building import building_state
+from fleet.modules.workspace import Registry, WorkspaceFacade, AlreadyHoused
 from fleet.transport import FleetError
-from fleet.workspace import NotShuttered, WorkspaceStore
-
-MOVE_IN_LOCK = threading.Lock()   # moving in, linking, merging, shuttering and restoring: one at a time
+from fleet.composition import open_work, open_execution, open_library, open_decisions
+from fleet.projections.project import project_status
 T = TypeVar("T")
-
-
-class AlreadyHoused(FleetError):
-    """The host's label already belongs to a registered project."""
 
 
 class LiveWorkspace:
     changed: threading.Condition
     version: int
-    workspace: WorkspaceStore
-    board: AttentionBoard
+    workspace: WorkspaceFacade
+    attention: AttentionFacade
+    woken_until: float
     registry: Registry
     project_labels: dict[str, str]
     capacity: int
+    pipeline_config: dict[str, dict[str, str]]           # name → {"host", "project": room label}, as configured
+    pipeline_runs: dict[tuple[str, str], dict[str, Any]]  # (host, name) → {"run", "baseline", "seq"} as last reported
+    pipeline_seq: int
 
     def known_projects(self) -> Container[str]:
         raise NotImplementedError
@@ -53,47 +55,24 @@ class LiveWorkspace:
         if not hosts or not label or any(host not in self.host_names() for host in hosts):
             raise FleetError("known hosts and a label are required")
 
-    def housed(self, hosts: list[str], label: str) -> None:
-        """Refuse when any host's label already belongs to a project. Call with the lock."""
-        for host in hosts:
-            if self.registry.project_for(host, label):
-                raise AlreadyHoused(f"{host}:{label} already belongs to {self.registry.project_for(host, label).id}")
-
     def move_in(self, hosts: list[str], label: str, shutter: str | None = None) -> dict[str, Any]:
         """Register an unregistered label on `hosts` as one project on the lowest free floor, named as its room is.
         When the building is full the only way in is to shutter a floor first (`shutter`); capacity never grows here."""
         self.check_hosts(hosts, label)
-        with MOVE_IN_LOCK:
-            self.known_projects()   # the registry as it is on disk now
-            self.housed(hosts, label)
-            self.make_room(shutter)
-
-            def register(registry: Registry) -> str:
-                project = registry.create(self.project_labels.get(label) or label)
-                for host in hosts:
-                    registry.link(project.id, host, label)
-                return project.id
-
-            project_id = self.edit_registry(register)
-            floor = self.workspace.move_in(project_id, self.capacity)
+        result = self.workspace.move_in(hosts, label, shutter, self.project_labels.get(label))
+        self.registry = self.workspace.registry()
         self.bump()
-        return {"project_id": project_id, "floor": floor}
+        return asdict(result)
 
     def link_in(self, project_id: str, hosts: list[str], label: str) -> dict[str, Any]:
         """Link the label on `hosts` to an existing project: its work joins that project, and no floor is taken."""
         self.check_hosts(hosts, label)
-        with MOVE_IN_LOCK:
-            if project_id not in self.known_projects():
-                raise LookupError(f"no project '{project_id}'")
-            self.housed(hosts, label)
-
-            def link(registry: Registry) -> None:
-                for host in hosts:
-                    registry.link(project_id, host, label)
-
-            self.edit_registry(link)
+        if project_id not in self.known_projects():
+            raise LookupError(f"no project '{project_id}'")
+        result = self.workspace.link_in(project_id, hosts, label)
+        self.registry = self.workspace.registry()
         self.bump()
-        return {"project_id": project_id, "floor": self.workspace.floors_snapshot().get(project_id)}
+        return asdict(result)
 
     def move_in_options(self, label: str, hosts: list[str]) -> dict[str, Any]:
         """What moving the label in on `hosts` could mean: projects it may belong to (see Registry.link_candidates),
@@ -120,60 +99,42 @@ class LiveWorkspace:
 
     def merge(self, keep: str, other: str) -> dict[str, Any]:
         """Fold a project registered by mistake into the older one (Registry.merge) and free its floor."""
-        with MOVE_IN_LOCK:
-            for project_id in (keep, other):
-                if project_id not in self.known_projects():
-                    raise LookupError(f"no project '{project_id}'")
-            self.edit_registry(lambda registry: registry.merge(keep, other))
-            freed = self.workspace.forget_project(other)
+        for project_id in (keep, other):
+            if project_id not in self.known_projects():
+                raise LookupError(f"no project '{project_id}'")
+        result = self.workspace.merge(keep, other)
+        self.registry = self.workspace.registry()
         self.bump()
-        return {"project_id": keep, "merged": other, "freed": freed,
-                "floor": self.workspace.floors_snapshot().get(keep)}
+        return asdict(result)
 
     def shutter(self, project_id: str) -> dict[str, Any]:
         """Pack a project away in the storehouse (ADR 0005): its floor is freed; its ID, links and records stay."""
-        with MOVE_IN_LOCK:
-            if project_id not in self.known_projects():
-                raise LookupError(f"no project '{project_id}'")
-            floor = self.workspace.shutter(project_id, time.time())
+        if project_id not in self.known_projects():
+            raise LookupError(f"no project '{project_id}'")
+        result = self.workspace.shutter(project_id)
         self.bump()
-        return {"project_id": project_id, "floor": floor}
+        return asdict(result)
 
     def restore(self, project_id: str, shutter: str | None = None) -> dict[str, Any]:
         """Move a crate back in: to its old floor if free, else the lowest free one; when full, only by shuttering."""
-        with MOVE_IN_LOCK:
-            if project_id not in self.known_projects():
-                raise LookupError(f"no project '{project_id}'")
-            if project_id not in self.workspace.shuttered_snapshot():
-                raise NotShuttered(f"{project_id} is not in the storehouse")
-            self.make_room(shutter)
-            floor = self.workspace.restore(project_id, self.capacity)
+        if project_id not in self.known_projects():
+            raise LookupError(f"no project '{project_id}'")
+        result = self.workspace.restore(project_id, shutter)
         self.bump()
-        return {"project_id": project_id, "floor": floor}
-
-    def make_room(self, shutter: str | None) -> None:
-        """Shutter `shutter` if given (it must hold a floor); then there must be a free floor. Call with the lock."""
-        self.workspace.settle(self.registry.projects, self.capacity)
-        floors = self.workspace.floors_snapshot()
-        if shutter is not None:
-            if floors.get(shutter, self.capacity + 1) > self.capacity:
-                raise FleetError(f"{shutter} holds no floor to clear")
-            self.workspace.shutter(shutter, time.time())
-        elif len({floor for floor in floors.values() if floor <= self.capacity}) >= self.capacity:
-            raise NoVacancy("The building's full: shutter a floor to make room")
+        return asdict(result)
 
     def with_building(self, document: dict[str, Any], registry: Registry) -> dict[str, Any]:
         """Add the floors registered projects occupy within capacity with each one's focus, the projects in the
         storehouse, and the live projects that have no floor."""
-        self.workspace.settle(registry.projects, self.capacity)
-        floors = {project_id: floor for project_id, floor in self.workspace.floors_snapshot().items()
-                  if project_id in registry.projects and floor <= self.capacity}
-        shuttered = self.workspace.shuttered_snapshot()
-        focus = {project_id: self.workspace.focus_of({"project_id": project_id}) for project_id in floors}
-        return {**document, "building": {"capacity": self.capacity, "floors": floors, "focus": focus,
-                                         "shuttered": shuttered,
-                                         "no_floor": [project_id for project_id in registry.projects
-                                                      if project_id not in floors and project_id not in shuttered]}}
+        self.workspace.settle()
+        building = building_state(self.workspace, registry, self.capacity)
+        work = open_work(self.store)
+        execution, library = open_execution(self.store), open_library(self.store)
+        decisions = open_decisions(self.store)
+        return {**document, "building": building,
+                "work": {project: project_status(project, work, self.attention, execution, library, decisions)
+                         for project in registry.projects},
+                "attention_display": attention_display(document["attention"], building, document["projects"])}
 
     def bump(self) -> None:
         """Push a new document to every browser."""
@@ -182,30 +143,75 @@ class LiveWorkspace:
             self.changed.notify_all()
 
     def set_focus(self, focus: str, projects: list[str], labels: list[str]) -> None:
-        self.workspace.set_focus(focus, projects, labels, self.known_projects())
+        self.workspace.set_focus(focus, projects, labels)
         self.bump()
 
     def document(self) -> dict[str, Any]:
         raise NotImplementedError
 
     def act_on_attention(self, action: str, item_id: str, seconds: float | None = None) -> None:
-        self.document()   # brings the board up to date: an item may have resolved since the last push
-        self.board.act(item_id, action, time.time(), seconds)
+        if action == "acknowledge":
+            self.attention.acknowledge(item_id, actor="web-user")
+        elif action == "snooze":
+            if not isinstance(seconds, (int, float)) or isinstance(seconds, bool) or seconds <= 0:
+                raise FleetError("snooze needs a positive number of seconds")
+            self.attention.snooze(item_id, until=self.attention.clock() + timedelta(seconds=seconds), actor="web-user")
+        elif action == "reopen":
+            self.attention.reopen(item_id, actor="web-user")
+        else:
+            raise FleetError(f"unknown attention action '{action}'")
         self.bump()
 
     def with_attention(self, document: dict[str, Any]) -> dict[str, Any]:
-        """Add the stored focus choices and attention items derived from the document's hosts."""
-        return {**document, "focus": self.workspace.focus_snapshot(),
-                "attention": self.board.items(document["hosts"], time.time())}
+        """Add stored focus choices and the Attention projection."""
+        return {**document, "focus": asdict(self.workspace.focus_snapshot()),
+                "attention": attention_items(self.attention, document["hosts"])}
 
-    def wait_for_change(self, seen_version: int, timeout: float) -> int:
-        """Also wakes when a snooze ends, so the item comes back on every deck without a reload."""
-        now = time.time()
-        ending = self.board.snooze_ending(now)
+    def report_pipeline(self, host: str, name: str, run: dict[str, Any] | None,
+                        baseline: dict[str, Any] | None) -> None:
+        """A host's latest summary of a pipeline's run; browsers get it as a pipeline event, not a new document."""
+        with self.changed:
+            self.pipeline_seq += 1
+            self.pipeline_runs[(host, name)] = {"run": run, "baseline": baseline, "seq": self.pipeline_seq}
+            self.changed.notify_all()
+
+    def pipelines(self, registry: Registry, hosts: dict[str, dict[str, Any]],
+                  after: int | None = None) -> list[dict[str, Any]]:
+        """Declared pipelines, reported or not, and any other a host reports; with `after`, only reports since that seq.
+
+        A declared pipeline names the room (project label) it belongs to; one nobody declared has no room.
+        `host_ok` and `host_error` say whether its host is reachable now; `run` is the last report, or null."""
+        with self.changed:
+            reported = dict(self.pipeline_runs)
+        keys = [(entry.get("host"), name) for name, entry in self.pipeline_config.items()]
+        keys += [key for key in sorted(reported) if key[1] not in self.pipeline_config]
+        out = []
+        for host, name in keys:
+            report = reported.get((host, name)) or {"run": None, "baseline": None, "seq": 0}
+            if after is not None and report["seq"] <= after:
+                continue
+            declared = self.pipeline_config.get(name)
+            label = declared.get("project") if declared else None
+            project = registry.project_for(host, label) if host and label else None
+            host_entry = hosts.get(host) or {"ok": False, "error": f"{host} is not a host this deck follows"}
+            out.append({"host": host, "pipeline": name, "project": label, "project_id": project.id if project else None,
+                        "declared": declared is not None, "host_ok": bool(host_entry.get("ok")),
+                        "host_error": host_entry.get("error"), "run": report["run"], "baseline": report["baseline"],
+                        "seq": report["seq"]})
+        return out
+
+    def wait_for_change(self, seen_version: int, timeout: float, seen_pipelines: int | None = None) -> int:
+        """Also wakes when a snooze ends, so the item comes back on every deck without a reload, and when a pipeline
+        report arrives if `seen_pipelines` is given (compare `pipeline_seq` to tell)."""
+        now = self.attention.clock().timestamp()
+        ends = [item.snooze_until.timestamp() for item in self.attention.list()
+                if item.snooze_until is not None and item.snooze_until.timestamp() > self.woken_until]
+        ending = min(ends) if ends else None
         wait = timeout if ending is None else max(0.0, min(timeout, ending - now))
         with self.changed:
-            self.changed.wait_for(lambda: self.version != seen_version, timeout=wait)
-            if self.version == seen_version and ending is not None and time.time() >= ending:
-                self.board.announce(ending)
+            self.changed.wait_for(lambda: self.version != seen_version or (
+                seen_pipelines is not None and self.pipeline_seq != seen_pipelines), timeout=wait)
+            if self.version == seen_version and ending is not None and self.attention.clock().timestamp() >= ending:
+                self.woken_until = max(self.woken_until, ending)
                 self.version += 1
             return self.version

@@ -7,7 +7,7 @@ import { AGENT_COLOR, TOOL_ICON, hostLook } from './looks.js';
 import { isSession, shortId } from './activity.js';
 import { ROBOT, renderer } from './scene.js';
 import {
-  ents, everLoaded, feed, feedSeeded, hosts, live, seenEvents, selectedKey, setFeedSeeded, setSelectedKey,
+  ents, everLoaded, feed, feedSeeded, hosts, live, seenEvents, selectedKey, setFanned, setFeedSeeded, setSelectedKey, workOf,
 } from './model.js';
 import { DOC_KIND, docMeta, docsOf, kindOf } from './docs3d.js';
 import { action, buildRobot } from './agents.js';
@@ -86,6 +86,7 @@ export function select(key) {
 }
 export function closePanel() {
   setSelectedKey(null);
+  setFanned(null);   // a fanned-out crowd gathers again
   panel.classList.remove('open');
   panel.setAttribute('aria-hidden', 'true');
 }
@@ -96,7 +97,7 @@ export function renderPanel() {
     if (!panelRenderPending) { panelRenderPending = true; setTimeout(() => { panelRenderPending = false; renderPanel(); }, wait + 20); }
     return;
   }
-  const e = ents.get(selectedKey);
+  const e = workOf(selectedKey);
   if (!e) return;
   if (isSession(e)) { renderSessionPanel(e); return; }
   const j = e.job;
@@ -201,7 +202,7 @@ panel.addEventListener('click', ev => {
   if (workarea) { if (!workarea.disabled) openWorkarea(workarea.dataset.workarea); return; }
   const open = ev.target.closest('[data-doc]');
   if (open) {
-    const e = ents.get(selectedKey), doc = e && (e.job.documents || []).find(d => d.id === open.dataset.doc);
+    const e = workOf(selectedKey), doc =e && (e.job.documents || []).find(d => d.id === open.dataset.doc);
     if (doc) openReader(e, doc);
     return;
   }
@@ -246,10 +247,10 @@ export function renderLegend() {
 }
 export function renderStats() {
   const count = { running: 0, queued: 0, done: 0 }, live = { working: 0, idle: 0 };
-  for (const e of ents.values()) {
-    const tally = isSession(e) ? live : count;
-    if (tally[e.job.status] !== undefined) tally[e.job.status]++;
-  }
+  // jobs in a background room count too, though they have no android
+  for (const h of hosts) for (const j of h.jobs || []) if (count[j.status] !== undefined) count[j.status]++;
+  // every session counts, including idle ones that have left the deck
+  for (const h of hosts) for (const s of h.sessions || []) if (s.project && live[s.status] !== undefined) live[s.status]++;
   document.getElementById('stats').innerHTML = `
     ${live.working + live.idle ? `<span class="chip sess" title="interactive Claude Code / Codex sessions"><i></i><b>${live.working + live.idle}</b> live${live.idle ? `<span class="opt"> · ${live.idle} waiting</span>` : ''}</span>` : ''}
     <span class="chip"><i style="background:var(--run)"></i><b>${count.running}</b> working</span>
@@ -306,7 +307,7 @@ export function renderFeed() {
 }
 document.getElementById('feedList').addEventListener('click', ev => {
   const li = ev.target.closest('li[data-key]');
-  if (li && ents.has(li.dataset.key)) select(li.dataset.key);
+  if (li && workOf(li.dataset.key)) select(li.dataset.key);
 });
 export function updateHint() {
   const hint = document.getElementById('hint');

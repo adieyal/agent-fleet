@@ -1,8 +1,9 @@
 // Demo data (?demo): a synthetic fleet and a small Markdown renderer for its documents.
 
-import { DEBUG, QS } from './env.js';
+import { DEBUG, POLL_MS, QS } from './env.js';
 import { esc, hash, seeded } from './util.js';
-import { DOC_FILE, activityOf } from './activity.js';
+import { activityOf } from './activity.js';
+import { demoEvents } from './demo-events.js';
 
 // Demo only: a small Markdown renderer producing the same shapes as the server's markdown-it
 // (heading ids, tables, task lists, footnotes). Everything is escaped before any tag is added.
@@ -308,27 +309,13 @@ export function demoSource() {
   const rand = seeded(42);
   const pick = arr => arr[Math.floor(rand() * arr.length)];
   const now = () => Date.now() / 1000;
-  const SUMMARIES = {
-    bash: ['pytest tests/invoices/test_upload.py -q', 'npx vitest run src/v2/suppliers', 'git diff --stat', 'ruff check app/suppliers', 'make migrate', 'npm run lint -- --fix', 'git log --oneline -5',
-      'git commit -m "Port supplier filters to the V2 route"', 'git push -u origin HEAD', 'npm install', 'npm run build', 'docker compose up -d db', 'sleep 30',
-      'curl -s https://api.github.com/repos/example/demo-store/pulls', 'ssh node-b fleet ls', 'psql -c "select count(*) from invoices"', 'ls -la fleet/web', 'mypy app/invoices',
-      'git add -A', 'python scripts/export_suppliers.py --dry-run', 'cat package.json', 'git checkout -b fix/upload-poller'],
-    edit: ['frontend/src/v2/routes/suppliers.tsx', 'app/invoices/parser/luc.py', 'fleet/web/index.html', 'docs/guides/onboarding.md', 'app/suppliers/adapters.py', 'tests/test_fleetd_parsers.py'],
-    read: ['app/suppliers/views.py', 'docs/adr/0002-module-refactor.md', 'frontend/src/v2/router.tsx', 'fleet/remote/fleetd.py', 'invoices/sample-0412.json'],
-    search: ['SupplierRow', '**/*.spec.ts', 'luc_tolerance', 'docs/**/*.png'],
-    web: ['https://tanstack.com/router/latest/docs/guide/data-loading', 'https://docs.python.org/3/library/decimal.html', 'https://playwright.dev/docs/screenshots'],
-    think: ['Weighing whether the tolerance should be relative to the line total…', 'The flake only happens when the poller fires twice…', 'Two ways to split the loader; the second keeps parity…'],
-    plan: ['{"todos": […]}'],
-    delegate: ['Find every caller of get_active_restaurants', 'List routes still on the legacy table'],
-  };
+  const SUMMARIES = Object.fromEntries(Object.entries(demoEvents).map(([kind, events]) => [kind, events.map(ev => ev.summary)]));
   // shaped like fleetd's events: the Claude tool name, its main argument, and for shell calls sometimes Claude's description
   const INTENTS = { 'make migrate': 'Run the database migrations', 'git diff --stat': 'Show what changed', 'ruff check app/suppliers': 'Lint the suppliers module',
     'git push -u origin HEAD': 'Push the branch', 'sleep 30': 'Wait for the server to come up' };
   const demoTool = kind => {
-    const summary = pick(SUMMARIES[kind]);
-    const name = { bash: 'Bash', edit: DOC_FILE.test(summary) ? 'Write' : 'Edit', read: 'Read', web: 'WebFetch', think: '', plan: 'TodoWrite', delegate: 'Agent' }[kind]
-      ?? (summary.includes('*') ? 'Glob' : 'Grep');
-    const ev = { kind: 'tool', tool: kind, name, summary };
+    const ev = { ...pick(demoEvents[kind]) };
+    const summary = ev.summary;
     if (kind === 'bash' && INTENTS[summary] && rand() < 0.7) ev.intent = INTENTS[summary];
     return ev;
   };
@@ -353,13 +340,17 @@ export function demoSource() {
     ['node-c', 'agent-fleet', 'Unit tests for the fleetd parsers', 'codex', 'gpt-5-codex', ['Claude stream fixtures', 'Codex exec fixtures', 'Runner lock tests'], 0, 'queued'],
     ['node-b', 'demo-docs', 'Refresh the onboarding guide screenshots', 'claude', 'claude-opus-5-5', ['List stale screenshots', 'Capture new ones', 'Update the markdown'], 1, 'stalled'],
     ['node-a', 'demo-docs', 'Support article: PAR by weekday', 'claude', 'claude-opus-5-5', ['Read the feature PR', 'Draft the article', 'Tighten the copy'], 3, 'done'],
+    // a batch of six at the comms dish, checking links: more than five at one station gather into a group figure
+    ...[1, 2, 3, 4, 5, 6].map(n => [['node-a', 'node-b', 'node-c'][n % 3], 'demo-docs', `Check the links in guide chapter ${n}`, 'claude', 'claude-opus-5-5',
+      ['Collect the links', 'Fetch each one', 'List the dead ones'], 1, 'running']),
   ];
   const t0 = now();
+  const focusOf = project => project === 'demo-parser' ? 'background' : 'priority';   // lit warm while its parse runs
   function newTodos(job) { const start = Math.floor(rand() * 4); job.todos = TODO_POOL.slice(start, start + 3).map((text, i) => ({ text, status: i === 0 ? 'in_progress' : 'pending' })); }
   const jobs = specs.map(([host, project, description, agent, model, titles, cur, status], i) => {
     const id = hash(description).toString(16).padStart(8, '0').slice(0, 6);
     const job = {
-      id, host, project, description, agent, model, status, cwd: `~/src/${project}`,
+      id, host, project, focus: focusOf(project), description, agent, model, status, cwd: `~/src/${project}`,
       permission: agent === 'claude' ? 'acceptEdits' : 'workspace-write',
       created_at: t0 - 3600 + i * 240, updated_at: t0 - (status === 'stalled' ? 1500 : 20),
       session_id: null, tmux: `tmux -L fleet attach -t fleet-${id}`, todos: [], events: [], activity: null, ticks: 0, documents: [],
@@ -381,18 +372,23 @@ export function demoSource() {
     job.activity = [...job.events].reverse().find(e => e.kind === 'tool' || e.kind === 'text' || e.kind === 'error') || null;
     return job;
   });
+  const batch = new Set(jobs.filter(job => job.description.startsWith('Check the links')));
+  for (const job of batch) push(job, demoTool('web'));
 
-  // interactive CLI sessions, shaped like `fleetd sessions` output: a working Claude, an idle one, a working Codex
+  // interactive CLI sessions, shaped like `fleetd sessions` output: a working Claude, an idle one, a working Codex, and
+  // a Claude idle for an hour (off the deck) that gets back to work soon after the page opens
   const sessionSpecs = [
-    ['node-a', 'agent-fleet', 'claude', 'claude-opus-5-5', '00000000-0000-4000-8000-000000000001', 'Show live CLI sessions on the deck', 'working', 1900],
-    ['node-b', 'demo-store', 'claude', 'claude-opus-5-5', '00000000-0000-4000-8000-000000000002', 'Why does the stocktake import modal re-render twice?', 'idle', 2600],
-    ['node-c', 'demo-parser', 'codex', 'gpt-6-sol', '00000000-0000-4000-8000-000000000003', 'review the unstaged changes are they correct and safe?', 'working', 900],
+    ['node-a', 'agent-fleet', 'claude', 'claude-opus-5-5', '00000000-0000-4000-8000-000000000001', 'Show live CLI sessions on the deck', 'working', 1900, 4],
+    ['node-b', 'demo-store', 'claude', 'claude-opus-5-5', '00000000-0000-4000-8000-000000000002', 'Why does the stocktake import modal re-render twice?', 'idle', 2600, 380],
+    ['node-c', 'demo-parser', 'codex', 'gpt-6-sol', '00000000-0000-4000-8000-000000000003', 'review the unstaged changes are they correct and safe?', 'working', 900, 4],
+    ['node-b', 'demo-store', 'claude', 'claude-opus-5-5', '00000000-0000-4000-8000-000000000004', 'Tidy the supplier import logs', 'idle', 5400, 3600],
   ];
-  const sessions = sessionSpecs.map(([host, project, agent, model, id, title, status, startedAgo], i) => {
+  const dormant = sessionSpecs.length - 1;
+  const sessions = sessionSpecs.map(([host, project, agent, model, id, title, status, startedAgo, quietFor], i) => {
     const cwd = `~/src/${project}`;
     const session = {
-      id, host, agent, cwd, project, title, status, model, started_at: t0 - startedAgo,
-      updated_at: t0 - (status === 'idle' ? 380 : 4), todos: [], events: [], activity: null,
+      id, host, agent, cwd, project, focus: focusOf(project), title, status, model, started_at: t0 - startedAgo,
+      updated_at: t0 - quietFor, todos: [], events: [], activity: null,
       resume: `cd ${cwd} && ${agent === 'codex' ? 'codex resume' : 'claude --resume'} ${id}`,
     };
     for (let k = 0; k < 6; k++) session.events.push({ ...demoTool(pickTool()), ts: t0 - 700 + k * 50 + i });
@@ -413,7 +409,7 @@ export function demoSource() {
     docText.set(`${job.host}:${job.id}:${id}`, markdown);
   }
   function addReport(job, i, mtime) { addDoc(job, `report-${i}`, 'report', `Step ${i + 1}: ${job.steps[i].title}`, i, stepReport(job, i), mtime); }
-  const [suppliers, flaky, , shadow, luc, deck, , , article] = jobs;
+  const [suppliers, flaky, review, shadow, luc, deck, , , article] = jobs;
   addReport(suppliers, 0, t0 - 2400); addReport(suppliers, 1, t0 - 1300);
   addDoc(suppliers, 'file-0', 'file', 'docs/suppliers-v2-parity.md', 1, DEMO_DOCS.deckLayout.replace('Deck layout notes', 'Suppliers V2 parity notes'), t0 - 1250);
   addReport(flaky, 0, t0 - 900);
@@ -430,6 +426,70 @@ export function demoSource() {
   addDoc(article, 'file-2', 'file', 'articles/par-by-weekday.md', 2, DEMO_DOCS.article, t0 - 3500);
   addReport(article, 2, t0 - 3300);
   addDoc(article, 'outbox-par-by-weekday.md', 'outbox', 'par-by-weekday.md', null, DEMO_DOCS.article, t0 - 3200);
+  // A synthetic pipeline shaped like fleetd's reports: items pass the first two columns tick by tick, the gates run
+  // in a burst at the end, and a few ticks later a new run starts with the finished one as its baseline.
+  const PIPE = { nodes: [['items'], ['decided', 'tied', 'unlearnable'], ['alone', 'agree', 'disagree', 'profile', 'unsettled'],
+    ['confident', 'review'], ['null cell', 'sum mismatch', 'profile disagree', 'low support']], total: 1800,
+    tones: { confident: 'good', review: 'warn', unsettled: 'muted', unlearnable: 'muted' } };
+  const prand = seeded(7), ppick = arr => arr[Math.floor(prand() * arr.length)];   // its own stream: the fleet's stays as it was
+  const weighted = weights => { let x = prand() * Object.values(weights).reduce((s, w) => s + w, 0); for (const [k, w] of Object.entries(weights)) if ((x -= w) <= 0) return k; return Object.keys(weights)[0]; };
+  let pipe = null, pipeBase = null, pipeSeq = 0;
+  function newPipeRun(n) {
+    pipe = { n, run_id: `demo-${n}`, label: `demo run ${n} (synthetic)`, started_at: now(), edges: new Map(), inflow: {}, outflow: {},
+      recent: {}, items: [], status: 'running', ended_at: null, updated_at: now(), rate: 0, doneAt: 0 };
+  }
+  function pipeFlow(item, from, to, attrs) {
+    const key = from + '→' + to;
+    pipe.edges.set(key, (pipe.edges.get(key) || 0) + 1);
+    pipe.outflow[from] = (pipe.outflow[from] || 0) + 1; pipe.inflow[to] = (pipe.inflow[to] || 0) + 1;
+    (pipe.recent[to] ||= []).push({ item, ts: now(), ...(attrs ? { attrs } : {}) });
+    if (pipe.recent[to].length > 25) pipe.recent[to].shift();
+  }
+  function pipeCounts(p) {
+    return Object.fromEntries([...new Set([...Object.keys(p.inflow), ...Object.keys(p.outflow)])].map(n => [n, Math.max(p.inflow[n] || 0, p.outflow[n] || 0)]));
+  }
+  function stepPipe() {
+    if (!pipe) newPipeRun(1);
+    if (pipe.status === 'done') { if (++pipe.doneAt > 4) { pipeBase = pipe; newPipeRun(pipe.n + 1); } return; }
+    const before = pipe.items.length;
+    for (let k = 0, n = 60 + Math.floor(prand() * 60); k < n && pipe.items.length < PIPE.total; k++) {
+      const item = `D-${pipe.n}-${String(pipe.items.length).padStart(5, '0')}`;
+      const first = weighted({ decided: 0.7, tied: 0.2, unlearnable: 0.1 });
+      pipeFlow(item, 'items', first, first === 'unlearnable' ? { why: ppick(['no printed total', 'unreadable scan']) } : null);
+      const second = first === 'unlearnable' ? null
+        : weighted(first === 'decided' ? { alone: 0.3, agree: 0.4, disagree: 0.15, profile: 0.15 } : { agree: 0.3, unsettled: 0.7 });
+      if (second) pipeFlow(item, first, second);
+      pipe.items.push([item, second]);
+    }
+    if (pipe.items.length >= PIPE.total) {   // the gates, all at once
+      const reasons = ['null cell', 'sum mismatch', 'profile disagree', 'low support'];
+      for (const [item, second] of pipe.items) {
+        if (!second) continue;
+        const confident = prand() < (['alone', 'agree', 'profile'].includes(second) ? 0.85 : 0.25);
+        pipeFlow(item, second, confident ? 'confident' : 'review');
+        if (!confident) {
+          const why = reasons.filter(() => prand() < 0.45);
+          if (!why.length) why.push(ppick(reasons));
+          pipeFlow(item, 'review', why[0], { reasons: why });
+        }
+      }
+      pipe.status = 'done'; pipe.ended_at = now();
+    }
+    pipe.rate = Math.round((pipe.items.length - before) / (POLL_MS / 1000) * 10) / 10;   // items into the first column
+    pipe.updated_at = now();
+  }
+  function pipeReport() {
+    const edges = [...pipe.edges].map(([key, c]) => [...key.split('→'), c]), counts = pipeCounts(pipe);
+    return { host: 'node-a', pipeline: 'demo-training', project: 'demo-training', project_id: null, declared: true, host_ok: true,
+      host_error: null, seq: ++pipeSeq,
+      run: { run_id: pipe.run_id, pipeline: 'demo-training', label: pipe.label, started_at: pipe.started_at, total: PIPE.total,
+        tones: PIPE.tones, nodes: PIPE.nodes, edges, counts, flows: edges.reduce((s, e) => s + e[2], 0),
+        recent: Object.fromEntries(Object.entries(pipe.recent).filter(([n]) => !pipe.outflow[n])),
+        item_rate: pipe.status === 'running' ? pipe.rate : 0, updated_at: pipe.updated_at, status: pipe.status, ended_at: pipe.ended_at },
+      baseline: pipeBase && { run_id: pipeBase.run_id, label: pipeBase.label, started_at: pipeBase.started_at, total: PIPE.total,
+        edges: [...pipeBase.edges].map(([key, c]) => [...key.split('→'), c]), counts: pipeCounts(pipeBase) } };
+  }
+
   let tickCount = 0;
   demoDoc = async (host, jobId, id) => {
     await new Promise(resolve => setTimeout(resolve, 350));
@@ -447,10 +507,23 @@ export function demoSource() {
     job.updated_at = now();
     if (e.kind === 'tool' || e.kind === 'text' || e.kind === 'error') job.activity = job.events[job.events.length - 1];
   }
+  // failed and stalled jobs are blockers under their room's lantern, as fleet/attention.py derives them
+  function blocker(job) {
+    const step = job.steps.find(s => s.status === (job.status === 'failed' ? 'failed' : 'running'));
+    return { id: `job:${job.host}:${job.id}:${job.status}:${step.index}`, kind: 'blocker', state: 'open', project: job.project,
+      project_id: null, source: 'Demo job', context_reference: `${job.host}:${job.id}`, last_seen: job.updated_at,
+      owner: { type: 'job', host: job.host, id: job.id, key: `${job.host}:${job.id}` },
+      summary: `step ${step.index + 1} ${job.status}: ${step.title}`, since: job.updated_at };
+  }
+  function finish(job) { job.status = 'done'; job.ticks = 0; job.todos = []; push(job, { kind: 'job', status: 'done', summary: 'job done' }); }
   function tick() {
     tickCount++;
-    if (tickCount === 3) { addDoc(deck, 'file-0', 'file', 'docs/deck-layout.md', 2, DEMO_DOCS.deckLayout); push(deck, { kind: 'tool', tool: 'edit', summary: 'docs/deck-layout.md' }); }
+    if (tickCount === 3) { addDoc(deck, 'file-0', 'file', 'docs/deck-layout.md', 2, DEMO_DOCS.deckLayout); push(deck, { kind: 'tool', tool: 'edit', summary: 'docs/deck-layout.md', activity_class: 'doc' }); }
     if (tickCount === 7) addDoc(flaky, 'outbox-root-cause.md', 'outbox', 'root-cause.md', null, DEMO_DOCS.rootCause);
+    if (tickCount === 4 && review.status === 'running') {   // one job finishes soon after the page opens, so its android is seen walking out
+      for (const s of review.steps) if (s.status !== 'done') { s.status = 'done'; s.finished_at = now(); s.result = pick(RESULTS); }
+      finish(review);
+    }
     for (const job of jobs) {
       job.ticks++;
       if (job.status === 'queued' && job.ticks > 7) {
@@ -464,12 +537,12 @@ export function demoSource() {
         push(job, { kind: 'job', status: 'queued', summary: `${job.steps.length} step(s) re-queued` });
         continue;
       }
-      if (job.status !== 'running') continue;
+      if (job.status !== 'running' || batch.has(job)) continue;
       const i = jobs.indexOf(job);
       if (PINS) {
         const seq = PINS[i % PINS.length].split('+'), act = seq[Math.floor(tickCount / 5) % seq.length];   // type+ship: alternate every 10 s
         // a pinned test run alternates with its outcome: an error half the time, otherwise the next command
-        if (act === 'test' && job.tested) push(job, rand() < 0.5 ? { kind: 'error', summary: 'exit 1: pytest -q (2 failed, 41 passed)' } : { kind: 'tool', tool: 'bash', name: 'Bash', summary: 'git add -A' });
+        if (act === 'test' && job.tested) push(job, rand() < 0.5 ? { kind: 'error', summary: 'exit 1: pytest -q (2 failed, 41 passed)' } : { ...demoEvents.bash.find(ev => ev.summary === 'git add -A') });
         else push(job, pinned(act));
         job.tested = act === 'test' && !job.tested;
         continue;
@@ -498,9 +571,10 @@ export function demoSource() {
         addReport(job, i);
         push(job, { kind: 'step', status: 'done', summary: job.steps[i].result });
         if (job.steps[i + 1]) { job.steps[i + 1].status = 'running'; job.steps[i + 1].started_at = now(); newTodos(job); push(job, { kind: 'step', status: 'running', summary: job.steps[i + 1].title }); }
-        else { job.status = 'done'; job.ticks = 0; job.todos = []; push(job, { kind: 'job', status: 'done', summary: 'job done' }); }
+        else finish(job);
       }
     }
+    if (tickCount === 6) { sessions[dormant].status = 'working'; sessions[dormant].updated_at = now(); }
     for (const s of sessions) {
       if (s.status !== 'working' || rand() > 0.5) continue;
       const tool = pickTool();
@@ -510,11 +584,24 @@ export function demoSource() {
       s.activity = s.events[s.events.length - 1];
       s.updated_at = now();
     }
-    const doc = { time: now(), hosts: [
+    stepPipe();
+    const doc = { time: now(), pipelines: [pipeReport()], attention: jobs.filter(j => j.status === 'failed' || j.status === 'stalled').map(blocker), hosts: [
       ...['node-a', 'node-b', 'node-c'].map(name => ({ name, ok: true, error: null, jobs: jobs.filter(j => j.host === name),
         sessions: sessions.filter(s => s.host === name) })),
       { name: 'node-d', ok: false, error: 'node-d: ssh: connect to host 192.0.2.10 port 22: Connection timed out', jobs: [] },
     ] };
+    const first = doc.attention[0];
+    doc.attention.push({ ...first, id: 'demo-release-review', kind: 'decision', summary: 'Review the release plan' });
+    const rooms = {};
+    for (const item of doc.attention) {
+      if (!rooms[item.project]) rooms[item.project] = { count: 0, level: 'open', kind: 'blocker', glyph: '✱', open_ids: [], shown: [], listed: [] };
+      const marker = rooms[item.project];
+      marker.count++;
+      for (const key of ['open_ids', 'shown', 'listed']) marker[key].push(item.id);
+    }
+    doc.attention_display = { rooms, places: [{ place: 'lobby', count: doc.attention.length, level: 'open',
+      kind: 'blocker', glyph: '✱', open_ids: doc.attention.map(item => item.id) }],
+      front_desk: doc.attention.map(item => item.id), open_count: doc.attention.length };
     return JSON.parse(JSON.stringify(doc));
   }
   return tick;

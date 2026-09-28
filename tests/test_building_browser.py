@@ -108,13 +108,19 @@ def page(still: BrowserContext) -> Iterator[Page]:
     yield from page_in(still)
 
 
+@pytest.fixture(scope="module")
+def reading_page(still: BrowserContext) -> Iterator[Page]:
+    yield from page_in(still)
+
+
 @pytest.fixture
 def moving_page(moving: BrowserContext) -> Iterator[Page]:
     yield from page_in(moving)
 
 
 def open_building(page: Page, url: str) -> list[dict[str, Any]]:
-    page.goto(url + "/")
+    if page.url != url + "/":
+        page.goto(url + "/")
     page.locator('#viewToggle [data-view="building"]').click()
     page.wait_for_function("fleetBuilding.floors().length > 0 && fleetBuilding.floors().every(floor => floor.built)")
     settle(page)
@@ -139,6 +145,40 @@ def post(url: str, path: str, body: dict[str, Any]) -> int:
 
 def lanterns(page: Page) -> dict[Any, dict[str, Any]]:
     return {lantern["place"]: lantern for lantern in page.evaluate("fleetBuilding.lanterns()")}
+
+
+@pytest.mark.parametrize("motion", ["reduce", "no-preference"])
+def test_stored_attention_display(browser: Browser, restoke_url: str, motion: str) -> None:
+    with browser.new_context(viewport=DESKTOP, reduced_motion=motion) as context:
+        page = context.new_page()
+        open_building(page, restoke_url)
+        page.evaluate("fleetDeck.advanceTime(0)")
+        before = state(restoke_url)
+        page.evaluate("""doc => {
+            for (const marker of doc.attention_display.places) marker.open_ids = marker.open_ids.map(id => id + ':arrival');
+            fleetDeck.apply(doc);
+        }""", before)
+        lamps = page.evaluate("fleetDeck.lanterns()")
+        assert [(l["place"], l["count"], l["glyph"]) for l in lamps] == [(1, 2, "✱"), (2, 1, "✱")]
+        page.locator('#buildingUi').evaluate("el => el.style.filter = 'grayscale(1)'")
+        expect(page.locator('.floor-lantern[data-place="1"] .lg')).to_have_text("✱")
+        assert all(l["swinging"] == (motion == "no-preference") for l in lamps)
+        page.evaluate("fleetDeck.advanceTime(3)")
+        assert not any(l["swinging"] for l in page.evaluate("fleetDeck.lanterns()"))
+        page.evaluate("doc => fleetDeck.apply(doc)", before)
+        assert not any(l["swinging"] for l in page.evaluate("fleetDeck.lanterns()"))
+        expect(page.locator('[data-attention-context]')).to_have_count(3)
+        page.locator('.front-desk summary').click()
+        page.locator('[data-attention-context]').first.click()
+        expect(page.locator('#reader')).to_be_visible()
+        expect(page.locator('#rdBody')).to_contain_text(before["attention"][0]["summary"])
+        expect(page.locator('#rdBody')).to_contain_text(before["attention"][0]["context_reference"])
+        expect(page.locator('#rdBody')).to_contain_text("Last seen:")
+        assert state(restoke_url)["attention"] == before["attention"]
+        page.keyboard.press("Escape")
+        page.locator('[data-enter="1"]').click()
+        expect(page.locator('#lift [data-lift="1"] .lift-lantern')).to_have_attribute("data-glyph", "✱")
+        assert not any(l["place"] == 3 for l in page.evaluate("fleetDeck.lanterns()"))
 
 
 # ------------------------------------------------------------------ the view switch
@@ -168,7 +208,8 @@ def test_the_deck_stays_the_default_and_the_choice_is_remembered(page: Page, res
 
 
 # ------------------------------------------------------------------ the building at L0
-def test_ten_floors_and_the_lobby_fit_one_desktop_screen(page: Page, ten_floors_url: str) -> None:
+def test_ten_floors_and_the_lobby_fit_one_desktop_screen(reading_page: Page, ten_floors_url: str) -> None:
+    page = reading_page
     floors = open_building(page, ten_floors_url)
     assert [floor["floor"] for floor in floors] == list(range(1, 11))
     lobby = page.evaluate("fleetBuilding.lobby().screen")
@@ -199,7 +240,8 @@ def floor_pixels(page: Page, floor: dict[str, Any]) -> tuple[float, float, float
     return tuple(ImageStat.Stat(image).mean)
 
 
-def test_priority_floors_are_open_and_background_floors_windowed(page: Page, ten_floors_url: str) -> None:
+def test_priority_floors_are_open_and_background_floors_windowed(reading_page: Page, ten_floors_url: str) -> None:
+    page = reading_page
     fixture = json.loads(TEN_FLOORS.read_text())
     background = set(fixture["focus"]["projects"])
     floors = open_building(page, ten_floors_url)
@@ -227,6 +269,11 @@ def test_priority_floors_are_open_and_background_floors_windowed(page: Page, ten
         return sum(floor_pixels(page, floor)) / 3
     windowed = [floor for floor in floors if floor["mode"] == "windowed"]
     busy = next(floor for floor in windowed if floor["active"])
+    attention_projects = {item["project_id"] for item in state(ten_floors_url)["attention"]}
+    quiet_signal = [floor for floor in windowed if floor["active"] and floor["project"] not in attention_projects]
+    assert quiet_signal
+    lit_places = {lamp["place"] for lamp in page.evaluate("fleetDeck.lanterns()")}
+    assert all(floor["floor"] not in lit_places for floor in quiet_signal)
     quiet = next(floor for floor in windowed if not floor["active"])
     assert warmth(busy) > warmth(quiet) + 4
     busy_open = [floor for floor in floors if floor["mode"] == "open" and floor["active"]]
@@ -236,7 +283,8 @@ def test_priority_floors_are_open_and_background_floors_windowed(page: Page, ten
     assert len(heights) == 1
 
 
-def test_open_floors_show_their_projects_rooms(page: Page, ten_floors_url: str) -> None:
+def test_open_floors_show_their_projects_rooms(reading_page: Page, ten_floors_url: str) -> None:
+    page = reading_page
     floors = {floor["floor"]: floor for floor in open_building(page, ten_floors_url)}
     # Agent Fleet (floor 3) has two rooms on the deck: agent-fleet, working, and agent-fleet-docs, idle
     rooms = floors[3]["built"]["rooms"]
@@ -249,7 +297,8 @@ def test_open_floors_show_their_projects_rooms(page: Page, ten_floors_url: str) 
     assert len({room["theme"] for floor in open_floors for room in floor["built"]["rooms"]}) > 1
 
 
-def test_free_floors_are_to_let(page: Page, restoke_url: str) -> None:
+def test_free_floors_are_to_let(reading_page: Page, restoke_url: str) -> None:
+    page = reading_page
     floors = open_building(page, restoke_url)
     document = state(restoke_url)
     assert document["building"]["capacity"] == 6 and len(floors) == 6
@@ -278,7 +327,8 @@ def visible_texts(page: Page) -> list[str]:
 
 
 @pytest.mark.parametrize("fixture", ["ten_floors_url", "restoke_url"])
-def test_the_building_keeps_to_its_text_budget(page: Page, fixture: str, request: pytest.FixtureRequest) -> None:
+def test_the_building_keeps_to_its_text_budget(reading_page: Page, fixture: str, request: pytest.FixtureRequest) -> None:
+    page = reading_page
     open_building(page, request.getfixturevalue(fixture))
     names = page.locator(".plate b").all_inner_texts()
     assert names and all(len(WORD.findall(name)) <= 3 for name in names)
@@ -292,7 +342,8 @@ def test_the_building_keeps_to_its_text_budget(page: Page, fixture: str, request
     expect(page.locator("#world")).to_be_hidden()
 
 
-def test_work_without_a_floor_waits_in_the_lobby(page: Page, ten_floors_url: str) -> None:
+def test_work_without_a_floor_waits_in_the_lobby(reading_page: Page, ten_floors_url: str) -> None:
+    page = reading_page
     open_building(page, ten_floors_url)
     visitors = page.locator(".lobby .visitor")
     expect(visitors).to_have_count(2)
@@ -402,7 +453,7 @@ def test_the_lift_goes_between_floors_and_back_to_the_building(page: Page, resto
     # Esc steps out one level, but only once whatever is open over the deck has closed
     page.locator('.plate[data-floor="1"] .enter').click()
     expect(page.locator("body")).to_have_attribute("data-view", "floor")
-    page.locator("#tags .tag", has_text="e1b5c8").dispatch_event("click")
+    page.locator("#tags .tag", has_text="a1c3e9").dispatch_event("click")   # a running job: failed ones have left the floor
     expect(page.locator("#panel")).to_have_class("open")
     page.keyboard.press("Escape")
     expect(page.locator("#panel")).not_to_have_class("open")

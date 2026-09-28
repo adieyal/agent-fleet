@@ -1,35 +1,76 @@
 // Deck entry point: the frame loop and boot.
 
-import { BK, DEBUG, DEMO, POLL_MS, QS, RD, REDUCED, RW, WARP, canvas } from './env.js';
+import { BK, DEBUG, DEMO, POLL_MS, QS, RD, REDUCED, RW, WARP, canvas, vh, vw } from './env.js';
 import { esc } from './util.js';
+import { advanceClock, animationNow, isStepping } from './clock.js';
 import { hostLook } from './looks.js';
 import { isActive } from './activity.js';
-import { M, _p, _w, applyCamera, cam, camera, loadAssets, renderer, scene, toScreen } from './scene.js';
-import { ents } from './model.js';
+import { M, _p, _w, applyCamera, cam, camera, centreFor, loadAssets, renderer, scene, toScreen } from './scene.js';
+import { ents, fanned } from './model.js';
 import { edgeStrips, layoutRooms, roomByName, rooms } from './rooms.js';
 import { _la, _lb, dashedLine, docSlots, liftHovered, lineGeo, nSeg, setNSeg, stepDocFx } from './docs3d.js';
-import { positionTags } from './agents.js';
+import { crowds, positionTags } from './agents.js';
 import { stepMotion, stepParticles, updateEnt, updateRoom } from './motion.js';
-import { applyState, stream } from './state.js';
+import { applyState, departIdle, stream } from './state.js';
 import { positionSwitches, stepFocus } from './focus.js';
 import { positionLanterns, stepLanterns } from './attention.js';
-import { resize } from './camera.js';
+import { lanternState } from './building.js';
+import { fit, resize } from './camera.js';
 import { miniBot, panelScrollUntil, renderLive } from './panel.js';
 import './library.js';
 import { reader } from './reader.js';
 import { demoSource } from './demo.js';
-import { buildingReady, buildingShown } from './building.js';
+import { buildingReady, buildingShown, stepBuilding } from './building.js';
+import { sankeyPane, stepSankey } from './sankey.js';
+import { glowOf, keyOf, pipelines, screenOf, stepScreens } from './pipelines.js';
+import { enterFloor } from './bench.js';
+import { textBudget } from './text-budget.js';
 
 // ------------------------------------------------------------------ frame loop
 let lastT = 0;
+let needsFrame = true;
+for (const event of ['pointermove', 'pointerup', 'click', 'keydown', 'wheel', 'resize']) {
+  window.addEventListener(event, () => { needsFrame = true; });
+}
+let demoTick = null, demoElapsed = 0;
+function advanceTime(seconds, draw = true) {
+  if (!Number.isFinite(seconds) || seconds < 0) throw new Error('Expected non-negative seconds');
+  advanceClock(0);
+  for (let remaining = seconds; remaining > 0;) {
+    const dt = Math.min(0.1, remaining);
+    advanceClock(dt);
+    demoElapsed += dt;
+    if (demoTick && demoElapsed >= POLL_MS / 1000) {
+      demoElapsed -= POLL_MS / 1000;
+      applyState(demoTick());
+    }
+    const now = animationNow() / 1000;
+    updateFrame(dt * WARP, now, now, false);
+    remaining -= dt;
+  }
+  departIdle();
+  const now = animationNow() / 1000;
+  updateFrame(0, now, now, draw);
+  stepSankey();
+  if (draw) stepBuilding();
+}
 function frame(ts) {
   requestAnimationFrame(frame);
-  if (document.hidden || !reader.hidden) { lastT = 0; return; }   // the reader covers the deck; don't render under it
+  if (document.hidden || !reader.hidden || !sankeyPane.hidden) { lastT = 0; return; }   // a sheet covers the deck; don't render under it
   if (buildingShown) { lastT = 0; return; }                      // the building has the screen and draws itself
   if (ts < panelScrollUntil) { lastT = 0; return; }             // hold the deck still while the panel scrolls, so the scroll gets the frame
-  const t = ts / 1000, now = performance.now() / 1000;
+  if (isStepping()) {
+    const now = animationNow() / 1000;
+    if (needsFrame) updateFrame(0, now, now, true);
+    needsFrame = false;
+    return;
+  }
+  const t = ts / 1000, now = animationNow() / 1000;
   const dt = Math.min(0.1, lastT ? t - lastT : 0.016) * WARP;
   lastT = t;
+  updateFrame(dt, t, now, true);
+}
+function updateFrame(dt, t, now, draw) {
   stepMotion(dt, now);
   if (cam.tween) {
     const k = REDUCED ? 1 : Math.min(1, dt * 7);
@@ -44,7 +85,7 @@ function frame(ts) {
     const r = roomByName.get(e.room);
     if (!r) continue;
     updateEnt(e, r, dt, t, now);
-    if (e.walking || !e.target || !isActive(e.job.status) || r.focus === 'background') continue;   // a background room's props rest
+    if (e.walking || !e.target || !isActive(e.job.status)) continue;
     const p = e.target.prop;
     if (p === 'terminal') { r.busyTerm |= 1 << e.target.propIdx; if (e.act === 'test') r.testTerm |= 1 << e.target.propIdx; }
     else if (p === 'cabinet') r.busyCab |= 1 << e.target.propIdx;
@@ -63,6 +104,7 @@ function frame(ts) {
   for (const r of rooms) updateRoom(r, t, dt, now);
   stepLanterns(rooms, now);
   stepDocFx(t);
+  stepScreens(t);
   liftHovered();
   lineGeo.setDrawRange(0, nSeg * 2);
   lineGeo.attributes.position.needsUpdate = true;
@@ -70,7 +112,8 @@ function frame(ts) {
   if (!REDUCED) for (const tex of edgeStrips) tex.offset.x = -t * 0.35;
   M.beacon.color.set(REDUCED || Math.sin(t * 2.4) > 0.6 ? 0xf87171 : 0x5a1d1d);
   stepParticles(dt);
-  renderer.render(scene, camera);
+  if (draw) renderer.render(scene, camera);
+  else scene.updateMatrixWorld();
   positionTags();
   positionSwitches();
   positionLanterns();
@@ -119,21 +162,61 @@ loadAssets().then(() => {
       miniBot(cv, hostLook(host), agent, pose || 'normal');
     }
   }
-  // read-only probe for browser tests: rooms live only in WebGL, so they have no DOM to query
+  // probe for browser tests: rooms live only in WebGL, so they have no DOM to query
+  const onScreen = mesh => {   // a unit plane's bounding box on screen
+    const pts = [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]].map(([x, y]) => toScreen(mesh.localToWorld(_w.set(x, y, 0)), { x: 0, y: 0 }));
+    const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+    return { left: Math.min(...xs), right: Math.max(...xs), top: Math.min(...ys), bottom: Math.max(...ys) };
+  };
+  const quadOf = mesh => [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]]   // a unit plane's (or box face's) corners on screen
+    .map(([x, y]) => toScreen(mesh.localToWorld(_w.set(x, y, 0)), { x: 0, y: 0 }));
+  const wallQuad = (r, t) => [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => toScreen(t.wall === 'back'
+    ? _w.set(r.ox + t.along + a * t.w / 2, t.up + b * t.h / 2, r.oy + t.out)
+    : _w.set(r.ox + t.out, t.up + b * t.h / 2, r.oy + t.along - a * t.w / 2), { x: 0, y: 0 }));
   window.fleetDeck = Object.freeze({
+    enterFloor, textBudget,
+    advanceTime,   // seconds; switches to a manual animation clock until reload
+    lanterns: lanternState,
     rooms: () => rooms.map(r => ({ name: r.name, label: r.label, x: r.ox, y: r.oy,
-      screen: toScreen(_w.set(r.ox + RW / 2, 0, r.oy + RD / 2), { x: 0, y: 0 }), focus: r.focus, dim: r.dimK ?? null,
+      screen: toScreen(_w.set(r.ox + RW / 2, 0, r.oy + RD / 2), { x: 0, y: 0 }), focus: r.focus, dim: r.dimK ?? null, lit: r.lit,
       attention: r.attention?.level ? { kind: r.attention.kind, state: r.attention.level, count: r.attention.shown.length } : null })),
-    agents: () => [...ents.values()].map(e => ({ key: e.key, kind: e.kind, room: e.room, status: e.job.status })),
+    agents: () => [...ents.values()].map(e => ({ key: e.key, kind: e.kind, room: e.room, status: e.job.status, leaving: !!e.leaving, clip: e.bot.clip,
+      station: e.spotProp ?? null, gathered: !!e.crowd })),
+    crowds: () => [...crowds.values()].map(c => ({ room: c.room, station: c.station, count: c.members.length, fanned: fanned === c.key })),
+    apply: doc => applyState(doc),   // feed a state document as the stream would
+    pipelines: () => pipelines.map(p => {
+      const s = screenOf(keyOf(p));
+      return { key: keyOf(p), room: p.project, run: p.run?.run_id ?? null,
+        screen: s ? toScreen(s.mesh.getWorldPosition(_w), { x: 0, y: 0 }) : null,
+        rect: s ? onScreen(s.mesh) : null, sign: s ? onScreen(s.room.signMesh) : null, glow: glowOf(keyOf(p)),
+        quad: s ? quadOf(s.frame) : null, wall: s ? s.room.onWalls.map(t => ({ kind: t.kind, wall: t.wall, quad: wallQuad(s.room, t) })) : [] };
+    }),
+    lookAt: (key, zoom) => {   // bring a pipeline's screen to the middle of the view (a phone shows one room at a time)
+      const s = screenOf(key);
+      if (!s) return;
+      if (zoom) cam.z = zoom;
+      cam.c.copy(centreFor(s.mesh.getWorldPosition(_w), vw / 2, vh / 2, cam.z)); cam.userMoved = true; cam.tween = null;
+      applyCamera(); camera.updateMatrixWorld();
+      needsFrame = true;
+    },
+    lookAtRoom: (name, zoom) => {   // bring a room's middle to the middle of the view; no zoom fits the whole deck again
+      const r = rooms.find(r => r.name === name);
+      if (!zoom) fit();
+      else if (r) { cam.z = zoom; cam.c.copy(centreFor(_w.set(r.ox + RW / 2, 0, r.oy + RD / 2), vw / 2, vh / 2, zoom)); cam.userMoved = true; cam.tween = null; }
+      applyCamera(); camera.updateMatrixWorld();
+      needsFrame = true;
+    },
   });
   if (DEMO) {
     const tick = demoSource();
+    demoTick = tick;
     applyState(tick());
-    setInterval(() => applyState(tick()), POLL_MS);
+    setInterval(() => { if (!isStepping()) applyState(tick()); }, POLL_MS);
   } else {
     stream();
   }
   setInterval(renderLive, 1000);
+  setInterval(() => { if (!isStepping()) departIdle(); }, 1000);
   requestAnimationFrame(frame);
 }, err => {
   const hint = document.getElementById('hint');

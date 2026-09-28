@@ -1,0 +1,41 @@
+# Worker dispatch protocol 4
+
+Controller dispatch sends `create --id <job> --run-id <run> --fingerprint <sha256>
+--schema-version 4 --hold`, followed by `start <job>` with the same run identity,
+fingerprint and schema version. The fingerprint covers the stored dispatch payload,
+including context references. The worker also hashes its immutable job definition,
+so a caller cannot reuse a fingerprint with changed steps or runtime options.
+
+Create serializes registration of run IDs. Start records a reservation under the
+job lock before launching outside that lock. Repeated commands return the existing
+job; a changed identity or fingerprint is refused. Legacy jobs without run identity
+retain the existing command interface. Stream hello now reports protocol version 3.
+
+After an uncertain create or start reply, the controller sends
+`reconcile <run> --fingerprint <sha256> --schema-version 4`. An unreachable or missing
+run keeps its unknown outcome and claim. A queued job with `start_requested: false`
+can be started after reconciliation; a reserved start is never sent again blindly.
+Repeating an unknown dispatch reconciles the same run instead of creating another.
+
+A worker reports `lost` when an agent is killed without a result, or when both the
+recorded runner and agent processes are confirmed gone during observation. A missing
+PID or a surviving agent does not prove loss. Execution records failed with reason
+lost and releases the claim; repeated identical observations add no history.
+# Reconciliation after controller death
+
+Reconcile query version 4 adds a successful `absent` response containing
+`schema_version: 4`, `run_id` and the requested `fingerprint` when the worker
+has no job for that run. Existing jobs return their usual summary with version
+4. Create, start and reconcile all require version 4; version 3 is rejected.
+Install the updated worker before using controller dispatch.
+
+Only a matching version 4 absence permits the controller to create the stored
+intent again, using its original run ID and payload. A timeout, disconnect or
+worker error leaves the claim held and the outcome unknown. Concurrent creates
+remain protected by the worker's run identity lock. Repeated reconciliation of
+an existing job does not create another job or start it again.
+
+Run `scripts/checks/phase2-gate.sh` on carbon at the checkpoint to exercise
+local/SSH claims, parallel actions, a dropped create reply and disconnects.
+It creates held jobs and documents the expected result at each step; automated
+tests use isolated controller stores and worker directories instead.

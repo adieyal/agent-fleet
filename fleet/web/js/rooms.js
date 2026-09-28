@@ -92,6 +92,7 @@ function wallArt(at, S, wall, along, kind, look) {
     if (wall === 'back') at(model, along + u, 0.07 + dz, V + v, S(w, h, 0.03), color, 0);
     else at(model, 0.07 + dz, along - u, V + v, S(w, h, 0.03), color, HALF);
   }
+  return { kind, wall, along, w: P[0][3], h: P[0][4], up: V, out: 0.1 };
 }
 
 // document press on the right-hand wall: a fabricator at the back, one tray per job along the console
@@ -126,7 +127,7 @@ function buildRoom(r, place) {
   };
   for (const [model, x, y, rot, h] of FURNITURE) put(model, x, y, rot, h);
   for (const [model, x, y, rot, h] of T.decor) put(model, x, y, rot, h);
-  for (const [wall, along, kind] of T.art) wallArt(at, S, wall, along, kind, look);
+  r.onWalls = T.art.map(([wall, along, kind]) => wallArt(at, S, wall, along, kind, look));   // what a wall screen must keep clear of
   // books on the open shelves
   for (let s = 0; s < 2; s++) for (const [lift, dz] of [[0.05, -0.2], [0.47, 0.15], [0.9, -0.1], [1.32, 0.18]]) at('books', 0.3, (s ? 3.12 : 2.3) + dz, lift, null, null, HALF);
 
@@ -148,6 +149,7 @@ function buildRoom(r, place) {
   at('board', 7.95, 0.081, 1.0, S(2.16, 0.98, 1), '#ffffff');
   at('metalBox', 7.95, 0.12, 0.43, S(2.3, 0.06, 0.16), '#8b98ad');
   r.pen = at('orb', 7.95, 0.1, 1.0, S(1, 1, 1), '#4ade80');   // scaled per frame by updateRoom
+  r.onWalls.push({ kind: 'whiteboard', wall: 'back', along: 7.95, w: 2.3, h: 1.1, up: 1.0, out: 0.12 });
 
   // comms dish for web lookups: the tip lights and waves ripple out while someone is on the web
   at('box', 10.75, 0.9, 0.07, S(0.6, 0.14, 0.6), '#1b2333');
@@ -193,6 +195,7 @@ function buildRoom(r, place) {
   const sign = new THREE.Mesh(G.plane, signMat);
   sign.scale.set(6, 1.5, 1); sign.position.set(ox + 3.2, WALL_H + 0.8, oy + 0.02);
   g.add(sign);
+  r.signMesh = sign;
   disposables.push(r.sign.tex, signMat);
   drawSign(r);
 }

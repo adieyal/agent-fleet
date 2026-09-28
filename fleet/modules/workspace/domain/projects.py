@@ -1,48 +1,13 @@
-"""Project registry: stable project identity, kept in the Fleet config (ADR 0001).
-
-A job's `project` string is a *label* chosen on one host (fleetd derives it from a
-repository directory name or `--project`). Labels are not identity: two hosts may
-use the same label for unrelated work, and one project may carry different labels
-on different hosts. The registry adds identity on top without changing labels:
-
-- A registered project has a random, stable ID (`p-` + 8 hex chars) and a display
-  name. The name can change freely and need not be unique.
-- A project owns explicit links, each a (host, label) pair. A pair links to at most
-  one project. Only a link attaches jobs to a project; matching names never do.
-- A project may list repository remote URLs. They only *suggest* links for unlinked
-  (host, label) pairs whose repository matches; accepting one is an explicit link.
-- A (host, label) pair with no link stays an unregistered group, grouped and shown
-  exactly as before the registry existed.
-- Moving a label in looks for projects it may belong to (`link_candidates`): the same
-  label linked on another host, a matching repository, or a matching name. These are
-  only offers; the user chooses between linking and a new project.
-- Two projects registered for one piece of work by mistake merge into the older one
-  (`merge`): it keeps its ID and name and gains the other's links and repositories.
-  Projects registered before `created_at` was recorded have no known age; merging
-  them needs the user to say which to keep.
-
-`project_labels` (label → friendly room name, host-agnostic) is kept as is and is
-not migrated: turning it into links would merge every host's same-named label into
-one project, which is the name matching ADR 0001 forbids. It remains a display name
-for unregistered groups; a linked pair shows its project's name instead.
-
-Stored under `projects` in the config file:
-
-    "projects": {"p-1a2b3c4d": {"name": "Agent Fleet",
-                                "links": [{"host": "home", "label": "agent-fleet"}],
-                                "repositories": ["git@github.com:adieyal/agent-fleet.git"],
-                                "created_at": 1790400000.0}}
-"""
+"""Stable project identities and explicit host-label links."""
 from __future__ import annotations
 
 import re
 import secrets
 import time
 from dataclasses import dataclass, field
-from typing import Any, Iterable
+from typing import Iterable
 
-from fleet import transport
-from fleet.transport import FleetError
+from fleet.errors import FleetError
 
 PROJECT_ID = re.compile(r"^p-[0-9a-f]{8}$")
 
@@ -60,13 +25,6 @@ class Project:
     links: list[Link] = field(default_factory=list)
     repositories: list[str] = field(default_factory=list)
     created_at: float | None = None   # unknown for projects registered before it was recorded
-
-    def to_config(self) -> dict[str, Any]:
-        entry = {"name": self.name,
-                 "links": [{"host": link.host, "label": link.label} for link in sorted(self.links)],
-                 "repositories": list(self.repositories)}
-        return entry if self.created_at is None else {**entry, "created_at": self.created_at}
-
 
 @dataclass(frozen=True)
 class Suggestion:
@@ -119,20 +77,21 @@ class Registry:
             for link in project.links:
                 self.link(project.id, link.host, link.label)
 
-    @classmethod
-    def from_config(cls, config: dict[str, Any]) -> Registry:
-        return cls(Project(project_id, entry["name"],
-                           [Link(link["host"], link["label"]) for link in entry.get("links", [])],
-                           list(entry.get("repositories", [])), entry.get("created_at"))
-                   for project_id, entry in config.get("projects", {}).items())
-
-    def to_config(self) -> dict[str, Any]:
-        return {project_id: project.to_config() for project_id, project in sorted(self.projects.items())}
-
     def get(self, project_id: str) -> Project:
         if project_id not in self.projects:
             raise FleetError(f"unknown project '{project_id}'")
         return self.projects[project_id]
+
+    def resolve(self, reference: str) -> str:
+        if reference in self.projects:
+            return reference
+        candidates = sorted(project.id for project in self.projects.values() if project.name == reference)
+        if len(candidates) == 1:
+            return candidates[0]
+        if candidates:
+            raise FleetError(f"ambiguous project '{reference}': {', '.join(candidates)}; "
+                             "use an ID or fleet project merge <keep> <other>")
+        raise FleetError(f"unknown project '{reference}'; use fleet project list to find a project ID")
 
     def create(self, name: str, repositories: Iterable[str] = ()) -> Project:
         if not name.strip():
@@ -230,11 +189,6 @@ class Registry:
         project_id = self.owners.get(Link(host, label))
         return self.projects[project_id] if project_id else None
 
-    def resolve(self, host: str, item: dict[str, Any]) -> dict[str, Any]:
-        """A job or session from `host` with `project_id` added: its label's project, or None."""
-        project = self.project_for(host, item["project"]) if item.get("project") else None
-        return {**item, "project_id": project.id if project else None}
-
     def display_name(self, host: str, label: str, project_labels: dict[str, str]) -> str | None:
         """Linked project name, else the `project_labels` entry, else None (show the label itself)."""
         project = self.project_for(host, label)
@@ -262,14 +216,3 @@ class Registry:
 
 def new_project_id() -> str:
     return "p-" + secrets.token_hex(4)
-
-
-def load_registry() -> Registry:
-    return Registry.from_config(transport.load_config())
-
-
-def save_registry(registry: Registry) -> None:
-    """Write the registry back, keeping every other config key as it is on disk."""
-    config = transport.load_config()
-    config["projects"] = registry.to_config()
-    transport.save_config(config)

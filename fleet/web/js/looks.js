@@ -135,7 +135,7 @@ const BLOCKS = [[0.3, 0.1, 5.6, 1.0], [0.3, 1.2, 5.6, 1.9], [4.3, 4.2, 7.2, 5.0]
   [0, 6.95, 1.0, 10], [8.55, 4.4, 9.85, 5.6], [1.0, 9.15, 4.15, 10], [9.2, 0, 10.1, 0.6],
   [11.0, 1.5, 12, 2.7], [6.7, 9.15, 7.3, 10], [11.0, 5.9, 12, 7.0]];   // (the last three: theme decor slots)
 export const blocked = (x, y) => x < 0.6 || y < 0.8 || x > RW - 0.6 || y > RD - 0.45 || BLOCKS.some(([x0, y0, x1, y1]) => x > x0 - 0.3 && x < x1 + 0.3 && y > y0 - 0.3 && y < y1 + 0.3);
-// free floor for androids whose station is full, stalled or failed ones, and delegates with nowhere beside their partner
+// free floor for androids whose station is full, sessions waiting on their human, and delegates with nowhere beside their partner
 export const OVERFLOW = [[3.4, 4.3, 0.4], [8.3, 3.6, -0.4], [2.4, 8.0, 0.5], [6.9, 8.0, -0.3], [9.7, 6.3, -0.6], [4.4, 6.1, 0.2],
   [6.0, 6.35, 0], [2.4, 3.9, 0.6], [10.3, 5.9, -0.8], [6.0, 2.7, 0], [4.7, 2.6, 0.3], [2.2, 6.6, 0.5]].filter(([x, y]) => !blocked(x, y));
 // every clear floor point on a 0.8-tile grid, for when the overflow list runs out
@@ -164,7 +164,7 @@ export const ACTS = {
   delegate: { station: 'partner' },
   idle:     { station: 'lounge', pace: 2.2 },
   await:    { station: 'stay' },                       // a live session waiting on its human: stays put, faces you
-  dock: { station: 'dock' }, failed: { station: 'stay' }, stalled: { station: 'stay' },
+  dock: { station: 'dock' },
 };
 export function stationOf(act, stage = 0) {
   const s = (ACTS[act] || ACTS.think).station;
