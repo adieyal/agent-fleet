@@ -80,6 +80,36 @@ function epicCard(r) {
   </article>`;
 }
 
+const statuses = { complete: svg('<path d="M5 12.5 10 17.5 19 7"/>'),
+  active: svg('<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3" fill="currentColor"/>'),
+  next: svg('<circle cx="12" cy="12" r="8"/>'),
+  blocked: svg('<circle cx="12" cy="12" r="8"/><path d="M6.5 17.5 17.5 6.5"/>'),
+  'on hold': svg('<path d="M9 6v12M15 6v12"/>') };
+
+function progressText({ basis, complete, total }) {
+  if (basis === 'unknown') return 'Progress not recorded';
+  return `<progress max="${total}" value="${complete}"></progress> ${complete} of ${total} ${basis === 'milestones' ? 'milestones' : 'criteria met'}`;
+}
+
+function planLine(item, opens) {
+  const title = opens ? `<button data-slice="${esc(item.id)}">${esc(item.title)}</button>` : `<b>${esc(item.title)}</b>`;
+  return `<li data-plan-item="${esc(item.id)}" data-status="${esc(item.status)}">
+    <span data-glyph role="img" aria-label="${esc(item.status)}" title="${esc(item.status)} · ${esc(item.condition)}">${statuses[item.status]}</span>
+    <div>${title}<p>${esc(item.headline)}</p><small data-next-step>${item.next_step === null ? 'Next step not recorded' : `Next: ${esc(item.next_step)}`}</small></div></li>`;
+}
+
+function epicPage(r) {
+  return `<article data-epic-page="${esc(r.id)}"><h2>${esc(r.title)}</h2>
+    <p data-goal>${esc(r.goal)}</p>
+    ${r.criteria.length ? `<section data-epic-criteria aria-label="Criteria"><h3>Criteria</h3><ul>${r.criteria.map(c =>
+      `<li data-criterion-state="${esc(c.state)}">${esc(c.text)} <small>${esc(c.verification)} · ${esc(c.state)}</small></li>`).join('')}</ul></section>` : ''}
+    <p data-progress>${progressText(r.progress)}</p>
+    <h3>Milestones</h3>${r.plan.length ? `<ol data-plan-list>${r.plan.map(m => planLine(m, true)).join('')}</ol>` : '<p>No milestones recorded</p>'}
+    ${r.tasks.length ? `<h3>Tasks</h3><ol data-plan-list>${r.tasks.map(t => planLine(t, false)).join('')}</ol>` : ''}
+    ${r.children.length ? `<h3>Epics</h3><p data-child-epics>${r.children.map(c => `<button data-epic="${esc(c.id)}">${esc(c.title)}</button>`).join('')}</p>` : ''}
+  </article>`;
+}
+
 function render(flipped = new Set()) {
   el.dataset.level = bench ? 'bench' : room ? 'room' : 'floor';
   const crumbs = `<nav id="benchBreadcrumb" aria-label="Breadcrumb"><button data-back-floor>Floor</button>${
@@ -97,7 +127,7 @@ function render(flipped = new Set()) {
       <details data-tray><summary>Reports <b>${bench.reports.length}</b></summary><ul>${bench.reports.map(report => `<li data-availability="${esc(report.availability)}">${report.title === null ? 'Title unknown' : esc(report.title)}<small>${esc(report.availability)} · ${esc(report.canonical_location)}</small></li>`).join('')}</ul></details>
       <section><button data-briefing aria-expanded="${briefing}">Briefing</button><div data-summary ${briefing ? '' : 'hidden'}>${bench.summary === null ? 'Summary unknown' : ['purpose', 'done', 'doing', 'next'].map(key => `<p><b>${key}</b> ${esc(bench.summary[key])}</p>`).join('')}</div></section></div>`;
   } else if (room) {
-    content = `<div class="bench-cluster">${room.benches.map(b => `<button data-slice="${esc(b.id)}"><i aria-hidden="true"></i>${esc(b.title)}</button>`).join('')}</div>`;
+    content = epicPage(room);
   } else {
     content = `<div class="epic-cards">${rooms.map(epicCard).join('')}</div>`;
     if (!rooms.length) content = '<p>No epic rooms recorded.</p>';

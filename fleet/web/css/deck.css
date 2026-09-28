@@ -981,10 +981,22 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 [data-epic-card] ul { margin:4px 0 0; padding-left:22px; }
 [data-epic-card] small, [data-epic-card] i { color:#94a3b8; }
 [data-epic-card] progress { width:120px; vertical-align:middle; accent-color:#34d399; }
+[data-epic-page] { max-width:720px; }
+[data-epic-page] [data-goal] { white-space:pre-line; }
+[data-epic-page] h3 { margin:16px 0 6px; font-size:14px; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; }
+[data-epic-page] progress { width:160px; vertical-align:middle; accent-color:#34d399; }
+[data-plan-list] { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
+[data-plan-item] { display:flex; gap:10px; align-items:flex-start; }
+[data-plan-item] p { margin:2px 0; }
+[data-plan-item] small { color:#94a3b8; }
+#benchRoute [data-plan-item] button { margin:0; padding:4px 8px; font-weight:bold; }
+[data-glyph] svg { width:22px; height:22px; fill:none; stroke-width:2.5; stroke:currentColor; }
+[data-status="complete"] [data-glyph] { color:#34d399; }
+[data-status="active"] [data-glyph] { color:#38bdf8; }
+[data-status="next"] [data-glyph] { color:#94a3b8; }
+[data-status="blocked"] [data-glyph] { color:#f87171; }
+[data-status="on hold"] [data-glyph] { color:#fbbf24; }
 [data-epic-card] [data-attention-count] svg { width:18px; height:18px; fill:none; stroke:#fbbf24; stroke-width:2; vertical-align:middle; }
-.bench-cluster { display:flex; flex-wrap:wrap; gap:20px; }
-.bench-cluster button { display:grid; gap:12px; }
-.bench-cluster i { display:block; height:36px; border:6px solid #aa805b; border-top-width:12px; border-bottom:0; }
 #benchRoute [data-lane] { padding:6px; border-left:4px solid #94a3b8; }
 #benchRoute [data-lane="done"] { border-color:#34d399; text-decoration:line-through; }
 #benchRoute [data-lane="doing"] { border-color:#38bdf8; font-weight:bold; }

@@ -20,6 +20,22 @@ def headline(goal: str) -> str:
     return re.split(r"(?<=[.!?])\s", line, maxsplit=1)[0]
 
 
+def status(item: dict) -> str:
+    """One of complete, blocked, on hold, active or next; recorded condition outranks runs."""
+    condition = item["condition"]
+    if condition in ("complete", "blocked", "on hold"):
+        return condition
+    if condition == "waiting":
+        return "on hold"
+    running = any(run["status"] == "running" for node in descendants(item) for run in node["runs"])
+    return "active" if running or condition == "ready for review" else "next"
+
+
+def line_item(item: dict) -> dict[str, Any]:
+    return {"id": item["id"], "title": item["title"], "headline": headline(item["goal"]),
+            "condition": item["condition"], "status": status(item), "next_step": item["next_step"]}
+
+
 def epic_room(epic: dict, parent: dict | None, depth: int) -> dict[str, Any]:
     scope = descendants(epic)
     milestones = [item for item in own_scope(epic) if item["kind"] == "milestone"]
@@ -27,6 +43,9 @@ def epic_room(epic: dict, parent: dict | None, depth: int) -> dict[str, Any]:
         "id": epic["id"], "title": epic["title"], "depth": depth,
         "parent": None if parent is None else {"id": parent["id"], "title": parent["title"]},
         "goal": epic["goal"], "headline": headline(epic["goal"]),
+        "criteria": epic["criteria"], "progress": epic["progress"],
+        "plan": [line_item(item) for item in milestones],
+        "tasks": [line_item(child) for child in epic["children"] if child["kind"] == "task"],
         "milestones": {"complete": sum(item["condition"] == "complete" for item in milestones),
                        "total": len(milestones)},
         "agents": [{"run": run["id"], "host": run["host"], "work_item": item["id"], "title": item["title"]}
