@@ -16,7 +16,7 @@ import { positionSwitches, stepFocus } from './focus.js';
 import { positionLanterns, stepLanterns } from './attention.js';
 import { lanternState } from './building.js';
 import { fit, resize } from './camera.js';
-import { miniBot, panelScrollUntil, renderLive } from './panel.js';
+import { miniBot, panelScrollUntil, renderLive, select } from './panel.js';
 import './library.js';
 import { reader } from './reader.js';
 import { demoSource } from './demo.js';
@@ -175,6 +175,7 @@ loadAssets().then(() => {
     : _w.set(r.ox + t.out, t.up + b * t.h / 2, r.oy + t.along - a * t.w / 2), { x: 0, y: 0 }));
   window.fleetDeck = Object.freeze({
     enterFloor, textBudget,
+    select,        // open an agent's panel by key, as clicking it would
     advanceTime,   // seconds; switches to a manual animation clock until reload
     lanterns: lanternState,
     rooms: () => rooms.map(r => ({ name: r.name, label: r.label, x: r.ox, y: r.oy,

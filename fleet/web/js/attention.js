@@ -25,6 +25,7 @@ const seen = new Set();   // open item ids already announced: each swings the la
 let items = [];
 let display = { rooms: {}, open_count: 0 };
 export let openCount = 0;   // open items under the lanterns: the header's "need you"
+export const attentionFor = key => items.filter(i => i.owner?.key === key && i.state !== 'resolved');   // a job's or session's
 export function applyAttention(rooms, doc) {
   if (doc) { items = doc.attention; display = doc.attention_display; }
   const now = animationNow() / 1000;

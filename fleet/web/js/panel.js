@@ -2,7 +2,7 @@
 
 import * as THREE from 'three';
 import { BOT_H, DEBUG, DEMO, PI, QS } from './env.js';
-import { age, clock, esc, mix, trunc } from './util.js';
+import { age, clock, esc, mix, store, trunc } from './util.js';
 import { AGENT_COLOR, TOOL_ICON, hostLook } from './looks.js';
 import { isSession, shortId } from './activity.js';
 import { ROBOT, renderer } from './scene.js';
@@ -13,8 +13,9 @@ import { DOC_KIND, docMeta, docsOf, kindOf } from './docs3d.js';
 import { action, buildRobot } from './agents.js';
 import { dismiss, entered, hiddenCount, restoreDismissed, retiredCount, showFinished, toggleFinished } from './state.js';
 import { focusOn } from './camera.js';
-import { openCount } from './attention.js';
-import { openReader } from './reader.js';
+import { attentionFor, openCount } from './attention.js';
+import { openAttentionReader, openReader } from './reader.js';
+import { noteTrace, summarySections, traceRows } from './summary.js';
 import { openWorkarea } from './workarea.js';
 
 // ------------------------------------------------------------------ portraits for the manifest and the panel
@@ -77,7 +78,11 @@ document.getElementById('panelBody').addEventListener('scroll', () => {
   panelScrollUntil = performance.now() + PANEL_SCROLL_HOLD_MS;
 }, { passive: true });
 export function select(key) {
-  if (key !== selectedKey) document.getElementById('panelBody').scrollTop = 0;
+  if (key !== selectedKey) {
+    document.getElementById('panelBody').scrollTop = 0;
+    shownTab = chosenTab; jumped = null;
+    for (const k of Object.keys(tabScroll)) delete tabScroll[k];
+  }
   setSelectedKey(key);
   panel.classList.add('open');
   panel.setAttribute('aria-hidden', 'false');
@@ -113,11 +118,9 @@ export function renderPanel() {
     <button id="close" aria-label="Close">✕</button>`;
   const steps = j.steps || [];
   const stepIcon = { done: '✓', running: '▶', failed: '✗', cancelled: '⊘', pending: '○' };
-  const events = (j.events || []).filter(ev => ev.kind !== 'todos' && ev.kind !== 'session').slice(-18).reverse();
+  const rows = traceRows(noteTrace(selectedKey, j.events));
   const cmds = [`fleet attach ${ref}`, `fleet tail ${ref} -f`, `fleet show ${ref}`];
-  // state updates arrive for every job, many times a second: replace only the sections that changed,
-  // so the rest of the panel keeps its nodes and the scroll position stays put
-  const sections = [`
+  const activity = [`
     <h3>Job</h3>
     <dl class="meta">
       <dt>ref</dt><dd>${esc(ref)}</dd>
@@ -127,22 +130,59 @@ export function renderPanel() {
       ${j.permission ? `<dt>perms</dt><dd>${esc(j.permission)}</dd>` : ''}
       <dt>updated</dt><dd>${esc(age(j.updated_at))} ago</dd>
     </dl>`, `
-    <h3>Steps · ${steps.filter(s => s.status === 'done').length}/${steps.length}<button class="wa-open" data-workarea="${esc(j.project ?? '')}"${
-      j.project ? '' : ' disabled'} title="Open this room's workarea: plan wall, question desk and report tray">Workarea</button></h3>
+    <h3>Steps · ${steps.filter(s => s.status === 'done').length}/${steps.length}</h3>
     <ol class="steps">${steps.map(s => `<li class="${esc(s.status)}"><span class="si">${stepIcon[s.status] || '?'}</span>
       <span class="t">${s.index + 1}. ${esc(s.title)}</span>${s.result ? `<span class="r">${esc(trunc(s.result, 400))}</span>` : ''}</li>`).join('')}</ol>`,
-    docsPanelHtml(e),
     (j.todos && j.todos.length) ? `<h3>Agent's own todo list</h3><ul class="todos">${j.todos.map(td => `<li class="${esc(td.status)}">${td.status === 'completed' ? '✓' : td.status === 'in_progress' ? '▸' : '·'} ${esc(td.text)}</li>`).join('')}</ul>` : '', `
     <h3>Recent activity</h3>
-    ${events.length ? `<ul class="evs">${events.map(ev => `<li class="${ev.kind === 'error' ? 'err' : ''}"><time>${clock(ev.ts)}</time><span class="k">${esc(eventIcon(ev))}</span><span class="${isCodeEvent(ev) ? 'code' : ''}">${esc(trunc(ev.summary || ev.status || ev.kind, 220))}</span></li>`).join('')}</ul>` : '<p class="muted" style="font-size:12px">No events yet.</p>'}`, `
+    ${traceHtml(rows, 'No events yet.')}`, `
     <h3>Commands</h3>
     ${cmds.map(c => `<div class="cmd"><code>${esc(c)}</code><button data-copy="${esc(c)}">copy</button></div>`).join('')}`];
-  patchPanel(headHtml, sections, e, j.status === 'done' ? 'off' : j.status === 'stalled' ? 'slump' : 'normal');
+  const docs = docsPanelHtml(e);
+  const workarea = `<button class="wa-open" data-workarea="${esc(j.project ?? '')}"${
+    j.project ? '' : ' disabled'} title="Open this room's workarea: plan wall, question desk and report tray">Workarea</button>`;
+  patchPanel(headHtml, workarea, {
+    summary: summarySections(selectedKey, j, false, rows, attentionFor(selectedKey), expanded),
+    activity,
+    ...(docs ? { documents: [docs] } : {}),
+  }, e, j.status === 'done' ? 'off' : j.status === 'stalled' ? 'slump' : 'normal');
 }
 const DISMISS_BUTTON = '<button id="dismiss" title="Hide this agent from the deck until it has new activity">Dismiss</button>';
-// State updates arrive for every job, many times a second: rewrite the head and each body section only when its
-// markup changed, so the rest of the panel keeps its nodes and the scroll position stays put.
-function patchPanel(headHtml, sections, e, pose) {
+
+// ------------------------------------------------------------------ tabs: Summary (default), Activity, Documents
+// The chosen tab is remembered per browser; jumping from a summary line to its moment in Activity is not a choice.
+const TAB_KEY = 'fleet.panel.tab', TABS = { summary: 'Summary', activity: 'Activity', documents: 'Documents' };
+let chosenTab = TABS[store('localStorage', TAB_KEY)] ? store('localStorage', TAB_KEY) : 'summary';
+let shownTab = chosenTab;
+let jumped = null;          // { key, from, to }: the Activity rows a summary line stands for, kept marked across updates
+const expanded = new Set(); // "entity|group" narrations shown in full
+const tabScroll = {};       // each tab's scroll position while the panel stays on one agent
+const traceHtml = (rows, empty) => rows.length ? `<ul class="evs">${rowsMarked(rows).slice().reverse().map(({ ev, key, hl }) =>
+  `<li data-evk="${esc(key)}" class="${ev.kind === 'error' ? 'err' : ''}${hl ? ' hl' : ''}"><time>${clock(ev.ts)}</time><span class="k">${esc(eventIcon(ev))}</span><span class="${isCodeEvent(ev) ? 'code' : ''}">${esc(trunc(ev.summary || ev.status || ev.kind, 220))}</span></li>`).join('')}</ul>`
+  : `<p class="muted" style="font-size:12px">${empty}</p>`;
+function rowsMarked(rows) {
+  if (!jumped || jumped.key !== selectedKey) return rows;
+  const a = rows.findIndex(r => r.key === jumped.from), b = rows.findIndex(r => r.key === jumped.to);
+  return a < 0 ? rows : rows.map((r, i) => ({ ...r, hl: i >= a && i <= (b < 0 ? a : b) }));
+}
+function showTab(name) {
+  const body = document.getElementById('panelBody');
+  tabScroll[shownTab] = body.scrollTop;
+  shownTab = name;
+  if (name !== 'activity') jumped = null;
+  panelScrollUntil = 0;   // a click, not a scroll: show the tab now
+  renderPanel();
+  body.scrollTop = tabScroll[name] ?? 0;
+}
+function jumpToActivity(from, to) {
+  jumped = { key: selectedKey, from, to };
+  showTab('activity');
+  const row = [...document.querySelectorAll('#panelBody [data-tab="activity"] [data-evk]')].find(li => li.dataset.evk === from);
+  row?.scrollIntoView({ block: 'center' });
+}
+// State updates arrive for every job, many times a second: rewrite the head, the tab bar and each section of each tab
+// only when its markup changed, so the rest of the panel keeps its nodes and the scroll position stays put.
+function patchPanel(headHtml, extraHtml, panes, e, pose) {
   const head = document.getElementById('panelHead');
   if (head.lastHtml !== headHtml) {
     head.lastHtml = headHtml;
@@ -151,11 +191,28 @@ function patchPanel(headHtml, sections, e, pose) {
     head.querySelector('#close').addEventListener('click', closePanel);
     head.querySelector('#dismiss')?.addEventListener('click', () => dismiss(selectedKey));
   }
+  const show = panes[shownTab] ? shownTab : 'summary';   // no documents yet: the Summary stands in, the choice stays
+  const tabs = document.getElementById('panelTabs');
+  const tabsHtml = `<div role="tablist">${Object.keys(panes).map(name => `<button role="tab" data-tab="${name}" aria-selected="${name === show}">${TABS[name]}</button>`).join('')}</div>${extraHtml}`;
+  if (tabs.lastHtml !== tabsHtml) { tabs.lastHtml = tabsHtml; tabs.innerHTML = tabsHtml; }
   const body = document.getElementById('panelBody');
-  if (body.childElementCount !== sections.length) body.replaceChildren(...sections.map(() => document.createElement('div')));
-  sections.forEach((html, i) => {
-    const part = body.children[i];
-    if (part.lastHtml !== html) { part.lastHtml = html; part.innerHTML = html; }
+  const names = Object.keys(panes);
+  if ([...body.children].map(p => p.dataset.tab).join() !== names.join()) {
+    body.replaceChildren(...names.map(name => {
+      const pane = document.createElement('div');
+      pane.setAttribute('role', 'tabpanel');
+      pane.dataset.tab = name;
+      return pane;
+    }));
+  }
+  names.forEach((name, i) => {
+    const pane = body.children[i], sections = panes[name];
+    pane.hidden = name !== show;
+    if (pane.childElementCount !== sections.length) pane.replaceChildren(...sections.map(() => document.createElement('div')));
+    sections.forEach((html, k) => {
+      const part = pane.children[k];
+      if (part.lastHtml !== html) { part.lastHtml = html; part.innerHTML = html; }
+    });
   });
 }
 // An interactive session: what it is, where it runs, its todos and recent activity. No steps or fleet commands —
@@ -171,8 +228,8 @@ function renderSessionPanel(e) {
       </div></div>
     ${s.status === 'idle' ? DISMISS_BUTTON : ''}
     <button id="close" aria-label="Close">✕</button>`;
-  const events = (s.events || []).filter(ev => ev.kind !== 'todos' && ev.kind !== 'session').slice(-18).reverse();
-  const sections = [`
+  const rows = traceRows(noteTrace(selectedKey, s.events));
+  const activity = [`
     <h3>Interactive session</h3>
     <dl class="meta">
       <dt>session</dt><dd>${esc(s.id)}</dd>
@@ -184,9 +241,12 @@ function renderSessionPanel(e) {
     </dl>`,
     (s.todos && s.todos.length) ? `<h3>Agent's own todo list</h3><ul class="todos">${s.todos.map(td => `<li class="${esc(td.status)}">${td.status === 'completed' ? '✓' : td.status === 'in_progress' ? '▸' : '·'} ${esc(td.text)}</li>`).join('')}</ul>` : '', `
     <h3>Recent activity</h3>
-    ${events.length ? `<ul class="evs">${events.map(ev => `<li class="${ev.kind === 'error' ? 'err' : ''}"><time>${clock(ev.ts)}</time><span class="k">${esc(eventIcon(ev))}</span><span class="${isCodeEvent(ev) ? 'code' : ''}">${esc(trunc(ev.summary || ev.kind, 220))}</span></li>`).join('')}</ul>` : '<p class="muted" style="font-size:12px">No activity in the transcript tail.</p>'}`,
+    ${traceHtml(rows, 'No activity in the transcript tail.')}`,
     s.resume ? `<h3>Resume in a terminal</h3><div class="cmd"><code>${esc(s.resume)}</code><button data-copy="${esc(s.resume)}">copy</button></div>` : ''];
-  patchPanel(headHtml, sections, e, 'normal');
+  patchPanel(headHtml, '', {
+    summary: summarySections(selectedKey, s, true, rows, attentionFor(selectedKey), expanded),
+    activity,
+  }, e, 'normal');
 }
 function docsPanelHtml(e) {
   const docs = docsOf(e.job).reverse();
@@ -198,6 +258,19 @@ function docsPanelHtml(e) {
   }).join('')}</ul>`;
 }
 panel.addEventListener('click', ev => {
+  const tab = ev.target.closest('[data-tab][role="tab"]');
+  if (tab) { chosenTab = tab.dataset.tab; store('localStorage', TAB_KEY, chosenTab); showTab(chosenTab); return; }
+  const jump = ev.target.closest('[data-jump]');
+  if (jump) { jumpToActivity(jump.dataset.jump, jump.dataset.to); return; }
+  const more = ev.target.closest('[data-expand]');
+  if (more) {
+    const k = `${selectedKey}|${more.dataset.expand}`;
+    if (!expanded.delete(k)) expanded.add(k);
+    renderPanel();
+    return;
+  }
+  const answer = ev.target.closest('[data-answer]');
+  if (answer) { const item = attentionFor(selectedKey).find(i => i.id === answer.dataset.answer); if (item) openAttentionReader(item); return; }
   const workarea = ev.target.closest('[data-workarea]');
   if (workarea) { if (!workarea.disabled) openWorkarea(workarea.dataset.workarea); return; }
   const open = ev.target.closest('[data-doc]');
@@ -273,6 +346,8 @@ export function renderLive() {
 }
 export function collectEvents() {
   const fresh = [];
+  // every agent's trace grows while the deck is open, so its panel reaches back further than the stream's window
+  for (const h of hosts) for (const w of [...h.jobs || [], ...h.sessions || []]) noteTrace(`${h.name}:${w.id}`, w.events);
   for (const h of hosts) for (const j of h.jobs || []) for (const ev of j.events || []) {
     if (ev.kind === 'todos' || ev.kind === 'session' || !ev.summary) continue;
     const k = `${h.name}:${j.id}:${ev.ts}:${ev.kind}:${ev.summary}`;

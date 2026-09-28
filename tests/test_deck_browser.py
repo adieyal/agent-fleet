@@ -490,7 +490,7 @@ def test_bubbles_show_action_glyphs_and_the_words_stay_a_click_away(deck: Deck) 
 def test_a_jobs_workarea_shows_its_plan_desk_and_tray(deck: Deck, fixture_data: dict[str, Any]) -> None:
     page = deck.page
     page.locator("#tags .tag", has_text="a1c3e9").dispatch_event("click")
-    page.locator("#panelBody [data-workarea]").click()
+    page.locator("#panelTabs [data-workarea]").click()
     workarea = page.locator("#workarea")
     expect(workarea).to_be_visible()
     expect(workarea.locator(".wa-head h2")).to_have_text("restoke")
@@ -539,7 +539,7 @@ def test_document_reader_opens_from_a_failed_jobs_panel(deck: Deck) -> None:
     page.locator("#attnPanel [data-close]").click()
     expect(page.locator("#panel")).to_have_class("open")
     expect(page.locator("#panelHead h2")).to_have_text("Upgrade Django to 5.2")
-    page.locator('#panelBody [data-doc="report-0"]').click()
+    page.locator('#panelBody [data-tab="summary"] [data-doc="report-0"]').click()   # the finished step's report
     expect(page.locator("#reader")).to_be_visible()
     expect(page.locator("#rdBody h1")).to_have_text("Django 5.2 upgrade blocked")
     expect(page.locator("#rdBody")).not_to_contain_text("FLEET_STATUS")
