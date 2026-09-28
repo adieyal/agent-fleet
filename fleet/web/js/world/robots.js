@@ -79,7 +79,8 @@ export class Robots {
       tiers: this.res.map(r => {
         const k = this.man.resolutions[r].scale;
         return { ppm: ppm1 * k, size: [dd.canvas[0] * k, dd.canvas[1] * k], anchor_px: [dd.foot[0] * k, dd.foot[1] * k],
-          frames: dd.frames.length, ...(once || part === 'shadow' ? {} : { fps: c.fps }), file: `robot ${r}` };
+          frames: dd.frames.length, ...(once || part === 'shadow' ? {} : { fps: c.fps }), file: `robot ${r}`,
+          lazy: this.man.resolutions[r].load !== 'eager' };
       }),
       compose: { load: i => this.ready(this.res[i]), cell: (i, f) => this.cell(look, name, d, part, this.res[i], f) },
       robot: { clip: name, dir: d, part, once, hold: !!c.hold_last },

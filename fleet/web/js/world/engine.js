@@ -27,7 +27,7 @@ export class World {
     this.sprites = new Map(); this.textures = new Map();
     this.items = new Map(); this.planes = []; this.glows = new Map();
     this.order = null;
-    this.budget = budgetMs; this.throttle = 1; this.work = 0; this.throttleAt = 0;
+    this.budget = budgetMs; this.throttle = 1; this.work = 0; this.throttleAt = 0; this.composing = 0;
     this.stats = { frames: 0, full: 0, partial: 0, fades: 0, requested: [], loaded: [], missing: [] };
     this.dirty = { all: true, ground: true, rects: [] };
     this.scaled = new Map(); this.scaledPpm = 0; this.steady = false; this.continuous = false; this.lastFrameAt = 0;
@@ -243,7 +243,11 @@ export class World {
   // one frame of that bitmap as its own bitmap: drawn scaled straight from a sheet, a frame picks up its neighbour's
   // edge pixels (a thin line beside a seated robot: floor review 2); copied out 1:1 first, it can't
   cellOf(s, i, tint, frame) {
-    if (s.compose) return s.compose.cell(i, frame);
+    if (s.compose) {   // (composing a frame the first time is loading: its time is kept out of the budget)
+      const t0 = performance.now(), c = s.compose.cell(i, frame);
+      this.composing += performance.now() - t0;
+      return c;
+    }
     const t = s.tiers[i], sheet = this.bitmap(s, i, tint);
     if (t.frames === 1) return sheet;
     const key = `${i}|${tint || ''}|${frame}`;
@@ -302,6 +306,7 @@ export class World {
   }
   frame() {
     const start = performance.now(), now = start / 1000;
+    this.composing = 0;
     const dt = this.lastTime === null ? 0 : Math.min(0.1, now - this.lastTime);
     this.lastTime = now;
     const moving = this.camera.step(dt);
@@ -337,7 +342,7 @@ export class World {
     this.dirty = { all: false, ground: false, rects: [] };
     // a canvas may rasterise after this returns, so the gap between back-to-back frames counts as well as the work
     const work = performance.now() - start, gap = this.continuous && this.lastFrameAt ? start - this.lastFrameAt - 1000 / 60 : 0;
-    const cost = Math.max(work, gap);
+    const cost = Math.max(work, gap) - this.composing;
     if (drew) {
       this.stats.frames++;
       // ambient animation answers only to the cost of animation frames: loading, zooming and full repaints are

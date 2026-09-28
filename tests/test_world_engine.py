@@ -147,6 +147,16 @@ def test_pick_tier(page: Page, need: float, current: int, want: int) -> None:
     assert run(page, "tiers", "(m, a) => m.pickTier(a.tiers, a.need, a.current)", {"tiers": TIERS, "need": need, "current": current}) == want
 
 
+@pytest.mark.parametrize(("need", "want"), [
+    (360, 1),   # l2 at pixel ratio 2: 5% past the eager tier, which serves (the robots' 4x set loads on demand)
+    (428, 1),
+    (430, 2),   # clearly soft by then: the on-demand tier
+])
+def test_an_on_demand_tier_is_wanted_only_well_past_the_tier_below(page: Page, need: float, want: int) -> None:
+    tiers = [{"ppm": 171.5}, {"ppm": 343}, {"ppm": 686, "lazy": True}]
+    assert run(page, "tiers", "(m, a) => m.pickTier(a.tiers, a.need)", {"tiers": tiers, "need": need}) == want
+
+
 @pytest.mark.parametrize(("want", "loaded", "draw"), [
     (1, [1], 1),
     (1, [0, 2], 2),   # a finer tier stands in (sharp, just more to scale)...

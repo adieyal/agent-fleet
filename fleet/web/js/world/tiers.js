@@ -3,11 +3,15 @@
 // until then. Pure functions, so they can be tested alone.
 
 const KEEP = 0.85;   // a finer tier is kept until the screen needs less than this share of the next tier down
+const LAZY = 1.25;   // an on-demand tier (`lazy`) is wanted only past this much upscaling of the tier below it
 
 // index of the tier to use at `need` screen pixels per metre, given the one in use (or -1)
 export function pickTier(tiers, need, current = -1) {
   let want = tiers.findIndex(t => t.ppm >= need);
   if (want < 0) want = tiers.length - 1;
+  // (the robots' 4x set is large and composed per frame: l2 at pixel ratio 2 needs 5% past their 2x, which is not
+  // worth seconds of loading, nor sharper than the kit around them)
+  if (tiers[want].lazy && want > 0 && need <= LAZY * tiers[want - 1].ppm) want--;
   // going finer is immediate (anything else is blurry); going coarser waits for a margin, so a zoom resting near a
   // boundary doesn't swap back and forth
   if (current > want && need > KEEP * tiers[current - 1].ppm) return current;
