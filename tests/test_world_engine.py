@@ -147,10 +147,17 @@ def test_pick_tier(page: Page, need: float, current: int, want: int) -> None:
     assert run(page, "tiers", "(m, a) => m.pickTier(a.tiers, a.need, a.current)", {"tiers": TIERS, "need": need, "current": current}) == want
 
 
+def test_a_zoom_resting_on_a_tier_boundary_does_not_flap(page: Page) -> None:
+    # wobbling about the tier-1 density: finer as soon as it is needed (never stretched), then it stays
+    picked = run(page, "tiers", """(m, a) => { let cur = -1; return a.needs.map(n => (cur = m.pickTier(a.tiers, n, cur))); }""",
+                 {"tiers": TIERS, "needs": [170, 173, 170, 173, 168, 172]})
+    assert picked == [1, 2, 2, 2, 2, 2]
+
+
 @pytest.mark.parametrize(("need", "want"), [
-    (360, 1),   # l2 at pixel ratio 2: 5% past the eager tier, which serves (the robots' 4x set loads on demand)
-    (428, 1),
-    (430, 2),   # clearly soft by then: the on-demand tier
+    (360, 1),   # l2 at pixel ratio 2: 5% past the eager tier, which serves (the robots' 4x set decodes to ~940 MB)
+    (361, 2),   # any further and the on-demand tier: nothing is drawn stretched more than that
+    (430, 2),
 ])
 def test_an_on_demand_tier_is_wanted_only_well_past_the_tier_below(page: Page, need: float, want: int) -> None:
     tiers = [{"ppm": 171.5}, {"ppm": 343}, {"ppm": 686, "lazy": True}]
@@ -168,8 +175,18 @@ def test_while_loading_the_nearest_loaded_tier_is_drawn(page: Page, want: int, l
     assert got == draw
 
 
-def test_crossfade_runs_a_quarter_second(page: Page) -> None:
-    assert run(page, "tiers", "m => [m.fadeAlpha(10, 10), m.fadeAlpha(10, 10.125), m.fadeAlpha(10, 11), m.fadeAlpha(-Infinity, 0)]") == [0, 0.5, 1, 1]
+def test_crossfade_runs_about_120_ms(page: Page) -> None:
+    assert run(page, "tiers", "m => [m.fadeAlpha(10, 10), m.fadeAlpha(10, 10.06), m.fadeAlpha(10, 10.12), m.fadeAlpha(-Infinity, 0)]") == pytest.approx([0, 0.5, 1, 1])
+
+
+@pytest.mark.parametrize(("want", "ahead"), [
+    (0, 1),    # at rest the next finer tier loads ahead of a zoom in
+    (1, -1),   # but not an on-demand one: only a zoom heading there loads that
+    (2, -1),
+])
+def test_the_next_finer_tier_loads_ahead_unless_on_demand(page: Page, want: int, ahead: int) -> None:
+    tiers = [{"ppm": 171.5}, {"ppm": 343}, {"ppm": 686, "lazy": True}]
+    assert run(page, "tiers", "(m, a) => m.nextTier(a.tiers, a.want)", {"tiers": tiers, "want": want}) == ahead
 
 
 # --- projection ------------------------------------------------------------------------------------------------------

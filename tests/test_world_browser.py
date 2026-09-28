@@ -112,12 +112,13 @@ def test_zoomed_in_a_drag_pans_but_stops_at_the_room_edge(world: Page) -> None:
     assert bounds["y"] <= edge["v"] <= bounds["y"] + bounds["h"]
 
 
-def test_finer_tiers_load_only_when_the_zoom_needs_them_and_fade_in(browser: Browser, base_url: str) -> None:
+def test_the_smallest_sharp_tier_is_drawn_the_next_loads_ahead_and_they_fade(browser: Browser, base_url: str) -> None:
     page, errors = open_world(browser, base_url, scale=2)
     try:
-        # the room at 2x device pixels needs under 171.5 px/m: the plant's 1x tier only
+        # the room at 2x device pixels needs under 171.5 px/m: the plant's 1x tier, and at rest its 2x loads ahead
         assert page.evaluate("world.engine.stats.requested").count("B1/plant@1x.png") == 1
-        assert not any("plant@2x" in f or "plant@4x" in f for f in page.evaluate("world.engine.stats.requested"))
+        assert page.evaluate("world.engine.sprites.get('plant').shown") == 0
+        page.wait_for_function("world.engine.stats.requested.includes('B1/plant@2x.png')")
         shown = []
         page.expose_function("noteShown", lambda s: shown.append(s))
         page.evaluate("""(() => { const w = world.engine, f = w.frame.bind(w);
@@ -126,11 +127,12 @@ def test_finer_tiers_load_only_when_the_zoom_needs_them_and_fade_in(browser: Bro
         page.wait_for_function("world.engine.stats.loaded.includes('B1/plant@2x.png')")
         settle(page)
         requested = page.evaluate("world.engine.stats.requested")
-        assert "B1/plant@2x.png" in requested
-        assert "B1/plant@4x.png" not in requested  # l2 at 2x device pixels is 219 px/m: 2x (343) is enough
+        assert requested.count("B1/plant@2x.png") == 1
         assert page.evaluate("world.engine.stats.fades") >= 1
         assert -1 not in shown  # never a frame without the plant
+        # l2 at 2x device pixels is 219 px/m: 2x (343) is drawn, and 4x has loaded ahead of a closer zoom
         assert page.evaluate("world.engine.sprites.get('plant').shown") == 1
+        page.wait_for_function("world.engine.stats.requested.includes('B1/plant@4x.png')")
     finally:
         page.close()
     assert errors == []

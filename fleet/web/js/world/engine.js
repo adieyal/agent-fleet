@@ -10,7 +10,7 @@ import { pickAt } from './hit.js';
 import { alphaOf, affineFill, canvas, glowDisc, hitMask, loadImage, tinted } from './paint.js';
 import { EDGE_SLOPE, PITCH, YAW, depth, fromScreen, plane, toScreen } from './projection.js';
 import { sortEntries } from './sort.js';
-import { drawableTier, fadeAlpha, pickTier } from './tiers.js';
+import { drawableTier, fadeAlpha, nextTier, pickTier } from './tiers.js';
 
 const THROTTLE_MAX = 8;
 
@@ -30,7 +30,7 @@ export class World {
     this.budget = budgetMs; this.throttle = 1; this.work = 0; this.throttleAt = 0; this.composing = 0;
     this.stats = { frames: 0, full: 0, partial: 0, fades: 0, requested: [], loaded: [], missing: [] };
     this.dirty = { all: true, ground: true, rects: [] };
-    this.scaled = new Map(); this.scaledPpm = 0; this.steady = false; this.continuous = false; this.lastFrameAt = 0;
+    this.scaled = new Map(); this.drawn = new WeakSet(); this.scaledPpm = 0; this.steady = false; this.continuous = false; this.lastFrameAt = 0;
     this.lastView = null; this.lastTime = null; this.raf = 0; this.timer = 0; this.onTap = null;
     this.t0 = performance.now() / 1000;
     this.ground = new GroundCache((g, view) => this.paintGround(g, view));
@@ -181,16 +181,21 @@ export class World {
 
   // --- level of detail ----------------------------------------------------------------------------------------------
 
-  // choose each used sprite's tier for this zoom, start loading it, and advance crossfades; true while fading
-  levels(need, now) {
+  // choose each used sprite's tier for this zoom, start loading it and the one the zoom's goal needs (so a zoom in
+  // finds its tier ready), and advance crossfades; true while fading
+  levels(need, now, goalNeed = need) {
     let fading = false;
     for (const s of this.sprites.values()) {
       if (!s.used) continue;
       s.want = pickTier(s.tiers, need, s.want);
       if (!s.loaded.has(s.want)) this.fetchTier(s, s.want);
+      const ahead = pickTier(s.tiers, goalNeed);
+      if (ahead > s.want && !s.loaded.has(ahead)) this.fetchTier(s, ahead);
       const show = drawableTier(s.tiers, s.want, s.loaded);
       if (show !== s.shown) {
-        if (s.shown >= 0 && show >= 0) { s.prev = s.shown; s.since = now; this.stats.fades++; }
+        // (under reduced motion a tier is swapped, not faded)
+        if (s.shown >= 0 && show >= 0 && !this.reduced) { s.prev = s.shown; s.since = now; this.stats.fades++; }
+        else if (s.shown >= 0 && show >= 0) { s.prev = -1; s.since = -Infinity; }
         else if (show >= 0) { s.prev = -1; s.since = this.stats.frames ? now : -Infinity; }   // first sight fades in, except the opening frame
         s.shown = show;
         this.dirtySprite(s);
@@ -202,6 +207,13 @@ export class World {
       }
     }
     return fading;
+  }
+  // at rest, load each used sprite's next finer tier (not an on-demand one: nextTier), so zooming in starts sharp
+  prefetch() {
+    for (const s of this.sprites.values()) {
+      const i = s.used ? nextTier(s.tiers, s.want) : -1;
+      if (i >= 0 && !s.loaded.has(i) && !s.failed.has(i)) this.fetchTier(s, i);
+    }
   }
   dirtySprite(s) {
     for (const it of this.items.values()) if (it.sprite === s.id) { if (it.layer === 'ground') this.dirty.groundTier = true; else this.dirtyItem(it); }
@@ -311,7 +323,7 @@ export class World {
     this.lastTime = now;
     const moving = this.camera.step(dt);
     const view = this.camera.view;
-    const fading = this.levels(view.ppm * this.dpr, now);
+    const fading = this.levels(view.ppm * this.dpr, now, this.camera.goal.ppm * this.dpr);
     const viewChanged = !this.lastView || ['u', 'v', 'ppm', 'W', 'H'].some(k => this.lastView[k] !== view[k]);
     this.steady = !!this.lastView && this.lastView.ppm === view.ppm && this.camera.goal.ppm === view.ppm;
     if (this.steady && this.scaledPpm !== view.ppm) { this.scaled.clear(); this.scaledPpm = view.ppm; }
@@ -328,8 +340,7 @@ export class World {
     let drew = false, full = false;
     // while the camera moves on a machine that can't keep up at a high pixel ratio, frames are drawn at ratio 1 and
     // scaled up; the frame at rest is drawn sharp again
-    const low = moving && this.dpr > 1 && this.lowMotion;
-    if (viewChanged || this.dirty.all || groundChanged || (this.wasLow && !low)) {
+    const low = moving && this.dpr > 1 && this.lowMotion;    if (viewChanged || this.dirty.all || groundChanged || (this.wasLow && !low)) {
       if (low) this.paintLow(view, now); else this.paint(view, now, null);
       this.stats.full++; drew = full = true;
     } else if (this.dirty.rects.length) {
@@ -341,15 +352,20 @@ export class World {
     this.lastView = view;
     this.dirty = { all: false, ground: false, rects: [] };
     // a canvas may rasterise after this returns, so the gap between back-to-back frames counts as well as the work
-    const work = performance.now() - start, gap = this.continuous && this.lastFrameAt ? start - this.lastFrameAt - 1000 / 60 : 0;
+    // (from the end of the last frame's work: a slow frame's own time is not the next one's gap)
+    const work = performance.now() - start, gap = this.continuous && this.lastFrameAt ? start - this.lastFrameAt - (this.lastWork || 0) - 1000 / 60 : 0;
     const cost = Math.max(work, gap) - this.composing;
     if (drew) {
       this.stats.frames++;
       // ambient animation answers only to the cost of animation frames: loading, zooming and full repaints are
       // expensive for other reasons and would keep it throttled long after they end
       if (!moving && !full) this.pace(cost, now);
-      // three slow frames while moving at a high pixel ratio: draw motion at ratio 1 from then on
-      if (moving && full && !low && this.dpr > 1 && this.motionDpr === 'auto' && cost > this.budget * 1.5 && ++this.slowMotion >= 3) this.lowMotion = true;
+      // three slow frames in a row while moving at a high pixel ratio: draw motion at ratio 1 from then on (a single
+      // slow frame, a tier being decoded, says nothing about the machine: frame review, sharp zoom)
+      if (moving && full && !low && this.dpr > 1 && this.motionDpr === 'auto') {
+        this.slowMotion = cost > this.budget * 1.5 ? this.slowMotion + 1 : 0;
+        if (this.slowMotion >= 3) this.lowMotion = true;
+      }
     }
     this.lastWork = work; this.lastFrameAt = start;
     // when the zoom comes to rest, one more full frame from bitmaps pre-scaled to it: sharper, and what partial
@@ -360,6 +376,7 @@ export class World {
     if (this.continuous) this.request();
     else {
       this.lastTime = null;   // resting: the next frame starts a fresh clock
+      this.prefetch();
       const wait = this.nextFrameIn(now);
       if (wait < Infinity) this.timer = setTimeout(() => this.request(), Math.max(0, wait * 1000 - 4));
     }
@@ -479,15 +496,23 @@ export class World {
   }
   drawTier(g, it, s, i, view, alpha) {
     if (alpha <= 0) return;
+    // Every tier is placed from the item's world anchor through its own anchor_px, unrounded; at a steady zoom the
+    // one final screen position is snapped to whole device pixels, and nothing else is rounded.
     const t = s.tiers[i], k = view.ppm / t.ppm, [x, y] = toScreen(view, it.at);
     let dx = x - t.anchor_px[0] * k, dy = y - t.anchor_px[1] * k;
     const w = t.fw * k, h = t.fh * k, frame = it.frame || 0;
-    // at a steady zoom, blit a copy pre-scaled to it at whole device pixels; while zooming, scale on the fly
-    // while zooming, the copy made for the last resting zoom, scaled: a few screen pixels rather than a large tier
-    const pre = this.steady ? this.prescaled(s, i, it.tint, frame, k, true) : this.prescaled(s, i, it.tint, frame, k, false);
-    const z = this.steady ? 1 : view.ppm / this.scaledPpm;
-    const usePre = pre && z > 0.25 && z < 4;   // (softer mid-zoom; the frame at rest is sharp)
-    if (usePre && this.steady) { dx = Math.round(dx * this.dpr) / this.dpr; dy = Math.round(dy * this.dpr) / this.dpr; }
+    // at a steady zoom, a copy pre-scaled to it; while zooming, the copy made for the last resting zoom only while it
+    // is drawn no larger than it was made (zooming out), else the tier itself, which is at least as dense as the
+    // screen: never a bitmap stretched past its own pixels
+    let pre = null, z = 1;
+    if (this.steady) {
+      pre = this.prescaled(s, i, it.tint, frame, k, true);
+      dx = Math.round(dx * this.dpr) / this.dpr; dy = Math.round(dy * this.dpr) / this.dpr;
+    } else {
+      const had = this.prescaled(s, i, it.tint, frame, k, false);
+      z = view.ppm / this.scaledPpm;
+      if (had && had.i === i && z <= 1 && z > 0.25) pre = had;
+    }
     g.save();
     g.globalAlpha = alpha * (it.intensity ?? 1);
     const cut = it.cut && this.cutLines(it, t, view, dx, dy, k);
@@ -497,8 +522,15 @@ export class World {
       g.beginPath(); g.moveTo(x0, top(x0)); g.lineTo(x1, top(x1)); g.lineTo(x1, bottom(x1)); g.lineTo(x0, bottom(x0)); g.closePath();
       g.clip();
     }
-    if (usePre) g.drawImage(pre, dx, dy, pre.width / this.dpr * z, pre.height / this.dpr * z);
-    else g.drawImage(this.cellOf(s, i, it.tint, frame), dx, dy, w, h);
+    g.imageSmoothingQuality = 'high';
+    // (a copy's own pixel ratio: one made at full ratio may be drawn into a frame at ratio 1, paintLow)
+    if (pre) g.drawImage(pre.c, dx, dy, pre.c.width / pre.d * z, pre.c.height / pre.d * z);
+    else {
+      // a bitmap's first draw decodes and uploads it: that is loading too, kept out of the budget like composing
+      const src = this.cellOf(s, i, it.tint, frame), fresh = !this.drawn.has(src), t0 = fresh && performance.now();
+      g.drawImage(src, dx, dy, w, h);
+      if (fresh) { this.drawn.add(src); this.composing += performance.now() - t0; }
+    }
     g.restore();
   }
   // A seated item's cut lines on screen, as functions of x: `split`, the desk-top line between its under and over
@@ -515,18 +547,21 @@ export class World {
   }
   // One frame of a sprite, tinted and scaled to the screen at the resting zoom (scaledPpm), from tier i; cached
   // until the zoom rests somewhere else. `build` makes it (or remakes it from a new tier); without, only a lookup.
+  // Returns { c, i, d }: the copy, its tier and pixel ratio. The frame is scaled by exactly k, not stretched to whole
+  // pixels (the canvas is rounded up around it), so each tier's copy keeps its anchor where the tier puts it.
   prescaled(s, i, tint, frame, k, build) {
     const key = `${s.id}|${tint || ''}|${frame}`;
     const had = this.scaled.get(key);
-    if (!build) return had ? had.c : null;
-    if (had && had.i === i) return had.c;
+    if (!build) return had || null;
+    if (had && had.i === i && had.d === this.dpr) return had;
     const t = s.tiers[i], d = this.dpr;
-    const c = canvas(Math.max(1, Math.round(t.fw * k * d)), Math.max(1, Math.round(t.fh * k * d)));
+    const c = canvas(Math.max(1, Math.ceil(t.fw * k * d)), Math.max(1, Math.ceil(t.fh * k * d)));
     const g = c.getContext('2d');
     g.imageSmoothingQuality = 'high';
-    g.drawImage(this.cellOf(s, i, tint, frame), 0, 0, c.width, c.height);
-    this.scaled.set(key, { c, i });
-    return c;
+    g.drawImage(this.cellOf(s, i, tint, frame), 0, 0, t.fw * k * d, t.fh * k * d);
+    const out = { c, i, d };
+    this.scaled.set(key, out);
+    return out;
   }
 
   // --- picking ------------------------------------------------------------------------------------------------------
