@@ -1,6 +1,7 @@
 """Fetches an agent's Markdown document from its host and renders it for the reader view."""
 from __future__ import annotations
 
+import base64
 import re
 from pathlib import PurePosixPath
 from typing import Any
@@ -26,7 +27,20 @@ renderer = (
 )
 
 
+IMAGE_TYPES = {".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+               ".gif": "image/gif", ".webp": "image/webp"}
+ASSET_READ_LIMIT = 5 * 1024 * 1024  # fleetd's cap for the same images
+
+
 class DocumentAccessDenied(FleetError):
+    pass
+
+
+class AssetNotImage(FleetError):
+    pass
+
+
+class AssetTooLarge(FleetError):
     pass
 
 
@@ -53,6 +67,25 @@ def fetch_document(host: Host, job_id: str, document_id: str) -> dict[str, Any]:
         raise
     markdown = STATUS_LINE.sub("", document.pop("content")).strip()
     return {**document, "host": host.name, **render_markdown(markdown)}
+
+
+def fetch_asset(host: Host, job_id: str, document_id: str, asset_path: str) -> tuple[str, bytes]:
+    """An image a job document links to, as (content type, bytes); fleetd applies the document's roots."""
+    document, asset = PurePosixPath(document_id), PurePosixPath(asset_path)
+    if document.is_absolute() or ".." in document.parts or asset.is_absolute() or "\x00" in asset_path:
+        raise DocumentAccessDenied(f"asset path outside approved document roots: {asset_path}")
+    try:
+        result = transport.call(host, ["read-asset", job_id, document_id, asset_path], timeout=30)
+    except FleetError as error:
+        message = str(error)
+        if "outside approved document roots" in message:
+            raise DocumentAccessDenied(message) from error
+        if "not a supported image type" in message:
+            raise AssetNotImage(message) from error
+        if "asset larger than" in message:
+            raise AssetTooLarge(message) from error
+        raise
+    return result["type"], base64.b64decode(result["content"])
 
 
 def render_markdown(markdown: str) -> dict[str, Any]:

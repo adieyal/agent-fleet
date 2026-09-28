@@ -29,7 +29,7 @@ from fleet.projections.workspace import annotate, resolve, registry_config
 from fleet.projections.project import project_status
 from fleet.projections.bench import bench_rooms, bench_state
 from fleet.transport import FleetError, Host
-from fleet.web.documents import DocumentAccessDenied, fetch_document
+from fleet.web.documents import AssetNotImage, AssetTooLarge, DocumentAccessDenied, fetch_asset, fetch_document
 from fleet.web.fixture import FixtureLibrary, FixtureState
 from fleet.web.library import ProjectLibrary
 from fleet.web.live import AlreadyHoused, LiveWorkspace
@@ -43,7 +43,8 @@ STATIC_TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; char
                 ".glb": "model/gltf-binary", ".gltf": "model/gltf+json",
                 ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".json": "application/json",
                 ".md": "text/markdown; charset=utf-8", ".txt": "text/plain; charset=utf-8"}
-ATTENTION_ACTIONS = ("acknowledge", "snooze", "reopen")
+ASSET_POLICY = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox"
+ATTENTION_ACTIONS =("acknowledge", "snooze", "reopen")
 FLOOR_CHANGES = ("/api/move-in", "/api/link", "/api/merge", "/api/shutter", "/api/restore")
 EVENTS_PER_JOB = "15"
 STREAM_SILENCE_LIMIT = 20  # seconds without a heartbeat before the stream is considered dead
@@ -185,6 +186,10 @@ class FleetState(LiveWorkspace):
         host = next(host for host in self.hosts if host.name == host_name)
         return fetch_document(host, job_id, document_id)
 
+    def read_asset(self, host_name: str, job_id: str, document_id: str, asset_path: str) -> tuple[str, bytes]:
+        host = next(host for host in self.hosts if host.name == host_name)
+        return fetch_asset(host, job_id, document_id, asset_path)
+
 
 def follow_host(state: FleetState, host: Host) -> None:
     """Keep one `fleetd stream` running for the host, reconnecting when it dies or goes quiet."""
@@ -279,6 +284,10 @@ def make_handler(state: FleetState | FixtureState,
                 self.stream()
             elif path == "/api/doc":
                 self.document()
+            elif path == "/api/doc/asset":
+                self.asset("host", "job")
+            elif path == "/api/library/asset":
+                self.asset("project")
             elif path == "/api/library":
                 try:
                     documents = library.list()
@@ -501,6 +510,39 @@ def make_handler(state: FleetState | FixtureState,
                 return
             self.respond(200, "application/json", json.dumps(body).encode())
 
+        def asset(self, *owner: str) -> None:
+            """GET /api/doc/asset?host=&job=&id=&path= or /api/library/asset?project=&id=&path= — an image
+            a document links to, resolved beside the document under the document's own roots."""
+            query = {key: values[0] for key, values in parse_qs(urlsplit(self.path).query).items()}
+            if not all(query.get(key) for key in (*owner, "id", "path")) or (
+                    "host" in owner and query["host"] not in state.host_names()):
+                self.error(400, f"{', '.join(owner)}, id and path are required")
+                return
+            try:
+                if "host" in owner:
+                    found = state.read_asset(query["host"], query["job"], query["id"], query["path"])
+                else:
+                    found = library.read_asset(query["project"], query["id"], query["path"])
+            except DocumentAccessDenied as error:
+                self.error(403, str(error))
+                return
+            except AssetNotImage as error:
+                self.error(415, str(error))
+                return
+            except AssetTooLarge as error:
+                self.error(413, str(error))
+                return
+            except FleetError as error:
+                self.error(404, str(error))
+                return
+            if found is None:
+                self.error(404, "image not found")
+                return
+            content_type, content = found
+            # an SVG can carry script: the policy keeps it inert even if opened on its own
+            self.respond(200, content_type, content, headers={"Content-Security-Policy": ASSET_POLICY,
+                                                              "X-Content-Type-Options": "nosniff"})
+
         def library_document(self) -> None:
             """GET /api/library/doc?project=&id= — Markdown under a configured local root."""
             query = {key: values[0] for key, values in parse_qs(urlsplit(self.path).query).items()}
@@ -539,9 +581,12 @@ def make_handler(state: FleetState | FixtureState,
             except (BrokenPipeError, ConnectionResetError):
                 return
 
-        def respond(self, status: int, content_type: str, body: bytes, *, cache_seconds: int = 0) -> None:
+        def respond(self, status: int, content_type: str, body: bytes, *, cache_seconds: int = 0,
+                    headers: dict[str, str] | None = None) -> None:
             self.send_response(status)
             self.send_header("Content-Type", content_type)
+            for name, value in (headers or {}).items():
+                self.send_header(name, value)
             self.send_header("Cache-Control", f"max-age={cache_seconds}" if cache_seconds else "no-store")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()

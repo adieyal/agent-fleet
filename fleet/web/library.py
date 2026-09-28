@@ -5,7 +5,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from fleet.web.documents import render_markdown
+from fleet.web.documents import (ASSET_READ_LIMIT, IMAGE_TYPES, AssetNotImage, AssetTooLarge,
+                                 DocumentAccessDenied, render_markdown)
 
 READ_LIMIT = 2_000_000
 SKIPPED_DIRECTORIES = {"node_modules", "worktrees", "__pycache__", "venv"}
@@ -80,7 +81,7 @@ class ProjectLibrary:
             raise ValueError(f"invalid library manifest {manifest}: {error}") from error
         return order, set(hidden), show_unlisted
 
-    def read(self, project: str, document_id: str) -> dict[str, Any] | None:
+    def _document(self, project: str, document_id: str) -> Path | None:
         root = self.roots.get(project)
         if root is None or "\x00" in document_id or not document_id.endswith(".md"):
             return None
@@ -97,6 +98,36 @@ class ProjectLibrary:
         elif len(relative.parts) != 1 and relative.parts[0] != "docs":
             return None
         elif len(relative.parts) == 1 and relative.name.startswith("."):
+            return None
+        return path
+
+    def read_asset(self, project: str, document_id: str, asset_path: str) -> tuple[str, bytes] | None:
+        """An image a library document links to, resolved beside it; it must stay under the library root
+        and out of hidden or skipped folders. None when the document or image doesn't exist."""
+        document = self._document(project, document_id)
+        if document is None:
+            return None
+        root = self.roots[project]
+        requested = Path(asset_path)
+        if "\x00" in asset_path or requested.is_absolute():
+            raise DocumentAccessDenied(f"asset path outside the library root: {asset_path}")
+        path = (document.parent / requested).resolve()
+        if not path.is_relative_to(root) or skipped(path.relative_to(root)):
+            raise DocumentAccessDenied(f"asset path outside the library root: {asset_path}")
+        content_type = IMAGE_TYPES.get(path.suffix.lower())
+        if content_type is None:
+            raise AssetNotImage(f"asset is not a supported image type: {asset_path}")
+        if not path.is_file():
+            return None
+        with path.open("rb") as handle:
+            raw = handle.read(ASSET_READ_LIMIT + 1)
+        if len(raw) > ASSET_READ_LIMIT:
+            raise AssetTooLarge(f"asset larger than {ASSET_READ_LIMIT} bytes: {asset_path}")
+        return content_type, raw
+
+    def read(self, project: str, document_id: str) -> dict[str, Any] | None:
+        path = self._document(project, document_id)
+        if path is None:
             return None
         with path.open("rb") as handle:
             raw = handle.read(READ_LIMIT + 1)
