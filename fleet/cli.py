@@ -1300,10 +1300,20 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> None:
     arguments = build_parser().parse_args(argv)
     try:
+        for name in ("FLEET_CONFIG", "FLEET_STORE"):
+            if name not in os.environ:
+                continue
+            path = Path(os.environ[name])
+            if path.exists():
+                continue
+            if name == "FLEET_STORE" and arguments.command == "web":
+                error_console.print(f"Creating new store at {path} (FLEET_STORE)", markup=False)
+            else:
+                raise FleetError(f"{name} points to a missing file: {path}")
         open_store()
         arguments.handler(arguments)
     except FleetError as error:
-        error_console.print(f"[red]fleet: {error}[/]")
+        error_console.print(f"fleet: {error}", style="red", markup=False)
         sys.exit(2)
     except KeyboardInterrupt:
         sys.exit(130)
