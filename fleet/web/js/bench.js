@@ -44,7 +44,8 @@ async function read(slice) {
   return doc;
 }
 
-export async function enterFloor(identity) {
+// `epic` and `milestone` open straight at that epic's page or that milestone's bench.
+export async function enterFloor(identity, { epic = null, milestone = null } = {}) {
   const request = ++revision;
   project = identity; room = bench = null;
   el.hidden = identity === null;
@@ -54,6 +55,12 @@ export async function enterFloor(identity) {
     const doc = await read();
     if (request !== revision) return;
     rooms = doc.rooms;
+    room = rooms.find(r => r.id === epic) ?? null;
+    if (milestone) {
+      const slice = await read(milestone);
+      if (request !== revision) return;
+      bench = slice; briefing = false;
+    }
     render();
   } catch (error) {
     if (request === revision) el.innerHTML = `<p role="alert">${esc(error.message)}</p>`;

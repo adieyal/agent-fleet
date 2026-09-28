@@ -21,7 +21,7 @@ from fleet.projections.building import building_state
 from fleet.modules.workspace import Registry, WorkspaceFacade, AlreadyHoused
 from fleet.transport import FleetError
 from fleet.composition import open_work, open_execution, open_library, open_decisions
-from fleet.projections.project import project_status
+from fleet.projections.project import project_status, run_work
 from fleet.web.job_store import ProjectDocuments
 from fleet.web.overview import Overview
 T = TypeVar("T")
@@ -231,6 +231,13 @@ class LiveWorkspace:
         """Add stored focus choices and the Attention projection."""
         return {**document, "focus": asdict(self.workspace.focus_snapshot()),
                 "attention": attention_items(self.attention, document["hosts"])}
+
+    def with_work(self, document: dict[str, Any]) -> dict[str, Any]:
+        """Give each job and session the work item its run is linked to, or null when none is."""
+        links = run_work(open_work(self.store), open_execution(self.store))
+        return {**document, "hosts": [{**host, **{kind: [{**item, "work": links.get((host["name"], item["id"]))}
+                                                         for item in host[kind]] for kind in ("jobs", "sessions")}}
+                                      for host in document["hosts"]]}
 
     def report_pipeline(self, host: str, name: str, run: dict[str, Any] | None,
                         baseline: dict[str, Any] | None) -> None:

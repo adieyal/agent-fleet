@@ -319,6 +319,45 @@ def test_epic_page_lists_milestones_tasks_and_child_epics(changed_deck: Deck, ro
     assert changed_deck.errors == []
 
 
+def test_panel_breadcrumb_names_the_linked_work_and_opens_it(changed_deck: Deck, route_migration,
+                                                              base_url: str) -> None:
+    milestone = route_migration['milestones'][2]
+    open_execution(open_store()).link('home', 'a1c3e9', milestone.id, actor='user')
+    with urlopen(base_url + '/api/state', timeout=5) as response:
+        doc = json.load(response)
+    jobs = {(host['name'], item['id']): item for host in doc['hosts'] for item in host['jobs'] + host['sessions']}
+    work = jobs['home', 'a1c3e9']['work']
+    assert work['project'] == 'restoke-v2'
+    assert [(node['kind'], node['title']) for node in work['chain']] == [
+        ('epic', 'V2 frontend overhaul'), ('epic', 'Route migration'), ('milestone', '3. Milestone 3')]
+    assert jobs['home', ASKING.split(':', 1)[1]]['work'] is None
+
+    page = changed_deck.page
+    route = page.locator('#benchRoute')
+    page.evaluate('doc => fleetDeck.apply(doc)', doc)
+    page.evaluate("fleetDeck.select('home:a1c3e9')")
+    crumbs = page.locator('#panel .work-crumbs')
+    expect(crumbs).to_have_text('V2 frontend overhaul > Route migration > 3. Milestone 3')
+    crumbs.get_by_role('button', name='Route migration').click()
+    expect(route).to_have_attribute('data-level', 'room')
+    expect(route.locator('[data-epic-page] h2')).to_have_text('Route migration')
+    crumbs.get_by_role('button', name='3. Milestone 3').click()
+    expect(route).to_have_attribute('data-level', 'bench')
+    expect(route.get_by_role('heading', level=2)).to_have_text('3. Milestone 3')
+    expect(page.locator('#benchBreadcrumb')).to_contain_text('Route migration')
+    page.keyboard.press('Escape')
+    expect(route).to_have_attribute('data-level', 'room')
+    page.evaluate('fleetDeck.enterFloor(null)')
+
+    page.evaluate(f"fleetDeck.select('{ASKING}')")
+    expect(page.locator('#panel .ph h2')).not_to_have_text('')
+    expect(page.locator('#panel .work-crumbs')).to_have_count(0)
+    page.evaluate("fleetDeck.select('home:b7d042')")
+    expect(page.locator('#panel .work-crumbs')).to_have_count(0)
+    page.locator('#panel #close').click()
+    assert changed_deck.errors == []
+
+
 def test_bench_route_steps_out_one_level(changed_deck: Deck) -> None:
     page = changed_deck.page
     page.locator('#viewToggle [data-view="building"]').click()

@@ -197,3 +197,23 @@ def test_later_failure_requires_another_next_step():
     node, = project([milestone], runs=[run("old", "host-a"),
         run("new", "host-b", end=NOW + timedelta(minutes=2))])["work_items"]
     assert node["no_follow_up_yet"] is True
+
+
+def test_run_work_maps_each_job_to_its_items_ancestry():
+    from fleet.projections.project import run_work
+
+    items = [item("epic", kind="epic", title="Overhaul"), item("m", kind="milestone", parent="epic", title="3. GET URLs"),
+             item("t", parent="m", title="Port")]
+    work = WorkFacade(ReadWork(items), None, lambda: NOW)
+    runs = [run("r1", "home"), run("r2", "home"), run("r3", "worker")]
+    runs[1] = replace(runs[1], remote_job_id="relinked")
+    runs.append(replace(run("r4", "home"), remote_job_id="relinked"))
+    actions = {"r1": "t", "r2": "t", "r3": None, "r4": "m"}
+    execution = SimpleNamespace(actions=lambda: [Action(key, value, "linked") for key, value in actions.items()],
+                                runs=lambda: runs)
+    links = run_work(work, execution)
+    assert links["home", "job"] == {"project": "p", "chain": [
+        {"id": "epic", "kind": "epic", "title": "Overhaul"}, {"id": "m", "kind": "milestone", "title": "3. GET URLs"},
+        {"id": "t", "kind": "task", "title": "Port"}]}
+    assert [node["id"] for node in links["home", "relinked"]["chain"]] == ["epic", "m"]
+    assert ("worker", "job") not in links
