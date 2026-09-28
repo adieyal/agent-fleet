@@ -608,7 +608,7 @@ def make_handler(state: FleetState | FixtureState,
 
 
 def serve(hosts: list[Host], *, port: int, bind: str, open_browser: bool = False,
-          libraries: dict[str, str] | None = None, project_labels: dict[str, str] | None = None,
+          libraries: dict[str, Any] | None = None, project_labels: dict[str, str] | None = None,
           pipelines: dict[str, dict[str, str]] | None = None) -> None:
     state = FleetState(hosts, project_labels, pipelines=pipelines)
     threading.Thread(target=state.follow_history, args=(threading.Event(),), daemon=True).start()

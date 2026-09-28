@@ -336,6 +336,17 @@ class CodexParser:
 # ---------------------------------------------------------------- the runner
 
 
+# The user reads job documents in the Fleet reader, which renders fenced code and Mermaid inline.
+WRITING_GUIDE = (
+    "Markdown documents you write (reports, reviews, plans, notes) are read by a person in a reader that "
+    "shows fenced code and ```mermaid diagrams inline. Lead with the conclusion, then the evidence. Make every "
+    "claim concrete: name the file and line, quote a short code excerpt in a fenced block with its language, "
+    "and show the command you ran with its relevant output. Give at least one specific example for each "
+    "finding or recommendation. Draw a flow, structure or dependency as a Mermaid diagram rather than "
+    "describing it in prose.\n"
+)
+
+
 def job_preamble(job: JsonObject) -> str:
     directory = JOBS_DIRECTORY / job["id"]
     return (
@@ -344,6 +355,7 @@ def job_preamble(job: JsonObject) -> str:
         f"Job goal: {job['description']}\n"
         f"Context files from the orchestrator (read what is relevant): {directory / 'context'}\n"
         f"Put any files the orchestrator should collect in: {directory / 'outbox'}\n"
+        f"{WRITING_GUIDE}"
         "Finish each step with a short plain summary of what you did and anything left open, then a final line "
         "`FLEET_STATUS: done`, `FLEET_STATUS: blocked — <reason>` (you could not do the work, e.g. tools or "
         "access failed) or `FLEET_STATUS: failed — <reason>` (you tried and it did not work). Never report done "
