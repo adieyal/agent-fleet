@@ -4,9 +4,12 @@
   "lightmap": null,
   "warm_groups": {},
   "dynamic": [
-    "robot_eye_+1",
-    "robot_eye_-1",
-    "robot_face"
+    "acc_antenna",
+    "acc_backpack",
+    "acc_crest",
+    "acc_halo",
+    "robot_band",
+    "robot_eyes"
   ],
   "anchors": [],
   "actions": [
@@ -32,19 +35,19 @@
   "seat_height": null,
   "runtime": {
     "seat_point": [
-      0.0007,
-      0.1735,
-      -0.4119
+      0.0,
+      0.1879,
+      0.2107
     ],
     "reach_error_units": {
-      "Rest.L": 0.05,
-      "Rest.R": 0.08,
-      "Type.L": 0.02,
-      "Type.R": 0.07,
-      "Write.L": 0.03,
-      "Write.R": 0.06,
-      "Hold.L": 0.02,
-      "Hold.R": 0.05
+      "Rest.L": 0.02,
+      "Rest.R": 0.12,
+      "Type.L": 0.04,
+      "Type.R": 0.02,
+      "Write.L": 0.01,
+      "Write.R": 0.05,
+      "Hold.L": 0.05,
+      "Hold.R": 0.03
     }
   },
   "camera": null,
@@ -56,16 +59,18 @@
   },
   "files": {
     "robot.glb": {
-      "bytes": 1230956,
-      "sha256": "0071ab2f860965c2263e78e985fc5f1971cd42a359cc881d4473849e3dc6b2a4"
+      "bytes": 3009420,
+      "sha256": "27ef008677a25d55e3564ed62d7ded20dfafe0debf5d3e6e1a0f53c98906fa58"
     }
   },
   "glb_summary": {
-    "nodes": 79,
-    "meshes": 19,
+    "nodes": 71,
+    "meshes": 11,
     "images": 0,
     "extensions": [
-      "KHR_materials_clearcoat"
+      "KHR_materials_clearcoat",
+      "KHR_materials_transmission",
+      "KHR_materials_ior"
     ]
   }
 }

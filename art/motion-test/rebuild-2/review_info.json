@@ -1,0 +1,221 @@
+{
+ "standing": {
+  "root_scale_v": 0.374,
+  "root_scale_h": 0.302,
+  "stripped_curves": 309,
+  "frames": 181,
+  "yaw_fix_deg": 4.7,
+  "ref_frame": 0,
+  "pinned_drift_ms": [
+   0.0,
+   0.0
+  ],
+  "ground_shift_m": [
+   0.014,
+   0.017
+  ],
+  "hand_pose": "fist"
+ },
+ "typing": {
+  "root_scale_v": 0.374,
+  "root_scale_h": 0.302,
+  "stripped_curves": 309,
+  "frames": 495,
+  "yaw_fix_deg": 0.1,
+  "ref_frame": 279,
+  "pinned_drift_ms": [
+   0.0,
+   0.0
+  ],
+  "seat_shift_m": [
+   0.346,
+   0.352
+  ],
+  "desk_lift_m": [
+   0.038,
+   0.065
+  ],
+  "hand_pose": "fist",
+  "clipping": {
+   "desk_top": {
+    "vertex_hits": 974,
+    "deepest_m": 0.003,
+    "pieces": [
+     "forearm_L",
+     "forearm_R"
+    ]
+   },
+   "chair_seat": {
+    "vertex_hits": 0,
+    "deepest_m": 0.0,
+    "pieces": []
+   },
+   "chair_back": {
+    "vertex_hits": 0,
+    "deepest_m": 0.0,
+    "pieces": []
+   }
+  },
+  "rise_px_1x": 97.7,
+  "chest_rise_px_1x": 4.4
+ },
+ "reading": {
+  "root_scale_v": 0.374,
+  "root_scale_h": 0.302,
+  "stripped_curves": 309,
+  "frames": 130,
+  "yaw_fix_deg": 0.8,
+  "ref_frame": 55,
+  "pinned_drift_ms": [
+   0.0,
+   0.0
+  ],
+  "seat_shift_m": [
+   0.352,
+   0.352
+  ],
+  "rest_fix_m": [
+   -0.173,
+   -0.022
+  ],
+  "hand_pose": "book",
+  "clipping": {
+   "desk_top": {
+    "vertex_hits": 0,
+    "deepest_m": 0.0,
+    "pieces": []
+   },
+   "chair_seat": {
+    "vertex_hits": 0,
+    "deepest_m": 0.0,
+    "pieces": []
+   },
+   "chair_back": {
+    "vertex_hits": 0,
+    "deepest_m": 0.0,
+    "pieces": []
+   }
+  },
+  "rise_px_1x": 94.5,
+  "chest_rise_px_1x": 4.6
+ },
+ "walk": {
+  "root_scale_v": 0.374,
+  "root_scale_h": 0.302,
+  "stripped_curves": 309,
+  "frames": 36,
+  "yaw_fix_deg": 1.2,
+  "ref_frame": 0,
+  "pinned_drift_ms": [
+   0.003,
+   -0.387
+  ],
+  "ground_shift_m": [
+   0.036,
+   0.092
+  ],
+  "hand_pose": "fist"
+ },
+ "hand_open": {
+  "root_scale_v": 0.374,
+  "root_scale_h": 0.302,
+  "stripped_curves": 309,
+  "frames": 17,
+  "yaw_fix_deg": -2.2,
+  "ref_frame": 0,
+  "pinned_drift_ms": [
+   0.0,
+   0.0
+  ],
+  "ground_shift_m": [
+   0.01,
+   0.017
+  ],
+  "hand_pose": "open",
+  "frame": 9
+ },
+ "hand_thumbs_up": {
+  "root_scale_v": 0.374,
+  "root_scale_h": 0.302,
+  "stripped_curves": 309,
+  "frames": 126,
+  "yaw_fix_deg": 2.2,
+  "ref_frame": 0,
+  "pinned_drift_ms": [
+   0.0,
+   0.0
+  ],
+  "ground_shift_m": [
+   0.032,
+   0.121
+  ],
+  "hand_pose": "thumbs_up",
+  "frame": 30
+ },
+ "hand_cupped": {
+  "root_scale_v": 0.374,
+  "root_scale_h": 0.302,
+  "stripped_curves": 309,
+  "frames": 190,
+  "yaw_fix_deg": 2.8,
+  "ref_frame": 0,
+  "pinned_drift_ms": [
+   0.0,
+   0.0
+  ],
+  "ground_shift_m": [
+   0.02,
+   0.036
+  ],
+  "hand_pose": "cupped",
+  "frame": 96
+ },
+ "hand_pinch": {
+  "root_scale_v": 0.374,
+  "root_scale_h": 0.302,
+  "stripped_curves": 309,
+  "frames": 151,
+  "yaw_fix_deg": 3.1,
+  "ref_frame": 127,
+  "pinned_drift_ms": [
+   0.0,
+   0.0
+  ],
+  "seat_shift_m": [
+   0.324,
+   0.326
+  ],
+  "desk_lift_m": [
+   0.036,
+   0.058
+  ],
+  "hand_pose": "pinch",
+  "frame": 76
+ },
+ "hand_sheet": {
+  "root_scale_v": 0.374,
+  "root_scale_h": 0.302,
+  "stripped_curves": 309,
+  "frames": 121,
+  "yaw_fix_deg": -4.5,
+  "ref_frame": 0,
+  "pinned_drift_ms": [
+   -0.019,
+   -0.264
+  ],
+  "ground_shift_m": [
+   0.033,
+   0.085
+  ],
+  "hand_pose": "sheet",
+  "frame": 61
+ },
+ "l2_rise_px": 90.0,
+ "height_m": 1.081,
+ "hand_fist": {
+  "frame": 19
+ },
+ "hand_book": {
+  "frame": 66
+ }
+}

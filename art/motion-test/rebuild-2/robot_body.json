@@ -1,0 +1,208 @@
+{
+ "height_m": 1.081,
+ "joints_m": {
+  "root": [
+   0.0,
+   0.0,
+   0.3889
+  ],
+  "spine": [
+   0.0,
+   0.0,
+   0.4381
+  ],
+  "chest": [
+   0.0,
+   0.0,
+   0.6024
+  ],
+  "neck": [
+   0.0,
+   0.0,
+   0.6763
+  ],
+  "head": [
+   0.0,
+   0.0,
+   0.7119
+  ],
+  "shoulder_L": [
+   0.1643,
+   0.0,
+   0.6024
+  ],
+  "elbow_L": [
+   0.2683,
+   -0.0055,
+   0.4874
+  ],
+  "wrist_L": [
+   0.3121,
+   -0.011,
+   0.3232
+  ],
+  "hand_tip_L": [
+   0.3285,
+   -0.0274,
+   0.1863
+  ],
+  "hip_L": [
+   0.1013,
+   0.0,
+   0.367
+  ],
+  "knee_L": [
+   0.104,
+   -0.0055,
+   0.2438
+  ],
+  "ankle_L": [
+   0.1095,
+   0.0,
+   0.0987
+  ],
+  "toe_L": [
+   0.115,
+   -0.1314,
+   0.0275
+  ],
+  "shoulder_R": [
+   -0.1643,
+   0.0,
+   0.6024
+  ],
+  "elbow_R": [
+   -0.2683,
+   -0.0055,
+   0.4874
+  ],
+  "wrist_R": [
+   -0.3121,
+   -0.011,
+   0.3232
+  ],
+  "hand_tip_R": [
+   -0.3285,
+   -0.0274,
+   0.1863
+  ],
+  "hip_R": [
+   -0.1013,
+   0.0,
+   0.367
+  ],
+  "knee_R": [
+   -0.104,
+   -0.0055,
+   0.2438
+  ],
+  "ankle_R": [
+   -0.1095,
+   0.0,
+   0.0987
+  ],
+  "toe_R": [
+   -0.115,
+   -0.1314,
+   0.0275
+  ]
+ },
+ "pieces": {
+  "forearm_L": {
+   "role": "fore",
+   "side": "L"
+  },
+  "forearm_R": {
+   "role": "fore",
+   "side": "R"
+  },
+  "head": {
+   "role": "head",
+   "side": null
+  },
+  "pelvis": {
+   "role": "root",
+   "side": null
+  },
+  "shin_L": {
+   "role": "shin",
+   "side": "L"
+  },
+  "shin_R": {
+   "role": "shin",
+   "side": "R"
+  },
+  "thigh_L": {
+   "role": "thigh",
+   "side": "L"
+  },
+  "thigh_R": {
+   "role": "thigh",
+   "side": "R"
+  },
+  "torso": {
+   "role": "spine3",
+   "side": null
+  },
+  "upper_arm_L": {
+   "role": "arm",
+   "side": "L"
+  },
+  "upper_arm_R": {
+   "role": "arm",
+   "side": "R"
+  },
+  "faceplate": {
+   "role": "head",
+   "side": null
+  },
+  "eyes": {
+   "role": "head",
+   "side": null
+  },
+  "ear_L": {
+   "role": "head",
+   "side": null
+  },
+  "ear_R": {
+   "role": "head",
+   "side": null
+  },
+  "ball_neck": {
+   "role": "neck",
+   "side": null
+  },
+  "ball_shoulder_L": {
+   "role": "arm",
+   "side": "L"
+  },
+  "ball_shoulder_R": {
+   "role": "arm",
+   "side": "R"
+  },
+  "ball_elbow_L": {
+   "role": "fore",
+   "side": "L"
+  },
+  "ball_elbow_R": {
+   "role": "fore",
+   "side": "R"
+  },
+  "ball_hip_L": {
+   "role": "thigh",
+   "side": "L"
+  },
+  "ball_hip_R": {
+   "role": "thigh",
+   "side": "R"
+  },
+  "ball_knee_L": {
+   "role": "shin",
+   "side": "L"
+  },
+  "ball_knee_R": {
+   "role": "shin",
+   "side": "R"
+  }
+ }
+}

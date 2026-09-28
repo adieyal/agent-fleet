@@ -1,0 +1,18 @@
+{
+ "height_m": 1.081,
+ "bench": {
+  "seat_h": 0.549,
+  "chair_y": 0.244,
+  "desk_edge": 0.159
+ },
+ "fit": {
+  "l2_chest_rise_px": 21.0,
+  "l2_helmet_rise_px": 112.5,
+  "at_seat_h": 0.549,
+  "chest_rise_px_now": 21.0,
+  "helmet_rise_px_now": 111.7,
+  "helmet_rise_px_fitted": 111.6,
+  "kit_seat_h": 0.47,
+  "gas_lift_raise_m": 0.079
+ }
+}

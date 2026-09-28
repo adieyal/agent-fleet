@@ -1,0 +1,207 @@
+{
+ "standing": {
+  "root_scale_v": 0.374,
+  "root_scale_h": 0.302,
+  "stripped_curves": 309,
+  "frames": 181,
+  "yaw_fix_deg": 4.7,
+  "ref_frame": 0,
+  "pinned_drift_ms": [
+   0.0,
+   0.0
+  ],
+  "ground_shift_m": [
+   0.014,
+   0.017
+  ],
+  "hand_pose": "fist"
+ },
+ "typing": {
+  "root_scale_v": 0.374,
+  "root_scale_h": 0.302,
+  "stripped_curves": 309,
+  "frames": 495,
+  "yaw_fix_deg": 0.1,
+  "ref_frame": 279,
+  "pinned_drift_ms": [
+   0.0,
+   0.0
+  ],
+  "seat_shift_m": [
+   0.425,
+   0.431
+  ],
+  "desk_lift_m": [
+   0.043,
+   0.058
+  ],
+  "hand_pose": "fist",
+  "clipping": {
+   "desk_top": {
+    "vertex_hits": 11,
+    "deepest_m": 0.0,
+    "pieces": [
+     "forearm_L"
+    ]
+   },
+   "chair_seat": {
+    "vertex_hits": 0,
+    "deepest_m": 0.0,
+    "pieces": []
+   },
+   "chair_back": {
+    "vertex_hits": 0,
+    "deepest_m": 0.0,
+    "pieces": []
+   }
+  },
+  "helmet_rise_px_1x": 111.7,
+  "chest_rise_px_1x": 21.0
+ },
+ "writing-seated": {
+  "root_scale_v": 0.374,
+  "root_scale_h": 0.302,
+  "stripped_curves": 309,
+  "frames": 151,
+  "yaw_fix_deg": 3.1,
+  "ref_frame": 127,
+  "pinned_drift_ms": [
+   0.0,
+   0.0
+  ],
+  "seat_shift_m": [
+   0.399,
+   0.401
+  ],
+  "desk_lift_m": [
+   0.052,
+   0.059
+  ],
+  "hand_pose": "pinch",
+  "clipping": {
+   "desk_top": {
+    "vertex_hits": 0,
+    "deepest_m": 0.0,
+    "pieces": []
+   },
+   "chair_seat": {
+    "vertex_hits": 1222,
+    "deepest_m": 0.003,
+    "pieces": [
+     "ball_hip_L",
+     "shin_L"
+    ]
+   },
+   "chair_back": {
+    "vertex_hits": 0,
+    "deepest_m": 0.0,
+    "pieces": []
+   }
+  },
+  "helmet_rise_px_1x": 102.8,
+  "chest_rise_px_1x": 10.8
+ },
+ "reading-seated": {
+  "root_scale_v": 0.374,
+  "root_scale_h": 0.302,
+  "stripped_curves": 309,
+  "frames": 130,
+  "yaw_fix_deg": 0.8,
+  "ref_frame": 55,
+  "pinned_drift_ms": [
+   0.0,
+   0.0
+  ],
+  "seat_shift_m": [
+   0.431,
+   0.431
+  ],
+  "hand_pose": "book",
+  "clipping": {
+   "desk_top": {
+    "vertex_hits": 0,
+    "deepest_m": 0.0,
+    "pieces": []
+   },
+   "chair_seat": {
+    "vertex_hits": 0,
+    "deepest_m": 0.0,
+    "pieces": []
+   },
+   "chair_back": {
+    "vertex_hits": 0,
+    "deepest_m": 0.0,
+    "pieces": []
+   }
+  },
+  "helmet_rise_px_1x": 109.1,
+  "chest_rise_px_1x": 17.6
+ },
+ "thumbs-up-standing": {
+  "root_scale_v": 0.374,
+  "root_scale_h": 0.302,
+  "stripped_curves": 309,
+  "frames": 126,
+  "yaw_fix_deg": 2.2,
+  "ref_frame": 0,
+  "pinned_drift_ms": [
+   0.0,
+   0.0
+  ],
+  "ground_shift_m": [
+   0.032,
+   0.121
+  ],
+  "thumbs_side": "R",
+  "thumbs_blend_peak": 1.0,
+  "hand_pose": "thumbs_up",
+  "peak_frame": 86
+ },
+ "thumbs-up-sitting": {
+  "root_scale_v": 0.374,
+  "root_scale_h": 0.302,
+  "stripped_curves": 309,
+  "frames": 116,
+  "yaw_fix_deg": -1.7,
+  "ref_frame": 25,
+  "pinned_drift_ms": [
+   0.0,
+   0.0
+  ],
+  "seat_shift_m": [
+   0.351,
+   0.364
+  ],
+  "thumbs_side": "R",
+  "thumbs_blend_peak": 1.0,
+  "hand_pose": "thumbs_up",
+  "peak_frame": 94
+ },
+ "box-walk-arc": {
+  "root_scale_v": 0.374,
+  "root_scale_h": 0.302,
+  "stripped_curves": 309,
+  "frames": 38,
+  "yaw_fix_deg": 2.8,
+  "ref_frame": 0,
+  "pinned_drift_ms": [
+   0.084,
+   -0.35
+  ],
+  "ground_shift_m": [
+   0.056,
+   0.097
+  ],
+  "hand_pose": "box"
+ },
+ "l2": {
+  "helmet_rise_px": 112.5,
+  "chest_rise_px": 21.0
+ },
+ "bench": {
+  "chair_y": 0.244,
+  "desk_edge": 0.159,
+  "seat_h": 0.549
+ },
+ "height_m": 1.081
+}

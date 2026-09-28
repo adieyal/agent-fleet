@@ -30,18 +30,40 @@ def test_there_are_the_workbench_and_the_robot() -> None:
 def test_output_matches_its_manifest_and_budget(scene: str) -> None:
     m = manifest(scene)
     folder = WORLD / scene
-    on_disk = {f.name for f in folder.iterdir()} - {"manifest.json"}
+    files = [f for f in folder.iterdir() if f.is_file()]  # the robot's sprites/ are built separately (below)
+    on_disk = {f.name for f in files} - {"manifest.json"}
     assert on_disk == set(m["files"])
     for name, meta in m["files"].items():
         data = (folder / name).read_bytes()
         assert len(data) == meta["bytes"] and hashlib.sha256(data).hexdigest() == meta["sha256"], name
-    assert sum(f.stat().st_size for f in folder.iterdir()) < BUDGET
+    assert sum(f.stat().st_size for f in files) < BUDGET
     if m["lightmap"] is None:  # a character: nothing baked, animated instead
         assert m["actions"]
         return
     layers = m["lightmap"]["layers"]
     assert "base" in layers and set(layers) - {"base"} == set(m["warm_groups"])
     assert all(layer["scale"] > 0 for layer in layers.values())
+
+
+def test_the_robot_sprites_are_complete_and_small() -> None:
+    """art/scripts/build_robot_sprites.py: every page the manifest names exists and nothing else does; the sets
+    loaded up front (1x, 2x and the manifest) stay under 8 MB; every frame of every clip has a body."""
+    folder = WORLD / "robot" / "sprites"
+    m = json.loads((folder / "sprites.json").read_text())
+    named = {p[k] for r in m["resolutions"].values() for p in r["pages"] for k in ("color", "mask")}
+    named |= {p["image"] for r in m["resolutions"].values() for p in r["shadow_pages"]}
+    on_disk = {str(f.relative_to(folder)) for f in folder.rglob("*") if f.is_file()} - {"sprites.json"}
+    assert on_disk == named
+    eager = [f for r, meta in m["resolutions"].items() if meta["load"] == "eager" for f in (folder / r).iterdir()]
+    assert sum(f.stat().st_size for f in eager) + (folder / "sprites.json").stat().st_size < 8 * 1000 * 1000
+    for clip, c in m["clips"].items():
+        assert c["dirs"], clip
+        for d, dd in c["dirs"].items():
+            assert len(dd["frames"]) == c["frames"], (clip, d)
+            for f in dd["frames"]:
+                layers = f["layers"]
+                assert "body" in layers or {"body_low", "body_high"} <= set(layers), (clip, d)
+                assert all(len(entry) == len(m["resolutions"]) for entry in layers.values())
 
 
 @pytest.fixture(scope="module")

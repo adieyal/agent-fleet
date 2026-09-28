@@ -1,0 +1,106 @@
+{
+ "clean": {
+  "welded_verts": 5760,
+  "islands": 1,
+  "floaters_removed": 0,
+  "boundary_edges_after": 0
+ },
+ "pieces": {
+  "forearm_L": {
+   "fragments_deleted": 2,
+   "caps": 2,
+   "faces": 6604
+  },
+  "forearm_R": {
+   "fragments_deleted": 1,
+   "caps": 2,
+   "faces": 6559
+  },
+  "head": {
+   "fragments_deleted": 0,
+   "caps": 1,
+   "faces": 30707
+  },
+  "pelvis": {
+   "fragments_deleted": 0,
+   "caps": 3,
+   "faces": 9122
+  },
+  "shin_L": {
+   "fragments_deleted": 1,
+   "caps": 1,
+   "faces": 13172
+  },
+  "shin_R": {
+   "fragments_deleted": 0,
+   "caps": 1,
+   "faces": 13205
+  },
+  "thigh_L": {
+   "fragments_deleted": 1,
+   "caps": 2,
+   "faces": 3259
+  },
+  "thigh_R": {
+   "fragments_deleted": 0,
+   "caps": 2,
+   "faces": 3197
+  },
+  "torso": {
+   "fragments_deleted": 0,
+   "caps": 5,
+   "faces": 11400
+  },
+  "upper_arm_L": {
+   "fragments_deleted": 0,
+   "caps": 2,
+   "faces": 5661
+  },
+  "upper_arm_R": {
+   "fragments_deleted": 1,
+   "caps": 3,
+   "faces": 6081
+  }
+ },
+ "balls": {
+  "ball_neck": {
+   "radius_m": 0.1641,
+   "rim_points": 420,
+   "squash": 0.45
+  },
+  "ball_shoulder_L": {
+   "radius_m": 0.0712,
+   "rim_points": 243
+  },
+  "ball_shoulder_R": {
+   "radius_m": 0.0712,
+   "rim_points": 222
+  },
+  "ball_elbow_L": {
+   "radius_m": 0.0712,
+   "rim_points": 221
+  },
+  "ball_elbow_R": {
+   "radius_m": 0.0688,
+   "rim_points": 222
+  },
+  "ball_hip_L": {
+   "radius_m": 0.0712,
+   "rim_points": 284
+  },
+  "ball_hip_R": {
+   "radius_m": 0.0712,
+   "rim_points": 268
+  },
+  "ball_knee_L": {
+   "radius_m": 0.0712,
+   "rim_points": 248
+  },
+  "ball_knee_R": {
+   "radius_m": 0.0712,
+   "rim_points": 248
+  }
+ },
+ "scale_m_per_unit": 0.5475,
+ "height_m": 1.081
+}

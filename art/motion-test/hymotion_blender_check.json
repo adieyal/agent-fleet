@@ -1,0 +1,353 @@
+[
+  {
+    "file": "a_typing_000.fbx",
+    "ok": true,
+    "bones": 52,
+    "root_bone": "Pelvis",
+    "frames": [
+      1,
+      150
+    ],
+    "fps": 30,
+    "meshes": 16,
+    "root_travel_m": 0.015
+  },
+  {
+    "file": "a_typing_001.fbx",
+    "ok": true,
+    "bones": 52,
+    "root_bone": "Pelvis",
+    "frames": [
+      1,
+      150
+    ],
+    "fps": 30,
+    "meshes": 16,
+    "root_travel_m": 0.018
+  },
+  {
+    "file": "a_typing_002.fbx",
+    "ok": true,
+    "bones": 52,
+    "root_bone": "Pelvis",
+    "frames": [
+      1,
+      150
+    ],
+    "fps": 30,
+    "meshes": 16,
+    "root_travel_m": 0.012
+  },
+  {
+    "file": "b_stand_up_000.fbx",
+    "ok": true,
+    "bones": 52,
+    "root_bone": "Pelvis",
+    "frames": [
+      1,
+      90
+    ],
+    "fps": 30,
+    "meshes": 16,
+    "root_travel_m": 0.597
+  },
+  {
+    "file": "b_stand_up_001.fbx",
+    "ok": true,
+    "bones": 52,
+    "root_bone": "Pelvis",
+    "frames": [
+      1,
+      90
+    ],
+    "fps": 30,
+    "meshes": 16,
+    "root_travel_m": 0.653
+  },
+  {
+    "file": "b_stand_up_002.fbx",
+    "ok": true,
+    "bones": 52,
+    "root_bone": "Pelvis",
+    "frames": [
+      1,
+      90
+    ],
+    "fps": 30,
+    "meshes": 16,
+    "root_travel_m": 0.581
+  },
+  {
+    "file": "c_sit_down_000.fbx",
+    "ok": true,
+    "bones": 52,
+    "root_bone": "Pelvis",
+    "frames": [
+      1,
+      90
+    ],
+    "fps": 30,
+    "meshes": 16,
+    "root_travel_m": 0.6
+  },
+  {
+    "file": "c_sit_down_001.fbx",
+    "ok": true,
+    "bones": 52,
+    "root_bone": "Pelvis",
+    "frames": [
+      1,
+      90
+    ],
+    "fps": 30,
+    "meshes": 16,
+    "root_travel_m": 0.56
+  },
+  {
+    "file": "c_sit_down_002.fbx",
+    "ok": true,
+    "bones": 52,
+    "root_bone": "Pelvis",
+    "frames": [
+      1,
+      90
+    ],
+    "fps": 30,
+    "meshes": 16,
+    "root_travel_m": 0.598
+  },
+  {
+    "file": "d_walk_000.fbx",
+    "ok": true,
+    "bones": 52,
+    "root_bone": "Pelvis",
+    "frames": [
+      1,
+      120
+    ],
+    "fps": 30,
+    "meshes": 16,
+    "root_travel_m": 4.944
+  },
+  {
+    "file": "d_walk_001.fbx",
+    "ok": true,
+    "bones": 52,
+    "root_bone": "Pelvis",
+    "frames": [
+      1,
+      120
+    ],
+    "fps": 30,
+    "meshes": 16,
+    "root_travel_m": 3.747
+  },
+  {
+    "file": "d_walk_002.fbx",
+    "ok": true,
+    "bones": 52,
+    "root_bone": "Pelvis",
+    "frames": [
+      1,
+      120
+    ],
+    "fps": 30,
+    "meshes": 16,
+    "root_travel_m": 4.844
+  },
+  {
+    "file": "e_nod_yes_000.fbx",
+    "ok": true,
+    "bones": 52,
+    "root_bone": "Pelvis",
+    "frames": [
+      1,
+      90
+    ],
+    "fps": 30,
+    "meshes": 16,
+    "root_travel_m": 0.009
+  },
+  {
+    "file": "e_nod_yes_001.fbx",
+    "ok": true,
+    "bones": 52,
+    "root_bone": "Pelvis",
+    "frames": [
+      1,
+      90
+    ],
+    "fps": 30,
+    "meshes": 16,
+    "root_travel_m": 0.018
+  },
+  {
+    "file": "e_nod_yes_002.fbx",
+    "ok": true,
+    "bones": 52,
+    "root_bone": "Pelvis",
+    "frames": [
+      1,
+      90
+    ],
+    "fps": 30,
+    "meshes": 16,
+    "root_travel_m": 0.005
+  },
+  {
+    "file": "f_shake_no_000.fbx",
+    "ok": true,
+    "bones": 52,
+    "root_bone": "Pelvis",
+    "frames": [
+      1,
+      90
+    ],
+    "fps": 30,
+    "meshes": 16,
+    "root_travel_m": 0.012
+  },
+  {
+    "file": "f_shake_no_001.fbx",
+    "ok": true,
+    "bones": 52,
+    "root_bone": "Pelvis",
+    "frames": [
+      1,
+      90
+    ],
+    "fps": 30,
+    "meshes": 16,
+    "root_travel_m": 0.009
+  },
+  {
+    "file": "f_shake_no_002.fbx",
+    "ok": true,
+    "bones": 52,
+    "root_bone": "Pelvis",
+    "frames": [
+      1,
+      90
+    ],
+    "fps": 30,
+    "meshes": 16,
+    "root_travel_m": 0.012
+  },
+  {
+    "file": "g_slump_000.fbx",
+    "ok": true,
+    "bones": 52,
+    "root_bone": "Pelvis",
+    "frames": [
+      1,
+      120
+    ],
+    "fps": 30,
+    "meshes": 16,
+    "root_travel_m": 0.015
+  },
+  {
+    "file": "g_slump_001.fbx",
+    "ok": true,
+    "bones": 52,
+    "root_bone": "Pelvis",
+    "frames": [
+      1,
+      120
+    ],
+    "fps": 30,
+    "meshes": 16,
+    "root_travel_m": 0.057
+  },
+  {
+    "file": "g_slump_002.fbx",
+    "ok": true,
+    "bones": 52,
+    "root_bone": "Pelvis",
+    "frames": [
+      1,
+      120
+    ],
+    "fps": 30,
+    "meshes": 16,
+    "root_travel_m": 0.017
+  },
+  {
+    "file": "h_read_book_000.fbx",
+    "ok": true,
+    "bones": 52,
+    "root_bone": "Pelvis",
+    "frames": [
+      1,
+      150
+    ],
+    "fps": 30,
+    "meshes": 16,
+    "root_travel_m": 0.005
+  },
+  {
+    "file": "h_read_book_001.fbx",
+    "ok": true,
+    "bones": 52,
+    "root_bone": "Pelvis",
+    "frames": [
+      1,
+      150
+    ],
+    "fps": 30,
+    "meshes": 16,
+    "root_travel_m": 0.003
+  },
+  {
+    "file": "h_read_book_002.fbx",
+    "ok": true,
+    "bones": 52,
+    "root_bone": "Pelvis",
+    "frames": [
+      1,
+      150
+    ],
+    "fps": 30,
+    "meshes": 16,
+    "root_travel_m": 0.003
+  },
+  {
+    "file": "i_thumbs_up_000.fbx",
+    "ok": true,
+    "bones": 52,
+    "root_bone": "Pelvis",
+    "frames": [
+      1,
+      90
+    ],
+    "fps": 30,
+    "meshes": 16,
+    "root_travel_m": 0.014
+  },
+  {
+    "file": "i_thumbs_up_001.fbx",
+    "ok": true,
+    "bones": 52,
+    "root_bone": "Pelvis",
+    "frames": [
+      1,
+      90
+    ],
+    "fps": 30,
+    "meshes": 16,
+    "root_travel_m": 0.012
+  },
+  {
+    "file": "i_thumbs_up_002.fbx",
+    "ok": true,
+    "bones": 52,
+    "root_bone": "Pelvis",
+    "frames": [
+      1,
+      90
+    ],
+    "fps": 30,
+    "meshes": 16,
+    "root_travel_m": 0.019
+  }
+]

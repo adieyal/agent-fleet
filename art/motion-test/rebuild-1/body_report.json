@@ -1,0 +1,36 @@
+{
+ "clean": {
+  "welded_verts": 5760,
+  "islands": 1,
+  "floaters_removed": 0,
+  "faces_removed": 0,
+  "boundary_edges_after": 0
+ },
+ "scale_m_per_unit": 0.5318,
+ "height_m": 1.05,
+ "faces": {
+  "faceplate": 769,
+  "forearm_L": 2272,
+  "forearm_R": 2402,
+  "hand_L": 1779,
+  "hand_R": 1662,
+  "head": 9469,
+  "pelvis": 2936,
+  "shin_L": 4395,
+  "shin_R": 4391,
+  "thigh_L": 1112,
+  "thigh_R": 1099,
+  "torso": 3591,
+  "upper_arm_L": 2002,
+  "upper_arm_R": 2113,
+  "eyes": 576,
+  "ball_shoulder_L": 512,
+  "ball_shoulder_R": 512,
+  "ball_elbow_L": 512,
+  "ball_elbow_R": 512,
+  "ball_hip_L": 512,
+  "ball_hip_R": 512,
+  "ball_knee_L": 512,
+  "ball_knee_R": 512
+ }
+}

@@ -43,7 +43,7 @@ for scene in "${scenes[@]}"; do
   run export.py "$scene"
   [[ "${PREVIEW:-0}" == 1 ]] && run preview.py "$scene"
   out="$REPO/fleet/web/assets/world/$scene"
-  bytes="$(du -cb "$out"/* | tail -1 | cut -f1)"
+  bytes="$(find "$out" -maxdepth 1 -type f -printf '%s\n' | awk '{s += $1} END {print s + 0}')"  # the scene, not its sprites/
   echo "$scene: $((bytes / 1000)) kB"
   if (( bytes > MAX_BYTES )); then
     echo "build.sh: $scene output is $((bytes / 1000000)) MB, over the 15 MB budget" >&2
