@@ -43,23 +43,60 @@ def read(job: dict, directory: Path, path: Path, capsys: pytest.CaptureFixture[s
     return json.loads(capsys.readouterr().out)
 
 
-@pytest.mark.parametrize("kind", ["traversal", "symlink", "absolute"])
+@pytest.mark.parametrize("kind", ["symlink", "not markdown"])
 def test_read_refuses_recorded_path_outside_approved_roots(
     job: tuple[dict, Path], tmp_path: Path, capsys: pytest.CaptureFixture[str], kind: str,
 ) -> None:
     record, directory = job
     secret = tmp_path / "secret.md"
     secret.write_text("private content")
-    if kind == "traversal":
-        path = directory / ".." / ".." / ".." / "secret.md"
-    elif kind == "symlink":
+    if kind == "symlink":
         path = directory / "link.md"
         path.symlink_to(secret)
     else:
-        path = secret
+        path = tmp_path / "secret.txt"
+        path.write_text("private content")
     with pytest.raises(SystemExit):
         read(record, directory, path, capsys)
     assert "outside approved document roots" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("kind", ["traversal", "absolute"])
+def test_markdown_the_agent_wrote_is_readable_wherever_it_lives(
+    job: tuple[dict, Path], tmp_path: Path, capsys: pytest.CaptureFixture[str], kind: str,
+) -> None:
+    record, directory = job
+    probe = tmp_path / "review" / "probe.md"
+    probe.parent.mkdir()
+    probe.write_text("# Probe")
+    path = directory / ".." / ".." / ".." / "review" / "probe.md" if kind == "traversal" else probe
+    assert read(record, directory, path, capsys)["content"] == "# Probe"
+
+
+def test_outbox_symlink_reads_only_inside_the_projects_library_root(
+    job: tuple[dict, Path], tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The agent did not write an outbox symlink, so it resolves only into a root: the project's library is one."""
+    record, directory = job
+    library = tmp_path / "repo"
+    (library / "docs").mkdir(parents=True)
+    (library / "docs" / "plan.md").write_text("# Plan")
+    (directory / "outbox").mkdir()
+    (directory / "outbox" / "plan.md").symlink_to(library / "docs" / "plan.md")
+    (directory / "job.json").write_text(json.dumps(record))
+    with pytest.raises(SystemExit):
+        fleetd.command_read(argparse.Namespace(job="job1", document="outbox-plan.md"))
+    assert "outside approved document roots" in capsys.readouterr().out
+
+    client_config = tmp_path / "client.json"
+    client_config.write_text(json.dumps({"libraries": {"project": str(library), "other": str(tmp_path)}}))
+    monkeypatch.setenv("FLEET_CONFIG", str(client_config))
+    fleetd.command_read(argparse.Namespace(job="job1", document="outbox-plan.md"))
+    assert json.loads(capsys.readouterr().out)["content"] == "# Plan"
+    record["project"] = "unrelated"
+    (directory / "job.json").write_text(json.dumps(record))
+    with pytest.raises(SystemExit):
+        fleetd.command_read(argparse.Namespace(job="job1", document="outbox-plan.md"))
 
 
 def test_read_allows_job_directory_and_explicit_root(
@@ -79,14 +116,16 @@ def test_read_allows_job_directory_and_explicit_root(
     assert read(record, directory, artifact, capsys)["content"] == "# Copied artifact"
 
 
+@pytest.mark.parametrize("where", ["cwd", "outside the cwd"])
 def test_run_step_copies_written_document_for_read(
     job: tuple[dict, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
+    capsys: pytest.CaptureFixture[str], where: str,
 ) -> None:
     record, directory = job
     cwd = Path(record["cwd"])
     cwd.mkdir()
-    source = cwd / "notes.md"
+    source = cwd / "notes.md" if where == "cwd" else tmp_path / "ralph" / "v2-review" / "notes.md"
+    source.parent.mkdir(parents=True, exist_ok=True)
     source.write_text("# Agent notes")
     event = {"type": "item.completed", "item": {"type": "file_change", "changes":
              [{"path": str(source), "kind": "add"}]}}
@@ -101,23 +140,22 @@ def test_run_step_copies_written_document_for_read(
     fleetd.command_read(argparse.Namespace(job="job1", document="file-0"))
     assert json.loads(capsys.readouterr().out)["content"] == "# Agent notes"
     assert list((directory / "artifacts").glob("*"))
+    source.unlink()   # the copy outlives the worktree
+    fleetd.command_read(argparse.Namespace(job="job1", document="file-0"))
+    assert json.loads(capsys.readouterr().out)["content"] == "# Agent notes"
 
 
-@pytest.mark.parametrize("kind", ["traversal", "symlink"])
-def test_run_step_does_not_copy_unsafe_recorded_path(
+def test_run_step_does_not_copy_a_recorded_symlink(
     job: tuple[dict, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str], kind: str,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     record, directory = job
     cwd = Path(record["cwd"])
     cwd.mkdir()
     secret = tmp_path / "secret.md"
     secret.write_text("private content")
-    if kind == "traversal":
-        path = cwd / ".." / "secret.md"
-    else:
-        path = cwd / "link.md"
-        path.symlink_to(secret)
+    path = cwd / "link.md"
+    path.symlink_to(secret)
     record["written_documents"] = [{"path": str(path), "step": 0}]
     (directory / "job.json").write_text(json.dumps(record))
     monkeypatch.setattr(fleetd, "agent_command", lambda *_args: [sys.executable, "-c", "pass"])

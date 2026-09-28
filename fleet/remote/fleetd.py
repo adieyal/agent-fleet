@@ -485,9 +485,12 @@ def record_written_documents(job_id: str, cwd: str, paths: List[str], step_index
     return recorded
 
 
-def safe_document_source(source: Path, cwd: str) -> bool:
-    """Only a regular file inside the job's working directory may be copied out, never a symlink."""
-    return not source.is_symlink() and source.is_file() and source.resolve().is_relative_to(Path(cwd).resolve())
+def safe_document_source(source: Path) -> bool:
+    """A document the agent wrote may be copied or read wherever it lives, if it is a regular Markdown file.
+
+    Agents keep working notes outside their cwd too. A symlink is never followed.
+    """
+    return is_markdown(source.name) and not source.is_symlink() and source.is_file()
 
 
 def copy_document(job_id: str, index: int, source: Path) -> Path:
@@ -500,20 +503,20 @@ def copy_document(job_id: str, index: int, source: Path) -> Path:
     return target
 
 
-def copy_written_documents(job_id: str, cwd: str) -> None:
+def copy_written_documents(job_id: str) -> None:
     """Keep agent-written Markdown under the job's approved document root."""
     with locked_job(job_id) as live_job:
         for index, entry in enumerate(live_job.get("written_documents", [])):
             source = Path(entry["path"])
-            if safe_document_source(source, cwd):
+            if safe_document_source(source):
                 entry["artifact"] = str(copy_document(job_id, index, source))
 
 
 class DocumentMirror:
     """Copies recorded Markdown into the job's artifacts whenever the agent changes it, so it reads live mid-step."""
 
-    def __init__(self, job_id: str, cwd: str) -> None:
-        self.job_id, self.cwd = job_id, cwd
+    def __init__(self, job_id: str) -> None:
+        self.job_id = job_id
         self.watched: Dict[int, Path] = {}
         self.copied: Dict[int, tuple] = {}
         self.announced: set = set()
@@ -531,7 +534,7 @@ class DocumentMirror:
             except OSError:
                 continue
             signature = (stat.st_mtime_ns, stat.st_size)
-            if signature == self.copied.get(index) or not safe_document_source(source, self.cwd):
+            if signature == self.copied.get(index) or not safe_document_source(source):
                 continue
             try:
                 target = copy_document(self.job_id, index, source)
@@ -573,7 +576,7 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
     outcome: JsonObject = {"ok": False, "summary": "", "text": "", "usage": None}
     result_recorded = False
     last_text = ""
-    mirror = DocumentMirror(job_id, job["cwd"])
+    mirror = DocumentMirror(job_id)
     raw_path = JOBS_DIRECTORY / job_id / f"raw-{step['index']}.jsonl"
     with open(raw_path, "a") as raw_file:
         process = subprocess.Popen(command, cwd=job["cwd"], env=environment, stdin=subprocess.DEVNULL,
@@ -620,7 +623,7 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
         outcome["reported_status"] = reported
         if reported != "done":
             outcome["ok"] = False
-    copy_written_documents(job_id, job["cwd"])
+    copy_written_documents(job_id)
     return outcome
 
 
@@ -783,14 +786,31 @@ def job_documents(job: JsonObject) -> List[JsonObject]:
     return documents
 
 
+def document_roots(job: JsonObject) -> List[Path]:
+    """The job directory, the configured document_roots, and the job's project library root.
+
+    A library root is configured with `fleet library add` on the machine running fleet; when that
+    is this machine, its config is here too.
+    """
+    roots = [JOBS_DIRECTORY / job["id"], *(Path(root).expanduser() for root in load_config().get("document_roots", []))]
+    client_config = Path(os.environ.get("FLEET_CONFIG") or Path.home() / ".config" / "fleet" / "config.json")
+    with contextlib.suppress(OSError, ValueError, AttributeError):
+        library = json.loads(client_config.read_text()).get("libraries", {}).get(job.get("project"))
+        if library:
+            roots.append(Path(library).expanduser())
+    return roots
+
+
 def command_read(arguments: argparse.Namespace) -> None:
     job = read_job(arguments.job)
     document = next((item for item in job_documents(job) if item["id"] == arguments.document), None)
     if document is None:
         fail(f"job {arguments.job} has no document {arguments.document}")
-    path = Path(document.pop("read_path", document["path"])).resolve()
-    roots = [JOBS_DIRECTORY / job["id"], *(Path(root).expanduser() for root in load_config().get("document_roots", []))]
-    if not any(path.is_relative_to(root.resolve()) for root in roots):
+    recorded = Path(document.pop("read_path", document["path"]))
+    path = recorded.resolve()
+    # A file the agent itself wrote is readable wherever it lives; anything else only under a root.
+    written = document["kind"] == "file" and safe_document_source(recorded)
+    if not written and not any(path.is_relative_to(root.resolve()) for root in document_roots(job)):
         fail(f"document path outside approved document roots: {document['path']}")
     with open(path, "rb") as handle:
         raw = handle.read(DOCUMENT_READ_LIMIT + 1)

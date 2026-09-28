@@ -161,7 +161,7 @@ def test_a_symlink_the_agent_writes_through_is_never_copied_live(tmp_path: Path,
     directory = home / "jobs" / "job1"
     directory.mkdir(parents=True)
     (directory / "job.json").write_text(json.dumps({"id": "job1", "steps": []}))
-    mirror = fleetd.DocumentMirror("job1", str(work))
+    mirror = fleetd.DocumentMirror("job1")
     mirror.watch(fleetd.record_written_documents("job1", str(work), ["link.md"], 0))
     mirror.sync()
     assert not (directory / "artifacts").exists()
