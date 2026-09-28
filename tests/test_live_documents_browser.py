@@ -107,6 +107,7 @@ def test_an_open_reader_refreshes_in_place_when_the_document_changes(
 
     page.evaluate("doc => fleetDeck.apply(doc)", with_documents(own_url, [notes(fixture_data, 5, 900)]))
     page.locator("#tags .tag", has_text="a1c3e9").dispatch_event("click")
+    page.locator('#panelTabs [data-tab="documents"]').click()   # documents live on their own tab
     page.locator('#panelBody [data-doc="file-0"]').click()
     body = page.locator("#rdBody")
     expect(body.locator("#doc-tail")).to_have_text("End of draft 1")
@@ -225,6 +226,7 @@ def test_a_live_refresh_keeps_highlighting_and_diagrams_without_redrawing(
         status=200, content_type="application/json", body=json.dumps(rich_document(served["version"]))))
     page.evaluate("doc => fleetDeck.apply(doc)", with_documents(own_url, [notes(fixture_data, 5, 900)]))
     page.locator("#tags .tag", has_text="a1c3e9").dispatch_event("click")
+    page.locator('#panelTabs [data-tab="documents"]').click()   # documents live on their own tab
     page.locator('#panelBody [data-doc="file-0"]').click()
     body = page.locator("#rdBody")
     expect(body.locator("code.hljs .hljs-keyword").first).to_have_text("def")
