@@ -8,6 +8,7 @@ import { hideDocTip } from './camera.js';
 import { fallbackCopy } from './panel.js';
 import { libraryDocs } from './library.js';
 import { demoDoc } from './demo.js';
+import { enrichProse, linkImages, rethemeDiagrams } from './rich.js';
 
 // ------------------------------------------------------------------ reader
 export const reader = document.getElementById('reader');
@@ -23,6 +24,7 @@ const THEME_ICON = {
 
 function setReaderTheme(theme) {
   rdSheet.dataset.theme = theme;
+  rethemeDiagrams(rdBody, theme);
   const b = document.getElementById('rdTheme');
   b.innerHTML = THEME_ICON[theme];
   b.setAttribute('aria-label', theme === 'dark' ? 'Switch to the paper theme' : 'Switch to the dark theme');
@@ -182,7 +184,11 @@ function renderReaderBody() {
       ${toc.map(x => `<a href="#doc-${esc(x.id)}" class="l${x.level - top + 1}">${esc(x.text)}</a>`).join('')}</nav></details>` : ''}
     <article class="prose"></article></div>`;
   const prose = rdBody.querySelector('.prose');
-  prose.innerHTML = d.html;   // rendered server-side with raw HTML escaped
+  const html = document.createElement('template');
+  html.innerHTML = d.html;   // rendered server-side with raw HTML escaped; inert until its images are pointed home
+  linkImages(html.content, assetUrl);
+  prose.replaceChildren(html.content);
+  enrichProse(prose, rdSheet.dataset.theme);
   if (d.truncated) prose.insertAdjacentHTML('beforeend', '<p class="rd-note">This document was truncated for the reader. Download the Markdown for the full text.</p>');
   tidyProse(prose);
   syncTocMode();
@@ -194,6 +200,12 @@ function renderReaderBody() {
   rd.tocCurrent = null;
   rdBody.scrollTop = Number(store('sessionStorage','fleet.reader.scroll.' + rd.key)) || 0;
   onReaderScroll();
+}
+// images resolve beside the document, under the same roots the document was read from
+function assetUrl(path) {
+  if (rd.source === 'library') return '/api/library/asset?' + new URLSearchParams({ project: rd.doc.project, id: rd.doc.id, path });
+  if (rd.source === 'job') return '/api/doc/asset?' + new URLSearchParams({ host: rd.host, job: rd.job.id, id: rd.doc.id, path });
+  return null;
 }
 // heading ids are prefixed so a heading called "panel" or "legend" can't collide with the page's own ids
 function tidyProse(prose) {

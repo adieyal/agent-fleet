@@ -15,6 +15,7 @@ State lives in ~/.fleet:
 from __future__ import annotations
 
 import argparse
+import base64
 import collections
 import contextlib
 import datetime
@@ -182,6 +183,10 @@ MARKDOWN_SUFFIXES = (".md", ".markdown", ".mdx")
 # A step's final reply counts as a document only when it is a real write-up, not "OK".
 REPORT_MINIMUM_BYTES = 400
 DOCUMENT_READ_LIMIT = 2 * 1024 * 1024
+# Images a document links to, served by `fleetd read-asset`; anything else is refused.
+ASSET_TYPES = {".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+               ".gif": "image/gif", ".webp": "image/webp"}
+ASSET_READ_LIMIT = 5 * 1024 * 1024
 
 
 def is_markdown(path: str) -> bool:
@@ -722,14 +727,23 @@ def job_documents(job: JsonObject) -> List[JsonObject]:
     return documents
 
 
+def approved(job: JsonObject, path: Path) -> bool:
+    roots = [JOBS_DIRECTORY / job["id"], *(Path(root).expanduser() for root in load_config().get("document_roots", []))]
+    return any(path.is_relative_to(root.resolve()) for root in roots)
+
+
+def listed_document(job: JsonObject, document_id: str) -> JsonObject:
+    document = next((item for item in job_documents(job) if item["id"] == document_id), None)
+    if document is None:
+        fail(f"job {job['id']} has no document {document_id}")
+    return document
+
+
 def command_read(arguments: argparse.Namespace) -> None:
     job = read_job(arguments.job)
-    document = next((item for item in job_documents(job) if item["id"] == arguments.document), None)
-    if document is None:
-        fail(f"job {arguments.job} has no document {arguments.document}")
+    document = listed_document(job, arguments.document)
     path = Path(document.pop("read_path", document["path"])).resolve()
-    roots = [JOBS_DIRECTORY / job["id"], *(Path(root).expanduser() for root in load_config().get("document_roots", []))]
-    if not any(path.is_relative_to(root.resolve()) for root in roots):
+    if not approved(job, path):
         fail(f"document path outside approved document roots: {document['path']}")
     with open(path, "rb") as handle:
         raw = handle.read(DOCUMENT_READ_LIMIT + 1)
@@ -738,6 +752,30 @@ def command_read(arguments: argparse.Namespace) -> None:
     document.update({"job": job["id"], "project": job["project"], "agent": job["agent"],
                      "host": os.uname().nodename, "job_description": job["description"]})
     emit(document)
+
+
+def command_read_asset(arguments: argparse.Namespace) -> None:
+    """An image a job document links to, resolved beside the document where the agent wrote it,
+    under the same approved roots as the document itself."""
+    job = read_job(arguments.job)
+    document = listed_document(job, arguments.document)
+    requested = Path(arguments.path)
+    if "\x00" in arguments.path or requested.is_absolute():
+        fail(f"asset path outside approved document roots: {arguments.path}")
+    path = (Path(document["path"]).parent / requested).resolve()
+    if not approved(job, path):
+        fail(f"asset path outside approved document roots: {arguments.path}")
+    content_type = ASSET_TYPES.get(path.suffix.lower())
+    if content_type is None:
+        fail(f"asset is not a supported image type: {arguments.path}")
+    if not path.is_file():
+        fail(f"job {job['id']} has no asset {arguments.path}")
+    with open(path, "rb") as handle:
+        raw = handle.read(ASSET_READ_LIMIT + 1)
+    if len(raw) > ASSET_READ_LIMIT:
+        fail(f"asset larger than {ASSET_READ_LIMIT} bytes: {arguments.path}")
+    emit({"path": arguments.path, "type": content_type, "size": len(raw),
+          "content": base64.b64encode(raw).decode("ascii")})
 
 
 def all_jobs() -> List[JsonObject]:
@@ -1813,6 +1851,12 @@ def main() -> None:
     read.add_argument("job")
     read.add_argument("document")
     read.set_defaults(handler=command_read)
+
+    read_asset = commands.add_parser("read-asset")
+    read_asset.add_argument("job")
+    read_asset.add_argument("document")
+    read_asset.add_argument("path")
+    read_asset.set_defaults(handler=command_read_asset)
 
     result = commands.add_parser("result")
     result.add_argument("job")

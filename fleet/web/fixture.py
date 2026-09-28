@@ -118,6 +118,9 @@ class FixtureState(LiveWorkspace):
                 "job_description": job["description"], "host": host_name,
                 **render_markdown(STATUS_LINE.sub("", markdown).strip())}
 
+    def read_asset(self, host_name: str, job_id: str, document_id: str, asset_path: str) -> tuple[str, bytes]:
+        raise FleetError(f"job {job_id} has no asset {asset_path}")  # recorded fleets carry no images
+
 
 class FixtureLibrary:
     """Same surface as ProjectLibrary, over the fixture's `library` section."""
@@ -137,6 +140,9 @@ class FixtureLibrary:
         return {"project": project, "id": document_id, "name": Path(document_id).name, "kind": "file",
                 "size": len(doc["markdown"].encode()), "mtime": doc["mtime"], "truncated": False,
                 **render_markdown(doc["markdown"])}
+
+    def read_asset(self, project: str, document_id: str, asset_path: str) -> tuple[str, bytes] | None:
+        return None  # the fixture's library is Markdown only
 
 
 def title(doc: dict[str, Any]) -> str:
