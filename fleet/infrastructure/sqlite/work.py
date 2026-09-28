@@ -71,6 +71,4 @@ class WorkRepository(Repository):
         with self.transaction() as repository:
             unit = repository.unit
             unit.connection.execute('DELETE FROM work_summary WHERE id = ?', (identity,))
-            unit.connection.execute('UPDATE state_history SET "from" = ?, "to" = ? WHERE subject = ?',
-                                    ('repository cutover', 'repository cutover', 'work:summary:' + identity))
             unit.record_change('work:summary:' + identity, 'store-owned', 'repository-owned', actor)

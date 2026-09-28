@@ -82,12 +82,27 @@ def test_summary_cutover_and_new_writes_have_no_stored_body(tmp_path):
                   authoring_role='user', updated=store.clock().isoformat())
     with store.unit_of_work() as unit:
         unit.connection.execute('INSERT INTO work_summary VALUES (?, ?)', (item.id, json.dumps(legacy)))
-        unit.record_change('work:summary:' + item.id, '', json.dumps(legacy), 'author')
+        unit.record_change('work:summary:' + item.id, '', 'earlier narrative', 'author')
+        unit.record_change('work:summary:' + item.id, 'earlier narrative', json.dumps(legacy), 'author')
+    with closing(connect(store.path)) as db:
+        db.text_factory = bytes
+        before = [tuple(row) for row in db.execute('SELECT * FROM state_history ORDER BY sequence')]
     _, records, repo = setup_records(tmp_path)
     assert work.summary(item.id).purpose == 'unique narrative'
     with closing(connect(store.path)) as db:
+        db.text_factory = bytes
+        after = [tuple(row) for row in db.execute(
+            'SELECT * FROM state_history WHERE sequence <= ? ORDER BY sequence', (before[-1][0],))]
+    assert after == before
+    with closing(connect(store.path)) as db:
         assert db.execute('SELECT count(*) FROM work_summary').fetchone()[0] == 0
-        assert 'unique narrative' not in '\n'.join(db.iterdump())
+        current_dump = '\n'.join(line for line in db.iterdump()
+                                 if not line.startswith('INSERT INTO "state_history"'))
+        assert 'unique narrative' not in current_dump
+    document, = records.intents()
+    assert document['path'] == 'summaries/' + item.id + '.json'
+    assert document['revision'] == git(repo, 'rev-parse', 'HEAD')
+    assert 'unique narrative' in (repo / document['path']).read_text()
     summary = work.set_summary(item.id, purpose='new narrative', done='Done', doing='Doing',
                                next='Next', authoring_role='user', actor='author')
     assert open_work(store).summary(item.id) == summary
