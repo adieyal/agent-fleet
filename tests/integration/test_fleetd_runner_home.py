@@ -57,6 +57,8 @@ def test_side_by_side_socket_and_runner_environment(worker, tmp_path):
 
 
 def test_missing_runner_job_records_failure(worker, tmp_path, monkeypatch):
+    log_path = worker.JOBS_DIRECTORY / "job" / "runner.log"
+    log_path.write_text("previous launch output\n")
     monkeypatch.setattr(worker, "TMUX_COMMAND", ["tmux", "-L", "missing-job", "-f", "/dev/null"])
     wrapper = tmp_path / "wrong_home.py"
     wrapper.write_text("import os, runpy\n"
@@ -69,5 +71,6 @@ def test_missing_runner_job_records_failure(worker, tmp_path, monkeypatch):
         assert worker.derive_status(job) == "failed"
         assert job["steps"][0]["result"] == "no such job: job"
         assert worker.read_events("job", 1)[0]["summary"] == "no such job: job"
+        assert log_path.read_text().startswith("previous launch output\n")
     finally:
         tmux(worker.TMUX_COMMAND, "kill-session", "-t", "fleet-job")

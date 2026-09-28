@@ -616,7 +616,7 @@ def launch_runner(job_id: str) -> None:
     runner_command = shlex.join(["env", *environment, sys.executable, os.path.abspath(__file__), "_run", job_id])
     log_path = JOBS_DIRECTORY / job_id / "runner.log"
     subprocess.run([*TMUX_COMMAND, "new-session", "-d", "-s", session, "-c", job["cwd"],
-                    f"{runner_command} 2>&1 | tee {shlex.quote(str(log_path))}"], check=True,
+                    f"{runner_command} 2>&1 | tee -a {shlex.quote(str(log_path))}"], check=True,
                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for _ in range(50):
         job = read_job(job_id)
