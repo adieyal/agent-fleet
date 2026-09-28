@@ -31,6 +31,7 @@ import signal
 import subprocess
 import sys
 import time
+import urllib.parse
 from pathlib import Path
 from typing import Any, Deque, Dict, Iterator, List, Optional, Tuple
 
@@ -1333,10 +1334,16 @@ def input_hook_settings(project: str, job_id: Optional[str] = None,
                       for event in ("PermissionRequest", "PostToolUse")}}
 
 
+QUESTION_TOOL = "AskUserQuestion"
+
+
 def record_input_hook(record: JsonObject, *, project: str, job_id: Optional[str] = None,
                       step_index: Optional[int] = None) -> None:
+    """Keep a permission request or a question to the user until PostToolUse shows it was answered."""
     event = record["hook_event_name"]
-    if event not in ("PermissionRequest", "PostToolUse"):
+    if event not in ("PermissionRequest", "PreToolUse", "PostToolUse"):
+        return
+    if event == "PreToolUse" and record.get("tool_name") != QUESTION_TOOL:
         return
     session_id = record["session_id"]
     owner = [job_id, session_id, step_index]
@@ -1351,17 +1358,18 @@ def record_input_hook(record: JsonObject, *, project: str, job_id: Optional[str]
                       if item["kind"] == "input_requested"
                       and item["raw_request"]["tool_name"] == record["tool_name"]
                       and item["raw_request"]["tool_input"] == record["tool_input"]), None)
-        if event == "PermissionRequest":
+        if event in ("PermissionRequest", "PreToolUse"):
             if match is not None:
                 return
             records.append({"type": "input_observation", "schema_version": 1,
                             "host": os.uname().nodename, "runtime": "claude",
                             "owner_type": "job" if job_id is not None else "session",
                             "job_id": job_id, "session_id": session_id, "step_index": step_index,
-                            "project": project, "kind": "input_requested", "reason": "permission",
+                            "project": project, "kind": "input_requested",
+                            "reason": "permission" if event == "PermissionRequest" else "question",
                             "source_event": event, "source_event_id": secrets.token_hex(16),
                             "observed_at": now(), "context_reference": str(path),
-                            "raw_request": record})
+                            "cwd": record.get("cwd"), "raw_request": record})
         elif match is not None:
             match.update(kind="input_cleared", source_event=event, observed_at=now(), raw_resume=record)
         else:
@@ -1389,14 +1397,171 @@ def input_request(raw: JsonObject) -> JsonObject:
     if detail is None:
         detail = json.dumps(tool_input) if tool_input else ""
     description = tool_input.get("description")
-    return {"tool": raw.get("tool_name") or "a tool",
-            "description": description if isinstance(description, str) else "",
-            "detail": detail[:2000]}
+    request = {"tool": raw.get("tool_name") or "a tool",
+               "description": description if isinstance(description, str) else "",
+               "detail": detail[:2000], "rules": permission_rules(raw.get("tool_name"), tool_input)}
+    if raw.get("tool_name") == QUESTION_TOOL:
+        request["questions"] = user_questions(tool_input)
+        request["detail"] = "\n".join(question["question"] for question in request["questions"])[:2000]
+        request["rules"] = []
+    return request
+
+
+def user_questions(tool_input: JsonObject) -> List[JsonObject]:
+    """AskUserQuestion's questions: header, question, options (label, description) and multi-select."""
+    text = lambda value: value if isinstance(value, str) else ""
+    questions = tool_input.get("questions")
+    return [{"header": text(question.get("header")), "question": text(question.get("question")),
+             "multi_select": question.get("multiSelect") is True,
+             "options": [{"label": text(option.get("label")), "description": text(option.get("description"))}
+                         for option in question.get("options") or [] if isinstance(option, dict)]}
+            for question in questions if isinstance(question, dict)] if isinstance(questions, list) else []
+
+
+SUBCOMMAND_PROGRAMS = {"git", "npm", "pnpm", "yarn", "npx", "uv", "cargo", "docker", "kubectl", "gh", "go",
+                       "pip", "poetry", "systemctl"}
+FILE_TOOLS = ("Read", "Edit", "Write", "MultiEdit", "NotebookEdit")
+RULE = re.compile(r"[A-Za-z_][\w-]*(\(.+\))?")
+
+
+def permission_rules(tool: Optional[str], tool_input: JsonObject) -> List[str]:
+    """Claude permission rules that would have allowed this request; empty when none can be named."""
+    if not tool:
+        return []
+    if tool == "Bash":
+        command = tool_input.get("command")
+        return bash_rules(command) if isinstance(command, str) else []
+    path = tool_input.get("file_path") or tool_input.get("notebook_path")
+    if tool in FILE_TOOLS:
+        if not isinstance(path, str) or not path:
+            return []
+        # `//` anchors an absolute path; a single `/` means relative to a settings file.
+        return [f"{tool}(/{path})" if path.startswith("/") else f"{tool}({path})"]
+    if tool == "WebFetch":
+        host = urllib.parse.urlsplit(tool_input.get("url") or "").hostname
+        return [f"WebFetch(domain:{host})"] if host else []
+    return [tool] if RULE.fullmatch(tool) else []
+
+
+def bash_rules(command: str) -> List[str]:
+    """One `Bash(prefix:*)` per simple command, as Claude checks each part of a compound command."""
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    try:
+        tokens = list(lexer)
+    except ValueError:
+        return []
+    rules: List[str] = []
+    segment: List[str] = []
+    redirect = False
+    for token in tokens + [";"]:
+        if redirect:
+            redirect = False
+            continue
+        if token and set(token) <= set("<>&") and set(token) & set("<>"):
+            redirect = True   # the next word is the redirect's target, not a command
+            continue
+        if token and set(token) <= set("&|;()"):
+            words = segment
+            while words and re.fullmatch(r"[A-Za-z_]\w*=.*", words[0]):
+                words = words[1:]   # leading VAR=value assignments
+            segment = []
+            if not words:
+                continue
+            prefix = words[:2] if words[0] in SUBCOMMAND_PROGRAMS and len(words) > 1 and not words[1].startswith("-") \
+                else words[:1]
+            rule = f"Bash({' '.join(prefix)}:*)"
+            if rule not in rules:
+                rules.append(rule)
+        else:
+            segment.append(token)
+    return rules
 
 
 def command_input_hook(arguments: argparse.Namespace) -> None:
-    record_input_hook(json.load(sys.stdin), project=arguments.project,
-                      job_id=arguments.job, step_index=arguments.step_index)
+    record = json.load(sys.stdin)
+    if arguments.session_hook:
+        # Installed for every session on the host; a job's own --settings hook records its events.
+        if os.environ.get("FLEET_JOB_ID") or not isinstance(record.get("cwd"), str):
+            return
+        project = repository_name(record["cwd"])
+    elif arguments.project is None:
+        fail("input-hook needs --project, or --session-hook")
+    else:
+        project = arguments.project
+    record_input_hook(record, project=project, job_id=arguments.job, step_index=arguments.step_index)
+
+
+SESSION_HOOK_MARK = "# fleet-session-hook"   # identifies the entries `session-hooks uninstall` removes
+
+
+def session_hook_settings() -> JsonObject:
+    """The hook groups every interactive Claude session on this host runs.
+
+    The command does nothing, successfully and silently, when this fleetd or its FLEET_HOME is gone,
+    so a removed install can never block or clutter a session.
+    """
+    fleetd, home = shlex.quote(str(Path(__file__).resolve())), shlex.quote(str(FLEET_HOME))
+    command = (f"test -d {home} && test -f {fleetd} && FLEET_HOME={home} {shlex.quote(sys.executable)} {fleetd} "
+               f"input-hook --session-hook >/dev/null 2>&1; exit 0 {SESSION_HOOK_MARK}")
+    group = {"hooks": [{"type": "command", "command": command}]}
+    return {"PermissionRequest": [group], "PreToolUse": [{"matcher": QUESTION_TOOL, **group}],
+            "PostToolUse": [group]}
+
+
+def without_session_hooks(hooks: JsonObject) -> JsonObject:
+    """The hooks with fleet's marked commands taken out, and any group or event they leave empty."""
+    result = {}
+    for event, groups in hooks.items():
+        if not isinstance(groups, list):
+            result[event] = groups
+            continue
+        kept = []
+        for group in groups:
+            commands = group.get("hooks") if isinstance(group, dict) else None
+            if not isinstance(commands, list):
+                kept.append(group)
+                continue
+            remaining = [hook for hook in commands if not (isinstance(hook, dict)
+                         and SESSION_HOOK_MARK in str(hook.get("command", "")))]
+            if remaining or not commands:
+                kept.append({**group, "hooks": remaining} if len(remaining) != len(commands) else group)
+        if kept or not groups:
+            result[event] = kept
+    return result
+
+
+def command_session_hooks(arguments: argparse.Namespace) -> None:
+    """Merge fleet's hooks into (or take them out of) Claude's user settings, keeping everything else."""
+    path = Path(arguments.settings or Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+                / "settings.json").expanduser()
+    try:
+        settings = json.loads(path.read_text()) if path.exists() else {}
+    except ValueError as error:
+        fail(f"{path} is not valid JSON, left unchanged: {error}")
+    if not isinstance(settings, dict) or not isinstance(settings.get("hooks", {}), dict):
+        fail(f"{path} does not hold a settings object with a hooks object, left unchanged")
+    hooks = without_session_hooks(settings.get("hooks", {}))
+    if arguments.action == "install":
+        for event, groups in session_hook_settings().items():
+            hooks[event] = hooks.get(event, []) + groups
+    if hooks:
+        settings["hooks"] = hooks
+    else:
+        settings.pop("hooks", None)
+    path = path.resolve()   # a settings file kept in dotfiles stays a symlink to it
+    path.parent.mkdir(parents=True, exist_ok=True)
+    mode = path.stat().st_mode & 0o7777 if path.exists() else 0o600
+    temporary = path.with_name(f".{path.name}.fleet-{os.getpid()}.tmp")
+    with open(os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode), "w") as handle:
+        handle.write(json.dumps(settings, indent=2) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.chmod(temporary, mode)
+    os.replace(temporary, path)
+    emit({"host": os.uname().nodename, "settings": str(path), "action": arguments.action,
+          "events": sorted(event for event, groups in settings.get("hooks", {}).items()
+                           if any(SESSION_HOOK_MARK in json.dumps(group) for group in groups))})
 
 
 def make_step(index: int, prompt: str, title: Optional[str]) -> JsonObject:
@@ -1531,6 +1696,47 @@ def command_deliver(arguments: argparse.Namespace) -> None:
             emit({"schema_version": 1, "key": arguments.key, "status": "busy"})
             return
     emit({"schema_version": 1, "key": arguments.key, "status": "applied"})
+
+
+def command_grant(arguments: argparse.Namespace) -> None:
+    """Add Claude permission rules to a job and queue a step that continues the refused one.
+
+    Idempotent by key: a repeated grant reports the first result and queues nothing more.
+    """
+    if arguments.schema_version != 1:
+        fail("unsupported grant schema version")
+    rules = json.loads(sys.stdin.read() or "null")
+    if (not arguments.key.strip() or not isinstance(rules, list) or not rules
+            or not all(isinstance(rule, str) and RULE.fullmatch(rule) for rule in rules)):
+        fail("grant key and a JSON list of permission rules are required")
+    with locked_job(arguments.job) as job:
+        grant = next((grant for grant in job.get("permission_grants", []) if grant["key"] == arguments.key), None)
+        if grant is None:
+            if job["agent"] != "claude":
+                fail("permission rules apply to claude jobs only")
+            if not 0 <= arguments.step < len(job["steps"]):
+                fail(f"job has no step {arguments.step}")
+            allowed = job.setdefault("allowed_tools", [])   # jobs created before --allowed-tools lack it
+            added = [rule for rule in dict.fromkeys(rules) if rule not in allowed]
+            allowed += added
+            step = make_step(len(job["steps"]),
+                             f"Continue step {arguments.step + 1}: the commands you were refused are now allowed "
+                             f"({', '.join(rules)}). Retry what was refused, then finish that step's work.",
+                             f"Continue step {arguments.step + 1}")
+            job["steps"].append(step)
+            job["cancelled"] = False
+            grant = {"key": arguments.key, "step": arguments.step, "rules": rules, "added": added,
+                     "continuation": step["index"], "at": now()}
+            job.setdefault("permission_grants", []).append(grant)
+            fresh = True
+        else:
+            fresh = False
+    if fresh:
+        append_event(arguments.job, {"kind": "job", "status": "queued",
+                                     "summary": f"allowed {', '.join(rules)}; step {arguments.step + 1} continues"})
+        launch_runner(arguments.job)
+    emit({"schema_version": 1, "key": arguments.key, "status": "applied", "added": grant["added"],
+          "continuation": grant["continuation"]})
 
 
 def command_add(arguments: argparse.Namespace) -> None:
@@ -1769,6 +1975,13 @@ def main() -> None:
     deliver.add_argument("--schema-version", type=int, required=True)
     deliver.set_defaults(handler=command_deliver)
 
+    grant = commands.add_parser("grant", help="allow Claude permission rules (JSON list on stdin) for a job")
+    grant.add_argument("job")
+    grant.add_argument("--step", type=int, required=True, help="the step whose refusals these rules answer")
+    grant.add_argument("--key", required=True)
+    grant.add_argument("--schema-version", type=int, required=True)
+    grant.set_defaults(handler=command_grant)
+
     create = commands.add_parser("create")
     create.add_argument("--id")
     create.add_argument("--run-id")
@@ -1881,10 +2094,18 @@ def main() -> None:
     run.set_defaults(handler=lambda arguments: run_job(arguments.job))
 
     hook = commands.add_parser("input-hook", help="receive Claude permission hooks on stdin")
-    hook.add_argument("--project", required=True)
+    hook.add_argument("--project")
+    hook.add_argument("--session-hook", action="store_true",
+                      help="installed for every session: project from the hook's cwd; ignored inside fleet jobs")
     hook.add_argument("--job")
     hook.add_argument("--step-index", type=int)
     hook.set_defaults(handler=command_input_hook)
+
+    session_hooks = commands.add_parser("session-hooks",
+                                        help="add fleet's hooks to (or remove them from) Claude's user settings")
+    session_hooks.add_argument("action", choices=("install", "uninstall"))
+    session_hooks.add_argument("--settings", help="settings file (default: ~/.claude/settings.json)")
+    session_hooks.set_defaults(handler=command_session_hooks)
 
     settings = commands.add_parser("input-hook-settings", help="Claude --settings JSON for an interactive session")
     settings.add_argument("--project", required=True)

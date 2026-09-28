@@ -22,7 +22,8 @@ def attention_items(attention: AttentionFacade, hosts: list[dict[str, Any]]) -> 
                        "source": item.source, "summary": item.headline}
             stale = False
         result.append({**context, "id": item.id, "kind": item.kind, "state": item.state, "stale": stale,
-                       "context_reference": item.context_reference,
+                       "context_reference": item.context_reference, "refusals": len(item.refusals),
+                       "questions": len(item.questions),
                        "last_seen": item.last_seen.timestamp(), "resolution_details": item.resolution_details,
                        "acknowledged_at": item.acknowledged_at.timestamp() if item.acknowledged_at else None,
                        "resolved_at": item.resolved_at.timestamp() if item.resolved_at else None,

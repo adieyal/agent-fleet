@@ -86,6 +86,8 @@ async function loadDecision(id, req) {
     if (!res.ok) throw new Error(detail.error);
     if (req !== rd.req) return;
     const prose = rdBody.querySelector('.prose');
+    if (detail.refusals) { renderRefusals(prose, id, detail); return; }
+    if (detail.session_question) { renderSessionQuestion(prose, detail.session_question); return; }
     prose.innerHTML = `<h2>${esc(detail.question)}</h2><p class="decision-context">${esc(detail.context)}</p>
       ${detail.proposal === null ? '' : `<h3>Proposed change</h3><pre>${esc(detail.proposal.change)}</pre><p>${esc(detail.proposal.reason)}</p>`}
       <form class="decision-answer">
@@ -119,6 +121,53 @@ async function loadDecision(id, req) {
   } catch (error) {
     if (req === rd.req) rdBody.querySelector('.prose').insertAdjacentHTML('beforeend', `<p role="alert">${esc(error.message)}</p>`);
   }
+}
+// A question an interactive session asked in its terminal. Fleet cannot type there, so it only shows where to answer.
+function renderSessionQuestion(prose, s) {
+  const where = s.project ? `${esc(s.project)} · ` : '';
+  prose.innerHTML = `<p class="session-answer" role="note"><b>Answer this in the session’s terminal on ${esc(s.host)}.</b>
+      Fleet cannot type there; this item closes once the session has its answer.</p>
+    <p class="session-where">${where}${s.cwd ? `<code>${esc(s.cwd)}</code>` : `${esc(s.label)} (working directory not reported)`} · ${esc(s.host)} · session ${esc(s.session)}</p>
+    ${s.state === 'resolved' ? `<p role="status">${esc(s.resolution)}</p>` : ''}
+    ${s.questions.map(q => `<section class="session-question">
+      ${q.header ? `<p class="qh">${esc(q.header)}</p>` : ''}<h2>${esc(q.question)}</h2>
+      ${q.multi_select ? '<p class="qm">More than one may be chosen.</p>' : ''}
+      <ol class="question-options">${q.options.map(o => `<li><b>${esc(o.label)}</b>${o.description ? `<span>${esc(o.description)}</span>` : ''}</li>`).join('')}</ol>
+    </section>`).join('')}`;
+}
+// A job step's refused permission requests: every one listed, answered by changing the job's permissions.
+function renderRefusals(prose, id, detail) {
+  const r = detail.refusals, open = r.state !== 'resolved';
+  const covers = q => q.rules === null ? 'this worker names no rule' : q.rules.length ? q.rules.map(esc).join(', ') : 'no rule covers this';
+  prose.innerHTML = `<h2>${esc(detail.question)}</h2>
+    <p>Job ${esc(r.job)} on ${esc(r.host)} ran step ${r.step + 1} with nobody at the prompt, so Claude refused these and carried on.</p>
+    ${open ? `<div class="refusal-actions">
+        <button data-scope="refused"${r.rules && r.rules.length ? '' : ' disabled'}>Allow these for this job</button>
+        <button data-scope="bash">Allow all Bash for this job</button>
+        <button data-dismiss>Dismiss</button></div>
+      <p class="refusal-note">${r.rules === null ? 'This worker’s fleetd names no rules, so only all of Bash can be allowed from here.'
+        : `Allowing adds the rules to job ${esc(r.job)}; a new step continues step ${r.step + 1} with them.`}</p>`
+      : `<p role="status">${esc(r.resolution)}</p>`}
+    <p role="alert"></p><p role="status" class="refusal-done"></p>
+    <ol class="refusals">${r.requests.map(q => `<li><code><b>${esc(q.tool)}</b> ${esc(q.detail)}</code>
+      <small>${q.description ? `${esc(q.description)} · ` : ''}${covers(q)}</small></li>`).join('')}</ol>`;
+  prose.addEventListener('click', async ev => {
+    const b = ev.target.closest('[data-scope],[data-dismiss]');
+    if (!b || b.disabled) return;
+    const buttons = prose.querySelectorAll('.refusal-actions button');
+    for (const x of buttons) x.disabled = true;
+    prose.querySelector('[role="alert"]').textContent = '';
+    try {
+      const res = await fetch(b.dataset.scope ? '/api/attention/allow' : '/api/attention/dismiss', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b.dataset.scope ? { id, scope: b.dataset.scope } : { id }) });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error);
+      prose.querySelector('.refusal-done').textContent = result.resolution;
+    } catch (error) {
+      prose.querySelector('[role="alert"]').textContent = error.message;
+      for (const x of buttons) x.disabled = x.dataset.scope === 'refused' && !(r.rules && r.rules.length);
+    }
+  });
 }
 async function loadDoc(req) {
   try {

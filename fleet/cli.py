@@ -808,6 +808,17 @@ def command_install(arguments: argparse.Namespace) -> None:
         console.print("  [red]tmux not found — jobs cannot start[/]")
 
 
+def command_hooks(arguments: argparse.Namespace) -> None:
+    """Add fleet's hooks to every interactive Claude session on a host, or take them out again."""
+    host = transport.host_by_name(arguments.name)
+    try:
+        report = transport.call(host, ["session-hooks", arguments.action])
+    except FleetError as error:
+        raise FleetError(f"{error} — if fleetd there predates session hooks, run: fleet install {host.name}") from error
+    events = ", ".join(report["events"]) or "none"
+    console.print(f"[bold]{host.name}[/] ({report['host']}): {report['settings']} — fleet hooks now on: {events}")
+
+
 def command_unlock(arguments: argparse.Namespace) -> None:
     """Add the host's key to its fleet ssh-agent; prompts for the passphrase once per boot."""
     if not sys.stdin.isatty():
@@ -1286,6 +1297,12 @@ def build_parser() -> argparse.ArgumentParser:
     install = commands.add_parser("install", help="install/upgrade fleetd on a host")
     install.add_argument("name")
     install.set_defaults(handler=command_install)
+
+    hooks = commands.add_parser("hooks", help="raise attention items from interactive Claude sessions on a host")
+    hooks.add_argument("action", choices=("install", "uninstall"),
+                       help="merge fleet's hooks into the host's ~/.claude/settings.json, or remove only them")
+    hooks.add_argument("name", help="the host")
+    hooks.set_defaults(handler=command_hooks)
 
     unlock = commands.add_parser("unlock", help="add a key to the host's fleet ssh-agent (passphrase once per boot)")
     unlock.add_argument("name")
