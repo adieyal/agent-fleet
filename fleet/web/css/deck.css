@@ -543,7 +543,7 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 .ws-head{display:flex;align-items:baseline;gap:8px;justify-content:space-between}
 .ws-head b{min-width:0;color:var(--text);font:600 13.5px/1.35 var(--sans)}
 .ws-state{flex:none;font:600 10.5px var(--mono);letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
-.st-in-progress .ws-state{color:var(--run)}.st-blocked .ws-state{color:var(--bad)}.st-planned .ws-state{color:var(--warn)}.st-done .ws-state{color:var(--ok)}
+.st-in-progress .ws-state{color:var(--run)}.st-paused .ws-state{color:var(--dim)}.st-blocked .ws-state{color:var(--bad)}.st-planned .ws-state{color:var(--warn)}.st-done .ws-state{color:var(--ok)}
 .ws-sub{margin:0 0 4px;color:var(--muted);font:12.5px/1.5 var(--sans)}
 .ws-facts{display:block;margin-top:4px;color:var(--dim);font:11.5px var(--mono)}
 .ws-body{padding:0 12px 10px}

@@ -169,6 +169,10 @@ class LiveWorkspace:
                              "jobs": jobs, "working": self.documents.working(project_id)})
         return projects
 
+    def clock(self) -> float:
+        """Now, for judging how recent work is; a recorded fixture answers with its own time."""
+        return time.time()
+
     def library_overview(self, library: Any) -> list[dict[str, Any]]:
         """Each project's overview (see fleet.web.overview): every project with a library root or a document store."""
         overview = self.__dict__.setdefault("overview", Overview())
@@ -190,7 +194,7 @@ class LiveWorkspace:
                 name=project.name if project else key or project_id, project_id=project_id, library=key,
                 root=library.root(key) if key else None,
                 documents=[document for document in documents if document["project"] == key] if key else [],
-                jobs=jobs, attention=attention,
+                jobs=jobs, attention=attention, now=self.clock(),
                 read_job=lambda job_key, document_id, project_id=project_id: self.documents.text(project_id, job_key, document_id)))
         return result
 

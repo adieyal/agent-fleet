@@ -50,6 +50,7 @@ function facts(ws) {
   return [ws.stories ? `${ws.stories.passing}/${ws.stories.total} stories` : '',
     ws.questions && ws.questions.open ? `${ws.questions.open} open question${ws.questions.open === 1 ? '' : 's'}` : '',
     running ? `${running} job${running === 1 ? '' : 's'} running` : ws.jobs.length ? `${ws.jobs.length} job${ws.jobs.length === 1 ? '' : 's'}` : '',
+    ws.last_activity ? `last activity ${age(ws.last_activity)} ago` : '',
   ].filter(Boolean).join(' · ');
 }
 function cardHtml(ws) {
@@ -75,12 +76,14 @@ function renderOverview() {
   chosen = key(project);
   const streams = project.workstreams;
   const active = streams.filter(ws => ws.state === 'in progress');
-  const waiting = streams.filter(ws => ws.state === 'blocked' || ws.state === 'planned' || ws.state === 'unknown');
+  const stopped = streams.filter(ws => ws.state === 'paused' || ws.state === 'blocked' || ws.state === 'unknown');
+  const planned = streams.filter(ws => ws.state === 'planned');
   const done = streams.filter(ws => ws.state === 'done');
   libList.innerHTML = `<section class="ov">
     <p class="ov-summary">${esc(project.summary)}</p>
     ${active.length ? `<h4>Active now</h4>${active.map(cardHtml).join('')}` : ''}
-    ${waiting.length ? `<h4>Blocked or planned</h4>${waiting.map(cardHtml).join('')}` : ''}
+    ${stopped.length ? `<h4>Paused and blocked</h4>${stopped.map(cardHtml).join('')}` : ''}
+    ${planned.length ? `<h4>Planned</h4>${planned.map(cardHtml).join('')}` : ''}
     ${done.length ? `<details class="ov-done" data-fold="done"${openCards.has(chosen + ':done') ? ' open' : ''}><summary><h4>Done · ${done.length}</h4></summary>${done.map(cardHtml).join('')}</details>` : ''}
     ${project.other_work.length ? `<h4>Other work</h4>${project.other_work.map(week => `<div class="ov-week"><h5>${esc(week.week)}</h5><ul class="ws-list">${
       week.jobs.map(job => `<li>${traceButton(job.report, `${job.description} · ${job.status}${WHERE[job.availability] ? ' · ' + WHERE[job.availability] : ''}`)}</li>`).join('')}</ul></div>`).join('')}` : ''}
