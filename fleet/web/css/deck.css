@@ -462,6 +462,8 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 .ov h4,.ov-done>summary h4,.ov-docs>summary h4{display:inline;margin:0}
 .ov>h4,.ov-done>summary,.ov-docs>summary{display:block;margin:16px 2px 8px;color:var(--run);font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
 .ov>h4{cursor:default}
+.ov-done>summary::before,.ov-docs>summary::before{content:"▸ ";color:var(--muted)}
+.ov-done[open]>summary::before,.ov-docs[open]>summary::before{content:"▾ "}
 .ov-done>summary h4,.ov-docs>summary h4{font:inherit;color:inherit;letter-spacing:inherit}
 .ws{margin:0 0 8px;border:1px solid var(--line);border-left:3px solid var(--line2);border-radius:10px;background:rgba(255,255,255,.02)}
 .ws.st-in-progress{border-left-color:var(--run)}

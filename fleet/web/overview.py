@@ -62,7 +62,7 @@ def readme(text: str) -> dict[str, str | None]:
     lines = text.splitlines()
     heading = next((line[2:].strip() for line in lines[:20] if line.startswith("# ")), None)
     status = next((match.group(1).strip() for line in lines[:12] if (match := STATUS_LINE.match(line.strip()))), None)
-    return {"heading": heading, "status": status}
+    return {"heading": heading, "status": re.sub(r"\*\*|__|`", "", status) if status else None}   # shown as plain text
 
 
 def questions(text: str) -> dict[str, int]:

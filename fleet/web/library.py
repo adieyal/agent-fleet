@@ -66,8 +66,6 @@ def prd_markdown(prd: dict[str, Any], name: str) -> str:
     stories = prd.get("userStories") or []
     passing = sum(1 for story in stories if story.get("passes"))
     lines = [f"# {name}", ""]
-    if prd.get("description"):
-        lines += [str(prd["description"]), ""]
     if prd.get("status"):
         lines += [f"**Status.** {prd['status']}", ""]
     where = [f"branch `{prd['branchName']}`" if prd.get("branchName") else "",
@@ -75,6 +73,8 @@ def prd_markdown(prd: dict[str, Any], name: str) -> str:
              f"worktree `{prd['worktree']}`" if prd.get("worktree") else ""]
     if any(where):
         lines += ["**Where.** " + " ".join(part for part in where if part), ""]
+    if prd.get("description"):
+        lines += [str(prd["description"]), ""]
     for heading, key in (("Objectives", "objectives"),):
         if items(prd.get(key)):
             lines += [f"## {heading}", "", *(f"- {item}" for item in items(prd.get(key))), ""]
