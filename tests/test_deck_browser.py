@@ -1113,9 +1113,18 @@ def test_the_attention_list_closes_on_escape_or_a_click_away(changed_deck: Deck,
     expect(lantern).to_be_focused()
     expect(page.locator("#panel")).to_have_attribute("aria-hidden", "true")   # no job panel was opened or closed
     shoot(request, page, "attention-popover-after-escape")
+    # A closed list follows the state too: no stale entries wait in it for the next opening.
+    page.evaluate("doc => fleetDeck.apply(doc)", {**document, "attention": document["attention"][:-12],
+        "attention_display": attention_display(document["attention"][:-12], document["building"], document["projects"])})
+    expect(page.locator('#attnPanel .attn-item[data-id^="extra"]')).to_have_count(0)
+    page.evaluate("doc => fleetDeck.apply(doc)", document)
+    expect(page.locator('#attnPanel .attn-item[data-id^="extra"]')).to_have_count(12)
+    expect(panel).to_be_hidden()
     lantern.dispatch_event("click")
     expect(panel).to_be_visible()
-    page.mouse.click(frame["x"] + frame["width"] + 200 if frame["x"] < 900 else 40, 800)
+    away = (frame["x"] + frame["width"] + 200 if frame["x"] < 900 else 40, 800)
+    assert page.evaluate("([x, y]) => document.elementFromPoint(x, y).id", away) == "world"   # the empty deck
+    page.mouse.click(*away)
     expect(panel).to_be_hidden()
     lantern.dispatch_event("click")
     close.click()
