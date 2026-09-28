@@ -25,7 +25,7 @@ def test_permission_hooks_are_retained_and_correlated(tmp_path, monkeypatch, job
     assert waiting["session_id"] == "session1"
     assert waiting["context_reference"]
     assert waiting["request"] == {"tool": "Bash", "description": "", "detail": "touch marker",
-                                  "rules": ["Bash(touch:*)"]}
+                                  "rules": ["Bash(touch:*)"], "denied_by": []}
     fleetd.record_input_hook({**request, "hook_event_name": "Stop"}, project="example",
                             job_id=job_id, step_index=0)
     fleetd.record_input_hook({**request, "hook_event_name": "PostToolUse",
@@ -178,3 +178,31 @@ def test_a_running_step_records_what_its_stream_refuses(tmp_path, monkeypatch):
     [observation] = fleetd.input_observations()
     assert (observation["job_id"], observation["step_index"], observation["request"]["rules"]) == (
         "probe", 0, ["Bash(curl:*)"])
+
+
+@pytest.mark.parametrize("deny, denied", [
+    (["Bash(curl:*)"], True),                      # what refused the real probe job
+    (["Bash(curl -s -o /dev/null -w '%{http_code}' https://example.com)"], True),
+    (["Bash"], True),
+    (["Bash(wget:*)", "Read(//etc/**)"], False),
+    (["Bash(cur:*)"], False),                      # a prefix is a whole word, not part of one
+])
+def test_a_refusal_names_the_deny_rule_no_allow_can_override(tmp_path, monkeypatch, deny, denied):
+    monkeypatch.setattr(fleetd, "FLEET_HOME", tmp_path)
+    settings = tmp_path / "claude-config" / "settings.json"
+    settings.parent.mkdir()
+    settings.write_text(json.dumps({"permissions": {"allow": ["Bash(curl:*)"], "deny": deny}}))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(settings.parent))
+    refusals_seen(stream_records())
+    [observation] = fleetd.input_observations()
+    assert observation["request"]["denied_by"] == ([f"{deny[0]} in {settings}"] if denied else [])
+
+
+def test_a_project_settings_deny_rule_is_found_in_the_jobs_directory(tmp_path, monkeypatch):
+    monkeypatch.setattr(fleetd, "FLEET_HOME", tmp_path)
+    project = tmp_path / "project" / ".claude" / "settings.local.json"
+    project.parent.mkdir(parents=True)
+    project.write_text(json.dumps({"permissions": {"deny": ["Bash(git push:*)"]}}))
+    assert fleetd.deny_rules_matching("Bash", {"command": "cd x && git push origin main"}, str(tmp_path / "project")) == [
+        f"Bash(git push:*) in {project}"]
+    assert fleetd.deny_rules_matching("Bash", {"command": "git pull"}, str(tmp_path / "project")) == []

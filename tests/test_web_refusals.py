@@ -247,3 +247,30 @@ def test_allowing_reaches_the_job_through_fleetd(deck, tmp_path, monkeypatch, ca
         assert len(worker.read_job("j1")["steps"]) == 2
     finally:
         worker.subprocess.run([*worker.TMUX_COMMAND, "kill-server"], capture_output=True)
+
+
+def test_a_request_a_deny_rule_refuses_is_not_offered_as_allowable(deck, monkeypatch):
+    from fleet import transport
+    sent = []
+
+    def call(host, arguments, stdin_text=None):
+        sent.append(json.loads(stdin_text))
+        return {"schema_version": 1, "key": arguments[arguments.index("--key") + 1], "status": "applied",
+                "added": [], "continuation": 2}
+    monkeypatch.setattr(transport, "call", call)
+    denied = refusal("curl", detail="curl -s https://example.com", rules=("Bash(curl:*)",))
+    denied["request"]["denied_by"] = ["Bash(curl:*) in /home/me/.claude/settings.json"]
+    apply_message(deck.state, HOSTS[0], denied)
+    [batch] = deck.state.attention.list()
+    detail = decision(deck, batch.id)["refusals"]
+    assert detail["rules"] == [] and detail["requests"][0]["denied_by"] == ["Bash(curl:*) in /home/me/.claude/settings.json"]
+    for scope in ("refused", "bash"):
+        status, body = post(deck, "/api/attention/allow", {"id": batch.id, "scope": scope})
+        assert status == 400 and "no rule allowed for the job can override it" in body["error"], body
+    assert not sent and deck.state.attention.get(batch.id).state == "open"
+    # Beside an allowable request, the denied one stays out of the rules and is named as still refused.
+    apply_message(deck.state, HOSTS[0], refusal("ls", detail="ls docs", rules=("Bash(ls:*)",)))
+    status, body = post(deck, "/api/attention/allow", {"id": batch.id, "scope": "refused"})
+    assert status == 200 and sent == [["Bash(ls:*)"]]
+    assert body["resolution"] == ("allowed for job j1: Bash(ls:*); step 2 continues as step 3; still not allowed: "
+                                  "curl -s https://example.com (denied by Bash(curl:*) in /home/me/.claude/settings.json)")

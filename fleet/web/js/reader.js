@@ -138,15 +138,18 @@ function renderSessionQuestion(prose, s) {
 // A job step's refused permission requests: every one listed, answered by changing the job's permissions.
 function renderRefusals(prose, id, detail) {
   const r = detail.refusals, open = r.state !== 'resolved';
-  const covers = q => q.rules === null ? 'this worker names no rule' : q.rules.length ? q.rules.map(esc).join(', ') : 'no rule covers this';
+  const denied = r.requests.filter(q => q.denied_by && q.denied_by.length), allDenied = denied.length === r.requests.length;
+  const covers = q => q.denied_by && q.denied_by.length ? `<span class="denied">denied by ${q.denied_by.map(esc).join(', ')}: no rule allowed for the job can override it</span>`
+    : q.rules === null ? 'this worker names no rule' : q.rules.length ? q.rules.map(esc).join(', ') : 'no rule covers this';
   prose.innerHTML = `<h2>${esc(detail.question)}</h2>
     <p>Job ${esc(r.job)} on ${esc(r.host)} ran step ${r.step + 1} with nobody at the prompt, so Claude refused these and carried on.</p>
     ${open ? `<div class="refusal-actions">
         <button data-scope="refused"${r.rules && r.rules.length ? '' : ' disabled'}>Allow these for this job</button>
-        <button data-scope="bash">Allow all Bash for this job</button>
+        <button data-scope="bash"${allDenied ? ' disabled' : ''}>Allow all Bash for this job</button>
         <button data-dismiss>Dismiss</button></div>
-      <p class="refusal-note">${r.rules === null ? 'This worker’s fleetd names no rules, so only all of Bash can be allowed from here.'
-        : `Allowing adds the rules to job ${esc(r.job)}; a new step continues step ${r.step + 1} with them.`}</p>`
+      <p class="refusal-note">${allDenied ? `A deny rule in the host’s Claude settings refuses ${denied.length === 1 ? 'this' : 'these'}; remove it there to let jobs run ${denied.length === 1 ? 'it' : 'them'}, or dismiss.`
+        : r.rules === null ? 'This worker’s fleetd names no rules, so only all of Bash can be allowed from here.'
+        : `Allowing adds the rules to job ${esc(r.job)}; a new step continues step ${r.step + 1} with them.${denied.length ? ' Requests a deny rule refuses stay refused.' : ''}`}</p>`
       : `<p role="status">${esc(r.resolution)}</p>`}
     <p role="alert"></p><p role="status" class="refusal-done"></p>
     <ol class="refusals">${r.requests.map(q => `<li><code><b>${esc(q.tool)}</b> ${esc(q.detail)}</code>
@@ -165,7 +168,8 @@ function renderRefusals(prose, id, detail) {
       prose.querySelector('.refusal-done').textContent = result.resolution;
     } catch (error) {
       prose.querySelector('[role="alert"]').textContent = error.message;
-      for (const x of buttons) x.disabled = x.dataset.scope === 'refused' && !(r.rules && r.rules.length);
+      for (const x of buttons) x.disabled = (x.dataset.scope === 'refused' && !(r.rules && r.rules.length))
+        || (x.dataset.scope === 'bash' && allDenied);
     }
   });
 }

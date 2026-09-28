@@ -9,16 +9,23 @@ SCOPES = ("refused", "bash")
 
 
 def grant_rules(item, scope: str) -> tuple[list[str], list[str]]:
-    """The rules to add, and the refused requests no rule covers."""
+    """The rules to add, and the refused requests they leave refused (a deny rule outranks any allow)."""
+    denied = [f"{refusal.detail} (denied by {', '.join(refusal.denied_by)})" for refusal in item.refusals
+              if refusal.denied_by]
+    if denied and len(denied) == len(item.refusals):
+        raise ValueError(f"a deny rule refuses {'this request' if len(denied) == 1 else 'these requests'}, and no "
+                         f"rule allowed for the job can override it: {'; '.join(denied)}. Remove that deny rule "
+                         "to let jobs run it")
     if scope == "bash":
-        return ["Bash"], [refusal.detail for refusal in item.refusals if refusal.tool != "Bash"]
+        return ["Bash"], denied + [refusal.detail for refusal in item.refusals
+                                   if refusal.tool != "Bash" and not refusal.denied_by]
     rules = refusal_rules(item.refusals)
     if rules is None:
         raise ValueError(f"fleetd on {item.stream_context.host} names no rules for these requests; "
                          "upgrade it, or allow all Bash")
     if not rules:
         raise ValueError("no permission rule matches these requests")
-    return rules, [refusal.detail for refusal in item.refusals if not refusal.rules]
+    return rules, denied + [refusal.detail for refusal in item.refusals if not refusal.rules and not refusal.denied_by]
 
 
 def grant(repository: ExecutionRepository, send: GrantSender, item_id: str, scope: str, actor: str) -> str:

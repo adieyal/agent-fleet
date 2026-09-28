@@ -277,7 +277,8 @@ def refusal_detail(item) -> dict[str, Any]:
     return {"host": context.host, "job": context.owner_id, "step": context.step, "state": item.state,
             "resolution": item.resolution_details, "rules": refusal_rules(item.refusals),
             "requests": [{"tool": refusal.tool, "description": refusal.description, "detail": refusal.detail,
-                          "rules": None if refusal.rules is None else list(refusal.rules)}
+                          "rules": None if refusal.rules is None else list(refusal.rules),
+                          "denied_by": list(refusal.denied_by)}
                          for refusal in item.refusals]}
 
 

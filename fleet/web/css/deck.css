@@ -532,6 +532,7 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 .refusals li{display:grid;gap:1px}
 .refusals code{white-space:pre-wrap;overflow-wrap:anywhere;justify-self:start}
 .refusals small{color:var(--rd-muted);font-size:.85em}
+.refusals .denied{color:var(--rd-bad)}
 .refusal-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
 .refusal-actions button{padding:10px 16px;border:1px solid var(--rd-rule);border-radius:6px;background:var(--rd-bg2);color:var(--rd-text);font:15px var(--sans);cursor:pointer}
 .refusal-actions button:disabled{opacity:.6;cursor:default}

@@ -61,7 +61,8 @@ class InputObservation:
         rules = request.get("rules")
         return Refusal(self.source_event_id, request.get("tool") or "a tool", request.get("description", ""),
                        request.get("detail") or self.context_reference,
-                       None if rules is None else tuple(rules), self.observed_at)
+                       None if rules is None else tuple(rules), self.observed_at,
+                       tuple(request.get("denied_by") or ()))
 
 
 def question_headline(question: Question) -> str:

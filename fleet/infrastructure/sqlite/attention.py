@@ -13,7 +13,8 @@ from .repository import Repository
 def decode(row) -> AttentionItem:
     values = dict(row)
     values["options"] = tuple(json.loads(values["options"]))
-    values["refusals"] = tuple(Refusal(**{**refusal, "rules": None if refusal["rules"] is None else tuple(refusal["rules"])})
+    values["refusals"] = tuple(Refusal(**{**refusal, "rules": None if refusal["rules"] is None else tuple(refusal["rules"]),
+                                          "denied_by": tuple(refusal.get("denied_by", ()))})
                                for refusal in json.loads(values["refusals"]))
     values["questions"] = tuple(Question(**{**question, "options": tuple(QuestionOption(**option)
                                                                           for option in question["options"])})

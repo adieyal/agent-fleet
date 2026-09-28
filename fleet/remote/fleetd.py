@@ -1374,7 +1374,9 @@ def record_input_hook(record: JsonObject, *, project: str, job_id: Optional[str]
                             "reason": "permission" if event == "PermissionRequest" else "question",
                             "source_event": event, "source_event_id": secrets.token_hex(16),
                             "observed_at": now(), "context_reference": str(path),
-                            "cwd": record.get("cwd"), "raw_request": record})
+                            "cwd": record.get("cwd"), "raw_request": record,
+                            "denied_by": deny_rules_matching(record.get("tool_name"), record.get("tool_input") or {},
+                                                             record.get("cwd")) if event == "PermissionRequest" else []})
         elif match is not None:
             match.update(kind="input_cleared", source_event=event, observed_at=now(), raw_resume=record)
         else:
@@ -1430,8 +1432,9 @@ def input_observations() -> List[JsonObject]:
     observations = []
     for path in sorted((FLEET_HOME / "input-observations").glob("*.json")):
         observations.extend({**{key: value for key, value in record.items()
-                                if key not in ("raw_request", "raw_resume")},
-                             "request": input_request(record["raw_request"])}
+                                if key not in ("raw_request", "raw_resume", "denied_by")},
+                             "request": {**input_request(record["raw_request"]),
+                                         "denied_by": record.get("denied_by", [])}}
                             for record in json.loads(path.read_text()))
     return observations
 
@@ -1490,15 +1493,15 @@ def permission_rules(tool: Optional[str], tool_input: JsonObject) -> List[str]:
     return [tool] if RULE.fullmatch(tool) else []
 
 
-def bash_rules(command: str) -> List[str]:
-    """One `Bash(prefix:*)` per simple command, as Claude checks each part of a compound command."""
+def bash_commands(command: str) -> List[List[str]]:
+    """The words of each simple command in a compound one, without leading VAR=value or redirects."""
     lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
     try:
         tokens = list(lexer)
     except ValueError:
         return []
-    rules: List[str] = []
+    commands: List[List[str]] = []
     segment: List[str] = []
     redirect = False
     for token in tokens + [";"]:
@@ -1513,16 +1516,66 @@ def bash_rules(command: str) -> List[str]:
             while words and re.fullmatch(r"[A-Za-z_]\w*=.*", words[0]):
                 words = words[1:]   # leading VAR=value assignments
             segment = []
-            if not words:
-                continue
-            prefix = words[:2] if words[0] in SUBCOMMAND_PROGRAMS and len(words) > 1 and not words[1].startswith("-") \
-                else words[:1]
-            rule = f"Bash({' '.join(prefix)}:*)"
-            if rule not in rules:
-                rules.append(rule)
+            if words:
+                commands.append(words)
         else:
             segment.append(token)
+    return commands
+
+
+def bash_rules(command: str) -> List[str]:
+    """One `Bash(prefix:*)` per simple command, as Claude checks each part of a compound command."""
+    rules: List[str] = []
+    for words in bash_commands(command):
+        prefix = words[:2] if words[0] in SUBCOMMAND_PROGRAMS and len(words) > 1 and not words[1].startswith("-") \
+            else words[:1]
+        rule = f"Bash({' '.join(prefix)}:*)"
+        if rule not in rules:
+            rules.append(rule)
     return rules
+
+
+def claude_settings_files(cwd: Optional[str]) -> List[Path]:
+    """The settings files whose deny rules apply to a Claude run in cwd: managed, user and project."""
+    user = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+    files = [Path("/etc/claude-code/managed-settings.json"), user / "settings.json"]
+    if cwd:
+        files += [Path(cwd) / ".claude" / "settings.json", Path(cwd) / ".claude" / "settings.local.json"]
+    return files
+
+
+def deny_rules_matching(tool: Optional[str], tool_input: JsonObject, cwd: Optional[str]) -> List[str]:
+    """The deny rules that refuse this request, with their files. No allow rule can override one.
+
+    Covers bare tool names, Bash commands and prefixes, and rules equal to one fleetd would
+    propose; path globs and other patterns are not interpreted, so an empty list is not proof.
+    """
+    if not tool:
+        return []
+    proposed = set(permission_rules(tool, tool_input))
+    command = tool_input.get("command") if tool == "Bash" else None
+    commands = [" ".join(words) for words in bash_commands(command)] if isinstance(command, str) else []
+    found = []
+    for path in claude_settings_files(cwd):
+        try:
+            deny = json.loads(path.read_text()).get("permissions", {}).get("deny", [])
+        except (OSError, ValueError, AttributeError):
+            continue
+        for rule in deny if isinstance(deny, list) else []:
+            match = re.fullmatch(r"([^()]+)(?:\((.*)\))?", rule) if isinstance(rule, str) else None
+            if match is None or match.group(1) != tool:
+                continue
+            content = match.group(2)
+            if content is None or rule in proposed:
+                hit = True
+            elif commands and content.endswith(":*"):
+                prefix = content[:-2]
+                hit = any(each == prefix or each.startswith(prefix + " ") for each in commands)
+            else:
+                hit = content in commands or content == command
+            if hit:
+                found.append(f"{rule} in {path}")
+    return found
 
 
 def command_input_hook(arguments: argparse.Namespace) -> None:

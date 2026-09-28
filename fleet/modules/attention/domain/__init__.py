@@ -61,13 +61,17 @@ class Refusal:
     detail: str
     rules: tuple[str, ...] | None  # None when the worker's fleetd proposes no rules
     observed_at: float
+    denied_by: tuple[str, ...] = ()  # deny rules (with their settings file) no allow rule can override
 
 
 def refusal_rules(refusals: tuple[Refusal, ...]) -> list[str] | None:
-    """The distinct rules that would allow these requests; None when the worker proposed none."""
+    """The distinct rules that would allow these requests; None when the worker proposed none.
+
+    A request a deny rule refuses contributes none: allowing it for the job would change nothing.
+    """
     if any(refusal.rules is None for refusal in refusals):
         return None
-    return list(dict.fromkeys(rule for refusal in refusals for rule in refusal.rules or ()))
+    return list(dict.fromkeys(rule for refusal in refusals if not refusal.denied_by for rule in refusal.rules or ()))
 
 
 @dataclass(frozen=True)
