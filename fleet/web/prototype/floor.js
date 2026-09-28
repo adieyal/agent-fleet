@@ -166,7 +166,7 @@ async function main() {
     const el = document.createElement('div');
     el.className = 'bubble';
     el.style.color = run.tint;
-    el.innerHTML = glyphHtml(actionOf(jobs.get(run.key)));
+    el.innerHTML = glyphHtml(actionOf({ ...jobs.get(run.key), status: run.status }));   // (?as may stand in a status)
     el.hidden = true;
     overlay.append(el);
     return { el, run, member: crew.members.find(m => m.run === run) };
