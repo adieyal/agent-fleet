@@ -56,6 +56,10 @@ def ingest_input(repository: AttentionRepository, host: str, observation: InputO
         previous = transaction.find(source, reference)
         if previous is not None and (previous.state == "resolved" or previous.last_seen > seen):
             return
+        if observation.owner_type == "job" and previous is None:
+            # A job runs Claude headless, so its permission request was already refused and
+            # nobody can answer it; raising an item only adds noise. Per-step batches replace this.
+            return
         headline, detail = observation.question()
         if previous is not None and observation.kind == "input_requested":
             if (previous.headline, previous.context_reference) == (headline, detail):

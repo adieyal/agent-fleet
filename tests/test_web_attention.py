@@ -320,7 +320,17 @@ def test_a_resolved_item_cannot_be_acted_on(deck):
     assert deck.act("reopen", {"id": item_id}) == 409
 
 
-@pytest.mark.parametrize("owner_type", ["job", "session"])
+def test_a_headless_job_refusal_raises_nothing(deck):
+    apply_message(deck.state, HOSTS[0], {"type": "hello"})
+    apply_message(deck.state, HOSTS[0], {
+        "type": "input_observation", "schema_version": 1, "runtime": "claude", "owner_type": "job",
+        "job_id": "j1", "session_id": "s1", "step_index": 0, "project": "restoke",
+        "kind": "input_requested", "reason": "permission", "source_event": "PermissionRequest",
+        "source_event_id": "request1", "observed_at": 200, "context_reference": "/retained/hook.json"})
+    assert deck.state.attention.list() == []
+
+
+@pytest.mark.parametrize("owner_type", ["session"])
 def test_input_observations_deduplicate_resume_and_survive_silence(deck, owner_type):
     observation = {"type": "input_observation", "schema_version": 1, "host": "worker-hostname",
                    "runtime": "claude", "owner_type": owner_type, "job_id": "j1",
@@ -355,7 +365,7 @@ def test_input_observations_deduplicate_resume_and_survive_silence(deck, owner_t
 
 def test_a_permission_request_says_what_the_agent_wants_to_run(deck):
     observation = {"type": "input_observation", "schema_version": 1, "runtime": "claude",
-                   "owner_type": "job", "job_id": "j1", "session_id": "s1", "step_index": 0,
+                   "owner_type": "session", "job_id": None, "session_id": "s1", "step_index": None,
                    "project": "restoke", "kind": "input_requested", "reason": "permission",
                    "source_event": "PermissionRequest", "source_event_id": "request1",
                    "observed_at": 200, "context_reference": "/retained/hook.json"}
