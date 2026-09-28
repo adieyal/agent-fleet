@@ -7,6 +7,7 @@ Registry in use), `project_labels`, `capacity`, `known_projects()`, `host_names(
 """
 from __future__ import annotations
 
+import contextlib
 from dataclasses import asdict
 import threading
 import time
@@ -21,6 +22,7 @@ from fleet.modules.workspace import Registry, WorkspaceFacade, AlreadyHoused
 from fleet.transport import FleetError
 from fleet.composition import open_work, open_execution, open_library, open_decisions
 from fleet.projections.project import project_status
+from fleet.web.job_store import ProjectDocuments
 T = TypeVar("T")
 
 
@@ -36,6 +38,7 @@ class LiveWorkspace:
     pipeline_config: dict[str, dict[str, str]]           # name → {"host", "project": room label}, as configured
     pipeline_runs: dict[tuple[str, str], dict[str, Any]]  # (host, name) → {"run", "baseline", "seq"} as last reported
     pipeline_seq: int
+    documents: ProjectDocuments   # each project's document store (see fleet.web.job_store)
 
     def known_projects(self) -> Container[str]:
         raise NotImplementedError
@@ -148,6 +151,34 @@ class LiveWorkspace:
 
     def document(self) -> dict[str, Any]:
         raise NotImplementedError
+
+    def job_hosts(self) -> dict[str, tuple[bool, set[str]]]:
+        """Each followed host: whether it is reachable now and the ids of the jobs it lists."""
+        raise NotImplementedError
+
+    def library_projects(self) -> list[dict[str, Any]]:
+        """Every project with a document store: its jobs newest first, each saying whether it is still on its
+        host, and its working documents. Stored documents stay readable whatever the host's state."""
+        registry, hosts = self.registry, self.job_hosts()
+        projects = []
+        for project_id in self.documents.projects():
+            jobs = self.documents.jobs(project_id)
+            for job in jobs:
+                reachable, listed = hosts.get(job["host"], (False, set()))
+                job["availability"] = ("on host" if reachable and job["id"] in listed
+                                       else "gone from host" if reachable else "host offline")
+            project = registry.projects.get(project_id)
+            projects.append({"id": project_id, "name": project.name if project else None,
+                             "jobs": jobs, "working": self.documents.working(project_id)})
+        return projects
+
+    def library_project_id(self, key: str) -> str | None:
+        """The project a `fleet library add` key names: its ID, its name, or a label linked to it on one project."""
+        with contextlib.suppress(FleetError):
+            return self.registry.resolve(key)
+        owners = {project.id for project in self.registry.projects.values()
+                  if any(link.label == key for link in project.links)}
+        return owners.pop() if len(owners) == 1 else None
 
     def act_on_attention(self, action: str, item_id: str, seconds: float | None = None) -> None:
         if action == "acknowledge":

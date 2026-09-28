@@ -32,6 +32,7 @@ from fleet.modules.workspace import Registry
 from fleet.projections.workspace import annotate, resolve, registry_config
 from fleet.transport import FleetError
 from fleet.web.documents import STATUS_LINE, render_markdown
+from fleet.web.job_store import ProjectDocuments
 from fleet.web.live import LiveWorkspace
 
 
@@ -67,6 +68,26 @@ class FixtureState(LiveWorkspace):
                                                                      "baseline": report.get("baseline"), "seq": 1}
                               for report in fixture.get("pipeline_reports", [])}
         self.pipeline_seq = 1 if self.pipeline_runs else 0
+        self.documents = ProjectDocuments(Path(self.attention_directory.name) / "projects")
+        self.keep_recorded_documents()
+
+    def keep_recorded_documents(self) -> None:
+        """Fill the document store as fleet web would have while it followed the recorded hosts."""
+        for host in self.fixture["hosts"]:
+            for job in host["jobs"]:
+                project_id = resolve(self.registry, host["name"], job)["project_id"]
+                if project_id is None:
+                    continue
+                for document in self.documents.observe(project_id, host["name"], job):
+                    markdown = self.fixture.get("job_documents", {}).get(f"{host['name']}/{job['id']}/{document['id']}")
+                    if markdown is None:
+                        self.documents.failed(project_id, host["name"], job["id"], document["id"],
+                                              "the fixture records no Markdown for this document")
+                    else:
+                        self.documents.keep(project_id, host["name"], job["id"], document, markdown)
+
+    def job_hosts(self) -> dict[str, tuple[bool, set[str]]]:
+        return {host["name"]: (bool(host.get("ok")), {job["id"] for job in host["jobs"]}) for host in self.fixture["hosts"]}
 
     @classmethod
     def load(cls, path: str | Path) -> FixtureState:

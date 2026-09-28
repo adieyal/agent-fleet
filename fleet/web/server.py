@@ -31,6 +31,7 @@ from fleet.projections.bench import bench_rooms, bench_state
 from fleet.transport import FleetError, Host
 from fleet.web.documents import DocumentAccessDenied, fetch_document
 from fleet.web.fixture import FixtureLibrary, FixtureState
+from fleet.web.job_store import DocumentKeeper, ProjectDocuments
 from fleet.web.library import ProjectLibrary
 from fleet.web.live import AlreadyHoused, LiveWorkspace
 from fleet.web.ingester import observe_runs
@@ -75,7 +76,7 @@ class FleetState(LiveWorkspace):
                  workspace: WorkspaceFacade | None = None,
                  load_capacity: Callable[[], int] | None = None,
                  pipelines: dict[str, dict[str, str]] | None = None,
-                 store: Store | None = None) -> None:
+                 store: Store | None = None, documents: ProjectDocuments | None = None) -> None:
         self.hosts = hosts
         self.project_labels = project_labels or {}
         self.store = store if store is not None else open_store()
@@ -97,6 +98,23 @@ class FleetState(LiveWorkspace):
         self.pipeline_config = pipelines or {}
         self.pipeline_runs = {}
         self.pipeline_seq = 0
+        self.documents = documents if documents is not None else ProjectDocuments()
+        self.keeper = DocumentKeeper(self.documents, self.fetch_raw)
+
+    def fetch_raw(self, host_name: str, job_id: str, document_id: str) -> dict[str, Any]:
+        """A job document's Markdown as its host serves it, before rendering."""
+        host = next(host for host in self.hosts if host.name == host_name)
+        return transport.call(host, ["read", job_id, document_id], timeout=30)
+
+    def keep_documents(self, host_name: str, job: dict[str, Any]) -> None:
+        """Copy the job's new and changed documents into its project's store; a job with no project has none."""
+        project_id = resolve(self.registry, host_name, job)["project_id"]
+        if project_id is not None and job.get("documents"):
+            self.keeper.observe(host_name, project_id, job)
+
+    def job_hosts(self) -> dict[str, tuple[bool, set[str]]]:
+        with self.changed:
+            return {name: (bool(entry["ok"]), set(entry["jobs"])) for name, entry in self.by_host.items()}
 
     def follow_history(self, stop: threading.Event) -> None:
         while not stop.is_set():
@@ -245,6 +263,7 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
         job = message["job"]
         state.update(host.name, lambda entry: entry["jobs"].__setitem__(job["id"], job),
                      owners={f"job:{host.name}:{job['id']}"})
+        state.keep_documents(host.name, job)
     elif kind == "removed":
         state.update(host.name, lambda entry: entry["jobs"].pop(message["id"], None),
                      owners={f"job:{host.name}:{message['id']}"})
@@ -285,9 +304,14 @@ def make_handler(state: FleetState | FixtureState,
                 except ValueError as error:
                     self.respond(400, "application/json", json.dumps({"error": str(error)}).encode())
                     return
-                self.respond(200, "application/json", json.dumps({"documents": documents}).encode())
+                for document in documents:
+                    document["project_id"] = state.library_project_id(document["project"])
+                self.respond(200, "application/json", json.dumps(
+                    {"documents": documents, "projects": state.library_projects()}).encode())
             elif path == "/api/library/doc":
                 self.library_document()
+            elif path in ("/api/library/job", "/api/library/working"):
+                self.stored_document(path.rsplit("/", 1)[1])
             elif path == "/api/move-in":
                 self.move_in_options()
             elif path == "/api/state":
@@ -510,6 +534,20 @@ def make_handler(state: FleetState | FixtureState,
             body = library.read(query["project"], query["id"])
             if body is None:
                 self.respond(404, "application/json", b'{"error": "document not found"}')
+                return
+            self.respond(200, "application/json", json.dumps(body).encode())
+
+        def stored_document(self, section: str) -> None:
+            """GET /api/library/job?project=&job=&id= or /api/library/working?project=&id= — from the project's store,
+            so it reads whether or not the job is still on its host."""
+            query = {key: values[0] for key, values in parse_qs(urlsplit(self.path).query).items()}
+            if not query.get("project") or not query.get("id") or (section == "job" and not query.get("job")):
+                self.respond(400, "application/json", b'{"error": "project, id and (for a job) job are required"}')
+                return
+            body = (state.documents.read(query["project"], query["job"], query["id"]) if section == "job"
+                    else state.documents.read_working(query["project"], query["id"]))
+            if body is None:
+                self.respond(404, "application/json", b'{"error": "document not in the project store"}')
                 return
             self.respond(200, "application/json", json.dumps(body).encode())
 
