@@ -173,6 +173,7 @@ export function applyState(doc) {
   if (selectedKey) renderPanel();
   for (const p of pipelines) updateSankey(p);
   openLinkedDoc();
+  document.dispatchEvent(new CustomEvent('fleet:state', { detail: doc }));   // (the sprite-world floor follows: world/floor-view.js)
 }
 
 // ?open=<host>:<job>:<docId> opens that document in the reader once it shows up on the deck (a link to a document)

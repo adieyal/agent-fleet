@@ -293,6 +293,8 @@ The deck's android behaviour (`fleet/web/js/motion.js`) must reach parity, so th
 - **`behaviour`** (renderer-agnostic, extracted from `motion.js`): activity to station (`ACTS`), spot allocation (`allocate`, keeping held spots, overflow, delegates beside their partner), dwell before changing station, pacing and wandering, event reactions (nod, head shake), clip choice, held items, tone. It outputs an agent pose each tick: `{x, y, facing, clip, clipTime, seated, held, nod, tone, bubble}`.
 - **`actors`** (sprite-specific) turns a pose into draw calls: the clip's frame sheet for the nearest rendered facing, the head layer offset for nods, the held item drawn at the frame's `hand.R` anchor, the tone variant, the bubble position for the DOM overlay.
 
+**Built** (`fleet/web/js/behaviour.js`): the rules, not the motion. Presence (finished jobs retire, one that finishes while watched says goodbye and leaves within 30 s; failed and stalled work goes to its lantern; an idle session leaves after half an hour unless a decision waits on it), the activity wanted and the dwell before changing it, reactions (nod, shake), held items, the resting look and crowds. The deck (`state.js`, `motion.js`, `agents.js`) and the world's crew (`world/crew.js`) both call it; each keeps its own motion, spots and clips. Spot allocation, pacing and routes stay renderer-specific: the deck's room plan and the floor's desks are different places.
+
 The three.js deck and the sprite world can then share `behaviour` while both exist. Stations are data: each place in the floor layout declares its spots (`[x, y, facing, sit]`, as `SPOTS` does), so the deck's vocabulary maps onto the new places: *terminal* and *workbench* to bench seats, *whiteboard* to the plan wall, *bookshelf* and *read* to the library, *mail* to the report tray, *dock* to the lift, *await* to standing at the question desk facing the viewer.
 
 **Navigation grid.** A 0.3 m grid over the floor, blocked where footprints (padded by a robot's 0.3 m radius) cover it. Routes are A* on the grid with aisle cells cheaper than open floor, then string-pulled into straight segments, and cached per (from, to) cell pair until the layout changes. This replaces the deck's hand-coded aisles and crossings, which only fit one room shape. The deck's walker nudge (stepping sideways to pass another android) carries over unchanged, since it is computed on screen axes.
@@ -327,8 +329,22 @@ Under `fleet/web/js/world/`, plain ES modules with no dependencies and no build 
 | `engine.js` | `World`: manifests, items, the frame loop, dirty rectangles, budget, picking |
 | `layout.js` | The floor from a room: shell, lanes, desks for jobs, stations, runs' seats, trails, framings |
 | `nav.js` | The walking grid from footprints, A* with string-pulling, walking along a route |
+| `robots.js` | The v2 robot sprites: composed per look, seated in two parts, shadows under the chair |
+| `crew.js` | The floor's robots from their jobs: walks, seating, work loops, reactions, farewells, live updates |
+| `desks.js` | Which desk each job sits at: kept across updates and reloads |
+| `floor-view.js` | The world in the app: a project's floor from the live state, beside the deck |
 
-Planned: `glow.js` (warmth fading per workarea), `behaviour.js` (renderer-agnostic agent behaviour, extracted from `motion.js`), `actors.js` (robot poses to sprites) and the rest of the DOM overlay (the lantern's glyph is the first piece).
+Planned: `glow.js` (warmth fading per workarea) and the rest of the DOM overlay.
+
+### In the app
+
+The header's switch reads **deck | world | building**; the choice is remembered per browser and the deck stays the default. **world** shows one project's floor, fed by the same state documents as the deck (`state.js` announces each), so it is live, and `fleet web --fixture` shows the fixture. A picker at the bottom left changes the floor; from inside a floor of the building, **world** opens that floor.
+
+- **Desks** (`desks.js`): each job the floor shows keeps its desk across updates and reloads; a new job takes the lowest free desk (the workarea bench first) in creation order, and nobody moves when others come or go. Desks are remembered per project in the browser, so a job away for one update gets its desk back.
+- **Robots**: host colour and kit, a Codex or Claude face, the job's work (`crew.js` with the shared behaviour). Finished jobs retire as on the deck; one that finishes while watched gives a thumbs-up and walks back into the lift; new jobs walk out of it. Failed and stalled jobs keep their robot at the desk (fallen, slumped), where the deck shows only their lantern.
+- **Attention**: an open or acknowledged item a job owns hangs a lantern over that job's desk; the floor's other items hang over the question desk.
+- **Text**: names (a job's first three words) and action bubbles only at close zoom; the whole floor shows only numbers. `test_world_app_browser.py` holds the budget.
+- **Clicks**: a robot or its lantern opens the job's panel (the deck's); a bench zooms onto it; Esc zooms out.
 
 `/prototype/world` runs the engine over the bake-off's l2 scene, `/prototype/kit` lays out the floor kit, and `/prototype/floor` builds the Restoke floor from the recorded fixture. On the floor, robots leave the lift one by one, walk around the furniture to their desks and sit. Clicking a bench zooms to it, and Escape zooms out.
 
