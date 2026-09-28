@@ -1,17 +1,19 @@
 // The floor kit (fleet/web/assets/world/kit/) laid out in a small room, as a check that its pieces share one angle
 // and scale: one wall bay as l2 (lift, question desk under the lantern, plan wall with tiles and criteria lights,
-// the bench with robots, lamps and their glow) and the rest of the kit around it. The robots are the bake-off's
-// placeholders. Zooms from the whole room to l2's framing of the bench.
+// the bench with robots, lamps and their glow) and the rest of the kit around it. The robots are the v2 robot sprites
+// (robots.js), seated on raised chairs as their seat_furniture asks. Zooms from the whole room to l2's framing.
 //   ?shot    no panel
 import { World } from '/js/world/engine.js';
+import { Robots, seat } from '/js/world/robots.js';
 
 const params = new URLSearchParams(location.search);
 const W = 14.4, D = 9.6, H = 3.2;   // the room: four bays along the back wall (y = D), the left wall at x = 0
 const BENCH = [7.9, 6.7, 0], BOARD = [7.9, D, 0], QDESK = [6.6, D - 0.75, 0], LIFT = [4.2, D, 0];   // (the alcove takes the corner)
 const FAR = { box: [0, 0, 0, W, D, H], margin: 0.03 };
 const NEAR = { target: [7.2, 7.4, 1.5], height: 5.486 };
-const HOSTS = ['#27b3b8', '#2e62dc', '#7a8a32'];
-const ROBOTS = ['b2/robot-typing', 'b2/robot-pencil', 'b2/robot-tube'];
+// the three at the bench: host colour and kit, agent, and what each does
+const CAST = [{ host: '#27b3b8', kit: 'antenna', agent: 'codex', clip: 'Typing' }, { host: '#2e62dc', kit: 'backpack', agent: 'claude', clip: 'Writing' },
+  { host: '#7a8a32', kit: 'crest', agent: 'claude', clip: 'Holding' }];
 
 if (params.has('shot')) document.body.classList.add('shot');
 const world = new World(document.getElementById('world'), { camera: { far: FAR, near: NEAR, bounds: [0, 0, 0, W, D, H] } });
@@ -26,7 +28,8 @@ const plus = (a, b) => a.map((v, i) => v + b[i]);
 
 async function main() {
   const m = await world.load('/assets/world/kit/manifest.json');
-  await world.load('/art/bakeoff/world.json', { prefix: 'b2/' });
+  const robots = await Robots.load(world);
+  const sf = robots.seatFurniture;
   const S = sprites = m.sprites;
   // shell: textured floor and walls, then the Blender pieces along them
   world.addPlane({ quad: [[0, 0, 0], [W, 0, 0], [W, D, 0], [0, D, 0]], texture: 'floor-tile', origin: [0, D, 0], u: [1, 0, 0], v: [0, -1, 0] });
@@ -63,9 +66,12 @@ async function main() {
   add('front-shadow', 'shadow-bench-4', front);
   ['bench-left', 'bench-mid', 'bench-mid', 'bench-right'].forEach((p, d) => add(`front-${d}`, p, [front[0] - 2 * M + d * M, front[1] + 0.4, 0.74]));
   const slots = S.bench.slots;
+  const far = BENCH[1] + S.bench.footprint[4];   // the desk top's far edge
   slots.seats.forEach((s, i) => {
-    world.seat('robot' + i, { sprite: ROBOTS[i], at: plus(BENCH, s), on: 'bench', tint: HOSTS[i], ambient: true, place: 'run' });
-    add('seat-shadow' + i, 'shadow-seat', [BENCH[0] + s[0], BENCH[1] + s[1] + 0.05, 0]);
+    const at = [BENCH[0] + s[0], far + sf.desk_edge_ahead_m, 0], chair = [at[0], at[1] + sf.chair_behind_m, 0];
+    add('chair-far' + i, 'chair-front', chair);
+    const { clip, ...look } = CAST[i];
+    seat(world, robots, { id: 'robot' + i, look, clip, seat: at, chair, desk: 'bench', place: 'run' });
     add('chair-near' + i, 'chair-back', plus(BENCH, [s[0] + 0.1, -0.75, 0]));
   });
   slots.lamps.forEach((p, i) => {

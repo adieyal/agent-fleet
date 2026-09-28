@@ -34,7 +34,7 @@ RECORD = """seconds => new Promise(done => {
     const q = (a, p) => a.slice().sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor(p * a.length))];
     const mean = a => a.reduce((s, v) => s + v, 0) / a.length;
     done({ frames: log.length, interval: mean(iv), p95: q(iv, 0.95), work: mean(work), throttle: e.throttle,
-           walking: floor.walkers.filter(w => w.state === 'walking').length });
+           walking: floor.crew.members.filter(m => m.state === 'walking').length });
   }, seconds * 1000);
 })"""
 
@@ -47,7 +47,7 @@ def run(p, url: str, flags: list[str], dpr: int, zoom: str, seconds: float) -> d
     page = browser.new_page(viewport={'width': 1440, 'height': 900}, device_scale_factor=dpr)
     page.goto(f'{url}/prototype/floor?shot&loop' + ('&zoom=near' if zoom == 'l2' else ''))
     page.wait_for_function('window.floor && (window.floor.ready || window.floor.error)', timeout=90_000)
-    page.wait_for_function('floor.walkers.filter(w => w.state === "walking").length === floor.walkers.length', timeout=60_000)
+    page.wait_for_function('floor.crew.members.filter(m => m.state === "walking").length === floor.crew.members.length', timeout=60_000)
     page.wait_for_timeout(1000)   # the ground snapshot settles
     if zoom == 'zooming':   # the click's zoom onto the active bench and back out, while they walk
         page.evaluate("""setTimeout(() => floor.zoomTo('bench-0'), 50);

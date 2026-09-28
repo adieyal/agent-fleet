@@ -11,7 +11,9 @@ from urllib.request import urlopen
 import pytest
 from playwright.sync_api import Browser, Page
 
-KIT = json.loads((Path(__file__).parent.parent / "fleet" / "web" / "assets" / "world" / "kit" / "manifest.json").read_text())
+ASSETS = Path(__file__).parent.parent / "fleet" / "web" / "assets" / "world"
+KIT = json.loads((ASSETS / "kit" / "manifest.json").read_text())
+SEAT = json.loads((ASSETS / "robot" / "sprites" / "sprites.json").read_text())["seat_furniture"]
 
 
 @pytest.fixture(scope="module")
@@ -56,9 +58,9 @@ def test_walking_along_a_route(page: Page) -> None:
 
 
 def layout(page: Page, state: dict[str, Any]) -> dict[str, Any]:
-    return page.evaluate("""([state, kit]) => Promise.all([import('/js/world/layout.js'), import('/js/workarea-model.js')])
-      .then(([L, W]) => { const room = W.workareaOf(state, 'restoke', state.time); return L.floorLayout(room, kit, h => '#' + h.length + '0a0a0'); })""",
-                         [state, KIT["sprites"]])
+    return page.evaluate("""([state, kit, seats]) => Promise.all([import('/js/world/layout.js'), import('/js/workarea-model.js')])
+      .then(([L, W]) => { const room = W.workareaOf(state, 'restoke', state.time); return L.floorLayout(room, kit, seats); })""",
+                         [state, KIT["sprites"], SEAT])
 
 
 def test_the_restoke_floor_seats_its_running_jobs_at_the_workarea_bench(page: Page, state: dict[str, Any]) -> None:
@@ -66,9 +68,11 @@ def test_the_restoke_floor_seats_its_running_jobs_at_the_workarea_bench(page: Pa
     running = sorted(f"{h['name']}:{j['id']}" for h in state["hosts"] for j in h["jobs"]
                      if j.get("project") == "restoke" and j["status"] == "running")
     assert len(running) == 3
-    assert sorted(r["key"] for r in out["runs"]) == running
-    assert {r["bench"] for r in out["runs"]} == {"bench-0"}
-    assert sorted(r["desk"] for r in out["runs"]) == [0, 1, 2]
+    work = [r for r in out["runs"] if r["bench"] == "bench-0"]
+    assert sorted(r["key"] for r in work) == running
+    assert sorted(r["desk"] for r in work) == [0, 1, 2]
+    # every job at a desk has its robot: the recently finished one rests at the next bench
+    assert [(r["key"], r["status"], r["bench"]) for r in out["runs"] if r["bench"] != "bench-0"] == [("worker:d4f7a2", "done", "bench-1")]
     after = next(b for b in out["benches"] if b["key"] == "bench-1")
     # the done job ran in the last hour; the failed one is older, so only its blocker shows (on the lantern)
     assert after["jobs"] == ["worker:d4f7a2"]
@@ -116,16 +120,22 @@ def floor(browser: Browser, base_url: str) -> Iterator[Page]:
     assert errors == []
 
 
+SETTLED = "floor.crew && floor.settled.length === floor.crew.members.length"
+
+
 def test_robots_walk_from_the_lift_and_sit(floor: Page) -> None:
     assert floor.evaluate("floor.error") is None
     assert floor.evaluate("floor.engine.stats.missing") == []
-    assert floor.evaluate("floor.walkers.every(w => w.pts && w.L > 3)")
-    floor.wait_for_function("floor.walkers.some(w => w.state === 'walking')", timeout=10_000)
+    assert floor.evaluate("floor.crew.members.every(m => m.legs && m.legs[0].L > 3)")
+    floor.wait_for_function("floor.crew.members.some(m => m.state === 'walking')", timeout=10_000)
     lift_open = floor.evaluate("floor.engine.items.get('lift').cell")
     assert lift_open > 0
-    floor.wait_for_function("floor.seated.length === floor.walkers.length", timeout=60_000)
-    assert floor.evaluate("[...floor.engine.items.keys()].filter(k => k.startsWith('walker-')).length") == 0
-    assert floor.evaluate("floor.layout.runs.every(r => !floor.engine.items.get(r.chair).visible)")
+    walking = floor.evaluate("floor.crew.members.filter(m => m.state === 'walking').map(m => m.clip)")
+    assert set(walking) <= {"Walking"}
+    floor.wait_for_function(SETTLED, timeout=60_000)
+    # seated at last: no standing robot left, each on its raised chair (the chair stays: the robot doesn't carry one)
+    assert floor.evaluate("floor.crew.members.filter(m => floor.engine.items.has(m.id)).length") == 0
+    assert floor.evaluate("floor.layout.runs.every(r => floor.engine.items.get(r.chairId).visible)")
     floor.wait_for_function("floor.engine.items.get('lift').cell === 0")
 
 
@@ -146,7 +156,7 @@ def test_a_click_on_a_bench_zooms_onto_it(floor: Page) -> None:
 
 
 def test_working_robots_show_their_action_only_zoomed_in(floor: Page) -> None:
-    floor.wait_for_function("floor.seated.length === floor.walkers.length", timeout=60_000)
+    floor.wait_for_function(SETTLED, timeout=60_000)
     floor.evaluate("floor.engine.camera.jump(floor.engine.camera.min); floor.engine.request()")
     floor.wait_for_timeout(200)
     assert floor.evaluate("floor.bubbles.every(b => b.el.hidden)")
@@ -154,7 +164,7 @@ def test_working_robots_show_their_action_only_zoomed_in(floor: Page) -> None:
     floor.wait_for_function("!floor.engine.camera.moving", timeout=10_000)
     floor.wait_for_timeout(200)
     shown = floor.evaluate("floor.bubbles.filter(b => !b.el.hidden).map(b => [b.el.querySelector('.glyph').dataset.action, b.el.style.color])")
-    assert len(shown) == 3
+    assert len(shown) == len(floor.evaluate("floor.seated"))   # every seated robot, the resting one too
     assert all(action for action, _ in shown)
     # the glyph takes the robot's host colour, never the attention magenta
     assert all("166, 14, 155" not in colour and "#a60e9b" not in colour for _, colour in shown)
@@ -194,65 +204,85 @@ def test_motion_draws_at_ratio_one_and_rests_sharp(browser: Browser, base_url: s
 
 
 SEATS = """(async () => {
-  const p = await import('/js/world/projection.js'), e = floor.engine, order = e.sorted().map(it => it.id), v = e.camera.view;
-  return floor.layout.runs.map(r => {
-    const under = order.indexOf(r.key + ':under'), bench = order.indexOf(r.module), over = order.indexOf(r.key + ':over');
-    const lines = e.cutLines(e.items.get(r.key + ':under'), {}, v, 0, 0, 1);
-    // (each line is compared at the screen x of the desk point it should pass near)
-    const far = p.toScreen(v, [r.seat[0], r.farEdge, 0.74]), near = p.toScreen(v, [r.seat[0], r.nearEdge, 0.74]);
-    return { key: r.key, under, bench, over, seat: r.seat, far: r.farEdge, near: r.nearEdge,
-      split: lines.split(far[0]), floor: lines.floor(near[0]), farY: far[1], nearY: near[1],
-      splitAtNear: lines.split(near[0]) };
+  const e = floor.engine, order = e.sorted().map(it => it.id);
+  return floor.crew.members.filter(m => floor.seated.includes(m.run.key)).map(m => {
+    const r = m.run, shadow = e.items.get(m.id + ':shadow');
+    return { key: r.key, low: order.indexOf(m.id + ':low'), bench: order.indexOf(r.module), high: order.indexOf(m.id + ':high'),
+      chair: order.indexOf(r.chairId), seat: r.seat, far: r.farEdge, chairAt: e.items.get(r.chairId).at,
+      shadowAt: shadow.at, shadowLayer: shadow.layer, split: floor.robots.man.desk_top_m };
   });
 })()"""
 
 
 def test_every_seated_robot_sits_behind_its_desk(floor: Page) -> None:
-    floor.wait_for_function("floor.seated.length === floor.walkers.length", timeout=60_000)
+    floor.wait_for_function(SETTLED, timeout=60_000)
     seats = floor.evaluate(SEATS)
-    assert len(seats) == 3
+    assert len(seats) == 4   # three at work, one resting
     for s in seats:
-        # drawn chair and lower body first, then the desk, then the upper body
-        assert 0 <= s["under"] < s["bench"] < s["over"], s
-        # the seat is well behind the desk's far edge, so the legs are under the top
-        assert s["seat"][1] >= s["far"] + 0.25, s
-        # the split runs along the desk top, just in from the far edge; the lower body stops at the near edge
-        assert s["farY"] < s["split"], s          # below the far edge where it passes it: on the desk top
-        assert s["splitAtNear"] < s["nearY"], s   # and above the near edge where it passes that
-        assert s["floor"] == pytest.approx(s["nearY"], abs=0.5), s
+        # drawn chair and lower body first, then the desk, then the upper body (the sprites split at the desk top)
+        assert 0 <= s["chair"] < s["low"] < s["bench"] < s["high"], s
+        assert s["split"] == 0.74
+        # seat_furniture: the seat point 0.159 m behind the desk's far edge, the raised chair 0.244 m further back
+        assert s["seat"][1] == pytest.approx(s["far"] + SEAT["desk_edge_ahead_m"]), s
+        assert s["chairAt"][1] == pytest.approx(s["seat"][1] + SEAT["chair_behind_m"]), s
+        # its shadow lies on the floor under the chair, not in front of the desk (the feet hang clear of the floor)
+        assert s["shadowAt"] == s["chairAt"] and s["shadowLayer"] == "ground", s
 
 
-def test_a_frame_of_a_sheet_is_drawn_without_its_neighbours_pixels(floor: Page) -> None:
-    # the pencil robot's frame 2 is opaque down its right edge; frame 3, scaled up, must not show that column down its
-    # left edge (the thin line beside a seated robot, floor review 2)
-    out = floor.evaluate("""(() => {
-      const e = floor.engine, s = e.sprites.get('b2/robot-pencil'), t = s.tiers[0];
-      const c = document.createElement('canvas'); c.width = t.fw * 4; c.height = t.fh * 4;
-      const g = c.getContext('2d');
-      g.drawImage(e.cellOf(s, 0, null, 3), 0, 0, c.width, c.height);
-      const col = g.getImageData(0, 0, 1, c.height).data;
-      let max = 0; for (let i = 3; i < col.length; i += 4) max = Math.max(max, col[i]);
-      const own = document.createElement('canvas'); own.width = 1; own.height = t.fh;
-      own.getContext('2d').drawImage(s.img[0], 3 * t.fw, 0, 1, t.fh, 0, 0, 1, t.fh);
-      const src = own.getContext('2d').getImageData(0, 0, 1, t.fh).data;
-      let srcMax = 0; for (let i = 3; i < src.length; i += 4) srcMax = Math.max(srcMax, src[i]);
-      return { drawn: max, own: srcMax };
-    })()""")
-    # the left column of the drawn frame is no stronger than the frame's own left column
-    assert out["drawn"] <= out["own"] + 2, out
+def open_floor(browser: Browser, base_url: str, query: str) -> Page:
+    page = browser.new_page(viewport={"width": 1000, "height": 600})
+    page.goto(f"{base_url}/prototype/floor?shot&{query}")
+    page.wait_for_function("window.floor && (window.floor.ready || window.floor.error)", timeout=60_000)
+    assert page.evaluate("floor.error") is None
+    return page
+
+
+def test_robots_do_what_their_jobs_do(browser: Browser, base_url: str) -> None:
+    # the deck's behaviour on the v2 sprites: a job's activity picks the seated loop, its status the look
+    page = open_floor(browser, base_url, "seated&as=2:stalled")
+    try:
+        out = page.evaluate("floor.crew.members.map(m => [m.run.key, m.act, m.clip, m.look.tone, m.look.agent])")
+        clips = {k: (act, clip, tone) for k, act, clip, tone, _ in out}
+        assert clips["home:a1c3e9"] == ("test", "Holding", "normal")     # vitest: holds up the test tube
+        assert clips["home:b7d042"] == ("edit", "Typing", "normal")      # a patch: typing
+        assert clips["worker:c90e11"][1:] == ("SitSlump", "stalled")    # (?as) stalled: slumped and dimmed
+        assert clips["worker:d4f7a2"] == ("dock", "SitIdle", "resting")  # done: resting, face light low
+        # a test result nods, an error shakes its head: once, then back to work
+        assert page.evaluate("floor.react('home:a1c3e9', true)")
+        assert page.evaluate("floor.crew.members[0].clip") == "SitNod"
+        page.wait_for_function("floor.crew.members[0].clip === 'Holding'", timeout=10_000)
+        assert page.evaluate("floor.react('home:b7d042', false)")
+        assert page.evaluate("floor.crew.members[1].clip") == "SitShake"
+    finally:
+        page.close()
+
+
+def test_a_shipping_robot_carries_its_box_by_the_storage_corner_and_a_failed_one_falls(browser: Browser, base_url: str) -> None:
+    page = open_floor(browser, base_url, "as=0:ship,1:failed")
+    try:
+        page.wait_for_function("floor.crew.members[0].clip === 'BoxWalk'", timeout=15_000)
+        legs = page.evaluate("floor.crew.members[0].legs.map(l => l.clip)")
+        assert legs == ["BoxWalk", "BoxIdle", "Walking"]
+        assert page.evaluate("floor.robots.clip('BoxWalk').items") == ["item_box"]
+        page.wait_for_function("floor.crew.members[1].state === 'arrived' && !floor.crew.members[1].once", timeout=60_000)
+        fallen = page.evaluate("(() => { const m = floor.crew.members[1], it = floor.engine.items.get(m.id); return [m.clip, it.cell, it.at, m.run.spot]; })()")
+        assert fallen[0] == "Death" and fallen[1] == 11   # held on its last frame
+        assert fallen[2] == pytest.approx(fallen[3], abs=0.05)   # in front of its desk (where its walk ended)
+    finally:
+        page.close()
 
 
 def test_robots_can_walk_to_the_storage_corner(page: Page, state: dict[str, Any]) -> None:
     # the store spot is on the walking grid, reachable from the lift (built as the floor page builds it)
-    out = page.evaluate("""([state, kit]) => Promise.all([import('/js/world/layout.js'), import('/js/workarea-model.js'), import('/js/world/nav.js')])
+    out = page.evaluate("""([state, kit, seats]) => Promise.all([import('/js/world/layout.js'), import('/js/workarea-model.js'), import('/js/world/nav.js')])
       .then(([L, W, N]) => {
         const room = W.workareaOf(state, 'restoke', state.time);
-        const lay = L.floorLayout(room, kit, () => '#888888');
+        const lay = L.floorLayout(room, kit, seats);
         const blocks = lay.items.filter(it => kit[it.sprite] && kit[it.sprite].layer !== 'light' && !/^(footprints|slab|chair|floor-sheen|shadow|ao-|glow)|-shadow$/.test(it.sprite))
           .map(it => { const f = kit[it.sprite].footprint; return [it.at[0] + f[0], it.at[1] + f[1], it.at[0] + f[3], it.at[1] + f[4], it.at[2] + f[2]]; })
           .filter(b => b[4] <= 1.8).map(b => b.slice(0, 4));
         const g = N.navGrid({ x0: 0, y0: 0, x1: lay.size.w, y1: lay.size.d }, blocks);
         const pts = N.route(g, [lay.lift.at[0], lay.lift.at[1] - 0.15], lay.store.spot);
         return { reachable: !!pts, free: N.walkable(g, lay.store.spot), stacks: lay.items.filter(it => it.sprite === 'crate-stack').length };
-      })""", [state, KIT["sprites"]])
+      })""", [state, KIT["sprites"], SEAT])
     assert out == {"reachable": True, "free": True, "stacks": 2}

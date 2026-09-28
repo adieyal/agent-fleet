@@ -129,11 +129,12 @@ function frameAt(clip, time) {
   else i = Math.min(i, c.frames - 1);
   return i;
 }
-// the layers of one robot, split at the desk top when seated: [below, above]
+// the layers of one robot, split at the desk top when seated: [below, above]. A seated robot's shadow is drawn with
+// its chair instead (seatShadow): its feet hang clear of the floor, and the chair's seat takes its shadow
 function layersOf(clip, frame, opts) {
   const f = frame.layers;
   const face = FACES[opts.face], kit = 'acc_' + opts.kit;
-  const below = ['shadow', 'body_low'], above = ['body', 'body_high', face, kit, ...man.clips[clip].items];
+  const below = man.clips[clip].seated ? ['body_low'] : ['shadow', 'body_low'], above = ['body', 'body_high', face, kit, ...man.clips[clip].items];
   return [below.filter(n => f[n]), above.filter(n => f[n])];
 }
 function drawLayers(ctx, names, frame, res, r, ox0, oy0, k) {
@@ -167,6 +168,16 @@ function robotDraw(r, part) {
       sx - dd.foot[0] * sc * k, sy - dd.foot[1] * sc * k, k);
     if (state.anchors && part !== 'below') drawAnchors(r, dd, f, sx, sy, view.ppm / man.camera.px_per_m_1x);
   };
+}
+// a seated robot's contact shadow on the floor under its chair (drawn before the chair)
+const shadowPoint = foot => [foot[0], foot[1] + SF.chair_behind_m, 0];
+function seatShadow(r) {
+  const res = pickRes();
+  if (!loaded[res] || !man.clips[r.clip].seated) return;
+  const dd = man.clips[r.clip].dirs[r.dir], f = dd.frames[r.frame];
+  const sc = man.resolutions[res].scale, k = view.ppm / (man.camera.px_per_m_1x * sc);
+  const [sx, sy] = screen(shadowPoint(r.foot));
+  drawLayers(g, ['shadow'], f, res, r, sx - dd.foot[0] * sc * k, sy - dd.foot[1] * sc * k, k);
 }
 function drawAnchors(r, dd, f, sx, sy, k) {
   const at = p => [sx + (p[0] - dd.foot[0]) * k, sy + (p[1] - dd.foot[1]) * k];
@@ -212,6 +223,10 @@ function drawDesk() {
 }
 function drawChair(d) {
   const [sx, sy] = seat(d), h = SF.seat_height_m, cy = sy + SF.chair_behind_m;
+  for (let i = 0; i < 5; i++) {   // the five-spoke base on the floor, which the seated robot's shadow lies under
+    const a = i * 2 * Math.PI / 5 + 0.3, ex = sx + Math.cos(a) * 0.28, ey = cy + Math.sin(a) * 0.28, nx = -Math.sin(a) * 0.02, ny = Math.cos(a) * 0.02;
+    poly([[sx + nx, cy + ny, 0.05], [ex + nx, ey + ny, 0.03], [ex - nx, ey - ny, 0.03], [sx - nx, cy - ny, 0.05]], '#3a3d44');
+  }
   boxAt([sx - 0.012, cy - 0.012, 0.05], [sx + 0.012, cy + 0.012, h - 0.06], '#8a8f99', '#787d86', '#8a8f99');  // the gas lift
   boxAt([sx - 0.25, cy - 0.24, h - 0.07], [sx + 0.25, cy + 0.24, h], '#2c2f35', '#22252a', '#34373d');  // seat
   boxAt([sx - 0.23, cy + 0.2, h + 0.08], [sx + 0.23, cy + 0.26, h + 0.58], '#2c2f35', '#22252a', '#34373d');  // back
@@ -269,8 +284,9 @@ function items(w, t) {
   const sitter = (d, clip, host, kit, face) => ({ clip, dir: 'S', frame: frameAt(clip, t), foot: seat(d), host, kit, face, look: 'normal' });
   const one = sitter(1, 'Writing', HOSTS.orange, 'backpack', 'claude'), three = sitter(3, 'SitRead', HOSTS.violet, 'crest', 'claude');
   const two = sitter(2, 'Typing', HOSTS.teal, 'antenna', 'codex');
+  const seated = [one, three, ...(BENCH_SCENE ? [two] : []), ...(w.atDesk && man.clips[r.clip].seated ? [r] : [])];
   const out = [
-    { label: 'chairs', key: benchKey - 0.01, draw: () => [1, 2, 3].forEach(drawChair) },
+    { label: 'chairs', key: benchKey - 0.01, draw: () => { seated.forEach(seatShadow); [1, 2, 3].forEach(drawChair); } },
     ...(BENCH_SCENE ? [{ label: 'desk2 below', key: benchKey - 0.002, draw: robotDraw(two, 'below') },
       { label: 'desk2 above', key: benchKey + 0.002, draw: robotDraw(two, 'above') }] : []),
     { label: 'bench', key: benchKey, draw: drawDesk },
@@ -408,5 +424,6 @@ window.robotPreview = {
   stats: () => ({ frame: frameStats(), bytes: bytes(), res: pickRes(), loaded: !!loaded[pickRes()], robot: current && { clip: current.robot.clip, dir: current.robot.dir, foot: current.robot.foot } }),
   resetStats: () => { frameLog.length = 0; last = null; },
   manifest: () => man, composeCanvas, order, setZoom, walkerAt: t => walker(t), pathSeconds: () => legs.reduce((s, l) => s + l.secs, 0),
+  seat, shadowPoint, layersOf: (clip, dir, i) => layersOf(clip, man.clips[clip].dirs[dir].frames[i || 0], { face: 'codex', kit: 'antenna' }),
 };
 main();

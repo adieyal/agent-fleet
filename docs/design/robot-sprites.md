@@ -247,4 +247,5 @@ Rules for the runtime:
 - **Seated nods over typing and reading** are not rendered (budget); `SitNod` / `SitShake` stand in.
 - **StandUp, ThumbsUp and BoxIdle** exist in S and N only; E and W would add about 1.3 MB up front.
 - **Slump away from a seat** stands slumped (`Slump`) rather than sitting on the floor.
-- **The floor's chair** must be raised to 0.549 m (its gas lift) and spaced by `seat_furniture`; with the kit's 0.47 m chair the seated robot sinks 8 cm into the desk.
+- **The floor's chair** is raised to 0.549 m (its gas lift, `art/scripts/render_props.py`) and spaced by `seat_furniture` on `renovate/floor`.
+- **Seated shadows** are drawn under the chair, not under the seat point: with the robot's feet hanging clear, the floor under the seat showed its shadow below the desk's near edge, detached (fixed in the preview and on the floor; `docs/design/sprite-world.md`, *Robots*).

@@ -32,7 +32,7 @@ def main() -> None:
           const b = floor.layout.benches.find(b => b.key === 'bench-0');
           return p.toScreen(floor.engine.camera.view, [b.at[0] + 1.8, b.at[1] - 0.2, 0.74]); })""")
         page.mouse.click(*at)
-        page.wait_for_function('floor.seated.length === floor.walkers.length', timeout=60_000)
+        page.wait_for_function('floor.settled.length === floor.crew.members.length', timeout=60_000)
         page.wait_for_timeout(2500)
         page.keyboard.press('Escape')
         page.wait_for_timeout(2500)

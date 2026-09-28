@@ -413,7 +413,7 @@ def procedural(module: float) -> dict:
     floor_sprite('glow-floor-spill', radial(int(3.2 * SRC), hexrgb('#fee095'), 0.28),
                  'low warm spill on the floor in front of an active bench', 'light', {'blend': 'lighter'})
     # contact shadows drawn as one piece, so tiled bench modules don't darken their seams: a whole bench of n seats
-    # (anchor: the bench's centre on the floor) and a seated robot on its chair (anchor: the seat's floor point)
+    # (anchor: the bench's centre on the floor). (A seated robot's shadow comes with its sprites: robots.js)
     def soft_rect(w_m, d_m, core, blur_m, strength):
         img = Image.new('L', (int((w_m + 0.8) * SRC), int((d_m + 0.8) * SRC)), 0)
         g = ImageDraw.Draw(img)
@@ -427,8 +427,6 @@ def procedural(module: float) -> dict:
     for n in (3, 4):
         a = ImageChops.lighter(soft_rect(n * module + 0.1, 0.78, 0.05, 0.035, 195), soft_rect(n * module + 0.4, 1.1, 0.25, 0.15, 115))
         floor_sprite(f'shadow-bench-{n}', shadow(a), f'the soft contact shadow of a {n}-seat bench, as one piece', 'ground', {'hit': 'none'})
-    a = ImageChops.lighter(soft_rect(0.5, 0.45, 0.2, 0.04, 140), soft_rect(0.7, 0.62, 0.3, 0.1, 70))
-    floor_sprite('shadow-seat', shadow(a), 'a seated robot and its chair\'s contact shadow', 'ground', {'hit': 'none'})
     # sheen: the soft reflection of a ceiling light in l1's satin floor, a wide blurred panel of warm white
     sw, sd = int(2.0 * SRC), int(1.4 * SRC)
     sheen = Image.new('L', (sw, sd), 0)

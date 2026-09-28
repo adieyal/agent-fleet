@@ -89,9 +89,23 @@ Each asset family has a `manifest.json` beside its files under `fleet/web/assets
 }
 ```
 
-The robot manifest is defined by the robot job in `docs/design/robot-sprites.md`. The runtime needs from it, per pose and facing: frame sheets with fps and loop flag; `under` and `over` layers for seated poses (the part below and above the desk top); a shell tint mask; the eyes as a separate layer so they can dim; and per-frame anchors for `seat` or `feet`, `hand.R` (held items), `head` (nods and shakes move the head layer) and `bubble` (the action glyph). Until those sprites land, `robot/placeholder.json` presents the bake-off B2 frames through the same schema: the B2 `cut` line splits each frame into `under` and `over`, `mask` becomes the tint mask, and the `seat` anchor is B2's `ref_px`. B2 has seated poses only, facing the viewer, so placeholder robots walk as their seated frame gliding. Swapping to the real robots is a change of manifest path.
+The robot manifest is defined by the robot job in `docs/design/robot-sprites.md`. The runtime needs from it, per pose and facing: frame sheets with fps and loop flag; `under` and `over` layers for seated poses (the part below and above the desk top); a shell tint mask; the eyes as a separate layer so they can dim; and per-frame anchors for `seat` or `feet`, `hand.R` (held items), `head` (nods and shakes move the head layer) and `bubble` (the action glyph). The v2 set (`fleet/web/assets/world/robot/sprites/sprites.json`, manifest version 2) is what the floor reads; see *Robots* below.
 
 **The floor kit** (`fleet/web/assets/world/kit/`, built as described in `art/kit/README.md`) is the first family built. Its manifest adds a `layer` hint per sprite (`ground`, `standing` or `light`), named `slots` (seats, lamp and lantern points, the plan wall's tile grid, the lift's indicator), `cells` for sheets of states without a frame rate (an item picks one with `cell`), and a `scale` record measured against l1 and l2. Lamps are separate from benches, and every warm light (desk pool, lit shade, wall-washer scallop, floor spill, lantern halo) is its own additive sprite whose placed item carries an `intensity`, as *Glow* above requires. The engine loads several manifests side by side with a prefix per manifest.
+
+### Robots
+
+The v2 robot sprites (`docs/design/robot-sprites.md`) come in through `fleet/web/js/world/robots.js`:
+- **Composition:** each look (host colour and kit, agent, tone), clip, facing and part becomes one engine sprite (`World.define` with a `compose` source). Its frames are composed from the layers the first time they are drawn: the shell and kit tinted through their masks, the white face multiplied by the agent's colour (dimmed for the stalled and resting tones). The engine then sorts, scales, caches and hit-tests them like any sprite. Composed frames are kept up to 160 MB, least recently drawn first; the 4x set loads only when zoomed close.
+- **Seating:** a seated robot is its `body_low` part attached just before its desk module and its `body_high` part (face, kit, items) just after: the sprites are split at the 0.74 m desk top when rendered. It sits by its `foot` on the floor point under the seat point, 0.159 m behind the desk's far edge. Its chair is the kit's, with the gas lift raised to 0.549 m (`render_props.py`), centred 0.244 m further back (`seat_furniture`).
+- **Seated shadows:** the rebuilt robot's feet hang clear of the floor on the raised chair, so its rendered shadow, on the floor straight under it, showed below the desk's near edge, detached from the robot (the preview's bench scene). A seated robot's shadow is drawn under its chair instead, where the chair's seat would catch it, as a ground sprite. The preview does the same and draws its chairs' five-spoke bases.
+- **Behaviour:** `crew.js` drives the deck's behaviour from each job (`activityFor`):
+  - **The walk in:** out of the lift and along a route to the desk, carrying a box by way of the storage corner (`ship`), or a book or a sheet (`read`, `review`).
+  - **At the desk:** `Sitting`, then the loop for the activity: `Typing`, `Writing`, `SitRead`, `Holding` for tests, `SitIdle`.
+  - **By status:** stalled slumps (`SitSlump`, dimmed); queued idles; finished gives a `SitThumbsUp` and rests with its face light low; failed walks to a spot in front of its desk and plays `Death`, held.
+  - **Reactions:** a test result or an error plays `SitNod` / `SitShake` (standing: `Yes` / `No`).
+- **Once clips:** clips that play once are stepped by the crew through `cell`; loops keep the engine's clock and ambient throttle.
+- **Recent jobs:** every job at a desk now has its robot, not only running ones.
 
 ## Layers and drawing
 
@@ -172,7 +186,7 @@ The remaining differences, largest first (`floor-sbs/round-8` in the job outbox)
 1. l1 lights every bench's lamps and l2's whole workarea is warm, whereas here only desks with active runs glow (PRD: warmth is activity); the ambient grade makes up part of it.
 2. l2 shows the lift beside the workarea; here it is at the far right as in l1, and l2's framing shows the library there instead.
 3. l2 is not a single projection: its question desk sits further from the bench's end than a real layout allows.
-4. The robots are placeholders: bake-off B2 seated frames and a Blender Walking clip rendered from the robot job's glb (`art/scripts/build_walker.py`).
+4. The robots are the v2 set (see *Robots*); l2's are a little larger and lean further over their desks.
 
 **Places are stable.** Lane slots are assigned when a lane first appears and stored with the floor's layout; they never change with state or focus. A lane's bench persists and resets for each new slice (PRD: *the bench resets for the next slice*). Done, active and next slices read on the lane's plan wall (ticked, lit and blank columns), and finished slices leave as dossiers to the archive shelf. More lanes than slots (nine per floor) is a rearrange-mode decision, not an automatic reflow.
 
@@ -283,7 +297,7 @@ The three.js deck and the sprite world can then share `behaviour` while both exi
 
 **Navigation grid.** A 0.3 m grid over the floor, blocked where footprints (padded by a robot's 0.3 m radius) cover it. Routes are A* on the grid with aisle cells cheaper than open floor, then string-pulled into straight segments, and cached per (from, to) cell pair until the layout changes. This replaces the deck's hand-coded aisles and crossings, which only fit one room shape. The deck's walker nudge (stepping sideways to pass another android) carries over unchanged, since it is computed on screen axes.
 
-**Facings.** Walking and standing use eight facings rendered by the robot job; the runtime picks the nearest to the route direction. Seated poses exist only in their seat's facing. Under reduced motion robots are placed at their target, as in the deck.
+**Facings.** Walking and standing use the four facings the v2 set renders (S, E, N, W along the room's axes); the runtime picks the nearest to the route direction. Seated poses exist only in their seat's facing. Under reduced motion robots are placed at their target, as in the deck.
 
 **Particles** (smoke over failed runs, motes over finished ones, coffee steam) become a small 2D particle pool drawn in pass 3 above their owner, with the deck's rates and lifetimes.
 

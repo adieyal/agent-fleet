@@ -25,7 +25,7 @@ REQUIRED = [
     "book-cart", "librarian-desk", "podium", "whiteboard", "plan-wall", "tile-blank", "tile-done", "tile-running",
     "tile-failed", "criteria-on", "criteria-off", "question-desk", "crate", "lantern", "lift",
     "alcove", "lift-panel", "monitor", "floor-sheen", "bench-left", "bench-mid", "bench-right",
-    "shadow-bench-3", "shadow-bench-4", "shadow-seat",
+    "shadow-bench-3", "shadow-bench-4",
     "crate-stack", "ao-floor-x", "ao-floor-y", "ao-wall-x", "ao-wall-y", "glow-window",
     "shelf-low", "crate-shelf", "wall-light", "floor-lamp",
     "pilaster", "wall-cap-x", "wall-cap-y", "wall-corner", "wall-end-back", "wall-end-left", "slab-front", "slab-side",

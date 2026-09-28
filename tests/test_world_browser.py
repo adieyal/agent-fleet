@@ -172,7 +172,7 @@ def test_animation_repaints_only_the_robots_at_their_frame_rate(world: Page) -> 
     world.wait_for_timeout(1000)
     after = world.evaluate("({...world.engine.stats})")
     assert after["full"] == before["full"]
-    assert 3 <= after["partial"] - before["partial"] <= 8  # 6 fps sheets
+    assert 3 <= after["partial"] - before["partial"] <= 14  # loops at 6.7, 4 and 1.9 fps
 
 
 def test_ambient_animation_slows_when_frames_run_over_budget(browser: Browser, base_url: str) -> None:
@@ -182,11 +182,11 @@ def test_ambient_animation_slows_when_frames_run_over_budget(browser: Browser, b
         settle(page)
         # count the typing robot's frame changes (other repaints, a late tier fading in, don't count)
         changes = page.evaluate("""() => new Promise(done => {
-          const it = world.engine.items.get('robot-0:over'); let last = it.frame, n = 0;
+          const it = world.engine.items.get('robot-0:high'); let last = it.frame, n = 0;
           const t = setInterval(() => { if (it.frame !== last) { n++; last = it.frame; } }, 20);
           setTimeout(() => { clearInterval(t); done(n); }, 2000);
         })""")
-        assert changes <= 3  # a 6 fps loop at an eighth of its speed; 12 unthrottled
+        assert changes <= 3  # a 6.7 fps loop at an eighth of its speed; 13 unthrottled
     finally:
         page.close()
     assert errors == []
@@ -200,7 +200,7 @@ def test_clicks_find_the_robot_the_lantern_and_the_floor(world: Page) -> None:
     for point in ([3.1, 5.25, 2.25], [2.0, 1.0, 0]):   # the lantern and a spot of floor, in the whole-room view
         world.mouse.click(*screen(world, point))
     wheel(world, -400, 25)
-    world.mouse.click(*screen(world, [4.45, 4.89, 1.05]))   # the typing robot's head, above the desk top
+    world.mouse.click(*screen(world, [4.7, 4.91, 0.95]))   # the typing robot's head, above the desk top
     lantern, floor, robot = world.evaluate("world.taps")
     assert (lantern["id"], lantern["place"]) == ("lantern", "attention")
     assert floor["floor"] == pytest.approx([2.0, 1.0], abs=0.05)
@@ -212,3 +212,25 @@ def test_a_seated_robots_legs_are_behind_the_desk(world: Page) -> None:
     wheel(world, -400, 25)
     pedestal = screen(world, [4.45, 4.45, 0.45])
     assert world.evaluate("([x, y]) => world.engine.pick(x, y)", pedestal)["id"] == "bench"
+
+
+def test_a_frame_of_a_sheet_is_drawn_without_its_neighbours_pixels(world: Page) -> None:
+    # the bake-off pencil robot's frame 2 is opaque down its right edge; frame 3, scaled up, must not show that column
+    # down its left edge (the thin line beside a seated robot, floor review 2)
+    world.evaluate("world.engine.use('robot-pencil')")
+    world.wait_for_function("world.engine.sprites.get('robot-pencil').loaded.size > 0", timeout=20_000)
+    out = world.evaluate("""(() => {
+      const e = world.engine, s = e.sprites.get('robot-pencil'), i = [...s.loaded][0], t = s.tiers[i];
+      const c = document.createElement('canvas'); c.width = t.fw * 4; c.height = t.fh * 4;
+      const g = c.getContext('2d');
+      g.drawImage(e.cellOf(s, i, null, 3), 0, 0, c.width, c.height);
+      const col = g.getImageData(0, 0, 1, c.height).data;
+      let max = 0; for (let k = 3; k < col.length; k += 4) max = Math.max(max, col[k]);
+      const own = document.createElement('canvas'); own.width = 1; own.height = t.fh;
+      own.getContext('2d').drawImage(s.img[i], 3 * t.fw, 0, 1, t.fh, 0, 0, 1, t.fh);
+      const src = own.getContext('2d').getImageData(0, 0, 1, t.fh).data;
+      let srcMax = 0; for (let k = 3; k < src.length; k += 4) srcMax = Math.max(srcMax, src[k]);
+      return { drawn: max, own: srcMax };
+    })()""")
+    # the left column of the drawn frame is no stronger than the frame's own left column
+    assert out["drawn"] <= out["own"] + 2, out

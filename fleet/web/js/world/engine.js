@@ -63,15 +63,22 @@ export class World {
     }
     const base = new URL(url, location.href);
     for (const [id, s] of Object.entries(m.sprites || {})) {
-      const tiers = s.tiers.map(t => ({ ...t, url: new URL(t.file, base).href, maskUrl: t.mask && new URL(t.mask, base).href, frames: t.frames || 1 }))
-        .sort((a, b) => a.ppm - b.ppm);
-      this.sprites.set(prefix + id, { ...s, id: prefix + id, tiers, img: [], alpha: [], tints: new Map(), cells: new Map(), loading: new Set(), loaded: new Set(), failed: new Set(),
-        want: -1, shown: -1, prev: -1, since: 0, mask: null, used: false });
+      this.define(prefix + id, { ...s, tiers: s.tiers.map(t => ({ ...t, url: new URL(t.file, base).href, maskUrl: t.mask && new URL(t.mask, base).href })) });
     }
     await Promise.all(Object.entries(m.textures || {}).map(async ([id, t]) => {
       this.textures.set(prefix + id, { ...t, img: await loadImage(new URL(t.file, base).href) });
     }));
     return m;
+  }
+
+  // A sprite made at runtime, or from a manifest (load). Besides the manifest's fields, `compose` stands in for tier
+  // files: compose.load(i) readies tier i, and compose.cell(i, frame) returns that frame's bitmap at the tier's size
+  // (the robots, composed from their layers: robots.js). Such a sprite is coloured by its composer, not by items.
+  define(id, s) {
+    const tiers = s.tiers.map(t => ({ ...t, frames: t.frames || 1 })).sort((a, b) => a.ppm - b.ppm);
+    const had = this.sprites.get(id);
+    this.sprites.set(id, { ...s, id, tiers, img: [], alpha: [], tints: new Map(), cells: new Map(), loading: new Set(), loaded: new Set(), failed: new Set(),
+      want: -1, shown: -1, prev: -1, since: 0, mask: null, used: !!(had && had.used) });
   }
 
   // a flat quad on the ground layer: quad is four world points; texture (id) tiles from `origin` along unit axes
@@ -98,6 +105,11 @@ export class World {
   set(id, patch) {
     const it = this.items.get(id);
     if (!it) throw new Error('no item ' + id);
+    if ('sprite' in patch) {   // (a sprite first shown by a set loads like one first added)
+      const s = this.sprites.get(patch.sprite);
+      if (!s) throw new Error('no sprite ' + patch.sprite);
+      s.used = true;
+    }
     this.dirtyItem(it);
     Object.assign(it, patch);
     this.changed(id, 'at' in patch || 'sprite' in patch || 'attach' in patch || 'visible' in patch);
@@ -198,8 +210,16 @@ export class World {
     if (s.loading.has(i)) return;
     s.loading.add(i);
     const t = s.tiers[i];
-    this.stats.requested.push(t.file);
+    this.stats.requested.push(t.file || s.id);
     try {
+      if (s.compose) {
+        await s.compose.load(i);
+        t.fw = t.size[0]; t.fh = t.size[1];
+        if (!s.mask) s.mask = hitMask(s.compose.cell(i, 0), t.fw, t.fh);
+        s.loaded.add(i);
+        this.request();
+        return;
+      }
       const img = await loadImage(t.url);
       if (t.maskUrl) s.alpha[i] = alphaOf(await loadImage(t.maskUrl));
       s.img[i] = img;
@@ -223,6 +243,7 @@ export class World {
   // one frame of that bitmap as its own bitmap: drawn scaled straight from a sheet, a frame picks up its neighbour's
   // edge pixels (a thin line beside a seated robot: floor review 2); copied out 1:1 first, it can't
   cellOf(s, i, tint, frame) {
+    if (s.compose) return s.compose.cell(i, frame);
     const t = s.tiers[i], sheet = this.bitmap(s, i, tint);
     if (t.frames === 1) return sheet;
     const key = `${i}|${tint || ''}|${frame}`;

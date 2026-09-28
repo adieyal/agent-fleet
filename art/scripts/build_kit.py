@@ -439,5 +439,5 @@ def main() -> None:
     (out / 'pieces.json').write_text(json.dumps(info, indent=2))
 
 
-if __name__ == '__main__':   # (build_walker.py imports the studio and renderer)
+if __name__ == '__main__':   # (render_props.py imports the studio and renderer)
     main()

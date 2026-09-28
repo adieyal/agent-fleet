@@ -104,10 +104,34 @@ def survey(models: Path, out: Path) -> None:
 # face -y, towards the viewer, unless noted); `at` is where its base centre goes, or with back=True the middle of
 # its back (its +y side) at floor level: flush against a wall face at y = 0.
 
-def part(glb, size, turn=0.0, at=(0, 0, 0), back=False, backrest=None):
+def part(glb, size, turn=0.0, at=(0, 0, 0), back=False, backrest=None, seat=None):
     """backrest: turn the model so its tall part (a chair's back) lies towards this world direction ('+y' or
-    '-y') from its centre, whatever way the model faces; `turn` is then ignored."""
-    return {'glb': glb, 'size': size, 'turn': turn, 'at': at, 'back': back, 'backrest': backrest}
+    '-y') from its centre, whatever way the model faces; `turn` is then ignored. seat: raise an office chair's gas
+    lift so its seat's top is this high (metres): the lift stretches, everything above it moves up."""
+    return {'glb': glb, 'size': size, 'turn': turn, 'at': at, 'back': back, 'backrest': backrest, 'seat': seat}
+
+
+def raise_seat(ob, height: float) -> float:
+    """Stretch a chair's gas lift so the seat's top is `height` above the floor; returns the seat height it had. The
+    lift's axis is the centre of the base (the vertices near the floor); the seat's top is the highest point near that
+    axis below the backrest's reach."""
+    me, mw = ob.data, ob.matrix_world
+    pts = [mw @ v.co for v in me.vertices]
+    lo_z = min(p.z for p in pts)
+    base = [p for p in pts if p.z < lo_z + 0.08]
+    ax = sum((Vector((p.x, p.y, 0)) for p in base), Vector()) / len(base)
+    near = [p.z for p in pts if (Vector((p.x, p.y, 0)) - ax).length < 0.07 and p.z < lo_z + 0.75]
+    top = max(near) - lo_z
+    delta = height - top
+    z0, z1 = lo_z + 0.16, lo_z + top - 0.12   # the lift: between the base's hub and the seat's underside
+    for v in me.vertices:
+        z = (mw @ v.co).z
+        if z >= z1:
+            v.co.z += delta
+        elif z > z0:
+            v.co.z += delta * (z - z0) / (z1 - z0)
+    me.update()
+    return top
 
 
 def top_centroid(ob, share=0.3) -> Vector:
@@ -136,6 +160,8 @@ def place(models: Path, p: dict, name: str) -> bpy.types.Object:
     lo, hi = bounds(ob)
     base = Vector(((lo.x + hi.x) / 2, hi.y if p['back'] else (lo.y + hi.y) / 2, lo.z))
     ob.data.transform(Matrix.Translation(Vector(p['at']) - base))
+    if p['seat']:
+        print('SEAT', p['glb'], round(raise_seat(ob, p['seat']), 3), '->', p['seat'], flush=True)
     if faces(ob) > MAX_FACES:
         mod = ob.modifiers.new('decimate', 'DECIMATE')
         mod.ratio = MAX_FACES / faces(ob)
@@ -144,6 +170,7 @@ def place(models: Path, p: dict, name: str) -> bpy.types.Object:
     return ob
 
 
+SEAT_H = 0.549    # the robot sprites' seat_furniture.seat_height_m
 WOOD, STEEL = '#c9a57a', '#4b4c52'   # the desk top and legs: the AI bench's oak and dark steel, as l2
 DESK_Z, TOP_T, LEG = 0.74, 0.035, 0.045
 
@@ -171,7 +198,10 @@ def desk_module(models: Path):
     for o in bpy.data.objects:
         if o.type == 'MESH':
             o.location.z -= DESK_Z
-    slots = {'seat': [0.8, 0.3, -0.27], 'lamp': [0.18, -0.12, 0], 'desk_top': [0.8, -0.4, 0], 'floor_centre': [0.8, -0.4, -0.74]}
+    # (seat: the seated robot's seat point, seat_furniture's 0.159 m behind the far edge at 0.549 m; its chair is
+    # centred 0.244 m further back)
+    slots = {'seat': [0.8, 0.159, round(SEAT_H - DESK_Z, 3)], 'chair': [0.8, 0.403, -DESK_Z], 'lamp': [0.18, -0.12, 0],
+             'desk_top': [0.8, -0.4, 0], 'floor_centre': [0.8, -0.4, -0.74]}
     return {'footprint': [0, -0.82, -DESK_Z, 1.6, 0, 0], 'slots': slots, 'module_m': 1.6,
             'anchor': "desk top, far edge, at the module's left end", 'from': 'objects/drawers + boxes', 'on': 'floor'}
 
@@ -192,8 +222,10 @@ PROPS = {
     # --- furniture on the floor ---
     'desk-module': desk_module,
     'question-desk': question_desk,
-    'chair-back': dict(parts=[part('objects/chair', ('z', 1.0), backrest='-y')], doc='office chair, near side of a desk, seen from behind'),
-    'chair-front': dict(parts=[part('objects/chair', ('z', 1.0), backrest='+y')], doc='office chair, far side of a desk, facing the viewer'),
+    # (the seat raised to the robot sprites' seat_furniture.seat_height_m: the rebuilt robot is 1.081 m and sits at
+    # 0.549 m, so its face clears the desk as in l2; docs/design/robot-sprites.md)
+    'chair-back': dict(parts=[part('objects/chair', ('z', 1.0), backrest='-y', seat=SEAT_H)], doc='office chair, near side of a desk, seen from behind; seat at 0.549 m'),
+    'chair-front': dict(parts=[part('objects/chair', ('z', 1.0), backrest='+y', seat=SEAT_H)], doc='office chair, far side of a desk, facing the viewer; seat at 0.549 m'),
     'shelf': dict(parts=[part('project fixtures/bookcase', ('z', 1.8), back=True)], wall='back', doc='bookcase with binders, against the back wall'),
     'shelf-low': dict(parts=[part('project fixtures/low bookcase with files', ('z', 1.2), back=True)], wall='back', doc='low bookcase with files, against the back wall'),
     'book-cart': dict(parts=[part('project fixtures/book cart', ('x', 0.9))], doc="the librarian's cart"),

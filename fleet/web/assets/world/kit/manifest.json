@@ -1383,8 +1383,13 @@
    "slots": {
     "seat": [
      0.8,
-     0.3,
-     -0.27
+     0.159,
+     -0.191
+    ],
+    "chair": [
+     0.8,
+     0.403,
+     -0.74
     ],
     "lamp": [
      0.18,
@@ -1518,8 +1523,13 @@
    "slots": {
     "seat": [
      0.8,
-     0.3,
-     -0.27
+     0.159,
+     -0.191
+    ],
+    "chair": [
+     0.8,
+     0.403,
+     -0.74
     ],
     "lamp": [
      0.18,
@@ -1653,8 +1663,13 @@
    "slots": {
     "seat": [
      0.8,
-     0.3,
-     -0.27
+     0.159,
+     -0.191
+    ],
+    "chair": [
+     0.8,
+     0.403,
+     -0.74
     ],
     "lamp": [
      0.18,
@@ -1899,21 +1914,21 @@
     0.0,
     0.379,
     0.336,
-    1.0
+    1.048
    ],
    "hit": "alpha",
-   "doc": "office chair, near side of a desk, seen from behind",
+   "doc": "office chair, near side of a desk, seen from behind; seat at 0.549 m",
    "tiers": [
     {
      "ppm": 85.764,
      "file": "chair-back@86.webp",
      "size": [
       72,
-      94
+      98
      ],
      "anchor_px": [
       35.62,
-      76.83
+      80.43
      ]
     },
     {
@@ -1921,11 +1936,11 @@
      "file": "chair-back@172.webp",
      "size": [
       143,
-      188
+      195
      ],
      "anchor_px": [
       71.24,
-      153.66
+      160.86
      ]
     },
     {
@@ -1933,11 +1948,11 @@
      "file": "chair-back@343.webp",
      "size": [
       285,
-      375
+      389
      ],
      "anchor_px": [
       142.48,
-      307.32
+      321.72
      ]
     }
    ],
@@ -1961,36 +1976,36 @@
      "ppm": 85.764,
      "file": "chair-back-shadow@86.webp",
      "size": [
-      341,
-      363
+      350,
+      376
      ],
      "anchor_px": [
-      170.27,
-      211.48
+      174.8,
+      219.61
      ]
     },
     {
      "ppm": 171.528,
      "file": "chair-back-shadow@172.webp",
      "size": [
-      681,
-      726
+      699,
+      751
      ],
      "anchor_px": [
-      340.54,
-      422.96
+      349.6,
+      439.21
      ]
     },
     {
      "ppm": 343.055,
      "file": "chair-back-shadow@343.webp",
      "size": [
-      1362,
-      1452
+      1398,
+      1502
      ],
      "anchor_px": [
-      681.08,
-      845.92
+      699.19,
+      878.43
      ]
     }
    ],
@@ -2005,21 +2020,21 @@
     0.0,
     0.379,
     0.336,
-    1.0
+    1.048
    ],
    "hit": "alpha",
-   "doc": "office chair, far side of a desk, facing the viewer",
+   "doc": "office chair, far side of a desk, facing the viewer; seat at 0.549 m",
    "tiers": [
     {
      "ppm": 85.764,
      "file": "chair-front@86.webp",
      "size": [
       72,
-      103
+      106
      ],
      "anchor_px": [
       35.44,
-      89.49
+      93.09
      ]
     },
     {
@@ -2027,11 +2042,11 @@
      "file": "chair-front@172.webp",
      "size": [
       143,
-      205
+      212
      ],
      "anchor_px": [
       70.88,
-      178.98
+      186.18
      ]
     },
     {
@@ -2039,11 +2054,11 @@
      "file": "chair-front@343.webp",
      "size": [
       285,
-      410
+      424
      ],
      "anchor_px": [
       141.77,
-      357.97
+      372.37
      ]
     }
    ],
@@ -2067,36 +2082,36 @@
      "ppm": 85.764,
      "file": "chair-front-shadow@86.webp",
      "size": [
-      341,
-      372
+      350,
+      385
      ],
      "anchor_px": [
-      170.09,
-      224.14
+      174.62,
+      232.27
      ]
     },
     {
      "ppm": 171.528,
      "file": "chair-front-shadow@172.webp",
      "size": [
-      681,
-      744
+      699,
+      769
      ],
      "anchor_px": [
-      340.18,
-      448.28
+      349.24,
+      464.54
      ]
     },
     {
      "ppm": 343.055,
      "file": "chair-front-shadow@343.webp",
      "size": [
-      1362,
-      1487
+      1398,
+      1538
      ],
      "anchor_px": [
-      680.36,
-      896.56
+      698.47,
+      929.08
      ]
     }
    ],
@@ -4971,59 +4986,6 @@
     }
    ],
    "doc": "the soft contact shadow of a 4-seat bench, as one piece"
-  },
-  "shadow-seat": {
-   "source": "procedural",
-   "from": "art/kit/finish.py",
-   "layer": "ground",
-   "hit": "none",
-   "footprint": [
-    -0.65,
-    -0.625,
-    0,
-    0.65,
-    0.625,
-    0.01
-   ],
-   "tiers": [
-    {
-     "ppm": 85.764,
-     "file": "shadow-seat@86.webp",
-     "size": [
-      161,
-      75
-     ],
-     "anchor_px": [
-      80.48,
-      37.4
-     ]
-    },
-    {
-     "ppm": 171.528,
-     "file": "shadow-seat@172.webp",
-     "size": [
-      322,
-      150
-     ],
-     "anchor_px": [
-      160.97,
-      74.8
-     ]
-    },
-    {
-     "ppm": 343.055,
-     "file": "shadow-seat@343.webp",
-     "size": [
-      644,
-      300
-     ],
-     "anchor_px": [
-      321.93,
-      149.6
-     ]
-    }
-   ],
-   "doc": "a seated robot and its chair's contact shadow"
   },
   "floor-sheen": {
    "source": "procedural",

@@ -172,3 +172,13 @@ def test_every_clip_is_drawn_in_every_facing_it_lists(preview: Page) -> None:
     for clip, dirs in clips.items():
         for d in dirs:
             assert compose(preview, clip=clip, dir=d)["opaque"] > 500, (clip, d)
+
+
+def test_a_seated_robots_shadow_lies_under_its_chair(preview: Page) -> None:
+    # the rebuilt robot's feet hang clear of the floor on its raised chair: its shadow is drawn under the chair, not on
+    # the floor under the seat point, which this camera shows below the desk's near edge, detached from the robot
+    out = preview.evaluate("""(() => { const P = robotPreview, seat = P.seat(1);
+      return { seat, at: P.shadowPoint(seat), behind: P.manifest().seat_furniture.chair_behind_m,
+               seated: P.layersOf('Typing', 'S'), standing: P.layersOf('Idle', 'S') }; })()""")
+    assert out["at"] == pytest.approx([out["seat"][0], out["seat"][1] + out["behind"], 0])
+    assert "shadow" not in out["seated"][0] and "shadow" in out["standing"][0]   # (drawn with the chair instead)

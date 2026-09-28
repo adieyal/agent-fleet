@@ -32,7 +32,6 @@ const ACTIVE = new Set(['running', 'queued', 'stalled']);
 const SMALL = ['pen-pot', 'paper-stack', 'sketch', 'mug', 'desk-plant', 'books', 'paper-tray'];
 // where small props go on a desk, from its centre (the near half; the monitor and lamp take the back)
 const SPOTS = [[-0.55, -0.2], [-0.1, -0.24], [0.32, -0.18], [0.66, -0.04], [0.72, 0.2], [-0.72, 0.12]];
-const POSES = ['b2/robot-typing', 'b2/robot-pencil', 'b2/robot-tube'];
 // flat on the back wall, so nothing stands behind them: tiles, criteria lights, and the light that falls on the wall
 // are painted with the ground (one snapshot) instead of sorted and drawn every frame
 const WALL = 'ground';
@@ -73,8 +72,10 @@ const SLAB_C = { front: '#9ca0a9', side: '#838c98', rim: '#dcd6d0', rimSide: '#c
 
 function hash(s) { let h = 2166136261; for (const ch of s) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
 
-// room: from workareaOf(state, label, now); kit: the kit manifest's sprites (for slots); colour(host): host colour
-export function floorLayout(room, kit, colour) {
+// room: from workareaOf(state, label, now); kit: the kit manifest's sprites (for slots); seats: the robot sprites'
+// seat_furniture (where a seated robot, its chair and its desk stand relative to each other)
+export function floorLayout(room, kit, seats) {
+  if (Math.abs(seats.desk_top_m - DESK_Z) > 1e-3) throw new Error(`robots sit at a ${seats.desk_top_m} m desk; the floor's is ${DESK_Z} m`);
   const { w: W, d: D, h: H } = FLOOR;
   const items = [], runs = [], benches = [];
   // (a prop rendered from a model has its contact shadow as its own ground sprite: it goes down with the prop)
@@ -169,6 +170,9 @@ export function floorLayout(room, kit, colour) {
   // anchored at its desk top's far edge on its left seam; one soft shadow lies under the whole bench
   const M = kit['bench-mid'].module_m, piece = kit['bench-mid'].slots;
   const moduleAt = (bx, by, d) => [bx - SEATS * M / 2 + d * M, by + DESK_D / 2, DESK_Z];
+  // a robot sits on the far side facing the viewer: the floor under its seat point is desk_edge_ahead_m behind the
+  // desk's far edge, and its raised chair is centred chair_behind_m further back (robot-sprites.md)
+  const seatAt = m => [m[0] + piece.seat[0], m[1] + seats.desk_edge_ahead_m, 0];
   BENCHES.forEach(([bx, by], bi) => {
     const at = [bx, by, 0], key = `bench-${bi}`, onBench = seated[bi];
     const live = onBench.some(j => j.active);
@@ -179,29 +183,31 @@ export function floorLayout(room, kit, colour) {
       const job = onBench[d], on = !!(job && job.active);
       const m = moduleAt(bx, by, d), module = `${key}-m${d}`;
       add(module, d === 0 ? 'bench-left' : d === SEATS - 1 ? 'bench-right' : 'bench-mid', m, { place: `bench:${key}` });
-      const seat = plus(m, piece.seat), lampAt = plus(m, piece.lamp), top = plus(m, piece.desk_top);
+      const seat = seatAt(m), chair = [seat[0], seat[1] + seats.chair_behind_m, 0];
+      const lampAt = plus(m, piece.lamp), top = plus(m, piece.desk_top);
       add(`lamp-${bi}-${d}`, 'lamp', lampAt);
       // every lamp throws a gentle pool; a desk with a run at work is bright (brightness still means activity)
       add(`shade-${bi}-${d}`, 'glow-shade', plus(lampAt, kit.lamp.slots.shade), { intensity: on ? 1 : IDLE_LAMP / 2 });
       add(`pool-${bi}-${d}`, 'glow-desk-pool', plus(lampAt, [0.3, -0.25, 0.005]), { intensity: on ? 1 : IDLE_LAMP });
       // (right of the seat's pedestal, which stands under the module's left part: chairs between pedestals, as l2)
       add(`chair-near-${bi}-${d}`, 'chair-back', [top[0] + 0.3, by - 0.6, 0], { place: `bench:${key}` });
-      if (bi === 0) add(`chair-far-${bi}-${d}`, 'chair-front', [seat[0], seat[1] + 0.12, 0], { place: `bench:${key}` });
-      // a monitor at most desks, as l1's benches; a robot at work brings its own laptop or papers
+      // (the far side's chairs: every desk of the workarea, as l2, and elsewhere where a robot sits)
+      if (bi === 0 || job) add(`chair-far-${bi}-${d}`, 'chair-front', chair, { place: `bench:${key}` });
+      // a monitor at most empty desks, as l1's benches; a robot brings its own laptop or papers (and a monitor at
+      // its desk would hide its face)
       const h = hash(`${key}:${d}`);
-      if (!on && (bi > 0 || d === 2)) add(`monitor-${bi}-${d}`, 'monitor', [top[0] + 0.15, by + 0.12, DESK_Z]);
+      if (!job && (bi > 0 || d === 2)) add(`monitor-${bi}-${d}`, 'monitor', [top[0] + 0.15, by + 0.12, DESK_Z]);
       // small things on the near half of the desk: more at a busy workarea (l2), a few elsewhere (l1)
       const n = bi === 0 ? 5 : 1 + (h % 3);
       for (let k = 0; k < n; k++) {
         const [dx, dy] = SPOTS[(h + k * 2) % SPOTS.length];
         add(`prop-${bi}-${d}-${k}`, SMALL[(h >>> (3 * k)) % SMALL.length], [top[0] + dx, by + dy, DESK_Z]);
       }
-      if (on) {
-        // seated behind the desk: split into lower and upper body along the desk top (15 cm in from its far edge,
-        // so hands and a laptop on the desk stay above the line), and nothing of the lower body below its near edge
-        runs.push({ key: job.key, host: job.host, agent: job.agent, bench: key, module, desk: d, seat,
-          chair: bi === 0 ? `chair-far-${bi}-${d}` : null, sprite: POSES[runs.length % POSES.length], tint: colour(job.host),
-          cutAt: [seat[0], m[1] - 0.15, DESK_Z], cutFloor: [seat[0], m[1] - DESK_D, DESK_Z], farEdge: m[1], nearEdge: m[1] - DESK_D });
+      if (job) {
+        // every job at a desk has its robot: at work, queued or stalled at the desk, resting there once finished, or
+        // fallen in front of it when failed (`spot`). Seated, it is drawn in two parts, before and after its desk
+        runs.push({ key: job.key, host: job.host, agent: job.agent, status: job.status, bench: key, module, desk: d, seat, chair,
+          chairId: `chair-far-${bi}-${d}`, spot: [seat[0], m[1] - DESK_D - 0.75, 0], farEdge: m[1], nearEdge: m[1] - DESK_D });
       }
     }
   });
@@ -235,7 +241,7 @@ export function floorLayout(room, kit, colour) {
     const bi = seated.findIndex(l => l.some(j => j.key === f.to));
     if (bi < 0) return null;
     const d = seated[bi].findIndex(j => j.key === f.to);
-    return { to: f.to, from: liftThreshold, seat: plus(moduleAt(...BENCHES[bi], d), piece.seat), at: f.at };
+    return { to: f.to, from: liftThreshold, seat: seatAt(moduleAt(...BENCHES[bi], d)), at: f.at };
   }).filter(Boolean);
 
   return {
