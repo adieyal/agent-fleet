@@ -1060,6 +1060,7 @@ def build_parser() -> argparse.ArgumentParser:
     dispatch.add_argument("--host", required=True)
     dispatch.add_argument("--runtime", dest="agent", choices=("claude", "codex"), required=True)
     dispatch.add_argument("--cwd", required=True)
+    dispatch.add_argument("--permission", help="runtime permission, as for fleet send")
     dispatch.add_argument("--id")
     dispatch.add_argument("--json", action="store_true")
     dispatch.set_defaults(handler=command_dispatch_work, permission=None, model=None, allow=None,

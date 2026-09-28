@@ -39,12 +39,13 @@ fleet host add worker --ssh worker  # any SSH target you can already reach
 fleet install worker                # copy the runner and locate agent CLIs
 ```
 
-Use `fleet host add laptop --local` for this machine. Re-run `fleet install <host>`
-after updating `fleet/remote/fleetd.py`.
+Use `fleet host add laptop --local` for this machine. **After upgrading, reinstall
+fleetd on every host with `fleet install <host>`: the wire protocol changed.**
 
 Send a job with a clear goal and checkable steps:
 
 ```bash
+fleet project add myrepo --link worker:myrepo
 fleet send -H worker -p myrepo -d "Fix flaky invoice tests" -C ~/src/myrepo \
   -s "Find why tests/test_invoice.py is flaky" \
   -s "Fix it and run that test file" \
@@ -70,22 +71,9 @@ jobs. Add `"project_labels": {"restoke-analytics": "Bang bang!"}` to
 `~/.config/fleet/config.json` (or the file selected by `FLEET_CONFIG`), then
 restart `fleet web`.
 
-To give a project a stable identity across hosts, register it and link each host's
-label explicitly. Same-named labels on other hosts stay separate until you link them.
-
-```bash
-fleet project add "Agent Fleet" --link home:agent-fleet --repo git@github.com:adieyal/agent-fleet.git
-fleet project ls                      # IDs, links, and links suggested by matching repositories
-fleet project link p-1a2b3c4d gpu:fleet
-fleet project unlink gpu:fleet
-fleet project rename p-1a2b3c4d "Fleet"   # the ID never changes
-fleet project repo add p-1a2b3c4d https://github.com/adieyal/agent-fleet
-```
-
-Projects are stored under `"projects"` in the same config file. A repository only
-suggests links in `fleet project ls`; nothing links until you run `fleet project link`.
-The deck's `/api/state` reports each job's and session's `project_id`, which is null
-when its label is unlinked.
+Projects have stable IDs in the persistent store. Host labels are linked explicitly;
+matching repository URLs only suggest links in `fleet project ls`. The deck's
+`/api/state` reports a null `project_id` when a job or session's label is unlinked.
 
 Focus is where you are putting resources: priority or background. Each room in the
 deck has a priority/background switch at its front corner; one click sets it. A
@@ -93,26 +81,25 @@ background room is dimmed and desaturated, its androids lose their speech bubble
 stay nearly still however busy they are, and its props rest. Rooms never move when
 focus changes. Work is focused through its registered project when its label is
 linked, otherwise through the label itself, so unregistered rooms can be focused too.
-Anything you have never set is in priority. Choices are live workspace state, kept in
-`workspace.json` beside the config file (not in the registry, not in Git), and every open
+Anything you have never set is in priority. Choices are live workspace state in
+the SQLite store, and every open
 deck updates as soon as one changes.
 
-Things that need you are attention items, derived only from what the hosts report:
-a failed or stalled job is a blocker, and a session whose latest step is a question
-for you (`AskUserQuestion`) or a plan to approve (`ExitPlanMode`) is a decision. A
-room with an open item gets a lantern outside its front corner: a diamond with ✋ or
-?, and a count when there is more than one. It swings once when an item arrives and
-then stays still. Click it to list the room's items, open the job or session, and
-acknowledge (the lantern stays, dimmer) or snooze one for an hour (it hides until
-then). Items resolve by themselves when the job is retried or removed or the session
-moves on; looking at one never changes it. `/api/state` lists them under `attention`.
+Attention items are stored questions, blockers and alerts, raised by host observations,
+work, proposals or manual commands. They survive restarts. Lanterns show outstanding
+items on rooms and floors; the front desk includes items from shuttered projects.
+Select an item to open its context and answer in the reader panel. Reading never
+acknowledges it. Acknowledging keeps it visible; snoozing hides it until its deadline.
+A quiet host leaves its items intact with last-seen information. Source observations
+can resolve items when the underlying condition clears; you can also resolve them
+explicitly. `/api/state` lists them under `attention`.
 
 The header's **deck | building** switch shows the same fleet as a building seen in
 cross-section, one floor per registered project; the deck stays the default and the
 choice is remembered. Priority floors are open, background floors are windowed and
 glow warm while runs are active, and free floors say "To let". The building has six
 floors unless you set another number with `fleet building capacity N` (1 to 10);
-the deck never offers to raise it. A project keeps its floor, kept in `workspace.json`: the lowest free one when it
+the deck never offers to raise it. A project keeps its floor in the store: the lowest free one when it
 moves in. The lobby shows the host key and any visitors, labels with work that no
 project claims; **Move in** registers one as a project on the lowest free floor.
 A floor with attention items gets one lantern beside it (items on no floor hang theirs
@@ -127,6 +114,135 @@ attention moves to the front desk and the storehouse door. Open a crate to look 
 the project read-only, or restore it to its old floor if that is free (the lowest free
 floor otherwise). When every floor is taken, moving in or restoring asks which floor to
 clear, or you can cancel.
+
+## Getting started with the workspace
+
+The controller keeps projects, floors, focus, work, attention and execution state in
+`fleet.db` beside `~/.config/fleet/config.json` (or beside `FLEET_CONFIG`). Set
+`FLEET_STORE` to override the database path. On first use, Fleet imports legacy
+projects and workspace state from `config.json` and `workspace.json` once, keeping
+backups and the original files. Hosts and display settings still use `config.json`.
+
+The examples below use a local host. Replace `PROJECT_ID`, `DUPLICATE_ID`, `WORK_ID`,
+`CRITERION_ID`, `ATTENTION_ID` and `RUN_ID` with IDs printed by preceding commands.
+Use an absolute clean Git repository path for `MANAGEMENT_PATH`, and an existing
+host directory for `WORKING_DIRECTORY`. `JOB_ID` means an existing job on that host.
+To experiment independently, set `FLEET_CONFIG`, `FLEET_STORE` and `FLEET_HOME` to
+paths in a temporary directory before starting.
+
+```bash
+fleet host add workspace-demo --local
+fleet project add "Workspace demo" --link workspace-demo:demo
+fleet project ls --no-suggest
+```
+
+The project ID stays stable when renamed. Per-host duplicates can be folded into
+the older project, preserving its ID and collecting the other's links. For example:
+
+```bash
+fleet project add "Duplicate demo"
+fleet project merge PROJECT_ID DUPLICATE_ID
+```
+
+Work items carry goals, conditions and next steps. Criteria are checked against
+recorded evidence, judged within a mandate, or accepted by the user. A successful
+run never completes work automatically; progress without a known total is unknown.
+
+```bash
+fleet work add "Write the guide" --project PROJECT_ID --kind milestone --goal "Ship the guide" --actor user
+fleet work set WORK_ID --next-step "Review the guide" --actor user
+fleet criterion add WORK_ID "Guide reviewed" --verification accepted --actor user
+fleet criterion meet CRITERION_ID --actor user
+```
+
+Register a management repository before writing summaries. Registration migrates
+legacy summaries once; new summaries and mandates are committed there, with paths
+and confirmed revisions in the store. Structured decisions remain store-owned.
+
+```bash
+git init MANAGEMENT_PATH
+fleet project management PROJECT_ID MANAGEMENT_PATH
+fleet summary set WORK_ID --purpose "Ship the guide" --done "Draft written" --doing "Review" --next "Publish" --authoring-role user --actor user
+fleet status PROJECT_ID
+```
+
+Use the front desk and lanterns, or these commands, to manage attention:
+
+```bash
+fleet attention add "Review the guide" --project PROJECT_ID --work-item WORK_ID --kind decision --owner user --source manual --source-reference guide-review --context-reference README.md --actor user
+fleet attention list --project PROJECT_ID
+fleet attention ack ATTENTION_ID --actor user
+fleet attention snooze ATTENTION_ID --until 2099-01-01T09:00:00+00:00 --actor user
+fleet attention resolve ATTENTION_ID --details "Review handled separately" --actor user
+fleet attention add "May we publish?" --project PROJECT_ID --work-item WORK_ID --kind decision --owner user --source manual --source-reference publish --context-reference README.md --actor user
+fleet answer ATTENTION_ID "Yes, publish the guide" --next-step "Publish"
+```
+
+Use the second attention ID for the answer. Answering in the CLI or reader records
+a decision and resolves the item; live-session answers have separately tracked
+delivery, so an offline host does not lose the answer.
+
+Link existing jobs without fetching them, and add external references to the library
+(a link grants no access). Run reports and traces also appear in the library; pruned
+traces remain listed as unavailable.
+
+```bash
+fleet run link workspace-demo JOB_ID WORK_ID
+fleet library link https://example.com/guide --work-item WORK_ID --title "Guide reference"
+```
+
+An unobserved run has unknown outcome, not failure. Only after investigating an
+unknown outcome, explicitly close it to permit retry:
+
+```bash
+fleet run resolve-unknown RUN_ID
+```
+
+These commands start real agents on your configured host. Choose its runtime,
+working directory and permission deliberately. `send --project` is the host label
+(`demo` here), while `--work-item` links the run to persistent work.
+
+```bash
+fleet dispatch WORK_ID "Review the guide" --host workspace-demo --runtime codex --cwd WORKING_DIRECTORY --permission workspace-write
+fleet send --host workspace-demo --project demo --work-item WORK_ID --description "Review guide" --agent codex --cwd WORKING_DIRECTORY --permission workspace-write --step "Review the guide"
+```
+
+For orchestration, first record a complete mandate. From this checkout's
+`uv run --frozen python` interpreter, run the following, substituting your project
+ID. `write_mandate` validates and commits it; use a new key when changing the body.
+
+```python
+import json
+from fleet.composition import open_records
+
+mandate = {
+    "goal": "Review the guide and report the next step",
+    "constraints": ["Do not publish or deploy"],
+    "decision_authority": ["update_progress", "raise_attention", "dispatch", "summary", "record_decision"],
+    "escalation_conditions": ["Ask the user before publishing"],
+    "criteria_it_may_judge": []
+}
+result = open_records().write_mandate(
+    "PROJECT_ID", "mandate.json", json.dumps(mandate), key="guide-mandate-v1", actor="user"
+)
+assert result["state"] == "confirmed", result
+```
+
+The valid `decision_authority` names are those above plus `accept`, which this
+example intentionally withholds. To delegate judgement, list existing **judged
+criterion IDs from this work item** in `criteria_it_may_judge`. Start explicitly:
+
+```bash
+fleet orchestrate WORK_ID --mandate mandate.json --host workspace-demo --runtime codex --cwd WORKING_DIRECTORY --permission workspace-write
+```
+
+The orchestrator must run on the controller's local host, with runtime permission
+to write the controller store and management repository. Each activation pins a
+mandate revision. Out-of-authority commands are rejected; an explicit proposal
+raises attention for the user. There is no automatic scheduling. See
+[management records](docs/design/records-authoring.md),
+[activation commands](docs/design/authority-commands.md), the [design](docs/design/)
+and [ADRs](docs/adr/) for the detailed contracts.
 
 ## Read the work
 
@@ -193,8 +309,7 @@ also expose Markdown under configured local project roots. Anyone who can reach
 the dashboard can read that data. Keep it on loopback or use an SSH tunnel. Add
 access control before binding it to a shared network. Its writes, `POST /api/focus`,
 `POST /api/attention/…`, `POST /api/move-in`, `POST /api/shutter` and `POST /api/restore`,
-change `workspace.json` (and, for
-moving in, the project registry in the config); they refuse requests from pages on
+change the persistent store; they refuse requests from pages on
 other origins, but anyone who can reach the dashboard directly can use them.
 
 Agents can place Markdown outside the job directory in the document list, so review
@@ -206,6 +321,15 @@ setup runs `ssh-agent -D -a %t/fleet-ssh-agent.sock` as
 `fleet unlock worker` once per boot to add the key to that agent.
 
 ## Development
+
+To try a branch alongside the installed fleetd, set `FLEET_FLEETD_PATH` to a
+separate worker script path (for example `~/.local/share/fleet-branch/fleetd.py`)
+and `FLEET_REMOTE_HOME` to a separate worker state directory (for example
+`~/.fleet-branch`). Copy the branch's `fleet/remote/fleetd.py` to that script path
+on each target host yourself: `fleet install` updates the normal installation.
+For a local host, `FLEET_FLEETD_PATH` can point directly into the checkout.
+Both variables are controller-side overrides applied to worker invocations; also
+use temporary `FLEET_CONFIG`/`FLEET_STORE` paths to isolate controller state.
 
 For a review of the intended workspace model, start with the [domain description](CONTEXT.md)
 and its [working design](docs/design/workspace-hierarchy.md). These describe planned

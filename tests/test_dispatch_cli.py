@@ -24,13 +24,15 @@ def test_cli_dispatch_commits_before_transport_and_send_wraps_it(monkeypatch, ca
     monkeypatch.setattr(cli.transport, "call", call)
     arguments = (["send", "--project", "p", "--description", "Task", "--step", "Ship", "--work-item", item.id]
                  if legacy else ["dispatch", item.id, "Ship", "--runtime", "codex"])
-    arguments += ["--host", "fake", "--cwd", "/repo", "--json", "--id", "request"]
+    arguments += ["--host", "fake", "--cwd", "/repo", "--json", "--id", "request",
+                  "--permission", "workspace-write"]
     cli.main(arguments)
     first = json.loads(capsys.readouterr().out)
     cli.main(arguments)
     second = json.loads(capsys.readouterr().out)
     assert first["job"] == second["job"]
     assert [call[0] for call in calls] == ["create", "start", "reconcile"]
+    assert calls[0][calls[0].index('--permission') + 1] == 'workspace-write'
     run = composition.open_execution().runs()[0]
     with pytest.raises(SystemExit):
         cli.main(["run", "retry", run.id])
