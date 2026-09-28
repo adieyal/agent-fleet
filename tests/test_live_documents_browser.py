@@ -8,21 +8,32 @@ from typing import Any
 import pytest
 from playwright.sync_api import Browser, Page, Route, expect
 
+from conftest import FIXTURE, serve_fixture
+from fleet.web.fixture import FixtureState
 from test_deck_browser import PIN_CLOCK, VIEWPORTS, finish_jobs
-from test_web_focus import post_focus
+
+
+# A fixture server of this module's own: other tests move rooms to the background, shutter them and finish jobs
+# on the shared one.
+@pytest.fixture(scope="module")
+def own_state() -> FixtureState:
+    return FixtureState.load(FIXTURE)
+
+
+@pytest.fixture(scope="module")
+def own_url(own_state: FixtureState) -> Iterator[str]:
+    with serve_fixture(own_state) as url:
+        yield url
 
 
 @pytest.fixture
-def page(browser: Browser, base_url: str, fixture_data: dict[str, Any]) -> Iterator[Page]:
-    # other tests may leave the room in the background of the shared fixture server, and then it has no crew
-    assert post_focus(base_url, {"focus": "priority", "labels": ["restoke"]})[0] == 200
+def page(browser: Browser, own_url: str, fixture_data: dict[str, Any]) -> Iterator[Page]:
     context = browser.new_context(viewport=VIEWPORTS["desktop"], reduced_motion="reduce")
     context.add_init_script(PIN_CLOCK % (fixture_data["time"], fixture_data["time"]))
     page = context.new_page()
     errors: list[str] = []
     page.on("pageerror", lambda error: errors.append(str(error)))
-    page.goto(base_url + "/")
-    # only this job's android: other rooms may be in any state
+    page.goto(own_url + "/")
     page.wait_for_function("window.fleetDeck && (fleetDeck.advanceTime(0), fleetDeck.agents().some(agent => agent.key === 'home:a1c3e9'))")
     yield page
     context.close()
@@ -34,9 +45,9 @@ def shoot(request: pytest.FixtureRequest, page: Page, name: str) -> None:
         page.screenshot(path=str(Path(request.config.getoption("--shots")) / f"{name}.png"))
 
 
-def with_documents(base_url: str, documents: list[dict[str, Any]]) -> dict[str, Any]:
+def with_documents(own_url: str, documents: list[dict[str, Any]]) -> dict[str, Any]:
     """The server's state document with the running job a1c3e9 holding these documents."""
-    doc = finish_jobs(base_url, {})
+    doc = finish_jobs(own_url, {})
     job = next(job for host in doc["hosts"] if host["name"] == "home" for job in host["jobs"] if job["id"] == "a1c3e9")
     job["documents"] = documents
     return doc
@@ -53,8 +64,8 @@ def notes(fixture_data: dict[str, Any], seconds_ago: int, size: int) -> dict[str
 
 
 def test_the_documents_list_shows_new_documents_while_the_step_runs(
-        page: Page, base_url: str, fixture_data: dict[str, Any], request: pytest.FixtureRequest) -> None:
-    page.evaluate("doc => fleetDeck.apply(doc)", with_documents(base_url, [brief(fixture_data)]))
+        page: Page, own_url: str, fixture_data: dict[str, Any], request: pytest.FixtureRequest) -> None:
+    page.evaluate("doc => fleetDeck.apply(doc)", with_documents(own_url, [brief(fixture_data)]))
     page.locator("#tags .tag", has_text="a1c3e9").dispatch_event("click")
     documents = page.locator("#panelBody ul.docs li")
     expect(documents).to_have_count(1)
@@ -62,7 +73,7 @@ def test_the_documents_list_shows_new_documents_while_the_step_runs(
     expect(documents.first).to_contain_text("brief · step 1")
     expect(page.locator("#panelBody .upd")).to_have_count(0)            # what the agent was given is not "updating"
 
-    page.evaluate("doc => fleetDeck.apply(doc)", with_documents(base_url, [brief(fixture_data), notes(fixture_data, 5, 900)]))
+    page.evaluate("doc => fleetDeck.apply(doc)", with_documents(own_url, [brief(fixture_data), notes(fixture_data, 5, 900)]))
     expect(documents).to_have_count(2)
     expect(page.locator("#panelBody h3", has_text="Documents")).to_have_text("Documents · 2")
     expect(documents.first).to_contain_text("migration-notes.md")         # what it produced comes first
@@ -72,7 +83,7 @@ def test_the_documents_list_shows_new_documents_while_the_step_runs(
     shoot(request, page, "live-document-panel")
 
     page.evaluate("advanceClock(90)")                                    # a minute and a half without a change
-    page.evaluate("doc => fleetDeck.apply(doc)", with_documents(base_url, [brief(fixture_data), notes(fixture_data, 5, 900)]))
+    page.evaluate("doc => fleetDeck.apply(doc)", with_documents(own_url, [brief(fixture_data), notes(fixture_data, 5, 900)]))
     expect(page.locator("#panelBody .upd")).to_have_count(0)
     expect(documents).to_have_count(2)
 
@@ -85,7 +96,7 @@ def long_document(version: int, paragraphs: int) -> dict[str, Any]:
 
 
 def test_an_open_reader_refreshes_in_place_when_the_document_changes(
-        page: Page, base_url: str, fixture_data: dict[str, Any], request: pytest.FixtureRequest) -> None:
+        page: Page, own_url: str, fixture_data: dict[str, Any], request: pytest.FixtureRequest) -> None:
     served = {"version": 1, "paragraphs": 80}
 
     def serve(route: Route) -> None:
@@ -93,7 +104,7 @@ def test_an_open_reader_refreshes_in_place_when_the_document_changes(
                       body=json.dumps(long_document(served["version"], served["paragraphs"])))
     page.route("**/api/doc?*", serve)
 
-    page.evaluate("doc => fleetDeck.apply(doc)", with_documents(base_url, [notes(fixture_data, 5, 900)]))
+    page.evaluate("doc => fleetDeck.apply(doc)", with_documents(own_url, [notes(fixture_data, 5, 900)]))
     page.locator("#tags .tag", has_text="a1c3e9").dispatch_event("click")
     page.locator('#panelBody [data-doc="file-0"]').click()
     body = page.locator("#rdBody")
@@ -112,7 +123,7 @@ def test_an_open_reader_refreshes_in_place_when_the_document_changes(
     }""")
     assert position > 800
     served["version"] = 2
-    page.evaluate("doc => fleetDeck.apply(doc)", with_documents(base_url, [notes(fixture_data, 1, 950)]))
+    page.evaluate("doc => fleetDeck.apply(doc)", with_documents(own_url, [notes(fixture_data, 1, 950)]))
     expect(body.locator("#doc-tail")).to_have_text("End of draft 2")
     shoot(request, page, "live-document-reader")
     assert page.evaluate("document.getElementById('rdBody').scrollTop") == position
@@ -122,7 +133,7 @@ def test_an_open_reader_refreshes_in_place_when_the_document_changes(
     # a reader at the bottom follows the new text down
     page.evaluate("const body = document.getElementById('rdBody'); body.scrollTop = body.scrollHeight")
     served.update(version=3, paragraphs=120)
-    page.evaluate("doc => fleetDeck.apply(doc)", with_documents(base_url, [notes(fixture_data, 0, 1400)]))
+    page.evaluate("doc => fleetDeck.apply(doc)", with_documents(own_url, [notes(fixture_data, 0, 1400)]))
     expect(body.locator("#doc-tail")).to_have_text("End of draft 3")
     assert page.evaluate("""() => {
         const body = document.getElementById('rdBody');
@@ -132,17 +143,17 @@ def test_an_open_reader_refreshes_in_place_when_the_document_changes(
     # a state update that leaves the document alone fetches nothing
     requests: list[str] = []
     page.on("request", lambda item: "/api/doc" in item.url and requests.append(item.url))
-    page.evaluate("doc => fleetDeck.apply(doc)", with_documents(base_url, [notes(fixture_data, 0, 1400)]))
+    page.evaluate("doc => fleetDeck.apply(doc)", with_documents(own_url, [notes(fixture_data, 0, 1400)]))
     page.wait_for_timeout(300)
     assert requests == []
     page.keyboard.press("Escape")
 
 
 def test_a_departed_jobs_report_opens_from_the_library(
-        page: Page, deck_state: Any, fixture_data: dict[str, Any], request: pytest.FixtureRequest) -> None:
+        page: Page, own_state: Any, fixture_data: dict[str, Any], request: pytest.FixtureRequest) -> None:
     """The job left its host (fleet rm) long ago; its copy in the project's store is all that remains."""
-    store = deck_state.documents
-    project_id = deck_state.registry.project_for("home", "restoke").id
+    store = own_state.documents
+    project_id = own_state.registry.project_for("home", "restoke").id
     report = {"id": "report-0", "kind": "report", "name": "Step 1: Audit the stock counts", "step": 0,
               "path": "/home/adi/.fleet/jobs/0ld5ob/result-0.md", "size": 120, "mtime": fixture_data["time"] - 86400}
     job = {"id": "0ld5ob", "project": "restoke", "description": "Audit last month's stock counts", "agent": "claude",
