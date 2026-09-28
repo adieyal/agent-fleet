@@ -276,6 +276,16 @@ def refusal_detail(item) -> dict[str, Any]:
                          for refusal in item.refusals]}
 
 
+def question_detail(item, projects: dict[str, Any]) -> dict[str, Any]:
+    """A session's question, where it waits, and that only its terminal can answer it."""
+    context = item.stream_context
+    project = projects.get(context.project_id) if context.project_id is not None else None
+    return {"host": context.host, "session": context.owner_id, "cwd": context.cwd,
+            "project": project.name if project is not None else None, "label": context.project,
+            "state": item.state, "resolution": item.resolution_details,
+            "questions": [asdict(question) for question in item.questions]}
+
+
 def make_handler(state: FleetState | FixtureState,
                  library: ProjectLibrary | FixtureLibrary | None = None) -> type[BaseHTTPRequestHandler]:
     # Read once so a running server keeps serving the page and code that match its API.
@@ -318,7 +328,9 @@ def make_handler(state: FleetState | FixtureState,
                               "context": item.context_reference, "options": item.options,
                               "proposal": asdict(proposal) if proposal is not None else None,
                               # a job step's refused requests, answered with actions rather than words
-                              "refusals": refusal_detail(item) if item.refusals else None}
+                              "refusals": refusal_detail(item) if item.refusals else None,
+                              "session_question": (question_detail(item, state.known_projects())
+                                                   if item.questions else None)}
                 except LookupError as error:
                     self.error(404, str(error))
                     return

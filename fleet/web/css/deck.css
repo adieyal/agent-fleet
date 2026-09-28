@@ -517,6 +517,13 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 .rd-actions svg{width:15px;height:15px;flex:none}
 .rd-actions .rd-x{width:34px;padding:0;justify-content:center;font-size:15px}
 .decision-context{white-space:pre-wrap;overflow-wrap:anywhere}
+.session-answer{padding:10px 14px;border:1px solid var(--rd-accent);border-radius:6px}
+.session-where{color:var(--rd-muted);font-size:.9em;overflow-wrap:anywhere}
+.session-question .qh{margin-bottom:0;color:var(--rd-muted);font-size:.85em;text-transform:uppercase;letter-spacing:.06em}
+.prose .session-question h2{margin-top:4px}
+.question-options{display:grid;gap:10px;padding-left:1.6em}
+.question-options li{display:grid;gap:2px}
+.question-options span{color:var(--rd-muted);font-size:.92em}
 .refusals{display:grid;gap:8px;padding-left:1.6em;font-size:.9em}
 .refusals li{display:grid;gap:1px}
 .refusals code{white-space:pre-wrap;overflow-wrap:anywhere;justify-self:start}

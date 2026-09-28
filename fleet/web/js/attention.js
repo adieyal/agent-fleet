@@ -145,6 +145,7 @@ function renderPanel() {
           ${present ? `<button class="owner" data-owner="${esc(owner.key)}" title="${esc(owner.key)}">${owner.type === 'job' ? 'Open job' : 'Open session'} ${esc(ownerName(owner))}</button>`
                     : `<button class="owner" data-context="${esc(i.id)}">Open context</button>`}
           ${i.refusals ? `<button class="owner" data-context="${esc(i.id)}">Review refused commands</button>`
+            : i.questions ? `<button class="owner" data-context="${esc(i.id)}">Read the question</button>`
             : i.kind === 'decision' ? `<button class="owner" data-context="${esc(i.id)}">Answer question</button>` : ''}
           <div class="aa">${actions}</div><em class="err"></em></div>
       </li>`;

@@ -34,6 +34,22 @@ class StreamContext:
     summary: str
     since: float | None
     step: int | None = None  # the job step a permission batch belongs to
+    cwd: str | None = None   # where the session runs, from its hook
+
+
+@dataclass(frozen=True)
+class QuestionOption:
+    label: str
+    description: str
+
+
+@dataclass(frozen=True)
+class Question:
+    """A question an interactive session put to the person at its terminal (AskUserQuestion)."""
+    header: str
+    question: str
+    options: tuple[QuestionOption, ...]
+    multi_select: bool = False
 
 
 @dataclass(frozen=True)
@@ -75,6 +91,7 @@ class AttentionItem:
     stream_context: StreamContext | None = None
     options: tuple[str, ...] = ()
     refusals: tuple[Refusal, ...] = ()
+    questions: tuple[Question, ...] = ()  # answered in the session's terminal, never in Fleet
 
     def __post_init__(self) -> None:
         for option in self.options:

@@ -18,6 +18,10 @@ fleetd derives the rules because it knows the runtime's rule syntax: `Bash(<prog
 
 When the step ends (done, failed or cancelled) with the item untouched, it resolves as `refused; step finished`; a job the worker no longer reports once it has sent a full pass resolves it as `refused; job finished or removed`. Per-request job items recorded before this change fold into their step's item when fleetd replays their observation, and any left over after the first full pass resolve as superseded.
 
+## Interactive sessions
+
+Interactive sessions get the same hooks from the host's Claude user settings: `fleet hooks install <host>` has fleetd merge `PermissionRequest`, `PreToolUse` (matcher `AskUserQuestion`) and `PostToolUse` entries into `~/.claude/settings.json`, each marked `# fleet-session-hook` so `fleet hooks uninstall <host>` removes only them. The installed command does nothing, and succeeds, once fleetd or its FLEET_HOME is gone, and ignores processes with `FLEET_JOB_ID` set, because a job's own `--settings` hook records its events. A session's `AskUserQuestion` becomes one attention item headed by the question's header and the start of the question; the reader shows the questions, their options, the host, working directory and project, and says it is answered in that terminal. Fleet cannot type into a terminal, so the item has no answer box and closes on `PostToolUse`.
+
 ## Consequences
 
 - The inbox holds one item per troubled job step, and each can be settled in one click.

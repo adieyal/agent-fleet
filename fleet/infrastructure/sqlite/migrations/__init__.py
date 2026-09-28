@@ -95,4 +95,7 @@ MIGRATIONS = (
     (
         "ALTER TABLE attention_item ADD COLUMN refusals TEXT NOT NULL DEFAULT '[]'",
     ),
+    (
+        "ALTER TABLE attention_item ADD COLUMN questions TEXT NOT NULL DEFAULT '[]'",
+    ),
 )

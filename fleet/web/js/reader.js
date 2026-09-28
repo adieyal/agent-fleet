@@ -85,6 +85,7 @@ async function loadDecision(id, req) {
     if (req !== rd.req) return;
     const prose = rdBody.querySelector('.prose');
     if (detail.refusals) { renderRefusals(prose, id, detail); return; }
+    if (detail.session_question) { renderSessionQuestion(prose, detail.session_question); return; }
     prose.innerHTML = `<h2>${esc(detail.question)}</h2><p class="decision-context">${esc(detail.context)}</p>
       ${detail.proposal === null ? '' : `<h3>Proposed change</h3><pre>${esc(detail.proposal.change)}</pre><p>${esc(detail.proposal.reason)}</p>`}
       <form class="decision-answer">
@@ -118,6 +119,19 @@ async function loadDecision(id, req) {
   } catch (error) {
     if (req === rd.req) rdBody.querySelector('.prose').insertAdjacentHTML('beforeend', `<p role="alert">${esc(error.message)}</p>`);
   }
+}
+// A question an interactive session asked in its terminal. Fleet cannot type there, so it only shows where to answer.
+function renderSessionQuestion(prose, s) {
+  const where = s.project ? `${esc(s.project)} · ` : '';
+  prose.innerHTML = `<p class="session-answer" role="note"><b>Answer this in the session’s terminal on ${esc(s.host)}.</b>
+      Fleet cannot type there; this item closes once the session has its answer.</p>
+    <p class="session-where">${where}${s.cwd ? `<code>${esc(s.cwd)}</code>` : `${esc(s.label)} (working directory not reported)`} · ${esc(s.host)} · session ${esc(s.session)}</p>
+    ${s.state === 'resolved' ? `<p role="status">${esc(s.resolution)}</p>` : ''}
+    ${s.questions.map(q => `<section class="session-question">
+      ${q.header ? `<p class="qh">${esc(q.header)}</p>` : ''}<h2>${esc(q.question)}</h2>
+      ${q.multi_select ? '<p class="qm">More than one may be chosen.</p>' : ''}
+      <ol class="question-options">${q.options.map(o => `<li><b>${esc(o.label)}</b>${o.description ? `<span>${esc(o.description)}</span>` : ''}</li>`).join('')}</ol>
+    </section>`).join('')}`;
 }
 // A job step's refused permission requests: every one listed, answered by changing the job's permissions.
 function renderRefusals(prose, id, detail) {

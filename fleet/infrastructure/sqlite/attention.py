@@ -4,7 +4,8 @@ from dataclasses import asdict
 from datetime import datetime
 import json
 
-from fleet.modules.attention import AttentionItem, ImportedAction, Refusal, StreamContext
+from fleet.modules.attention import (AttentionItem, ImportedAction, Question, QuestionOption, Refusal,
+                                    StreamContext)
 
 from .repository import Repository
 
@@ -14,6 +15,9 @@ def decode(row) -> AttentionItem:
     values["options"] = tuple(json.loads(values["options"]))
     values["refusals"] = tuple(Refusal(**{**refusal, "rules": None if refusal["rules"] is None else tuple(refusal["rules"])})
                                for refusal in json.loads(values["refusals"]))
+    values["questions"] = tuple(Question(**{**question, "options": tuple(QuestionOption(**option)
+                                                                          for option in question["options"])})
+                                for question in json.loads(values["questions"]))
     if values["stream_context"] is not None:
         values["stream_context"] = StreamContext(**json.loads(values["stream_context"]))
     for name in ("last_seen", "snooze_until", "acknowledged_at", "resolved_at"):
@@ -51,6 +55,7 @@ class AttentionRepository(Repository):
         values = asdict(item)
         values["options"] = json.dumps(values["options"])
         values["refusals"] = json.dumps(values["refusals"])
+        values["questions"] = json.dumps(values["questions"])
         if values["stream_context"] is not None:
             values["stream_context"] = json.dumps(values["stream_context"])
         for name in ("last_seen", "snooze_until", "acknowledged_at", "resolved_at"):

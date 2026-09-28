@@ -1039,6 +1039,52 @@ def test_refused_commands_are_one_item_answered_with_actions(changed_deck: Deck,
     assert changed_deck.errors == []
 
 
+def test_a_session_question_is_shown_with_where_to_answer_it(changed_deck: Deck, base_url: str, tmp_path,
+                                                             monkeypatch, request) -> None:
+    from test_web_attention import Deck as ServerDeck, HOSTS
+    from test_web_session_questions import asked
+    from fleet.projections.attention import attention_display
+    from fleet.web.server import apply_message
+
+    config = tmp_path / "hosts.json"
+    config.write_text(json.dumps({"hosts": {"home": {}}}))
+    monkeypatch.setenv("FLEET_CONFIG", str(config))
+    server = ServerDeck()
+    apply_message(server.state, HOSTS[0], {"type": "hello"})
+    apply_message(server.state, HOSTS[0], asked())
+    page = changed_deck.page
+
+    def proxy(route):
+        route.fulfill(response=route.fetch(url=server.url + "/api/" + route.request.url.split("/api/", 1)[1]))
+    page.route("**/api/decision**", proxy)
+    try:
+        [item] = server.state.document()["attention"]
+        with urlopen(base_url + "/api/state", timeout=5) as response:
+            document = json.load(response)
+        document["attention"].append(item)
+        document["attention_display"] = attention_display(document["attention"], document["building"], document["projects"])
+        page.evaluate("doc => fleetDeck.apply(doc)", document)
+        page.locator('.lantern[data-room="restoke"]').dispatch_event("click")
+        row = page.locator(f'#attnPanel .attn-item[data-id="{item["id"]}"]')
+        expect(row).to_contain_text("Probe run: The agent-friendliness probe needs a live site before it can…")
+        expect(row.get_by_role("button", name="Answer question", exact=True)).to_have_count(0)
+        shoot(request, page, "session-question-popover")
+        row.get_by_role("button", name="Read the question", exact=True).click()
+        body = page.locator("#rdBody")
+        expect(body.get_by_role("note")).to_contain_text("Answer this in the session’s terminal on home")
+        expect(body).to_contain_text("How should I run it?")
+        expect(body.locator(".question-options li")).to_have_count(2)
+        expect(body).to_contain_text("Run against staging now")
+        expect(body).to_contain_text("/srv/restoke")
+        expect(body.locator("textarea, input, form")).to_have_count(0)   # nothing to answer with here
+        shoot(request, page, "session-question-reader")
+        page.keyboard.press("Escape")
+        assert changed_deck.errors == []
+    finally:
+        page.unroute("**/api/decision**", proxy)
+        server.close()
+
+
 def test_the_attention_list_closes_on_escape_or_a_click_away(changed_deck: Deck, base_url: str, request) -> None:
     from fleet.projections.attention import attention_display
     page = changed_deck.page

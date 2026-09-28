@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from .ports import AttentionRepository
-from ..domain import AttentionItem, Refusal, StreamContext
+from ..domain import AttentionItem, Question, QuestionOption, Refusal, StreamContext
 
 if TYPE_CHECKING:
     from .observations import HostObservation
@@ -36,10 +36,21 @@ class InputObservation:
     source_event_id: str
     observed_at: float
     context_reference: str
-    request: dict | None = None  # tool, description, detail, rules; absent from older fleetd
+    request: dict | None = None  # tool, description, detail, rules, questions; absent from older fleetd
+    cwd: str | None = None       # the session's working directory; absent from older fleetd
+
+    def questions(self) -> tuple[Question, ...]:
+        return tuple(Question(question.get("header", ""), question.get("question", ""),
+                              tuple(QuestionOption(option.get("label", ""), option.get("description", ""))
+                                    for option in question.get("options", [])),
+                              question.get("multi_select") is True)
+                     for question in (self.request or {}).get("questions") or [])
 
     def question(self) -> tuple[str, str]:
         """The headline and context a person reads to answer the request."""
+        questions = self.questions()
+        if questions:
+            return question_headline(questions[0]), question_context(questions)
         if not self.request:
             return "Claude needs permission", self.context_reference
         parts = [self.request.get("description", ""), self.request.get("detail", "")]
@@ -52,6 +63,23 @@ class InputObservation:
         return Refusal(self.source_event_id, request.get("tool") or "a tool", request.get("description", ""),
                        request.get("detail") or self.context_reference,
                        None if rules is None else tuple(rules), self.observed_at)
+
+
+def question_headline(question: Question) -> str:
+    """The header and the start of the question, at most 12 words."""
+    words = f"{question.header}:".split() if question.header.strip() else []
+    words += question.question.split()
+    if not words:
+        return "Claude asks you a question"
+    return " ".join(words) if len(words) <= 12 else " ".join(words[:12]) + "…"
+
+
+def question_context(questions: tuple[Question, ...]) -> str:
+    return "\n\n".join(
+        "\n".join([f"{question.header}: {question.question}" if question.header else question.question]
+                  + [f"- {option.label}" + (f": {option.description}" if option.description else "")
+                     for option in question.options])
+        for question in questions)
 
 
 def batch_headline(project: str, step: int, refusals: tuple[Refusal, ...]) -> str:
@@ -80,7 +108,8 @@ def ingest_input(repository: AttentionRepository, host: str, observation: InputO
     if observation.owner_type not in ("job", "session"):
         raise ValueError("invalid input observation owner type")
     if (observation.kind, observation.source_event) not in (
-            ("input_requested", "PermissionRequest"), ("input_cleared", "PostToolUse")):
+            ("input_requested", "PermissionRequest"), ("input_requested", "PreToolUse"),
+            ("input_cleared", "PostToolUse")):
         raise ValueError("unsupported input observation transition")
     owner_id = observation.job_id if observation.owner_type == "job" else observation.session_id
     if not owner_id or not observation.source_event_id:
@@ -99,23 +128,24 @@ def ingest_input(repository: AttentionRepository, host: str, observation: InputO
         if previous is not None and (previous.state == "resolved" or previous.last_seen > seen):
             return
         headline, detail = observation.question()
+        questions = observation.questions()
         if previous is not None and observation.kind == "input_requested":
-            if (previous.headline, previous.context_reference) == (headline, detail):
+            if (previous.headline, previous.context_reference, previous.questions) == (headline, detail, questions):
                 return
             # Items recorded before fleetd sent the request text pick it up on replay.
             context = previous.stream_context and replace(previous.stream_context, summary=headline)
-            transaction.save(replace(previous, headline=headline, context_reference=detail, stream_context=context),
-                             previous.state, "runtime-hook")
+            transaction.save(replace(previous, headline=headline, context_reference=detail, stream_context=context,
+                                     questions=questions), previous.state, "runtime-hook")
             return
-        context = StreamContext(host, observation.owner_type, owner_id, observation.project,
-                                project_id, "Claude permission request", headline,
-                                observation.observed_at)
+        context = StreamContext(host, observation.owner_type, owner_id, observation.project, project_id,
+                                "Claude question" if observation.reason == "question" else "Claude permission request",
+                                headline, observation.observed_at, cwd=observation.cwd)
         item = previous if previous is not None else AttentionItem(
             id=str(uuid4()), project=project_id if project_id is not None else observation.project,
             work_item=None, run=None, kind="decision", owner=owner, source=source,
             source_reference=reference, headline=headline,
             context_reference=detail, state="open", snooze_until=None,
-            resolution_details=None, last_seen=seen, stream_context=context)
+            resolution_details=None, last_seen=seen, stream_context=context, questions=questions)
         if observation.kind == "input_cleared":
             item = replace(item.transition("resolved", seen, details="answered in session"), last_seen=seen)
         transaction.save(item, previous.state if previous is not None else None, "runtime-hook")
