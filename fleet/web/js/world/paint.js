@@ -10,10 +10,18 @@ export function canvas(w, h) {
   return c;
 }
 
-export async function loadImage(url) {
+// decode() can reject an image that loaded fine (many decodes in flight, a background tab), so a rejection only
+// counts once the image itself failed; otherwise it is retried once.
+export async function loadImage(url, attempt = 0) {
   const img = new Image();
   img.src = url;
-  try { await img.decode(); } catch { throw new Error('missing ' + url); }
+  try {
+    await img.decode();
+  } catch {
+    if (img.complete && img.naturalWidth > 0) return img;
+    if (attempt === 0) return loadImage(url, 1);
+    throw new Error('missing ' + url);
+  }
   return img;
 }
 
