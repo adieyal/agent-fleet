@@ -12,7 +12,12 @@ class Commands:
         if not actor.strip() or role != 'orchestrator':
             raise AuthorityRejected('actor and orchestrator role are required')
         item = self.work.get(work_item)
-        version, _ = self.records.mandate_version(item.project, mandate_path)
+        version, mandate = self.records.mandate_version(item.project, mandate_path)
+        criteria = {criterion.id for criterion in self.work.criteria(item.id)}
+        unknown = [identity for identity in mandate.criteria_it_may_judge if identity not in criteria]
+        if unknown:
+            raise AuthorityRejected(f'criteria_it_may_judge entries are not criteria of work item {item.id}: '
+                                    f'{", ".join(unknown)}')
         activation = Activation(str(uuid4()), actor, role, item.project, item.id, mandate_path, version)
         self.repository.insert(activation)
         return activation

@@ -15,6 +15,32 @@ recorded evidence checks. Accepted criteria remain reserved for the user.
 Constraints and escalation conditions are instructions to the orchestrator;
 they are not executable policy expressions.
 
+Mandates are JSON objects with all five fields shown below. This complete example
+allows routine commands without granting judgement of any criterion:
+
+```json
+{
+  "goal": "Implement the work item and leave its evidence ready for review",
+  "constraints": ["Do not deploy"],
+  "decision_authority": [
+    "update_progress", "raise_attention", "dispatch", "summary", "record_decision"
+  ],
+  "escalation_conditions": ["Ask the user before changing the agreed scope"],
+  "criteria_it_may_judge": []
+}
+```
+
+`decision_authority` accepts exact command names from Authority's public
+`DECISION_AUTHORITY_COMMANDS` list. `write_mandate` rejects unknown names and
+reports both the unknown entries and the valid names. Prose such as
+`"Dispatch actions for slice 6 tasks"` is not a command name. Add `accept` only
+when delegating completion as well as routine progress updates.
+
+To delegate judgement, put existing criterion IDs from the target work item in
+`criteria_it_may_judge`, rather than criterion text. `fleet orchestrate` checks
+every ID against that work item when resolving the mandate, before recording
+an activation or dispatching a run. An ID from another work item is rejected.
+
 Activation commands carry `actor` and `activation`. Work's `set` and `meet`
 and Execution's `dispatch` accept that context and check Authority; Authority
 does not provide duplicate entry points for these writes.

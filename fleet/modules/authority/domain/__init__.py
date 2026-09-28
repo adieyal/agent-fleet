@@ -1,6 +1,11 @@
 from dataclasses import dataclass
 
 
+DECISION_AUTHORITY_COMMANDS = (
+    'update_progress', 'raise_attention', 'dispatch', 'summary', 'record_decision', 'accept',
+)
+
+
 class AuthorityRejected(ValueError):
     """The command exceeds the activation's authority."""
 
@@ -29,5 +34,7 @@ def require_command(mandate, command: str, criterion=None) -> None:
             raise AuthorityRejected('criterion is reserved for the user')
         if criterion.verification == 'judged' and criterion.id not in mandate.criteria_it_may_judge:
             raise AuthorityRejected('mandate may not judge this criterion')
-    elif command != 'propose' and command not in mandate.decision_authority:
+    elif command != 'propose' and (
+        command not in DECISION_AUTHORITY_COMMANDS or command not in mandate.decision_authority
+    ):
         raise AuthorityRejected(f'mandate does not authorize {command}')

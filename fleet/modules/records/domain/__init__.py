@@ -3,6 +3,8 @@
 import json
 from dataclasses import dataclass
 
+from fleet.modules.authority import DECISION_AUTHORITY_COMMANDS
+
 
 @dataclass(frozen=True)
 class Mandate:
@@ -22,6 +24,10 @@ class Mandate:
                 entries = getattr(value, name)
                 if not isinstance(entries, list) or any(not isinstance(x, str) or not x.strip() for x in entries):
                     raise ValueError(name)
+            unknown = [name for name in value.decision_authority if name not in DECISION_AUTHORITY_COMMANDS]
+            if unknown:
+                raise ValueError(f'unknown decision_authority entries: {", ".join(unknown)}; '
+                                 f'valid names: {", ".join(DECISION_AUTHORITY_COMMANDS)}')
             return value
         except (TypeError, ValueError) as error:
             raise ValueError(f'invalid mandate: {error}') from error
