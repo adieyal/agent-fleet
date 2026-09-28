@@ -15,6 +15,7 @@ State lives in ~/.fleet:
 from __future__ import annotations
 
 import argparse
+import base64
 import collections
 import contextlib
 import datetime
@@ -30,6 +31,7 @@ import signal
 import subprocess
 import sys
 import time
+import urllib.parse
 from pathlib import Path
 from typing import Any, Deque, Dict, Iterator, List, Optional, Tuple
 
@@ -182,10 +184,15 @@ MARKDOWN_SUFFIXES = (".md", ".markdown", ".mdx")
 # A step's final reply counts as a document only when it is a real write-up, not "OK".
 REPORT_MINIMUM_BYTES = 400
 DOCUMENT_READ_LIMIT = 2 * 1024 * 1024
+# Images a document links to, served by `fleetd read-asset`; anything else is refused.
+ASSET_TYPES = {".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+               ".gif": "image/gif", ".webp": "image/webp"}
+ASSET_READ_LIMIT = 5 * 1024 * 1024
 
 
 def is_markdown(path: str) -> bool:
-    return path.lower().endswith(MARKDOWN_SUFFIXES)
+    """A Markdown document; CLAUDE.local.md and other *.local.md files are private notes, never documents."""
+    return path.lower().endswith(MARKDOWN_SUFFIXES) and not path.lower().endswith(".local.md")
 
 
 TOOL_KINDS = {
@@ -479,32 +486,96 @@ def reported_status(text: str) -> Optional[str]:
     return matches[-1].lower() if matches else None
 
 
-def record_written_documents(job_id: str, cwd: str, paths: List[str], step_index: int) -> None:
-    """Remember Markdown files the agent wrote so the orchestrator and the deck can find them."""
+def record_written_documents(job_id: str, cwd: str, paths: List[str], step_index: int) -> List[Tuple[int, str]]:
+    """Remember Markdown files the agent wrote so the orchestrator and the deck can find them.
+
+    Returns the (index, absolute path) of every given path, whether new or already known.
+    """
+    recorded = []
     with locked_job(job_id) as live_job:
         written = live_job.setdefault("written_documents", [])
-        known = {entry["path"] for entry in written}
+        known = {entry["path"]: index for index, entry in enumerate(written)}
         for path in paths:
             absolute = os.path.normpath(os.path.join(cwd, os.path.expanduser(path)))
             if absolute not in known:
                 written.append({"path": absolute, "step": step_index})
-                known.add(absolute)
+                known[absolute] = len(written) - 1
+            recorded.append((known[absolute], absolute))
+    return recorded
 
 
-def copy_written_documents(job_id: str, cwd: str) -> None:
+def safe_document_source(source: Path) -> bool:
+    """A document the agent wrote may be copied or read wherever it lives, if it is a regular Markdown file.
+
+    Agents keep working notes outside their cwd too. A symlink is never followed.
+    """
+    return is_markdown(source.name) and not source.is_symlink() and source.is_file()
+
+
+def copy_document(job_id: str, index: int, source: Path) -> Path:
+    artifacts = JOBS_DIRECTORY / job_id / "artifacts"
+    artifacts.mkdir(exist_ok=True)
+    target = artifacts / f"file-{index}{source.suffix}"
+    temporary = artifacts / f"file-{index}.tmp"
+    shutil.copy2(source, temporary)
+    temporary.replace(target)
+    return target
+
+
+def copy_written_documents(job_id: str) -> None:
     """Keep agent-written Markdown under the job's approved document root."""
     with locked_job(job_id) as live_job:
-        artifacts = JOBS_DIRECTORY / job_id / "artifacts"
         for index, entry in enumerate(live_job.get("written_documents", [])):
             source = Path(entry["path"])
-            if source.is_symlink() or not source.is_file() or not source.resolve().is_relative_to(Path(cwd).resolve()):
+            if safe_document_source(source):
+                entry["artifact"] = str(copy_document(job_id, index, source))
+
+
+class DocumentMirror:
+    """Copies recorded Markdown into the job's artifacts whenever the agent changes it, so it reads live mid-step."""
+
+    def __init__(self, job_id: str) -> None:
+        self.job_id = job_id
+        self.watched: Dict[int, Path] = {}
+        self.copied: Dict[int, tuple] = {}
+        self.announced: set = set()
+
+    def watch(self, recorded: List[Tuple[int, str]]) -> None:
+        for index, path in recorded:
+            self.watched[index] = Path(path)
+
+    def sync(self) -> None:
+        """Stats the watched files; copies only those whose mtime or size changed since the last copy."""
+        fresh: Dict[int, str] = {}
+        for index, source in self.watched.items():
+            try:
+                stat = source.lstat()
+            except OSError:
                 continue
-            artifacts.mkdir(exist_ok=True)
-            target = artifacts / f"file-{index}{source.suffix}"
-            temporary = artifacts / f"file-{index}.tmp"
-            shutil.copy2(source, temporary)
-            temporary.replace(target)
-            entry["artifact"] = str(target)
+            signature = (stat.st_mtime_ns, stat.st_size)
+            if signature == self.copied.get(index) or not safe_document_source(source):
+                continue
+            try:
+                target = copy_document(self.job_id, index, source)
+            except OSError:
+                continue
+            self.copied[index] = signature
+            if index not in self.announced:
+                fresh[index] = str(target)
+        if fresh:
+            with locked_job(self.job_id) as live_job:
+                written = live_job.get("written_documents", [])
+                for index, target in fresh.items():
+                    written[index]["artifact"] = target
+            self.announced.update(fresh)
+
+
+def write_briefs(job_id: str, steps: List[JsonObject]) -> None:
+    """Each step's prompt as a readable document, there from the moment the step exists."""
+    for step in steps:
+        path = JOBS_DIRECTORY / job_id / f"brief-{step['index']}.md"
+        if not path.exists():
+            path.write_text(step["prompt"])
 
 
 def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
@@ -524,7 +595,9 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
     outcome: JsonObject = {"ok": False, "summary": "", "text": "", "usage": None}
     result_recorded = False
     last_text = ""
+    mirror = DocumentMirror(job_id)
     raw_path = JOBS_DIRECTORY / job_id / f"raw-{step['index']}.jsonl"
+    refusals = StreamRefusals(job, step["index"]) if job["agent"] == "claude" else None
     with open(raw_path, "a") as raw_file:
         process = subprocess.Popen(command, cwd=job["cwd"], env=environment, stdin=subprocess.DEVNULL,
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
@@ -540,6 +613,10 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
                 if line.strip():
                     append_event(job_id, {"kind": "log", "step": step["index"], "summary": shorten(line)})
                 continue
+            if refusals is not None:
+                # an unexpected record shape must not cost the step
+                with contextlib.suppress(OSError, ValueError, TypeError, KeyError, AttributeError):
+                    refusals.consume(record)
             events, result = runtime.parse(record)
             if result is not None:
                 result_recorded = True
@@ -554,10 +631,12 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
                     with locked_job(job_id) as live_job:
                         live_job["todos"] = event["todos"]
                 if event.get("paths"):
-                    record_written_documents(job_id, job["cwd"], event["paths"], step["index"])
+                    mirror.watch(record_written_documents(job_id, job["cwd"], event["paths"], step["index"]))
                 if event["kind"] == "text":
                     last_text = event.pop("text", None) or event["summary"]
                 append_event(job_id, event)
+            # A Claude write lands after its tool_use line, so every later line checks again.
+            mirror.sync()
         exit_code = process.wait()
     runtime.finish(outcome, exit_code, last_text)
     outcome["exit_code"] = exit_code
@@ -568,7 +647,7 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
         outcome["reported_status"] = reported
         if reported != "done":
             outcome["ok"] = False
-    copy_written_documents(job_id, job["cwd"])
+    copy_written_documents(job_id)
     return outcome
 
 
@@ -684,7 +763,8 @@ def job_summary(job: JsonObject, event_count: int) -> JsonObject:
 
 
 def job_documents(job: JsonObject) -> List[JsonObject]:
-    """Markdown the job produced: step reports, files the agent wrote, and outbox files.
+    """Markdown the job was given (step briefs, context files) and produced (step reports,
+    files the agent wrote, outbox files).
 
     Only these can be read back with `fleetd read`, so the deck can never be used
     to fetch arbitrary files from the host.
@@ -705,6 +785,14 @@ def job_documents(job: JsonObject) -> List[JsonObject]:
                 documents.append(document)
 
     for step in job["steps"]:
+        describe(f"brief-{step['index']}", directory / f"brief-{step['index']}.md", "brief",
+                 f"Step {step['index'] + 1} brief", step["index"])
+    context = directory / "context"
+    if context.exists():
+        for path in sorted(context.rglob("*")):
+            if is_markdown(path.name):
+                describe(f"context-{path.relative_to(context)}", path, "context", str(path.relative_to(context)), None)
+    for step in job["steps"]:
         report = directory / f"result-{step['index']}.md"
         with contextlib.suppress(OSError):
             if report.stat().st_size >= REPORT_MINIMUM_BYTES:
@@ -722,14 +810,40 @@ def job_documents(job: JsonObject) -> List[JsonObject]:
     return documents
 
 
+def document_roots(job: JsonObject) -> List[Path]:
+    """The job directory, the configured document_roots, and the job's project library root.
+
+    A library root is configured with `fleet library add` on the machine running fleet; when that
+    is this machine, its config is here too.
+    """
+    roots = [JOBS_DIRECTORY / job["id"], *(Path(root).expanduser() for root in load_config().get("document_roots", []))]
+    client_config = Path(os.environ.get("FLEET_CONFIG") or Path.home() / ".config" / "fleet" / "config.json")
+    with contextlib.suppress(OSError, ValueError, AttributeError, TypeError, KeyError):
+        library = json.loads(client_config.read_text()).get("libraries", {}).get(job.get("project"))
+        if library:   # a path, or {"path": ..., "recursive": true}
+            roots.append(Path(library if isinstance(library, str) else library["path"]).expanduser())
+    return roots
+
+
+def approved(job: JsonObject, path: Path) -> bool:
+    return any(path.is_relative_to(root.resolve()) for root in document_roots(job))
+
+
+def listed_document(job: JsonObject, document_id: str) -> JsonObject:
+    document = next((item for item in job_documents(job) if item["id"] == document_id), None)
+    if document is None:
+        fail(f"job {job['id']} has no document {document_id}")
+    return document
+
+
 def command_read(arguments: argparse.Namespace) -> None:
     job = read_job(arguments.job)
-    document = next((item for item in job_documents(job) if item["id"] == arguments.document), None)
-    if document is None:
-        fail(f"job {arguments.job} has no document {arguments.document}")
-    path = Path(document.pop("read_path", document["path"])).resolve()
-    roots = [JOBS_DIRECTORY / job["id"], *(Path(root).expanduser() for root in load_config().get("document_roots", []))]
-    if not any(path.is_relative_to(root.resolve()) for root in roots):
+    document = listed_document(job, arguments.document)
+    recorded = Path(document.pop("read_path", document["path"]))
+    path = recorded.resolve()
+    # A file the agent itself wrote is readable wherever it lives; anything else only under a root.
+    written = document["kind"] == "file" and safe_document_source(recorded)
+    if not written and not approved(job, path):
         fail(f"document path outside approved document roots: {document['path']}")
     with open(path, "rb") as handle:
         raw = handle.read(DOCUMENT_READ_LIMIT + 1)
@@ -738,6 +852,30 @@ def command_read(arguments: argparse.Namespace) -> None:
     document.update({"job": job["id"], "project": job["project"], "agent": job["agent"],
                      "host": os.uname().nodename, "job_description": job["description"]})
     emit(document)
+
+
+def command_read_asset(arguments: argparse.Namespace) -> None:
+    """An image a job document links to, resolved beside the document where the agent wrote it,
+    under the same approved roots as the document itself."""
+    job = read_job(arguments.job)
+    document = listed_document(job, arguments.document)
+    requested = Path(arguments.path)
+    if "\x00" in arguments.path or requested.is_absolute():
+        fail(f"asset path outside approved document roots: {arguments.path}")
+    path = (Path(document["path"]).parent / requested).resolve()
+    if not approved(job, path):
+        fail(f"asset path outside approved document roots: {arguments.path}")
+    content_type = ASSET_TYPES.get(path.suffix.lower())
+    if content_type is None:
+        fail(f"asset is not a supported image type: {arguments.path}")
+    if not path.is_file():
+        fail(f"job {job['id']} has no asset {arguments.path}")
+    with open(path, "rb") as handle:
+        raw = handle.read(ASSET_READ_LIMIT + 1)
+    if len(raw) > ASSET_READ_LIMIT:
+        fail(f"asset larger than {ASSET_READ_LIMIT} bytes: {arguments.path}")
+    emit({"path": arguments.path, "type": content_type, "size": len(raw),
+          "content": base64.b64encode(raw).decode("ascii")})
 
 
 def all_jobs() -> List[JsonObject]:
@@ -1295,10 +1433,16 @@ def input_hook_settings(project: str, job_id: Optional[str] = None,
                       for event in ("PermissionRequest", "PostToolUse")}}
 
 
+QUESTION_TOOL = "AskUserQuestion"
+
+
 def record_input_hook(record: JsonObject, *, project: str, job_id: Optional[str] = None,
                       step_index: Optional[int] = None) -> None:
+    """Keep a permission request or a question to the user until PostToolUse shows it was answered."""
     event = record["hook_event_name"]
-    if event not in ("PermissionRequest", "PostToolUse"):
+    if event not in ("PermissionRequest", "PreToolUse", "PostToolUse"):
+        return
+    if event == "PreToolUse" and record.get("tool_name") != QUESTION_TOOL:
         return
     session_id = record["session_id"]
     owner = [job_id, session_id, step_index]
@@ -1313,17 +1457,20 @@ def record_input_hook(record: JsonObject, *, project: str, job_id: Optional[str]
                       if item["kind"] == "input_requested"
                       and item["raw_request"]["tool_name"] == record["tool_name"]
                       and item["raw_request"]["tool_input"] == record["tool_input"]), None)
-        if event == "PermissionRequest":
+        if event in ("PermissionRequest", "PreToolUse"):
             if match is not None:
                 return
             records.append({"type": "input_observation", "schema_version": 1,
                             "host": os.uname().nodename, "runtime": "claude",
                             "owner_type": "job" if job_id is not None else "session",
                             "job_id": job_id, "session_id": session_id, "step_index": step_index,
-                            "project": project, "kind": "input_requested", "reason": "permission",
+                            "project": project, "kind": "input_requested",
+                            "reason": "permission" if event == "PermissionRequest" else "question",
                             "source_event": event, "source_event_id": secrets.token_hex(16),
                             "observed_at": now(), "context_reference": str(path),
-                            "raw_request": record})
+                            "cwd": record.get("cwd"), "raw_request": record,
+                            "denied_by": deny_rules_matching(record.get("tool_name"), record.get("tool_input") or {},
+                                                             record.get("cwd")) if event == "PermissionRequest" else []})
         elif match is not None:
             match.update(kind="input_cleared", source_event=event, observed_at=now(), raw_resume=record)
         else:
@@ -1333,12 +1480,55 @@ def record_input_hook(record: JsonObject, *, project: str, job_id: Optional[str]
         temporary.replace(path)
 
 
+class StreamRefusals:
+    """Records the refusals a job's Claude reports in its stream-json output.
+
+    In -p mode Claude does not always run the PermissionRequest hook before refusing: some
+    refusals (e.g. decision_reason_type subcommandResults) show only as a `permission_denied`
+    system event and in the result's `permission_denials`. Each is recorded as the hook would
+    have recorded it, into the same per-step observations, so a refusal reported by both paths
+    is one entry (record_input_hook matches on tool name and input).
+    """
+
+    def __init__(self, job: JsonObject, step_index: int) -> None:
+        self.job, self.step_index = job, step_index
+        self.tool_uses: Dict[str, Tuple[str, JsonObject]] = {}   # tool_use_id → (tool name, input)
+        self.recorded: set = set()
+
+    def consume(self, record: JsonObject) -> None:
+        kind = record.get("type")
+        if kind == "assistant":
+            for block in (record.get("message") or {}).get("content") or []:
+                if isinstance(block, dict) and block.get("type") == "tool_use" and isinstance(block.get("input"), dict):
+                    self.tool_uses[block.get("id")] = (block.get("name"), block["input"])
+        elif kind == "system" and record.get("subtype") == "permission_denied":
+            tool_use = self.tool_uses.get(record.get("tool_use_id"))
+            if tool_use is not None:   # otherwise the result's permission_denials names it
+                self.refused(record, record.get("tool_use_id"), record.get("tool_name") or tool_use[0], tool_use[1])
+        elif kind == "result":
+            for denial in record.get("permission_denials") or []:
+                if isinstance(denial, dict) and isinstance(denial.get("tool_input"), dict):
+                    self.refused(record, denial.get("tool_use_id"), denial.get("tool_name"), denial["tool_input"])
+
+    def refused(self, record: JsonObject, tool_use_id: Optional[str], tool_name: Optional[str],
+                tool_input: JsonObject) -> None:
+        session_id = record.get("session_id") or self.job.get("session_id")
+        if not tool_name or not session_id or (tool_use_id is not None and tool_use_id in self.recorded):
+            return
+        self.recorded.add(tool_use_id)
+        record_input_hook({"hook_event_name": "PermissionRequest", "session_id": session_id, "cwd": self.job["cwd"],
+                           "tool_name": tool_name, "tool_input": tool_input, "tool_use_id": tool_use_id,
+                           "reported_by": "stream"},
+                          project=self.job["project"], job_id=self.job["id"], step_index=self.step_index)
+
+
 def input_observations() -> List[JsonObject]:
     observations = []
     for path in sorted((FLEET_HOME / "input-observations").glob("*.json")):
         observations.extend({**{key: value for key, value in record.items()
-                                if key not in ("raw_request", "raw_resume")},
-                             "request": input_request(record["raw_request"])}
+                                if key not in ("raw_request", "raw_resume", "denied_by")},
+                             "request": {**input_request(record["raw_request"]),
+                                         "denied_by": record.get("denied_by", [])}}
                             for record in json.loads(path.read_text()))
     return observations
 
@@ -1351,14 +1541,221 @@ def input_request(raw: JsonObject) -> JsonObject:
     if detail is None:
         detail = json.dumps(tool_input) if tool_input else ""
     description = tool_input.get("description")
-    return {"tool": raw.get("tool_name") or "a tool",
-            "description": description if isinstance(description, str) else "",
-            "detail": detail[:2000]}
+    request = {"tool": raw.get("tool_name") or "a tool",
+               "description": description if isinstance(description, str) else "",
+               "detail": detail[:2000], "rules": permission_rules(raw.get("tool_name"), tool_input)}
+    if raw.get("tool_name") == QUESTION_TOOL:
+        request["questions"] = user_questions(tool_input)
+        request["detail"] = "\n".join(question["question"] for question in request["questions"])[:2000]
+        request["rules"] = []
+    return request
+
+
+def user_questions(tool_input: JsonObject) -> List[JsonObject]:
+    """AskUserQuestion's questions: header, question, options (label, description) and multi-select."""
+    text = lambda value: value if isinstance(value, str) else ""
+    questions = tool_input.get("questions")
+    return [{"header": text(question.get("header")), "question": text(question.get("question")),
+             "multi_select": question.get("multiSelect") is True,
+             "options": [{"label": text(option.get("label")), "description": text(option.get("description"))}
+                         for option in question.get("options") or [] if isinstance(option, dict)]}
+            for question in questions if isinstance(question, dict)] if isinstance(questions, list) else []
+
+
+SUBCOMMAND_PROGRAMS = {"git", "npm", "pnpm", "yarn", "npx", "uv", "cargo", "docker", "kubectl", "gh", "go",
+                       "pip", "poetry", "systemctl"}
+FILE_TOOLS = ("Read", "Edit", "Write", "MultiEdit", "NotebookEdit")
+RULE = re.compile(r"[A-Za-z_][\w-]*(\(.+\))?")
+
+
+def permission_rules(tool: Optional[str], tool_input: JsonObject) -> List[str]:
+    """Claude permission rules that would have allowed this request; empty when none can be named."""
+    if not tool:
+        return []
+    if tool == "Bash":
+        command = tool_input.get("command")
+        return bash_rules(command) if isinstance(command, str) else []
+    path = tool_input.get("file_path") or tool_input.get("notebook_path")
+    if tool in FILE_TOOLS:
+        if not isinstance(path, str) or not path:
+            return []
+        # `//` anchors an absolute path; a single `/` means relative to a settings file.
+        return [f"{tool}(/{path})" if path.startswith("/") else f"{tool}({path})"]
+    if tool == "WebFetch":
+        host = urllib.parse.urlsplit(tool_input.get("url") or "").hostname
+        return [f"WebFetch(domain:{host})"] if host else []
+    return [tool] if RULE.fullmatch(tool) else []
+
+
+def bash_commands(command: str) -> List[List[str]]:
+    """The words of each simple command in a compound one, without leading VAR=value or redirects."""
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    try:
+        tokens = list(lexer)
+    except ValueError:
+        return []
+    commands: List[List[str]] = []
+    segment: List[str] = []
+    redirect = False
+    for token in tokens + [";"]:
+        if redirect:
+            redirect = False
+            continue
+        if token and set(token) <= set("<>&") and set(token) & set("<>"):
+            redirect = True   # the next word is the redirect's target, not a command
+            continue
+        if token and set(token) <= set("&|;()"):
+            words = segment
+            while words and re.fullmatch(r"[A-Za-z_]\w*=.*", words[0]):
+                words = words[1:]   # leading VAR=value assignments
+            segment = []
+            if words:
+                commands.append(words)
+        else:
+            segment.append(token)
+    return commands
+
+
+def bash_rules(command: str) -> List[str]:
+    """One `Bash(prefix:*)` per simple command, as Claude checks each part of a compound command."""
+    rules: List[str] = []
+    for words in bash_commands(command):
+        prefix = words[:2] if words[0] in SUBCOMMAND_PROGRAMS and len(words) > 1 and not words[1].startswith("-") \
+            else words[:1]
+        rule = f"Bash({' '.join(prefix)}:*)"
+        if rule not in rules:
+            rules.append(rule)
+    return rules
+
+
+def claude_settings_files(cwd: Optional[str]) -> List[Path]:
+    """The settings files whose deny rules apply to a Claude run in cwd: managed, user and project."""
+    user = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+    files = [Path("/etc/claude-code/managed-settings.json"), user / "settings.json"]
+    if cwd:
+        files += [Path(cwd) / ".claude" / "settings.json", Path(cwd) / ".claude" / "settings.local.json"]
+    return files
+
+
+def deny_rules_matching(tool: Optional[str], tool_input: JsonObject, cwd: Optional[str]) -> List[str]:
+    """The deny rules that refuse this request, with their files. No allow rule can override one.
+
+    Covers bare tool names, Bash commands and prefixes, and rules equal to one fleetd would
+    propose; path globs and other patterns are not interpreted, so an empty list is not proof.
+    """
+    if not tool:
+        return []
+    proposed = set(permission_rules(tool, tool_input))
+    command = tool_input.get("command") if tool == "Bash" else None
+    commands = [" ".join(words) for words in bash_commands(command)] if isinstance(command, str) else []
+    found = []
+    for path in claude_settings_files(cwd):
+        try:
+            deny = json.loads(path.read_text()).get("permissions", {}).get("deny", [])
+        except (OSError, ValueError, AttributeError):
+            continue
+        for rule in deny if isinstance(deny, list) else []:
+            match = re.fullmatch(r"([^()]+)(?:\((.*)\))?", rule) if isinstance(rule, str) else None
+            if match is None or match.group(1) != tool:
+                continue
+            content = match.group(2)
+            if content is None or rule in proposed:
+                hit = True
+            elif commands and content.endswith(":*"):
+                prefix = content[:-2]
+                hit = any(each == prefix or each.startswith(prefix + " ") for each in commands)
+            else:
+                hit = content in commands or content == command
+            if hit:
+                found.append(f"{rule} in {path}")
+    return found
 
 
 def command_input_hook(arguments: argparse.Namespace) -> None:
-    record_input_hook(json.load(sys.stdin), project=arguments.project,
-                      job_id=arguments.job, step_index=arguments.step_index)
+    record = json.load(sys.stdin)
+    if arguments.session_hook:
+        # Installed for every session on the host; a job's own --settings hook records its events.
+        if os.environ.get("FLEET_JOB_ID") or not isinstance(record.get("cwd"), str):
+            return
+        project = repository_name(record["cwd"])
+    elif arguments.project is None:
+        fail("input-hook needs --project, or --session-hook")
+    else:
+        project = arguments.project
+    record_input_hook(record, project=project, job_id=arguments.job, step_index=arguments.step_index)
+
+
+SESSION_HOOK_MARK = "# fleet-session-hook"   # identifies the entries `session-hooks uninstall` removes
+
+
+def session_hook_settings() -> JsonObject:
+    """The hook groups every interactive Claude session on this host runs.
+
+    The command does nothing, successfully and silently, when this fleetd or its FLEET_HOME is gone,
+    so a removed install can never block or clutter a session.
+    """
+    fleetd, home = shlex.quote(str(Path(__file__).resolve())), shlex.quote(str(FLEET_HOME))
+    command = (f"test -d {home} && test -f {fleetd} && FLEET_HOME={home} {shlex.quote(sys.executable)} {fleetd} "
+               f"input-hook --session-hook >/dev/null 2>&1; exit 0 {SESSION_HOOK_MARK}")
+    group = {"hooks": [{"type": "command", "command": command}]}
+    return {"PermissionRequest": [group], "PreToolUse": [{"matcher": QUESTION_TOOL, **group}],
+            "PostToolUse": [group]}
+
+
+def without_session_hooks(hooks: JsonObject) -> JsonObject:
+    """The hooks with fleet's marked commands taken out, and any group or event they leave empty."""
+    result = {}
+    for event, groups in hooks.items():
+        if not isinstance(groups, list):
+            result[event] = groups
+            continue
+        kept = []
+        for group in groups:
+            commands = group.get("hooks") if isinstance(group, dict) else None
+            if not isinstance(commands, list):
+                kept.append(group)
+                continue
+            remaining = [hook for hook in commands if not (isinstance(hook, dict)
+                         and SESSION_HOOK_MARK in str(hook.get("command", "")))]
+            if remaining or not commands:
+                kept.append({**group, "hooks": remaining} if len(remaining) != len(commands) else group)
+        if kept or not groups:
+            result[event] = kept
+    return result
+
+
+def command_session_hooks(arguments: argparse.Namespace) -> None:
+    """Merge fleet's hooks into (or take them out of) Claude's user settings, keeping everything else."""
+    path = Path(arguments.settings or Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+                / "settings.json").expanduser()
+    try:
+        settings = json.loads(path.read_text()) if path.exists() else {}
+    except ValueError as error:
+        fail(f"{path} is not valid JSON, left unchanged: {error}")
+    if not isinstance(settings, dict) or not isinstance(settings.get("hooks", {}), dict):
+        fail(f"{path} does not hold a settings object with a hooks object, left unchanged")
+    hooks = without_session_hooks(settings.get("hooks", {}))
+    if arguments.action == "install":
+        for event, groups in session_hook_settings().items():
+            hooks[event] = hooks.get(event, []) + groups
+    if hooks:
+        settings["hooks"] = hooks
+    else:
+        settings.pop("hooks", None)
+    path = path.resolve()   # a settings file kept in dotfiles stays a symlink to it
+    path.parent.mkdir(parents=True, exist_ok=True)
+    mode = path.stat().st_mode & 0o7777 if path.exists() else 0o600
+    temporary = path.with_name(f".{path.name}.fleet-{os.getpid()}.tmp")
+    with open(os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode), "w") as handle:
+        handle.write(json.dumps(settings, indent=2) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.chmod(temporary, mode)
+    os.replace(temporary, path)
+    emit({"host": os.uname().nodename, "settings": str(path), "action": arguments.action,
+          "events": sorted(event for event, groups in settings.get("hooks", {}).items()
+                           if any(SESSION_HOOK_MARK in json.dumps(group) for group in groups))})
 
 
 def make_step(index: int, prompt: str, title: Optional[str]) -> JsonObject:
@@ -1418,6 +1815,7 @@ def command_create(arguments: argparse.Namespace) -> None:
             (directory / "context").mkdir(parents=True)
             (directory / "outbox").mkdir()
             (directory / "job.json").write_text(json.dumps(job, indent=1))
+            write_briefs(job_id, steps)
             append_event(job_id, {"kind": "job", "status": "queued", "summary": f"job created: {arguments.description}"})
     if not arguments.hold:
         start_job(job_id, arguments)
@@ -1485,6 +1883,7 @@ def command_deliver(arguments: argparse.Namespace) -> None:
                 step = make_step(len(job["steps"]), answer, "Answer")
                 step["delivery_key"] = arguments.key
                 job["steps"].append(step)
+                write_briefs(arguments.job, [step])
             pending = step["status"] == "pending"
         if pending:
             launch_runner(arguments.job)
@@ -1493,6 +1892,47 @@ def command_deliver(arguments: argparse.Namespace) -> None:
             emit({"schema_version": 1, "key": arguments.key, "status": "busy"})
             return
     emit({"schema_version": 1, "key": arguments.key, "status": "applied"})
+
+
+def command_grant(arguments: argparse.Namespace) -> None:
+    """Add Claude permission rules to a job and queue a step that continues the refused one.
+
+    Idempotent by key: a repeated grant reports the first result and queues nothing more.
+    """
+    if arguments.schema_version != 1:
+        fail("unsupported grant schema version")
+    rules = json.loads(sys.stdin.read() or "null")
+    if (not arguments.key.strip() or not isinstance(rules, list) or not rules
+            or not all(isinstance(rule, str) and RULE.fullmatch(rule) for rule in rules)):
+        fail("grant key and a JSON list of permission rules are required")
+    with locked_job(arguments.job) as job:
+        grant = next((grant for grant in job.get("permission_grants", []) if grant["key"] == arguments.key), None)
+        if grant is None:
+            if job["agent"] != "claude":
+                fail("permission rules apply to claude jobs only")
+            if not 0 <= arguments.step < len(job["steps"]):
+                fail(f"job has no step {arguments.step}")
+            allowed = job.setdefault("allowed_tools", [])   # jobs created before --allowed-tools lack it
+            added = [rule for rule in dict.fromkeys(rules) if rule not in allowed]
+            allowed += added
+            step = make_step(len(job["steps"]),
+                             f"Continue step {arguments.step + 1}: the commands you were refused are now allowed "
+                             f"({', '.join(rules)}). Retry what was refused, then finish that step's work.",
+                             f"Continue step {arguments.step + 1}")
+            job["steps"].append(step)
+            job["cancelled"] = False
+            grant = {"key": arguments.key, "step": arguments.step, "rules": rules, "added": added,
+                     "continuation": step["index"], "at": now()}
+            job.setdefault("permission_grants", []).append(grant)
+            fresh = True
+        else:
+            fresh = False
+    if fresh:
+        append_event(arguments.job, {"kind": "job", "status": "queued",
+                                     "summary": f"allowed {', '.join(rules)}; step {arguments.step + 1} continues"})
+        launch_runner(arguments.job)
+    emit({"schema_version": 1, "key": arguments.key, "status": "applied", "added": grant["added"],
+          "continuation": grant["continuation"]})
 
 
 def command_add(arguments: argparse.Namespace) -> None:
@@ -1505,6 +1945,7 @@ def command_add(arguments: argparse.Namespace) -> None:
             for step in job["steps"]:
                 if step["status"] in ("failed", "cancelled"):
                     step["status"] = "pending"
+        write_briefs(arguments.job, job["steps"])
     append_event(arguments.job, {"kind": "job", "status": "queued", "summary": f"{len(new_steps)} step(s) added"})
     if not arguments.hold:
         launch_runner(arguments.job)
@@ -1525,14 +1966,35 @@ def command_list(arguments: argparse.Namespace) -> None:
           "jobs": [job_summary(job, arguments.events) for job in jobs]})
 
 
-def job_signature(directory: Path) -> tuple:
-    """Changes whenever the job definition or its activity changes."""
-    signature = []
-    for name in ("job.json", "events.jsonl", "outbox"):
+def job_signature(directory: Path, documents: bool = True) -> tuple:
+    """Changes whenever the job definition, its activity or (with documents) one of its documents changes.
+
+    Document folders are stat-ed, never read. Without documents only the outbox folder itself is
+    stat-ed, which is enough to wake a long-finished job the stream no longer follows.
+    """
+    signature: List[Any] = []
+    for name in ("job.json", "events.jsonl") if documents else ("job.json", "events.jsonl", "outbox"):
         with contextlib.suppress(OSError):
             stat = (directory / name).stat()
             signature += [stat.st_mtime_ns, stat.st_size]
+    if documents:
+        signature += [tree_signature(directory / name) for name in ("outbox", "context", "artifacts")]
     return tuple(signature)
+
+
+def tree_signature(root: Path) -> tuple:
+    """(file count, newest mtime, total size) of the regular files under root."""
+    count = newest = total = 0
+    pending = [root]
+    while pending:
+        for entry in scan_directory(pending.pop()):
+            with contextlib.suppress(OSError):
+                if entry.is_dir(follow_symlinks=False):
+                    pending.append(Path(entry.path))
+                elif entry.is_file(follow_symlinks=False):
+                    stat = entry.stat(follow_symlinks=False)
+                    count, newest, total = count + 1, max(newest, stat.st_mtime_ns), total + stat.st_size
+    return count, newest, total
 
 
 def command_stream(arguments: argparse.Namespace) -> None:
@@ -1566,9 +2028,9 @@ def command_stream(arguments: argparse.Namespace) -> None:
             seen = set()
             for path in JOBS_DIRECTORY.glob("*/job.json") if JOBS_DIRECTORY.exists() else []:
                 job_id = path.parent.name
-                signature = job_signature(path.parent)
-                if ignored.get(job_id) == signature:
+                if job_id in ignored and ignored[job_id] == job_signature(path.parent, documents=False):
                     continue
+                signature = job_signature(path.parent)
                 # Recheck processes until both runner and agent have ended.
                 if signature == signatures.get(job_id) and not runner_states.get(job_id):
                     seen.add(job_id)
@@ -1579,7 +2041,7 @@ def command_stream(arguments: argparse.Namespace) -> None:
                     continue
                 status = derive_status(job)
                 if status in TERMINAL_STATUSES and job.get("updated_at", 0) < now() - horizon_seconds:
-                    ignored[job_id] = signature
+                    ignored[job_id] = job_signature(path.parent, documents=False)
                     continue
                 seen.add(job_id)
                 alive = runner_alive(job) or process_alive(job.get("agent_pid"))
@@ -1731,6 +2193,13 @@ def main() -> None:
     deliver.add_argument("--schema-version", type=int, required=True)
     deliver.set_defaults(handler=command_deliver)
 
+    grant = commands.add_parser("grant", help="allow Claude permission rules (JSON list on stdin) for a job")
+    grant.add_argument("job")
+    grant.add_argument("--step", type=int, required=True, help="the step whose refusals these rules answer")
+    grant.add_argument("--key", required=True)
+    grant.add_argument("--schema-version", type=int, required=True)
+    grant.set_defaults(handler=command_grant)
+
     create = commands.add_parser("create")
     create.add_argument("--id")
     create.add_argument("--run-id")
@@ -1814,6 +2283,12 @@ def main() -> None:
     read.add_argument("document")
     read.set_defaults(handler=command_read)
 
+    read_asset = commands.add_parser("read-asset")
+    read_asset.add_argument("job")
+    read_asset.add_argument("document")
+    read_asset.add_argument("path")
+    read_asset.set_defaults(handler=command_read_asset)
+
     result = commands.add_parser("result")
     result.add_argument("job")
     result.add_argument("--step", type=int)
@@ -1837,10 +2312,18 @@ def main() -> None:
     run.set_defaults(handler=lambda arguments: run_job(arguments.job))
 
     hook = commands.add_parser("input-hook", help="receive Claude permission hooks on stdin")
-    hook.add_argument("--project", required=True)
+    hook.add_argument("--project")
+    hook.add_argument("--session-hook", action="store_true",
+                      help="installed for every session: project from the hook's cwd; ignored inside fleet jobs")
     hook.add_argument("--job")
     hook.add_argument("--step-index", type=int)
     hook.set_defaults(handler=command_input_hook)
+
+    session_hooks = commands.add_parser("session-hooks",
+                                        help="add fleet's hooks to (or remove them from) Claude's user settings")
+    session_hooks.add_argument("action", choices=("install", "uninstall"))
+    session_hooks.add_argument("--settings", help="settings file (default: ~/.claude/settings.json)")
+    session_hooks.set_defaults(handler=command_session_hooks)
 
     settings = commands.add_parser("input-hook-settings", help="Claude --settings JSON for an interactive session")
     settings.add_argument("--project", required=True)

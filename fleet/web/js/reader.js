@@ -3,11 +3,12 @@
 import { DEMO, REDUCED } from './env.js';
 import { age, clamp, esc, store } from './util.js';
 import { hostLook } from './looks.js';
-import { DOC_KIND, kindOf } from './docs3d.js';
+import { DOC_KIND, isUpdating, kindOf } from './docs3d.js';
 import { hideDocTip } from './camera.js';
 import { fallbackCopy } from './panel.js';
 import { libraryDocs } from './library.js';
 import { demoDoc } from './demo.js';
+import { drawnDiagrams, enrichProse, linkImages, rethemeDiagrams } from './rich.js';
 
 // ------------------------------------------------------------------ reader
 export const reader = document.getElementById('reader');
@@ -23,6 +24,7 @@ const THEME_ICON = {
 
 function setReaderTheme(theme) {
   rdSheet.dataset.theme = theme;
+  rethemeDiagrams(rdBody, theme);
   const b = document.getElementById('rdTheme');
   b.innerHTML = THEME_ICON[theme];
   b.setAttribute('aria-label', theme === 'dark' ? 'Switch to the paper theme' : 'Switch to the dark theme');
@@ -34,7 +36,7 @@ export function openReader(e, doc) {
   rd.req++;
   rd.key = `${e.host}:${e.job.id}:${doc.id}`;
   rd.source = 'job';
-  rd.host = e.host; rd.job = e.job; rd.doc = doc; rd.data = null;
+  rd.host = e.host; rd.job = e.job; rd.doc = doc; rd.data = null; rd.stale = false; rd.refreshError = null;
   if (reader.hidden) rd.lastFocus = document.activeElement;
   reader.hidden = false;
   renderReaderHead();
@@ -48,6 +50,23 @@ export function openLibraryReader(doc) {
   rd.key = `library:${doc.project}:${doc.id}`;
   rd.source = 'library';
   rd.host = null; rd.job = { id: 'library', description: doc.project }; rd.doc = doc; rd.data = null;
+  if (reader.hidden) rd.lastFocus = document.activeElement;
+  reader.hidden = false;
+  renderReaderHead();
+  renderReaderLoading();
+  rdSheet.focus();
+  loadDoc(rd.req);
+}
+// A copy from a project's document store: a job's document (shown as from the job panel, though the job may have
+// left the floor or its host) or one of the project's working documents (no job).
+export function openStoredReader(url, doc, job) {
+  if (!reader.hidden) saveReaderScroll();
+  rd.req++;
+  rd.key = 'stored:' + url;
+  rd.source = 'stored'; rd.url = url;
+  rd.host = job ? job.host : null;
+  rd.job = job ? { id: job.id, description: job.description, agent: job.agent } : { id: 'working', description: 'working documents' };
+  rd.doc = doc; rd.data = null;
   if (reader.hidden) rd.lastFocus = document.activeElement;
   reader.hidden = false;
   renderReaderHead();
@@ -84,6 +103,8 @@ async function loadDecision(id, req) {
     if (!res.ok) throw new Error(detail.error);
     if (req !== rd.req) return;
     const prose = rdBody.querySelector('.prose');
+    if (detail.refusals) { renderRefusals(prose, id, detail); return; }
+    if (detail.session_question) { renderSessionQuestion(prose, detail.session_question); return; }
     prose.innerHTML = `<h2>${esc(detail.question)}</h2><p class="decision-context">${esc(detail.context)}</p>
       ${detail.proposal === null ? '' : `<h3>Proposed change</h3><pre>${esc(detail.proposal.change)}</pre><p>${esc(detail.proposal.reason)}</p>`}
       <form class="decision-answer">
@@ -118,16 +139,101 @@ async function loadDecision(id, req) {
     if (req === rd.req) rdBody.querySelector('.prose').insertAdjacentHTML('beforeend', `<p role="alert">${esc(error.message)}</p>`);
   }
 }
+// A question an interactive session asked in its terminal. Fleet cannot type there, so it only shows where to answer.
+function renderSessionQuestion(prose, s) {
+  const where = s.project ? `${esc(s.project)} · ` : '';
+  prose.innerHTML = `<p class="session-answer" role="note"><b>Answer this in the session’s terminal on ${esc(s.host)}.</b>
+      Fleet cannot type there; this item closes once the session has its answer.</p>
+    <p class="session-where">${where}${s.cwd ? `<code>${esc(s.cwd)}</code>` : `${esc(s.label)} (working directory not reported)`} · ${esc(s.host)} · session ${esc(s.session)}</p>
+    ${s.state === 'resolved' ? `<p role="status">${esc(s.resolution)}</p>` : ''}
+    ${s.questions.map(q => `<section class="session-question">
+      ${q.header ? `<p class="qh">${esc(q.header)}</p>` : ''}<h2>${esc(q.question)}</h2>
+      ${q.multi_select ? '<p class="qm">More than one may be chosen.</p>' : ''}
+      <ol class="question-options">${q.options.map(o => `<li><b>${esc(o.label)}</b>${o.description ? `<span>${esc(o.description)}</span>` : ''}</li>`).join('')}</ol>
+    </section>`).join('')}`;
+}
+// A job step's refused permission requests: every one listed, answered by changing the job's permissions.
+function renderRefusals(prose, id, detail) {
+  const r = detail.refusals, open = r.state !== 'resolved';
+  const denied = r.requests.filter(q => q.denied_by && q.denied_by.length), allDenied = denied.length === r.requests.length;
+  const covers = q => q.denied_by && q.denied_by.length ? `<span class="denied">denied by ${q.denied_by.map(esc).join(', ')}: no rule allowed for the job can override it</span>`
+    : q.rules === null ? 'this worker names no rule' : q.rules.length ? q.rules.map(esc).join(', ') : 'no rule covers this';
+  prose.innerHTML = `<h2>${esc(detail.question)}</h2>
+    <p>Job ${esc(r.job)} on ${esc(r.host)} ran step ${r.step + 1} with nobody at the prompt, so Claude refused these and carried on.</p>
+    ${open ? `<div class="refusal-actions">
+        <button data-scope="refused"${r.rules && r.rules.length ? '' : ' disabled'}>Allow these for this job</button>
+        <button data-scope="bash"${allDenied ? ' disabled' : ''}>Allow all Bash for this job</button>
+        <button data-dismiss>Dismiss</button></div>
+      <p class="refusal-note">${allDenied ? `A deny rule in the host’s Claude settings refuses ${denied.length === 1 ? 'this' : 'these'}; remove it there to let jobs run ${denied.length === 1 ? 'it' : 'them'}, or dismiss.`
+        : r.rules === null ? 'This worker’s fleetd names no rules, so only all of Bash can be allowed from here.'
+        : `Allowing adds the rules to job ${esc(r.job)}; a new step continues step ${r.step + 1} with them.${denied.length ? ' Requests a deny rule refuses stay refused.' : ''}`}</p>`
+      : `<p role="status">${esc(r.resolution)}</p>`}
+    <p role="alert"></p><p role="status" class="refusal-done"></p>
+    <ol class="refusals">${r.requests.map(q => `<li><code><b>${esc(q.tool)}</b> ${esc(q.detail)}</code>
+      <small>${q.description ? `${esc(q.description)} · ` : ''}${covers(q)}</small></li>`).join('')}</ol>`;
+  prose.addEventListener('click', async ev => {
+    const b = ev.target.closest('[data-scope],[data-dismiss]');
+    if (!b || b.disabled) return;
+    const buttons = prose.querySelectorAll('.refusal-actions button');
+    for (const x of buttons) x.disabled = true;
+    prose.querySelector('[role="alert"]').textContent = '';
+    try {
+      const res = await fetch(b.dataset.scope ? '/api/attention/allow' : '/api/attention/dismiss', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b.dataset.scope ? { id, scope: b.dataset.scope } : { id }) });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error);
+      prose.querySelector('.refusal-done').textContent = result.resolution;
+    } catch (error) {
+      prose.querySelector('[role="alert"]').textContent = error.message;
+      for (const x of buttons) x.disabled = (x.dataset.scope === 'refused' && !(r.rules && r.rules.length))
+        || (x.dataset.scope === 'bash' && allDenied);
+    }
+  });
+}
 async function loadDoc(req) {
   try {
     const data = rd.source === 'library' ? await fetchLibraryDoc(rd.doc.project, rd.doc.id)
+      : rd.source === 'stored' ? await fetchJson(rd.url)
       : DEMO ? await demoDoc(rd.host, rd.job.id, rd.doc.id) : await fetchDoc(rd.host, rd.job.id, rd.doc.id);
     if (req !== rd.req) return;
     rd.data = data;
     renderReaderHead();
     renderReaderBody();
+    if (rd.stale && rd.source === 'job') refreshDoc(req);
   } catch (err) {
     if (req === rd.req) renderReaderError(err.message || String(err));
+  }
+}
+// A job document the agent is still writing: when a state update brings it a new mtime or size, fetch it again and
+// swap the text in place, keeping the reading position, or the bottom for someone following along.
+export function readerTarget() { return reader.hidden || rd.source !== 'job' ? null : `${rd.host}:${rd.job.id}`; }
+export function followDoc(e) {
+  if (reader.hidden || rd.source !== 'job' || !e || e.host !== rd.host || e.job.id !== rd.job.id) return;
+  const doc = (e.job.documents || []).find(d => d.id === rd.doc.id);
+  rd.job = e.job;
+  if (!doc || (doc.mtime === rd.doc.mtime && doc.size === rd.doc.size)) return;
+  rd.doc = doc;
+  // still loading or refreshing: fetch once more when that lands
+  if (!rd.data || rd.refreshing === rd.req) rd.stale = true;
+  else refreshDoc(rd.req);
+}
+async function refreshDoc(req) {
+  rd.refreshing = req; rd.stale = false;
+  try {
+    const data = DEMO ? await demoDoc(rd.host, rd.job.id, rd.doc.id) : await fetchDoc(rd.host, rd.job.id, rd.doc.id);
+    if (req !== rd.req) return;
+    rd.data = data; rd.refreshError = null;
+    const max = rdBody.scrollHeight - rdBody.clientHeight;
+    renderReaderBody(max > 0 && rdBody.scrollTop >= max - 4 ? Infinity : rdBody.scrollTop);
+  } catch (err) {
+    // the last text that did load stays on screen, and the head says it is out of date
+    if (req === rd.req) rd.refreshError = err.message || String(err);
+  } finally {
+    if (req === rd.req) {
+      rd.refreshing = 0;
+      renderReaderHead();
+      if (rd.stale) refreshDoc(req);
+    }
   }
 }
 async function fetchDoc(host, job, id) {
@@ -139,7 +245,10 @@ async function fetchDoc(host, job, id) {
   return body;
 }
 async function fetchLibraryDoc(project, id) {
-  const res = await fetch('/api/library/doc?' + new URLSearchParams({ project, id }));
+  return fetchJson('/api/library/doc?' + new URLSearchParams({ project, id }));
+}
+async function fetchJson(url) {
+  const res = await fetch(url);
   const body = await res.json();
   if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
   return body;
@@ -154,10 +263,13 @@ function renderReaderHead() {
   document.getElementById('rdMeta').innerHTML = [
     rd.source === 'attention' ? `<span>Attention item · ${esc(doc.id)}</span>`
       : rd.source === 'library' ? `<span>${esc(doc.project)} · ${esc(doc.id)}</span>`
+      : rd.source === 'stored' && !rd.host ? `<span>working · ${esc(doc.id)}</span>`
       : `<span title="${esc(d.job_description || rd.job.description)}"><i class="hd" style="background:${hostLook(rd.host).color}"></i>${esc(rd.host)} · ${esc(rd.job.id)} · ${esc(d.agent || rd.job.agent)}</span>`,
     step != null ? `<span>step ${step + 1}</span>` : '',
     d.minutes ? `<span>${d.minutes} min read</span>` : '',
     (d.mtime || doc.mtime) ? `<span>updated ${age(d.mtime || doc.mtime)} ago</span>` : '',
+    rd.source === 'job' && isUpdating(rd.job, doc) ? '<span class="rd-live">updating live</span>' : '',
+    rd.source === 'job' && rd.refreshError ? `<span class="rd-stale" title="${esc(rd.refreshError)}">couldn’t refresh: showing an older version</span>` : '',
   ].join('');
   document.getElementById('rdCopy').disabled = !rd.data;
   document.getElementById('rdDownload').disabled = !rd.data;
@@ -173,27 +285,61 @@ function renderReaderError(message) {
     <code>${esc(message)}</code><br><button class="rd-retry" id="rdRetry">Try again</button></div></div>`;
   document.getElementById('rdRetry').addEventListener('click', () => { renderReaderLoading(); loadDoc(++rd.req); });
 }
-function renderReaderBody() {
+function keepImageSizes(prose, fragment) {
+  const sizes = new Map([...prose.querySelectorAll('img')].filter(img => img.naturalWidth)
+    .map(img => [img.getAttribute('src'), [img.naturalWidth, img.naturalHeight]]));
+  for (const img of fragment.querySelectorAll('img')) {
+    const size = sizes.get(img.getAttribute('src'));
+    if (size && !img.hasAttribute('width')) { img.width = size[0]; img.height = size[1]; }
+  }
+}
+// With a scroll position this is a refresh of the open document: the grid stays, only the contents and the text are
+// swapped, and the position is restored before the browser paints, so nothing flickers. Infinity follows the bottom.
+function renderReaderBody(scrollTop) {
   const d = rd.data;
   const toc = (d.toc || []).filter(x => x.id && x.level <= 3);
   const showToc = toc.length >= 3, top = Math.min(...toc.map(x => x.level));
-  rdBody.innerHTML = `<div class="rd-grid${showToc ? ' has-toc' : ''}">
-    ${showToc ? `<details class="rd-toc"><summary>Contents<span>${toc.length}</span></summary><nav aria-label="Contents"><p class="lbl">Contents</p>
-      ${toc.map(x => `<a href="#doc-${esc(x.id)}" class="l${x.level - top + 1}">${esc(x.text)}</a>`).join('')}</nav></details>` : ''}
-    <article class="prose"></article></div>`;
+  const links = showToc ? toc.map(x => `<a href="#doc-${esc(x.id)}" class="l${x.level - top + 1}">${esc(x.text)}</a>`).join('') : '';
+  const grid = rdBody.querySelector('.rd-grid');
+  const refresh = scrollTop !== undefined && grid && grid.classList.contains('has-toc') === showToc && grid.querySelector('.prose');
+  if (refresh) {
+    const nav = grid.querySelector('.rd-toc nav');
+    if (nav) nav.innerHTML = `<p class="lbl">Contents</p>${links}`;
+    const count = grid.querySelector('.rd-toc summary span');
+    if (count) count.textContent = toc.length;
+  } else {
+    rdBody.innerHTML = `<div class="rd-grid${showToc ? ' has-toc' : ''}">
+      ${showToc ? `<details class="rd-toc"><summary>Contents<span>${toc.length}</span></summary><nav aria-label="Contents"><p class="lbl">Contents</p>
+        ${links}</nav></details>` : ''}
+      <article class="prose"></article></div>`;
+  }
   const prose = rdBody.querySelector('.prose');
-  prose.innerHTML = d.html;   // rendered server-side with raw HTML escaped
+  const html = document.createElement('template');
+  html.innerHTML = d.html;   // rendered server-side with raw HTML escaped; inert until its images are pointed home
+  linkImages(html.content, assetUrl);
+  // a refresh shows unchanged diagrams as drawn and keeps each image's room while it reloads, so nothing jumps
+  const drawn = refresh ? drawnDiagrams(prose) : new Map();
+  if (refresh) keepImageSizes(prose, html.content);
+  prose.replaceChildren(html.content);
+  enrichProse(prose, rdSheet.dataset.theme, drawn);
   if (d.truncated) prose.insertAdjacentHTML('beforeend', '<p class="rd-note">This document was truncated for the reader. Download the Markdown for the full text.</p>');
   tidyProse(prose);
-  syncTocMode();
+  if (!refresh) syncTocMode();
   fitTables();
   if (document.fonts) document.fonts.ready.then(fitTables);
   rd.tocLinks = [...rdBody.querySelectorAll('.rd-toc a')]
     .map(a => ({ a, h: document.getElementById(a.getAttribute('href').slice(1)) }))
     .filter(x => x.h);
   rd.tocCurrent = null;
-  rdBody.scrollTop = Number(store('sessionStorage','fleet.reader.scroll.' + rd.key)) || 0;
+  rdBody.scrollTop = scrollTop === Infinity ? rdBody.scrollHeight
+    : scrollTop ?? (Number(store('sessionStorage','fleet.reader.scroll.' + rd.key)) || 0);
   onReaderScroll();
+}
+// images resolve beside the document, under the same roots the document was read from
+function assetUrl(path) {
+  if (rd.source === 'library') return '/api/library/asset?' + new URLSearchParams({ project: rd.doc.project, id: rd.doc.id, path });
+  if (rd.source === 'job') return '/api/doc/asset?' + new URLSearchParams({ host: rd.host, job: rd.job.id, id: rd.doc.id, path });
+  return null;
 }
 // heading ids are prefixed so a heading called "panel" or "legend" can't collide with the page's own ids
 function tidyProse(prose) {

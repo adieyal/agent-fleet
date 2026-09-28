@@ -1,0 +1,302 @@
+{
+ "parts": {
+  "helmet": {
+   "fix": "remesh",
+   "raw": {
+    "faces": 40000,
+    "boundary_edges": 9176,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 4760,
+    "islands": 1
+   },
+   "final": {
+    "faces": 27150,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 0,
+    "islands": 1
+   }
+  },
+  "visor": {
+   "fix": null,
+   "raw": {
+    "faces": 40000,
+    "boundary_edges": 7712,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 4010,
+    "islands": 1
+   },
+   "final": {
+    "faces": 3000,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 0,
+    "islands": 1
+   }
+  },
+  "ear": {
+   "fix": null,
+   "raw": {
+    "faces": 40000,
+    "boundary_edges": 3594,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 1820,
+    "islands": 1
+   },
+   "final": {
+    "faces": 2500,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 0,
+    "islands": 1
+   }
+  },
+  "neck": {
+   "fix": null,
+   "raw": {
+    "faces": 40000,
+    "boundary_edges": 5808,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 2943,
+    "islands": 1
+   },
+   "final": {
+    "faces": 1500,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 0,
+    "islands": 1
+   }
+  },
+  "chest": {
+   "fix": null,
+   "raw": {
+    "faces": 40000,
+    "boundary_edges": 15932,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 8676,
+    "islands": 1
+   },
+   "final": {
+    "faces": 8000,
+    "boundary_edges": 4,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 0,
+    "islands": 1
+   }
+  },
+  "chest_light": {
+   "fix": null,
+   "raw": {
+    "faces": 40000,
+    "boundary_edges": 12660,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 6596,
+    "islands": 1
+   },
+   "final": {
+    "faces": 1500,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 0,
+    "islands": 1
+   }
+  },
+  "waist": {
+   "fix": null,
+   "raw": {
+    "faces": 40000,
+    "boundary_edges": 14888,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 8064,
+    "islands": 1
+   },
+   "final": {
+    "faces": 2500,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 0,
+    "islands": 1
+   }
+  },
+  "pelvis": {
+   "fix": "mirror_half",
+   "raw": {
+    "faces": 40000,
+    "boundary_edges": 12008,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 6398,
+    "islands": 1
+   },
+   "final": {
+    "faces": 6056,
+    "boundary_edges": 40,
+    "nonmanifold_edges": 43,
+    "duplicate_verts": 0,
+    "islands": 1
+   }
+  },
+  "joint": {
+   "fix": null,
+   "raw": {
+    "faces": 40000,
+    "boundary_edges": 6196,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 3202,
+    "islands": 1
+   },
+   "final": {
+    "faces": 1500,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 0,
+    "islands": 1
+   }
+  },
+  "upper_arm": {
+   "fix": "fill_hinge",
+   "raw": {
+    "faces": 40000,
+    "boundary_edges": 14664,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 8120,
+    "islands": 1
+   },
+   "final": {
+    "faces": 9767,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 0,
+    "islands": 1
+   }
+  },
+  "forearm": {
+   "fix": "largest_island",
+   "raw": {
+    "faces": 40000,
+    "boundary_edges": 13510,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 7292,
+    "islands": 2
+   },
+   "final": {
+    "faces": 4000,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 0,
+    "islands": 1
+   }
+  },
+  "palm": {
+   "fix": "mitt",
+   "raw": {
+    "faces": 40000,
+    "boundary_edges": 10258,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 5365,
+    "islands": 1
+   },
+   "final": {
+    "faces": 1890,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 0,
+    "islands": 1
+   }
+  },
+  "fingers": {
+   "fix": "mitt",
+   "raw": {
+    "faces": 40000,
+    "boundary_edges": 10258,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 5365,
+    "islands": 1
+   },
+   "final": {
+    "faces": 1390,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 0,
+    "islands": 1
+   }
+  },
+  "thumb": {
+   "fix": "mitt",
+   "raw": {
+    "faces": 40000,
+    "boundary_edges": 10258,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 5365,
+    "islands": 1
+   },
+   "final": {
+    "faces": 394,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 0,
+    "islands": 1
+   }
+  },
+  "thigh": {
+   "fix": null,
+   "raw": {
+    "faces": 3760,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 0,
+    "islands": 1
+   },
+   "final": {
+    "faces": 3760,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 0,
+    "islands": 1
+   }
+  },
+  "shin": {
+   "fix": "remesh",
+   "raw": {
+    "faces": 40000,
+    "boundary_edges": 9782,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 5180,
+    "islands": 1
+   },
+   "final": {
+    "faces": 9784,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 0,
+    "islands": 1
+   }
+  },
+  "foot": {
+   "fix": "remesh",
+   "raw": {
+    "faces": 40000,
+    "boundary_edges": 12244,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 6677,
+    "islands": 1
+   },
+   "final": {
+    "faces": 9766,
+    "boundary_edges": 0,
+    "nonmanifold_edges": 0,
+    "duplicate_verts": 0,
+    "islands": 1
+   }
+  }
+ },
+ "unused": {
+  "helmet large": "replaced by the regular helmet (too big for the body; creases read as cracks)",
+  "hand palm side": "a second complete hand, not a half; hand back side is split into palm, fingers, thumb",
+  "thigh": "wrong shape: socket holes on three sides; substituted by a smooth tapered capsule",
+  "shoulder joint": "flanged joint read as a stack of rings; the ball joint is used at every joint",
+  "elbow joint": "as shoulder joint",
+  "socket joint 1": "as shoulder joint",
+  "socket joint 2": "as shoulder joint"
+ }
+}

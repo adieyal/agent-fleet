@@ -1,0 +1,1055 @@
+{
+ "a": {
+  "mixamo": {
+   "kind": "mixamo",
+   "leg_ratio": 0.495,
+   "stripped_curves": 309,
+   "frames": 495,
+   "yaw_fix_deg": 0.1,
+   "ref_frame": 279,
+   "pinned_drift_ms": [
+    0.0,
+    0.0
+   ],
+   "seat_lift_m": 0.319,
+   "seated_root_z_before_lift": 0.284,
+   "jitter_mm": {
+    "hand_L": 0.18,
+    "hand_R": 1.42,
+    "head": 0.25,
+    "foot_L": 0.05,
+    "foot_R": 0.05
+   },
+   "planted_foot_ground_speed_ms": 0.0,
+   "planted_foot_slip_ms": 0.002,
+   "hand_low_point_above_desk_m": {
+    "median": -0.008,
+    "min": -0.031,
+    "max": 0.028
+   },
+   "hand_frames_on_keyboard_pct": 26.6,
+   "wrist_y_median_m": -0.23,
+   "fbx": "typing.fbx"
+  },
+  "hy000": {
+   "kind": "smpl",
+   "leg_ratio": 0.568,
+   "stripped_curves": 309,
+   "frames": 150,
+   "yaw_fix_deg": -1.3,
+   "ref_frame": 49,
+   "pinned_drift_ms": [
+    0.0,
+    0.0
+   ],
+   "seat_lift_m": 0.249,
+   "seated_root_z_before_lift": 0.351,
+   "jitter_mm": {
+    "hand_L": 0.52,
+    "hand_R": 0.86,
+    "head": 0.31,
+    "foot_L": 0.3,
+    "foot_R": 0.29
+   },
+   "planted_foot_ground_speed_ms": 0.001,
+   "planted_foot_slip_ms": 0.011,
+   "hand_low_point_above_desk_m": {
+    "median": 0.09,
+    "min": 0.063,
+    "max": 0.105
+   },
+   "hand_frames_on_keyboard_pct": 0.0,
+   "wrist_y_median_m": -0.248,
+   "fbx": "a_typing_000.fbx"
+  },
+  "hy001": {
+   "kind": "smpl",
+   "leg_ratio": 0.568,
+   "stripped_curves": 309,
+   "frames": 150,
+   "yaw_fix_deg": -1.5,
+   "ref_frame": 87,
+   "pinned_drift_ms": [
+    0.0,
+    0.0
+   ],
+   "seat_lift_m": 0.25,
+   "seated_root_z_before_lift": 0.37,
+   "jitter_mm": {
+    "hand_L": 1.34,
+    "hand_R": 2.93,
+    "head": 0.29,
+    "foot_L": 0.26,
+    "foot_R": 0.24
+   },
+   "planted_foot_ground_speed_ms": 0.001,
+   "planted_foot_slip_ms": 0.01,
+   "hand_low_point_above_desk_m": {
+    "median": 0.088,
+    "min": 0.027,
+    "max": 0.113
+   },
+   "hand_frames_on_keyboard_pct": 0.0,
+   "wrist_y_median_m": -0.26,
+   "fbx": "a_typing_001.fbx"
+  },
+  "hy002": {
+   "kind": "smpl",
+   "leg_ratio": 0.568,
+   "stripped_curves": 309,
+   "frames": 150,
+   "yaw_fix_deg": -1.7,
+   "ref_frame": 17,
+   "pinned_drift_ms": [
+    0.0,
+    0.0
+   ],
+   "seat_lift_m": 0.247,
+   "seated_root_z_before_lift": 0.372,
+   "jitter_mm": {
+    "hand_L": 1.18,
+    "hand_R": 1.1,
+    "head": 0.31,
+    "foot_L": 0.31,
+    "foot_R": 0.32
+   },
+   "planted_foot_ground_speed_ms": 0.002,
+   "planted_foot_slip_ms": 0.012,
+   "hand_low_point_above_desk_m": {
+    "median": 0.099,
+    "min": 0.086,
+    "max": 0.121
+   },
+   "hand_frames_on_keyboard_pct": 0.0,
+   "wrist_y_median_m": -0.198,
+   "fbx": "a_typing_002.fbx"
+  },
+  "_camera": {
+   "size": [
+    356,
+    504
+   ],
+   "px_per_m": 343.055,
+   "ref_world": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "ref_px": [
+    187.49,
+    445.39
+   ],
+   "mult": 2,
+   "pitch": 44.5,
+   "yaw": 21.25
+  }
+ },
+ "b": {
+  "mixamo": {
+   "kind": "mixamo",
+   "leg_ratio": 0.495,
+   "stripped_curves": 309,
+   "frames": 69,
+   "yaw_fix_deg": -2.9,
+   "ref_frame": 20,
+   "pinned_drift_ms": [
+    0.0,
+    0.0
+   ],
+   "seat_lift_m": 0.334,
+   "seated_root_z_before_lift": 0.274,
+   "jitter_mm": {
+    "hand_L": 3.15,
+    "hand_R": 2.69,
+    "head": 2.22,
+    "foot_L": 2.32,
+    "foot_R": 2.27
+   },
+   "planted_foot_ground_speed_ms": 0.036,
+   "planted_foot_slip_ms": 0.007,
+   "fbx": "sit-to-stand.fbx"
+  },
+  "hy000": {
+   "kind": "smpl",
+   "leg_ratio": 0.568,
+   "stripped_curves": 309,
+   "frames": 90,
+   "yaw_fix_deg": 1.7,
+   "ref_frame": 38,
+   "pinned_drift_ms": [
+    0.0,
+    0.0
+   ],
+   "seat_lift_m": 0.289,
+   "seated_root_z_before_lift": 0.331,
+   "jitter_mm": {
+    "hand_L": 1.82,
+    "hand_R": 1.81,
+    "head": 1.59,
+    "foot_L": 1.73,
+    "foot_R": 1.73
+   },
+   "planted_foot_ground_speed_ms": 0.011,
+   "planted_foot_slip_ms": 0.021,
+   "fbx": "b_stand_up_000.fbx"
+  },
+  "hy001": {
+   "kind": "smpl",
+   "leg_ratio": 0.568,
+   "stripped_curves": 309,
+   "frames": 90,
+   "yaw_fix_deg": 1.2,
+   "ref_frame": 0,
+   "pinned_drift_ms": [
+    0.0,
+    0.0
+   ],
+   "seat_lift_m": 0.299,
+   "seated_root_z_before_lift": 0.339,
+   "jitter_mm": {
+    "hand_L": 2.3,
+    "hand_R": 2.29,
+    "head": 1.95,
+    "foot_L": 1.96,
+    "foot_R": 1.96
+   },
+   "planted_foot_ground_speed_ms": 0.016,
+   "planted_foot_slip_ms": 0.017,
+   "fbx": "b_stand_up_001.fbx"
+  },
+  "hy002": {
+   "kind": "smpl",
+   "leg_ratio": 0.568,
+   "stripped_curves": 309,
+   "frames": 90,
+   "yaw_fix_deg": 2.5,
+   "ref_frame": 31,
+   "pinned_drift_ms": [
+    0.0,
+    0.0
+   ],
+   "seat_lift_m": 0.334,
+   "seated_root_z_before_lift": 0.304,
+   "jitter_mm": {
+    "hand_L": 2.0,
+    "hand_R": 1.89,
+    "head": 1.38,
+    "foot_L": 1.78,
+    "foot_R": 1.76
+   },
+   "planted_foot_ground_speed_ms": 0.008,
+   "planted_foot_slip_ms": 0.019,
+   "fbx": "b_stand_up_002.fbx"
+  },
+  "_camera": {
+   "size": [
+    399,
+    592
+   ],
+   "px_per_m": 343.055,
+   "ref_world": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "ref_px": [
+    218.48,
+    463.35
+   ],
+   "mult": 2,
+   "pitch": 44.5,
+   "yaw": 21.25
+  }
+ },
+ "c": {
+  "mixamo": {
+   "kind": "mixamo",
+   "leg_ratio": 0.495,
+   "stripped_curves": 309,
+   "frames": 68,
+   "yaw_fix_deg": 0.7,
+   "ref_frame": 49,
+   "pinned_drift_ms": [
+    0.0,
+    0.0
+   ],
+   "seat_lift_m": 0.316,
+   "seated_root_z_before_lift": 0.284,
+   "jitter_mm": {
+    "hand_L": 3.74,
+    "hand_R": 3.32,
+    "head": 2.46,
+    "foot_L": 2.22,
+    "foot_R": 2.15
+   },
+   "planted_foot_ground_speed_ms": 0.015,
+   "planted_foot_slip_ms": 0.1,
+   "fbx": "stand-to-sit.fbx"
+  },
+  "hy000": {
+   "kind": "smpl",
+   "leg_ratio": 0.568,
+   "stripped_curves": 309,
+   "frames": 90,
+   "yaw_fix_deg": 60.4,
+   "ref_frame": 63,
+   "pinned_drift_ms": [
+    0.0,
+    0.0
+   ],
+   "seat_lift_m": 0.267,
+   "seated_root_z_before_lift": 0.355,
+   "jitter_mm": {
+    "hand_L": 1.9,
+    "hand_R": 2.08,
+    "head": 1.86,
+    "foot_L": 2.29,
+    "foot_R": 1.92
+   },
+   "planted_foot_ground_speed_ms": 0.127,
+   "planted_foot_slip_ms": 0.172,
+   "fbx": "c_sit_down_000.fbx"
+  },
+  "hy001": {
+   "kind": "smpl",
+   "leg_ratio": 0.568,
+   "stripped_curves": 309,
+   "frames": 90,
+   "yaw_fix_deg": -5.4,
+   "ref_frame": 65,
+   "pinned_drift_ms": [
+    0.0,
+    0.0
+   ],
+   "seat_lift_m": 0.265,
+   "seated_root_z_before_lift": 0.367,
+   "jitter_mm": {
+    "hand_L": 1.24,
+    "hand_R": 1.39,
+    "head": 1.3,
+    "foot_L": 1.16,
+    "foot_R": 1.19
+   },
+   "planted_foot_ground_speed_ms": 0.073,
+   "planted_foot_slip_ms": 0.03,
+   "fbx": "c_sit_down_001.fbx"
+  },
+  "hy002": {
+   "kind": "smpl",
+   "leg_ratio": 0.568,
+   "stripped_curves": 309,
+   "frames": 90,
+   "yaw_fix_deg": 72.3,
+   "ref_frame": 55,
+   "pinned_drift_ms": [
+    0.0,
+    0.0
+   ],
+   "seat_lift_m": 0.262,
+   "seated_root_z_before_lift": 0.368,
+   "jitter_mm": {
+    "hand_L": 1.58,
+    "hand_R": 1.85,
+    "head": 1.5,
+    "foot_L": 1.58,
+    "foot_R": 1.41
+   },
+   "planted_foot_ground_speed_ms": 0.029,
+   "planted_foot_slip_ms": 0.07,
+   "fbx": "c_sit_down_002.fbx"
+  },
+  "_camera": {
+   "size": [
+    482,
+    601
+   ],
+   "px_per_m": 343.055,
+   "ref_world": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "ref_px": [
+    249.92,
+    467.52
+   ],
+   "mult": 2,
+   "pitch": 44.5,
+   "yaw": 21.25
+  }
+ },
+ "d": {
+  "mixamo_normal": {
+   "kind": "mixamo",
+   "leg_ratio": 0.495,
+   "stripped_curves": 309,
+   "frames": 36,
+   "yaw_fix_deg": 1.2,
+   "ref_frame": 0,
+   "pinned_drift_ms": [
+    0.005,
+    -0.635
+   ],
+   "jitter_mm": {
+    "hand_L": 2.88,
+    "hand_R": 3.1,
+    "head": 2.41,
+    "foot_L": 4.45,
+    "foot_R": 4.65
+   },
+   "planted_foot_ground_speed_ms": 0.675,
+   "planted_foot_slip_ms": 0.239,
+   "fbx": "walk-normal.fbx"
+  },
+  "mixamo_walk": {
+   "kind": "mixamo",
+   "leg_ratio": 0.495,
+   "stripped_curves": 309,
+   "frames": 31,
+   "yaw_fix_deg": -2.0,
+   "ref_frame": 0,
+   "pinned_drift_ms": [
+    -0.034,
+    -0.843
+   ],
+   "jitter_mm": {
+    "hand_L": 4.93,
+    "hand_R": 3.8,
+    "head": 1.59,
+    "foot_L": 6.46,
+    "foot_R": 6.91
+   },
+   "planted_foot_ground_speed_ms": 0.999,
+   "planted_foot_slip_ms": 0.139,
+   "fbx": "walk.fbx"
+  },
+  "hy000": {
+   "kind": "smpl",
+   "leg_ratio": 0.568,
+   "stripped_curves": 309,
+   "frames": 120,
+   "yaw_fix_deg": -5.0,
+   "ref_frame": 0,
+   "pinned_drift_ms": [
+    -0.104,
+    -0.698
+   ],
+   "jitter_mm": {
+    "hand_L": 2.23,
+    "hand_R": 2.38,
+    "head": 1.4,
+    "foot_L": 4.74,
+    "foot_R": 4.19
+   },
+   "planted_foot_ground_speed_ms": 0.657,
+   "planted_foot_slip_ms": 0.224,
+   "fbx": "d_walk_000.fbx"
+  },
+  "hy001": {
+   "kind": "smpl",
+   "leg_ratio": 0.568,
+   "stripped_curves": 309,
+   "frames": 120,
+   "yaw_fix_deg": 2.9,
+   "ref_frame": 0,
+   "pinned_drift_ms": [
+    -0.015,
+    -0.575
+   ],
+   "jitter_mm": {
+    "hand_L": 2.42,
+    "hand_R": 2.45,
+    "head": 1.24,
+    "foot_L": 3.73,
+    "foot_R": 3.95
+   },
+   "planted_foot_ground_speed_ms": 0.316,
+   "planted_foot_slip_ms": 0.228,
+   "fbx": "d_walk_001.fbx"
+  },
+  "hy002": {
+   "kind": "smpl",
+   "leg_ratio": 0.568,
+   "stripped_curves": 309,
+   "frames": 120,
+   "yaw_fix_deg": 3.6,
+   "ref_frame": 0,
+   "pinned_drift_ms": [
+    0.007,
+    -0.7
+   ],
+   "jitter_mm": {
+    "hand_L": 2.38,
+    "hand_R": 2.56,
+    "head": 1.38,
+    "foot_L": 4.31,
+    "foot_R": 4.53
+   },
+   "planted_foot_ground_speed_ms": 0.606,
+   "planted_foot_slip_ms": 0.215,
+   "fbx": "d_walk_002.fbx"
+  },
+  "_camera": {
+   "size": [
+    358,
+    563
+   ],
+   "px_per_m": 343.055,
+   "ref_world": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "ref_px": [
+    165.41,
+    458.56
+   ],
+   "mult": 2,
+   "pitch": 44.5,
+   "yaw": 21.25
+  }
+ },
+ "e": {
+  "hy000": {
+   "kind": "smpl",
+   "leg_ratio": 0.568,
+   "stripped_curves": 309,
+   "frames": 90,
+   "yaw_fix_deg": -1.7,
+   "ref_frame": 48,
+   "pinned_drift_ms": [
+    0.0,
+    0.0
+   ],
+   "seat_lift_m": 0.262,
+   "seated_root_z_before_lift": 0.351,
+   "jitter_mm": {
+    "hand_L": 0.22,
+    "hand_R": 0.22,
+    "head": 0.26,
+    "foot_L": 0.19,
+    "foot_R": 0.18
+   },
+   "planted_foot_ground_speed_ms": 0.003,
+   "planted_foot_slip_ms": 0.006,
+   "hand_low_point_above_desk_m": {
+    "median": -0.125,
+    "min": -0.139,
+    "max": -0.114
+   },
+   "hand_frames_on_keyboard_pct": 0.0,
+   "wrist_y_median_m": -0.074,
+   "fbx": "e_nod_yes_000.fbx"
+  },
+  "hy001": {
+   "kind": "smpl",
+   "leg_ratio": 0.568,
+   "stripped_curves": 309,
+   "frames": 90,
+   "yaw_fix_deg": -0.4,
+   "ref_frame": 75,
+   "pinned_drift_ms": [
+    0.0,
+    0.0
+   ],
+   "seat_lift_m": 0.292,
+   "seated_root_z_before_lift": 0.343,
+   "jitter_mm": {
+    "hand_L": 0.32,
+    "hand_R": 0.36,
+    "head": 0.76,
+    "foot_L": 0.19,
+    "foot_R": 0.19
+   },
+   "planted_foot_ground_speed_ms": 0.002,
+   "planted_foot_slip_ms": 0.014,
+   "hand_low_point_above_desk_m": {
+    "median": -0.063,
+    "min": -0.073,
+    "max": -0.038
+   },
+   "hand_frames_on_keyboard_pct": 0.0,
+   "wrist_y_median_m": -0.072,
+   "fbx": "e_nod_yes_001.fbx"
+  },
+  "hy002": {
+   "kind": "smpl",
+   "leg_ratio": 0.568,
+   "stripped_curves": 309,
+   "frames": 90,
+   "yaw_fix_deg": 1.4,
+   "ref_frame": 30,
+   "pinned_drift_ms": [
+    0.0,
+    0.0
+   ],
+   "seat_lift_m": 0.268,
+   "seated_root_z_before_lift": 0.35,
+   "jitter_mm": {
+    "hand_L": 0.3,
+    "hand_R": 0.28,
+    "head": 0.34,
+    "foot_L": 0.23,
+    "foot_R": 0.23
+   },
+   "planted_foot_ground_speed_ms": 0.0,
+   "planted_foot_slip_ms": 0.009,
+   "hand_low_point_above_desk_m": {
+    "median": -0.097,
+    "min": -0.1,
+    "max": -0.093
+   },
+   "hand_frames_on_keyboard_pct": 0.0,
+   "wrist_y_median_m": -0.118,
+   "fbx": "e_nod_yes_002.fbx"
+  },
+  "_camera": {
+   "size": [
+    378,
+    525
+   ],
+   "px_per_m": 343.055,
+   "ref_world": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "ref_px": [
+    190.09,
+    466.51
+   ],
+   "mult": 2,
+   "pitch": 44.5,
+   "yaw": 21.25
+  }
+ },
+ "f": {
+  "hy000": {
+   "kind": "smpl",
+   "leg_ratio": 0.568,
+   "stripped_curves": 309,
+   "frames": 90,
+   "yaw_fix_deg": -0.8,
+   "ref_frame": 29,
+   "pinned_drift_ms": [
+    0.0,
+    0.0
+   ],
+   "seat_lift_m": 0.279,
+   "seated_root_z_before_lift": 0.338,
+   "jitter_mm": {
+    "hand_L": 0.25,
+    "hand_R": 0.26,
+    "head": 0.25,
+    "foot_L": 0.24,
+    "foot_R": 0.25
+   },
+   "planted_foot_ground_speed_ms": 0.002,
+   "planted_foot_slip_ms": 0.008,
+   "hand_low_point_above_desk_m": {
+    "median": -0.106,
+    "min": -0.114,
+    "max": -0.102
+   },
+   "hand_frames_on_keyboard_pct": 0.0,
+   "wrist_y_median_m": -0.111,
+   "fbx": "f_shake_no_000.fbx"
+  },
+  "hy001": {
+   "kind": "smpl",
+   "leg_ratio": 0.568,
+   "stripped_curves": 309,
+   "frames": 90,
+   "yaw_fix_deg": -1.0,
+   "ref_frame": 81,
+   "pinned_drift_ms": [
+    0.0,
+    0.0
+   ],
+   "seat_lift_m": 0.278,
+   "seated_root_z_before_lift": 0.34,
+   "jitter_mm": {
+    "hand_L": 0.29,
+    "hand_R": 0.28,
+    "head": 0.38,
+    "foot_L": 0.26,
+    "foot_R": 0.25
+   },
+   "planted_foot_ground_speed_ms": 0.001,
+   "planted_foot_slip_ms": 0.009,
+   "hand_low_point_above_desk_m": {
+    "median": -0.114,
+    "min": -0.119,
+    "max": -0.109
+   },
+   "hand_frames_on_keyboard_pct": 0.0,
+   "wrist_y_median_m": -0.111,
+   "fbx": "f_shake_no_001.fbx"
+  },
+  "hy002": {
+   "kind": "smpl",
+   "leg_ratio": 0.568,
+   "stripped_curves": 309,
+   "frames": 90,
+   "yaw_fix_deg": 1.4,
+   "ref_frame": 29,
+   "pinned_drift_ms": [
+    0.0,
+    0.0
+   ],
+   "seat_lift_m": 0.279,
+   "seated_root_z_before_lift": 0.339,
+   "jitter_mm": {
+    "hand_L": 0.3,
+    "hand_R": 0.29,
+    "head": 0.29,
+    "foot_L": 0.24,
+    "foot_R": 0.23
+   },
+   "planted_foot_ground_speed_ms": 0.001,
+   "planted_foot_slip_ms": 0.008,
+   "hand_low_point_above_desk_m": {
+    "median": -0.099,
+    "min": -0.11,
+    "max": -0.092
+   },
+   "hand_frames_on_keyboard_pct": 0.0,
+   "wrist_y_median_m": -0.113,
+   "fbx": "f_shake_no_002.fbx"
+  },
+  "_camera": {
+   "size": [
+    388,
+    523
+   ],
+   "px_per_m": 343.055,
+   "ref_world": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "ref_px": [
+    198.51,
+    464.43
+   ],
+   "mult": 2,
+   "pitch": 44.5,
+   "yaw": 21.25
+  }
+ },
+ "g": {
+  "hy000": {
+   "kind": "smpl",
+   "leg_ratio": 0.568,
+   "stripped_curves": 309,
+   "frames": 120,
+   "yaw_fix_deg": 2.1,
+   "ref_frame": 92,
+   "pinned_drift_ms": [
+    0.0,
+    0.0
+   ],
+   "seat_lift_m": 0.285,
+   "seated_root_z_before_lift": 0.356,
+   "jitter_mm": {
+    "hand_L": 0.22,
+    "hand_R": 0.19,
+    "head": 0.28,
+    "foot_L": 0.15,
+    "foot_R": 0.16
+   },
+   "planted_foot_ground_speed_ms": 0.001,
+   "planted_foot_slip_ms": 0.005,
+   "hand_low_point_above_desk_m": {
+    "median": -0.277,
+    "min": -0.302,
+    "max": -0.27
+   },
+   "hand_frames_on_keyboard_pct": 0.0,
+   "wrist_y_median_m": -0.002,
+   "fbx": "g_slump_000.fbx"
+  },
+  "hy001": {
+   "kind": "smpl",
+   "leg_ratio": 0.568,
+   "stripped_curves": 309,
+   "frames": 120,
+   "yaw_fix_deg": -10.0,
+   "ref_frame": 70,
+   "pinned_drift_ms": [
+    0.0,
+    0.0
+   ],
+   "seat_lift_m": 0.286,
+   "seated_root_z_before_lift": 0.351,
+   "jitter_mm": {
+    "hand_L": 0.71,
+    "hand_R": 1.54,
+    "head": 0.53,
+    "foot_L": 0.25,
+    "foot_R": 0.25
+   },
+   "planted_foot_ground_speed_ms": 0.006,
+   "planted_foot_slip_ms": 0.01,
+   "hand_low_point_above_desk_m": {
+    "median": -0.238,
+    "min": -0.364,
+    "max": -0.194
+   },
+   "hand_frames_on_keyboard_pct": 0.0,
+   "wrist_y_median_m": -0.103,
+   "fbx": "g_slump_001.fbx"
+  },
+  "hy002": {
+   "kind": "smpl",
+   "leg_ratio": 0.568,
+   "stripped_curves": 309,
+   "frames": 120,
+   "yaw_fix_deg": 1.6,
+   "ref_frame": 30,
+   "pinned_drift_ms": [
+    0.0,
+    0.0
+   ],
+   "seat_lift_m": 0.307,
+   "seated_root_z_before_lift": 0.333,
+   "jitter_mm": {
+    "hand_L": 0.75,
+    "hand_R": 1.37,
+    "head": 0.24,
+    "foot_L": 0.16,
+    "foot_R": 0.16
+   },
+   "planted_foot_ground_speed_ms": 0.001,
+   "planted_foot_slip_ms": 0.007,
+   "hand_low_point_above_desk_m": {
+    "median": -0.27,
+    "min": -0.277,
+    "max": -0.259
+   },
+   "hand_frames_on_keyboard_pct": 0.0,
+   "wrist_y_median_m": 0.014,
+   "fbx": "g_slump_002.fbx"
+  },
+  "_camera": {
+   "size": [
+    462,
+    514
+   ],
+   "px_per_m": 343.055,
+   "ref_world": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "ref_px": [
+    293.61,
+    454.6
+   ],
+   "mult": 2,
+   "pitch": 44.5,
+   "yaw": 21.25
+  }
+ },
+ "h": {
+  "hy000": {
+   "kind": "smpl",
+   "leg_ratio": 0.568,
+   "stripped_curves": 309,
+   "frames": 150,
+   "yaw_fix_deg": -0.7,
+   "ref_frame": 69,
+   "pinned_drift_ms": [
+    0.0,
+    0.0
+   ],
+   "seat_lift_m": 0.275,
+   "seated_root_z_before_lift": 0.354,
+   "jitter_mm": {
+    "hand_L": 0.15,
+    "hand_R": 0.15,
+    "head": 0.15,
+    "foot_L": 0.15,
+    "foot_R": 0.15
+   },
+   "planted_foot_ground_speed_ms": 0.001,
+   "planted_foot_slip_ms": 0.005,
+   "hand_low_point_above_desk_m": {
+    "median": 0.021,
+    "min": 0.017,
+    "max": 0.04
+   },
+   "hand_frames_on_keyboard_pct": 36.3,
+   "wrist_y_median_m": -0.119,
+   "fbx": "h_read_book_000.fbx"
+  },
+  "hy001": {
+   "kind": "smpl",
+   "leg_ratio": 0.568,
+   "stripped_curves": 309,
+   "frames": 150,
+   "yaw_fix_deg": 6.6,
+   "ref_frame": 134,
+   "pinned_drift_ms": [
+    0.0,
+    0.0
+   ],
+   "seat_lift_m": 0.27,
+   "seated_root_z_before_lift": 0.364,
+   "jitter_mm": {
+    "hand_L": 0.18,
+    "hand_R": 0.18,
+    "head": 0.17,
+    "foot_L": 0.18,
+    "foot_R": 0.17
+   },
+   "planted_foot_ground_speed_ms": 0.001,
+   "planted_foot_slip_ms": 0.006,
+   "hand_low_point_above_desk_m": {
+    "median": 0.018,
+    "min": 0.012,
+    "max": 0.032
+   },
+   "hand_frames_on_keyboard_pct": 0.0,
+   "wrist_y_median_m": -0.0,
+   "fbx": "h_read_book_001.fbx"
+  },
+  "hy002": {
+   "kind": "smpl",
+   "leg_ratio": 0.568,
+   "stripped_curves": 309,
+   "frames": 150,
+   "yaw_fix_deg": 0.9,
+   "ref_frame": 12,
+   "pinned_drift_ms": [
+    0.0,
+    0.0
+   ],
+   "seat_lift_m": 0.24,
+   "seated_root_z_before_lift": 0.351,
+   "jitter_mm": {
+    "hand_L": 0.19,
+    "hand_R": 0.2,
+    "head": 0.17,
+    "foot_L": 0.15,
+    "foot_R": 0.14
+   },
+   "planted_foot_ground_speed_ms": 0.001,
+   "planted_foot_slip_ms": 0.005,
+   "hand_low_point_above_desk_m": {
+    "median": 0.046,
+    "min": -0.046,
+    "max": 0.054
+   },
+   "hand_frames_on_keyboard_pct": 5.0,
+   "wrist_y_median_m": -0.175,
+   "fbx": "h_read_book_002.fbx"
+  },
+  "_camera": {
+   "size": [
+    352,
+    482
+   ],
+   "px_per_m": 343.055,
+   "ref_world": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "ref_px": [
+    180.1,
+    423.05
+   ],
+   "mult": 2,
+   "pitch": 44.5,
+   "yaw": 21.25
+  }
+ },
+ "i": {
+  "hy000": {
+   "kind": "smpl",
+   "leg_ratio": 0.568,
+   "stripped_curves": 309,
+   "frames": 90,
+   "yaw_fix_deg": -0.3,
+   "ref_frame": 0,
+   "pinned_drift_ms": [
+    0.0,
+    0.0
+   ],
+   "jitter_mm": {
+    "hand_L": 6.0,
+    "hand_R": 1.03,
+    "head": 0.3,
+    "foot_L": 0.3,
+    "foot_R": 0.24
+   },
+   "planted_foot_ground_speed_ms": 0.003,
+   "planted_foot_slip_ms": 0.013,
+   "fbx": "i_thumbs_up_000.fbx"
+  },
+  "hy001": {
+   "kind": "smpl",
+   "leg_ratio": 0.568,
+   "stripped_curves": 309,
+   "frames": 90,
+   "yaw_fix_deg": 2.5,
+   "ref_frame": 0,
+   "pinned_drift_ms": [
+    0.0,
+    0.0
+   ],
+   "jitter_mm": {
+    "hand_L": 0.83,
+    "hand_R": 4.85,
+    "head": 0.27,
+    "foot_L": 0.26,
+    "foot_R": 0.24
+   },
+   "planted_foot_ground_speed_ms": 0.003,
+   "planted_foot_slip_ms": 0.011,
+   "fbx": "i_thumbs_up_001.fbx"
+  },
+  "hy002": {
+   "kind": "smpl",
+   "leg_ratio": 0.568,
+   "stripped_curves": 309,
+   "frames": 90,
+   "yaw_fix_deg": 1.4,
+   "ref_frame": 0,
+   "pinned_drift_ms": [
+    0.0,
+    0.0
+   ],
+   "jitter_mm": {
+    "hand_L": 4.74,
+    "hand_R": 0.82,
+    "head": 0.29,
+    "foot_L": 0.24,
+    "foot_R": 0.23
+   },
+   "planted_foot_ground_speed_ms": 0.004,
+   "planted_foot_slip_ms": 0.01,
+   "fbx": "i_thumbs_up_002.fbx"
+  },
+  "_camera": {
+   "size": [
+    326,
+    512
+   ],
+   "px_per_m": 343.055,
+   "ref_world": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "ref_px": [
+    156.06,
+    447.58
+   ],
+   "mult": 2,
+   "pitch": 44.5,
+   "yaw": 21.25
+  }
+ }
+}

@@ -1,0 +1,246 @@
+{
+  "assets": [
+    {
+      "id": "white_studio_06",
+      "source": "polyhaven",
+      "license": "CC0-1.0",
+      "page": "https://polyhaven.com/a/white_studio_06",
+      "title": "White Studio 06",
+      "authors": [
+        "Grzegorz Wronkowski"
+      ],
+      "files": [
+        {
+          "path": "polyhaven/white_studio_06/white_studio_06_1k.hdr",
+          "url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/white_studio_06_1k.hdr",
+          "sha256": "f7fd2eb1940bbc7fdc4a33bb3c7bcff50da852aaffd3727799b29fa82d16dbe5",
+          "size": 1330672
+        }
+      ]
+    },
+    {
+      "id": "calathea_orbifolia_01",
+      "source": "polyhaven",
+      "license": "CC0-1.0",
+      "page": "https://polyhaven.com/a/calathea_orbifolia_01",
+      "title": "Calathea Orbifolia 01",
+      "authors": [
+        "Rico Cilliers",
+        "Rob Tuytel"
+      ],
+      "files": [
+        {
+          "path": "polyhaven/calathea_orbifolia_01/calathea_orbifolia_01.bin",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/calathea_orbifolia_01/calathea_orbifolia_01.bin",
+          "sha256": "df1668bcb44914abac046217bbdae9867a3702198f7c374135f2b4456df8b038",
+          "size": 407968
+        },
+        {
+          "path": "polyhaven/calathea_orbifolia_01/calathea_orbifolia_01_1k.gltf",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/calathea_orbifolia_01/calathea_orbifolia_01_1k.gltf",
+          "sha256": "399130c01bfff6b493f885652112c3c841c3814b024a3d3c87773e0c5ab4f156",
+          "size": 9309
+        },
+        {
+          "path": "polyhaven/calathea_orbifolia_01/textures/calathea_orbifolia_01_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/calathea_orbifolia_01/calathea_orbifolia_01_arm_1k.jpg",
+          "sha256": "df4ea4dfc74a6965476200cffea69886ac26d3c089f356a7b69518149ef585e0",
+          "size": 421555
+        },
+        {
+          "path": "polyhaven/calathea_orbifolia_01/textures/calathea_orbifolia_01_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/calathea_orbifolia_01/calathea_orbifolia_01_diff_1k.jpg",
+          "sha256": "a105a093d74317a3853319a06fdc78cad2a13e353962298d2094195720b9b4a0",
+          "size": 455819
+        },
+        {
+          "path": "polyhaven/calathea_orbifolia_01/textures/calathea_orbifolia_01_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/calathea_orbifolia_01/calathea_orbifolia_01_nor_gl_1k.jpg",
+          "sha256": "52aac88c18bf42c369aad9b2b5e41dbe58b015ca2fac7ff6ed4cb21147cb49c8",
+          "size": 581558
+        }
+      ]
+    },
+    {
+      "id": "anthurium_botany_01",
+      "source": "polyhaven",
+      "license": "CC0-1.0",
+      "page": "https://polyhaven.com/a/anthurium_botany_01",
+      "title": "Anthurium Botany 01",
+      "authors": [
+        "Rico Cilliers",
+        "Rob Tuytel"
+      ],
+      "files": [
+        {
+          "path": "polyhaven/anthurium_botany_01/anthurium_botany_01.bin",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/anthurium_botany_01/anthurium_botany_01.bin",
+          "sha256": "6a23daf128e297ad99e984bec11bdea3c6eab64e52d07cbdc948ace5a05b2e25",
+          "size": 1744256
+        },
+        {
+          "path": "polyhaven/anthurium_botany_01/anthurium_botany_01_1k.gltf",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/anthurium_botany_01/anthurium_botany_01_1k.gltf",
+          "sha256": "6b3f6b8eda6cc0edfefd6a58f6758ef6538c35b2ca2a76189383f23b246dd8c6",
+          "size": 10675
+        },
+        {
+          "path": "polyhaven/anthurium_botany_01/textures/anthurium_botany_01_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/anthurium_botany_01/anthurium_botany_01_arm_1k.jpg",
+          "sha256": "88d9ce05e4b301ae9cd5b479459262c4690a3ee2de80a8f5e18a288ff5e96bee",
+          "size": 542795
+        },
+        {
+          "path": "polyhaven/anthurium_botany_01/textures/anthurium_botany_01_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/anthurium_botany_01/anthurium_botany_01_diff_1k.jpg",
+          "sha256": "f759421f00e848d7d2915b409d98c6311cc601e4be17d4155e0852429fa4993e",
+          "size": 448508
+        },
+        {
+          "path": "polyhaven/anthurium_botany_01/textures/anthurium_botany_01_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/anthurium_botany_01/anthurium_botany_01_nor_gl_1k.jpg",
+          "sha256": "f0cf940590733a2a5a9b0db362bd093c39b28405c66b1d084aa203efe6f0d3fc",
+          "size": 494107
+        }
+      ]
+    },
+    {
+      "id": "binder_notebook",
+      "source": "polyhaven",
+      "license": "CC0-1.0",
+      "page": "https://polyhaven.com/a/binder_notebook",
+      "title": "Binder Notebook",
+      "authors": [
+        "DaDrood"
+      ],
+      "files": [
+        {
+          "path": "polyhaven/binder_notebook/binder_notebook.bin",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/binder_notebook/binder_notebook.bin",
+          "sha256": "68e28e6fac708a6e172230c42debd990e48819566fa07f222415467b1034b9c0",
+          "size": 525488
+        },
+        {
+          "path": "polyhaven/binder_notebook/binder_notebook_1k.gltf",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/binder_notebook/binder_notebook_1k.gltf",
+          "sha256": "714596552fad383ae3ca76d42038b03a20b6864d6ef5bc6d12620ac21fef1b1e",
+          "size": 4309
+        },
+        {
+          "path": "polyhaven/binder_notebook/textures/binder_notebook_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/binder_notebook/binder_notebook_arm_1k.jpg",
+          "sha256": "c0bc38cd13e5ada9552c3a9b60f88c36acf9e672011d97d066a6c0148f01898a",
+          "size": 507028
+        },
+        {
+          "path": "polyhaven/binder_notebook/textures/binder_notebook_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/binder_notebook/binder_notebook_diff_1k.jpg",
+          "sha256": "8591cce815138bd737c252dc12a4d9bf41bceb499ace7dbfef0725e64dadda2d",
+          "size": 533256
+        },
+        {
+          "path": "polyhaven/binder_notebook/textures/binder_notebook_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/binder_notebook/binder_notebook_nor_gl_1k.jpg",
+          "sha256": "24b18d9792c3816337d7d09b30aed400a887747ea6beb04b23612b6e1210a29e",
+          "size": 319694
+        }
+      ]
+    },
+    {
+      "id": "cardboard_box_01",
+      "source": "polyhaven",
+      "license": "CC0-1.0",
+      "page": "https://polyhaven.com/a/cardboard_box_01",
+      "title": "Cardboard Box 01",
+      "authors": [
+        "Rahul Chaudhary"
+      ],
+      "files": [
+        {
+          "path": "polyhaven/cardboard_box_01/cardboard_box_01.bin",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/4k/cardboard_box_01/cardboard_box_01.bin",
+          "sha256": "7212d43b4cb56459e46d31ab34dc7c310fcfbe170f4a588416dea07ae5628a4b",
+          "size": 381936
+        },
+        {
+          "path": "polyhaven/cardboard_box_01/cardboard_box_01_1k.gltf",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/cardboard_box_01/cardboard_box_01_1k.gltf",
+          "sha256": "6038bcc5bba5a08a5f6643a265977e37e3d14553e62981e144c33a89f10b78e1",
+          "size": 2903
+        },
+        {
+          "path": "polyhaven/cardboard_box_01/textures/cardboard_box_01_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/cardboard_box_01/cardboard_box_01_arm_1k.jpg",
+          "sha256": "5db63828d0f904c6a8d9c83afc912260b2a27261c15a28d06360519384574d2b",
+          "size": 398433
+        },
+        {
+          "path": "polyhaven/cardboard_box_01/textures/cardboard_box_01_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/cardboard_box_01/cardboard_box_01_diff_1k.jpg",
+          "sha256": "122c7ba8c5935e289804a730b480677a4bffdf74a45c91970cba682df92e171c",
+          "size": 567741
+        },
+        {
+          "path": "polyhaven/cardboard_box_01/textures/cardboard_box_01_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/cardboard_box_01/cardboard_box_01_nor_gl_1k.jpg",
+          "sha256": "d2d1f529a851966b65411b5094510dd9eba03cd5c0a89921f79325c377a8e8eb",
+          "size": 817424
+        }
+      ]
+    },
+    {
+      "id": "Wood095",
+      "source": "ambientcg",
+      "license": "CC0-1.0",
+      "page": "https://ambientcg.com/view?id=Wood095",
+      "title": "Wood 095",
+      "authors": [
+        "ambientCG"
+      ],
+      "files": [
+        {
+          "path": "archives/Wood095_1K-JPG.zip",
+          "url": "https://ambientcg.com/get?file=Wood095_1K-JPG.zip",
+          "sha256": "04acff5a13e8ada6749b58ff5f6c49402692aadbfde87d65b06d35d70a9601d8",
+          "size": 3882297
+        }
+      ]
+    },
+    {
+      "id": "PaintedPlaster017",
+      "source": "ambientcg",
+      "license": "CC0-1.0",
+      "page": "https://ambientcg.com/view?id=PaintedPlaster017",
+      "title": "Painted Plaster 017",
+      "authors": [
+        "ambientCG"
+      ],
+      "files": [
+        {
+          "path": "archives/PaintedPlaster017_1K-JPG.zip",
+          "url": "https://ambientcg.com/get?file=PaintedPlaster017_1K-JPG.zip",
+          "sha256": "bae0380d82b6ccac8943b4980417cb3c9de5c896218339c108056f1dfb8e886c",
+          "size": 4721132
+        }
+      ]
+    },
+    {
+      "id": "Concrete034",
+      "source": "ambientcg",
+      "license": "CC0-1.0",
+      "page": "https://ambientcg.com/view?id=Concrete034",
+      "title": "Concrete 034",
+      "authors": [
+        "ambientCG"
+      ],
+      "files": [
+        {
+          "path": "archives/Concrete034_1K-JPG.zip",
+          "url": "https://ambientcg.com/get?file=Concrete034_1K-JPG.zip",
+          "sha256": "5839d284d94ffb8d2a56df742ec522b13dd311c52dbd42b8fd33f0409ceedb81",
+          "size": 3657575
+        }
+      ]
+    }
+  ]
+}

@@ -7,6 +7,7 @@ import { ROBOT, cam, drawSign } from './scene.js';
 import { fit } from './camera.js';
 import { ents, everLoaded, hosts, live, offFloor, selectedKey, setEverLoaded, setHosts, setLive, workOf } from './model.js';
 import { hostLook } from './looks.js';
+import { departed as quietFor, farewell, offFloor as offTheFloor, retired } from './behaviour.js';
 import { layoutRooms, rooms } from './rooms.js';
 import { buildDocs, noteDocs } from './docs3d.js';
 import { createEnt, dropEnt, updateTag } from './agents.js';
@@ -14,7 +15,8 @@ import { assignTargets } from './motion.js';
 import {
   closePanel, collectEvents, renderFeed, renderLegend, renderLive, renderPanel, renderStats, updateHint,
 } from './panel.js';
-import { openReader } from './reader.js';
+import { followDoc, openReader, readerTarget } from './reader.js';
+import { refreshLibrary } from './library.js';
 import { applyFocus } from './focus.js';
 import { applyAttention } from './attention.js';
 import { patchScene } from './dim.js';
@@ -59,26 +61,21 @@ function visibleHosts(doc) {
 // already finished never shows. A header chip counts them and shows them again. Failed and stalled jobs have no
 // android either: their room's lantern (attention.js) carries them and opens their panel. Nor has any work in a
 // background room: the room is lit warm while it runs (focus.js).
-const FINISHED_STATUSES = new Set(['done', 'cancelled']);
-const BLOCKED_STATUSES = new Set(['failed', 'stalled']);
-const LEAVE_WITHIN_SECONDS = 30;
+// (the rules: behaviour.js)
 export let retiredCount = 0, showFinished = false;
 function retireFinished(hostList) {
   retiredCount = 0;
   if (showFinished) return;
   for (const h of hostList) h.jobs = h.jobs.filter(j => {
-    if (!FINISHED_STATUSES.has(j.status)) return true;
+    if (j.status !== 'done' && j.status !== 'cancelled') return true;
     retiredCount++;
-    const e = ents.get(h.name + ':' + j.id);
-    return !REDUCED && !!e && (e.leaving || !FINISHED_STATUSES.has(e.lastStatus));
+    return !retired(j, ents.get(h.name + ':' + j.id) || null, { reduced: REDUCED });
   });
 }
 // An idle live session leaves the deck after half an hour quiet and comes back with its next activity; one waiting
 // on a decision keeps its android. The header still counts it.
-const IDLE_LEAVE_SECONDS = 30 * 60;
 function departed(h, s, doc) {
-  return s.status === 'idle' && Date.now() / 1000 - s.updated_at > IDLE_LEAVE_SECONDS
-    && !(doc.attention || []).some(i => i.kind === 'decision' && i.state !== 'resolved' && i.owner.key === h.name + ':' + s.id);
+  return quietFor(h.name + ':' + s.id, s, doc.attention, Date.now() / 1000);
 }
 export function departIdle() {
   if (lastDoc && hosts.some(h => h.sessions.some(s => ents.has(h.name + ':' + s.id) && departed(h, s, lastDoc)))) applyState(lastDoc);
@@ -135,16 +132,17 @@ export function applyState(doc) {
   for (const h of hosts) {
     for (const j of h.jobs || []) {
       const key = h.name + ':' + j.id;
-      if (BLOCKED_STATUSES.has(j.status) || quiet.has(j.project)) { offFloor.set(key, { key, kind: 'job', host: h.name, job: j, look: hostLook(h.name) }); continue; }
+      if (offTheFloor(j, quiet.has(j.project))) { offFloor.set(key, { key, kind: 'job', host: h.name, job: j, look: hostLook(h.name) }); continue; }
       seen.add(key);
       let e = ents.get(key);
       const known = !!e;
       if (!e) { e = createEnt(key, h.name, j); ents.set(key, e); }
       // a job that just finished gives a thumbs-up (a cancelled one waves) before it leaves, or heads for the sofa
       // while finished jobs are shown
-      if (known && FINISHED_STATUSES.has(j.status) && !FINISHED_STATUSES.has(e.lastStatus) && !REDUCED) {
-        e.holdClip = j.status === 'done' ? 'ThumbsUp' : 'Wave'; e.holdUntil = now + ROBOT.clips[e.holdClip].duration;
-        e.leaving = !showFinished; e.leaveBy = now + LEAVE_WITHIN_SECONDS;
+      const bye = known ? farewell(j, e, { reduced: REDUCED }) : null;
+      if (bye) {
+        e.holdClip = bye.clip; e.holdUntil = now + ROBOT.clips[e.holdClip].duration;
+        e.leaving = !showFinished; e.leaveBy = now + bye.within;
       }
       e.lastStatus = j.status;
       e.job = j; e.host = h.name;
@@ -176,6 +174,9 @@ export function applyState(doc) {
   if (selectedKey) renderPanel();
   for (const p of pipelines) updateSankey(p);
   openLinkedDoc();
+  followDoc(workOf(readerTarget()));
+  refreshLibrary();
+  document.dispatchEvent(new CustomEvent('fleet:state', { detail: doc }));   // (the sprite-world floor follows: world/floor-view.js)
 }
 
 // ?open=<host>:<job>:<docId> opens that document in the reader once it shows up on the deck (a link to a document)

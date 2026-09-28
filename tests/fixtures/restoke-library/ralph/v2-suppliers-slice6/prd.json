@@ -1,0 +1,240 @@
+{
+  "project": "Restoke V2 suppliers migration: slice 6, supplier imports and add or update items from a file",
+  "status": "DRAFT \u2014 not reviewed by the human; open questions in questions.md (Q1-Q43, none answered); criteria that depend on one cite it as (Qn)",
+  "branchName": "ralph/v2-suppliers-slice6",
+  "baseBranch": "adi/v2-suppliers",
+  "worktree": "/home/adi/Development/restoke/webapp/worktrees/v2-slice6",
+  "plan": null,
+  "description": "Move the last legacy supplier actions of the suppliers list (/app/suppliers) and the supplier page (/app/suppliers/<id>) to V2. On the list: Import suppliers fr\u2026",
+  "objectives": [
+    "O1 Slice 6: every 'Slice 6 \u2014' / 'Until slice 6' entry in suppliers/parity.yaml and supplier-detail/parity.yaml is done in V2 under V2_SUPPLIERS, or accepted by\u2026",
+    "O2 Legacy look: each dialog uses its legacy template's markup and classes (suppliers.html #importSuppliersFromXeroModal, supplier_import/import_suppliers_from_a\u2026",
+    "O3 Safe writes: every V2 endpoint is tenancy-scoped, is a POST/PATCH where it writes (no GET writes, Q10), and enforces on the server the rules the legacy entri\u2026",
+    "O4 Simplicity: the smallest code that meets each story, on the DX API (read/write, useWrite, WriteButton, WriteError, DialogLoadState). External services are re\u2026"
+  ],
+  "outOfScope": [
+    "Onboard suppliers / request a supplier basket (#onboardSuppliersModal, POST /onboard_suppliers/): not ported; its legacy deep link keeps the legacy modal (Q4)",
+    "The shared legacy import partials and endpoints used by quickstart (quickstart/wizard.html, quickstart-actions.ts), activation, the welcome modal and integratio\u2026",
+    "The Xero, QuickBooks and Gmail OAuth start and callback views: they stay legacy views; V2 links to them (Q13)",
+    "A V2 toast area: import results keep arriving as legacy toasts, shown on the next legacy page (Q9 a); logged as a platform follow-up",
+    "The External Customers view, HQ supplier pages, legacy=1 pages and the retirement of the legacy supplier list and page (see README.md 'What still blocks retirin\u2026",
+    "Fixing legacy endpoints: the holes in questions.md Q6 (no permission or tenancy checks on the import endpoints, GET writes, OAuth state, analyze_supplier_docume\u2026"
+  ],
+  "userStories": [
+    {
+      "id": "US-091",
+      "objective": "O1",
+      "title": "Slice 6 parity checklist for the imports and add or update from file",
+      "priority": 91,
+      "passes": false,
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "Accounting import (suppliers.html:9-21, 37-39, 174-190, 263-269; supplier_views.py:941-1043, 2535-2736; import_suppliers\u2026",
+        "Gmail import (suppliers.html:22-26, 40, 190, 263-269; gmail_import_modal.html:8-44; supplier_pending_candidates.html:32-\u2026"
+      ]
+    },
+    {
+      "id": "US-092",
+      "objective": "O2",
+      "title": "InvoiceFileInput moves to platform/ui",
+      "priority": 92,
+      "passes": false,
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "InvoiceFileInput lives in frontend/src/v2/platform/ui with its stylesheet and test; features/suppliers imports it from t\u2026",
+        "It takes the accepted types as a prop: New Supplier From Invoice keeps 'image/*,application/pdf' (invoice-file-input.tsx\u2026"
+      ]
+    },
+    {
+      "id": "US-093",
+      "objective": "O2",
+      "title": "GET the accounting connection, and Import from Accounting opens as a V2 dialog",
+      "priority": 93,
+      "passes": false,
+      "dependsOn": [
+        "US-091",
+        "US-092"
+      ],
+      "acceptanceCriteria": [
+        "A port AccountingSupplierImport in restoke/main/modules/suppliers (method connection(restaurant user) -> provider, conne\u2026",
+        "GET /api/v2/suppliers/import/accounting/ returns {provider: 'xero' | 'qb' | null, connected, accountName, tenants: [{id,\u2026"
+      ]
+    },
+    {
+      "id": "US-094",
+      "objective": "O3",
+      "title": "Choose the Xero tenant, and GET the accounting supplier candidates",
+      "priority": 94,
+      "passes": false,
+      "dependsOn": [
+        "US-093"
+      ],
+      "acceptanceCriteria": [
+        "The port gains candidates(restaurant user, tenant) and set_tenant(restaurant user, tenant); the adapter wraps get_list_o\u2026",
+        "GET /api/v2/suppliers/import/accounting/candidates/ returns [{id, name}] in legacy's order. It is 409 when not connected\u2026"
+      ]
+    },
+    {
+      "id": "US-095",
+      "objective": "O3",
+      "title": "Create suppliers from the accounting system, and cancel the flow",
+      "priority": 95,
+      "passes": false,
+      "dependsOn": [
+        "US-094"
+      ],
+      "acceptanceCriteria": [
+        "The port gains start_import(restaurant user, provider, ids); the adapter calls what create_suppliers_from_accounting doe\u2026",
+        "POST /api/v2/suppliers/import/accounting/create/ {ids} is 400 for an empty list and 409 when not connected; suppliers fe\u2026"
+      ]
+    },
+    {
+      "id": "US-096",
+      "objective": "O2",
+      "title": "Import from Gmail opens as a V2 dialog and scans the inbox",
+      "priority": 96,
+      "passes": false,
+      "dependsOn": [
+        "US-095"
+      ],
+      "acceptanceCriteria": [
+        "A port InboxSupplierImport in restoke/main/modules/suppliers (connected(restaurant), scan(restaurant user) -> candidates\u2026",
+        "GET /api/v2/suppliers/import/gmail/ returns {connected}. POST /api/v2/suppliers/import/gmail/scan/ runs the scan with le\u2026"
+      ]
+    },
+    {
+      "id": "US-097",
+      "objective": "O3",
+      "title": "Reject a Gmail candidate, and the background consent toggle",
+      "priority": 97,
+      "passes": false,
+      "dependsOn": [
+        "US-096"
+      ],
+      "acceptanceCriteria": [
+        "Reject runs what inbox_reject_candidate does (inbox_searching_views.py:84-105; inbox_orders_service.py:893-904: every Pe\u2026",
+        "The trash icon hides at once and the row is removed when the POST succeeds, without legacy's 1s fade (Q26); a failure re\u2026"
+      ]
+    },
+    {
+      "id": "US-098",
+      "objective": "O3",
+      "title": "Create suppliers from the chosen Gmail candidates",
+      "priority": 98,
+      "passes": false,
+      "dependsOn": [
+        "US-097"
+      ],
+      "acceptanceCriteria": [
+        "The port gains accept(restaurant user, candidate ids); the adapter calls process_approved_candidates as inbox_accept_can\u2026",
+        "POST /api/v2/suppliers/import/gmail/accept/ {candidateIds} is 400 for an empty list and 404 for a candidate not of the r\u2026"
+      ]
+    },
+    {
+      "id": "US-099",
+      "objective": "O1",
+      "title": "OAuth returns and legacy import deep links open the V2 dialogs",
+      "priority": 99,
+      "passes": false,
+      "dependsOn": [
+        "US-098"
+      ],
+      "acceptanceCriteria": [
+        "restoke/main/views/supplier_views.py suppliers() (V2 :957-965) answers {'redirect': '/app/suppliers?dialog=import-accoun\u2026",
+        "The external-customers view (external_cpk_customers, supplier_views.py:978-998) and quickstart's popup OAuth (oauth/api.\u2026"
+      ]
+    },
+    {
+      "id": "US-100",
+      "objective": "O2",
+      "title": "Add or update from file opens as a V2 dialog, also for an empty basket",
+      "priority": 100,
+      "passes": false,
+      "dependsOn": [
+        "US-099"
+      ],
+      "acceptanceCriteria": [
+        "The dialog copies upload_supplier_basket_modal.html:1-26: title 'Add or update from file', 'How would you like to update\u2026",
+        "The button shows when the supplier is not isReadOnly (supplier.html:170; Q12) inside the non-external toolbar, as today;\u2026"
+      ]
+    },
+    {
+      "id": "US-101",
+      "objective": "O3",
+      "title": "Analyse a CSV/XLSX file and map its fields",
+      "priority": 101,
+      "passes": false,
+      "dependsOn": [
+        "US-100"
+      ],
+      "acceptanceCriteria": [
+        "A port SupplierDocumentImport (analyse(file) -> upload id, columns, first row, suggested mapping) has an adapter wrappin\u2026",
+        "The endpoint takes multipart 'file', accepts .csv, .xlsx and .xls as legacy (file_utils.py:284-323) and answers 400 for\u2026"
+      ]
+    },
+    {
+      "id": "US-102",
+      "objective": "O3",
+      "title": "Apply the field mapping to the supplier's items",
+      "priority": 102,
+      "passes": false,
+      "dependsOn": [
+        "US-101"
+      ],
+      "acceptanceCriteria": [
+        "The port gains apply(supplier, upload id, mapping); the adapter sets supplier.supplierDocumentUrl, calls create_supplier\u2026",
+        "Backend tests on a real CSV prove: a code match updates, a fuzzy description match (80) updates, a new row creates, mapp\u2026"
+      ]
+    },
+    {
+      "id": "US-103",
+      "objective": "O3",
+      "title": "Upload an invoice to add or update items",
+      "priority": 103,
+      "passes": false,
+      "dependsOn": [
+        "US-102"
+      ],
+      "acceptanceCriteria": [
+        "A port InvoiceItemExtraction wraps analyze_supplier_invoice's work (supplier_views.py:1179-1241: temporary Invoice, invo\u2026",
+        "The endpoint takes multipart files (jpg, png, gif, jpeg, pdf as base.js:9930-9943) and answers 204; not isReadOnly else\u2026"
+      ]
+    },
+    {
+      "id": "US-104",
+      "objective": "O1",
+      "title": "Slice 6 goes live under V2_SUPPLIERS",
+      "priority": 104,
+      "passes": false,
+      "dependsOn": [
+        "US-103"
+      ],
+      "acceptanceCriteria": [
+        "FLAGGED_PAGES rows (restoke/main/v2_flags.py:46-95) list update_supplier_basket, analyze_supplier_document and analyze_s\u2026",
+        "No slice-6 entry (the two import header buttons, the two '+ New' import entries, Add or update from file) is a LegacyLin\u2026"
+      ]
+    },
+    {
+      "id": "US-105",
+      "objective": "O1",
+      "title": "Browser smoke test for slice 6, manual external checks, and ready parity checklists",
+      "priority": 105,
+      "passes": false,
+      "dependsOn": [
+        "US-104"
+      ],
+      "acceptanceCriteria": [
+        "With V2_SUPPLIERS on and the accounting and inbox ports faked in the e2e server (Q40, Q41): open Import from Accounting,\u2026",
+        "On a supplier with no items the upload dialog opens by itself; Upload CSV/XLSX with a seeded CSV, see Map Your Fields, c\u2026"
+      ]
+    }
+  ],
+  "decisions": [
+    "Carried from slice 5 (ralph/v2-suppliers-slice5/corrections.md): the skill is the authority; one flag V2_SUPPLIERS; server rules are the legacy entry's, nothing\u2026",
+    "Draft (2026-09-27): every external service (Xero, QuickBooks, Gmail, file storage, invoice analysis) is reached only through a port in restoke/main/modules/supp\u2026",
+    "Draft (2026-09-27): stories are serialised by dependsOn because they share restoke/main/modules/suppliers (dtos, ports, facade), persistence/django/suppliers, t\u2026",
+    "Draft (2026-09-27): the import dialogs live in a new feature, frontend/src/v2/features/supplier-import, composed by app/pages/suppliers/index.tsx; the upload di\u2026",
+    "Draft (2026-09-27): the loop-practice memory file (feedback_ralph_loop_practice.md) could not be read in this job; the lessons applied are the ones the orchestr\u2026"
+  ],
+  "openQuestions": "See questions.md"
+}

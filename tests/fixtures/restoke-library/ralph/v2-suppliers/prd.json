@@ -1,0 +1,441 @@
+{
+  "project": "Restoke V2 suppliers migration: foundations and slice 1",
+  "branchName": "ralph/v2-suppliers-slice1",
+  "baseBranch": "adi/v2-tanstack",
+  "worktree": "/home/adi/Development/restoke/webapp/worktrees/v2-ralph",
+  "plan": "https://claude.ai/code/artifact/e662dfad-4c0e-4c5a-a7fd-71c07c359e62",
+  "description": "Close the V2 drift gaps, give people and agents a local loop that matches CI, extend v2:new for list pages, build the two primitives slice 1 needs, then ship th\u2026",
+  "objectives": [
+    "O1 Local = CI: one in-repo command runs exactly the v2-gates checks; local e2e runs with one command.",
+    "O2 Drift: every rule the skill calls enforced is enforced by a check, and each failure message tells the reader the fix.",
+    "O3 Migration checks: flags know the legacy endpoints they replace; parity checklists are machine-checked.",
+    "O4 Generator: v2:new scaffolds a list page with search params and a cutover flag, passing every gate as generated.",
+    "O5 Slice 1: /app/suppliers ships behind enableV2SuppliersList with a parity checklist, tests and a browser smoke test.",
+    "O6 Simplicity: the smallest code that meets each story; unlikely edge cases are logged, not handled."
+  ],
+  "outOfScope": [
+    "Gap 14 (branch protection): a GitHub setting, for a human",
+    "Write verbs, tab and dialog page kinds, form/toast/confirm primitives, row selection: slices 2 to 5",
+    "Legacy deep-link redirect to V2: needs the detail page (slice 2a)",
+    "Pushing, opening PRs, rebasing onto other branches"
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "objective": "O1",
+      "title": "One command runs exactly what v2-gates runs",
+      "priority": 1,
+      "passes": true,
+      "attempts": 1,
+      "startCommit": "a14723a79d45a00dea03980328f10bf83820c392",
+      "acceptanceCriteria": [
+        "scripts/v2-gates.sh frontend runs, in order: npm run check:v2, npm run test:v2, npm run build, git diff --exit-code of f\u2026",
+        "scripts/v2-gates.sh backend runs pytest on sqlite with --no-migrations over test_api_tenancy.py, test_api_contract.py, t\u2026"
+      ]
+    },
+    {
+      "id": "US-002",
+      "objective": "O1",
+      "title": "frontend/src/v2/README.md for readers who do not load skills",
+      "priority": 2,
+      "passes": true,
+      "startCommit": "aaef0b6a02d5ea9f084a987d4b91428d3c767efc",
+      "attempts": 1,
+      "acceptanceCriteria": [
+        "frontend/src/v2/README.md exists, at most 40 lines",
+        "It links .claude/skills/react-route-patterns/SKILL.md, names scripts/v2-gates.sh, and gives the dev loop (ENABLE_VITE_DE\u2026"
+      ]
+    },
+    {
+      "id": "US-003",
+      "objective": "O1",
+      "title": "Local browser smoke tests in one command, and the first /app/ smoke test",
+      "priority": 3,
+      "passes": true,
+      "startCommit": "ad04315763d9fc9f94ad79e4857a58b446ba7196",
+      "attempts": 2,
+      "acceptanceCriteria": [
+        "scripts/v2-e2e.sh starts (or reuses) a pgvector/pgvector:pg13 container on 127.0.0.1:5440, creates vector, pg_trgm, btre\u2026",
+        "restoke/tests/e2e/features/v2/test_supplier_items_e2e.py signs in, opens /app/suppliers/<id>/items for a supplier with t\u2026"
+      ]
+    },
+    {
+      "id": "US-004",
+      "objective": "O2",
+      "title": "Gap 1: page-uses-page-frame checks that <Page> is rendered",
+      "priority": 4,
+      "passes": true,
+      "startCommit": "8a1a72e8c9f43c620b96f0df7fb3b9614242b049",
+      "attempts": 1,
+      "acceptanceCriteria": [
+        "v2/page-uses-page-frame reports a page file that imports Page but renders no <Page> element",
+        "It still passes every existing page"
+      ]
+    },
+    {
+      "id": "US-005",
+      "objective": "O2",
+      "title": "Gap 2: the page effect ban also catches React.useEffect",
+      "priority": 5,
+      "passes": true,
+      "startCommit": "54249713e4c70f85baad6527f9c27208e4d4e762",
+      "attempts": 1,
+      "acceptanceCriteria": [
+        "In page files, React.useEffect and React.useLayoutEffect are reported (member access), or namespace/default imports of r\u2026",
+        "The message names the fix: data comes from the route loader; see the skill"
+      ]
+    },
+    {
+      "id": "US-006",
+      "objective": "O2",
+      "title": "Gap 3: page-parses-params accepts only platform parsers",
+      "priority": 6,
+      "passes": true,
+      "startCommit": "6658fd266d43e64d2bf22a61c837a468cf6f244e",
+      "attempts": 2,
+      "acceptanceCriteria": [
+        "v2/page-parses-params reports a hand-written params: { parse, stringify } and accepts only calls to parsers exported fro\u2026",
+        "Existing pages still pass"
+      ]
+    },
+    {
+      "id": "US-007a",
+      "objective": "O2",
+      "priority": 6.5,
+      "passes": true,
+      "title": "Lint-rule tests live next to the plugin, not in the app layer",
+      "startCommit": "e3b12238ac3f76524ce9fbd189d935a760d75bfb",
+      "attempts": 1,
+      "acceptanceCriteria": [
+        "No RuleTester test remains under frontend/src/v2 (git grep -l RuleTester -- frontend/src is empty)",
+        "The moved tests live in frontend/eslint-local-plugins/__tests__/, one file per rule, contents unchanged apart from impor\u2026"
+      ]
+    },
+    {
+      "id": "US-007",
+      "objective": "O2",
+      "title": "Gap 4: routes that read search params must validate them",
+      "priority": 7,
+      "passes": true,
+      "startCommit": "082923a936e125ed5828e95f026e65ba90d45019",
+      "attempts": 1,
+      "acceptanceCriteria": [
+        "New rule v2/page-validates-search reports a page reading search state without validateSearch",
+        "The message names the fix and the skill section"
+      ]
+    },
+    {
+      "id": "US-008",
+      "objective": "O2",
+      "title": "Gaps 5 and 6: query definitions live in features/*/api/queries.ts; testing helpers only in tests",
+      "priority": 8,
+      "passes": true,
+      "startCommit": "c4b620819b0cc6275f837a7c811f28b25846d68b",
+      "attempts": 1,
+      "acceptanceCriteria": [
+        "Importing queryOptions from @tanstack/react-query outside src/v2/features/*/api/queries.ts is a lint error, with a messa\u2026",
+        "Importing app/testing or platform/testing from a non-test file under src/v2 is a lint error"
+      ]
+    },
+    {
+      "id": "US-009",
+      "objective": "O2",
+      "title": "Gap 7: Bootstrap 5 class names are refused in V2 JSX",
+      "priority": 9,
+      "passes": true,
+      "startCommit": "3f5a52bcf8b71cc23f5adacf632d3ccef70cc3c6",
+      "attempts": 1,
+      "acceptanceCriteria": [
+        "A className string literal or template literal containing a denylisted class is a lint error naming the Bootstrap 4.5 eq\u2026",
+        "Classes backfilled by restoke/static/css/core/tokens/bootstrap-compat.css are not denied"
+      ]
+    },
+    {
+      "id": "US-010",
+      "objective": "O2",
+      "title": "Gaps 8 and 9: src/shared/react is gated, and boundary rules apply to tests",
+      "priority": 10,
+      "passes": true,
+      "startCommit": "b2090c5b62bf1f019d0af965491bde7caa28317c",
+      "attempts": 2,
+      "acceptanceCriteria": [
+        "check:v2 typechecks, lints and format-checks src/shared/react",
+        "Boundary rules run on test files under src/v2; any violations found are fixed, not suppressed"
+      ]
+    },
+    {
+      "id": "US-011",
+      "objective": "O2",
+      "title": "Gaps 11 and 12: the tenancy gate proves it found /api/v2/ URLs, and needs no registry for conventional parameters",
+      "priority": 11,
+      "passes": true,
+      "startCommit": "5e2749c15e02073806de1c60fd63f92fe6f3302f",
+      "attempts": 1,
+      "acceptanceCriteria": [
+        "test_the_walk_finds_the_surfaces_we_know_about asserts at least one URL starting /api/v2/ and names the supplier-items e\u2026",
+        "A parameter supplier_id resolves via SupplierFactory with no entry in OBJECT_FOR_PARAMETER; a parameter whose factory do\u2026"
+      ]
+    },
+    {
+      "id": "US-012",
+      "objective": "O2",
+      "title": "Gap 13: drf-spectacular warnings fail schema generation",
+      "priority": 12,
+      "passes": true,
+      "startCommit": "9c801efe84d59b56e65af8699b1f46b24a5d56e3",
+      "attempts": 1,
+      "acceptanceCriteria": [
+        "generate_api_contract.sh passes --fail-on-warn",
+        "Any warnings present today are fixed at their source in the serializers/views, or, if there are more than five or a fix\u2026"
+      ]
+    },
+    {
+      "id": "US-013",
+      "objective": "O2",
+      "title": "The honest rules table is tested, and every rule message tells the fix",
+      "priority": 13,
+      "passes": true,
+      "startCommit": "0b6aa3cd26ae7b946d2ef79126b1e7b255b99f97",
+      "attempts": 1,
+      "acceptanceCriteria": [
+        "A vitest test reads .claude/skills/react-route-patterns/SKILL.md, extracts every `v2/<rule>` id from the table, and asse\u2026",
+        "The test fails when a row names a non-existent rule (shown in the commit message by a local run)"
+      ]
+    },
+    {
+      "id": "US-014",
+      "objective": "O3",
+      "title": "Flag registry: each cutover flag records the legacy URL names it replaces",
+      "priority": 14,
+      "passes": true,
+      "startCommit": "aae790bd9f4fa9161077331c0fbd8623073a53c6",
+      "attempts": 1,
+      "acceptanceCriteria": [
+        "restoke/main/v2_flags.py (or the nearest existing home) maps FeatureType.V2_ORDER_SCHEDULE_ROUTE to the legacy order-sch\u2026",
+        "Test 1: every recorded URL name resolves with django.urls.reverse (parameters supplied where needed)"
+      ]
+    },
+    {
+      "id": "US-015",
+      "objective": "O3",
+      "title": "Parity checklist format and its gate",
+      "priority": 15,
+      "passes": true,
+      "startCommit": "99e9d041ae5507fdaf9d73545d946f0647eb9149",
+      "attempts": 1,
+      "acceptanceCriteria": [
+        "The format is documented in the skill in at most 15 lines, with an example",
+        "For each parity.yaml with ready: true, the gate fails if a must item has no test, names a file that does not exist, or n\u2026"
+      ]
+    },
+    {
+      "id": "US-016",
+      "objective": "O4",
+      "title": "v2:new: pages with zero or several URL parameters, and a factory check",
+      "priority": 16,
+      "passes": true,
+      "startCommit": "6d77778d44ca108f567c00c4eeac57a85f609e85",
+      "attempts": 2,
+      "blocked": false,
+      "acceptanceCriteria": [
+        "npm run v2:new -- --feature demo-list --path 'demo-things' --title Demo --dry-run prints a plan with no URL parameter; t\u2026",
+        "A two-parameter path generates a route using idParams for both"
+      ]
+    },
+    {
+      "id": "US-017",
+      "objective": "O4",
+      "title": "v2:new: search parameters with a generated validateSearch",
+      "priority": 17,
+      "passes": true,
+      "startCommit": "6d77778d44ca108f567c00c4eeac57a85f609e85",
+      "attempts": 1,
+      "acceptanceCriteria": [
+        "Generated route declares validateSearch that accepts the declared keys and drops or defaults unknown/invalid values as t\u2026",
+        "Generated page satisfies v2/page-validates-search"
+      ]
+    },
+    {
+      "id": "US-018",
+      "objective": "O4",
+      "title": "v2:new: --flag scaffolds the cutover flag and its registry entry",
+      "priority": 18,
+      "passes": true,
+      "startCommit": "804e9b8ca819f4b342f738c69c856b99f5eecb8a",
+      "attempts": 1,
+      "acceptanceCriteria": [
+        "The generated flag resolves through the same path as V2_ORDER_SCHEDULE_ROUTE (featureFlagsMap), with no migration",
+        "The registry entry is written and the registry tests pass"
+      ]
+    },
+    {
+      "id": "US-019",
+      "objective": "O3",
+      "title": "v2:new writes a parity.yaml skeleton and test stubs",
+      "priority": 19,
+      "passes": true,
+      "startCommit": "713c78874d763cac6ff7bc4b7fcdef09c40ee71d",
+      "attempts": 1,
+      "acceptanceCriteria": [
+        "Generated parity.yaml passes the parity gate (ready: false)",
+        "Setting ready: true on the generated skeleton makes the gate fail because the stubs are todo"
+      ]
+    },
+    {
+      "id": "US-020",
+      "objective": "O5",
+      "title": "platform/ui DataTable: sortable columns and an empty state",
+      "priority": 20,
+      "passes": true,
+      "startCommit": "1117a3a6899fb9158824d5712f3e81fde1ed7cdc",
+      "attempts": 1,
+      "acceptanceCriteria": [
+        "The choice of base element and why is one sentence in the commit message",
+        "Props: columns (key, header, sortable, render), rows, a sort state held by the caller, an empty-state message"
+      ]
+    },
+    {
+      "id": "US-021",
+      "objective": "O5",
+      "title": "platform/ui SearchInput bound to a URL search parameter",
+      "priority": 21,
+      "passes": true,
+      "startCommit": "ffb8df82a7a7972b60177c6623b4b7499d9662c5",
+      "attempts": 2,
+      "acceptanceCriteria": [
+        "Typing updates the named search param with history replace, debounced; reload keeps the value",
+        "Tests through the real router (renderAppAt or equivalent) prove the URL changes and the input reflects the URL on load"
+      ]
+    },
+    {
+      "id": "US-022",
+      "objective": "O5",
+      "title": "Slice 1 parity checklist for the supplier list",
+      "priority": 22,
+      "passes": true,
+      "startCommit": "420b01e03ba49430ec7d264f2bf6b15bf1091515",
+      "attempts": 1,
+      "acceptanceCriteria": [
+        "Every action in suppliers.html is an item, with base.js handler references in a comment per item",
+        "Slice 1 items are must: search, type filter, grid/list view, open a supplier, links to legacy for new supplier, bulk act\u2026"
+      ]
+    },
+    {
+      "id": "US-023",
+      "objective": "O5",
+      "title": "GET /api/v2/suppliers/: the restaurant's suppliers",
+      "priority": 23,
+      "passes": true,
+      "startCommit": "31840cf2bd42c66ab0de031fb325b62758a55039",
+      "attempts": 2,
+      "acceptanceCriteria": [
+        "Scaffold committed exactly as generated in its own commit; hand-written changes in a second commit",
+        "Returns only request.restaurant's suppliers; a test with two restaurants proves it"
+      ]
+    },
+    {
+      "id": "US-024",
+      "objective": "O5",
+      "title": "/app/suppliers page: table, search, type filter, grid/list view in the URL",
+      "priority": 24,
+      "passes": true,
+      "startCommit": "7f517366d936176555c0e4fa1e460d4079ca71e8",
+      "attempts": 1,
+      "acceptanceCriteria": [
+        "Loading /app/suppliers?q=acme&type=<t>&view=grid shows the filtered suppliers in grid view; changing the filter updates\u2026",
+        "Empty result shows the DataTable empty state"
+      ]
+    },
+    {
+      "id": "US-024a",
+      "objective": "O5",
+      "title": "/app/suppliers keeps the first-visit experience: feature video, getting-started banner, suppliers tour",
+      "priority": 24.5,
+      "passes": true,
+      "startCommit": "8885b555cd720a287cb111e2e3154ceec6d896e5",
+      "attempts": 1,
+      "acceptanceCriteria": [
+        "GET /api/v2/suppliers/ also returns showFeatureVideo and showContentView, computed exactly as supplier_views.py does (re\u2026",
+        "Feature video: when showFeatureVideo is true, /app/suppliers opens a dialog titled 'Learn about Suppliers' playing the s\u2026"
+      ]
+    },
+    {
+      "id": "US-025",
+      "objective": "O5",
+      "title": "enableV2SuppliersList flag and the side-menu link",
+      "priority": 25,
+      "passes": true,
+      "startCommit": "0e092354537708f0f85e0efbd1401cdbc1a158c5",
+      "attempts": 1,
+      "acceptanceCriteria": [
+        "With the flag off the side menu is unchanged; with it on, Suppliers links to /app/suppliers as a plain link",
+        "A backend test renders the menu both ways"
+      ]
+    },
+    {
+      "id": "US-026",
+      "objective": "O5",
+      "title": "Slice 1 browser smoke test and a ready parity checklist",
+      "priority": 26,
+      "passes": true,
+      "startCommit": "69c25e2b05f4b1a110b4a954781950124dc020fd",
+      "attempts": 1,
+      "acceptanceCriteria": [
+        "restoke/tests/e2e/features/v2/test_suppliers_list_e2e.py: with the flag on, the side-menu link opens /app/suppliers, sea\u2026",
+        "scripts/v2-e2e.sh restoke/tests/e2e/features/v2 passes"
+      ]
+    },
+    {
+      "id": "US-027",
+      "objective": "O7",
+      "title": "The legacy frame around every /app/ page",
+      "priority": 27,
+      "passes": true,
+      "startCommit": "885330c40a6810770676ba14b9b1b9612edf2fb9",
+      "attempts": 1,
+      "acceptanceCriteria": [
+        "restoke/templates/v2_app.html renders the legacy frame around #v2-app-root; the navigation context comes from the same h\u2026",
+        "Side-menu items work without base.js: a small shell script turns a click on .content-loader[data-url] into a full page l\u2026"
+      ]
+    },
+    {
+      "id": "US-028",
+      "objective": "O7",
+      "title": "/app/suppliers in the legacy markup",
+      "priority": 28,
+      "passes": true,
+      "startCommit": "81ef1861b5ba79928f1af81acb09c9e413bd478f",
+      "attempts": 1,
+      "acceptanceCriteria": [
+        "suppliers-view.tsx and the page emit the legacy structure and class names of suppliers.html + supplier_card.html (grid)\u2026",
+        "The type select looks like the legacy bootstrap-select control using its classes, with no jQuery plugin in src/v2"
+      ]
+    },
+    {
+      "id": "US-029",
+      "objective": "O5",
+      "title": "/app/suppliers honours and saves the legacy view preference",
+      "priority": 29,
+      "passes": true,
+      "startCommit": "55719ede18a4c35150276abed9e71b6a7f25fd47",
+      "attempts": 1,
+      "acceptanceCriteria": [
+        "GET /api/v2/suppliers/ returns the user's view (cards or list) computed as supplier_views.py does; backend tests cover s\u2026",
+        "With no view in the URL the page shows the returned view; a view in the URL wins"
+      ]
+    },
+    {
+      "id": "US-030",
+      "objective": "O7",
+      "title": "The suppliers feature video as the legacy modal",
+      "priority": 30,
+      "passes": true,
+      "startCommit": "1b19722fdd9cf939a36401813309c1614a59c4e8",
+      "attempts": 1,
+      "acceptanceCriteria": [
+        "The video renders the markup and classes of modals/feature_video.html (modal, modal-dialog, modal-content, video-respons\u2026",
+        "Escape, the close button, 'Got it, thanks!' and a backdrop click each close it and mark it seen once; focus moves into t\u2026"
+      ]
+    }
+  ]
+}

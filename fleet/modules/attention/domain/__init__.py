@@ -33,6 +33,45 @@ class StreamContext:
     source: str
     summary: str
     since: float | None
+    step: int | None = None  # the job step a permission batch belongs to
+    cwd: str | None = None   # where the session runs, from its hook
+
+
+@dataclass(frozen=True)
+class QuestionOption:
+    label: str
+    description: str
+
+
+@dataclass(frozen=True)
+class Question:
+    """A question an interactive session put to the person at its terminal (AskUserQuestion)."""
+    header: str
+    question: str
+    options: tuple[QuestionOption, ...]
+    multi_select: bool = False
+
+
+@dataclass(frozen=True)
+class Refusal:
+    """One permission request a non-interactive job was refused, and the rules that would allow it."""
+    occurrence: str
+    tool: str
+    description: str
+    detail: str
+    rules: tuple[str, ...] | None  # None when the worker's fleetd proposes no rules
+    observed_at: float
+    denied_by: tuple[str, ...] = ()  # deny rules (with their settings file) no allow rule can override
+
+
+def refusal_rules(refusals: tuple[Refusal, ...]) -> list[str] | None:
+    """The distinct rules that would allow these requests; None when the worker proposed none.
+
+    A request a deny rule refuses contributes none: allowing it for the job would change nothing.
+    """
+    if any(refusal.rules is None for refusal in refusals):
+        return None
+    return list(dict.fromkeys(rule for refusal in refusals if not refusal.denied_by for rule in refusal.rules or ()))
 
 
 @dataclass(frozen=True)
@@ -55,6 +94,8 @@ class AttentionItem:
     resolved_at: datetime | None = None
     stream_context: StreamContext | None = None
     options: tuple[str, ...] = ()
+    refusals: tuple[Refusal, ...] = ()
+    questions: tuple[Question, ...] = ()  # answered in the session's terminal, never in Fleet
 
     def __post_init__(self) -> None:
         for option in self.options:

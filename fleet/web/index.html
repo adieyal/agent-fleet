@@ -20,6 +20,11 @@
   <div id="buildingUi"></div>
 </div>
 <nav id="lift" aria-label="Lift"></nav>
+<div id="floorWorld" aria-label="A project floor as a sprite world: each robot is a job at its desk">
+  <canvas id="floorWorldCanvas" tabindex="0" aria-hidden="true"></canvas>
+  <div id="floorWorldUi"></div>
+  <div id="floorWorldBar"><label>Floor <select id="floorWorldProject"></select></label><span id="floorWorldNote" role="status"></span></div>
+</div>
 <div id="toast" role="status" hidden></div>
 <div id="readonlyTag" aria-hidden="true">In the storehouse · read-only</div>
 
@@ -29,7 +34,7 @@
     <span>FLEET</span>
   </div>
   <div class="view-toggle" id="viewToggle" role="group" aria-label="View">
-    <button data-view="deck" aria-pressed="true">deck</button><button data-view="building" aria-pressed="false">building</button>
+    <button data-view="deck" aria-pressed="true">deck</button><button data-view="world" aria-pressed="false">world</button><button data-view="building" aria-pressed="false">building</button>
   </div>
   <button id="libraryOpen" title="Browse project documents">Library</button>
   <div class="stats" id="stats"></div>
@@ -66,8 +71,12 @@
   <div class="lib-scrim" data-lib-close></div>
   <aside class="lib-sheet" role="dialog" aria-modal="true" aria-labelledby="libTitle">
     <div class="lib-head"><h2 id="libTitle">Project library</h2><button data-lib-close aria-label="Close library">✕</button></div>
-    <p class="lib-intro">Plans, decisions, and reports from configured local projects.</p>
-    <input id="libSearch" type="search" placeholder="Find a document" aria-label="Find a document">
+    <p class="lib-intro">What each project has done, is doing and will do, with every document behind it. Job documents stay here after the job leaves the floor.</p>
+    <div class="lib-views" role="group" aria-label="Library view">
+      <button data-lib-view="overview" aria-pressed="true">Overview</button><button data-lib-view="all" aria-pressed="false">All documents</button>
+    </div>
+    <div id="libProjects" class="lib-projects" role="group" aria-label="Project"></div>
+    <input id="libSearch" type="search" placeholder="Find a document" aria-label="Find a document" hidden>
     <div id="libList" role="list"></div>
   </aside>
 </div>

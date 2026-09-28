@@ -1,0 +1,26 @@
+{
+  "description": "a freestanding grey metal shelving unit, about 1.2 m wide, 0.4 m deep and 1.8 m tall, standing \\\nagainst a wall, with four shelves holding upright ring binders with muted coloured spines (grey, dusty \\\nblue, sand, sage), a few stacked books and one cardboard file box. Its long side faces the viewer, running \\\nfrom the upper left to the lower right like the wall in the references.",
+  "prompt": "Generate a single game sprite: a freestanding grey metal shelving unit, about 1.2 m wide, 0.4 m deep and 1.8 m tall, standing \\\nagainst a wall, with four shelves holding upright ring binders with muted coloured spines (grey, dusty \\\nblue, sand, sage), a few stacked books and one cardboard file box. Its long side faces the viewer, running \\\nfrom the upper left to the lower right like the wall in the references.\n\nStyle: match the attached reference crops from the concept art exactly. Soft, clean, slightly stylised 3D render of an isometric office, three-quarter view from above at the same camera angle as the references (about 30 degrees down). Warm soft key light from the upper left, gentle ambient occlusion, no harsh shadows. Pale, desaturated palette. Render only the object, centred, whole and uncropped, on a fully transparent background: no floor, no ground shadow, no backdrop, no text, no border.",
+  "instructions": "You are a sprite generator. Always answer by calling the image_generation tool exactly once. Do not reply with text.",
+  "references": [
+    {
+      "path": "docs/images/concept/l2.png@1510,330,162,420",
+      "sha256": "1980c89cbec2d79dff7648e3e1857a313983bb790662d0e6f9130b53f7503e70"
+    },
+    {
+      "path": "docs/images/concept/l1.png@530,150,115,130",
+      "sha256": "905e57546a86803ca7c89a1706aa5d511224ddc217bda7ce6a7625d40baf077b"
+    }
+  ],
+  "model": "gpt-5.5",
+  "image_model": "gpt-image-2-codex",
+  "quality_requested": "high",
+  "quality": "medium",
+  "size": "1024x1536",
+  "revised_prompt": "Generate a single game sprite of a freestanding grey metal shelving unit, approximately 1.2 m wide, 0.4 m deep, 1.8 m tall. The unit is standing against an implied wall orientation but render ONLY the shelving object and contents, isolated on a fully transparent background. Long side faces the viewer, angled diagonally from upper left to lower right, isometric office three-quarter view from above, about 30 degrees down, matching soft clean slightly stylised 3D concept art references. Pale desaturated palette, warm soft key light from upper left, gentle ambient occlusion, no harsh shadows, no floor, no ground shadow, no backdrop, no text, no border. Grey powder-coated metal frame with four shelves. Shelves hold upright ring binders with muted coloured spines: grey, dusty blue, sand, sage, neatly arranged; a few stacked books; one cardboard file box. Centered, whole object uncropped, game asset sprite, clean silhouettes, subtle bevels, realistic but stylized office furniture render.",
+  "response_id": "resp_063e5552f2eceb16016ab84793487487d2a7eb50e53551b792",
+  "request_sha256": "6b3b5c29a04dc649757fd024b9bc1be2f92a1f03b0a9d3cadc4d55e35698f83e",
+  "output_sha256": "b59c0c06dbc9934464112ae70eb76558f01813709c5f6e1902aaf18aee3f4527",
+  "timestamp": "2026-09-26T22:31:31Z",
+  "seconds": 50.2
+}

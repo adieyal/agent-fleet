@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Fleet · Restoke floor</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #dcebf8; font: 13px/1.35 system-ui, sans-serif; color: #3d4450; }
+  #world { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
+  #overlay { position: fixed; inset: 0; pointer-events: none; }
+  .lantern-glyph { position: absolute; transform: translate(-50%, -50%); min-width: 16px; height: 16px; padding: 0 3px; border-radius: 8px;
+           background: #fff; color: #7a0f72; font: 700 11px/16px system-ui, sans-serif; text-align: center;
+           box-shadow: 0 0 0 1.5px #a60e9b; }
+  /* an action bubble over a working robot, as l2: a white rounded card with a tail, the glyph in the robot's colour */
+  .bubble { position: absolute; transform: translate(-50%, -100%); width: 30px; height: 30px; border-radius: 9px;
+            background: #fff; box-shadow: 0 2px 6px rgba(40, 50, 70, .22); display: grid; place-items: center; }
+  .bubble::after { content: ''; position: absolute; left: 50%; bottom: -5px; margin-left: -5px; border: 5px solid transparent;
+                   border-bottom: 0; border-top-color: #fff; }
+  .bubble .glyph { display: block; width: 20px; height: 20px; }
+  .bubble svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+  /* the lift's floor buttons: numbers over the rendered buttons; this floor lit, floors needing you marked */
+  .floor-button { position: absolute; width: 18px; height: 18px; border-radius: 50%; font: 700 11px/18px system-ui, sans-serif;
+                  text-align: center; color: #e8e8ee; }
+  .floor-button.here { background: #f7f5ef; color: #3d4450; box-shadow: 0 0 6px rgba(255, 244, 214, .9); }
+  .floor-button.attention { box-shadow: 0 0 0 2px #a60e9b; }
+  /* the lift's indicator: the floor's number glowing over the doors */
+  .lift-number { position: absolute; min-width: 22px; padding: 0 4px; border-radius: 3px; background: #15171c; color: #ffb35c;
+                 font: 700 15px/20px ui-monospace, monospace; text-align: center; text-shadow: 0 0 6px rgba(255, 170, 80, .8); }
+  #panel { position: fixed; left: 12px; top: 12px; background: rgba(255, 255, 255, .88); border: 1px solid #c9ced8;
+           border-radius: 10px; padding: 8px 12px; font: 12px/1.35 ui-monospace, monospace; white-space: pre; }
+  body.shot #panel { display: none; }
+</style>
+</head>
+<body>
+<canvas id="world"></canvas>
+<div id="overlay"></div>
+<div id="panel"></div>
+<script type="module" src="/prototype/floor.js"></script>
+</body>
+</html>

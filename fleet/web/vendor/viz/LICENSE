@@ -1,0 +1,6 @@
+Viz.js 3.30.0 (@viz-js/viz, dist/viz.js) — https://github.com/mdaines/viz-js
+Copyright (c) Michael Daines. Released under the MIT License.
+
+This distribution contains other software in object code form:
+Graphviz (https://www.graphviz.org), Eclipse Public License 1.0
+Expat (https://libexpat.github.io), MIT License

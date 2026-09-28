@@ -1,0 +1,22 @@
+{
+  "description": "a seamless wall texture seen straight on: a pale warm grey \\\npainted plaster wall, smooth, very faint texture, no joints, no skirting. Perfectly even brightness \\\neverywhere, no vignette.",
+  "prompt": "Generate a single game sprite: a seamless wall texture seen straight on: a pale warm grey \\\npainted plaster wall, smooth, very faint texture, no joints, no skirting. Perfectly even brightness \\\neverywhere, no vignette.\n\nStyle: a flat texture seen straight on, with no perspective and no objects. Soft, even, slightly warm \\\nlight; pale, desaturated colours matching the attached reference crop. It must tile seamlessly: the left \\\nedge continues into the right edge and the top into the bottom. Fill the whole square image edge to edge.",
+  "instructions": "You are a sprite generator. Always answer by calling the image_generation tool exactly once. Do not reply with text.",
+  "references": [
+    {
+      "path": "docs/images/concept/l2.png@700,40,640,200",
+      "sha256": "4ed4c1c4c6901f84d7caf195dd4ffc099d1fe99b1dab523396b17731c97bdcab"
+    }
+  ],
+  "model": "gpt-5.5",
+  "image_model": "gpt-image-2-codex",
+  "quality_requested": "high",
+  "quality": "low",
+  "size": "1254x1254",
+  "revised_prompt": "Single square seamless game sprite texture, straight-on flat view: pale warm grey painted plaster wall, smooth with very faint subtle plaster grain/noise, no seams, no joints, no skirting, no objects. Perfectly even brightness across the entire image, no vignette, no shadows, no highlights, no perspective. Soft even slightly warm lighting, pale desaturated warm grey color inspired by reference crop. Must tile seamlessly horizontally and vertically: left edge continues perfectly into right edge, top edge into bottom. Fill the whole square edge-to-edge. High-quality flat PBR/albedo-style texture, minimal variation, 1:1 square.",
+  "response_id": "resp_02b43411463519db016ab8268fd91487d288b382599835e8f7",
+  "request_sha256": "5957243b508941e8fdd79afff6db26a884a631fb226c083b028bc73364831f56",
+  "output_sha256": "db8ce9f5554ae532a3e9c8e999e930360bc5e1549075a3e0f7dccd5fd9ebb2d3",
+  "timestamp": "2026-09-26T20:10:16Z",
+  "seconds": 25.2
+}

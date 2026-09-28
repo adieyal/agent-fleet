@@ -50,7 +50,7 @@ def test_api_doc_refuses_path_ids_with_an_explicit_error(
         thread.join(timeout=5)
 
 
-@pytest.mark.parametrize("kind", ["traversal", "symlink", "absolute"])
+@pytest.mark.parametrize("kind", ["symlink", "not markdown"])
 def test_api_doc_refuses_recorded_paths_outside_roots(
     kind: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -59,13 +59,12 @@ def test_api_doc_refuses_recorded_paths_outside_roots(
     directory.mkdir(parents=True)
     secret = tmp_path / "private.md"
     secret.write_text("secret content")
-    if kind == "traversal":
-        path = directory / ".." / ".." / ".." / "private.md"
-    elif kind == "symlink":
+    if kind == "symlink":
         path = directory / "link.md"
         path.symlink_to(secret)
-    else:
-        path = secret
+    else:   # a written Markdown file outside the roots is the agent's own and readable; nothing else is
+        path = tmp_path / "private.txt"
+        path.write_text("secret content")
     job = {"id": "job1", "project": "project", "agent": "codex", "description": "work",
            "steps": [], "written_documents": [{"path": str(path), "step": 0}]}
     (directory / "job.json").write_text(json.dumps(job))

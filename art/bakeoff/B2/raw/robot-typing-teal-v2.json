@@ -1,0 +1,26 @@
+{
+  "description": "one small friendly robot exactly in the style of the reference robots: a rounded helmet-like head with a glossy black face visor and two glowing cyan eyes, round ear discs, chunky rounded limbs, matte plastic shell. Its whole body is teal (like the teal robot in the reference), with grey joints. It sits on a black office chair behind a desk, facing toward the lower left of the image like the robots in the reference. Do not draw the desk. It types on an open dark-grey laptop that sits in front of it at desk height, both hands on the \\\nkeyboard; the laptop floats where the desk top would be.",
+  "prompt": "Generate a single game sprite: one small friendly robot exactly in the style of the reference robots: a rounded helmet-like head with a glossy black face visor and two glowing cyan eyes, round ear discs, chunky rounded limbs, matte plastic shell. Its whole body is teal (like the teal robot in the reference), with grey joints. It sits on a black office chair behind a desk, facing toward the lower left of the image like the robots in the reference. Do not draw the desk. It types on an open dark-grey laptop that sits in front of it at desk height, both hands on the \\\nkeyboard; the laptop floats where the desk top would be.\n\nStyle: match the attached reference crops from the concept art exactly. Soft, clean, slightly stylised 3D render of an isometric office, three-quarter view from above at the same camera angle as the references (about 30 degrees down). Warm soft key light from the upper left, gentle ambient occlusion, no harsh shadows. Pale, desaturated palette. Render only the object, centred, whole and uncropped, on a fully transparent background: no floor, no ground shadow, no backdrop, no text, no border.",
+  "instructions": "You are a sprite generator. Always answer by calling the image_generation tool exactly once. Do not reply with text.",
+  "references": [
+    {
+      "path": "docs/images/concept/l2.png@530,390,190,190",
+      "sha256": "68c3a33a1d71b18828691e651d89646e0d4d779faa5d3385c1b5b3d00da53d08"
+    },
+    {
+      "path": "docs/images/concept/l1.png@660,350,370,130",
+      "sha256": "59e0231ac64f24768b3c6391da4cad4a8d0365278ae606063a6bd821ce205a0c"
+    }
+  ],
+  "model": "gpt-5.5",
+  "image_model": "gpt-image-2-codex",
+  "quality_requested": "high",
+  "quality": "medium",
+  "size": "1254x1254",
+  "revised_prompt": "Generate a single game sprite on a fully transparent background. Subject: one small friendly teal robot, matching the provided concept-art reference style: rounded helmet-like head, glossy black face visor, two glowing cyan eyes, round ear discs, chunky rounded limbs, matte plastic shell, grey joints. The robot is seated on a black office chair, facing toward the lower-left of the image in an isometric three-quarter view from above, about 30 degrees down. It is typing on an open dark-grey laptop positioned in front of it at desk height, both hands on the keyboard; the laptop floats where a desktop would be. Important: do not draw the desk, no tabletop, no floor, no ground shadow, no backdrop, no text, no border. Render only the robot, chair, and floating laptop, centered, whole, uncropped.\n\nStyle: soft, clean, slightly stylised 3D render like isometric office concept art, pale desaturated palette, warm soft key light from upper left, gentle ambient occlusion, no harsh shadows. Friendly toy-like proportions, glossy visor, subtle highlights, matte teal plastic body, grey mechanical joints, black chair. Ensure transparent alpha background.",
+  "response_id": "resp_02989e1f372e4eb5016ab82203722087d288a01a248c834318",
+  "request_sha256": "2ecef300b56e9b71d0832888ea04dfc2063503e8c8fb2d4372794893b83312fb",
+  "output_sha256": "5d92d3243833913be49532062f20f1d8ab6ec414f161c1b7c576f8a1c0274bc3",
+  "timestamp": "2026-09-26T19:51:19Z",
+  "seconds": 53.0
+}

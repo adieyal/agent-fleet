@@ -25,6 +25,7 @@ import { sankeyPane, stepSankey } from './sankey.js';
 import { glowOf, keyOf, pipelines, screenOf, stepScreens } from './pipelines.js';
 import { enterFloor } from './bench.js';
 import { textBudget } from './text-budget.js';
+import { worldShown } from './world/floor-view.js';
 
 // ------------------------------------------------------------------ frame loop
 let lastT = 0;
@@ -58,6 +59,7 @@ function frame(ts) {
   requestAnimationFrame(frame);
   if (document.hidden || !reader.hidden || !sankeyPane.hidden) { lastT = 0; return; }   // a sheet covers the deck; don't render under it
   if (buildingShown) { lastT = 0; return; }                      // the building has the screen and draws itself
+  if (worldShown) { lastT = 0; return; }                         // so has the sprite-world floor
   if (ts < panelScrollUntil) { lastT = 0; return; }             // hold the deck still while the panel scrolls, so the scroll gets the frame
   if (isStepping()) {
     const now = animationNow() / 1000;

@@ -1,0 +1,216 @@
+{
+  "version": 1,
+  "about": "The bake-off's sprites in the sprite engine's manifest format, for /prototype/world until the floor kit exists: B2 (AI) bench, robots and lantern, B1 (Blender) plant for its three tiers. Camera: the world camera since floor review 1 (the B2 sprites are AI-drawn at about that camera; the B1 plant was rendered at the old one, pitch 44.5, yaw 21.25).",
+  "camera": {
+    "pitch": 28,
+    "yaw": 33
+  },
+  "sprites": {
+    "bench": {
+      "footprint": [
+        -2.75,
+        -1.45,
+        -0.74,
+        2.75,
+        0.35,
+        0.45
+      ],
+      "hit": "alpha",
+      "tiers": [
+        {
+          "ppm": 257.292,
+          "file": "B2/bench.webp",
+          "size": [
+            1395,
+            789
+          ],
+          "anchor_px": [
+            716.1,
+            252.7
+          ]
+        }
+      ]
+    },
+    "plant": {
+      "footprint": [
+        -0.3,
+        -0.3,
+        0,
+        0.3,
+        0.3,
+        1.4
+      ],
+      "hit": "alpha",
+      "tiers": [
+        {
+          "ppm": 171.528,
+          "file": "B1/plant@1x.png",
+          "size": [
+            321,
+            393
+          ],
+          "anchor_px": [
+            153.07,
+            241.02
+          ]
+        },
+        {
+          "ppm": 343.055,
+          "file": "B1/plant@2x.png",
+          "size": [
+            642,
+            785
+          ],
+          "anchor_px": [
+            306.13,
+            482.05
+          ]
+        },
+        {
+          "ppm": 686.11,
+          "file": "B1/plant@4x.png",
+          "size": [
+            1283,
+            1570
+          ],
+          "anchor_px": [
+            612.26,
+            964.1
+          ]
+        }
+      ]
+    },
+    "robot-typing": {
+      "footprint": [
+        -0.3,
+        -0.3,
+        -0.47,
+        0.3,
+        0.3,
+        0.9
+      ],
+      "hit": "alpha",
+      "tiers": [
+        {
+          "ppm": 257.292,
+          "file": "B2/robot-typing.anim.webp",
+          "mask": "B2/robot-typing.anim.mask.png",
+          "size": [
+            264,
+            308
+          ],
+          "anchor_px": [
+            160,
+            210
+          ],
+          "frames": 4,
+          "fps": 6,
+          "cut": {
+            "x": 160,
+            "y": 240,
+            "slope": 0.2726
+          }
+        }
+      ]
+    },
+    "robot-pencil": {
+      "footprint": [
+        -0.3,
+        -0.3,
+        -0.47,
+        0.3,
+        0.3,
+        0.9
+      ],
+      "hit": "alpha",
+      "tiers": [
+        {
+          "ppm": 257.292,
+          "file": "B2/robot-pencil.anim.webp",
+          "mask": "B2/robot-pencil.anim.mask.png",
+          "size": [
+            214,
+            308
+          ],
+          "anchor_px": [
+            140,
+            210
+          ],
+          "frames": 4,
+          "fps": 6,
+          "cut": {
+            "x": 140,
+            "y": 233,
+            "slope": 0.2726
+          }
+        }
+      ]
+    },
+    "robot-tube": {
+      "footprint": [
+        -0.3,
+        -0.3,
+        -0.47,
+        0.3,
+        0.3,
+        0.9
+      ],
+      "hit": "alpha",
+      "tiers": [
+        {
+          "ppm": 257.292,
+          "file": "B2/robot-tube.webp",
+          "mask": "B2/robot-tube.mask.png",
+          "size": [
+            224,
+            308
+          ],
+          "anchor_px": [
+            142,
+            205
+          ],
+          "cut": {
+            "x": 142,
+            "y": 205,
+            "slope": 0.2726
+          }
+        }
+      ]
+    },
+    "lantern": {
+      "footprint": [
+        -0.15,
+        -0.15,
+        -0.35,
+        0.15,
+        0.15,
+        0.6
+      ],
+      "hit": "alpha",
+      "tiers": [
+        {
+          "ppm": 257.292,
+          "file": "B2/lantern.webp",
+          "size": [
+            108,
+            233
+          ],
+          "anchor_px": [
+            54.0,
+            163.1
+          ]
+        }
+      ]
+    }
+  },
+  "textures": {
+    "floor-tile": {
+      "file": "B2/floor-tile.webp",
+      "metres": 0.6
+    },
+    "wall-tile": {
+      "file": "B2/wall-tile.webp",
+      "metres": 2.0
+    }
+  }
+}

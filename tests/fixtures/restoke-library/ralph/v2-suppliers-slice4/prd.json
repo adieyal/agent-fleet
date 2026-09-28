@@ -1,0 +1,296 @@
+{
+  "project": "Restoke V2 suppliers migration: slice 4, supplier editing",
+  "status": "Reviewed by the human 2026-09-25: every questions.md recommendation accepted, plus one V2_SUPPLIERS flag (US-072); see corrections.md",
+  "branchName": "ralph/v2-suppliers-slice4",
+  "baseBranch": "adi/v2-suppliers",
+  "worktree": "/home/adi/Development/restoke/webapp/worktrees/v2-slice4",
+  "plan": null,
+  "description": "Move the supplier-level actions of the suppliers list (/app/suppliers) and the supplier page (/app/suppliers/<id>) to V2: New Supplier, New Supplier From Invoic\u2026",
+  "objectives": [
+    "O1 Slice 4: every 'Slice 4 \u2014' entry in suppliers/parity.yaml and supplier-detail/parity.yaml is done in V2 under the one V2_SUPPLIERS flag (US-072), with a pari\u2026",
+    "O2 Legacy look: each dialog uses its legacy template's markup and classes (supplier_details_modal_internal.html, new_supplier_modal_internal.html, supplier_quic\u2026",
+    "O3 Safe writes: every V2 supplier endpoint is tenancy-scoped and enforces on the server the rules legacy applies only in templates (the Actions menu's `not isRe\u2026",
+    "O4 Simplicity: the smallest code that meets each story; unlikely edge cases are logged, not handled."
+  ],
+  "outOfScope": [
+    "Bulk actions on the suppliers list (Bulk delete, Bulk mark read only/editable), row selection, merge suppliers, copy supplier items to other venues (supplier/<i\u2026",
+    "Import suppliers from Xero / Gmail in the '+ New' menu: stay LegacyLinks",
+    "The External Customers view, HQ, and the SupplierKey portal (supplier_details for anonymous key holders): keep legacy",
+    "The legacy modals' dead code (.btn-back/.btn-next/.analysis/.step-2 upload step, analysis[] import, data-submit-url): not migrated",
+    "Fixing legacy endpoints: the holes found while scoping (set_readonly_value without an admin check and audit, delete_supplier and create_supplier_from_invoice ov\u2026",
+    "A frontend Mixpanel client (the upgrade dialog's 'Upgrade Package Modal Show' event): see questions.md"
+  ],
+  "userStories": [
+    {
+      "id": "US-058",
+      "objective": "O1",
+      "title": "Slice 4 parity checklist for the supplier dialogs and actions",
+      "priority": 58,
+      "passes": true,
+      "dependsOn": [],
+      "startCommit": "6ff66e20ad6889b6677379bbfd00ee2902c36b91",
+      "attempts": 1,
+      "mergedAt": "d65a7019242d1aded2584b39a6d4020bab9fc0dd",
+      "acceptanceCriteria": [
+        "Edit details (supplier_details_modal_internal.html; base.js show.bs.modal '#supplierDetailsModal' ~9507, sendVia change\u2026",
+        "New Supplier (new_supplier_modal_internal.html, NewSupplierForm forms.py:532; base.js ~9615-9742 incl. sendVia show/hide\u2026"
+      ]
+    },
+    {
+      "id": "US-072",
+      "objective": "O1",
+      "title": "One V2 suppliers flag",
+      "priority": 57.5,
+      "passes": true,
+      "dependsOn": [],
+      "startCommit": "6ff66e20ad6889b6677379bbfd00ee2902c36b91",
+      "attempts": 1,
+      "mergedAt": "cb133e52037b5a7deebb552a189e6fe4c59fa0c1",
+      "acceptanceCriteria": [
+        "restoke/main/choices.py: FeatureType.V2_SUPPLIERS = \"enableV2Suppliers\" replaces V2_SUPPLIERS_LIST and V2_SUPPLIER_DETAI\u2026",
+        "Every reference moves to the new flag: supplier_views.py, templates/index_blocks/side_menu.html (has_feature_flag:\"enabl\u2026"
+      ]
+    },
+    {
+      "id": "US-059",
+      "objective": "O2",
+      "title": "The supplier Actions menu opens V2 dialogs, and shows Change in other venues",
+      "priority": 59,
+      "passes": true,
+      "dependsOn": [
+        "US-058",
+        "US-072"
+      ],
+      "startCommit": "cb133e52037b5a7deebb552a189e6fe4c59fa0c1",
+      "attempts": 1,
+      "mergedAt": "62d57cb31bc341047e284199ee89732f616c0825",
+      "acceptanceCriteria": [
+        "The menu stays in entities/supplier and takes the slice-4 actions as callbacks/props; the dialogs live in a new features\u2026",
+        "GET /api/v2/suppliers/ and /api/v2/suppliers/<id>/ access carry hasMultipleRestaurants (ru.has_multiple_restaurants()) a\u2026"
+      ]
+    },
+    {
+      "id": "US-060",
+      "objective": "O3",
+      "title": "GET /api/v2/suppliers/<id>/details/: the supplier as the edit dialog shows it",
+      "priority": 60,
+      "passes": true,
+      "dependsOn": [
+        "US-058",
+        "US-072"
+      ],
+      "startCommit": "cb133e52037b5a7deebb552a189e6fe4c59fa0c1",
+      "attempts": 1,
+      "mergedAt": "20586557806325750dca44910fd2a9d4f734c0b6",
+      "acceptanceCriteria": [
+        "Returns every field US-058 lists for the edit dialog with supplier_details' values (model_to_dict mapping as base.js app\u2026",
+        "Returns the option lists: supplier types, the restaurant's departments, the restaurant's storage areas (with legacy's '<\u2026"
+      ]
+    },
+    {
+      "id": "US-061",
+      "objective": "O2",
+      "title": "Edit Supplier Details opens as a V2 dialog",
+      "priority": 61,
+      "passes": true,
+      "dependsOn": [
+        "US-059",
+        "US-060"
+      ],
+      "startCommit": "62d57cb31bc341047e284199ee89732f616c0825",
+      "attempts": 1,
+      "blocked": false,
+      "mergedAt": "a317cc7e17ddea210d8f017f627c8cbdb809e50c",
+      "acceptanceCriteria": [
+        "Structure, collapsible cards (General Details open; Contact Details, Order Settings, Advanced Settings, Price Update Set\u2026",
+        "An external CPK customer hides the .hide-for-external-cpk-customer-fields fields, shows the .hide-for-suppliers switch a\u2026"
+      ]
+    },
+    {
+      "id": "US-062",
+      "objective": "O3",
+      "title": "Save supplier details",
+      "priority": 62,
+      "passes": true,
+      "dependsOn": [
+        "US-061"
+      ],
+      "startCommit": "a317cc7e17ddea210d8f017f627c8cbdb809e50c",
+      "attempts": 1,
+      "mergedAt": "a9616ddaaab0d222cb30a1a765b6c436ce71d237",
+      "acceptanceCriteria": [
+        "Each field is stored as new_supplier does (supplier_views.py:1263-1354): name stripped, deliveryDays as {'days': [...]},\u2026",
+        "The server enforces the menu's rule: 403 unless is_supplier_editable (not isReadOnly, or admin); tests prove the 403 and\u2026"
+      ]
+    },
+    {
+      "id": "US-063",
+      "objective": "O3",
+      "title": "New Supplier",
+      "priority": 63,
+      "passes": true,
+      "dependsOn": [
+        "US-059"
+      ],
+      "startCommit": "62d57cb31bc341047e284199ee89732f616c0825",
+      "attempts": 1,
+      "blocked": false,
+      "mergedAt": "d210c6bb10d87b83f7a3f1cdc39d65e99e288847",
+      "acceptanceCriteria": [
+        "POST /api/v2/suppliers/ creates the supplier with the fields the dialog shows, stored as new_supplier does without suppl\u2026",
+        "Fields and show conditions match NewSupplierForm (name, supplierType; departments and Order Via with the orders feature;\u2026"
+      ]
+    },
+    {
+      "id": "US-064",
+      "objective": "O3",
+      "title": "New Supplier From Invoice",
+      "priority": 64,
+      "passes": true,
+      "dependsOn": [
+        "US-063"
+      ],
+      "startCommit": "d210c6bb10d87b83f7a3f1cdc39d65e99e288847",
+      "attempts": 3,
+      "blocked": false,
+      "mergedAt": "39bb4cc5c0e83dc286444704fb461258211f1b2f",
+      "acceptanceCriteria": [
+        "The endpoint takes up to 10 files (image/* or PDF, multipart) and does what create_supplier_from_invoice does (supplier_\u2026",
+        "No vendor found answers 400 with legacy's message 'Could not find supplier details in the invoice, please try another';\u2026"
+      ]
+    },
+    {
+      "id": "US-065",
+      "objective": "O3",
+      "title": "Mark a supplier read only or editable",
+      "priority": 65,
+      "passes": true,
+      "dependsOn": [
+        "US-059"
+      ],
+      "startCommit": "62d57cb31bc341047e284199ee89732f616c0825",
+      "attempts": 1,
+      "mergedAt": "b330a5641bc1c7bc7daf9c878728e1ad7946ca28",
+      "acceptanceCriteria": [
+        "The entry shows for an admin (is_admin: restaurant administrator or HQ admin) on a supplier that is not an external CPK\u2026",
+        "The confirmation header and body are legacy's exact wording for each direction, with the 'Yes' button"
+      ]
+    },
+    {
+      "id": "US-066",
+      "objective": "O3",
+      "title": "Delete a supplier",
+      "priority": 66,
+      "passes": true,
+      "dependsOn": [
+        "US-059"
+      ],
+      "startCommit": "62d57cb31bc341047e284199ee89732f616c0825",
+      "attempts": 1,
+      "blocked": false,
+      "mergedAt": "b996af392af1fbc5237ac30555ddb850bf4860fd",
+      "acceptanceCriteria": [
+        "The entry shows where the menu's editable block shows it (not isReadOnly or is_admin); header 'Are you sure you want to\u2026",
+        "DELETE runs SupplierManager.delete_supplier (soft delete; each item's RecipeItems frozen to free text, active master sto\u2026"
+      ]
+    },
+    {
+      "id": "US-067",
+      "objective": "O3",
+      "title": "GET /api/v2/suppliers/<id>/advanced/ and the Advanced Settings dialog, read only",
+      "priority": 67,
+      "passes": true,
+      "dependsOn": [
+        "US-059"
+      ],
+      "startCommit": "b330a5641bc1c7bc7daf9c878728e1ad7946ca28",
+      "attempts": 1,
+      "mergedAt": "58f01f80e0b00a52ff89d1eb929ff62a3f259513",
+      "acceptanceCriteria": [
+        "The read returns what supplier_advanced_settings returns that the dialog shows (supplier_views.py:2369-2435): alternativ\u2026",
+        "The dialog shows the four sections with legacy's labels, instructions and empty state ('There are no other extracted nam\u2026"
+      ]
+    },
+    {
+      "id": "US-068",
+      "objective": "O3",
+      "title": "Save advanced supplier settings",
+      "priority": 68,
+      "passes": true,
+      "dependsOn": [
+        "US-067"
+      ],
+      "startCommit": "58f01f80e0b00a52ff89d1eb929ff62a3f259513",
+      "attempts": 1,
+      "mergedAt": "a147c0da8f136bce4aafe90cf46c84251bef3cbe",
+      "acceptanceCriteria": [
+        "Stored as save_supplier_advanced_settings does (supplier_views.py:2438-2539): alternative names kept, tri-states 'defaul\u2026",
+        "The legacy faults listed in questions.md (xero_code/xero_contact_id stored as bogus tracking categories; names with comm\u2026"
+      ]
+    },
+    {
+      "id": "US-069",
+      "objective": "O3",
+      "title": "Change in other venues, and the upgrade dialog",
+      "priority": 69,
+      "passes": true,
+      "dependsOn": [
+        "US-059"
+      ],
+      "startCommit": "b996af392af1fbc5237ac30555ddb850bf4860fd",
+      "attempts": 1,
+      "blocked": false,
+      "mergedAt": "388d0e8d5fe8d7d5c01e4e737ee465dcf4dc01d7",
+      "acceptanceCriteria": [
+        "GET returns the title, one row per venue from ru.other_active_restaurants(perm='can_manage_procedure', limit_to_hq_if_av\u2026",
+        "POST takes the chosen item ids and copy options, saves the options to preferences and runs copy_supplier / SupplierManag\u2026"
+      ]
+    },
+    {
+      "id": "US-070",
+      "objective": "O1",
+      "title": "Slice 4 goes live under V2_SUPPLIERS",
+      "priority": 70,
+      "passes": true,
+      "dependsOn": [
+        "US-058",
+        "US-059",
+        "US-060",
+        "US-061",
+        "US-062",
+        "US-063"
+      ],
+      "startCommit": "39bb4cc5c0e83dc286444704fb461258211f1b2f",
+      "attempts": 1,
+      "mergedAt": "a211bfd04cbb14053f907573bbdf4d426683b643",
+      "acceptanceCriteria": [
+        "FLAGGED_PAGES rows list the legacy URL names slice 4 replaces (name the unnamed re_paths first, as US-040 did): new_supp\u2026",
+        "No slice-4 entry on /app/suppliers or /app/suppliers/<id> (Actions menu, row/card menus, 'No departments set', '+ New' N\u2026"
+      ]
+    },
+    {
+      "id": "US-071",
+      "objective": "O1",
+      "title": "Slice 4 browser smoke test and ready parity checklists",
+      "priority": 71,
+      "passes": false,
+      "dependsOn": [
+        "US-070"
+      ],
+      "startCommit": "a211bfd04cbb14053f907573bbdf4d426683b643",
+      "attempts": 2,
+      "blocked": false,
+      "acceptanceCriteria": [
+        "With V2_SUPPLIERS on: create a supplier with New Supplier and land on its page; edit its details and reload to see them;\u2026",
+        "scripts/v2-e2e.sh restoke/tests/e2e/features/v2 passes and the run is reported"
+      ]
+    }
+  ],
+  "decisions": [
+    "Human, 2026-09-25 (corrections.md): one flag, FeatureType.V2_SUPPLIERS (enableV2Suppliers), replaces V2_SUPPLIERS_LIST and V2_SUPPLIER_DETAIL (US-072); slice 4\u2026",
+    "Human, 2026-09-25 (corrections.md): server-side permissions enforce exactly the rules the legacy menus apply when showing entries (the dropdown's `not isReadOnl\u2026",
+    "Human, 2026-09-25 (corrections.md): supplier dialogs open from local state like legacy modals (reload closes them), except New Supplier, which gets a search par\u2026",
+    "Carried from slice 3: every V2 read and write goes through restoke/main/modules/suppliers; adapters may wrap legacy code behind a port and name it in the commit\u2026"
+  ],
+  "openQuestions": "See questions.md"
+}

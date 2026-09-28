@@ -6,8 +6,8 @@ from typing import Callable
 from .application import Commands
 from .application.ports import AttentionRepository
 from .application.observations import HostObservation, ingest_attention
-from .application.input_observations import InputObservation, ingest_input
-from .domain import AttentionItem, StreamContext, STATES
+from .application.input_observations import InputObservation, close_refusals, ingest_input
+from .domain import AttentionItem, ItemResolved, StreamContext, STATES
 
 
 class AttentionFacade:
@@ -32,6 +32,19 @@ class AttentionFacade:
 
     def observe_input(self, host: str, observation: InputObservation, *, project_id: str | None = None) -> None:
         ingest_input(self.repository, host, observation, project_id)
+
+    def close_refusals(self, host: HostObservation, *, complete: bool) -> bool:
+        """Resolve job refusal batches whose step has ended; report whether any were."""
+        return close_refusals(self.repository, host, complete=complete, now=self.clock())
+
+    def dismiss_refusals(self, item_id: str, *, actor: str) -> AttentionItem:
+        item = self.repository.get(item_id)
+        if not item.refusals:
+            raise ValueError("only a job step's permission refusals can be dismissed")
+        if item.state == "resolved":
+            raise ItemResolved("attention item is resolved")
+        return self.commands.change(item_id, "resolved", actor,
+                                    details="dismissed; the job's permissions are unchanged")
 
     def observe(self, host: HostObservation, *, owners: set[str] | None = None,
                 raise_items: bool = True) -> bool:

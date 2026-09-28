@@ -22,15 +22,16 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from fleet import transport
 from fleet.composition import (Store, open_attention, open_execution, open_library, open_store,
                                open_workspace, open_work, open_decisions)
-from fleet.modules.attention import InputObservation, ItemResolved
+from fleet.modules.attention import InputObservation, ItemResolved, refusal_rules
 from fleet.modules.workspace import (NoVacancy, FOCUSES, AlreadyShuttered, NotShuttered,
                                      WorkspaceFacade, Registry)
 from fleet.projections.workspace import annotate, resolve, registry_config
 from fleet.projections.project import project_status
 from fleet.projections.bench import bench_rooms, bench_state
 from fleet.transport import FleetError, Host
-from fleet.web.documents import DocumentAccessDenied, fetch_document
+from fleet.web.documents import AssetNotImage, AssetTooLarge, DocumentAccessDenied, fetch_asset, fetch_document
 from fleet.web.fixture import FixtureLibrary, FixtureState
+from fleet.web.job_store import DocumentKeeper, ProjectDocuments
 from fleet.web.library import ProjectLibrary
 from fleet.web.live import AlreadyHoused, LiveWorkspace
 from fleet.web.ingester import observe_runs
@@ -38,12 +39,24 @@ from fleet.web.ingester import observe_runs
 WEB_ROOT = Path(__file__).parent.resolve()
 INDEX_PATH = WEB_ROOT / "index.html"
 APP_DIRECTORIES = ("css", "js")  # the deck's own code, read at startup together with the page
-STATIC_PREFIXES = ("/vendor/", "/assets/")
+STATIC_PREFIXES = ("/vendor/", "/assets/", "/prototype/")
+PROTOTYPES = {"/prototype/bakeoff": "/prototype/bakeoff.html",  # art prototypes; not linked from the deck
+              "/prototype/bench": "/prototype/bench.html",
+              "/prototype/world": "/prototype/world.html",
+              "/prototype/kit": "/prototype/kit.html",
+              "/prototype/floor": "/prototype/floor.html",
+              "/prototype/robot": "/prototype/robot.html"}
+REPO_ROOT = WEB_ROOT.parent.parent
+# Source-checkout folders the art prototypes read; absent from an installed package, so they 404 there.
+CHECKOUT_FOLDERS = {"/art/bakeoff/": REPO_ROOT / "art" / "bakeoff", "/concept/": REPO_ROOT / "docs" / "images" / "concept"}
 STATIC_TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
+                ".html": "text/html; charset=utf-8", ".hdr": "image/vnd.radiance",
                 ".glb": "model/gltf-binary", ".gltf": "model/gltf+json",
                 ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".json": "application/json",
                 ".md": "text/markdown; charset=utf-8", ".txt": "text/plain; charset=utf-8"}
+ASSET_POLICY = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox"
 ATTENTION_ACTIONS = ("acknowledge", "snooze", "reopen")
+REFUSAL_ACTIONS = ("allow", "dismiss")   # a job step's permission refusals
 FLOOR_CHANGES = ("/api/move-in", "/api/link", "/api/merge", "/api/shutter", "/api/restore")
 EVENTS_PER_JOB = "15"
 STREAM_SILENCE_LIMIT = 20  # seconds without a heartbeat before the stream is considered dead
@@ -75,7 +88,7 @@ class FleetState(LiveWorkspace):
                  workspace: WorkspaceFacade | None = None,
                  load_capacity: Callable[[], int] | None = None,
                  pipelines: dict[str, dict[str, str]] | None = None,
-                 store: Store | None = None) -> None:
+                 store: Store | None = None, documents: ProjectDocuments | None = None) -> None:
         self.hosts = hosts
         self.project_labels = project_labels or {}
         self.store = store if store is not None else open_store()
@@ -97,6 +110,23 @@ class FleetState(LiveWorkspace):
         self.pipeline_config = pipelines or {}
         self.pipeline_runs = {}
         self.pipeline_seq = 0
+        self.documents = documents if documents is not None else ProjectDocuments()
+        self.keeper = DocumentKeeper(self.documents, self.fetch_raw)
+
+    def fetch_raw(self, host_name: str, job_id: str, document_id: str) -> dict[str, Any]:
+        """A job document's Markdown as its host serves it, before rendering."""
+        host = next(host for host in self.hosts if host.name == host_name)
+        return transport.call(host, ["read", job_id, document_id], timeout=30)
+
+    def keep_documents(self, host_name: str, job: dict[str, Any]) -> None:
+        """Copy the job's new and changed documents into its project's store; a job with no project has none."""
+        project_id = resolve(self.registry, host_name, job)["project_id"]
+        if project_id is not None and job.get("documents"):
+            self.keeper.observe(host_name, project_id, job)
+
+    def job_hosts(self) -> dict[str, tuple[bool, set[str]]]:
+        with self.changed:
+            return {name: (bool(entry["ok"]), set(entry["jobs"])) for name, entry in self.by_host.items()}
 
     def follow_history(self, stop: threading.Event) -> None:
         while not stop.is_set():
@@ -122,6 +152,9 @@ class FleetState(LiveWorkspace):
                     "jobs": [resolve(self.registry, host_name, job) for job in host["jobs"].values()],
                     "sessions": [resolve(self.registry, host_name, session) for session in host["sessions"].values()]},
                     owners=owners, raise_items=not heartbeat)
+                # A heartbeat follows a full pass over the host's jobs, so absent jobs are gone.
+                reconciled = self.attention.close_refusals(
+                    {**host, "jobs": list(host["jobs"].values()), "sessions": []}, complete=heartbeat) or reconciled
             if previous == self.by_host[host_name] and self.store.latest_sequence() == sequence and not reconciled:
                 return
             self.version += 1
@@ -185,6 +218,10 @@ class FleetState(LiveWorkspace):
         host = next(host for host in self.hosts if host.name == host_name)
         return fetch_document(host, job_id, document_id)
 
+    def read_asset(self, host_name: str, job_id: str, document_id: str, asset_path: str) -> tuple[str, bytes]:
+        host = next(host for host in self.hosts if host.name == host_name)
+        return fetch_asset(host, job_id, document_id, asset_path)
+
 
 def follow_host(state: FleetState, host: Host) -> None:
     """Keep one `fleetd stream` running for the host, reconnecting when it dies or goes quiet."""
@@ -245,6 +282,7 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
         job = message["job"]
         state.update(host.name, lambda entry: entry["jobs"].__setitem__(job["id"], job),
                      owners={f"job:{host.name}:{job['id']}"})
+        state.keep_documents(host.name, job)
     elif kind == "removed":
         state.update(host.name, lambda entry: entry["jobs"].pop(message["id"], None),
                      owners={f"job:{host.name}:{message['id']}"})
@@ -263,6 +301,26 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
         state.update(host.name, lambda entry: entry.update(ok=False, error=message.get("error")))
 
 
+def refusal_detail(item) -> dict[str, Any]:
+    context = item.stream_context
+    return {"host": context.host, "job": context.owner_id, "step": context.step, "state": item.state,
+            "resolution": item.resolution_details, "rules": refusal_rules(item.refusals),
+            "requests": [{"tool": refusal.tool, "description": refusal.description, "detail": refusal.detail,
+                          "rules": None if refusal.rules is None else list(refusal.rules),
+                          "denied_by": list(refusal.denied_by)}
+                         for refusal in item.refusals]}
+
+
+def question_detail(item, projects: dict[str, Any]) -> dict[str, Any]:
+    """A session's question, where it waits, and that only its terminal can answer it."""
+    context = item.stream_context
+    project = projects.get(context.project_id) if context.project_id is not None else None
+    return {"host": context.host, "session": context.owner_id, "cwd": context.cwd,
+            "project": project.name if project is not None else None, "label": context.project,
+            "state": item.state, "resolution": item.resolution_details,
+            "questions": [asdict(question) for question in item.questions]}
+
+
 def make_handler(state: FleetState | FixtureState,
                  library: ProjectLibrary | FixtureLibrary | None = None) -> type[BaseHTTPRequestHandler]:
     # Read once so a running server keeps serving the page and code that match its API.
@@ -279,15 +337,31 @@ def make_handler(state: FleetState | FixtureState,
                 self.stream()
             elif path == "/api/doc":
                 self.document()
+            elif path == "/api/doc/asset":
+                self.asset("host", "job")
+            elif path == "/api/library/asset":
+                self.asset("project")
             elif path == "/api/library":
                 try:
                     documents = library.list()
                 except ValueError as error:
                     self.respond(400, "application/json", json.dumps({"error": str(error)}).encode())
                     return
-                self.respond(200, "application/json", json.dumps({"documents": documents}).encode())
+                for document in documents:
+                    document["project_id"] = state.library_project_id(document["project"])
+                self.respond(200, "application/json", json.dumps(
+                    {"documents": documents, "projects": state.library_projects()}).encode())
             elif path == "/api/library/doc":
                 self.library_document()
+            elif path == "/api/library/overview":
+                try:
+                    projects = state.library_overview(library)
+                except ValueError as error:
+                    self.respond(400, "application/json", json.dumps({"error": str(error)}).encode())
+                    return
+                self.respond(200, "application/json", json.dumps({"projects": projects}).encode())
+            elif path in ("/api/library/job", "/api/library/working"):
+                self.stored_document(path.rsplit("/", 1)[1])
             elif path == "/api/move-in":
                 self.move_in_options()
             elif path == "/api/state":
@@ -303,7 +377,11 @@ def make_handler(state: FleetState | FixtureState,
                         item.source, item.source_reference)
                     detail = {"id": item.id, "question": item.headline,
                               "context": item.context_reference, "options": item.options,
-                              "proposal": asdict(proposal) if proposal is not None else None}
+                              "proposal": asdict(proposal) if proposal is not None else None,
+                              # a job step's refused requests, answered with actions rather than words
+                              "refusals": refusal_detail(item) if item.refusals else None,
+                              "session_question": (question_detail(item, state.known_projects())
+                                                   if item.questions else None)}
                 except LookupError as error:
                     self.error(404, str(error))
                     return
@@ -323,17 +401,22 @@ def make_handler(state: FleetState | FixtureState,
                 self.respond(200, "application/json", json.dumps(result).encode())
             elif path in ("/", "/index.html"):
                 self.respond(200, "text/html; charset=utf-8", index_page)
+            elif path in PROTOTYPES:
+                self.static_file(PROTOTYPES[path])
             elif path in app_files:
                 self.respond(200, STATIC_TYPES.get(Path(path).suffix, "application/octet-stream"), app_files[path])
             elif path.startswith(STATIC_PREFIXES):
                 self.static_file(path)
+            elif path.startswith(tuple(CHECKOUT_FOLDERS)):
+                self.checkout_file(path)
             else:
                 self.respond(404, "text/plain", b"not found")
 
         def do_POST(self) -> None:  # noqa: N802 — http.server naming
             path = self.path.split("?", 1)[0]
             action = path.removeprefix("/api/attention/") if path.startswith("/api/attention/") else None
-            if path not in FLOOR_CHANGES + ("/api/focus", "/api/decision/answer") and action not in ATTENTION_ACTIONS:
+            if (path not in FLOOR_CHANGES + ("/api/focus", "/api/decision/answer")
+                    and action not in ATTENTION_ACTIONS + REFUSAL_ACTIONS):
                 self.respond(404, "text/plain", b"not found")
             elif not self.same_origin():
                 self.respond(403, "application/json", b'{"error": "cross-origin writes are refused"}')
@@ -347,6 +430,8 @@ def make_handler(state: FleetState | FixtureState,
                 body = body if isinstance(body, dict) else {}
                 if path == "/api/decision/answer":
                     self.answer(body)
+                elif action in REFUSAL_ACTIONS:
+                    self.refusals(action, body)
                 elif action:
                     self.attention(action, body)
                 elif path in ("/api/move-in", "/api/link"):
@@ -457,6 +542,30 @@ def make_handler(state: FleetState | FixtureState,
             state.bump()
             self.respond(200, "application/json", json.dumps(asdict(decision), default=str).encode())
 
+        def refusals(self, action: str, body: dict[str, Any]) -> None:
+            """POST /api/attention/allow {"id": item id, "scope": "refused" | "bash"} — add permission rules to
+            the job on its worker and continue the refused step there.
+            POST /api/attention/dismiss {"id": item id} — resolve the batch and change nothing."""
+            if not isinstance(body.get("id"), str) or (action == "allow" and not isinstance(body.get("scope"), str)):
+                self.error(400, "the item's id is required" + (", and a scope" if action == "allow" else ""))
+                return
+            try:
+                if action == "allow":
+                    details = open_execution(state.store).grant_permissions(body["id"], body["scope"], actor="web-user")
+                else:
+                    details = state.attention.dismiss_refusals(body["id"], actor="web-user").resolution_details
+            except LookupError as error:
+                self.error(404, str(error.args[0]))
+                return
+            except ItemResolved as error:
+                self.error(409, str(error))
+                return
+            except (FleetError, ValueError, RuntimeError) as error:
+                self.error(400, str(error))
+                return
+            state.bump()
+            self.respond(200, "application/json", json.dumps({"id": body["id"], "resolution": details}).encode())
+
         def attention(self, action: str, body: dict[str, Any]) -> None:
             """POST /api/attention/acknowledge|snooze|reopen {"id": item id, "seconds": snooze length}"""
             if not isinstance(body.get("id"), str):
@@ -485,6 +594,17 @@ def make_handler(state: FleetState | FixtureState,
             content_type = STATIC_TYPES.get(target.suffix.lower(), "application/octet-stream")
             self.respond(200, content_type, target.read_bytes(), cache_seconds=3600)
 
+        def checkout_file(self, path: str) -> None:
+            """Art and concept files from a source checkout, for the prototypes; nothing outside those folders."""
+            prefix = next(p for p in CHECKOUT_FOLDERS if path.startswith(p))
+            folder = CHECKOUT_FOLDERS[prefix].resolve()
+            target = (folder / unquote(path.removeprefix(prefix))).resolve()
+            if not target.is_relative_to(folder) or not target.is_file():
+                self.respond(404, "text/plain", b"not found")
+                return
+            content_type = STATIC_TYPES.get(target.suffix.lower(), "application/octet-stream")
+            self.respond(200, content_type, target.read_bytes(), cache_seconds=3600)
+
         def document(self) -> None:
             """GET /api/doc?host=&job=&id= — one rendered document; ids come from a job's `documents` list."""
             query = {key: values[0] for key, values in parse_qs(urlsplit(self.path).query).items()}
@@ -501,6 +621,39 @@ def make_handler(state: FleetState | FixtureState,
                 return
             self.respond(200, "application/json", json.dumps(body).encode())
 
+        def asset(self, *owner: str) -> None:
+            """GET /api/doc/asset?host=&job=&id=&path= or /api/library/asset?project=&id=&path= — an image
+            a document links to, resolved beside the document under the document's own roots."""
+            query = {key: values[0] for key, values in parse_qs(urlsplit(self.path).query).items()}
+            if not all(query.get(key) for key in (*owner, "id", "path")) or (
+                    "host" in owner and query["host"] not in state.host_names()):
+                self.error(400, f"{', '.join(owner)}, id and path are required")
+                return
+            try:
+                if "host" in owner:
+                    found = state.read_asset(query["host"], query["job"], query["id"], query["path"])
+                else:
+                    found = library.read_asset(query["project"], query["id"], query["path"])
+            except DocumentAccessDenied as error:
+                self.error(403, str(error))
+                return
+            except AssetNotImage as error:
+                self.error(415, str(error))
+                return
+            except AssetTooLarge as error:
+                self.error(413, str(error))
+                return
+            except FleetError as error:
+                self.error(404, str(error))
+                return
+            if found is None:
+                self.error(404, "image not found")
+                return
+            content_type, content = found
+            # an SVG can carry script: the policy keeps it inert even if opened on its own
+            self.respond(200, content_type, content, headers={"Content-Security-Policy": ASSET_POLICY,
+                                                              "X-Content-Type-Options": "nosniff"})
+
         def library_document(self) -> None:
             """GET /api/library/doc?project=&id= — Markdown under a configured local root."""
             query = {key: values[0] for key, values in parse_qs(urlsplit(self.path).query).items()}
@@ -510,6 +663,20 @@ def make_handler(state: FleetState | FixtureState,
             body = library.read(query["project"], query["id"])
             if body is None:
                 self.respond(404, "application/json", b'{"error": "document not found"}')
+                return
+            self.respond(200, "application/json", json.dumps(body).encode())
+
+        def stored_document(self, section: str) -> None:
+            """GET /api/library/job?project=&job=&id= or /api/library/working?project=&id= — from the project's store,
+            so it reads whether or not the job is still on its host."""
+            query = {key: values[0] for key, values in parse_qs(urlsplit(self.path).query).items()}
+            if not query.get("project") or not query.get("id") or (section == "job" and not query.get("job")):
+                self.respond(400, "application/json", b'{"error": "project, id and (for a job) job are required"}')
+                return
+            body = (state.documents.read(query["project"], query["job"], query["id"]) if section == "job"
+                    else state.documents.read_working(query["project"], query["id"]))
+            if body is None:
+                self.respond(404, "application/json", b'{"error": "document not in the project store"}')
                 return
             self.respond(200, "application/json", json.dumps(body).encode())
 
@@ -539,9 +706,12 @@ def make_handler(state: FleetState | FixtureState,
             except (BrokenPipeError, ConnectionResetError):
                 return
 
-        def respond(self, status: int, content_type: str, body: bytes, *, cache_seconds: int = 0) -> None:
+        def respond(self, status: int, content_type: str, body: bytes, *, cache_seconds: int = 0,
+                    headers: dict[str, str] | None = None) -> None:
             self.send_response(status)
             self.send_header("Content-Type", content_type)
+            for name, value in (headers or {}).items():
+                self.send_header(name, value)
             self.send_header("Cache-Control", f"max-age={cache_seconds}" if cache_seconds else "no-store")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
