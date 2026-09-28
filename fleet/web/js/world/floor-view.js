@@ -322,7 +322,7 @@ function place(view) {
     o.el.style.left = `${x + ax * view.ppm}px`;
     if (o.kind === 'name') { o.el.style.top = `${y + ay * view.ppm - 22 * k}px`; o.el.style.transform = `translate(-50%, 0) scale(${k})`; }
     else {
-      o.el.style.color = o.color;
+      o.el.style.setProperty('--hc', o.color);   // (the deck's glyph takes its colour from --hc)
       o.el.style.top = `${y + ay * view.ppm - 26 * k}px`;   // (above the name)
       o.el.style.transform = `translate(-50%, -100%) scale(${Math.max(1, 1.6 * scale)})`;
     }
