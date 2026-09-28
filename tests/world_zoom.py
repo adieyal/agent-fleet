@@ -220,7 +220,9 @@ AGREEMENT = """async ({ ids, frames: most }) => {
   // (from here on synchronous: no engine frame runs while its state is borrowed)
   const out = [];
   const keep = { steady: w.steady, scaledPpm: w.scaledPpm, dpr: w.dpr };
-  w.steady = false; w.scaledPpm = Infinity; w.dpr = 1;   // (drawn from the tiers themselves, unsnapped)
+  // (drawn from the tiers themselves, unsnapped, smoothed as the copies drawn at rest are)
+  const keepSmoothing = w.smoothing;
+  w.steady = false; w.scaledPpm = Infinity; w.dpr = 1; w.smoothing = 'high';
   try {
     for (const id of ids) {
       const s = w.sprites.get(id);
@@ -244,6 +246,45 @@ AGREEMENT = """async ({ ids, frames: most }) => {
         out.push({ id, tiers: [i, i + 1], ppm, ...worst, centroid: centre });
       }
     }
-  } finally { Object.assign(w, keep); }
+  } finally { Object.assign(w, keep); w.smoothing = keepSmoothing; }
   return out;
 }"""
+
+
+# Long tasks and long animation frames (PerformanceObserver), and every animation frame's interval from a rAF loop of
+# its own, recorded from install until read back with LONG_TASKS_READ.
+LONG_TASKS = """(() => {
+  const log = window.zoomLongTasks = { tasks: [], frames: [], on: true };
+  for (const type of ['longtask', 'long-animation-frame']) {
+    try {
+      new PerformanceObserver(list => { for (const e of list.getEntries()) if (log.on) log.tasks.push({ type, start: e.startTime, ms: e.duration }); })
+        .observe({ type });
+    } catch { /* (an entry type this browser doesn't have) */ }
+  }
+  let last = null;
+  const tick = t => { if (last !== null && log.on) log.frames.push(t - last); last = t; if (log.on) requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+})()"""
+LONG_TASKS_READ = "(() => { const log = window.zoomLongTasks; log.on = false; return { tasks: log.tasks, frames: log.frames }; })()"
+
+
+def zoom_bursts(page: Page, direction: int, *, bursts: int = 5, ticks: int = 8, delta: float = 60, pause_ms: int = 400) -> None:
+    """Wheel out (-1) or in (1) in bursts with pauses between, as a hand on a wheel does: each pause lets the zoom
+    settle and the ground be rebuilt for it, while the next burst starts."""
+    page.mouse.move(720, 450)
+    for _ in range(bursts):
+        for _ in range(ticks):
+            page.mouse.wheel(0, -delta * direction)
+            page.wait_for_timeout(16)
+        page.wait_for_timeout(pause_ms)
+
+
+def long_task_summary(record: dict[str, Any]) -> dict[str, Any]:
+    """The longest task (either entry type), how many ran over 50 ms, and the p50/p95/max animation frame interval."""
+    tasks = [t["ms"] for t in record["tasks"] if t["type"] == "longtask"]
+    frames = [t["ms"] for t in record["tasks"] if t["type"] == "long-animation-frame"]
+    iv = record["frames"]
+    return {"longest_task_ms": round(max(tasks or [0]), 1), "tasks_over_50ms": len(tasks),
+            "longest_loaf_ms": round(max(frames or [0]), 1), "loafs_over_50ms": len(frames),
+            "frame_p50_ms": round(percentile(iv, 0.5), 1), "frame_p95_ms": round(percentile(iv, 0.95), 1),
+            "frame_max_ms": round(max(iv or [0]), 1), "frames": len(iv)}

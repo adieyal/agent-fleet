@@ -10,19 +10,25 @@ export function canvas(w, h) {
   return c;
 }
 
-// decode() can reject an image that loaded fine (many decodes in flight, a background tab), so a rejection only
-// counts once the image itself failed; otherwise it is retried once.
+// the URL an image was loaded from (loadImage), so a worker can load it again itself instead of being sent its pixels
+const urls = new WeakMap();
+export const urlOf = img => urls.get(img);
+
+// An image as a decoded ImageBitmap: decoded off the main thread and kept decoded, so drawing it never decodes it in
+// a frame (an <img> drawn onto a GPU canvas was decoded again there: a 1 s frame, zoom-out profile 2026-09). A failed
+// decode is retried once before the image counts as missing.
 export async function loadImage(url, attempt = 0) {
-  const img = new Image();
-  img.src = url;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('missing ' + url);
+  const blob = await r.blob();
   try {
-    await img.decode();
+    const img = await createImageBitmap(blob);
+    urls.set(img, r.url);
+    return img;
   } catch {
-    if (img.complete && img.naturalWidth > 0) return img;
     if (attempt === 0) return loadImage(url, 1);
     throw new Error('missing ' + url);
   }
-  return img;
 }
 
 // a greyscale mask image as an alpha-only bitmap

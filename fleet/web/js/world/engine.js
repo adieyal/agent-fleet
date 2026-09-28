@@ -7,6 +7,7 @@
 import { Camera } from './camera.js';
 import { GroundCache } from './ground.js';
 import { pickAt } from './hit.js';
+import { Painter } from './raster.js';
 import { alphaOf, affineFill, canvas, glowDisc, hitMask, loadImage, tinted } from './paint.js';
 import { EDGE_SLOPE, PITCH, YAW, depth, fromScreen, plane, toScreen } from './projection.js';
 import { sortEntries } from './sort.js';
@@ -33,7 +34,8 @@ export class World {
     this.scaled = new Map(); this.drawn = new WeakSet(); this.scaledPpm = 0; this.steady = false; this.continuous = false; this.lastFrameAt = 0;
     this.lastView = null; this.lastTime = null; this.raf = 0; this.timer = 0; this.onTap = null;
     this.t0 = performance.now() / 1000;
-    this.ground = new GroundCache((g, view) => this.paintGround(g, view));
+    this.painter = new Painter(); this.smoothing = 'low';
+    this.ground = new GroundCache((g, view) => this.paintGround(g, view), this.painter, { reduced, ready: () => this.request() });
     this.resize();
     this.detach = this.camera.attach(el, {
       onChange: () => this.request(),
@@ -326,7 +328,10 @@ export class World {
     const fading = this.levels(view.ppm * this.dpr, now, this.camera.goal.ppm * this.dpr);
     const viewChanged = !this.lastView || ['u', 'v', 'ppm', 'W', 'H'].some(k => this.lastView[k] !== view[k]);
     this.steady = !!this.lastView && this.lastView.ppm === view.ppm && this.camera.goal.ppm === view.ppm;
-    if (this.steady && this.scaledPpm !== view.ppm) { this.scaled.clear(); this.scaledPpm = view.ppm; }
+    if (this.steady && this.scaledPpm !== view.ppm) {
+      for (const e of this.scaled.values()) if (e.c) e.c.close();
+      this.scaled.clear(); this.scaledPpm = view.ppm;
+    }
     for (const it of this.items.values()) {   // animated sprites whose frame changed
       const s = this.sprites.get(it.sprite), f = s.shown >= 0 ? this.frameOf(it, s, now) : 0;
       if (f !== it.frame) { it.frame = f; if (!viewChanged) this.dirtyItem(it); }
@@ -336,12 +341,14 @@ export class World {
     else if (this.dirty.groundTier) this.ground.invalidate({ content: false });
     this.ground.base({ ...this.camera.min, W: view.W, H: view.H }, this.dpr);
     const zooming = this.camera.goal.ppm !== view.ppm || (this.lastView && this.lastView.ppm !== view.ppm);
-    const groundChanged = !zooming && this.ground.update(view, this.dpr, { now: !this.ground.snap });
+    // (painted in a worker: a new snapshot comes in some frames after the zoom stops, and crossfades in)
+    const groundChanged = (!zooming && this.ground.update(view, this.dpr)) || !!this.ground.prev;
     let drew = false, full = false;
     // while the camera moves on a machine that can't keep up at a high pixel ratio, frames are drawn at ratio 1 and
     // scaled up; the frame at rest is drawn sharp again
-    const low = moving && this.dpr > 1 && this.lowMotion;    if (viewChanged || this.dirty.all || groundChanged || (this.wasLow && !low)) {
-      if (low) this.paintLow(view, now); else this.paint(view, now, null);
+    const low = moving && this.dpr > 1 && this.lowMotion;
+    if (viewChanged || this.dirty.all || groundChanged || (this.wasLow && !low)) {
+      if (low) this.paintLow(view, now); else { this.canvasSize(this.dpr); this.paint(view, now, null); }
       this.stats.full++; drew = full = true;
     } else if (this.dirty.rects.length) {
       for (const r of merged(this.dirty.rects)) this.paint(view, now, r);   // robots far apart repaint apart
@@ -371,8 +378,8 @@ export class World {
     // when the zoom comes to rest, one more full frame from bitmaps pre-scaled to it: sharper, and what partial
     // repaints will match
     if (drew && !moving && !this.steady) this.dirty.all = true;
-    // (a tier that finishes loading asks for a frame itself)
-    this.continuous = moving || fading || this.dirty.all || this.ground.building;
+    // (a tier that finishes loading, or a ground snapshot coming in, asks for a frame itself)
+    this.continuous = moving || fading || this.dirty.all || !!this.ground.prev;
     if (this.continuous) this.request();
     else {
       this.lastTime = null;   // resting: the next frame starts a fresh clock
@@ -387,57 +394,34 @@ export class World {
     if (this.work > this.budget && this.throttle < THROTTLE_MAX && now - this.throttleAt > 0.5) { this.throttle *= 2; this.throttleAt = now; }
     else if (this.work < this.budget / 2 && this.throttle > 1 && now - this.throttleAt > 1) { this.throttle /= 2; this.throttleAt = now; }
   }
-  // a full frame at pixel ratio 1 into a side canvas, scaled onto the screen
+  // a full frame at pixel ratio 1: the canvas itself drops to CSS pixels, and the browser scales it up to the screen
+  // off the main thread (scaled up here instead, from a side canvas, that is a third of a software frame); the frame
+  // at rest sizes it back (canvasSize)
   paintLow(view, now) {
-    if (!this.lo || this.lo.width !== view.W || this.lo.height !== view.H) this.lo = canvas(view.W, view.H);
-    const g = this.g, dpr = this.dpr;
-    this.g = this.lo.getContext('2d'); this.dpr = 1;
-    try { this.paint(view, now, null); } finally { this.g = g; this.dpr = dpr; }
-    g.save();
-    g.setTransform(1, 0, 0, 1, 0, 0);
-    g.drawImage(this.lo, 0, 0, this.el.width, this.el.height);
-    g.restore();
+    this.canvasSize(1);
+    const dpr = this.dpr;
+    this.dpr = 1;
+    try { this.paint(view, now, null); } finally { this.dpr = dpr; }
+  }
+  canvasSize(dpr) {
+    const w = Math.round(this.W * dpr), h = Math.round(this.H * dpr);
+    if (this.el.width !== w || this.el.height !== h) { this.el.width = w; this.el.height = h; }
   }
 
-  // the ground for a view, into a context already scaled to CSS pixels (see GroundCache)
+  // the ground for a view, into a context already scaled to CSS pixels: a recorder, replayed in a worker (see
+  // GroundCache)
   paintGround(g, view) {
     g.fillStyle = this.background;
     g.fillRect(0, 0, view.W, view.H);
-    for (const p of this.planes) {
-      const pts = p.quad.map(q => toScreen(view, q));
-      if (p.texture) {
-        const t = this.textures.get(p.texture), o = p.origin || p.quad[0];
-        const along = d => toScreen(view, o.map((c, i) => c + d[i] * t.metres));
-        affineFill(g, t.img, pts, toScreen(view, o), along(p.u), along(p.v));
-      } else {
-        g.beginPath();
-        pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
-        g.closePath();
-        if (p.gradient) {   // a radial gradient centred on a world point, radius in metres (light falling off)
-          const [cx, cy] = toScreen(view, p.gradient.at), gr = g.createRadialGradient(cx, cy, 0, cx, cy, p.gradient.radius * view.ppm);
-          for (const [o, c] of p.gradient.stops) gr.addColorStop(o, c);
-          g.fillStyle = gr;
-        } else if (p.linear) {   // a linear gradient between two world points (occlusion fading off a wall's foot)
-          // canvas keeps a linear gradient constant across its screen direction; turn that to run along the world
-          // direction `along` (the wall), so the shading stays parallel to the wall under the camera
-          const [x0, y0] = toScreen(view, p.linear.from), [x1, y1] = toScreen(view, p.linear.to);
-          const [ax, ay] = toScreen(view, p.linear.from.map((v, i) => v + p.linear.along[i])), al = Math.hypot(ax - x0, ay - y0);
-          const ux = (ax - x0) / al, uy = (ay - y0) / al, t = (x1 - x0) * ux + (y1 - y0) * uy;
-          const gr = g.createLinearGradient(x0, y0, x1 - t * ux, y1 - t * uy);
-          for (const [o, c] of p.linear.stops) gr.addColorStop(o, c);
-          g.fillStyle = gr;
-        } else g.fillStyle = p.color;
-        g.fill();
-      }
-    }
+    for (const p of this.planes) this.paintPlane(g, view, p, p.quad.map(q => toScreen(view, q)));
     // far to near; light on the ground (a wall washer's scallop, the lantern's halo) last, added over what it lights
     const lit = it => (this.sprites.get(it.sprite).blend === 'lighter' ? 1 : 0);
     const flat = [...this.items.values()].filter(it => it.layer === 'ground' && it.visible && (it.intensity ?? 1) > 0)
       .sort((a, b) => lit(a) - lit(b) || depth(a.at) - depth(b.at));
-    for (const it of flat) {   // (no crossfades in a snapshot)
+    for (const it of flat) {   // (no crossfades in a snapshot; drawn from the tier itself, not a copy scaled for the screen)
       g.save();
       if (lit(it)) g.globalCompositeOperation = 'lighter';
-      this.drawItem(g, it, view, Infinity);
+      this.drawItem(g, it, view, Infinity, true);
       g.restore();
     }
     // the grade (a warm ambient) tones the ground: the floor and walls that fill most of the screen. Laid on every
@@ -450,6 +434,33 @@ export class World {
       g.fillRect(0, 0, view.W, view.H);
       g.restore();
     }
+  }
+  // a flat quad (see addPlane) at its screen points
+  paintPlane(g, view, p, pts) {
+    if (p.texture) {
+      const t = this.textures.get(p.texture), o = p.origin || p.quad[0];
+      const along = d => toScreen(view, o.map((c, i) => c + d[i] * t.metres));
+      affineFill(g, t.img, pts, toScreen(view, o), along(p.u), along(p.v));
+      return;
+    }
+    g.beginPath();
+    pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
+    g.closePath();
+    if (p.gradient) {   // a radial gradient centred on a world point, radius in metres (light falling off)
+      const [cx, cy] = toScreen(view, p.gradient.at), gr = g.createRadialGradient(cx, cy, 0, cx, cy, p.gradient.radius * view.ppm);
+      for (const [o, c] of p.gradient.stops) gr.addColorStop(o, c);
+      g.fillStyle = gr;
+    } else if (p.linear) {   // a linear gradient between two world points (occlusion fading off a wall's foot)
+      // canvas keeps a linear gradient constant across its screen direction; turn that to run along the world
+      // direction `along` (the wall), so the shading stays parallel to the wall under the camera
+      const [x0, y0] = toScreen(view, p.linear.from), [x1, y1] = toScreen(view, p.linear.to);
+      const [ax, ay] = toScreen(view, p.linear.from.map((v, i) => v + p.linear.along[i])), al = Math.hypot(ax - x0, ay - y0);
+      const ux = (ax - x0) / al, uy = (ay - y0) / al, t = (x1 - x0) * ux + (y1 - y0) * uy;
+      const gr = g.createLinearGradient(x0, y0, x1 - t * ux, y1 - t * uy);
+      for (const [o, c] of p.linear.stops) gr.addColorStop(o, c);
+      g.fillStyle = gr;
+    } else g.fillStyle = p.color;
+    g.fill();
   }
 
   // clip: a screen rectangle to repaint, or null for everything
@@ -467,13 +478,14 @@ export class World {
     g.fillStyle = this.background;
     g.fillRect(0, 0, view.W, view.H);
     this.ground.draw(g, view, { partial: !!clip });
+    const area = clip || { x: 0, y: 0, w: view.W, h: view.H };   // (zoomed in, most sprites are off the screen)
     for (const it of this.sorted()) {
-      if (clip && !meets(this.screenRect(this.planeRect(it), view), clip)) continue;
+      if (!meets(this.screenRect(this.planeRect(it), view), area)) continue;
       this.drawItem(g, it, view, now);
     }
     g.globalCompositeOperation = 'lighter';
     for (const it of this.lights()) {   // glow sprites (layer 'light'), at their intensity
-      if (clip && !meets(this.screenRect(this.planeRect(it), view), clip)) continue;
+      if (!meets(this.screenRect(this.planeRect(it), view), area)) continue;
       this.drawItem(g, it, view, now);
     }
     for (const gl of this.glows.values()) {
@@ -486,15 +498,16 @@ export class World {
     g.restore();
   }
 
-  drawItem(g, it, view, now) {
+  // raw: drawn from the tier itself even at a steady zoom (into the ground snapshot, which is itself the copy)
+  drawItem(g, it, view, now, raw = false) {
     const s = this.sprites.get(it.sprite);
     if (s.shown < 0) return;
     const fade = fadeAlpha(s.since, now);
     // the old tier stays whole beneath the new one, except for additive light, which would then count twice
-    if (s.prev >= 0 && fade < 1) this.drawTier(g, it, s, s.prev, view, it.layer === 'light' ? 1 - fade : 1);
-    this.drawTier(g, it, s, s.shown, view, fade);
+    if (s.prev >= 0 && fade < 1) this.drawTier(g, it, s, s.prev, view, it.layer === 'light' ? 1 - fade : 1, raw);
+    this.drawTier(g, it, s, s.shown, view, fade, raw);
   }
-  drawTier(g, it, s, i, view, alpha) {
+  drawTier(g, it, s, i, view, alpha, raw = false) {
     if (alpha <= 0) return;
     // Every tier is placed from the item's world anchor through its own anchor_px, unrounded; at a steady zoom the
     // one final screen position is snapped to whole device pixels, and nothing else is rounded.
@@ -505,8 +518,9 @@ export class World {
     // is drawn no larger than it was made (zooming out), else the tier itself, which is at least as dense as the
     // screen: never a bitmap stretched past its own pixels
     let pre = null, z = 1;
-    if (this.steady) {
-      pre = this.prescaled(s, i, it.tint, frame, k, true);
+    if (raw || this.steady) {
+      // (none yet once this frame's time for making copies is spent: the tier itself until a later frame makes it)
+      if (!raw) pre = this.prescaled(s, i, it.tint, frame, k, true);
       dx = Math.round(dx * this.dpr) / this.dpr; dy = Math.round(dy * this.dpr) / this.dpr;
     } else {
       const had = this.prescaled(s, i, it.tint, frame, k, false);
@@ -522,7 +536,10 @@ export class World {
       g.beginPath(); g.moveTo(x0, top(x0)); g.lineTo(x1, top(x1)); g.lineTo(x1, bottom(x1)); g.lineTo(x0, bottom(x0)); g.closePath();
       g.clip();
     }
-    g.imageSmoothingQuality = 'high';
+    // high quality only into the ground snapshot and into copies (both in the worker): a copy is drawn 1:1 or
+    // smaller, and high-quality downscaling of ~180 sprites straight from their tiers is 100 ms or more on a software
+    // canvas (`smoothing`: what a sprite drawn straight from its tier onto the screen gets)
+    g.imageSmoothingQuality = raw ? 'high' : this.smoothing;
     // (a copy's own pixel ratio: one made at full ratio may be drawn into a frame at ratio 1, paintLow)
     if (pre) g.drawImage(pre.c, dx, dy, pre.c.width / pre.d * z, pre.c.height / pre.d * z);
     else {
@@ -546,22 +563,33 @@ export class World {
     return { split: sx => dy + k * (c.y + c.slope * ((sx - dx) / k - c.x)), floor: null };
   }
   // One frame of a sprite, tinted and scaled to the screen at the resting zoom (scaledPpm), from tier i; cached
-  // until the zoom rests somewhere else. `build` makes it (or remakes it from a new tier); without, only a lookup.
-  // Returns { c, i, d }: the copy, its tier and pixel ratio. The frame is scaled by exactly k, not stretched to whole
-  // pixels (the canvas is rounded up around it), so each tier's copy keeps its anchor where the tier puts it.
+  // until the zoom rests somewhere else. `build` starts making it (or remaking it from a new tier) in the worker, and
+  // it is drawn from a later frame on (a high-quality downscale of a large tier is up to 100 ms on the main thread);
+  // without, only a lookup. Returns { c, i, d }: the copy, its tier and pixel ratio, or null until it is made. The
+  // frame is scaled by exactly k, not stretched to whole pixels (the bitmap is rounded up around it), so each tier's
+  // copy keeps its anchor where the tier puts it.
   prescaled(s, i, tint, frame, k, build) {
     const key = `${s.id}|${tint || ''}|${frame}`;
     const had = this.scaled.get(key);
-    if (!build) return had || null;
-    if (had && had.i === i && had.d === this.dpr) return had;
-    const t = s.tiers[i], d = this.dpr;
-    const c = canvas(Math.max(1, Math.ceil(t.fw * k * d)), Math.max(1, Math.ceil(t.fh * k * d)));
-    const g = c.getContext('2d');
-    g.imageSmoothingQuality = 'high';
-    g.drawImage(this.cellOf(s, i, tint, frame), 0, 0, t.fw * k * d, t.fh * k * d);
-    const out = { c, i, d };
+    if (had && (!build || (had.i === i && had.d === this.dpr))) return had.c ? had : null;
+    if (!build) return null;
+    const t = s.tiers[i], d = this.dpr, src = this.cellOf(s, i, tint, frame), out = { c: null, i, d };
     this.scaled.set(key, out);
-    return out;
+    this.painter.paint(Math.max(1, Math.ceil(t.fw * k * d)), Math.max(1, Math.ceil(t.fh * k * d)), g => {
+      g.imageSmoothingQuality = 'high';
+      g.drawImage(src, 0, 0, t.fw * k * d, t.fh * k * d);
+    }).then(c => {
+      if (this.scaled.get(key) !== out) { c.close(); return; }
+      out.c = c;
+      // repaint what shows this frame now, unless it animates: its next frame is drawn from a copy soon anyway, and
+      // a repaint for each copy of a loop doubles its repaints while the copies are made
+      const t = s.tiers[i], animates = t.frames > 1 && t.fps && !this.reduced;
+      for (const it of this.items.values()) {
+        if (it.sprite === s.id && it.layer !== 'ground' && (it.frame || 0) === frame && (!animates || it.still)) this.dirtyItem(it);
+      }
+      this.request();
+    }, e => this.stats.missing.push(String(e.message || e)));
+    return null;
   }
 
   // --- picking ------------------------------------------------------------------------------------------------------
@@ -582,7 +610,7 @@ export class World {
     return { floor: [fx, fy] };
   }
 
-  destroy() { cancelAnimationFrame(this.raf); clearTimeout(this.timer); this.detach(); }
+  destroy() { cancelAnimationFrame(this.raf); clearTimeout(this.timer); this.detach(); this.painter.worker.terminate(); }
 }
 
 const meets = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;

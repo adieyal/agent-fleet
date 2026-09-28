@@ -127,9 +127,9 @@ def test_robots_walk_from_the_lift_and_sit(floor: Page) -> None:
     assert floor.evaluate("floor.error") is None
     assert floor.evaluate("floor.engine.stats.missing") == []
     assert floor.evaluate("floor.crew.members.every(m => m.legs && m.legs[0].L > 3)")
-    floor.wait_for_function("floor.crew.members.some(m => m.state === 'walking')", timeout=10_000)
-    lift_open = floor.evaluate("floor.engine.items.get('lift').cell")
-    assert lift_open > 0
+    # (the doors open over DOORS from the moment the first robot walks: read at that moment, they are still shut)
+    floor.wait_for_function("floor.crew.members.some(m => m.state === 'walking') && floor.engine.items.get('lift').cell > 0",
+                            timeout=10_000)
     walking = floor.evaluate("floor.crew.members.filter(m => m.state === 'walking').map(m => m.clip)")
     assert set(walking) <= {"Walking"}
     floor.wait_for_function(SETTLED, timeout=60_000)
