@@ -21,6 +21,11 @@ def setup_question():
     return store, work, attention, item, question, blocker
 
 
+def test_decision_repository_requires_records():
+    with pytest.raises(TypeError, match='records'):
+        DecisionRepository(open_store(), None, None, None)
+
+
 def test_answer_resolves_exactly_selected_item_and_records_actor_and_unblocks():
     store, work, attention, item, question, blocker = setup_question()
     other_question = attention.raise_item(project="p", work_item=item.id, kind="decision", owner="user",

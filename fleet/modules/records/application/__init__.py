@@ -38,8 +38,6 @@ class Authoring:
 
     def write(self, project: str, path: str, body: str, *, key: str, actor: str,
               source_run: str | None = None) -> dict:
-        if not key.strip() or not actor.strip():
-            raise ValueError('key and actor are required')
         root = self.workspace.management_repository(project)
         self.writer.validate_path(root, path)
         digest = hashlib.sha256(body.encode()).hexdigest()

@@ -11,6 +11,7 @@ from fleet.modules.attention import AttentionFacade
 from fleet.modules.decisions import Decision, Proposal
 from fleet.modules.work import WorkFacade
 from fleet.modules.execution import ExecutionFacade
+from fleet.modules.records import RecordsFacade
 from .repository import Repository
 from .store import Store, UnitOfWork
 
@@ -25,7 +26,8 @@ def decode(payload: str) -> Decision:
 class DecisionRepository(Repository):
     def __init__(self, store: Store, attention: Callable[[UnitOfWork], AttentionFacade],
                  work: Callable[[UnitOfWork], WorkFacade],
-                 execution: Callable[[UnitOfWork], ExecutionFacade], *, records=None) -> None:
+                 execution: Callable[[UnitOfWork], ExecutionFacade], *,
+                 records: Callable[[UnitOfWork], RecordsFacade]) -> None:
         super().__init__(store)
         self.attention_factory, self.work_factory = attention, work
         self.execution_factory = execution
@@ -35,8 +37,7 @@ class DecisionRepository(Repository):
         self.attention = self.attention_factory(unit)
         self.work = self.work_factory(unit)
         self.execution = self.execution_factory(unit)
-        if self.records_factory is not None:
-            self.records = self.records_factory(unit)
+        self.records = self.records_factory(unit)
 
     def insert(self, decision: Decision) -> None:
         if self.unit is None:
@@ -67,3 +68,11 @@ class DecisionRepository(Repository):
             fields['time'] = datetime.fromisoformat(fields['time'])
             result.append(Proposal(**fields))
         return result
+
+    def get_proposal(self, identity: str) -> Proposal | None:
+        rows = self.rows('SELECT record FROM decisions_proposal WHERE id = ?', (identity,))
+        if not rows:
+            return None
+        fields = json.loads(rows[0]['record'])
+        fields['time'] = datetime.fromisoformat(fields['time'])
+        return Proposal(**fields)

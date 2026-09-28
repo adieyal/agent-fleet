@@ -470,7 +470,7 @@ def test_bubbles_show_action_glyphs_and_the_words_stay_a_click_away(deck: Deck) 
     }""")
     assert 'tests' in phrase
     page = deck.page
-    expected = {"a1c3e9": "test", "b7d042": "edit", "Why does the st": "ask", "f20a6d": "edit", "c90e11": "think"}
+    expected = {"a1c3e9": "test", "b7d042": "edit", "Why does the st": "wait", "f20a6d": "edit", "c90e11": "think"}
     for agent, action in expected.items():
         bubble = page.locator("#tags .tag", has_text=agent).locator(".bubble")
         expect(bubble).to_have_attribute("data-action", action)

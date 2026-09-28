@@ -128,12 +128,19 @@ def test_decision_reader_and_answer(deck, monkeypatch):
     assert deck.state.store.latest_sequence() == sequence
 
 
-def test_decision_reader_shows_proposal_without_writes(deck):
+def test_decision_reader_shows_proposal_without_writes(deck, monkeypatch):
     from types import SimpleNamespace
     proposal = open_decisions(deck.state.store).propose(
         SimpleNamespace(project="p", work_item="w", actor="agent", id="activation", mandate_version="v1"),
         question="Run migration?", change="fleet migrate <database>", reason="Schema needs updating")
     item, = deck.state.attention.list()
+    decisions = open_decisions(deck.state.store)
+    assert decisions.proposal_for_attention(item.source, item.source_reference) == proposal
+    assert decisions.proposal_for_attention('manual', proposal.id) is None
+    assert decisions.proposal_for_attention('proposal', 'missing') is None
+    def no_scan(self):
+        raise AssertionError('decision reader must query a proposal directly')
+    monkeypatch.setattr(type(decisions.repository), 'proposals', no_scan)
     sequence = deck.state.store.latest_sequence()
     with urlopen(deck.url + "/api/decision?id=" + item.id, timeout=5) as response:
         detail = json.load(response)
