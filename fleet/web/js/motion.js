@@ -8,7 +8,8 @@ import {
   ACTS, AGENT_COLOR, AISLES, APART_ACROSS, APART_ALONG, CROSSINGS, FACE_VIEWER, FLOOR, OVERFLOW, SPOTS, apart,
   blocked, stationOf,
 } from './looks.js';
-import { activityFor, activityOf, isActive } from './activity.js';
+import { isActive } from './activity.js';
+import { heldItem as held, mayChange, reactions, resting, wanted } from './behaviour.js';
 import { G, ROBOT, _m4, _m4b, _q, _sc, _v, cam, drawScreen, scene, softDot } from './scene.js';
 import { ents, selectedKey } from './model.js';
 import { PRESS, placer, roomByName, rooms } from './rooms.js';
@@ -27,33 +28,19 @@ export function assignTargets() {
     r.ents.sort((a, b) => a.key < b.key ? -1 : 1);
     for (const e of r.ents) {
       noteEvents(e, now);
-      let want = activityFor(e.job);
-      if (want === null) want = e.act === 'init' ? 'type' : e.act;
-      if (want !== e.act) {
-        // a change of station waits out a minimum dwell once there, so bursts of events don't send androids back and forth
-        const settled = ['dock', 'idle', 'await'].includes(want) || e.act === 'init' || stationOf(want) === stationOf(e.act, e.stage);
-        const dwelt = now - e.actSince > DWELL && (e.slow || (e.arrivedAt != null && now - e.arrivedAt > 1.2));
-        if (settled || dwelt) { e.act = want; e.actSince = now; e.anchor = null; e.stage = 0; e.dropped = false; }
-      }
+      // a change of station waits out a minimum dwell once there, so bursts of events don't send androids back and forth
+      const want = wanted(e.job, e.act);
+      if (mayChange(want, e, now)) { e.act = want; e.actSince = now; e.anchor = null; e.stage = 0; e.dropped = false; }
     }
     allocate(r);
   }
 }
-const DWELL = 3.5;   // seconds an android stays on an activity before walking off to another station
 const EXIT = { x: 5.5, y: RD + 0.7, prop: 'door' };   // just outside the door, where androids walk in
 
 // React to what happened since the last poll: a test run followed by anything but an error passed (a nod), an error gets
 // a head shake. Seated androids nod or shake just their head; standing ones play the full clip.
 function noteEvents(e, now) {
-  const evs = (e.job.events || []).filter(ev => ev.kind === 'tool' || ev.kind === 'text' || ev.kind === 'error');
-  const last = evs.length ? evs[evs.length - 1] : null;
-  if (e.evTs === undefined || !isActive(e.job.status)) { e.evTs = last ? last.ts : 0; e.testing = activityOf(last) === 'test'; return; }
-  for (const ev of evs) {
-    if (ev.ts <= e.evTs) continue;
-    if (ev.kind === 'error') { react(e, false, now); e.testing = false; }
-    else { if (e.testing) react(e, true, now); e.testing = activityOf(ev) === 'test'; }
-  }
-  if (last) e.evTs = Math.max(e.evTs, last.ts);
+  for (const yes of reactions(e, e.job)) react(e, yes, now);   // (the entity keeps evTs and testing)
 }
 function react(e, yes, now) {
   if (REDUCED) return;
@@ -278,8 +265,7 @@ export function stepParticles(dt) {
 
 function tone(e, t) {
   // finished androids rest with their face light low
-  const st = e.job.status, arrived = !e.walking && !!e.target;
-  const key = (st === 'done' || st === 'cancelled' || st === 'idle') && arrived ? 'rest' : '';
+  const key = resting(e.job.status, !e.walking && !!e.target) ? 'rest' : '';
   if (key === e.tone) return;
   e.tone = key;
   const lit = AGENT_COLOR[e.job.agent] || '#cbd5e1', low = mix(lit, '#1b2333', 0.35);
@@ -293,15 +279,7 @@ const HELD = {
   book:  { mat: new THREE.MeshStandardMaterial({ color: '#b4463c', roughness: 0.7 }), size: [0.36, 0.08, 0.46], stand: [0, 1.3, 0.4, -1.0], sit: [0, 1.2, 0.5, -1.1] },
   sheet: { mat: new THREE.MeshBasicMaterial({ color: '#f4f6fa' }), size: [0.4, 0.012, 0.52], stand: [0, 1.3, 0.4, -1.1], sit: [0, 1.02, 0.45, -0.55] },
 };
-function heldItem(e, now) {
-  if (!isActive(e.job.status) || !e.target) return null;
-  switch (e.act) {
-    case 'ship': return e.dropped ? null : 'box';
-    case 'read': return e.stage > 0 || (!e.walking && e.arrivedAt != null && now - e.arrivedAt > 1) ? 'book' : null;   // pulled off the shelf
-    case 'review': return e.walking ? null : 'sheet';
-  }
-  return null;
-}
+const heldItem = (e, now) => held(e.job.status, e, now);
 function hold(e, item, seated) {
   if (!item) { if (e.held) e.held.visible = false; return; }
   if (!e.held) { e.held = new THREE.Mesh(G.box); e.bot.root.add(e.held); }

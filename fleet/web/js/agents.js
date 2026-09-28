@@ -6,6 +6,7 @@ import { BK, HALF, PI, RD, PHONE_ROOM_FILL, REDUCED, ROOM_FILL, RW, TINY_Z, tags
 import { clamp, clock, esc, trunc } from './util.js';
 import { AGENT_COLOR, hostLook } from './looks.js';
 import { isSession, mumble, shortId } from './activity.js';
+import { crowdsOf } from './behaviour.js';
 import { actionOf, glyphHtml } from './glyphs.js';
 import { G, M, ROBOT, _w, botGroup, cam, toScreen } from './scene.js';
 import { ents, everLoaded, fanned, selectedKey, setFanned } from './model.js';
@@ -215,7 +216,6 @@ export function updateTag(e) {
 // More than five androids at one station of a room gather into one figure (the first of them) with a count badge in
 // place of their tags. Clicking it fans them out until you click elsewhere or close the panel. The selected android
 // always stands on its own.
-const CROWD = 5;
 export const crowds = new Map();   // "room|station" → { key, room, station, members, el }
 function makeBadge(key) {
   const el = document.createElement('div');
@@ -226,22 +226,15 @@ function makeBadge(key) {
   return el;
 }
 function gatherCrowds() {
-  const at = new Map();
-  for (const e of ents.values()) {
-    e.crowd = null;
-    if (e.leaving || !e.spotProp || e.spotProp === 'stay' || e.spotProp === 'partner') continue;
-    const key = e.room + '|' + e.spotProp;
-    if (!at.has(key)) at.set(key, []);
-    at.get(key).push(e);
-  }
+  for (const e of ents.values()) e.crowd = null;
+  const at = crowdsOf([...ents.values()].map(e => ({ key: e.key, room: e.room, station: e.spotProp, leaving: e.leaving, e })), selectedKey);
   for (const [key, c] of crowds) {
-    if ((at.get(key)?.length ?? 0) > CROWD) continue;
+    if (at.has(key)) continue;
     c.el.remove(); crowds.delete(key);
     if (fanned === key) setFanned(null);
   }
-  for (const [key, all] of at) {
-    if (all.length <= CROWD) continue;
-    const members = all.filter(e => e.key !== selectedKey);
+  for (const [key, list] of at) {
+    const members = list.map(m => m.e);
     let c = crowds.get(key);
     if (!c) { c = { key, room: members[0].room, station: members[0].spotProp, el: makeBadge(key) }; crowds.set(key, c); }
     c.members = members;

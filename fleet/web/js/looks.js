@@ -145,29 +145,6 @@ export const DOOR_X0 = 4.6, DOOR_X1 = 6.4;
 export const AISLES = [2.55, 6.5, 8.75];    // walkways across the room (y) and the columns that join them (x)
 export const CROSSINGS = [3.2, 7.55];
 export const FACE_VIEWER = PI / 4;          // the camera looks along (-1,-1,-1): an android facing +x+z looks out at you
-// What an android does for each activity (see activityOf). station: where it works (a list is walked in turn: a book
-// from the shelf, then the armchair); hands: typing while seated; carry: what it holds; pace: strolls this far and back.
-export const ACTS = {
-  type:     { station: 'terminal', hands: true },
-  test:     { station: 'terminal' },                   // watches the run; nods or shakes its head at the result
-  ship:     { station: 'mail', carry: 'box' },         // commit/push: a parcel into the outbox
-  build:    { station: 'rack' },                       // installs, builds, containers: waits by the machine
-  edit:     { station: 'workbench', hands: true },
-  review:   { station: 'workbench', carry: 'sheet' },  // diff/log/status: reads a printout at the desk
-  doc:      { station: 'press' },                      // writing markdown: at the document press
-  read:     { station: ['bookshelf', 'armchair'], carry: 'book' },
-  search:   { station: 'cabinet' },
-  web:      { station: 'comms' },
-  plan:     { station: 'whiteboard' },
-  think:    { station: 'think', pace: 1.4 },
-  wait:     { station: 'kitchen' },                    // sleep, background jobs, questions: a coffee
-  delegate: { station: 'partner' },
-  idle:     { station: 'lounge', pace: 2.2 },
-  await:    { station: 'stay' },                       // a live session waiting on its human: stays put, faces you
-  dock: { station: 'dock' },
-};
-export function stationOf(act, stage = 0) {
-  const s = (ACTS[act] || ACTS.think).station;
-  return Array.isArray(s) ? s[Math.min(stage, s.length - 1)] : s;
-}
+// What an android does for each activity: the table lives with the shared behaviour (behaviour.js)
+export { ACTS, stationOf } from './behaviour.js';
 export const TOOL_ICON = { bash: '$', edit: '✎', read: '▤', search: '⌕', web: '◎', think: '∴', plan: '☰', delegate: '⇄', other: '•' };
