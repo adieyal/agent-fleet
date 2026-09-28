@@ -87,6 +87,9 @@ class FixtureState(LiveWorkspace):
                     else:
                         self.documents.keep(project_id, host["name"], job["id"], document, markdown)
 
+    def clock(self) -> float:
+        return self.fixture["time"]
+
     def job_hosts(self) -> dict[str, tuple[bool, set[str]]]:
         return {host["name"]: (bool(host.get("ok")), {job["id"] for job in host["jobs"]}) for host in self.fixture["hosts"]}
 

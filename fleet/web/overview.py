@@ -2,24 +2,31 @@
 
 Derived from documents only, the same way every time (no model is asked anything):
 
-- A workstream is a library folder with a prd.json or a README.md (a Ralph loop), plus the Fleet jobs
-  linked to it: a job whose cwd is the PRD's worktree, or whose step briefs mention the folder.
+- A workstream is a library folder with a prd.json or any top-level Markdown file (a Ralph loop, a spike, a
+  review), plus the Fleet jobs linked to it: a job whose cwd is the PRD's worktree or ends in the folder's name,
+  or whose step briefs mention the folder.
 - When the library has no such folders (a repository with docs/, or no library at all), each distinct
   job description is a workstream; nothing else is inferred.
-- Jobs linked to no workstream are "other work", by week. Documents in no workstream are "other documents",
-  by folder.
+- A running or waiting job linked to no workstream is a workstream of its own, so running work is always under
+  Active. Other jobs linked to no workstream are "other work", by week. Documents in no workstream are
+  "other documents", by folder.
+- "In progress" needs evidence of current activity: a running or waiting job, or a file in the folder changed
+  within a day. Partly done work without it is "paused".
 
 Parsed files are cached by mtime and size, so a large library (hundreds of documents) recomputes fast.
 """
 from __future__ import annotations
 
 import json
+import os
 import re
+import time
 from datetime import datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable
 
-STATES = ("in progress", "blocked", "planned", "unknown", "done")   # the order the overview shows them in
+STATES = ("in progress", "paused", "blocked", "unknown", "planned", "done")   # the order the overview shows them in
+RECENT = 24 * 3600   # a file changed this recently is evidence the work is going on
 RUNNING = {"running"}
 WAITING = {"queued", "pending"}
 FINISHED = {"done", "cancelled"}
@@ -104,8 +111,10 @@ class Overview:
 
     def build(self, *, name: str, project_id: str | None, library: str | None, root: Path | None,
               documents: list[dict[str, Any]], jobs: list[dict[str, Any]],
-              read_job: Callable[[str, str], str | None], attention: list[dict[str, Any]]) -> dict[str, Any]:
+              read_job: Callable[[str, str], str | None], attention: list[dict[str, Any]],
+              now: float | None = None) -> dict[str, Any]:
         """`documents` are the library's (ProjectLibrary.list for `library`), `jobs` the store's (with availability)."""
+        now = time.time() if now is None else now
         folders = self.folders(root, documents) if root is not None else []
         linked: dict[str, list[dict[str, Any]]] = {folder["id"]: [] for folder in folders}
         loose_jobs = []
@@ -115,12 +124,16 @@ class Overview:
                 linked[folder].append(job)
             if not homes:
                 loose_jobs.append(job)
-        streams = [self.folder_stream(folder, linked[folder["id"]], library, project_id, read_job, attention)
+        streams = [self.folder_stream(folder, linked[folder["id"]], library, project_id, read_job, attention, now)
                    for folder in folders]
         other_work = []
         if folders:
+            # running work is never hidden in other work: each such job is a card of its own
+            streams += [self.job_stream(job.get("description") or job["id"], [job], project_id, read_job, attention)
+                        for job in loose_jobs if job.get("status") in RUNNING | WAITING]
             weeks: dict[str, list[dict[str, Any]]] = {}
-            for job in sorted(loose_jobs, key=lambda job: job.get("created_at") or 0, reverse=True):
+            for job in sorted((job for job in loose_jobs if job.get("status") not in RUNNING | WAITING),
+                              key=lambda job: job.get("created_at") or 0, reverse=True):
                 weeks.setdefault(week_of(job.get("created_at")), []).append(self.job_line(job))
             other_work = [{"week": week, "jobs": entries} for week, entries in weeks.items()]
         else:
@@ -129,7 +142,7 @@ class Overview:
                 by_description.setdefault(job.get("description") or job["id"], []).append(job)
             streams += [self.job_stream(description, grouped, project_id, read_job, attention)
                         for description, grouped in by_description.items()]
-        streams.sort(key=lambda stream: (STATES.index(stream["state"]), -(stream["updated"] or 0)))
+        streams.sort(key=lambda stream: (STATES.index(stream["state"]), -(stream["last_activity"] or 0)))
         in_folder = {folder["id"] for folder in folders}
         other_documents: dict[str, list[dict[str, Any]]] = {}
         for document in documents:
@@ -156,19 +169,26 @@ class Overview:
         found = []
         for folder, inside in sorted(by_folder.items()):
             names = {document["id"] for document in inside}
-            if f"{folder}/prd.json" not in names and f"{folder}/README.md" not in names:
+            # README.md names the workstream; without one, the most recently changed top-level Markdown file does
+            markdown = sorted((document for document in inside if len(PurePosixPath(document["id"]).parts) == 2
+                               and document["id"].lower().endswith(".md")),
+                              key=lambda document: (document["id"] != f"{folder}/README.md", -(document.get("mtime") or 0),
+                                                    document["id"]))
+            if f"{folder}/prd.json" not in names and not markdown:
                 continue
             found.append({"id": folder, "documents": inside,
                           "prd": self.cache.parsed(root / folder / "prd.json", prd) if f"{folder}/prd.json" in names else None,
-                          "readme": self.cache.parsed(root / folder / "README.md", readme) if f"{folder}/README.md" in names else None,
+                          "readme": self.cache.parsed(root / markdown[0]["id"], readme) if markdown else None,
                           "questions": (self.cache.parsed(root / folder / "questions.md", questions)
                                         if f"{folder}/questions.md" in names else None),
-                          "path": str(root / folder), "updated": max(document.get("mtime") or 0 for document in inside)})
+                          "path": str(root / folder),
+                          "updated": max([document.get("mtime") or 0 for document in inside] + files_changed(root / folder))})
         return found
 
     def homes(self, job: dict[str, Any], folders: list[dict[str, Any]], root: Path | None,
               read_job: Callable[[str, str], str | None]) -> list[str]:
-        """The folders a job belongs to: its cwd is the PRD's worktree, or a step brief names the folder."""
+        """The folders a job belongs to: its cwd is the PRD's worktree or is named as the folder
+        (worktrees/spike-one-shell for ralph/spike-one-shell), or a step brief names the folder."""
         cwd = (job.get("cwd") or "").rstrip("/")
         briefs = "\n".join(text for document in job["documents"] if document["kind"] == "brief"
                            and (text := self.cache.job_text(job["key"], document, read_job)))
@@ -177,13 +197,13 @@ class Overview:
             worktree = str((folder["prd"] or {}).get("worktree") or "").rstrip("/")
             mentioned = re.search(rf"(?:{re.escape(folder['path'])}|{re.escape(root.name) + '/' if root else ''}"
                                   rf"{re.escape(folder['id'])})(?![\w.-])", briefs) if briefs else None
-            if (worktree and cwd == worktree) or mentioned:
+            if (worktree and cwd == worktree) or PurePosixPath(cwd).name == folder["id"] or mentioned:
                 homes.append(folder["id"])
         return homes
 
     def folder_stream(self, folder: dict[str, Any], jobs: list[dict[str, Any]], library: str | None,
                       project_id: str | None, read_job: Callable[[str, str], str | None],
-                      attention: list[dict[str, Any]]) -> dict[str, Any]:
+                      attention: list[dict[str, Any]], now: float) -> dict[str, Any]:
         spec, notes, asked = folder["prd"] or {}, folder["readme"] or {}, folder["questions"]
         stories = spec.get("userStories") if isinstance(spec.get("userStories"), list) else []
         documents = {document["id"]: document for document in folder["documents"]}
@@ -215,14 +235,16 @@ class Overview:
         return {"id": folder["id"], "title": notes.get("heading") or first_sentence(spec.get("description")) or folder["id"],
                 "summary": notes.get("status") or (str(spec["status"]) if spec.get("status") else None)
                 or first_sentence(spec.get("description")),
-                "state": derive_state(stories, asked, jobs, notes.get("status") or str(spec.get("status") or "")),
+                "state": derive_state(stories, asked, jobs, notes.get("status") or str(spec.get("status") or ""),
+                                      recent=now - folder["updated"] < RECENT),
                 "stories": {"passing": len(done), "total": len(stories)} if stories else None,
                 "questions": ({"open": asked["total"] - asked["answered"], "total": asked["total"],
                                "trace": questions_trace} if asked and asked["total"] else None),
                 "jobs": [self.job_line(job) for job in jobs],
                 # what jobs did or are doing leads: it is the latest news, where stories are the long record
                 "done": job_done + done, "next": job_next + next_steps, "needs": needs + job_needs,
-                "traces": traces, "updated": max([folder["updated"]] + [job.get("updated_at") or 0 for job in jobs])}
+                "traces": traces,
+                "last_activity": max([folder["updated"]] + [job.get("updated_at") or 0 for job in jobs]) or None}
 
     # ------------------------------------------------------------------ jobs
 
@@ -233,7 +255,7 @@ class Overview:
                 "state": derive_state([], None, jobs, ""), "stories": None, "questions": None,
                 "jobs": [self.job_line(job) for job in jobs], "done": done, "next": upcoming, "needs": needs,
                 "traces": self.job_traces(jobs, project_id),
-                "updated": max(job.get("updated_at") or job.get("created_at") or 0 for job in jobs)}
+                "last_activity": max(job.get("updated_at") or job.get("created_at") or 0 for job in jobs) or None}
 
     def job_items(self, jobs: list[dict[str, Any]], project_id: str | None,
                   read_job: Callable[[str, str], str | None], attention: list[dict[str, Any]]) -> tuple[list, list, list]:
@@ -281,18 +303,21 @@ class Overview:
 
 
 def derive_state(stories: list[dict[str, Any]], asked: dict[str, int] | None, jobs: list[dict[str, Any]],
-                 status: str) -> str:
-    """In order: a running job; every story passing; a blocked story, or questions with none answered;
-    some stories passing; none passing. Without stories: the README's status words, then the jobs' outcomes."""
+                 status: str, recent: bool = False) -> str:
+    """In order: a running or waiting job; every story passing; a blocked story, or questions with none answered;
+    some stories passing (in progress if a file changed recently, else paused); none passing. Without stories:
+    the README's status words, then the jobs' outcomes, then whether a file changed recently."""
     statuses = [job.get("status") for job in sorted(jobs, key=lambda job: job.get("created_at") or 0)]
-    if any(status in RUNNING for status in statuses):
+    if any(status in RUNNING | WAITING for status in statuses):
         return "in progress"
     if stories:
         if all(story.get("passes") for story in stories):
             return "done"
         if any(story.get("blocked") for story in stories) or (asked and asked["total"] and not asked["answered"]):
             return "blocked"
-        return "in progress" if any(story.get("passes") for story in stories) else "planned"
+        if not any(story.get("passes") for story in stories):
+            return "planned"
+        return "in progress" if recent else "paused"
     if asked and asked["total"] and not asked["answered"]:
         return "blocked"
     words = status.lower()
@@ -300,9 +325,17 @@ def derive_state(stories: list[dict[str, Any]], asked: dict[str, int] | None, jo
         return "planned"
     if statuses:
         latest = statuses[-1]
-        return ("blocked" if latest in FAILED else "planned" if latest in WAITING else
-                "done" if latest in FINISHED else "unknown")
-    return "unknown"
+        return "blocked" if latest in FAILED else "done" if latest in FINISHED else "unknown"
+    return "in progress" if recent else "paused"
+
+
+def files_changed(folder: Path) -> list[float]:
+    """The mtimes of the files directly in a folder, listed or not (a loop's progress.txt counts as activity)."""
+    try:
+        with os.scandir(folder) as entries:
+            return [entry.stat().st_mtime for entry in entries if entry.is_file()]
+    except OSError:
+        return []
 
 
 def summary(streams: list[dict[str, Any]], counts: dict[str, int]) -> str:

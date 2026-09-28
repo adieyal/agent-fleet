@@ -48,20 +48,26 @@ def test_the_overview_shows_workstreams_and_opens_their_traces(
     page, errors = open_library(browser, overview_url, fixture_data["time"])
     choose(page, "Restoke")
     summary = page.locator("#libList .ov-summary")
-    expect(summary).to_contain_text("4 workstreams: 1 in progress, 1 blocked, 2 done.")
-    expect(summary).to_contain_text("Active now: Ralph loop: V2 suppliers, slice 4")
+    expect(summary).to_contain_text("7 workstreams: 3 in progress, 1 paused, 1 blocked, 2 done.")
+    expect(summary).to_contain_text("Ralph loop: V2 suppliers, slice 4")
+    expect(page.locator("#libList .ov h4")).to_have_text(["Active now", "Paused and blocked", "Done · 2", "Other work",
+                                                                 "Other documents · 1"])
     cards = page.locator("#libList .ov > .ws")
-    expect(cards).to_have_count(2)                                # active, then blocked or planned
-    expect(cards.nth(0)).to_contain_text("slice 4")
-    expect(cards.nth(0)).to_contain_text("14/15 stories · 1 job running")
-    expect(cards.nth(1)).to_contain_text("0/15 stories · 43 open questions")
+    # active: slice 4 and the two running jobs linked to no folder; then the review (paused) and slice 6 (blocked)
+    expect(cards.locator(".ws-state")).to_have_text(["in progress"] * 3 + ["paused", "blocked"])
+    expect(cards.nth(0)).to_contain_text("Shadow-parse 60 invoices")
+    expect(cards.nth(2)).to_contain_text("slice 4")
+    expect(cards.nth(2)).to_contain_text("14/15 stories · 1 job running · last activity")
+    expect(cards.nth(3)).to_contain_text("V2 architecture review")
+    expect(cards.nth(3)).to_contain_text("last activity 2d ago")
+    expect(cards.nth(4)).to_contain_text("0/15 stories · 43 open questions · last activity 2d ago")
     done = page.locator("#libList .ov-done")
     expect(done).not_to_have_attribute("open", "")               # done work stays folded
     expect(done.locator(":scope > summary")).to_have_text("Done · 2")
     expect(page.locator("#libList .ov-week h5").first).to_have_text("Week of 21 Sep 2026")
     shoot(request, page, "overview-restoke")
 
-    draft = cards.nth(1)
+    draft = cards.nth(4)
     draft.locator(":scope > summary").click()
     expect(draft.locator(".ws-body")).to_contain_text("43 open questions of 43 in questions.md")
     expect(draft.locator(".ws-body")).to_contain_text("prd.json is drafted and has not been reviewed")
@@ -153,7 +159,7 @@ def test_the_overview_fits_a_phone(browser: Browser, overview_url: str, fixture_
     # nothing runs off the side, every headline keeps to 12 words, and every briefing list to three visible lines
     assert page.evaluate("document.querySelector('#libList').scrollWidth <= document.querySelector('#libList').clientWidth")
     headlines = page.locator("#libList .ws-head b").all_text_contents()
-    assert len(headlines) == 4 and all(len(text.split()) <= 12 for text in headlines), headlines
+    assert len(headlines) == 7 and all(len(text.split()) <= 12 for text in headlines), headlines
     assert page.evaluate("""[...document.querySelectorAll('#libList .ws-body > .ws-list')]
         .every(list => list.children.length <= 3)""")
     assert page.evaluate("fleetDeck.textBudget(document.querySelector('#libList .ov > .ws > summary'))") <= 20

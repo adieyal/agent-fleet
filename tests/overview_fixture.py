@@ -2,7 +2,7 @@
 
 Restoke's library is tests/fixtures/restoke-library/ralph, cut down from the Restoke V2 Ralph library: a done slice
 (v2-suppliers), a slice in progress (slice 4, 14 of 15 stories), a done slice with open questions (slice 5),
-a draft slice with 43 unanswered questions (slice 6), a folder with no README or PRD (v2-review) and a loose
+a draft slice with 43 unanswered questions (slice 6), a review with REVIEW.md and no README or PRD (v2-review) and a loose
 file. agent-fleet's library is a repository with docs/ and no PRD. Jobs gain step briefs, so they can link to
 workstreams: b7d042's brief names slice 4's folder, and d4f7a2 runs in the v2-suppliers worktree.
 """
@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import copy
 import json
+import os
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -38,12 +40,17 @@ def repository(root: Path) -> Path:
 
 
 def overview_fixture(agent_fleet_root: Path) -> dict[str, Any]:
+    """Restoke's library is copied beside `agent_fleet_root`, every file last changed two days before the fixture's time."""
     fixture = json.loads((FIXTURES / "restoke.json").read_text())
     fixture = copy.deepcopy(fixture)
     fixture["projects"][AGENT_FLEET] = {"name": "agent-fleet", "repositories": [],
                                         "links": [{"host": "worker", "label": "agent-fleet"}]}
+    ralph = shutil.copytree(RALPH, agent_fleet_root.parent / "ralph")
+    two_days_ago = fixture["time"] - 2 * 86400
+    for path in ralph.rglob("*"):
+        os.utime(path, (two_days_ago, two_days_ago))
     # Restoke's library is configured as it is on carbon: recursive, at the ralph folder
-    fixture["library_roots"] = {"restoke": {"path": str(RALPH), "recursive": True}, "agent-fleet": str(agent_fleet_root)}
+    fixture["library_roots"] = {"restoke": {"path": str(ralph), "recursive": True}, "agent-fleet": str(agent_fleet_root)}
     for host in fixture["hosts"]:
         for job in host["jobs"]:
             brief = BRIEFS.get((host["name"], job["id"]))
