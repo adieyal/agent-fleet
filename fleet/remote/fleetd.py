@@ -1055,6 +1055,8 @@ class Transcript:
         self.cwd: Optional[str] = None
         self.model: Optional[str] = None
         self.started_at: Optional[float] = None
+        # The newest record's own timestamp: the file's mtime also moves when nothing is written to it.
+        self.last_record_at: Optional[float] = None
         self.titles: Dict[str, str] = {}
         self.hidden = False  # a sub-agent's transcript or a fleet job's own session
         self.events: Deque[JsonObject] = collections.deque(maxlen=SESSION_EVENTS)
@@ -1094,6 +1096,9 @@ class Transcript:
             return
         if not isinstance(record, dict):
             return
+        stamp = parse_timestamp(record.get("timestamp")) if record.get("timestamp") else None
+        if stamp is not None and (self.last_record_at is None or stamp > self.last_record_at):
+            self.last_record_at = stamp
         self.runtime.consume_transcript(self, record, head)
 
     def _claude_record(self, record: JsonObject, head: bool) -> None:
@@ -1242,8 +1247,9 @@ class SessionTracker:
                     continue  # an unexpected record shape must not take the stream down
             if transcript.hidden or transcript.cwd is None or transcript.id in job_sessions:
                 continue
-            status = "working" if clock - stat.st_mtime < SESSION_WORKING_SECONDS else "idle"
-            sessions[transcript.id] = transcript.summary(status, round(stat.st_mtime, 3))
+            active = min(stat.st_mtime, transcript.last_record_at or stat.st_mtime)
+            status = "working" if clock - active < SESSION_WORKING_SECONDS else "idle"
+            sessions[transcript.id] = transcript.summary(status, round(active, 3))
         self.transcripts = live
         return sessions
 
