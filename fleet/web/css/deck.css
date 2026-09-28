@@ -972,6 +972,16 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 #benchRoute[hidden] { display:none; }
 #benchRoute button { color:inherit; background:#26374c; border:1px solid #64748b; border-radius:6px; padding:10px; margin:4px; cursor:pointer; }
 #benchBreadcrumb { margin-bottom:16px; }
+.epic-cards { display:grid; gap:12px; }
+[data-epic-card] { margin-left:calc(var(--depth) * 28px); padding:10px 14px; border:1px solid #64748b; border-left:4px solid #38bdf8; border-radius:8px; background:#1b2a3d; }
+[data-epic-card][data-depth="0"] { border-left-color:#a78bfa; }
+[data-epic-head] { display:flex; align-items:baseline; gap:8px; }
+#benchRoute [data-epic-head] button { font-weight:bold; margin:0; }
+[data-epic-card] p, [data-epic-card] [data-next] { margin:6px 0; }
+[data-epic-card] ul { margin:4px 0 0; padding-left:22px; }
+[data-epic-card] small, [data-epic-card] i { color:#94a3b8; }
+[data-epic-card] progress { width:120px; vertical-align:middle; accent-color:#34d399; }
+[data-epic-card] [data-attention-count] svg { width:18px; height:18px; fill:none; stroke:#fbbf24; stroke-width:2; vertical-align:middle; }
 .bench-cluster { display:flex; flex-wrap:wrap; gap:20px; }
 .bench-cluster button { display:grid; gap:12px; }
 .bench-cluster i { display:block; height:36px; border:6px solid #aa805b; border-top-width:12px; border-bottom:0; }

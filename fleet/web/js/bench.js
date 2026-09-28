@@ -60,6 +60,26 @@ export async function enterFloor(identity) {
   }
 }
 
+function epicCard(r) {
+  const { complete, total } = r.milestones;
+  const now = r.agents.length
+    ? `${r.agents.length} running: ${r.agents.map(a => `${esc(a.title)} (${esc(a.host)})`).join(', ')}`
+    : 'Nothing running';
+  const next = r.upcoming.length
+    ? `<ul>${r.upcoming.map(m => `<li data-upcoming="${esc(m.id)}">${esc(m.title)} — ${m.next_step === null ? '<i>Next step not recorded</i>' : esc(m.next_step)}</li>`).join('')}</ul>`
+    : total ? 'All milestones complete' : 'No milestones recorded';
+  const count = r.attention.length;
+  return `<article data-epic-card="${esc(r.id)}" data-depth="${r.depth}" style="--depth:${r.depth}">
+    <div data-epic-head><button data-epic="${esc(r.id)}">${esc(r.title)}</button>${r.parent ? `<small data-parent-epic>in ${esc(r.parent.title)}</small>` : ''}</div>
+    <p data-goal title="${esc(r.goal)}">${esc(r.headline)}</p>
+    <p data-milestones>${total ? `<progress max="${total}" value="${complete}"></progress> ${complete} of ${total} milestones` : 'No milestones recorded'}</p>
+    <p data-now>Now: ${now}</p>
+    <div data-next>Next: ${next}</div>
+    ${r.children.length ? `<p data-child-epics>Epics: ${r.children.map(c => esc(c.title)).join(', ')}</p>` : ''}
+    <p data-attention-count="${count}">${count ? `${lantern} ${count} open ${count === 1 ? 'decision or blocker' : 'decisions or blockers'}` : 'No open decisions or blockers'}</p>
+  </article>`;
+}
+
 function render(flipped = new Set()) {
   el.dataset.level = bench ? 'bench' : room ? 'room' : 'floor';
   const crumbs = `<nav id="benchBreadcrumb" aria-label="Breadcrumb"><button data-back-floor>Floor</button>${
@@ -79,7 +99,7 @@ function render(flipped = new Set()) {
   } else if (room) {
     content = `<div class="bench-cluster">${room.benches.map(b => `<button data-slice="${esc(b.id)}"><i aria-hidden="true"></i>${esc(b.title)}</button>`).join('')}</div>`;
   } else {
-    content = rooms.map(r => `<button data-epic="${esc(r.id)}">${esc(r.title)}</button>`).join('');
+    content = `<div class="epic-cards">${rooms.map(epicCard).join('')}</div>`;
     if (!rooms.length) content = '<p>No epic rooms recorded.</p>';
   }
   el.innerHTML = crumbs + content;

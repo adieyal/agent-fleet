@@ -206,6 +206,62 @@ def test_bench_real_endpoint(changed_deck: Deck, deck_state, monkeypatch, tmp_pa
     page.evaluate('fleetDeck.enterFloor(null)')
 
 
+def test_epic_cards_summarise_nested_route_migration(changed_deck: Deck, deck_state, monkeypatch) -> None:
+    store = open_store()
+    work = open_work(store)
+    monkeypatch.setattr(deck_state, 'store', store)
+    monkeypatch.setattr(deck_state, 'attention', open_attention(store))
+    add = lambda title, goal, **fields: work.add(project='restoke-v2', title=title, goal=goal, actor='user', **fields)
+    overhaul = add('V2 frontend overhaul', 'Rebuild the V2 frontend on one design system.', kind='epic')
+    routes = add('Route migration', 'Move every page to the new router. Legacy routes go last.',
+                 kind='epic', parent=overhaul.id)
+    next_steps = {4: 'Port the supplier list', 6: 'Delete router.js'}
+    milestones = [add(f'{n}. Milestone {n}', f'Deliver milestone {n}', kind='milestone', parent=routes.id,
+                      next_step=next_steps.get(n)) for n in range(1, 7)]
+    for milestone in milestones[:3]:
+        work.set(milestone.id, condition='complete', actor='user')
+    task = add('Port supplier list', 'Port it', parent=milestones[3].id)
+    add('Fix redirect loop', 'Fix it', parent=routes.id)
+    execution = open_execution(store)
+    execution.link('home', 'route-job', task.id, actor='user')
+    now = store.clock()
+    execution.observe('home', JobObservation('route-job', 'running', 'codex', now, None, now))
+    deck_state.attention.raise_item(project='restoke-v2', work_item=milestones[4].id, kind='decision',
+        owner='user', source='manual', source_reference='route-question', headline='Keep order URLs?',
+        context_reference='work:' + milestones[4].id, actor='user')
+
+    page = changed_deck.page
+    page.evaluate("fleetDeck.enterFloor('restoke-v2')")
+    cards = page.locator('[data-epic-card]')
+    expect(cards).to_have_count(2)
+    parent, child = cards.nth(0), cards.nth(1)
+    expect(parent.locator('[data-now]')).to_have_text('Now: 1 running: Port supplier list (home)')
+    expect(parent.locator('[data-milestones]')).to_have_text('No milestones recorded')
+    expect(parent.locator('[data-next]')).to_have_text('Next: No milestones recorded')
+    expect(parent.locator('[data-child-epics]')).to_have_text('Epics: Route migration')
+    expect(parent.locator('[data-attention-count]')).to_have_attribute('data-attention-count', '1')
+
+    expect(child.locator('[data-parent-epic]')).to_have_text('in V2 frontend overhaul')
+    assert child.evaluate('e => e.getBoundingClientRect().left') > parent.evaluate('e => e.getBoundingClientRect().left')
+    expect(child.locator('[data-goal]')).to_have_text('Move every page to the new router.')
+    expect(child.locator('[data-goal]')).to_have_attribute('title', routes.goal)
+    expect(child.locator('[data-milestones]')).to_have_text('3 of 6 milestones')
+    expect(child.locator('progress')).to_have_attribute('value', '3')
+    expect(child.locator('[data-upcoming]')).to_have_text([
+        '4. Milestone 4 — Port the supplier list', '5. Milestone 5 — Next step not recorded',
+        '6. Milestone 6 — Delete router.js'])
+    expect(child.locator('[data-now]')).to_have_text('Now: 1 running: Port supplier list (home)')
+    expect(child.locator('[data-attention-count]')).to_have_text('1 open decision or blocker')
+    card, title = child.bounding_box(), child.locator('[data-epic]').bounding_box()
+    assert card['y'] <= title['y'] and title['y'] + title['height'] <= card['y'] + card['height']
+
+    child.get_by_role('button', name='Route migration', exact=True).click()
+    expect(page.locator('#benchRoute')).to_have_attribute('data-level', 'room')
+    expect(page.locator('[data-slice]')).to_have_count(6)
+    page.evaluate('fleetDeck.enterFloor(null)')
+    assert changed_deck.errors == []
+
+
 def test_bench_route_steps_out_one_level(changed_deck: Deck) -> None:
     page = changed_deck.page
     page.locator('#viewToggle [data-view="building"]').click()
@@ -250,7 +306,10 @@ def test_l3_bench_projection(changed_deck: Deck, base_url: str, redact: bool) ->
         if 'slice=' in route.request.url:
             route.fulfill(json=doc)
         else:
-            route.fulfill(json={'rooms': [{'id': 'epic', 'title': 'Suppliers',
+            route.fulfill(json={'rooms': [{'id': 'epic', 'title': 'Suppliers', 'depth': 0, 'parent': None,
+                                          'goal': 'Find suppliers', 'headline': 'Find suppliers',
+                                          'milestones': {'complete': 0, 'total': 1}, 'agents': [],
+                                          'upcoming': [], 'children': [], 'attention': [],
                                           'benches': [{'id': 'slice', 'title': 'Supplier slice'}]}]})
     page.route('**/api/bench?*', respond)
     try:
