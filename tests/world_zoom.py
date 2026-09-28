@@ -207,6 +207,9 @@ AGREEMENT = """async ({ ids, frames: most }) => {
     const q = (arr, p) => { let s = 0; for (let i = 0; i < arr.length; i++) { const n = s + arr[i]; if (n >= p * t) return i + (p * t - s) / arr[i]; s = n; } return arr.length; };
     return t ? [sx / t, sy / t, q(col, 0.005), q(row, 0.005), q(col, 0.995), q(row, 0.995)] : null;
   };
+  // (every tier of every sprite at once: past the engine's budget for decoded tiers, which would release them again)
+  const keepBudget = w.tierBytes;
+  w.tierBytes = Infinity;
   for (const id of ids) {
     const s = w.sprites.get(id);
     for (let j = 0; j < s.tiers.length; j++) {
@@ -246,7 +249,7 @@ AGREEMENT = """async ({ ids, frames: most }) => {
         out.push({ id, tiers: [i, i + 1], ppm, ...worst, centroid: centre });
       }
     }
-  } finally { Object.assign(w, keep); w.smoothing = keepSmoothing; }
+  } finally { Object.assign(w, keep); w.smoothing = keepSmoothing; w.tierBytes = keepBudget; }
   return out;
 }"""
 

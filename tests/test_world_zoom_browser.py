@@ -87,3 +87,30 @@ def test_zooming_out_and_back_in_never_stalls_the_page(world: Page) -> None:
     summary = long_task_summary(record)
     assert summary["frames"] > 100, summary
     assert summary["longest_task_ms"] <= LONGEST_TASK_MS, summary
+
+
+TIER_MEMORY = """(() => { const w = fleetWorld.engine; let total = 0, busy = 0;
+  for (const s of w.sprites.values()) {
+    if (s.compose) continue;
+    const inUse = s.used ? [s.want, s.shown, s.prev, s.want + 1] : [];
+    s.img.forEach((img, i) => { if (!img) return; const b = img.width * img.height * 4 + (s.alpha[i] ? s.alpha[i].width * s.alpha[i].height * 4 : 0);
+      total += b; if (inUse.includes(i)) busy += b; });
+  }
+  return { total, busy, released: w.stats.released || 0, missing: w.stats.missing }; })()"""
+
+
+def test_tier_bitmaps_past_the_budget_are_released_and_loaded_again(world: Page) -> None:
+    budget = 64 * 2 ** 20
+    world.evaluate(f"fleetWorld.engine.tierBytes = {budget}")
+    zoom_bursts(world, 1, bursts=4, ticks=10)
+    rest(world)
+    zoom_bursts(world, -1, bursts=4, ticks=10)
+    rest(world)
+    out = world.evaluate(TIER_MEMORY)
+    assert out["released"] > 0
+    # (tiers in use are kept whatever the total)
+    assert out["total"] <= max(budget, out["busy"])
+    # back in, the released close tiers load again (rest waits for every wanted tier)
+    zoom_bursts(world, 1, bursts=4, ticks=10)
+    rest(world)
+    assert world.evaluate(TIER_MEMORY)["missing"] == []

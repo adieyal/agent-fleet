@@ -14,6 +14,9 @@ import { sortEntries } from './sort.js';
 import { drawableTier, fadeAlpha, nextTier, pickTier } from './tiers.js';
 
 const THROTTLE_MAX = 8;
+// decoded tier bitmaps kept on the main thread: past this, the least recently drawn tiers not in use are released
+// (a full zoom in and out otherwise keeps ~370 MB of them for good), and loaded again if a zoom wants them
+const TIER_BYTES = 256 * 2 ** 20;
 
 export class World {
   // camera: { far, near, bounds } (see Camera); budgetMs: work per frame above which ambient animation slows down;
@@ -34,7 +37,7 @@ export class World {
     this.scaled = new Map(); this.drawn = new WeakSet(); this.scaledPpm = 0; this.steady = false; this.continuous = false; this.lastFrameAt = 0;
     this.lastView = null; this.lastTime = null; this.raf = 0; this.timer = 0; this.onTap = null;
     this.t0 = performance.now() / 1000;
-    this.painter = new Painter(); this.smoothing = 'low';
+    this.painter = new Painter(); this.smoothing = 'low'; this.tierBytes = TIER_BYTES;
     this.ground = new GroundCache((g, view) => this.paintGround(g, view), this.painter, { reduced, ready: () => this.request() });
     this.resize();
     this.detach = this.camera.attach(el, {
@@ -80,7 +83,7 @@ export class World {
     const tiers = s.tiers.map(t => ({ ...t, frames: t.frames || 1 })).sort((a, b) => a.ppm - b.ppm);
     const had = this.sprites.get(id);
     this.sprites.set(id, { ...s, id, tiers, img: [], alpha: [], tints: new Map(), cells: new Map(), loading: new Set(), loaded: new Set(), failed: new Set(),
-      want: -1, shown: -1, prev: -1, since: 0, mask: null, used: !!(had && had.used) });
+      want: -1, shown: -1, prev: -1, since: 0, mask: null, used: !!(had && had.used), drawnAt: [] });
   }
 
   // a flat quad on the ground layer: quad is four world points; texture (id) tiles from `origin` along unit axes
@@ -217,6 +220,37 @@ export class World {
       if (i >= 0 && !s.loaded.has(i) && !s.failed.has(i)) this.fetchTier(s, i);
     }
   }
+  // keep the decoded tiers within tierBytes: release the least recently drawn of those not in use (wanted, shown,
+  // fading out, the finer one loaded ahead, or loading); in use, they are kept whatever the total
+  trim() {
+    const spare = [];
+    let n = 0;
+    for (const s of this.sprites.values()) {
+      if (s.compose) continue;   // (composed robots keep their own bounded cache: robots.js)
+      const busy = s.used ? [s.want, s.shown, s.prev, nextTier(s.tiers, s.want)] : [];
+      s.img.forEach((img, i) => {
+        if (!img) return;
+        const b = img.width * img.height * 4 + (s.alpha[i] ? s.alpha[i].width * s.alpha[i].height * 4 : 0);
+        n += b;
+        if (!busy.includes(i)) spare.push({ s, i, b, at: s.drawnAt[i] ?? -1 });
+      });
+    }
+    if (n <= this.tierBytes) return;
+    spare.sort((a, b) => a.at - b.at);
+    for (const { s, i, b } of spare) {
+      if (n <= this.tierBytes) break;
+      this.release(s, i);
+      n -= b;
+    }
+  }
+  release(s, i) {
+    if (s.img[i].close) s.img[i].close();
+    s.img[i] = s.alpha[i] = undefined;
+    s.loaded.delete(i); s.loading.delete(i);
+    for (const k of [...s.tints.keys()]) if (k.startsWith(i + '#')) s.tints.delete(k);
+    for (const k of [...s.cells.keys()]) if (k.startsWith(i + '|')) s.cells.delete(k);
+    this.stats.released = (this.stats.released || 0) + 1;
+  }
   dirtySprite(s) {
     for (const it of this.items.values()) if (it.sprite === s.id) { if (it.layer === 'ground') this.dirty.groundTier = true; else this.dirtyItem(it); }
   }
@@ -241,6 +275,7 @@ export class World {
       if (!s.mask) s.mask = hitMask(img, t.fw, t.fh);
       s.loaded.add(i);
       this.stats.loaded.push(t.file);
+      this.trim();
     } catch (e) {
       s.failed.add(i);
       this.stats.missing.push(String(e.message || e));
@@ -384,6 +419,7 @@ export class World {
     else {
       this.lastTime = null;   // resting: the next frame starts a fresh clock
       this.prefetch();
+      this.trim();
       const wait = this.nextFrameIn(now);
       if (wait < Infinity) this.timer = setTimeout(() => this.request(), Math.max(0, wait * 1000 - 4));
     }
@@ -528,6 +564,7 @@ export class World {
       if (had && had.i === i && z <= 1 && z > 0.25) pre = had;
     }
     g.save();
+    s.drawnAt[i] = this.stats.frames;
     g.globalAlpha = alpha * (it.intensity ?? 1);
     const cut = it.cut && this.cutLines(it, t, view, dx, dy, k);
     if (cut) {   // keep one side of the desk-top line (the under part also stops at the desk's near edge)
