@@ -223,13 +223,13 @@ body[data-view=world] :is(#world,#tags,#floorUi,#legend,#feed,#zoom,#hint,#docTi
 body[data-view=world] #panel:not(.open){visibility:hidden}   /* (its shadow shows against the world's light floor) */
 #floorWorldUi .lantern-glyph{position:absolute;transform:translate(-50%,-50%);min-width:16px;height:16px;padding:0 3px;border-radius:8px;
   background:#fff;color:#7a0f72;font:700 11px/16px var(--sans);text-align:center;box-shadow:0 0 0 1.5px #a60e9b}
-#floorWorldUi .bubble{position:absolute;transform:translate(-50%,-100%);width:30px;height:30px;border-radius:9px;background:#fff;
+#floorWorldUi .bubble{position:absolute;transform:translate(-50%,-100%);transform-origin:50% 100%;width:30px;height:30px;border-radius:9px;background:#fff;
   box-shadow:0 2px 6px rgba(40,50,70,.22);display:grid;place-items:center}
 #floorWorldUi .bubble::after{content:'';position:absolute;left:50%;bottom:-5px;margin-left:-5px;border:5px solid transparent;border-bottom:0;border-top-color:#fff}
 #floorWorldUi .bubble .glyph,#floorWorldUi .bubble svg{display:block;width:20px;height:20px}
 #floorWorldUi .bubble svg{fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
 /* a robot's name at close zoom: the first words of its job */
-#floorWorldUi .name{position:absolute;transform:translate(-50%,0);padding:1px 7px;border-radius:999px;background:rgba(21,23,28,.78);
+#floorWorldUi .name{position:absolute;transform:translate(-50%,0);transform-origin:50% 0;padding:1px 7px;border-radius:999px;background:rgba(21,23,28,.78);
   color:#f1f3f7;font:600 11px/16px var(--sans);white-space:nowrap}
 #floorWorldUi .floor-button{position:absolute;width:18px;height:18px;border-radius:50%;font:700 11px/18px var(--sans);text-align:center;color:#e8e8ee}
 #floorWorldUi .floor-button.here{background:#f7f5ef;color:#3d4450;box-shadow:0 0 6px rgba(255,244,214,.9)}

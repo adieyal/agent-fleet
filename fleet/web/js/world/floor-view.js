@@ -25,7 +25,7 @@ import { actionOf, glyphHtml } from '../glyphs.js';
 import { activityFor, isActive } from '../activity.js';
 import { retired } from '../behaviour.js';
 import { select } from '../panel.js';
-import { store } from '../util.js';
+import { mix, store } from '../util.js';
 
 const FLOOR_KEY = 'fleet.world.floor';
 const ZOOM_RATE = 3.2;           // a click's zoom: slower than following the pointer
@@ -166,6 +166,7 @@ function roomNow(jobs) {
   return { ...room, benches, desk: { items: rest, lantern: lanternOf(rest) }, waiting };
 }
 function sync(first = false) {
+  probe.syncs = (probe.syncs || 0) + 1;
   if (!label || !world || !robots) return;
   const now = performance.now() / 1000, jobs = jobsOf(doc), room = roomNow(jobs);
   const created = key => jobs.get(key)?.created_at ?? 0;
@@ -191,6 +192,8 @@ function sync(first = false) {
   tick();
   if (first) world.whenLoaded().then(() => { if (layout) probe.ready = true; });
   probe.unseated = given.unseated;
+  const over = given.unseated.length;   // (more jobs than desks: said, not hidden)
+  note.textContent = over ? `${over} more without a desk` : '';
 }
 // walking: a grid from everything standing on the floor below head height
 function gridOf(lay) {
@@ -291,7 +294,8 @@ function renderOverlay(jobs, room) {
     const job = jobs.get(run.key);
     const name = String(job?.description || '').trim().split(/\s+/).filter(Boolean).slice(0, NAME_WORDS).join(' ');
     if (name) add('name', esc(name), null, { run, kind: 'name' });
-    if (job && isActive(run.status)) add('bubble', glyphHtml(actionOf(job)), null, { run, kind: 'bubble', color: hostLook(run.host).color });
+    // (the glyph in the host's colour, deepened to read on the white card)
+    if (job && isActive(run.status)) add('bubble', glyphHtml(actionOf(job)), null, { run, kind: 'bubble', color: mix(hostLook(run.host).color, '#1b2333', 0.35) });
   }
   place(world.camera.view);
 }
@@ -319,7 +323,7 @@ function place(view) {
     if (o.kind === 'name') { o.el.style.top = `${y + ay * view.ppm - 22 * k}px`; o.el.style.transform = `translate(-50%, 0) scale(${k})`; }
     else {
       o.el.style.color = o.color;
-      o.el.style.top = `${y + ay * view.ppm - 28 * k}px`;
+      o.el.style.top = `${y + ay * view.ppm - 26 * k}px`;   // (above the name)
       o.el.style.transform = `translate(-50%, -100%) scale(${Math.max(1, 1.6 * scale)})`;
     }
   }
