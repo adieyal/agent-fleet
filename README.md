@@ -123,12 +123,19 @@ The controller keeps projects, floors, focus, work, attention and execution stat
 projects and workspace state from `config.json` and `workspace.json` once, keeping
 backups and the original files. Hosts and display settings still use `config.json`.
 
+An explicit `FLEET_CONFIG` must name an existing file; every command fails if it
+is missing. An explicit `FLEET_STORE` must also exist, except that `fleet web`
+initializes a missing store and announces its path. Without these overrides,
+first use still creates the store at the default location.
+
 The examples below use a local host. Replace `PROJECT_ID`, `DUPLICATE_ID`, `WORK_ID`,
 `CRITERION_ID`, `ATTENTION_ID` and `RUN_ID` with IDs printed by preceding commands.
 Use an absolute clean Git repository path for `MANAGEMENT_PATH`, and an existing
 host directory for `WORKING_DIRECTORY`. `JOB_ID` means an existing job on that host.
 To experiment independently, set `FLEET_CONFIG`, `FLEET_STORE` and `FLEET_HOME` to
-paths in a temporary directory before starting.
+paths in a temporary directory before starting. Create the config file first
+(for example, `{"hosts": {"workspace-demo": {"ssh": null}}}`), then run
+`fleet web` once to initialize the store before using the commands below.
 
 ```bash
 fleet host add workspace-demo --local

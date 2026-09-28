@@ -41,7 +41,7 @@ def test_attention_import_and_status_leave_real_config_untouched(monkeypatch, tm
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
     config = tmp_path / "config" / "config.json"
-    config.parent.mkdir()
+    config.parent.mkdir(exist_ok=True)
     workspace = config.with_name("workspace.json")
     workspace.write_text('{"attention": {}}')
     monkeypatch.setenv("FLEET_CONFIG", str(config))
