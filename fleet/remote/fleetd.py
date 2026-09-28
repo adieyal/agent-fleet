@@ -76,6 +76,25 @@ def shorten(text: Any, length: int = SUMMARY_LENGTH) -> str:
     return flat if len(flat) <= length else flat[: length - 1] + "…"
 
 
+def closing_question(text: Any) -> Optional[str]:
+    """The last sentence of a message that asks something, outside code blocks, or None."""
+    prose = re.sub(r"```.*?(```|$)", "\n", str(text or ""), flags=re.S)
+    for sentence in reversed(re.split(r"(?<=[.!?])\s+|\n+", prose)):
+        sentence = sentence.strip().strip("*_").strip()
+        if sentence.endswith("?"):
+            return shorten(sentence)
+    return None
+
+
+def text_event(text: str) -> JsonObject:
+    """An agent message: the summary is its opening, and ask is the question it leaves you with, if any."""
+    event: JsonObject = {"kind": "text", "summary": shorten(text)}
+    question = closing_question(text)
+    if question:
+        event["ask"] = question
+    return event
+
+
 def load_config() -> JsonObject:
     if CONFIG_PATH.exists():
         return json.loads(CONFIG_PATH.read_text())
@@ -231,7 +250,7 @@ class ClaudeParser:
                 if block_type == "thinking":
                     events.append({"kind": "tool", "tool": "think", "summary": shorten(block.get("thinking")) or "thinking…"})
                 elif block_type == "text" and block.get("text", "").strip():
-                    events.append({"kind": "text", "summary": shorten(block["text"])})
+                    events.append(text_event(block["text"]))
                 elif block_type == "tool_use":
                     events.extend(self._tool_use(block))
         elif record_type == "user":
@@ -308,7 +327,7 @@ class CodexParser:
         item_type = item.get("type")
         finished = record_type == "item.completed"
         if item_type == "agent_message" and finished:
-            return [{"kind": "text", "summary": shorten(item.get("text")), "text": item.get("text")}]
+            return [{**text_event(item.get("text") or ""), "text": item.get("text")}]
         if item_type == "reasoning" and finished:
             return [{"kind": "tool", "tool": "think", "summary": shorten(item.get("text")) or "thinking…"}]
         if item_type == "command_execution" and record_type == "item.started":
@@ -991,7 +1010,7 @@ class CodexRolloutParser:
         item_type = item.get("type")
         if item_type == "AgentMessage":
             text = codex_text(item.get("content"))
-            return [{"kind": "text", "summary": shorten(text)}] if text.strip() else []
+            return [text_event(text)] if text.strip() else []
         if item_type == "Reasoning":
             summary = " ".join(codex_text([part]) if isinstance(part, dict) else str(part)
                                for part in item.get("summary_text") or [])

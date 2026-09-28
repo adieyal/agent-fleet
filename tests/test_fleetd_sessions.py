@@ -28,3 +28,13 @@ def test_a_session_is_as_old_as_its_last_record_not_its_file(tmp_path, monkeypat
     [session] = fleetd.SessionTracker().scan().values()
     assert session["status"] == "idle"
     assert time.time() - session["updated_at"] > 3 * 3600 - 120
+
+
+def test_a_message_that_ends_on_a_question_carries_it_as_its_ask():
+    text = ("Step 4 gives legacy pages one way to start up.\n\n```js\nif (x) { ask()? }\n```\n\n"
+            "I'd measure that first. **Should I send that sample to fleet?**")
+    [event] = fleetd.ClaudeParser().parse({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}})
+    assert event["summary"].startswith("Step 4 gives legacy pages")
+    assert event["ask"] == "Should I send that sample to fleet?"
+    [plain] = fleetd.ClaudeParser().parse({"type": "assistant", "message": {"content": [{"type": "text", "text": "Done."}]}})
+    assert "ask" not in plain

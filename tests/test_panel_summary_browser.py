@@ -127,6 +127,15 @@ def test_one_line_is_the_first_sentence_cut_at_a_word(page: Page) -> None:
     assert len(lines[3]) <= 80 and lines[3].endswith("word…")
 
 
+def test_an_idle_session_shows_the_question_its_last_message_ended_on(page: Page) -> None:
+    events = [{"kind": "text", "summary": "Step 4 gives legacy pages one way to start up.",
+               "ask": "Should I send that sample to fleet?", "ts": 1}]
+    wait = run(page, f"""const rows = s.traceRows({json.dumps(events)});
+      const [now] = s.summarySections('k', {{status: 'idle'}}, {{}}, rows, [], new Set());
+      return new DOMParser().parseFromString(now, 'text/html').querySelector('.sm-wait').textContent;""")
+    assert "Should I send that sample to fleet?" in wait
+
+
 def test_the_trace_grows_as_the_window_slides(page: Page) -> None:
     kept = run(page, """
       const ev = i => ({ kind: 'tool', tool: 'bash', summary: 'c' + i, ts: i });

@@ -54,7 +54,7 @@ export function groupActivity(rows) {
   const groups = [];
   let open = null;
   for (const { ev, key } of rows) {
-    if (ev.kind === 'text') { open = { narration: ev.summary || '', ts: ev.ts, first: key, last: key, counts: {} }; groups.push(open); continue; }
+    if (ev.kind === 'text') { open = { narration: ev.summary || '', ask: ev.ask, ts: ev.ts, first: key, last: key, counts: {} }; groups.push(open); continue; }
     if (ev.kind === 'step' && ev.status === 'running') { open = null; continue; }
     const kind = countKind(ev);
     if (!kind) continue;
@@ -101,11 +101,12 @@ const STEP_MARK = { done: '✓', failed: '✗', cancelled: '⊘' };
 const ago = ts => ts ? `${age(ts)} ago` : '';
 
 // What the agent is waiting on you for, if anything: an idle session, or an unresolved decision or blocker it owns.
-function waitingHtml(work, session, items) {
+// An idle session with no item shows the question its last message ended on, when it asked one.
+function waitingHtml(work, session, items, said) {
   const asks = items.filter(i => i.kind === 'decision' || i.kind === 'blocker');
   if (!asks.length && !(session && work.status === 'idle')) return '';
-  const lead = asks[0];
-  return `<div class="sm-wait" role="status"><b>Waiting for you</b>${lead ? `<span>${esc(clip(lead.summary, ONE_LINE))}</span>` : ''}
+  const lead = asks[0], question = lead ? lead.summary : said?.ask;
+  return `<div class="sm-wait" role="status"><b>Waiting for you</b>${question ? `<span>${esc(clip(question, ONE_LINE))}</span>` : ''}
     ${lead && lead.kind === 'decision' ? `<button data-answer="${esc(lead.id)}">Answer</button>` : ''}</div>`;
 }
 
@@ -119,7 +120,7 @@ export function summarySections(key, work, session, rows, items, expanded) {
   const done = steps.filter(s => s.status === 'done').length;
   const stepLine = running ? `<div class="sm-step"><span class="sm-n">Step ${running.index + 1} of ${steps.length}</span>${esc(clip(running.title, ONE_LINE))}</div>`
     : steps.length ? `<div class="sm-step"><span class="sm-n">${esc(work.status)}</span>${done} of ${steps.length} steps done</div>` : '';
-  const now = `<h3>Now</h3>${waitingHtml(work, session, items)}${stepLine}
+  const now = `<h3>Now</h3>${waitingHtml(work, session, items, said)}${stepLine}
     ${doing ? `<div class="sm-todo">▸ ${esc(clip(doing.text, ONE_LINE))}</div>` : ''}
     ${said ? `<p class="sm-say">${esc(clip(said.narration, TWO_LINES))} <time>${esc(ago(said.ts))}</time></p>`
       : '<p class="sm-say muted">No narration yet.</p>'}`;
