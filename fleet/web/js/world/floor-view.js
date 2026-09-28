@@ -25,6 +25,7 @@ import { actionOf, glyphHtml } from '../glyphs.js';
 import { activityFor, isActive } from '../activity.js';
 import { retired } from '../behaviour.js';
 import { select } from '../panel.js';
+import { libraryKeyOf, openProjectLibrary } from '../library.js';
 import { mix, store } from '../util.js';
 
 const FLOOR_KEY = 'fleet.world.floor';
@@ -330,10 +331,26 @@ function place(view) {
 }
 
 // ------------------------------------------------------------------ clicks
+// a bookshelf opens the floor's project library; the pick is front-most, so a robot before a shelf is picked first
+const isShelf = hit => hit && hit.place === 'library' && /^shelf-/.test(hit.id);
+const shelfTip = Object.assign(document.createElement('div'), { className: 'shelf-tip', hidden: true });
+ui.append(shelfTip);
+canvas.addEventListener('pointermove', ev => {
+  if (!world || !layout || ev.buttons) return;
+  const r = canvas.getBoundingClientRect(), x = ev.clientX - r.left, y = ev.clientY - r.top;
+  const on = isShelf(world.pick(x, y)) && ev.pointerType !== 'touch';
+  canvas.classList.toggle('hot', on);
+  shelfTip.hidden = !on;
+  if (!on) return;
+  shelfTip.textContent = `${labelsOf(doc).get(label)} library`;
+  shelfTip.style.left = `${x + 14}px`; shelfTip.style.top = `${y + 18}px`;
+});
+canvas.addEventListener('pointerleave', () => { canvas.classList.remove('hot'); shelfTip.hidden = true; });
 function tap(hit) {
   probe.taps.push(hit);
   const where = hit && hit.place;
   if (!where || !layout) return;
+  if (isShelf(hit)) { shelfTip.hidden = true; openProjectLibrary(libraryKeyOf(doc, label), labelsOf(doc).get(label)); return; }
   const run = layout.runs.find(r => where === `run:${r.key}`);
   if (run) { select(run.key); return; }   // a robot, or its lantern: the job's panel
   const m = where.match(/^(?:bench|plan):(.+)$/), step = layout.runs.find(r => where.startsWith(`step:${r.key}:`));
@@ -345,6 +362,10 @@ probe.frame = which => { world.camera.frame(which === 'near' ? layout.frames.nea
 probe.state = () => ({ label, desks: Object.fromEntries(desks), runs: layout ? layout.runs.map(r => ({ key: r.key, desk: r.module, status: r.status })) : [],
   members: crew ? crew.members.map(m => ({ key: m.run.key, state: m.state, clip: m.clip, leaving: m.leaving, at: m.at, tone: m.look.tone, kit: m.look.kit, host: m.look.host, agent: m.look.agent })) : [],
   lanterns: layout ? layout.items.filter(it => it.sprite === 'lantern').map(it => ({ id: it.id, place: it.place, at: it.at, count: it.lantern.count })) : [] });
+probe.shelfAt = id => {   // where a bookshelf is on screen (high on its face), for clicking it
+  const it = layout.items.find(x => x.id === id), f = kit[it.sprite].footprint;
+  return toScreen(world.camera.view, [it.at[0], it.at[1] + f[1] / 2, f[5] * 0.8]);
+};
 probe.robotAt = key => {   // where a robot is on screen (its chest), for clicking it
   const m = crew.members.find(x => x.run.key === key);
   return toScreen(world.camera.view, [m.at[0], m.at[1], m.clip && crew.seated.includes(key) ? 0.95 : 0.6]);

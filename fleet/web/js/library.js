@@ -14,6 +14,7 @@ const libProjects = document.getElementById('libProjects');
 export let libraryDocs = [], libraryFocus = null;
 let libraryProjects = [], overviews = [], view = 'overview', loading = null, refreshTimer = 0;
 let chosen = store('localStorage', 'fleet.library.project');
+let asked = { key: null, name: null };   // the project a bookshelf opened, shown even without an overview
 const openCards = new Set(), openFolders = new Set();
 // what a job's copy says about where the job is now; its documents read from the store either way
 const WHERE = { 'on host': '', 'gone from host': 'left its host', 'host offline': 'host offline' };
@@ -66,8 +67,17 @@ function cardHtml(ws) {
       <h5>Traces</h5><div class="ws-traces">${ws.traces.map(t => traceButton(t.trace, t.label, 'chip-tr')).join('')}</div>
     </div></details>`;
 }
+// a project opened from its bookshelf that has no overview: its job documents, or that it has none yet
+function renderUnlisted() {
+  const entry = libraryProjects.find(p => p.id === chosen);
+  const jobs = (entry?.jobs || []).filter(job => job.documents.length);
+  libList.innerHTML = jobs.length
+    ? `<section class="lib-group"><h3>${esc(entry.name || entry.id)}</h3><h4>Job documents · ${jobs.length}</h4>${jobs.map(job => jobHtml(entry.id, job, job.documents)).join('')}</section>`
+    : `<p class="lib-empty">${esc(entry?.name || asked.name)} has no documents yet.</p>`;
+}
 function renderOverview() {
   traces.clear();
+  if (asked.key === chosen && !overviews.some(p => key(p) === chosen)) { renderUnlisted(); return; }
   const project = overviews.find(p => key(p) === chosen) || overviews[0];
   if (!project) {
     libList.innerHTML = '<p class="lib-empty">No projects yet. Jobs’ documents collect here as they are written; add a project’s repository or Ralph folder with <code>fleet library add PROJECT /path</code>.</p>';
@@ -209,6 +219,23 @@ export function refreshLibrary() {
     refreshTimer = 0;
     try { await load(); render(); } catch (error) { /* the open view stays as it was; the next update tries again */ }
   }, 2000);
+}
+// A project label's key in the library: the project ID its work carries, or that the registry links the label to;
+// a label no project claims is its library's name.
+export function libraryKeyOf(doc, label) {
+  const items = (doc.hosts || []).flatMap(h => [...(h.jobs || []), ...(h.sessions || [])]);
+  const id = items.find(item => item.project === label && item.project_id)?.project_id
+    ?? (doc.projects || []).find(p => (p.links || []).some(l => l.label === label))?.id;
+  return id || 'library:' + label;
+}
+// A project's library, from its bookshelf: the overview with that project chosen, as its project button would.
+// projectKey is the project buttons' key (the project ID, else 'library:<name>'); name is what an empty state calls it.
+export function openProjectLibrary(projectKey, name = projectKey) {
+  view = 'overview';
+  chosen = projectKey;
+  asked = { key: projectKey, name };
+  store('localStorage', 'fleet.library.project', chosen);
+  return showLibrary();
 }
 document.getElementById('libraryOpen').addEventListener('click', showLibrary);
 libraryPane.addEventListener('toggle', ev => {

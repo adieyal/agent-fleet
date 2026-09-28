@@ -182,7 +182,9 @@ loadAssets().then(() => {
     lanterns: lanternState,
     rooms: () => rooms.map(r => ({ name: r.name, label: r.label, x: r.ox, y: r.oy,
       screen: toScreen(_w.set(r.ox + RW / 2, 0, r.oy + RD / 2), { x: 0, y: 0 }), focus: r.focus, dim: r.dimK ?? null, lit: r.lit,
-      attention: r.attention?.level ? { kind: r.attention.kind, state: r.attention.level, count: r.attention.shown.length } : null })),
+      attention: r.attention?.level ? { kind: r.attention.kind, state: r.attention.level, count: r.attention.shown.length } : null,
+      library: r.libraryKey ?? null,
+      shelves: r.shelves.map(m => toScreen(m.localToWorld(_w.set(0, 0.2, 0)), { x: 0, y: 0 })) })),   // (high on each bookcase, above anyone at it)
     agents: () => [...ents.values()].map(e => ({ key: e.key, kind: e.kind, room: e.room, status: e.job.status, leaving: !!e.leaving, clip: e.bot.clip,
       station: e.spotProp ?? null, gathered: !!e.crowd })),
     crowds: () => [...crowds.values()].map(c => ({ room: c.room, station: c.station, count: c.members.length, fanned: fanned === c.key })),

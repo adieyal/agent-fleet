@@ -8,7 +8,7 @@ import { ents, setFanned } from './model.js';
 import { layoutNames, layoutRooms, plates, roomByName, rooms } from './rooms.js';
 import { DOC_KIND, docKey, docMeshes, docMeta, docSlots, hoverDoc, kindOf, setHoverDoc } from './docs3d.js';
 import { closePanel, select } from './panel.js';
-import { closeLibrary, libraryPane } from './library.js';
+import { closeLibrary, libraryPane, openProjectLibrary } from './library.js';
 import { closeReader, openReader, reader } from './reader.js';
 import { hoverScreen, pipelineByKey, screenMeshes } from './pipelines.js';
 import { openSankey, sankeyPane } from './sankey.js';
@@ -154,14 +154,15 @@ canvas.addEventListener('pointermove', ev => {
   const hit = pick(ev.clientX, ev.clientY);
   canvas.classList.toggle('hot', !!hit);
   hoverScreen(hit?.pipeline ? hit.key : null);
-  if (hit && (hit.doc || hit.pipeline) && ev.pointerType !== 'touch') showDocTip(hit, ev.clientX, ev.clientY); else hideDocTip();
+  if (hit && (hit.doc || hit.pipeline || hit.shelf) && ev.pointerType !== 'touch') showDocTip(hit, ev.clientX, ev.clientY); else hideDocTip();
 });
 function endPointer(ev) {
   pointers.delete(ev.pointerId);
   if (pointers.size < 2) pinch = null;
   if (drag && !drag.moved && ev.type === 'pointerup') {
     const hit = pick(ev.clientX, ev.clientY);
-    if (hit && hit.pipeline) { hideDocTip(); openSankey(hit.pipeline); }
+    if (hit && hit.shelf) { hideDocTip(); openProjectLibrary(hit.shelf.libraryKey, hit.shelf.label); }
+    else if (hit && hit.pipeline) { hideDocTip(); openSankey(hit.pipeline); }
     else if (hit && hit.doc) openReader(hit.e, hit.doc);
     else if (hit && hit.e.crowd) setFanned(hit.e.crowd.key);
     else if (hit) select(hit.e.key);
@@ -175,8 +176,15 @@ canvas.addEventListener('pointerleave', hideDocTip);
 
 const docTip = document.getElementById('docTip');
 function showDocTip(hit, px, py) {
-  const { e, doc } = hit, key = hit.pipeline ? 'pipeline:' + hit.key : docKey(e, doc);
-  if (hit.pipeline && hoverDoc?.key !== key) {
+  const { e, doc } = hit, key = hit.shelf ? 'shelf:' + hit.shelf.name : hit.pipeline ? 'pipeline:' + hit.key : docKey(e, doc);
+  if (hit.shelf) {
+    if (hoverDoc?.key !== key) {
+      setHoverDoc({ key });
+      docTip.style.setProperty('--hc', hit.shelf.look.accent);
+      docTip.innerHTML = `<div class="th"><span class="kb">Library</span><b>${esc(hit.shelf.label)} library</b></div><div class="tc">click to open</div>`;
+      docTip.hidden = false;
+    }
+  } else if (hit.pipeline && hoverDoc?.key !== key) {
     setHoverDoc({ key });
     const p = hit.pipeline;
     docTip.style.setProperty('--hc', '#38bdf8');
@@ -207,10 +215,12 @@ function pick(px, py) {
   for (const e of ents.values()) if (roomByName.has(e.room) && e.bot.root.visible) proxies.push(e.proxy);
   for (const kind in docMeshes) proxies.push(docMeshes[kind]);
   proxies.push(...screenMeshes);
+  for (const r of rooms) if (r.libraryKey) proxies.push(...r.shelves);
   _ndc.set(px / vw * 2 - 1, -(py / vh) * 2 + 1);
   raycaster.setFromCamera(_ndc, camera);
   const hit = raycaster.intersectObjects(proxies, false)[0];
   if (!hit) return null;
+  if (hit.object.userData.shelf) return { shelf: hit.object.userData.shelf };
   if (hit.object.userData.pipeline) {
     const pipeline = pipelineByKey(hit.object.userData.pipeline);
     return pipeline ? { pipeline, key: hit.object.userData.pipeline } : null;

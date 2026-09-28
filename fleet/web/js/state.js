@@ -16,7 +16,7 @@ import {
   closePanel, collectEvents, renderFeed, renderLegend, renderLive, renderPanel, renderStats, updateHint,
 } from './panel.js';
 import { followDoc, openReader, readerTarget } from './reader.js';
-import { refreshLibrary } from './library.js';
+import { libraryKeyOf, refreshLibrary } from './library.js';
 import { applyFocus } from './focus.js';
 import { applyAttention } from './attention.js';
 import { patchScene } from './dim.js';
@@ -124,6 +124,7 @@ export function applyState(doc) {
   layoutRooms([...projects].sort());
   buildScreens();
   for (const room of rooms) room.label = doc.project_labels?.[room.name] || room.name;
+  for (const room of rooms) room.libraryKey = libraryKeyOf(doc, room.name);
   applyFocus(doc, rooms);
   const seen = new Set();
   const now = animationNow() / 1000;

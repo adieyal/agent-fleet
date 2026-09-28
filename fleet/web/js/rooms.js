@@ -119,11 +119,21 @@ function buildRoom(r, place) {
 
   // furniture (roles filled by the theme), then the theme's decor and wall art
   const lift = h => h === 'counter' ? KIT.kitchenCabinet.size.y : typeof h === 'string' ? KIT[h.slice(3)].size.y : h || 0;
+  // each bookcase also gets an invisible box the pointer picks: a click opens the project's library
+  const g = new THREE.Group();
+  deckGroup.add(g);
+  r.shelves = [];
   const put = (model, x, y, rot, h) => {
     if (model && model[0] === '@') model = T.roles[model.slice(1)];
     if (!model) return;
     if (model === 'rack') serverRack(at, S, x, y, rot);
     else at(model, x, y, lift(h), null, null, rot);
+    if (!model.startsWith('bookcase')) return;
+    const size = KIT[model].size, proxy = new THREE.Mesh(G.box, M.hidden);
+    proxy.scale.copy(size); proxy.position.set(ox + x, lift(h) + size.y / 2, oy + y); proxy.rotation.y = rot;
+    proxy.userData.shelf = r;
+    g.add(proxy);
+    r.shelves.push(proxy);
   };
   for (const [model, x, y, rot, h] of FURNITURE) put(model, x, y, rot, h);
   for (const [model, x, y, rot, h] of T.decor) put(model, x, y, rot, h);
@@ -132,8 +142,6 @@ function buildRoom(r, place) {
   for (let s = 0; s < 2; s++) for (const [lift, dz] of [[0.05, -0.2], [0.47, 0.15], [0.9, -0.1], [1.32, 0.18]]) at('books', 0.3, (s ? 3.12 : 2.3) + dz, lift, null, null, HALF);
 
   // terminal screens: a glowing canvas in front of each monitor (their own draw calls: each shows its own text)
-  const g = new THREE.Group();
-  deckGroup.add(g);
   r.screens = TERMINALS.map((x, i) => {
     const s = { ...canvasTex(128, 80), busy: null, next: 0, seed: i * 3 + hash(r.name) % 5 };
     const mat = new THREE.MeshBasicMaterial({ map: s.tex, toneMapped: false });
