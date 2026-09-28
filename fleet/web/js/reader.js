@@ -3,7 +3,7 @@
 import { DEMO, REDUCED } from './env.js';
 import { age, clamp, esc, store } from './util.js';
 import { hostLook } from './looks.js';
-import { DOC_KIND, kindOf } from './docs3d.js';
+import { DOC_KIND, isUpdating, kindOf } from './docs3d.js';
 import { hideDocTip } from './camera.js';
 import { fallbackCopy } from './panel.js';
 import { libraryDocs } from './library.js';
@@ -34,7 +34,7 @@ export function openReader(e, doc) {
   rd.req++;
   rd.key = `${e.host}:${e.job.id}:${doc.id}`;
   rd.source = 'job';
-  rd.host = e.host; rd.job = e.job; rd.doc = doc; rd.data = null;
+  rd.host = e.host; rd.job = e.job; rd.doc = doc; rd.data = null; rd.stale = false; rd.refreshError = null;
   if (reader.hidden) rd.lastFocus = document.activeElement;
   reader.hidden = false;
   renderReaderHead();
@@ -126,8 +126,41 @@ async function loadDoc(req) {
     rd.data = data;
     renderReaderHead();
     renderReaderBody();
+    if (rd.stale && rd.source === 'job') refreshDoc(req);
   } catch (err) {
     if (req === rd.req) renderReaderError(err.message || String(err));
+  }
+}
+// A job document the agent is still writing: when a state update brings it a new mtime or size, fetch it again and
+// swap the text in place, keeping the reading position, or the bottom for someone following along.
+export function readerTarget() { return reader.hidden || rd.source !== 'job' ? null : `${rd.host}:${rd.job.id}`; }
+export function followDoc(e) {
+  if (reader.hidden || rd.source !== 'job' || !e || e.host !== rd.host || e.job.id !== rd.job.id) return;
+  const doc = (e.job.documents || []).find(d => d.id === rd.doc.id);
+  rd.job = e.job;
+  if (!doc || (doc.mtime === rd.doc.mtime && doc.size === rd.doc.size)) return;
+  rd.doc = doc;
+  // still loading or refreshing: fetch once more when that lands
+  if (!rd.data || rd.refreshing === rd.req) rd.stale = true;
+  else refreshDoc(rd.req);
+}
+async function refreshDoc(req) {
+  rd.refreshing = req; rd.stale = false;
+  try {
+    const data = DEMO ? await demoDoc(rd.host, rd.job.id, rd.doc.id) : await fetchDoc(rd.host, rd.job.id, rd.doc.id);
+    if (req !== rd.req) return;
+    rd.data = data; rd.refreshError = null;
+    const max = rdBody.scrollHeight - rdBody.clientHeight;
+    renderReaderBody(max > 0 && rdBody.scrollTop >= max - 4 ? Infinity : rdBody.scrollTop);
+  } catch (err) {
+    // the last text that did load stays on screen, and the head says it is out of date
+    if (req === rd.req) rd.refreshError = err.message || String(err);
+  } finally {
+    if (req === rd.req) {
+      rd.refreshing = 0;
+      renderReaderHead();
+      if (rd.stale) refreshDoc(req);
+    }
   }
 }
 async function fetchDoc(host, job, id) {
@@ -158,6 +191,8 @@ function renderReaderHead() {
     step != null ? `<span>step ${step + 1}</span>` : '',
     d.minutes ? `<span>${d.minutes} min read</span>` : '',
     (d.mtime || doc.mtime) ? `<span>updated ${age(d.mtime || doc.mtime)} ago</span>` : '',
+    rd.source === 'job' && isUpdating(rd.job, doc) ? '<span class="rd-live">updating live</span>' : '',
+    rd.source === 'job' && rd.refreshError ? `<span class="rd-stale" title="${esc(rd.refreshError)}">couldn’t refresh: showing an older version</span>` : '',
   ].join('');
   document.getElementById('rdCopy').disabled = !rd.data;
   document.getElementById('rdDownload').disabled = !rd.data;
@@ -173,26 +208,39 @@ function renderReaderError(message) {
     <code>${esc(message)}</code><br><button class="rd-retry" id="rdRetry">Try again</button></div></div>`;
   document.getElementById('rdRetry').addEventListener('click', () => { renderReaderLoading(); loadDoc(++rd.req); });
 }
-function renderReaderBody() {
+// With a scroll position this is a refresh of the open document: the grid stays, only the contents and the text are
+// swapped, and the position is restored before the browser paints, so nothing flickers. Infinity follows the bottom.
+function renderReaderBody(scrollTop) {
   const d = rd.data;
   const toc = (d.toc || []).filter(x => x.id && x.level <= 3);
   const showToc = toc.length >= 3, top = Math.min(...toc.map(x => x.level));
-  rdBody.innerHTML = `<div class="rd-grid${showToc ? ' has-toc' : ''}">
-    ${showToc ? `<details class="rd-toc"><summary>Contents<span>${toc.length}</span></summary><nav aria-label="Contents"><p class="lbl">Contents</p>
-      ${toc.map(x => `<a href="#doc-${esc(x.id)}" class="l${x.level - top + 1}">${esc(x.text)}</a>`).join('')}</nav></details>` : ''}
-    <article class="prose"></article></div>`;
+  const links = showToc ? toc.map(x => `<a href="#doc-${esc(x.id)}" class="l${x.level - top + 1}">${esc(x.text)}</a>`).join('') : '';
+  const grid = rdBody.querySelector('.rd-grid');
+  const refresh = scrollTop !== undefined && grid && grid.classList.contains('has-toc') === showToc && grid.querySelector('.prose');
+  if (refresh) {
+    const nav = grid.querySelector('.rd-toc nav');
+    if (nav) nav.innerHTML = `<p class="lbl">Contents</p>${links}`;
+    const count = grid.querySelector('.rd-toc summary span');
+    if (count) count.textContent = toc.length;
+  } else {
+    rdBody.innerHTML = `<div class="rd-grid${showToc ? ' has-toc' : ''}">
+      ${showToc ? `<details class="rd-toc"><summary>Contents<span>${toc.length}</span></summary><nav aria-label="Contents"><p class="lbl">Contents</p>
+        ${links}</nav></details>` : ''}
+      <article class="prose"></article></div>`;
+  }
   const prose = rdBody.querySelector('.prose');
   prose.innerHTML = d.html;   // rendered server-side with raw HTML escaped
   if (d.truncated) prose.insertAdjacentHTML('beforeend', '<p class="rd-note">This document was truncated for the reader. Download the Markdown for the full text.</p>');
   tidyProse(prose);
-  syncTocMode();
+  if (!refresh) syncTocMode();
   fitTables();
   if (document.fonts) document.fonts.ready.then(fitTables);
   rd.tocLinks = [...rdBody.querySelectorAll('.rd-toc a')]
     .map(a => ({ a, h: document.getElementById(a.getAttribute('href').slice(1)) }))
     .filter(x => x.h);
   rd.tocCurrent = null;
-  rdBody.scrollTop = Number(store('sessionStorage','fleet.reader.scroll.' + rd.key)) || 0;
+  rdBody.scrollTop = scrollTop === Infinity ? rdBody.scrollHeight
+    : scrollTop ?? (Number(store('sessionStorage','fleet.reader.scroll.' + rd.key)) || 0);
   onReaderScroll();
 }
 // heading ids are prefixed so a heading called "panel" or "legend" can't collide with the page's own ids

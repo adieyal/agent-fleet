@@ -9,7 +9,7 @@ import { ROBOT, renderer } from './scene.js';
 import {
   ents, everLoaded, feed, feedSeeded, hosts, live, seenEvents, selectedKey, setFanned, setFeedSeeded, setSelectedKey, workOf,
 } from './model.js';
-import { DOC_KIND, docMeta, docsOf, kindOf } from './docs3d.js';
+import { DOC_KIND, DOC_UPDATING_SECONDS, docMeta, docsOf, inputDocsOf, isUpdating, kindOf } from './docs3d.js';
 import { action, buildRobot } from './agents.js';
 import { dismiss, entered, hiddenCount, restoreDismissed, retiredCount, showFinished, toggleFinished } from './state.js';
 import { focusOn } from './camera.js';
@@ -188,13 +188,21 @@ function renderSessionPanel(e) {
     s.resume ? `<h3>Resume in a terminal</h3><div class="cmd"><code>${esc(s.resume)}</code><button data-copy="${esc(s.resume)}">copy</button></div>` : ''];
   patchPanel(headHtml, sections, e, 'normal');
 }
+// What the job produced, newest first, then what it was given. A document the running agent changed in the last
+// minute says so; the panel re-renders when that runs out, even if no state update arrives.
+let docsExpiry = 0;
 function docsPanelHtml(e) {
-  const docs = docsOf(e.job).reverse();
+  const docs = [...docsOf(e.job).reverse(), ...inputDocsOf(e.job)];
   if (!docs.length) return '';
+  const updating = docs.filter(d => isUpdating(e.job, d));
+  if (updating.length) {
+    const next = Math.min(...updating.map(d => d.mtime)) + DOC_UPDATING_SECONDS;
+    if (next !== docsExpiry) { docsExpiry = next; setTimeout(renderPanel, Math.max(0, next * 1000 - Date.now()) + 50); }
+  }
   return `<h3>Documents · ${docs.length}</h3><ul class="docs" style="--hc:${e.look.color}">${docs.map(d => {
-    const kind = kindOf(d);
-    return `<li><button data-doc="${esc(d.id)}" title="Read ${esc(d.name)}"><span class="dk ${kind}" aria-hidden="true">${DOC_KIND[kind].glyph}</span>
-      <span class="dn">${esc(d.name)}</span><span class="dm">${DOC_KIND[kind].label.toLowerCase()} · ${esc(docMeta(d))}</span><span class="go">Read →</span></button></li>`;
+    const kind = kindOf(d), live = updating.includes(d);
+    return `<li${live ? ' class="updating"' : ''}><button data-doc="${esc(d.id)}" title="Read ${esc(d.name)}"><span class="dk ${kind}" aria-hidden="true">${DOC_KIND[kind].glyph}</span>
+      <span class="dn">${esc(d.name)}</span><span class="dm">${live ? '<span class="upd">updating</span> · ' : ''}${DOC_KIND[kind].label.toLowerCase()} · ${esc(docMeta(d))}</span><span class="go">Read →</span></button></li>`;
   }).join('')}</ul>`;
 }
 panel.addEventListener('click', ev => {

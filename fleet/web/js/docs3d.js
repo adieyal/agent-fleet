@@ -30,8 +30,8 @@ const badges = [];
 
 export function buildDocs() {
   const holders = [];
-  for (const r of rooms) for (const e of r.ents) if (e.job.documents && e.job.documents.length) holders.push(e);
-  const sig = holders.map(e => e.key + ':' + e.room + ':' + e.job.documents.map(d => d.id).join(',')).join('|');
+  for (const r of rooms) for (const e of r.ents) if (docsOf(e.job).length) holders.push(e);
+  const sig = holders.map(e => e.key + ':' + e.room + ':' + docsOf(e.job).map(d => d.id).join(',')).join('|');
   if (sig === docSig) return;
   docSig = sig;
   for (const k of Object.keys(docMeshes)) { docGroup.remove(docMeshes[k]); docMeshes[k].dispose(); delete docMeshes[k]; }
@@ -40,7 +40,7 @@ export function buildDocs() {
   docByKey.clear();
   const slots = { report: [], file: [], outbox: [] }, trays = [], stripes = [];
   for (const r of rooms) {
-    const mine = r.ents.filter(e => e.job.documents && e.job.documents.length);
+    const mine = r.ents.filter(e => docsOf(e.job).length);
     if (!mine.length) continue;
     const pitch = Math.min(0.62, (PRESS.y1 - 0.05 - PRESS.trays) / mine.length);
     mine.forEach((e, i) => {
@@ -219,13 +219,27 @@ export const DOC_KIND = {
   report: { label: 'Report', glyph: '▤' },
   file:   { label: 'File',   glyph: '✎' },
   outbox: { label: 'Outbox', glyph: '⇪' },
+  brief:   { label: 'Brief',   glyph: '☰' },
+  context: { label: 'Context', glyph: '⧉' },
 };
+// what the job was given rather than what it produced: listed and readable, but never printed onto the press
+const INPUT_KINDS = new Set(['brief', 'context']);
+// a document changed this recently, on a running job, is still being written
+export const DOC_UPDATING_SECONDS = 60;
 const seenDocs = new Set();
 const docFx = new Map();                            // doc key → { entKey, start }
 export let hoverDoc = null;                                // { key } of the document under the pointer
 
 export function docKey(e, doc) { return e.key + ':' + doc.id; }
-export function docsOf(job) { return (job.documents || []).slice().sort((a, b) => (a.mtime || 0) - (b.mtime || 0)); }
+export function docsOf(job) { return (job.documents || []).filter(d => !INPUT_KINDS.has(d.kind)).sort((a, b) => (a.mtime || 0) - (b.mtime || 0)); }
+// step briefs in step order, then context files by name
+export function inputDocsOf(job) {
+  const inputs = (job.documents || []).filter(d => INPUT_KINDS.has(d.kind));
+  return [...inputs.filter(d => d.kind === 'brief').sort((a, b) => (a.step ?? 0) - (b.step ?? 0)), ...inputs.filter(d => d.kind === 'context')];
+}
+export function isUpdating(job, doc) {
+  return job.status === 'running' && !INPUT_KINDS.has(doc.kind) && doc.mtime != null && Date.now() / 1000 - doc.mtime < DOC_UPDATING_SECONDS;
+}
 export function kindOf(doc) { return DOC_KIND[doc.kind] ? doc.kind : 'file'; }
 export function fmtSize(n) { if (!n && n !== 0) return ''; if (n < 1024) return n + ' B'; if (n < 1048576) return (n / 1024).toFixed(n < 10240 ? 1 : 0) + ' KB'; return (n / 1048576).toFixed(1) + ' MB'; }
 export function docMeta(doc) { return [doc.step != null ? `step ${doc.step + 1}` : '', fmtSize(doc.size), doc.mtime ? age(doc.mtime) + ' ago' : ''].filter(Boolean).join(' · '); }

@@ -415,6 +415,11 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 .dk.report{background:#e9edf3;color:#334155}
 .dk.file{background:#0f2940;color:#7dd3fc;box-shadow:0 0 8px rgba(125,211,252,.25)}
 .dk.outbox{background:#dfae55;color:#4a3208}
+.dk.brief,.dk.context{background:transparent;color:var(--muted);border-style:dashed;border-top-style:solid}
+.docs .upd{color:var(--run);font-weight:600}
+.docs .upd::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;margin-right:5px;vertical-align:1px;animation:pulse 1.1s ease-in-out infinite}
+.docs li.updating button{border-color:color-mix(in srgb,var(--run) 45%,var(--line))}
+@media (prefers-reduced-motion:reduce){.docs .upd::before{animation:none}}
 #docTip{position:fixed;left:0;top:0;z-index:35;pointer-events:none;max-width:320px;padding:9px 12px 10px;border-radius:10px;
   background:rgba(7,12,22,.96);border:1px solid var(--hc,var(--line2));box-shadow:0 8px 24px rgba(0,0,0,.5);font:13px/1.4 var(--sans)}
 #docTip[hidden]{display:none}
@@ -503,6 +508,9 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 .rd-kind.report{color:var(--rd-muted)}
 .rd-kind.file{color:#38a3d8}
 .rd-kind.outbox{color:#c98a16}
+.rd-kind.brief,.rd-kind.context{color:var(--rd-muted);border-style:dashed}
+.rd-meta .rd-live{color:var(--run)}
+.rd-meta .rd-stale{color:var(--bad)}
 .rd-meta{margin-top:5px;display:flex;flex-wrap:wrap;gap:2px 0;font:13px/1.45 var(--sans);color:var(--rd-muted);font-variant-numeric:tabular-nums}
 .rd-meta span+span::before{content:"·";margin:0 .55em;opacity:.7}
 .rd-meta .hd{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px}
