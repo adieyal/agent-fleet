@@ -204,11 +204,14 @@ export function updateTag(e) {
   let window0 = 0;
   if (steps.length > 12) window0 = clamp((cur < 0 ? done : cur) - 5, 0, steps.length - 12);
   const pips = steps.slice(window0, window0 + 12).map(s => `<i class="pip ${esc(s.status)}"></i>`).join('');
-  const sig = action + '|' + words + '|' + cls + '|' + pips + done;
+  // A job is named by the start of its description; the short id stays, dimmed, to match the CLI.
+  const name = trunc(j.description || '', vw < 760 ? 14 : 22);
+  const label = `<span class="id" title="${esc(j.id)}">${name ? `${esc(name)} <i class="sid">${esc(shortId(j.id))}</i>` : esc(shortId(j.id))}</span>`;
+  const sig = action + '|' + words + '|' + cls + '|' + pips + done + '|' + label;
   if (sig === e.sig) return;
   setBubble(e, action, words, cls);
   e.sig = sig;
-  e.el.lastChild.innerHTML = `<span class="id">${esc(j.id)}</span>${window0 > 0 ? '<b>…</b>' : ''}${pips}<b>${done}/${steps.length}</b>`;
+  e.el.lastChild.innerHTML = `${label}${window0 > 0 ? '<b>…</b>' : ''}${pips}<b>${done}/${steps.length}</b>`;
   e.sizeDirty = true;
 }
 
