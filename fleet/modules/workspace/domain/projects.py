@@ -82,6 +82,17 @@ class Registry:
             raise FleetError(f"unknown project '{project_id}'")
         return self.projects[project_id]
 
+    def resolve(self, reference: str) -> str:
+        if reference in self.projects:
+            return reference
+        candidates = sorted(project.id for project in self.projects.values() if project.name == reference)
+        if len(candidates) == 1:
+            return candidates[0]
+        if candidates:
+            raise FleetError(f"ambiguous project '{reference}': {', '.join(candidates)}; "
+                             "use an ID or fleet project merge <keep> <other>")
+        raise FleetError(f"unknown project '{reference}'; use fleet project list to find a project ID")
+
     def create(self, name: str, repositories: Iterable[str] = ()) -> Project:
         if not name.strip():
             raise FleetError("a project needs a name")

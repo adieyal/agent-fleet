@@ -52,6 +52,13 @@ def isolated_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, empty_store:
     monkeypatch.setenv("FLEET_HOME", str(tmp_path / "fleet-home"))
 
 
+@pytest.fixture
+def project_id():
+    from fleet.composition import open_workspace
+
+    return open_workspace().edit_registry(lambda registry: registry.create('p')).id
+
+
 @pytest.fixture(scope="session", autouse=True)
 def real_config_unchanged() -> Iterator[None]:
     directory = Path.home() / ".config" / "fleet"

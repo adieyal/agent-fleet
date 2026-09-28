@@ -19,6 +19,8 @@ from fleet.projections.attention import attention_display, attention_items
 from fleet.projections.building import building_state
 from fleet.modules.workspace import Registry, WorkspaceFacade, AlreadyHoused
 from fleet.transport import FleetError
+from fleet.composition import open_work, open_execution, open_library, open_decisions
+from fleet.projections.project import project_status
 T = TypeVar("T")
 
 
@@ -126,6 +128,11 @@ class LiveWorkspace:
         storehouse, and the live projects that have no floor."""
         self.workspace.settle()
         building = building_state(self.workspace, registry, self.capacity)
+        work = open_work(self.store)
+        execution, library = open_execution(self.store), open_library(self.store)
+        decisions = open_decisions(self.store)
+        document['work'] = {project: project_status(project, work, self.attention, execution, library, decisions)
+                            for project in registry.projects}
         return {**document, "building": building,
                 "attention_display": attention_display(document["attention"], building, document["projects"])}
 

@@ -49,8 +49,9 @@ def test_attention_import_and_status_leave_real_config_untouched(monkeypatch, tm
     if command == "attention":
         open_attention()
     else:
+        identity = cli.open_workspace().edit_registry(lambda registry: registry.create('p')).id
         cli.main(["status", "p", "--json"])
-        assert '"project": "p"' in capsys.readouterr().out
+        assert f'"project": "{identity}"' in capsys.readouterr().out
     assert snapshot(original_config) == before
     assert not home.exists()
     assert workspace.with_suffix(".json.bak").read_bytes() == workspace.read_bytes()

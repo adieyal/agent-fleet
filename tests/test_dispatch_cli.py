@@ -7,8 +7,8 @@ from fleet import cli, composition
 
 
 @pytest.mark.parametrize("legacy", [False, True])
-def test_cli_dispatch_commits_before_transport_and_send_wraps_it(monkeypatch, capsys, legacy):
-    item = composition.open_work().add(project="p", title="Task", goal="Ship", actor="user")
+def test_cli_dispatch_commits_before_transport_and_send_wraps_it(monkeypatch, capsys, legacy, project_id):
+    item = composition.open_work().add(project=project_id, title="Task", goal="Ship", actor="user")
     calls = []
 
     def call(host, arguments, **kwargs):
@@ -48,7 +48,7 @@ def test_dispatch_requires_explicit_cwd():
 
 
 @pytest.mark.parametrize("refused", ["create", "start"])
-def test_dispatch_preserves_refusal_when_reconcile_fails(monkeypatch, capsys, refused):
+def test_dispatch_preserves_refusal_when_reconcile_fails(monkeypatch, capsys, refused, project_id):
     calls = []
 
     def call(host, arguments, **kwargs):
@@ -76,6 +76,7 @@ def test_dispatch_preserves_refusal_when_reconcile_fails(monkeypatch, capsys, re
 
 
 def test_send_without_work_keeps_unknown_intent_after_lost_create_reply(monkeypatch):
+    composition.open_workspace().edit_registry(lambda registry: registry.create('legacy'))
     calls = []
 
     def call(host, arguments, **kwargs):
@@ -98,7 +99,7 @@ def test_send_without_work_keeps_unknown_intent_after_lost_create_reply(monkeypa
 
 
 @pytest.mark.parametrize("dropped", ["create", "start"])
-def test_dropped_dispatch_reply_reconciles_by_run_id(monkeypatch, dropped):
+def test_dropped_dispatch_reply_reconciles_by_run_id(monkeypatch, dropped, project_id):
     calls = []
     def call(host, arguments, **kwargs):
         run, = composition.open_execution().runs()

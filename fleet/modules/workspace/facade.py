@@ -30,6 +30,9 @@ class WorkspaceFacade:
     def registry(self) -> Registry:
         return self.application.registry()
 
+    def resolve_project(self, reference: str) -> str:
+        return self.registry().resolve(reference)
+
     def capacity(self) -> int:
         return self.application.capacity()
 

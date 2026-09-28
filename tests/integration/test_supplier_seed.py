@@ -6,11 +6,16 @@ import sys
 import pytest
 
 from fleet import cli
-from fleet.composition import open_store, open_work
+from fleet.composition import open_store, open_work, open_workspace
 
 
 SCRIPT = Path(__file__).parents[2] / "scripts/seed_supplier_slice.py"
 # Story fields copied from first-stories/sources/v2-suppliers-slice6/prd.json.
+
+
+@pytest.fixture(autouse=True)
+def supplier_project():
+    return open_workspace().edit_registry(lambda registry: registry.create('Restoke V2')).id
 
 
 def seed(prd=None):
@@ -19,22 +24,22 @@ def seed(prd=None):
         runpy.run_path(str(SCRIPT), run_name="__main__")
 
 
-def test_supplier_seed_is_repeatable_and_updates(capsys):
+def test_supplier_seed_is_repeatable_and_updates(capsys, supplier_project):
     seed()
     work = open_work()
-    before = work.list(project="Restoke V2")
+    before = work.list(project=supplier_project)
     sequence = open_store().latest_sequence()
     seed()
-    assert work.list(project="Restoke V2") == before
+    assert work.list(project=supplier_project) == before
     assert open_store().latest_sequence() == sequence
     supplier = next(item for item in before if item.title == "Supplier migration")
     work.set(supplier.id, actor="test", goal="stale imported goal")
     seed()
     assert work.get(supplier.id).goal == supplier.goal
-    assert {item.id for item in work.list(project="Restoke V2")} == {item.id for item in before}
+    assert {item.id for item in work.list(project=supplier_project)} == {item.id for item in before}
 
 
-def test_supplier_seed_status_and_sources(capsys, monkeypatch):
+def test_supplier_seed_status_and_sources(capsys, monkeypatch, supplier_project):
     original = Path.open
 
     def no_source_writes(path, mode="r", *args, **kwargs):
@@ -64,21 +69,21 @@ def test_supplier_seed_status_and_sources(capsys, monkeypatch):
     assert all(item["condition"] == "none" for item in tasks)
     records = json.loads(SCRIPT.with_suffix(".json").read_text())
     assert all(record["sources"] and all(Path(source).is_absolute() for source in record["sources"]) for record in records)
-    assert all("Source: " in item.goal for item in open_work().list(project="Restoke V2"))
-    assert not any(item.title == "Invoice analysis" for item in open_work().list(project="Restoke V2"))
+    assert all("Source: " in item.goal for item in open_work().list(project=supplier_project))
+    assert not any(item.title == "Invoice analysis" for item in open_work().list(project=supplier_project))
     cli.main(["status", "Restoke V2"])
     output = capsys.readouterr().out
     assert "Slice 6: supplier imports" in output and "Progress: unknown" in output
     assert "complete" in output and "Development experience" in output
 
 
-def test_slice6_prd_progress_and_repeatability(tmp_path, capsys):
+def test_slice6_prd_progress_and_repeatability(tmp_path, capsys, supplier_project):
     prd = tmp_path / "prd.json"
     content = json.loads((SCRIPT.parents[1] / "tests/fixtures/supplier_slice6_prd.json").read_text())
     prd.write_text(json.dumps(content))
     seed()
     work = open_work()
-    original = work.list(project="Restoke V2")
+    original = work.list(project=supplier_project)
     seed(prd)
     milestone = next(item for item in work.list() if item.title == "Slice 6: supplier imports")
     tasks = [item for item in work.list() if item.parent == milestone.id]

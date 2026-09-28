@@ -4,14 +4,14 @@ import subprocess
 from fleet import cli, composition, transport
 
 
-def test_phase3_gate_from_persisted_slice(tmp_path, monkeypatch, capsys):
+def test_phase3_gate_from_persisted_slice(tmp_path, monkeypatch, capsys, project_id):
     from scripts.checks.phase3_gate import run_scenario
 
     store = composition.open_store()
     root = tmp_path / 'records'
     subprocess.run(['git', 'init', str(root)], check=True, capture_output=True, timeout=10)
-    composition.open_records(store).register('p', root, actor='user')
-    item = composition.open_work(store).add(project='p', title='Real slice', goal='Ship',
+    composition.open_records(store).register(project_id, root, actor='user')
+    item = composition.open_work(store).add(project=project_id, title='Real slice', goal='Ship',
                                            kind='milestone', actor='user')
     def no_hosts(*args, **kwargs):
         raise AssertionError('scenario must use faked hosts')
@@ -29,14 +29,14 @@ def test_phase3_gate_from_persisted_slice(tmp_path, monkeypatch, capsys):
     assert node['interruptions'] == 0
 
 
-def test_status_counts_unique_user_items_for_slice_subtree(capsys):
+def test_status_counts_unique_user_items_for_slice_subtree(capsys, project_id):
     store = composition.open_store()
     work, attention = composition.open_work(store), composition.open_attention(store)
-    first = work.add(project='p', title='First', goal='Ship', kind='milestone', actor='user')
-    child = work.add(project='p', title='Task', goal='Build', parent=first.id, actor='user')
-    second = work.add(project='p', title='Second', goal='Ship', kind='milestone', actor='user')
+    first = work.add(project=project_id, title='First', goal='Ship', kind='milestone', actor='user')
+    child = work.add(project=project_id, title='Task', goal='Build', parent=first.id, actor='user')
+    second = work.add(project=project_id, title='Second', goal='Ship', kind='milestone', actor='user')
     def raise_item(reference, item, owner='user'):
-        return attention.raise_item(project='p', work_item=item, kind='decision', owner=owner,
+        return attention.raise_item(project=project_id, work_item=item, kind='decision', owner=owner,
             source='manual', source_reference=reference, headline='Choose', context_reference=reference,
             actor='user')
     resolved = raise_item('resolved', child.id)

@@ -4,11 +4,11 @@ from fleet import cli
 from fleet.composition import open_attention, open_work
 
 
-def test_options_and_answer_and_status(capsys):
+def test_options_and_answer_and_status(capsys, project_id):
     work = open_work()
-    item = work.add(project="p", title="Delivery", goal="Ship", actor="author")
+    item = work.add(project=project_id, title="Delivery", goal="Ship", actor="author")
     work.set(item.id, condition="blocked", actor="author")
-    question = open_attention().raise_item(project="p", work_item=item.id, kind="decision", owner="user",
+    question = open_attention().raise_item(project=project_id, work_item=item.id, kind="decision", owner="user",
         source="manual", source_reference="q", headline="Choose route", context_reference="doc:1",
         actor="author", options=("Direct", "Scenic"))
     cli.main(["attention", "list"])

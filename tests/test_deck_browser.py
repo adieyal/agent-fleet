@@ -123,6 +123,32 @@ def test_every_project_gets_a_room(deck: Deck, fixture_data: dict[str, Any]) -> 
     assert deck.errors == []
 
 
+def test_seeded_project_bench_by_floor_id(changed_deck: Deck, deck_state, monkeypatch) -> None:
+    import runpy
+    import sys
+    from pathlib import Path
+    from fleet.composition import open_workspace
+
+    store = open_store()
+    workspace = open_workspace(store)
+    workspace.move_in(['worker'], 'restoke', name='Restoke V2')
+    project = workspace.resolve_project('Restoke V2')
+    assert project in workspace.floors_snapshot()
+    script = Path(__file__).parents[1] / 'scripts/seed_supplier_slice.py'
+    monkeypatch.setattr(sys, 'argv', [str(script), '--project', project])
+    runpy.run_path(str(script), run_name='__main__')
+    monkeypatch.setattr(deck_state, 'store', store)
+    monkeypatch.setattr(deck_state, 'attention', open_attention(store))
+    page = changed_deck.page
+    page.evaluate('(project) => fleetDeck.enterFloor(project)', project)
+    expect(page.get_by_role('button', name='V2 frontend overhaul', exact=True)).to_be_visible()
+    page.get_by_role('button', name='V2 frontend overhaul', exact=True).click()
+    page.get_by_role('button', name='Slice 6: supplier imports', exact=True).click()
+    expect(page.locator('#benchRoute')).to_have_attribute('data-level', 'bench')
+    expect(page.locator('#benchRoute')).to_contain_text('Slice 6: supplier imports')
+    page.evaluate('fleetDeck.enterFloor(null)')
+
+
 def test_bench_real_endpoint(changed_deck: Deck, deck_state, monkeypatch, tmp_path) -> None:
     store = open_store()
     work = open_work(store)

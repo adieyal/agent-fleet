@@ -144,13 +144,13 @@ def test_recovery_cannot_replace_a_newer_document_revision(tmp_path, monkeypatch
     assert result['revision'] == git(repo, 'rev-parse', 'HEAD')
 
 
-def test_management_registration_cli_and_summary_command(tmp_path, capsys):
+def test_management_registration_cli_and_summary_command(tmp_path, capsys, project_id):
     from fleet import cli
     repo = tmp_path / 'management'
     repo.mkdir()
     git(repo, 'init')
-    cli.main(['project', 'management', 'p', str(repo)])
-    item = open_work().add(project='p', title='Task', goal='Goal', actor='author')
+    cli.main(['project', 'management', project_id, str(repo)])
+    item = open_work().add(project=project_id, title='Task', goal='Goal', actor='author')
     cli.main(['summary', 'set', item.id, '--purpose', 'Purpose', '--done', 'Done',
               '--doing', 'Doing', '--next', 'Next', '--authoring-role', 'user', '--actor', 'author'])
     capsys.readouterr()

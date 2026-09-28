@@ -17,7 +17,7 @@ from fleet.web.ingester import observe_runs
     ("claude", None, None),
     ("codex", None, None),
 ])
-def test_recorded_results_reach_durable_run_without_replay_churn(tmp_path, monkeypatch, capsys, agent, tokens, cost):
+def test_recorded_results_reach_durable_run_without_replay_churn(tmp_path, monkeypatch, capsys, agent, tokens, cost, project_id):
     monkeypatch.setattr(fleetd, "JOBS_DIRECTORY", tmp_path)
     monkeypatch.setattr(fleetd, "CONFIG_PATH", tmp_path / "config.json")
     monkeypatch.setattr(fleetd.signal, "signal", lambda *args: None)
@@ -45,7 +45,7 @@ def test_recorded_results_reach_durable_run_without_replay_churn(tmp_path, monke
     assert summary["status"] == "done"
     store = composition.open_store()
     work = composition.open_work(store)
-    item = work.add(project="p", title="Usage", goal="Capture", actor="user")
+    item = work.add(project=project_id, title="Usage", goal="Capture", actor="user")
     execution = composition.open_execution(store)
     linked = execution.link("host", "job", item.id, actor="user")
     library = composition.open_library(store)
