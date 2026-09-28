@@ -605,9 +605,10 @@ def command_library_add(arguments: argparse.Namespace) -> None:
         raise FleetError(f"not a directory: {root}")
     open_workspace()
     config = transport.load_config()
-    config.setdefault("libraries", {})[arguments.project] = str(root)
+    config.setdefault("libraries", {})[arguments.project] = (
+        {"path": str(root), "recursive": True} if arguments.recursive else str(root))
     transport.save_config(config)
-    console.print(f"added library {arguments.project}: {root}")
+    console.print(f"added library {arguments.project}: {root}{' (every folder)' if arguments.recursive else ''}")
 
 
 def command_library_remove(arguments: argparse.Namespace) -> None:
@@ -618,8 +619,11 @@ def command_library_remove(arguments: argparse.Namespace) -> None:
 
 
 def command_libraries(arguments: argparse.Namespace) -> None:
-    for project, path in sorted(transport.load_config().get("libraries", {}).items()):
-        console.print(f"[bold]{project}[/] {path}")
+    for project, entry in sorted(transport.load_config().get("libraries", {}).items()):
+        if isinstance(entry, str):
+            console.print(f"[bold]{project}[/] {entry}")
+        else:
+            console.print(f"[bold]{project}[/] {entry['path']}{' (every folder)' if entry.get('recursive') else ''}")
 
 
 def parse_link(text: str) -> tuple[str, str]:
@@ -802,6 +806,17 @@ def command_install(arguments: argparse.Namespace) -> None:
     console.print(f"  ssh-agent for jobs: {agent_socket or '[yellow]none — jobs get no SSH_AUTH_SOCK[/]'}")
     if not report["tmux"]:
         console.print("  [red]tmux not found — jobs cannot start[/]")
+
+
+def command_hooks(arguments: argparse.Namespace) -> None:
+    """Add fleet's hooks to every interactive Claude session on a host, or take them out again."""
+    host = transport.host_by_name(arguments.name)
+    try:
+        report = transport.call(host, ["session-hooks", arguments.action])
+    except FleetError as error:
+        raise FleetError(f"{error} — if fleetd there predates session hooks, run: fleet install {host.name}") from error
+    events = ", ".join(report["events"]) or "none"
+    console.print(f"[bold]{host.name}[/] ({report['host']}): {report['settings']} — fleet hooks now on: {events}")
 
 
 def command_unlock(arguments: argparse.Namespace) -> None:
@@ -1187,6 +1202,8 @@ def build_parser() -> argparse.ArgumentParser:
     library_add = library.add_parser("add")
     library_add.add_argument("project")
     library_add.add_argument("path")
+    library_add.add_argument("--recursive", action="store_true",
+                             help="read Markdown in every folder, not only the top level and docs/")
     library_add.set_defaults(handler=command_library_add)
     library_remove = library.add_parser("rm")
     library_remove.add_argument("project")
@@ -1280,6 +1297,12 @@ def build_parser() -> argparse.ArgumentParser:
     install = commands.add_parser("install", help="install/upgrade fleetd on a host")
     install.add_argument("name")
     install.set_defaults(handler=command_install)
+
+    hooks = commands.add_parser("hooks", help="raise attention items from interactive Claude sessions on a host")
+    hooks.add_argument("action", choices=("install", "uninstall"),
+                       help="merge fleet's hooks into the host's ~/.claude/settings.json, or remove only them")
+    hooks.add_argument("name", help="the host")
+    hooks.set_defaults(handler=command_hooks)
 
     unlock = commands.add_parser("unlock", help="add a key to the host's fleet ssh-agent (passphrase once per boot)")
     unlock.add_argument("name")

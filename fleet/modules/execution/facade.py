@@ -4,7 +4,8 @@ from datetime import datetime, timezone
 from .application import link, observe, unavailable
 from .application.delivery import queue, retry as retry_delivery
 
-from .application.ports import ExecutionRepository, InputSender
+from .application.permissions import grant
+from .application.ports import ExecutionRepository, GrantSender, InputSender
 from .domain import Action, Claim, Delivery, DispatchResult, JobObservation, Run
 from .domain.activity import HOST_FRESHNESS_SECONDS, classify_activity
 from fleet.modules.attention import AttentionItem
@@ -20,9 +21,10 @@ if TYPE_CHECKING:
 class ExecutionFacade:
     def __init__(self, repository: ExecutionRepository, work: WorkFacade,
                  prepare_dispatch: Callable[[], object] | None = None, *, send: InputSender | None = None,
+                 grant: GrantSender | None = None,
                  authority=None, clock: Callable[[], datetime] | None = None) -> None:
         self.repository, self.work = repository, work
-        self.send = send
+        self.send, self.grant = send, grant
         self.prepare_dispatch = prepare_dispatch
         self.authority = authority
         self.clock = clock if clock is not None else lambda: datetime.now(timezone.utc)
@@ -53,6 +55,12 @@ class ExecutionFacade:
 
     def queue_answer(self, item: AttentionItem, decision: "Decision") -> None:
         queue(self.repository, item, decision)
+
+    def grant_permissions(self, item_id: str, scope: str, *, actor: str) -> str:
+        """Allow a job step's refused requests ("refused") or all Bash ("bash") for the job; returns what was done."""
+        if self.grant is None:
+            raise RuntimeError("permission transport is not configured")
+        return grant(self.repository, self.grant, item_id, scope, actor)
 
     def deliveries(self) -> list[Delivery]:
         return self.repository.deliveries()

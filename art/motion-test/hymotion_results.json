@@ -1,0 +1,182 @@
+{
+  "model": "HY-Motion-1.0",
+  "encoder_device": "offload",
+  "encoder_load_s": 2.7,
+  "encoder_peak_vram_mb": 2175,
+  "dit_load_s": 22.0,
+  "dit_weights_vram_mb": 4031,
+  "gpu": "NVIDIA GeForce RTX 3090",
+  "clips": [
+    {
+      "slug": "a_typing",
+      "prompt": "a person sits at a desk typing on a keyboard",
+      "seconds": 5.0,
+      "seeds": [
+        11,
+        22,
+        33
+      ],
+      "generate_s": 13.23,
+      "encode_s": 4.66,
+      "fbx_export_s": 0.76,
+      "peak_vram_mb": 6217,
+      "fbx": [
+        "a_typing_000.fbx",
+        "a_typing_001.fbx",
+        "a_typing_002.fbx"
+      ]
+    },
+    {
+      "slug": "b_stand_up",
+      "prompt": "a person stands up from a chair",
+      "seconds": 3.0,
+      "seeds": [
+        11,
+        22,
+        33
+      ],
+      "generate_s": 20.89,
+      "encode_s": 2.53,
+      "fbx_export_s": 0.66,
+      "peak_vram_mb": 5365,
+      "fbx": [
+        "b_stand_up_000.fbx",
+        "b_stand_up_001.fbx",
+        "b_stand_up_002.fbx"
+      ]
+    },
+    {
+      "slug": "c_sit_down",
+      "prompt": "a person sits down on a chair",
+      "seconds": 3.0,
+      "seeds": [
+        11,
+        22,
+        33
+      ],
+      "generate_s": 19.72,
+      "encode_s": 2.63,
+      "fbx_export_s": 0.65,
+      "peak_vram_mb": 5365,
+      "fbx": [
+        "c_sit_down_000.fbx",
+        "c_sit_down_001.fbx",
+        "c_sit_down_002.fbx"
+      ]
+    },
+    {
+      "slug": "d_walk",
+      "prompt": "a person walks forward at a normal relaxed pace",
+      "seconds": 4.0,
+      "seeds": [
+        11,
+        22,
+        33
+      ],
+      "generate_s": 14.31,
+      "encode_s": 2.52,
+      "fbx_export_s": 0.7,
+      "peak_vram_mb": 5791,
+      "fbx": [
+        "d_walk_000.fbx",
+        "d_walk_001.fbx",
+        "d_walk_002.fbx"
+      ]
+    },
+    {
+      "slug": "e_nod_yes",
+      "prompt": "a seated person nods yes",
+      "seconds": 3.0,
+      "seeds": [
+        11,
+        22,
+        33
+      ],
+      "generate_s": 24.87,
+      "encode_s": 2.58,
+      "fbx_export_s": 0.64,
+      "peak_vram_mb": 5365,
+      "fbx": [
+        "e_nod_yes_000.fbx",
+        "e_nod_yes_001.fbx",
+        "e_nod_yes_002.fbx"
+      ]
+    },
+    {
+      "slug": "f_shake_no",
+      "prompt": "a seated person shakes their head no",
+      "seconds": 3.0,
+      "seeds": [
+        11,
+        22,
+        33
+      ],
+      "generate_s": 25.08,
+      "encode_s": 2.53,
+      "fbx_export_s": 0.66,
+      "peak_vram_mb": 5365,
+      "fbx": [
+        "f_shake_no_000.fbx",
+        "f_shake_no_001.fbx",
+        "f_shake_no_002.fbx"
+      ]
+    },
+    {
+      "slug": "g_slump",
+      "prompt": "a seated person slumps, tired and stuck",
+      "seconds": 4.0,
+      "seeds": [
+        11,
+        22,
+        33
+      ],
+      "generate_s": 23.94,
+      "encode_s": 2.53,
+      "fbx_export_s": 0.71,
+      "peak_vram_mb": 5791,
+      "fbx": [
+        "g_slump_000.fbx",
+        "g_slump_001.fbx",
+        "g_slump_002.fbx"
+      ]
+    },
+    {
+      "slug": "h_read_book",
+      "prompt": "a seated person reads a book held in both hands, head down",
+      "seconds": 5.0,
+      "seeds": [
+        11,
+        22,
+        33
+      ],
+      "generate_s": 13.29,
+      "encode_s": 2.5,
+      "fbx_export_s": 0.77,
+      "peak_vram_mb": 6217,
+      "fbx": [
+        "h_read_book_000.fbx",
+        "h_read_book_001.fbx",
+        "h_read_book_002.fbx"
+      ]
+    },
+    {
+      "slug": "i_thumbs_up",
+      "prompt": "a standing person gives a thumbs up",
+      "seconds": 3.0,
+      "seeds": [
+        11,
+        22,
+        33
+      ],
+      "generate_s": 24.47,
+      "encode_s": 2.53,
+      "fbx_export_s": 0.66,
+      "peak_vram_mb": 5365,
+      "fbx": [
+        "i_thumbs_up_000.fbx",
+        "i_thumbs_up_001.fbx",
+        "i_thumbs_up_002.fbx"
+      ]
+    }
+  ]
+}

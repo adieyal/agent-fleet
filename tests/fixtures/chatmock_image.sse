@@ -1,0 +1,42 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_0274a43a8447e0f1016ab81e273c6087d2860ac43c6bec7a2e","object":"response","created_at":1790451239,"status":"in_progress","access_programs":null,"background":false,"completed_at":null,"error":null,"frequency_penalty":0.0,"incomplete_details":null,"instructions":"You generate images using the image_generation tool.","max_output_tokens":null,"max_tool_calls":null,"model":"gpt-5.5","moderation":null,"output":[],"parallel_tool_calls":true,"presence_penalty":0.0,"previous_response_id":null,"prompt_cache_retention":"24h","reasoning":{"context":"current_turn","effort":"medium","mode":"standard","summary":"detailed"},"service_tier":"auto","store":false,"temperature":1.0,"text":{"format":{"type":"text"},"verbosity":"medium"},"tool_choice":{"type":"image_generation"},"tool_usage":{"image_gen":{"input_tokens":0,"input_tokens_details":{"image_tokens":0,"text_tokens":0},"output_tokens":0,"output_tokens_details":{"image_tokens":0,"text_tokens":0},"total_tokens":0},"web_search":{"num_requests":0}},"tools":[{"type":"image_generation","background":"transparent","model":"gpt-image-2-codex","moderation":"auto","n":1,"output_compression":100,"output_format":"png","quality":"auto","size":"auto"}],"top_logprobs":0,"top_p":0.98,"truncation":"disabled","usage":null,"user":null,"metadata":{}},"sequence_number":0}
+
+event: response.in_progress
+data: {"type":"response.in_progress","response":{"id":"resp_0274a43a8447e0f1016ab81e273c6087d2860ac43c6bec7a2e","object":"response","created_at":1790451239,"status":"in_progress","access_programs":null,"background":false,"completed_at":null,"error":null,"frequency_penalty":0.0,"incomplete_details":null,"instructions":"You generate images using the image_generation tool.","max_output_tokens":null,"max_tool_calls":null,"model":"gpt-5.5","moderation":null,"output":[],"parallel_tool_calls":true,"presence_penalty":0.0,"previous_response_id":null,"prompt_cache_retention":"24h","reasoning":{"context":"current_turn","effort":"medium","mode":"standard","summary":"detailed"},"service_tier":"auto","store":false,"temperature":1.0,"text":{"format":{"type":"text"},"verbosity":"medium"},"tool_choice":{"type":"image_generation"},"tool_usage":{"image_gen":{"input_tokens":0,"input_tokens_details":{"image_tokens":0,"text_tokens":0},"output_tokens":0,"output_tokens_details":{"image_tokens":0,"text_tokens":0},"total_tokens":0},"web_search":{"num_requests":0}},"tools":[{"type":"image_generation","background":"transparent","model":"gpt-image-2-codex","moderation":"auto","n":1,"output_compression":100,"output_format":"png","quality":"auto","size":"auto"}],"top_logprobs":0,"top_p":0.98,"truncation":"disabled","usage":null,"user":null,"metadata":{}},"sequence_number":1}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","item":{"id":"ig_0274a43a8447e0f1016ab81e29232c87d29176929ad6af9d4c","type":"image_generation_call","status":"in_progress"},"output_index":0,"sequence_number":2}
+
+event: response.image_generation_call.in_progress
+data: {"type":"response.image_generation_call.in_progress","item_id":"ig_0274a43a8447e0f1016ab81e29232c87d29176929ad6af9d4c","output_index":0,"sequence_number":3}
+
+event: response.image_generation_call.generating
+data: {"type":"response.image_generation_call.generating","item_id":"ig_0274a43a8447e0f1016ab81e29232c87d29176929ad6af9d4c","output_index":0,"sequence_number":4}
+
+event: keepalive
+data: {"type":"keepalive","sequence_number":5}
+
+event: response.image_generation_call.completed
+data: {"type":"response.image_generation_call.completed","item_id":"ig_0274a43a8447e0f1016ab81e29232c87d29176929ad6af9d4c","output_index":0,"sequence_number":6}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","item":{"id":"ig_0274a43a8447e0f1016ab81e29232c87d29176929ad6af9d4c","type":"image_generation_call","status":"completed","action":"generate","background":"transparent","output_format":"png","quality":"medium","result":"iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAYAAAC09K7GAAAAFElEQVR4nGM8ceIEAzJgYkADGAIAc6QCXmVk2d4AAAAASUVORK5CYII=","revised_prompt":"A small potted plant in a square concrete planter, isometric view, clean minimalist 3D render. The planter is light gray rough concrete with subtle texture and sharp square edges, filled with dark soil. A healthy small green houseplant with several oval leaves grows from the center. Soft studio lighting, gentle shadows, isolated object, transparent background, high resolution, no text, no watermark.","size":"4x3"},"output_index":0,"sequence_number":7}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","item":{"id":"msg_0274a43a8447e0f1016ab81e585d9487d281cdfe092c455561","type":"message","status":"in_progress","content":[],"phase":"final_answer","role":"assistant"},"output_index":1,"sequence_number":8}
+
+event: response.content_part.added
+data: {"type":"response.content_part.added","content_index":0,"item_id":"msg_0274a43a8447e0f1016ab81e585d9487d281cdfe092c455561","output_index":1,"part":{"type":"output_text","annotations":[],"logprobs":[],"text":""},"sequence_number":9}
+
+event: response.output_text.done
+data: {"type":"response.output_text.done","content_index":0,"item_id":"msg_0274a43a8447e0f1016ab81e585d9487d281cdfe092c455561","logprobs":[],"output_index":1,"sequence_number":10,"text":""}
+
+event: response.content_part.done
+data: {"type":"response.content_part.done","content_index":0,"item_id":"msg_0274a43a8447e0f1016ab81e585d9487d281cdfe092c455561","output_index":1,"part":{"type":"output_text","annotations":[],"logprobs":[],"text":""},"sequence_number":11}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","item":{"id":"msg_0274a43a8447e0f1016ab81e585d9487d281cdfe092c455561","type":"message","status":"completed","content":[{"type":"output_text","annotations":[],"logprobs":[],"text":""}],"phase":"final_answer","role":"assistant"},"output_index":1,"sequence_number":12}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_0274a43a8447e0f1016ab81e273c6087d2860ac43c6bec7a2e","object":"response","created_at":1790451239,"status":"completed","access_programs":null,"background":false,"completed_at":1790451288,"error":null,"frequency_penalty":0.0,"incomplete_details":null,"instructions":"You generate images using the image_generation tool.","max_output_tokens":null,"max_tool_calls":null,"model":"gpt-5.5","moderation":null,"output":[],"parallel_tool_calls":true,"presence_penalty":0.0,"previous_response_id":null,"prompt_cache_retention":"24h","reasoning":{"context":"current_turn","effort":"medium","mode":"standard","summary":"detailed"},"service_tier":"default","store":false,"temperature":1.0,"text":{"format":{"type":"text"},"verbosity":"medium"},"tool_choice":{"type":"image_generation"},"tool_usage":{"image_gen":{"input_tokens":85,"input_tokens_details":{"image_tokens":0,"text_tokens":85},"output_tokens":1887,"output_tokens_details":{"image_tokens":1887,"text_tokens":0},"total_tokens":1972},"web_search":{"num_requests":0}},"tools":[{"type":"image_generation","background":"transparent","model":"gpt-image-2-codex","moderation":"auto","n":1,"output_compression":100,"output_format":"png","quality":"auto","size":"auto"}],"top_logprobs":0,"top_p":0.98,"truncation":"disabled","usage":{"input_tokens":2311,"input_tokens_details":{"cache_write_tokens":0,"cached_tokens":0},"output_tokens":98,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":2409},"user":null,"metadata":{}},"sequence_number":13}
+

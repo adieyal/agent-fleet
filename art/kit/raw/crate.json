@@ -1,0 +1,22 @@
+{
+  "description": "a closed wooden shipping crate, about 70 cm on each side, made of pale pine planks with a \\\ndiagonal brace on each face, like the crate in the reference, with a dark hourglass symbol stencilled on \\\nits front face.",
+  "prompt": "Generate a single game sprite: a closed wooden shipping crate, about 70 cm on each side, made of pale pine planks with a \\\ndiagonal brace on each face, like the crate in the reference, with a dark hourglass symbol stencilled on \\\nits front face.\n\nStyle: match the attached reference crops from the concept art exactly. Soft, clean, slightly stylised 3D render of an isometric office, three-quarter view from above at the same camera angle as the references (about 30 degrees down). Warm soft key light from the upper left, gentle ambient occlusion, no harsh shadows. Pale, desaturated palette. Render only the object, centred, whole and uncropped, on a fully transparent background: no floor, no ground shadow, no backdrop, no text, no border.",
+  "instructions": "You are a sprite generator. Always answer by calling the image_generation tool exactly once. Do not reply with text.",
+  "references": [
+    {
+      "path": "docs/images/concept/l1.png@285,165,100,105",
+      "sha256": "a524a70bce138fd0cc2e590cfcdb334ff0f95d46236ee1a5c874c6ad1a11b1f5"
+    }
+  ],
+  "model": "gpt-5.5",
+  "image_model": "gpt-image-2-codex",
+  "quality_requested": "high",
+  "quality": "medium",
+  "size": "1254x1254",
+  "revised_prompt": "Single game sprite of a closed wooden shipping crate, approximately cube-shaped about 70 cm per side, made of pale pine planks. Three-quarter isometric view from above, about 30 degrees down, matching soft clean slightly stylized 3D concept-art office prop style. Front face visible with a dark stencilled hourglass symbol centered; diagonal wooden brace on each visible face, including top and side, with plank seams and simple bevels. Pale desaturated warm palette, soft warm key light from upper left, gentle ambient occlusion, no harsh shadows. Object centered, whole and uncropped. Render only the crate on a fully transparent background, no floor, no ground shadow, no backdrop, no text, no border.",
+  "response_id": "resp_0ecf554977276ae8016ab847daaf3487d29248ff318f2d604d",
+  "request_sha256": "367792b88b0770b2d0a2e4b542c469334c43cc6fec8ff0ec545b501d567a79a4",
+  "output_sha256": "a0f37c851d4749b12061ac06159276284357022eec509b422e74ada04824a7ce",
+  "timestamp": "2026-09-26T22:32:44Z",
+  "seconds": 51.3
+}

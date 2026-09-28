@@ -48,8 +48,10 @@ export let buildingShown = false;
 let current = null, crate = null;
 const toggle = document.getElementById('viewToggle');
 const lift = document.getElementById('lift');
+// ('world' is a project floor in the sprite world, world/floor-view.js; opened from inside a floor, it shows that one)
 function showView(view, where = null) {
   const leaving = current !== null;
+  const project = view === 'world' && typeof current === 'number' ? floors.find(f => f.floor === current)?.projectId ?? null : null;
   current = view === 'floor' ? where : view === 'crate' ? 'S' : null;
   crate = view === 'crate' ? where : null;
   buildingShown = view === 'building';
@@ -65,6 +67,7 @@ function showView(view, where = null) {
   if (!buildingShown) closeDialogs();
   renderLift();
   draw();
+  document.dispatchEvent(new CustomEvent('fleet:view', { detail: { view, project } }));
 }
 toggle.addEventListener('click', ev => {
   const b = ev.target.closest('button[data-view]');
@@ -979,4 +982,4 @@ window.fleetBuilding = Object.freeze({
   zoom: () => zoom,
 });
 
-showView((QS.get('view') || store('localStorage', VIEW_KEY)) === 'building' ? 'building' : 'deck');
+{ const v = QS.get('view') || store('localStorage', VIEW_KEY); showView(v === 'building' || v === 'world' ? v : 'deck'); }

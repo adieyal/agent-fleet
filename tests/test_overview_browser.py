@@ -108,6 +108,7 @@ def test_a_repository_library_shows_jobs_and_its_folders(
     documents.locator(":scope > summary").click()
     expect(documents.locator("h5")).to_have_text(["top level", "docs/adr/", "docs/design/"])
     shoot(request, page, "overview-agent-fleet")
+    expect(page.locator("#libList")).not_to_contain_text("Private working notes")   # CLAUDE.local.md stays private
     documents.locator(".tr", has_text="ADR 5: the storehouse").click()
     expect(page.locator("#rdBody h1")).to_have_text("ADR 5: the storehouse")
     page.keyboard.press("Escape")
@@ -129,6 +130,9 @@ def test_all_documents_is_a_folder_tree_with_a_filter(
     slice6.locator(":scope > summary").click()
     expect(slice6.locator(".tree-folder > summary span")).to_have_text(["notes/"])
     shoot(request, page, "all-documents-tree")
+    page.locator("#libSearch").fill("local")
+    expect(page.locator('#libList .tree-doc[data-id$=".local.md"]')).to_have_count(0)
+    page.locator("#libSearch").fill("")
 
     page.locator("#libSearch").fill("legacy-map")
     expect(page.locator("#libList .tree-doc")).to_have_count(1)

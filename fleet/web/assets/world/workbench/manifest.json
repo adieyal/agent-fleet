@@ -1,0 +1,285 @@
+{
+  "scene": "workbench",
+  "glb": "workbench.glb",
+  "lightmap": {
+    "uv_channel": 1,
+    "encoding": "srgb8",
+    "apply": "irradiance = decode_srgb(texel) * scale; colour = albedo * irradiance. With MeshBasicMaterial set lightMap.channel = 1, lightMap.colorSpace = SRGBColorSpace and lightMapIntensity = scale * PI (the shader divides by PI).",
+    "texel_m": 0.015,
+    "layers": {
+      "base": {
+        "file": "lightmap-base.webp",
+        "size": 2304,
+        "scale": 1.56808
+      },
+      "corner": {
+        "file": "lightmap-corner.webp",
+        "size": 1152,
+        "scale": 1.03576
+      },
+      "criteria0": {
+        "file": "lightmap-criteria0.webp",
+        "size": 1152,
+        "scale": 1.22193
+      },
+      "criteria1": {
+        "file": "lightmap-criteria1.webp",
+        "size": 1152,
+        "scale": 1.2227
+      },
+      "criteria2": {
+        "file": "lightmap-criteria2.webp",
+        "size": 1152,
+        "scale": 1.23062
+      },
+      "criteria3": {
+        "file": "lightmap-criteria3.webp",
+        "size": 1152,
+        "scale": 1.22865
+      },
+      "criteria4": {
+        "file": "lightmap-criteria4.webp",
+        "size": 1152,
+        "scale": 1.23217
+      },
+      "desk1": {
+        "file": "lightmap-desk1.webp",
+        "size": 1152,
+        "scale": 1.23952
+      },
+      "desk2": {
+        "file": "lightmap-desk2.webp",
+        "size": 1152,
+        "scale": 1.23059
+      },
+      "desk3": {
+        "file": "lightmap-desk3.webp",
+        "size": 1152,
+        "scale": 1.24285
+      }
+    },
+    "ao": {
+      "file": "ao.webp",
+      "size": 2304,
+      "encoding": "linear8"
+    }
+  },
+  "warm_groups": {
+    "corner": [
+      "corner_lamp_bulb"
+    ],
+    "criteria0": [
+      "criteria_light_0"
+    ],
+    "criteria1": [
+      "criteria_light_1"
+    ],
+    "criteria2": [
+      "criteria_light_2"
+    ],
+    "criteria3": [
+      "criteria_light_3"
+    ],
+    "criteria4": [
+      "criteria_light_4"
+    ],
+    "desk1": [
+      "desk1_lamp_bulb"
+    ],
+    "desk2": [
+      "desk2_lamp_bulb"
+    ],
+    "desk3": [
+      "desk3_lamp_bulb"
+    ]
+  },
+  "dynamic": [
+    "corner_lamp_bulb",
+    "corner_plant",
+    "criteria_light_0",
+    "criteria_light_1",
+    "criteria_light_2",
+    "criteria_light_3",
+    "criteria_light_4",
+    "desk1_lamp_bulb",
+    "desk1_plant",
+    "desk2_lamp_bulb",
+    "desk2_plant",
+    "desk3_lamp_bulb",
+    "desk3_plant",
+    "lantern",
+    "lantern_cord",
+    "lift_indicator_0",
+    "lift_indicator_1",
+    "lift_indicator_2",
+    "plan_tile_r0_c0",
+    "plan_tile_r0_c1",
+    "plan_tile_r0_c2",
+    "plan_tile_r0_c3",
+    "plan_tile_r0_c4",
+    "plan_tile_r0_c5",
+    "plan_tile_r0_c6",
+    "plan_tile_r0_c7",
+    "plan_tile_r0_c8",
+    "plan_tile_r1_c0",
+    "plan_tile_r1_c1",
+    "plan_tile_r1_c2",
+    "plan_tile_r1_c3",
+    "plan_tile_r1_c4",
+    "plan_tile_r1_c5",
+    "plan_tile_r1_c6",
+    "plan_tile_r1_c7",
+    "plan_tile_r1_c8",
+    "plan_tile_r2_c0",
+    "plan_tile_r2_c1",
+    "plan_tile_r2_c2",
+    "plan_tile_r2_c3",
+    "plan_tile_r2_c4",
+    "plan_tile_r2_c5",
+    "plan_tile_r2_c6",
+    "plan_tile_r2_c7",
+    "plan_tile_r2_c8",
+    "plan_tile_r3_c0",
+    "plan_tile_r3_c1",
+    "plan_tile_r3_c2",
+    "plan_tile_r3_c3",
+    "plan_tile_r3_c4",
+    "plan_tile_r3_c5",
+    "plan_tile_r3_c6",
+    "plan_tile_r3_c7",
+    "plan_tile_r3_c8",
+    "plan_tile_r4_c0",
+    "plan_tile_r4_c1",
+    "plan_tile_r4_c2",
+    "plan_tile_r4_c3",
+    "plan_tile_r4_c4",
+    "plan_tile_r4_c5",
+    "plan_tile_r4_c6",
+    "plan_tile_r4_c7",
+    "plan_tile_r4_c8",
+    "plan_tile_r5_c0",
+    "plan_tile_r5_c1",
+    "plan_tile_r5_c2",
+    "plan_tile_r5_c3",
+    "plan_tile_r5_c4",
+    "plan_tile_r5_c5",
+    "plan_tile_r5_c6",
+    "plan_tile_r5_c7",
+    "plan_tile_r5_c8",
+    "planter_0_plant",
+    "planter_1_plant",
+    "planter_2_plant",
+    "planter_3_plant",
+    "planter_4_plant",
+    "planter_5_plant",
+    "qdesk_plant",
+    "shelf_binder_0",
+    "shelf_binder_1",
+    "shelf_binder_2",
+    "shelf_binder_3",
+    "shelf_binder_4",
+    "shelf_binder_5",
+    "shelf_binder_hi_0",
+    "shelf_binder_hi_1",
+    "shelf_binder_hi_2",
+    "shelf_binder_hi_3",
+    "shelf_box",
+    "shelf_plant"
+  ],
+  "anchors": [
+    "footprint_0",
+    "footprint_1",
+    "footprint_2",
+    "footprint_3",
+    "footprint_4",
+    "footprint_5",
+    "footprint_6",
+    "footprint_7",
+    "lantern_anchor",
+    "seat_desk1",
+    "seat_desk2",
+    "seat_desk3"
+  ],
+  "actions": [],
+  "seat_height": 0.47,
+  "runtime": null,
+  "camera": "camera_l2",
+  "environment": {
+    "file": "environment.hdr",
+    "hdri": "white_studio_06_1k.hdr",
+    "rotation_deg": 120.0,
+    "strength": 0.699999988079071
+  },
+  "built_with": {
+    "blender": "4.2.23 LTS",
+    "bake_device": "OPTIX: NVIDIA GeForce RTX 3090",
+    "samples": {
+      "base": 512,
+      "warm": 256
+    }
+  },
+  "files": {
+    "ao.webp": {
+      "bytes": 219540,
+      "sha256": "bbe120f36b599579a3e1f1725a64096d640eba6220e3d75f8020777e208393be"
+    },
+    "environment.hdr": {
+      "bytes": 335827,
+      "sha256": "557f348b3a48b147afe9b780d205da5ee68a5a5bba45452f4dfffeb4c95f012a"
+    },
+    "lightmap-base.webp": {
+      "bytes": 192002,
+      "sha256": "fff2b68bd54f1e469128a3f753588f48b73dfbc49b7c2522edaee61f04b8bb03"
+    },
+    "lightmap-corner.webp": {
+      "bytes": 55884,
+      "sha256": "7defa308eef75b099eb7cc690b9a2fec1180ba7891b5bc14f174fc08521a99c6"
+    },
+    "lightmap-criteria0.webp": {
+      "bytes": 50842,
+      "sha256": "3e735f7ed5cedb596983f358e1331f064494784ccdfb761a39594b81a5ed7867"
+    },
+    "lightmap-criteria1.webp": {
+      "bytes": 50570,
+      "sha256": "7e5b5723f7822afa3299e8fa83f4c68400ac9563cc40a04c5d48862c48ffaa00"
+    },
+    "lightmap-criteria2.webp": {
+      "bytes": 51400,
+      "sha256": "766c90b273a1a47aad192714fca404ebf3e45ed96e0aec555a698f52293f007a"
+    },
+    "lightmap-criteria3.webp": {
+      "bytes": 51300,
+      "sha256": "ffcff96406ea3c4313dda2b69585718f48a888e2da0a41e3060a48ad61e3e43e"
+    },
+    "lightmap-criteria4.webp": {
+      "bytes": 49746,
+      "sha256": "4d1a8799bf57c85df20133de5a91a7a5bc6bd2993b97d1f19be0e978ed4db723"
+    },
+    "lightmap-desk1.webp": {
+      "bytes": 73870,
+      "sha256": "a374edf26719ccc3a42dfebc0e95c8496458707a17a811d244e0388274d38dde"
+    },
+    "lightmap-desk2.webp": {
+      "bytes": 75906,
+      "sha256": "55b91655e9fe28f82c3bd33ec06d41f1d2f272e5b625d8b7c7ed5e66d0f9df80"
+    },
+    "lightmap-desk3.webp": {
+      "bytes": 74150,
+      "sha256": "ca96dfc4652750f5f22d8efa3244f9c581f4394a87c8934be9e08871720f59de"
+    },
+    "workbench.glb": {
+      "bytes": 4051512,
+      "sha256": "310197300a100e82dd12ec15a5f80f83f0ccaa9768fccc6c9b0113c7155d7e7c"
+    }
+  },
+  "glb_summary": {
+    "nodes": 402,
+    "meshes": 380,
+    "images": 17,
+    "extensions": [
+      "KHR_materials_specular",
+      "KHR_materials_ior",
+      "EXT_texture_webp"
+    ]
+  }
+}

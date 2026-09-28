@@ -1,0 +1,22 @@
+{
+  "description": "one tall square wall pilaster (a pale grey rectangular column that projects from a wall \\\nface) running from the floor to a top cap, with the wall face to either side cut off at the column; \\\nseen at the same angle as the reference",
+  "prompt": "Generate a single game sprite: one tall square wall pilaster (a pale grey rectangular column that projects from a wall \\\nface) running from the floor to a top cap, with the wall face to either side cut off at the column; \\\nseen at the same angle as the reference\n\nStyle: match the attached reference crops from the concept art exactly. Soft, clean, slightly stylised 3D render of an isometric office, three-quarter view from above at the same camera angle as the references (about 30 degrees down). Warm soft key light from the upper left, gentle ambient occlusion, no harsh shadows. Pale, desaturated palette. Render only the object, centred, whole and uncropped, on a fully transparent background: no floor, no ground shadow, no backdrop, no text, no border.",
+  "instructions": "You are a sprite generator. Always answer by calling the image_generation tool exactly once. Do not reply with text.",
+  "references": [
+    {
+      "path": "docs/images/concept/l2.png@1320,130,210,600",
+      "sha256": "927c812bdf96206b4e2cf27f066fee2961f5b26bd0eb7132ab540ed61781a95a"
+    }
+  ],
+  "model": "gpt-5.5",
+  "image_model": "gpt-image-2-codex",
+  "quality_requested": "high",
+  "quality": "medium",
+  "size": "1024x1536",
+  "revised_prompt": "Generate a single game sprite, centered and fully visible, on a fully transparent background. Subject: one tall square wall pilaster / rectangular column projecting from a wall face, running vertically from the floor/base to a top cap. The wall face continues only as short cut-off sections to the left and right of the pilaster, visibly recessed behind the projecting column, and is cropped into the object silhouette (no full wall or floor). Camera: isometric office game asset, three-quarter view from above, about 30 degrees down, matching the attached reference angle; front face visible with slight side faces and top cap visible. Style: soft, clean, slightly stylised 3D render, pale desaturated palette, warm soft key light from upper left, gentle ambient occlusion, no harsh shadows. Materials: smooth pale warm-grey painted wall/plaster, subtle bevels on edges, thin darker seams where side wall sections meet the pilaster, simple flat top cap slab in light grey. Object only, no poster/sign, no plants, no floor, no ground shadow, no backdrop, no text, no border. Ensure the sprite is isolated with alpha transparency, whole and uncropped.",
+  "response_id": "resp_01dbc5a40413b18f016ab8243e455c87d29ad8a249e2f00af7",
+  "request_sha256": "4f8bcdc6db84fccafa7bcfad2a864347cb7d3e7c780a7e9413195771ea00ee32",
+  "output_sha256": "628e0a0c79b8d6b24d93b76f050b31783104740f50645aeb3a152c7bc4271214",
+  "timestamp": "2026-09-26T20:00:35Z",
+  "seconds": 37.5
+}

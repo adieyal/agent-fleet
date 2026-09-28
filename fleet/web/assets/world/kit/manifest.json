@@ -1,0 +1,5223 @@
+{
+ "version": 1,
+ "about": "The floor kit: see art/kit/README.md. Sprites are anchored at their base centre unless their doc says otherwise; footprints and slots are metres from the anchor (x along the back wall, y towards it, z up). layer is a hint: ground (in the ground snapshot), standing (sorted), light (additive).",
+ "camera": {
+  "pitch": 28.0,
+  "yaw": 33.0
+ },
+ "scale": {
+  "px_per_m_1x": 171.528,
+  "tiers_px_per_m": [
+   85.764,
+   171.528,
+   343.055
+  ],
+  "basis": "l2.png's framing as fitted by art/scripts/fit_camera.py: 941 px over 5.486 m (171.528 px/m). Every object is modelled or scaled from its real size in metres; the tiers are 0.5x, 1x and 2x that density, plus an AI prop's own density when it is finer.",
+  "measured": {
+   "l2": {
+    "bench_width_px": 930,
+    "bench_m": "3 desks of 1.8 m (5.4 m x 0.8 m)",
+    "px_per_m": 171.5,
+    "note": "the bench, desks and robots agree with the fitted camera within a few percent"
+   },
+   "l1": {
+    "active_bench_width_px": 380,
+    "bench_m": "assumed 4 desks of 1.8 m (7.2 m)",
+    "px_per_m": 54,
+    "lift_door_height_px": 170,
+    "lift_door_m": 2.3,
+    "lift_px_per_m": 104,
+    "note": "l1 is not drawn to one scale: measured against its benches, its lift is about twice the size real proportions give. The kit keeps real sizes; the floor framing of l1 is about 45-55 px/m on a 1672 px screen."
+   }
+  }
+ },
+ "sprites": {
+  "bench": {
+   "source": "ai",
+   "from": "art/kit/raw/bench-v2.png",
+   "size_m": [
+    5.4,
+    0.8,
+    0.74
+   ],
+   "scale": {
+    "fit": "w",
+    "source_px_per_m": 300.9
+   },
+   "footprint": [
+    -2.7,
+    -0.4,
+    0.0,
+    2.7,
+    0.4,
+    0.74
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "bench@86.webp",
+     "size": [
+      483,
+      255
+     ],
+     "anchor_px": [
+      241.89,
+      157.84
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "bench@172.webp",
+     "size": [
+      966,
+      511
+     ],
+     "anchor_px": [
+      482.78,
+      315.68
+     ]
+    },
+    {
+     "ppm": 300.935,
+     "file": "bench@301.webp",
+     "size": [
+      1694,
+      896
+     ],
+     "anchor_px": [
+      847.0,
+      553.85
+     ]
+    }
+   ],
+   "slots": {
+    "seats": [
+     [
+      -1.8,
+      0.54,
+      0.47
+     ],
+     [
+      0.0,
+      0.54,
+      0.47
+     ],
+     [
+      1.8,
+      0.54,
+      0.47
+     ]
+    ],
+    "lamps": [
+     [
+      -2.52,
+      0.28,
+      0.74
+     ],
+     [
+      -0.72,
+      0.28,
+      0.74
+     ],
+     [
+      1.08,
+      0.28,
+      0.74
+     ]
+    ],
+    "desk_top": [
+     [
+      -1.8,
+      0,
+      0.74
+     ],
+     [
+      0.0,
+      0,
+      0.74
+     ],
+     [
+      1.8,
+      0,
+      0.74
+     ]
+    ]
+   },
+   "doc": "three desks end to end; top empty; no lamps, no chairs"
+  },
+  "terminal-desk": {
+   "source": "ai",
+   "from": "art/kit/raw/terminal-desk.png",
+   "size_m": [
+    1.6,
+    0.8,
+    0.74
+   ],
+   "scale": {
+    "fit": "w",
+    "source_px_per_m": 645.8
+   },
+   "footprint": [
+    -0.8,
+    -0.4,
+    0.0,
+    0.8,
+    0.4,
+    0.74
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "terminal-desk@86.webp",
+     "size": [
+      210,
+      147
+     ],
+     "anchor_px": [
+      105.23,
+      91.12
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "terminal-desk@172.webp",
+     "size": [
+      419,
+      294
+     ],
+     "anchor_px": [
+      209.45,
+      182.25
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "terminal-desk@343.webp",
+     "size": [
+      838,
+      588
+     ],
+     "anchor_px": [
+      418.9,
+      364.5
+     ]
+    },
+    {
+     "ppm": 645.82,
+     "file": "terminal-desk@646.webp",
+     "size": [
+      1578,
+      1107
+     ],
+     "anchor_px": [
+      789.0,
+      686.18
+     ]
+    }
+   ],
+   "slots": {
+    "seat": [
+     0,
+     -0.55,
+     0.47
+    ],
+    "screen": [
+     0,
+     0.2,
+     1.05
+    ]
+   },
+   "doc": "one desk with monitor and keyboard"
+  },
+  "librarian-desk": {
+   "source": "ai",
+   "from": "art/kit/raw/librarian-desk.png",
+   "size_m": [
+    1.5,
+    0.7,
+    0.95
+   ],
+   "scale": {
+    "fit": "w",
+    "source_px_per_m": 664.3
+   },
+   "footprint": [
+    -0.75,
+    -0.35,
+    0.0,
+    0.75,
+    0.35,
+    0.95
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "librarian-desk@86.webp",
+     "size": [
+      198,
+      139
+     ],
+     "anchor_px": [
+      99.29,
+      85.73
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "librarian-desk@172.webp",
+     "size": [
+      395,
+      277
+     ],
+     "anchor_px": [
+      197.59,
+      171.46
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "librarian-desk@343.webp",
+     "size": [
+      791,
+      555
+     ],
+     "anchor_px": [
+      395.18,
+      342.91
+     ]
+    },
+    {
+     "ppm": 664.327,
+     "file": "librarian-desk@664.webp",
+     "size": [
+      1531,
+      1075
+     ],
+     "anchor_px": [
+      765.5,
+      664.05
+     ]
+    }
+   ],
+   "doc": "the librarian's desk with card drawers"
+  },
+  "pilaster": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -0.27,
+    -0.24,
+    0,
+    0.27,
+    0,
+    3.2
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "pilaster@86.webp",
+     "size": [
+      54,
+      264
+     ],
+     "anchor_px": [
+      32.5,
+      250.16
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "pilaster@172.webp",
+     "size": [
+      108,
+      527
+     ],
+     "anchor_px": [
+      64.99,
+      500.33
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "pilaster@343.webp",
+     "size": [
+      216,
+      1053
+     ],
+     "anchor_px": [
+      129.99,
+      1000.66
+     ]
+    }
+   ],
+   "layer": "ground",
+   "doc": "A pilaster on the back wall's face, with its capping block; anchor: base centre on the wall face."
+  },
+  "wall-cap-x": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    0,
+    -0.02,
+    3.18,
+    3.6,
+    0.47,
+    3.28
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "wall-cap-x@86.webp",
+     "size": [
+      286,
+      107
+     ],
+     "anchor_px": [
+      3.58,
+      265.29
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "wall-cap-x@172.webp",
+     "size": [
+      571,
+      213
+     ],
+     "anchor_px": [
+      7.17,
+      530.58
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "wall-cap-x@343.webp",
+     "size": [
+      1142,
+      426
+     ],
+     "anchor_px": [
+      14.33,
+      1061.15
+     ]
+    }
+   ],
+   "layer": "ground",
+   "doc": "The back wall's top for one bay: cap face and its front lip, repeatable along x; anchor: the bay's"
+  },
+  "wall-cap-y": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -0.47,
+    0,
+    3.18,
+    0.02,
+    3.6,
+    3.28
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "wall-cap-y@86.webp",
+     "size": [
+      207,
+      144
+     ],
+     "anchor_px": [
+      34.08,
+      381.53
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "wall-cap-y@172.webp",
+     "size": [
+      414,
+      287
+     ],
+     "anchor_px": [
+      68.17,
+      763.05
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "wall-cap-y@343.webp",
+     "size": [
+      828,
+      574
+     ],
+     "anchor_px": [
+      136.33,
+      1526.1
+     ]
+    }
+   ],
+   "layer": "ground",
+   "doc": "The left wall's top for one bay along y (the wall's room face is x = 0); anchor: its front end at the"
+  },
+  "wall-corner": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -0.45,
+    -0.2,
+    0,
+    0.2,
+    0.45,
+    3.28
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "wall-corner@86.webp",
+     "size": [
+      64,
+      290
+     ],
+     "anchor_px": [
+      36.81,
+      276.01
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "wall-corner@172.webp",
+     "size": [
+      127,
+      579
+     ],
+     "anchor_px": [
+      73.62,
+      552.03
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "wall-corner@343.webp",
+     "size": [
+      254,
+      1157
+     ],
+     "anchor_px": [
+      147.23,
+      1104.06
+     ]
+    }
+   ],
+   "layer": "ground",
+   "doc": "Where the back and left walls meet: the corner post of the cap and a corner pilaster; anchor: the inner"
+  },
+  "wall-end-back": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -0.3,
+    0,
+    -0.9,
+    0,
+    0.45,
+    3.28
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "wall-end-back@86.webp",
+     "size": [
+      54,
+      347
+     ],
+     "anchor_px": [
+      27.73,
+      274.44
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "wall-end-back@172.webp",
+     "size": [
+      107,
+      694
+     ],
+     "anchor_px": [
+      55.47,
+      548.88
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "wall-end-back@343.webp",
+     "size": [
+      213,
+      1387
+     ],
+     "anchor_px": [
+      110.94,
+      1097.76
+     ]
+    }
+   ],
+   "layer": "ground",
+   "doc": "The back wall's cut-away right end: the last 30 cm of wall, its cut face and cap; anchor: the end of the"
+  },
+  "wall-end-left": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -0.45,
+    0,
+    -0.9,
+    0,
+    0.3,
+    3.28
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "wall-end-left@86.webp",
+     "size": [
+      58,
+      345
+     ],
+     "anchor_px": [
+      36.66,
+      272.66
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "wall-end-left@172.webp",
+     "size": [
+      116,
+      690
+     ],
+     "anchor_px": [
+      73.31,
+      545.33
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "wall-end-left@343.webp",
+     "size": [
+      232,
+      1380
+     ],
+     "anchor_px": [
+      146.62,
+      1090.66
+     ]
+    }
+   ],
+   "layer": "ground",
+   "doc": "The left wall's cut-away front end, as wall_end_back; anchor: its front end on the room face."
+  },
+  "slab-front": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    0,
+    -0.05,
+    -0.9,
+    3.6,
+    0.01,
+    0
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "slab-front@86.webp",
+     "size": [
+      267,
+      153
+     ],
+     "anchor_px": [
+      4.91,
+      2.91
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "slab-front@172.webp",
+     "size": [
+      534,
+      306
+     ],
+     "anchor_px": [
+      9.82,
+      5.82
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "slab-front@343.webp",
+     "size": [
+      1068,
+      611
+     ],
+     "anchor_px": [
+      19.63,
+      11.64
+     ]
+    }
+   ],
+   "layer": "ground",
+   "doc": "The floor slab's cut edge along the front for one bay; anchor: the bay's left end at the floor's edge."
+  },
+  "slab-side": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -0.01,
+    0,
+    -0.9,
+    0.05,
+    3.6,
+    0
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "slab-side@86.webp",
+     "size": [
+      178,
+      196
+     ],
+     "anchor_px": [
+      3.29,
+      124.36
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "slab-side@172.webp",
+     "size": [
+      356,
+      391
+     ],
+     "anchor_px": [
+      6.58,
+      248.71
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "slab-side@343.webp",
+     "size": [
+      711,
+      781
+     ],
+     "anchor_px": [
+      13.17,
+      497.43
+     ]
+    }
+   ],
+   "layer": "ground",
+   "doc": "The slab's cut edge along the right side for one bay (the floor ends at x = 0 here); anchor: the bay's"
+  },
+  "lift": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -1.1,
+    -0.2,
+    0,
+    1.1,
+    0.05,
+    3.05
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "lift@86.webp",
+     "size": [
+      247,
+      374
+     ],
+     "anchor_px": [
+      120.15,
+      301.39
+     ],
+     "frames": 5
+    },
+    {
+     "ppm": 171.528,
+     "file": "lift@172.webp",
+     "size": [
+      493,
+      747
+     ],
+     "anchor_px": [
+      240.3,
+      602.79
+     ],
+     "frames": 5
+    },
+    {
+     "ppm": 343.055,
+     "file": "lift@343.webp",
+     "size": [
+      985,
+      1494
+     ],
+     "anchor_px": [
+      480.6,
+      1205.57
+     ],
+     "frames": 5
+    }
+   ],
+   "layer": "standing",
+   "slots": {
+    "indicator": [
+     0,
+     -0.17,
+     2.93
+    ],
+    "threshold": [
+     0,
+     -0.4,
+     0
+    ]
+   },
+   "doc": "The lift bay on the back wall: surround, two sliding steel leaves over a dark car, a floor indicator",
+   "cells": [
+    "shut",
+    "quarter",
+    "half",
+    "three-quarters",
+    "open"
+   ]
+  },
+  "lift-panel": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -0.29,
+    -0.38,
+    0,
+    0.29,
+    0,
+    3.28
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "lift-panel@86.webp",
+     "size": [
+      64,
+      269
+     ],
+     "anchor_px": [
+      40.83,
+      250.71
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "lift-panel@172.webp",
+     "size": [
+      128,
+      538
+     ],
+     "anchor_px": [
+      81.67,
+      501.42
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "lift-panel@343.webp",
+     "size": [
+      256,
+      1076
+     ],
+     "anchor_px": [
+      163.34,
+      1002.85
+     ]
+    }
+   ],
+   "layer": "ground",
+   "slots": {
+    "buttons": [
+     [
+      0,
+      -0.365,
+      0.95
+     ],
+     [
+      0,
+      -0.365,
+      1.21
+     ],
+     [
+      0,
+      -0.365,
+      1.47
+     ],
+     [
+      0,
+      -0.365,
+      1.73
+     ],
+     [
+      0,
+      -0.365,
+      1.99
+     ],
+     [
+      0,
+      -0.365,
+      2.25
+     ]
+    ]
+   },
+   "doc": "The lift's floor-button column beside its doors, as l1: a box column with a round button per floor, faces"
+  },
+  "alcove": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    0,
+    -1.4,
+    0,
+    2.85,
+    0,
+    3.28
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "alcove@86.webp",
+     "size": [
+      279,
+      327
+     ],
+     "anchor_px": [
+      68.9,
+      214.48
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "alcove@172.webp",
+     "size": [
+      557,
+      654
+     ],
+     "anchor_px": [
+      137.8,
+      428.96
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "alcove@343.webp",
+     "size": [
+      1114,
+      1308
+     ],
+     "anchor_px": [
+      275.61,
+      857.93
+     ]
+    }
+   ],
+   "layer": "standing",
+   "slots": {
+    "lamp": [
+     1.2,
+     -0.8499999999999999,
+     2.05
+    ],
+    "inside": [
+     1.2,
+     -0.7,
+     0
+    ]
+   },
+   "doc": "l1's alcove in the back-left corner: a wall fin projecting from the back wall, a lintel across the opening"
+  },
+  "plan-wall": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -1.61,
+    -0.07,
+    0.75,
+    1.61,
+    0,
+    3.11
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "plan-wall@86.webp",
+     "size": [
+      277,
+      272
+     ],
+     "anchor_px": [
+      139.63,
+      270.66
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "plan-wall@172.webp",
+     "size": [
+      553,
+      544
+     ],
+     "anchor_px": [
+      279.26,
+      541.32
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "plan-wall@343.webp",
+     "size": [
+      1106,
+      1088
+     ],
+     "anchor_px": [
+      558.52,
+      1082.64
+     ]
+    }
+   ],
+   "layer": "ground",
+   "slots": {
+    "tiles": {
+     "first": [
+      -1.35,
+      -0.075,
+      1.01
+     ],
+     "col": [
+      0.3,
+      0,
+      0
+     ],
+     "row": [
+      0,
+      0,
+      0.3
+     ],
+     "cols": 10,
+     "rows": 6
+    },
+    "lights": [
+     [
+      -0.48,
+      -0.05,
+      2.99
+     ],
+     [
+      -0.24,
+      -0.05,
+      2.99
+     ],
+     [
+      0.0,
+      -0.05,
+      2.99
+     ],
+     [
+      0.24,
+      -0.05,
+      2.99
+     ],
+     [
+      0.48,
+      -0.05,
+      2.99
+     ]
+    ]
+   },
+   "doc": "The plan wall's board: a light bezel around a recessed grey backing for COLS x ROWS tiles, and a strip"
+  },
+  "tile-blank": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -0.135,
+    -0.04,
+    -0.135,
+    0.135,
+    0,
+    0.135
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "tile-blank@86.webp",
+     "size": [
+      29,
+      35
+     ],
+     "anchor_px": [
+      15.05,
+      16.93
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "tile-blank@172.webp",
+     "size": [
+      58,
+      70
+     ],
+     "anchor_px": [
+      30.1,
+      33.86
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "tile-blank@343.webp",
+     "size": [
+      115,
+      140
+     ],
+     "anchor_px": [
+      60.21,
+      67.73
+     ]
+    }
+   ],
+   "layer": "standing"
+  },
+  "tile-done": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -0.135,
+    -0.04,
+    -0.135,
+    0.135,
+    0,
+    0.135
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "tile-done@86.webp",
+     "size": [
+      29,
+      35
+     ],
+     "anchor_px": [
+      15.05,
+      16.93
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "tile-done@172.webp",
+     "size": [
+      58,
+      70
+     ],
+     "anchor_px": [
+      30.1,
+      33.86
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "tile-done@343.webp",
+     "size": [
+      115,
+      140
+     ],
+     "anchor_px": [
+      60.21,
+      67.73
+     ]
+    }
+   ],
+   "layer": "standing"
+  },
+  "tile-running": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -0.135,
+    -0.04,
+    -0.135,
+    0.135,
+    0,
+    0.135
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "tile-running@86.webp",
+     "size": [
+      29,
+      35
+     ],
+     "anchor_px": [
+      15.05,
+      16.93
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "tile-running@172.webp",
+     "size": [
+      58,
+      70
+     ],
+     "anchor_px": [
+      30.1,
+      33.86
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "tile-running@343.webp",
+     "size": [
+      115,
+      140
+     ],
+     "anchor_px": [
+      60.21,
+      67.73
+     ]
+    }
+   ],
+   "layer": "standing"
+  },
+  "tile-failed": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -0.135,
+    -0.04,
+    -0.135,
+    0.135,
+    0,
+    0.135
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "tile-failed@86.webp",
+     "size": [
+      29,
+      35
+     ],
+     "anchor_px": [
+      15.05,
+      16.93
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "tile-failed@172.webp",
+     "size": [
+      58,
+      70
+     ],
+     "anchor_px": [
+      30.1,
+      33.86
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "tile-failed@343.webp",
+     "size": [
+      115,
+      140
+     ],
+     "anchor_px": [
+      60.21,
+      67.73
+     ]
+    }
+   ],
+   "layer": "standing"
+  },
+  "criteria-off": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -0.09,
+    -0.045,
+    -0.09,
+    0.09,
+    0,
+    0.09
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "criteria-off@86.webp",
+     "size": [
+      25,
+      26
+     ],
+     "anchor_px": [
+      13.02,
+      12.22
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "criteria-off@172.webp",
+     "size": [
+      50,
+      51
+     ],
+     "anchor_px": [
+      26.04,
+      24.43
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "criteria-off@343.webp",
+     "size": [
+      99,
+      102
+     ],
+     "anchor_px": [
+      52.08,
+      48.86
+     ]
+    }
+   ],
+   "layer": "standing"
+  },
+  "criteria-on": {
+   "source": "blender",
+   "from": "art/scripts/build_kit.py",
+   "footprint": [
+    -0.09,
+    -0.045,
+    -0.09,
+    0.09,
+    0,
+    0.09
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "criteria-on@86.webp",
+     "size": [
+      25,
+      26
+     ],
+     "anchor_px": [
+      13.02,
+      12.22
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "criteria-on@172.webp",
+     "size": [
+      50,
+      51
+     ],
+     "anchor_px": [
+      26.04,
+      24.43
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "criteria-on@343.webp",
+     "size": [
+      99,
+      102
+     ],
+     "anchor_px": [
+      52.08,
+      48.86
+     ]
+    }
+   ],
+   "layer": "standing"
+  },
+  "bench-left": {
+   "source": "blender",
+   "from": "model objects/drawers + boxes (art/scripts/render_props.py)",
+   "footprint": [
+    0,
+    -0.82,
+    -0.74,
+    1.6,
+    0,
+    0
+   ],
+   "hit": "alpha",
+   "slots": {
+    "seat": [
+     0.8,
+     0.159,
+     -0.191
+    ],
+    "chair": [
+     0.8,
+     0.403,
+     -0.74
+    ],
+    "lamp": [
+     0.18,
+     -0.12,
+     0
+    ],
+    "desk_top": [
+     0.8,
+     -0.4,
+     0
+    ],
+    "floor_centre": [
+     0.8,
+     -0.4,
+     -0.74
+    ]
+   },
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "bench-left@86.webp",
+     "size": [
+      158,
+      121
+     ],
+     "anchor_px": [
+      39.73,
+      2.25
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "bench-left@172.webp",
+     "size": [
+      315,
+      242
+     ],
+     "anchor_px": [
+      79.47,
+      4.5
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "bench-left@343.webp",
+     "size": [
+      629,
+      483
+     ],
+     "anchor_px": [
+      158.93,
+      9.0
+     ]
+    }
+   ],
+   "layer": "standing",
+   "size_m": [
+    1.6,
+    0.8,
+    0.74
+   ],
+   "module_m": 1.6,
+   "anchor": "desk top, far edge, at the module's left end",
+   "shadow": "bench-left-shadow"
+  },
+  "bench-left-shadow": {
+   "source": "blender",
+   "from": "model objects/drawers + boxes (art/scripts/render_props.py)",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    0,
+    -0.82,
+    -0.74,
+    1.6,
+    0,
+    -0.73
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "bench-left-shadow@86.webp",
+     "size": [
+      378,
+      341
+     ],
+     "anchor_px": [
+      149.85,
+      112.37
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "bench-left-shadow@172.webp",
+     "size": [
+      755,
+      682
+     ],
+     "anchor_px": [
+      299.71,
+      224.74
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "bench-left-shadow@343.webp",
+     "size": [
+      1510,
+      1364
+     ],
+     "anchor_px": [
+      599.41,
+      449.48
+     ]
+    }
+   ],
+   "doc": "the contact shadow of bench-left, rendered: place it with the prop"
+  },
+  "bench-mid": {
+   "source": "blender",
+   "from": "model objects/drawers + boxes (art/scripts/render_props.py)",
+   "footprint": [
+    0,
+    -0.82,
+    -0.74,
+    1.6,
+    0,
+    0
+   ],
+   "hit": "alpha",
+   "slots": {
+    "seat": [
+     0.8,
+     0.159,
+     -0.191
+    ],
+    "chair": [
+     0.8,
+     0.403,
+     -0.74
+    ],
+    "lamp": [
+     0.18,
+     -0.12,
+     0
+    ],
+    "desk_top": [
+     0.8,
+     -0.4,
+     0
+    ],
+    "floor_centre": [
+     0.8,
+     -0.4,
+     -0.74
+    ]
+   },
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "bench-mid@86.webp",
+     "size": [
+      158,
+      121
+     ],
+     "anchor_px": [
+      39.73,
+      2.25
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "bench-mid@172.webp",
+     "size": [
+      315,
+      242
+     ],
+     "anchor_px": [
+      79.47,
+      4.5
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "bench-mid@343.webp",
+     "size": [
+      629,
+      483
+     ],
+     "anchor_px": [
+      158.93,
+      9.0
+     ]
+    }
+   ],
+   "layer": "standing",
+   "size_m": [
+    1.6,
+    0.8,
+    0.74
+   ],
+   "module_m": 1.6,
+   "anchor": "desk top, far edge, at the module's left end",
+   "shadow": "bench-mid-shadow"
+  },
+  "bench-mid-shadow": {
+   "source": "blender",
+   "from": "model objects/drawers + boxes (art/scripts/render_props.py)",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    0,
+    -0.82,
+    -0.74,
+    1.6,
+    0,
+    -0.73
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "bench-mid-shadow@86.webp",
+     "size": [
+      378,
+      341
+     ],
+     "anchor_px": [
+      149.85,
+      112.37
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "bench-mid-shadow@172.webp",
+     "size": [
+      755,
+      682
+     ],
+     "anchor_px": [
+      299.71,
+      224.74
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "bench-mid-shadow@343.webp",
+     "size": [
+      1510,
+      1364
+     ],
+     "anchor_px": [
+      599.41,
+      449.48
+     ]
+    }
+   ],
+   "doc": "the contact shadow of bench-mid, rendered: place it with the prop"
+  },
+  "bench-right": {
+   "source": "blender",
+   "from": "model objects/drawers + boxes (art/scripts/render_props.py)",
+   "footprint": [
+    0,
+    -0.82,
+    -0.74,
+    1.6,
+    0,
+    0
+   ],
+   "hit": "alpha",
+   "slots": {
+    "seat": [
+     0.8,
+     0.159,
+     -0.191
+    ],
+    "chair": [
+     0.8,
+     0.403,
+     -0.74
+    ],
+    "lamp": [
+     0.18,
+     -0.12,
+     0
+    ],
+    "desk_top": [
+     0.8,
+     -0.4,
+     0
+    ],
+    "floor_centre": [
+     0.8,
+     -0.4,
+     -0.74
+    ]
+   },
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "bench-right@86.webp",
+     "size": [
+      158,
+      121
+     ],
+     "anchor_px": [
+      39.73,
+      2.25
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "bench-right@172.webp",
+     "size": [
+      315,
+      242
+     ],
+     "anchor_px": [
+      79.47,
+      4.5
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "bench-right@343.webp",
+     "size": [
+      629,
+      483
+     ],
+     "anchor_px": [
+      158.93,
+      9.0
+     ]
+    }
+   ],
+   "layer": "standing",
+   "size_m": [
+    1.6,
+    0.8,
+    0.74
+   ],
+   "module_m": 1.6,
+   "anchor": "desk top, far edge, at the module's left end",
+   "shadow": "bench-right-shadow"
+  },
+  "bench-right-shadow": {
+   "source": "blender",
+   "from": "model objects/drawers + boxes (art/scripts/render_props.py)",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    0,
+    -0.82,
+    -0.74,
+    1.6,
+    0,
+    -0.73
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "bench-right-shadow@86.webp",
+     "size": [
+      378,
+      341
+     ],
+     "anchor_px": [
+      149.85,
+      112.37
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "bench-right-shadow@172.webp",
+     "size": [
+      755,
+      682
+     ],
+     "anchor_px": [
+      299.71,
+      224.74
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "bench-right-shadow@343.webp",
+     "size": [
+      1510,
+      1364
+     ],
+     "anchor_px": [
+      599.41,
+      449.48
+     ]
+    }
+   ],
+   "doc": "the contact shadow of bench-right, rendered: place it with the prop"
+  },
+  "question-desk": {
+   "source": "blender",
+   "from": "model objects/drawers + boxes (art/scripts/render_props.py)",
+   "footprint": [
+    -0.6,
+    -0.35,
+    0,
+    0.6,
+    0.35,
+    0.9
+   ],
+   "hit": "alpha",
+   "slots": {
+    "lantern": [
+     0,
+     0.1,
+     2.0
+    ],
+    "card": [
+     0.1,
+     0.05,
+     0.85
+    ]
+   },
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "question-desk@86.webp",
+     "size": [
+      124,
+      109
+     ],
+     "anchor_px": [
+      61.87,
+      83.26
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "question-desk@172.webp",
+     "size": [
+      248,
+      217
+     ],
+     "anchor_px": [
+      123.74,
+      166.52
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "question-desk@343.webp",
+     "size": [
+      495,
+      434
+     ],
+     "anchor_px": [
+      247.48,
+      333.05
+     ]
+    }
+   ],
+   "shadow": "question-desk-shadow"
+  },
+  "question-desk-shadow": {
+   "source": "blender",
+   "from": "model objects/drawers + boxes (art/scripts/render_props.py)",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    -0.6,
+    -0.35,
+    0,
+    0.6,
+    0.35,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "question-desk-shadow@86.webp",
+     "size": [
+      375,
+      359
+     ],
+     "anchor_px": [
+      187.08,
+      208.48
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "question-desk-shadow@172.webp",
+     "size": [
+      749,
+      718
+     ],
+     "anchor_px": [
+      374.17,
+      416.95
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "question-desk-shadow@343.webp",
+     "size": [
+      1497,
+      1436
+     ],
+     "anchor_px": [
+      748.34,
+      833.91
+     ]
+    }
+   ],
+   "doc": "the contact shadow of question-desk, rendered: place it with the prop"
+  },
+  "chair-back": {
+   "source": "blender",
+   "from": "model objects/chair (art/scripts/render_props.py)",
+   "footprint": [
+    -0.379,
+    -0.336,
+    0.0,
+    0.379,
+    0.336,
+    1.048
+   ],
+   "hit": "alpha",
+   "doc": "office chair, near side of a desk, seen from behind; seat at 0.549 m",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "chair-back@86.webp",
+     "size": [
+      72,
+      98
+     ],
+     "anchor_px": [
+      35.62,
+      80.43
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "chair-back@172.webp",
+     "size": [
+      143,
+      195
+     ],
+     "anchor_px": [
+      71.24,
+      160.86
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "chair-back@343.webp",
+     "size": [
+      285,
+      389
+     ],
+     "anchor_px": [
+      142.48,
+      321.72
+     ]
+    }
+   ],
+   "shadow": "chair-back-shadow"
+  },
+  "chair-back-shadow": {
+   "source": "blender",
+   "from": "model objects/chair (art/scripts/render_props.py)",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    -0.379,
+    -0.336,
+    0.0,
+    0.379,
+    0.336,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "chair-back-shadow@86.webp",
+     "size": [
+      350,
+      376
+     ],
+     "anchor_px": [
+      174.8,
+      219.61
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "chair-back-shadow@172.webp",
+     "size": [
+      699,
+      751
+     ],
+     "anchor_px": [
+      349.6,
+      439.21
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "chair-back-shadow@343.webp",
+     "size": [
+      1398,
+      1502
+     ],
+     "anchor_px": [
+      699.19,
+      878.43
+     ]
+    }
+   ],
+   "doc": "the contact shadow of chair-back, rendered: place it with the prop"
+  },
+  "chair-front": {
+   "source": "blender",
+   "from": "model objects/chair (art/scripts/render_props.py)",
+   "footprint": [
+    -0.379,
+    -0.336,
+    0.0,
+    0.379,
+    0.336,
+    1.048
+   ],
+   "hit": "alpha",
+   "doc": "office chair, far side of a desk, facing the viewer; seat at 0.549 m",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "chair-front@86.webp",
+     "size": [
+      72,
+      106
+     ],
+     "anchor_px": [
+      35.44,
+      93.09
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "chair-front@172.webp",
+     "size": [
+      143,
+      212
+     ],
+     "anchor_px": [
+      70.88,
+      186.18
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "chair-front@343.webp",
+     "size": [
+      285,
+      424
+     ],
+     "anchor_px": [
+      141.77,
+      372.37
+     ]
+    }
+   ],
+   "shadow": "chair-front-shadow"
+  },
+  "chair-front-shadow": {
+   "source": "blender",
+   "from": "model objects/chair (art/scripts/render_props.py)",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    -0.379,
+    -0.336,
+    0.0,
+    0.379,
+    0.336,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "chair-front-shadow@86.webp",
+     "size": [
+      350,
+      385
+     ],
+     "anchor_px": [
+      174.62,
+      232.27
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "chair-front-shadow@172.webp",
+     "size": [
+      699,
+      769
+     ],
+     "anchor_px": [
+      349.24,
+      464.54
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "chair-front-shadow@343.webp",
+     "size": [
+      1398,
+      1538
+     ],
+     "anchor_px": [
+      698.47,
+      929.08
+     ]
+    }
+   ],
+   "doc": "the contact shadow of chair-front, rendered: place it with the prop"
+  },
+  "shelf": {
+   "source": "blender",
+   "from": "model project fixtures/bookcase (art/scripts/render_props.py)",
+   "footprint": [
+    -0.7,
+    -0.535,
+    0.0,
+    0.7,
+    0.0,
+    1.8
+   ],
+   "hit": "alpha",
+   "doc": "bookcase with binders, against the back wall",
+   "wall": "back",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "shelf@86.webp",
+     "size": [
+      130,
+      188
+     ],
+     "anchor_px": [
+      77.21,
+      152.99
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "shelf@172.webp",
+     "size": [
+      259,
+      376
+     ],
+     "anchor_px": [
+      154.43,
+      305.98
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "shelf@343.webp",
+     "size": [
+      518,
+      752
+     ],
+     "anchor_px": [
+      308.85,
+      611.95
+     ]
+    }
+   ],
+   "shadow": "shelf-shadow"
+  },
+  "shelf-shadow": {
+   "source": "blender",
+   "from": "model project fixtures/bookcase (art/scripts/render_props.py)",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    -0.7,
+    -0.535,
+    0.0,
+    0.7,
+    0.0,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "shelf-shadow@86.webp",
+     "size": [
+      550,
+      609
+     ],
+     "anchor_px": [
+      287.33,
+      363.11
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "shelf-shadow@172.webp",
+     "size": [
+      1100,
+      1217
+     ],
+     "anchor_px": [
+      574.67,
+      726.22
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "shelf-shadow@343.webp",
+     "size": [
+      2199,
+      2433
+     ],
+     "anchor_px": [
+      1149.34,
+      1452.44
+     ]
+    }
+   ],
+   "doc": "the contact shadow of shelf, rendered: place it with the prop"
+  },
+  "shelf-low": {
+   "source": "blender",
+   "from": "model project fixtures/low bookcase with files (art/scripts/render_props.py)",
+   "footprint": [
+    -0.354,
+    -0.414,
+    0.0,
+    0.354,
+    0.0,
+    1.2
+   ],
+   "hit": "alpha",
+   "doc": "low bookcase with files, against the back wall",
+   "wall": "back",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "shelf-low@86.webp",
+     "size": [
+      75,
+      125
+     ],
+     "anchor_px": [
+      46.99,
+      100.4
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "shelf-low@172.webp",
+     "size": [
+      149,
+      249
+     ],
+     "anchor_px": [
+      93.98,
+      200.81
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "shelf-low@343.webp",
+     "size": [
+      298,
+      497
+     ],
+     "anchor_px": [
+      187.95,
+      401.62
+     ]
+    }
+   ],
+   "shadow": "shelf-low-shadow"
+  },
+  "shelf-low-shadow": {
+   "source": "blender",
+   "from": "model project fixtures/low bookcase with files (art/scripts/render_props.py)",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    -0.354,
+    -0.414,
+    0.0,
+    0.354,
+    0.0,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "shelf-low-shadow@86.webp",
+     "size": [
+      382,
+      432
+     ],
+     "anchor_px": [
+      200.51,
+      253.92
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "shelf-low-shadow@172.webp",
+     "size": [
+      763,
+      863
+     ],
+     "anchor_px": [
+      401.01,
+      507.84
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "shelf-low-shadow@343.webp",
+     "size": [
+      1526,
+      1725
+     ],
+     "anchor_px": [
+      802.02,
+      1015.68
+     ]
+    }
+   ],
+   "doc": "the contact shadow of shelf-low, rendered: place it with the prop"
+  },
+  "book-cart": {
+   "source": "blender",
+   "from": "model project fixtures/book cart (art/scripts/render_props.py)",
+   "footprint": [
+    -0.45,
+    -0.238,
+    0.0,
+    0.45,
+    0.238,
+    0.78
+   ],
+   "hit": "alpha",
+   "doc": "the librarian's cart",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "book-cart@86.webp",
+     "size": [
+      92,
+      94
+     ],
+     "anchor_px": [
+      45.75,
+      75.05
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "book-cart@172.webp",
+     "size": [
+      184,
+      188
+     ],
+     "anchor_px": [
+      91.49,
+      150.1
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "book-cart@343.webp",
+     "size": [
+      367,
+      376
+     ],
+     "anchor_px": [
+      182.99,
+      300.2
+     ]
+    }
+   ],
+   "shadow": "book-cart-shadow"
+  },
+  "book-cart-shadow": {
+   "source": "blender",
+   "from": "model project fixtures/book cart (art/scripts/render_props.py)",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    -0.45,
+    -0.238,
+    0.0,
+    0.45,
+    0.238,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "book-cart-shadow@86.webp",
+     "size": [
+      320,
+      322
+     ],
+     "anchor_px": [
+      159.64,
+      188.94
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "book-cart-shadow@172.webp",
+     "size": [
+      639,
+      644
+     ],
+     "anchor_px": [
+      319.28,
+      377.89
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "book-cart-shadow@343.webp",
+     "size": [
+      1278,
+      1287
+     ],
+     "anchor_px": [
+      638.57,
+      755.78
+     ]
+    }
+   ],
+   "doc": "the contact shadow of book-cart, rendered: place it with the prop"
+  },
+  "whiteboard": {
+   "source": "blender",
+   "from": "model project fixtures/whiteboard on wheels (art/scripts/render_props.py)",
+   "footprint": [
+    -0.971,
+    -0.749,
+    0.0,
+    0.971,
+    0.0,
+    1.9
+   ],
+   "hit": "alpha",
+   "doc": "the briefing board on castors, backed against the wall",
+   "wall": "back",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "whiteboard@86.webp",
+     "size": [
+      179,
+      200
+     ],
+     "anchor_px": [
+      106.55,
+      152.68
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "whiteboard@172.webp",
+     "size": [
+      357,
+      399
+     ],
+     "anchor_px": [
+      213.1,
+      305.35
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "whiteboard@343.webp",
+     "size": [
+      713,
+      797
+     ],
+     "anchor_px": [
+      426.19,
+      610.71
+     ]
+    }
+   ],
+   "shadow": "whiteboard-shadow"
+  },
+  "whiteboard-shadow": {
+   "source": "blender",
+   "from": "model project fixtures/whiteboard on wheels (art/scripts/render_props.py)",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    -0.971,
+    -0.749,
+    0.0,
+    0.971,
+    0.0,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "whiteboard-shadow@86.webp",
+     "size": [
+      618,
+      639
+     ],
+     "anchor_px": [
+      326.1,
+      372.23
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "whiteboard-shadow@172.webp",
+     "size": [
+      1235,
+      1277
+     ],
+     "anchor_px": [
+      652.21,
+      744.46
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "whiteboard-shadow@343.webp",
+     "size": [
+      2470,
+      2553
+     ],
+     "anchor_px": [
+      1304.41,
+      1488.93
+     ]
+    }
+   ],
+   "doc": "the contact shadow of whiteboard, rendered: place it with the prop"
+  },
+  "podium": {
+   "source": "blender",
+   "from": "model project fixtures/lectern with clipboard (art/scripts/render_props.py)",
+   "footprint": [
+    -0.422,
+    -0.437,
+    0.0,
+    0.422,
+    0.437,
+    1.15
+   ],
+   "hit": "alpha",
+   "doc": "the orchestrator's lectern",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "podium@86.webp",
+     "size": [
+      105,
+      132
+     ],
+     "anchor_px": [
+      52.51,
+      110.02
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "podium@172.webp",
+     "size": [
+      210,
+      264
+     ],
+     "anchor_px": [
+      105.01,
+      220.05
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "podium@343.webp",
+     "size": [
+      420,
+      528
+     ],
+     "anchor_px": [
+      210.03,
+      440.09
+     ]
+    }
+   ],
+   "shadow": "podium-shadow"
+  },
+  "podium-shadow": {
+   "source": "blender",
+   "from": "model project fixtures/lectern with clipboard (art/scripts/render_props.py)",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    -0.422,
+    -0.437,
+    0.0,
+    0.422,
+    0.437,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "podium-shadow@86.webp",
+     "size": [
+      403,
+      430
+     ],
+     "anchor_px": [
+      201.31,
+      258.82
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "podium-shadow@172.webp",
+     "size": [
+      806,
+      859
+     ],
+     "anchor_px": [
+      402.61,
+      517.65
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "podium-shadow@343.webp",
+     "size": [
+      1611,
+      1718
+     ],
+     "anchor_px": [
+      805.23,
+      1035.3
+     ]
+    }
+   ],
+   "doc": "the contact shadow of podium, rendered: place it with the prop"
+  },
+  "plant-tall": {
+   "source": "blender",
+   "from": "model plants and rugs/plant in square pot (art/scripts/render_props.py)",
+   "footprint": [
+    -0.594,
+    -0.592,
+    0.0,
+    0.594,
+    0.592,
+    1.3
+   ],
+   "hit": "alpha",
+   "doc": "plant in a square pot",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "plant-tall@86.webp",
+     "size": [
+      106,
+      135
+     ],
+     "anchor_px": [
+      61.55,
+      118.4
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "plant-tall@172.webp",
+     "size": [
+      212,
+      270
+     ],
+     "anchor_px": [
+      123.11,
+      236.8
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "plant-tall@343.webp",
+     "size": [
+      424,
+      539
+     ],
+     "anchor_px": [
+      246.21,
+      473.61
+     ]
+    }
+   ],
+   "shadow": "plant-tall-shadow"
+  },
+  "plant-tall-shadow": {
+   "source": "blender",
+   "from": "model plants and rugs/plant in square pot (art/scripts/render_props.py)",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    -0.594,
+    -0.592,
+    0.0,
+    0.594,
+    0.592,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "plant-tall-shadow@86.webp",
+     "size": [
+      432,
+      461
+     ],
+     "anchor_px": [
+      224.5,
+      281.35
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "plant-tall-shadow@172.webp",
+     "size": [
+      864,
+      922
+     ],
+     "anchor_px": [
+      449.01,
+      562.71
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "plant-tall-shadow@343.webp",
+     "size": [
+      1727,
+      1843
+     ],
+     "anchor_px": [
+      898.02,
+      1125.41
+     ]
+    }
+   ],
+   "doc": "the contact shadow of plant-tall, rendered: place it with the prop"
+  },
+  "plant-bush": {
+   "source": "blender",
+   "from": "model plants and rugs/plant in round pot (art/scripts/render_props.py)",
+   "footprint": [
+    -0.48,
+    -0.487,
+    0.0,
+    0.48,
+    0.487,
+    1.0
+   ],
+   "hit": "alpha",
+   "doc": "plant in a round pot",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "plant-bush@86.webp",
+     "size": [
+      86,
+      106
+     ],
+     "anchor_px": [
+      44.66,
+      93.01
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "plant-bush@172.webp",
+     "size": [
+      171,
+      211
+     ],
+     "anchor_px": [
+      89.32,
+      186.02
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "plant-bush@343.webp",
+     "size": [
+      342,
+      422
+     ],
+     "anchor_px": [
+      178.64,
+      372.03
+     ]
+    }
+   ],
+   "shadow": "plant-bush-shadow"
+  },
+  "plant-bush-shadow": {
+   "source": "blender",
+   "from": "model plants and rugs/plant in round pot (art/scripts/render_props.py)",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    -0.48,
+    -0.487,
+    0.0,
+    0.48,
+    0.487,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "plant-bush-shadow@86.webp",
+     "size": [
+      355,
+      375
+     ],
+     "anchor_px": [
+      179.31,
+      227.66
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "plant-bush-shadow@172.webp",
+     "size": [
+      710,
+      750
+     ],
+     "anchor_px": [
+      358.62,
+      455.32
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "plant-bush-shadow@343.webp",
+     "size": [
+      1419,
+      1500
+     ],
+     "anchor_px": [
+      717.23,
+      910.63
+     ]
+    }
+   ],
+   "doc": "the contact shadow of plant-bush, rendered: place it with the prop"
+  },
+  "plant-small": {
+   "source": "blender",
+   "from": "model objects/pot plant (art/scripts/render_props.py)",
+   "footprint": [
+    -0.156,
+    -0.156,
+    0.0,
+    0.156,
+    0.156,
+    0.42
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "plant-small@86.webp",
+     "size": [
+      38,
+      49
+     ],
+     "anchor_px": [
+      17.23,
+      39.61
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "plant-small@172.webp",
+     "size": [
+      75,
+      97
+     ],
+     "anchor_px": [
+      34.46,
+      79.22
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "plant-small@343.webp",
+     "size": [
+      150,
+      193
+     ],
+     "anchor_px": [
+      68.91,
+      158.44
+     ]
+    }
+   ],
+   "shadow": "plant-small-shadow"
+  },
+  "plant-small-shadow": {
+   "source": "blender",
+   "from": "model objects/pot plant (art/scripts/render_props.py)",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    -0.156,
+    -0.156,
+    0.0,
+    0.156,
+    0.156,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "plant-small-shadow@86.webp",
+     "size": [
+      198,
+      209
+     ],
+     "anchor_px": [
+      97.16,
+      119.54
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "plant-small-shadow@172.webp",
+     "size": [
+      395,
+      417
+     ],
+     "anchor_px": [
+      194.32,
+      239.08
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "plant-small-shadow@343.webp",
+     "size": [
+      790,
+      833
+     ],
+     "anchor_px": [
+      388.64,
+      478.17
+     ]
+    }
+   ],
+   "doc": "the contact shadow of plant-small, rendered: place it with the prop"
+  },
+  "floor-lamp": {
+   "source": "blender",
+   "from": "model plants and rugs/tripod floor lamp (art/scripts/render_props.py)",
+   "footprint": [
+    -0.31,
+    -0.309,
+    0.0,
+    0.31,
+    0.309,
+    1.35
+   ],
+   "hit": "alpha",
+   "doc": "tripod floor lamp (its light is a glow sprite)",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "floor-lamp@86.webp",
+     "size": [
+      59,
+      122
+     ],
+     "anchor_px": [
+      29.07,
+      112.73
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "floor-lamp@172.webp",
+     "size": [
+      117,
+      243
+     ],
+     "anchor_px": [
+      58.15,
+      225.45
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "floor-lamp@343.webp",
+     "size": [
+      233,
+      485
+     ],
+     "anchor_px": [
+      116.29,
+      450.9
+     ]
+    }
+   ],
+   "shadow": "floor-lamp-shadow"
+  },
+  "floor-lamp-shadow": {
+   "source": "blender",
+   "from": "model plants and rugs/tripod floor lamp (art/scripts/render_props.py)",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    -0.31,
+    -0.309,
+    0.0,
+    0.31,
+    0.309,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "floor-lamp-shadow@86.webp",
+     "size": [
+      394,
+      457
+     ],
+     "anchor_px": [
+      196.74,
+      280.39
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "floor-lamp-shadow@172.webp",
+     "size": [
+      787,
+      913
+     ],
+     "anchor_px": [
+      393.48,
+      560.79
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "floor-lamp-shadow@343.webp",
+     "size": [
+      1574,
+      1826
+     ],
+     "anchor_px": [
+      786.96,
+      1121.57
+     ]
+    }
+   ],
+   "doc": "the contact shadow of floor-lamp, rendered: place it with the prop"
+  },
+  "crate": {
+   "source": "blender",
+   "from": "model waiting area/hourglass crate (art/scripts/render_props.py)",
+   "footprint": [
+    -0.35,
+    -0.35,
+    0.0,
+    0.35,
+    0.35,
+    0.699
+   ],
+   "hit": "alpha",
+   "doc": "the waiting crate, hourglass on its front",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "crate@86.webp",
+     "size": [
+      87,
+      95
+     ],
+     "anchor_px": [
+      43.27,
+      73.76
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "crate@172.webp",
+     "size": [
+      174,
+      190
+     ],
+     "anchor_px": [
+      86.54,
+      147.52
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "crate@343.webp",
+     "size": [
+      347,
+      379
+     ],
+     "anchor_px": [
+      173.08,
+      295.03
+     ]
+    }
+   ],
+   "shadow": "crate-shadow"
+  },
+  "crate-shadow": {
+   "source": "blender",
+   "from": "model waiting area/hourglass crate (art/scripts/render_props.py)",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    -0.35,
+    -0.35,
+    0.0,
+    0.35,
+    0.35,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "crate-shadow@86.webp",
+     "size": [
+      300,
+      308
+     ],
+     "anchor_px": [
+      149.52,
+      180.01
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "crate-shadow@172.webp",
+     "size": [
+      599,
+      615
+     ],
+     "anchor_px": [
+      299.04,
+      360.02
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "crate-shadow@343.webp",
+     "size": [
+      1197,
+      1229
+     ],
+     "anchor_px": [
+      598.09,
+      720.04
+     ]
+    }
+   ],
+   "doc": "the contact shadow of crate, rendered: place it with the prop"
+  },
+  "crate-stack": {
+   "source": "blender",
+   "from": "model garage/crate (art/scripts/render_props.py)",
+   "footprint": [
+    -0.7,
+    -0.719,
+    0.0,
+    0.72,
+    0.659,
+    1.643
+   ],
+   "hit": "alpha",
+   "doc": "crates stacked: storage furniture (the hourglass crate means waiting)",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "crate-stack@86.webp",
+     "size": [
+      161,
+      186
+     ],
+     "anchor_px": [
+      83.67,
+      149.92
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "crate-stack@172.webp",
+     "size": [
+      322,
+      371
+     ],
+     "anchor_px": [
+      167.33,
+      299.84
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "crate-stack@343.webp",
+     "size": [
+      643,
+      741
+     ],
+     "anchor_px": [
+      334.67,
+      599.67
+     ]
+    }
+   ],
+   "shadow": "crate-stack-shadow"
+  },
+  "crate-stack-shadow": {
+   "source": "blender",
+   "from": "model garage/crate (art/scripts/render_props.py)",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    -0.7,
+    -0.719,
+    0.0,
+    0.72,
+    0.659,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "crate-stack-shadow@86.webp",
+     "size": [
+      552,
+      576
+     ],
+     "anchor_px": [
+      278.98,
+      345.23
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "crate-stack-shadow@172.webp",
+     "size": [
+      1103,
+      1152
+     ],
+     "anchor_px": [
+      557.95,
+      690.46
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "crate-stack-shadow@343.webp",
+     "size": [
+      2205,
+      2304
+     ],
+     "anchor_px": [
+      1115.91,
+      1380.91
+     ]
+    }
+   ],
+   "doc": "the contact shadow of crate-stack, rendered: place it with the prop"
+  },
+  "crate-shelf": {
+   "source": "blender",
+   "from": "model garage/shelf of crates (art/scripts/render_props.py)",
+   "footprint": [
+    -0.0,
+    -0.909,
+    0.0,
+    0.748,
+    0.909,
+    2.0
+   ],
+   "hit": "alpha",
+   "doc": "shelf of crates, against the left wall",
+   "wall": "left",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "crate-shelf@86.webp",
+     "size": [
+      143,
+      229
+     ],
+     "anchor_px": [
+      44.38,
+      179.45
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "crate-shelf@172.webp",
+     "size": [
+      285,
+      457
+     ],
+     "anchor_px": [
+      88.76,
+      358.9
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "crate-shelf@343.webp",
+     "size": [
+      570,
+      914
+     ],
+     "anchor_px": [
+      177.51,
+      717.79
+     ]
+    }
+   ],
+   "shadow": "crate-shelf-shadow"
+  },
+  "crate-shelf-shadow": {
+   "source": "blender",
+   "from": "model garage/shelf of crates (art/scripts/render_props.py)",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    -0.0,
+    -0.909,
+    0.0,
+    0.748,
+    0.909,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "crate-shelf-shadow@86.webp",
+     "size": [
+      601,
+      687
+     ],
+     "anchor_px": [
+      273.37,
+      408.44
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "crate-shelf-shadow@172.webp",
+     "size": [
+      1201,
+      1373
+     ],
+     "anchor_px": [
+      546.74,
+      816.87
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "crate-shelf-shadow@343.webp",
+     "size": [
+      2402,
+      2746
+     ],
+     "anchor_px": [
+      1093.47,
+      1633.75
+     ]
+    }
+   ],
+   "doc": "the contact shadow of crate-shelf, rendered: place it with the prop"
+  },
+  "wall-light": {
+   "source": "blender",
+   "from": "model plants and rugs/wall light (art/scripts/render_props.py)",
+   "footprint": [
+    -0.101,
+    -0.12,
+    0.0,
+    0.101,
+    0.0,
+    0.6
+   ],
+   "hit": "alpha",
+   "doc": "wall light; anchor the middle of its back at its foot (placed up the wall)",
+   "wall": "back",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "wall-light@86.webp",
+     "size": [
+      22,
+      56
+     ],
+     "anchor_px": [
+      11.51,
+      50.03
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "wall-light@172.webp",
+     "size": [
+      43,
+      112
+     ],
+     "anchor_px": [
+      23.01,
+      100.07
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "wall-light@343.webp",
+     "size": [
+      86,
+      224
+     ],
+     "anchor_px": [
+      46.03,
+      200.14
+     ]
+    }
+   ],
+   "shadow": "wall-light-shadow"
+  },
+  "wall-light-shadow": {
+   "source": "blender",
+   "from": "model plants and rugs/wall light (art/scripts/render_props.py)",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    -0.101,
+    -0.12,
+    0.0,
+    0.101,
+    0.0,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "wall-light-shadow@86.webp",
+     "size": [
+      216,
+      250
+     ],
+     "anchor_px": [
+      108.42,
+      146.95
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "wall-light-shadow@172.webp",
+     "size": [
+      431,
+      500
+     ],
+     "anchor_px": [
+      216.84,
+      293.9
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "wall-light-shadow@343.webp",
+     "size": [
+      861,
+      999
+     ],
+     "anchor_px": [
+      433.68,
+      587.79
+     ]
+    }
+   ],
+   "doc": "the contact shadow of wall-light, rendered: place it with the prop"
+  },
+  "monitor": {
+   "source": "blender",
+   "from": "model coffee/keyboard + coffee/mouse + objects/monitor (art/scripts/render_props.py)",
+   "footprint": [
+    -0.275,
+    -0.237,
+    0.0,
+    0.293,
+    0.169,
+    0.371
+   ],
+   "hit": "alpha",
+   "doc": "monitor, keyboard and mouse",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "monitor@86.webp",
+     "size": [
+      209,
+      206
+     ],
+     "anchor_px": [
+      106.1,
+      114.88
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "monitor@172.webp",
+     "size": [
+      418,
+      411
+     ],
+     "anchor_px": [
+      213.21,
+      230.76
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "monitor@343.webp",
+     "size": [
+      836,
+      821
+     ],
+     "anchor_px": [
+      425.41,
+      460.53
+     ]
+    }
+   ]
+  },
+  "laptop": {
+   "source": "blender",
+   "from": "model objects/laptop (art/scripts/render_props.py)",
+   "footprint": [
+    -0.165,
+    -0.123,
+    0.0,
+    0.165,
+    0.123,
+    0.217
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "laptop@86.webp",
+     "size": [
+      162,
+      158
+     ],
+     "anchor_px": [
+      80.93,
+      87.51
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "laptop@172.webp",
+     "size": [
+      324,
+      316
+     ],
+     "anchor_px": [
+      161.86,
+      175.02
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "laptop@343.webp",
+     "size": [
+      647,
+      632
+     ],
+     "anchor_px": [
+      322.72,
+      349.03
+     ]
+    }
+   ]
+  },
+  "lamp": {
+   "source": "blender",
+   "from": "model objects/desk lamp (art/scripts/render_props.py)",
+   "footprint": [
+    -0.079,
+    -0.196,
+    0.0,
+    0.079,
+    0.196,
+    0.46
+   ],
+   "hit": "alpha",
+   "slots": {
+    "shade": [
+     -0.002,
+     -0.086,
+     0.346
+    ]
+   },
+   "doc": "desk lamp, switched off (its light is glow-* sprites)",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "lamp@86.webp",
+     "size": [
+      198,
+      205
+     ],
+     "anchor_px": [
+      99.07,
+      119.13
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "lamp@172.webp",
+     "size": [
+      395,
+      409
+     ],
+     "anchor_px": [
+      197.15,
+      237.26
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "lamp@343.webp",
+     "size": [
+      790,
+      818
+     ],
+     "anchor_px": [
+      395.29,
+      475.52
+     ]
+    }
+   ]
+  },
+  "pen-pot": {
+   "source": "blender",
+   "from": "model objects/pencil holder (art/scripts/render_props.py)",
+   "footprint": [
+    -0.061,
+    -0.061,
+    0.0,
+    0.061,
+    0.061,
+    0.18
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "pen-pot@86.webp",
+     "size": [
+      134,
+      138
+     ],
+     "anchor_px": [
+      66.72,
+      73.98
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "pen-pot@172.webp",
+     "size": [
+      268,
+      275
+     ],
+     "anchor_px": [
+      134.44,
+      148.95
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "pen-pot@343.webp",
+     "size": [
+      536,
+      550
+     ],
+     "anchor_px": [
+      267.88,
+      296.91
+     ]
+    }
+   ]
+  },
+  "paper-stack": {
+   "source": "blender",
+   "from": "model paper/stack of papers (art/scripts/render_props.py)",
+   "footprint": [
+    -0.15,
+    -0.15,
+    0.0,
+    0.15,
+    0.15,
+    0.085
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "paper-stack@86.webp",
+     "size": [
+      138,
+      125
+     ],
+     "anchor_px": [
+      68.22,
+      65.11
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "paper-stack@172.webp",
+     "size": [
+      275,
+      249
+     ],
+     "anchor_px": [
+      137.44,
+      131.23
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "paper-stack@343.webp",
+     "size": [
+      549,
+      498
+     ],
+     "anchor_px": [
+      273.89,
+      261.45
+     ]
+    }
+   ]
+  },
+  "sketch": {
+   "source": "blender",
+   "from": "model paper/diagram sheet (art/scripts/render_props.py)",
+   "footprint": [
+    -0.16,
+    -0.158,
+    0.0,
+    0.16,
+    0.158,
+    0.009
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "sketch@86.webp",
+     "size": [
+      125,
+      106
+     ],
+     "anchor_px": [
+      62.25,
+      52.87
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "sketch@172.webp",
+     "size": [
+      250,
+      211
+     ],
+     "anchor_px": [
+      124.51,
+      105.73
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "sketch@343.webp",
+     "size": [
+      500,
+      422
+     ],
+     "anchor_px": [
+      250.01,
+      212.47
+     ]
+    }
+   ]
+  },
+  "mug": {
+   "source": "blender",
+   "from": "model coffee/mug (art/scripts/render_props.py)",
+   "footprint": [
+    -0.053,
+    -0.058,
+    0.0,
+    0.053,
+    0.058,
+    0.1
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "mug@86.webp",
+     "size": [
+      114,
+      116
+     ],
+     "anchor_px": [
+      56.65,
+      62.34
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "mug@172.webp",
+     "size": [
+      227,
+      232
+     ],
+     "anchor_px": [
+      112.29,
+      123.68
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "mug@343.webp",
+     "size": [
+      453,
+      464
+     ],
+     "anchor_px": [
+      225.59,
+      248.37
+     ]
+    }
+   ]
+  },
+  "desk-plant": {
+   "source": "blender",
+   "from": "model objects/pot plant (art/scripts/render_props.py)",
+   "footprint": [
+    -0.06,
+    -0.059,
+    0.0,
+    0.06,
+    0.059,
+    0.16
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "desk-plant@86.webp",
+     "size": [
+      129,
+      133
+     ],
+     "anchor_px": [
+      63.16,
+      71.68
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "desk-plant@172.webp",
+     "size": [
+      257,
+      265
+     ],
+     "anchor_px": [
+      127.31,
+      144.36
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "desk-plant@343.webp",
+     "size": [
+      513,
+      530
+     ],
+     "anchor_px": [
+      254.62,
+      288.73
+     ]
+    }
+   ]
+  },
+  "books": {
+   "source": "blender",
+   "from": "model objects/notebook (art/scripts/render_props.py)",
+   "footprint": [
+    -0.12,
+    -0.157,
+    0.0,
+    0.12,
+    0.157,
+    0.054
+   ],
+   "hit": "alpha",
+   "doc": "a notebook",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "books@86.webp",
+     "size": [
+      126,
+      114
+     ],
+     "anchor_px": [
+      62.2,
+      58.71
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "books@172.webp",
+     "size": [
+      252,
+      227
+     ],
+     "anchor_px": [
+      125.39,
+      118.41
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "books@343.webp",
+     "size": [
+      504,
+      454
+     ],
+     "anchor_px": [
+      250.79,
+      236.82
+     ]
+    }
+   ]
+  },
+  "paper-tray": {
+   "source": "blender",
+   "from": "model objects/paper tray (art/scripts/render_props.py)",
+   "footprint": [
+    -0.17,
+    -0.162,
+    0.0,
+    0.17,
+    0.162,
+    0.188
+   ],
+   "hit": "alpha",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "paper-tray@86.webp",
+     "size": [
+      161,
+      154
+     ],
+     "anchor_px": [
+      80.22,
+      83.8
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "paper-tray@172.webp",
+     "size": [
+      322,
+      307
+     ],
+     "anchor_px": [
+      160.45,
+      167.59
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "paper-tray@343.webp",
+     "size": [
+      643,
+      614
+     ],
+     "anchor_px": [
+      320.89,
+      335.18
+     ]
+    }
+   ]
+  },
+  "lantern": {
+   "source": "blender",
+   "from": "model status effects/lantern lit (art/scripts/render_props.py)",
+   "footprint": [
+    -0.134,
+    -0.132,
+    -0.33,
+    0.134,
+    0.132,
+    0.33
+   ],
+   "hit": "alpha",
+   "slots": {
+    "glyph": [
+     0,
+     -0.073,
+     0.0
+    ],
+    "cable_top": [
+     0,
+     0,
+     1.2
+    ]
+   },
+   "doc": "the attention lantern: anchor at its centre; the front facet takes the glyph",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "lantern@86.webp",
+     "size": [
+      36,
+      56
+     ],
+     "anchor_px": [
+      17.91,
+      27.9
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "lantern@172.webp",
+     "size": [
+      72,
+      112
+     ],
+     "anchor_px": [
+      35.81,
+      55.79
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "lantern@343.webp",
+     "size": [
+      144,
+      224
+     ],
+     "anchor_px": [
+      71.63,
+      111.58
+     ]
+    }
+   ]
+  },
+  "ao-floor-x": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    0,
+    -1.1,
+    0,
+    3.6,
+    0,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "ao-floor-x@86.webp",
+     "size": [
+      320,
+      121
+     ],
+     "anchor_px": [
+      55.92,
+      2.04
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "ao-floor-x@172.webp",
+     "size": [
+      639,
+      241
+     ],
+     "anchor_px": [
+      111.85,
+      4.08
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "ao-floor-x@343.webp",
+     "size": [
+      1277,
+      481
+     ],
+     "anchor_px": [
+      223.7,
+      8.17
+     ]
+    }
+   ],
+   "doc": "occlusion on the floor along the back wall, one bay"
+  },
+  "ao-floor-y": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    0,
+    0,
+    0,
+    1.1,
+    3.6,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "ao-floor-y@86.webp",
+     "size": [
+      257,
+      150
+     ],
+     "anchor_px": [
+      4.77,
+      123.61
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "ao-floor-y@172.webp",
+     "size": [
+      513,
+      300
+     ],
+     "anchor_px": [
+      9.54,
+      247.21
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "ao-floor-y@343.webp",
+     "size": [
+      1025,
+      600
+     ],
+     "anchor_px": [
+      18.07,
+      494.43
+     ]
+    }
+   ],
+   "doc": "occlusion on the floor along the left wall, one bay"
+  },
+  "ao-wall-x": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    0,
+    -0.01,
+    0,
+    3.6,
+    0,
+    0.7
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "ao-wall-x@86.webp",
+     "size": [
+      265,
+      140
+     ],
+     "anchor_px": [
+      2.64,
+      56.59
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "ao-wall-x@172.webp",
+     "size": [
+      529,
+      279
+     ],
+     "anchor_px": [
+      5.27,
+      113.18
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "ao-wall-x@343.webp",
+     "size": [
+      1057,
+      557
+     ],
+     "anchor_px": [
+      10.55,
+      226.35
+     ]
+    }
+   ],
+   "doc": "occlusion at the foot of the back wall, one bay"
+  },
+  "ao-wall-y": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    0,
+    0,
+    0,
+    0.01,
+    3.6,
+    0.7
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "ao-wall-y@86.webp",
+     "size": [
+      172,
+      184
+     ],
+     "anchor_px": [
+      1.71,
+      179.55
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "ao-wall-y@172.webp",
+     "size": [
+      344,
+      367
+     ],
+     "anchor_px": [
+      3.43,
+      358.09
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "ao-wall-y@343.webp",
+     "size": [
+      687,
+      732
+     ],
+     "anchor_px": [
+      6.85,
+      715.18
+     ]
+    }
+   ],
+   "doc": "occlusion at the foot of the left wall, one bay"
+  },
+  "glow-window": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    -0.65,
+    -1.4,
+    0,
+    0.65,
+    1.4,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "glow-window@86.webp",
+     "size": [
+      234,
+      128
+     ],
+     "anchor_px": [
+      117.28,
+      63.57
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "glow-window@172.webp",
+     "size": [
+      467,
+      255
+     ],
+     "anchor_px": [
+      233.57,
+      127.14
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "glow-window@343.webp",
+     "size": [
+      933,
+      509
+     ],
+     "anchor_px": [
+      466.13,
+      254.29
+     ]
+    }
+   ],
+   "doc": "daylight through a window of the cut-away front wall, on the floor",
+   "blend": "lighter"
+  },
+  "footprints-000": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "box",
+   "footprint": [
+    -0.4,
+    -0.4,
+    0,
+    0.4,
+    0.4,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "footprints-000@86.webp",
+     "size": [
+      104,
+      49
+     ],
+     "anchor_px": [
+      52.01,
+      24.32
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "footprints-000@172.webp",
+     "size": [
+      208,
+      98
+     ],
+     "anchor_px": [
+      104.02,
+      48.64
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "footprints-000@343.webp",
+     "size": [
+      416,
+      195
+     ],
+     "anchor_px": [
+      208.05,
+      97.28
+     ]
+    }
+   ],
+   "doc": "a pair of prints walking 0\u00b0 from +x (anticlockwise from above)"
+  },
+  "footprints-045": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "box",
+   "footprint": [
+    -0.4,
+    -0.4,
+    0,
+    0.4,
+    0.4,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "footprints-045@86.webp",
+     "size": [
+      104,
+      49
+     ],
+     "anchor_px": [
+      52.01,
+      24.32
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "footprints-045@172.webp",
+     "size": [
+      208,
+      98
+     ],
+     "anchor_px": [
+      104.02,
+      48.64
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "footprints-045@343.webp",
+     "size": [
+      416,
+      195
+     ],
+     "anchor_px": [
+      208.05,
+      97.28
+     ]
+    }
+   ],
+   "doc": "a pair of prints walking 45\u00b0 from +x (anticlockwise from above)"
+  },
+  "footprints-090": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "box",
+   "footprint": [
+    -0.4,
+    -0.4,
+    0,
+    0.4,
+    0.4,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "footprints-090@86.webp",
+     "size": [
+      104,
+      49
+     ],
+     "anchor_px": [
+      52.01,
+      24.32
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "footprints-090@172.webp",
+     "size": [
+      208,
+      98
+     ],
+     "anchor_px": [
+      104.02,
+      48.64
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "footprints-090@343.webp",
+     "size": [
+      416,
+      195
+     ],
+     "anchor_px": [
+      208.05,
+      97.28
+     ]
+    }
+   ],
+   "doc": "a pair of prints walking 90\u00b0 from +x (anticlockwise from above)"
+  },
+  "footprints-135": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "box",
+   "footprint": [
+    -0.4,
+    -0.4,
+    0,
+    0.4,
+    0.4,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "footprints-135@86.webp",
+     "size": [
+      104,
+      49
+     ],
+     "anchor_px": [
+      52.01,
+      24.32
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "footprints-135@172.webp",
+     "size": [
+      208,
+      98
+     ],
+     "anchor_px": [
+      104.02,
+      48.64
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "footprints-135@343.webp",
+     "size": [
+      416,
+      195
+     ],
+     "anchor_px": [
+      208.05,
+      97.28
+     ]
+    }
+   ],
+   "doc": "a pair of prints walking 135\u00b0 from +x (anticlockwise from above)"
+  },
+  "footprints-180": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "box",
+   "footprint": [
+    -0.4,
+    -0.4,
+    0,
+    0.4,
+    0.4,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "footprints-180@86.webp",
+     "size": [
+      104,
+      49
+     ],
+     "anchor_px": [
+      52.01,
+      24.32
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "footprints-180@172.webp",
+     "size": [
+      208,
+      98
+     ],
+     "anchor_px": [
+      104.02,
+      48.64
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "footprints-180@343.webp",
+     "size": [
+      416,
+      195
+     ],
+     "anchor_px": [
+      208.05,
+      97.28
+     ]
+    }
+   ],
+   "doc": "a pair of prints walking 180\u00b0 from +x (anticlockwise from above)"
+  },
+  "footprints-225": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "box",
+   "footprint": [
+    -0.4,
+    -0.4,
+    0,
+    0.4,
+    0.4,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "footprints-225@86.webp",
+     "size": [
+      104,
+      49
+     ],
+     "anchor_px": [
+      52.01,
+      24.32
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "footprints-225@172.webp",
+     "size": [
+      208,
+      98
+     ],
+     "anchor_px": [
+      104.02,
+      48.64
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "footprints-225@343.webp",
+     "size": [
+      416,
+      195
+     ],
+     "anchor_px": [
+      208.05,
+      97.28
+     ]
+    }
+   ],
+   "doc": "a pair of prints walking 225\u00b0 from +x (anticlockwise from above)"
+  },
+  "footprints-270": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "box",
+   "footprint": [
+    -0.4,
+    -0.4,
+    0,
+    0.4,
+    0.4,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "footprints-270@86.webp",
+     "size": [
+      104,
+      49
+     ],
+     "anchor_px": [
+      52.01,
+      24.32
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "footprints-270@172.webp",
+     "size": [
+      208,
+      98
+     ],
+     "anchor_px": [
+      104.02,
+      48.64
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "footprints-270@343.webp",
+     "size": [
+      416,
+      195
+     ],
+     "anchor_px": [
+      208.05,
+      97.28
+     ]
+    }
+   ],
+   "doc": "a pair of prints walking 270\u00b0 from +x (anticlockwise from above)"
+  },
+  "footprints-315": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "box",
+   "footprint": [
+    -0.4,
+    -0.4,
+    0,
+    0.4,
+    0.4,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "footprints-315@86.webp",
+     "size": [
+      104,
+      49
+     ],
+     "anchor_px": [
+      52.01,
+      24.32
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "footprints-315@172.webp",
+     "size": [
+      208,
+      98
+     ],
+     "anchor_px": [
+      104.02,
+      48.64
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "footprints-315@343.webp",
+     "size": [
+      416,
+      195
+     ],
+     "anchor_px": [
+      208.05,
+      97.28
+     ]
+    }
+   ],
+   "doc": "a pair of prints walking 315\u00b0 from +x (anticlockwise from above)"
+  },
+  "glow-desk-pool": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "light",
+   "hit": "none",
+   "footprint": [
+    -0.575,
+    -0.575,
+    0,
+    0.575,
+    0.575,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "glow-desk-pool@86.webp",
+     "size": [
+      146,
+      69
+     ],
+     "anchor_px": [
+      73.42,
+      34.07
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "glow-desk-pool@172.webp",
+     "size": [
+      291,
+      137
+     ],
+     "anchor_px": [
+      145.85,
+      68.14
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "glow-desk-pool@343.webp",
+     "size": [
+      581,
+      273
+     ],
+     "anchor_px": [
+      290.7,
+      136.27
+     ]
+    }
+   ],
+   "doc": "warm pool under a desk lamp, on the desk top (place at desk height)",
+   "blend": "lighter"
+  },
+  "glow-floor-spill": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "light",
+   "hit": "none",
+   "footprint": [
+    -1.6,
+    -1.6,
+    0,
+    1.6,
+    1.6,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "glow-floor-spill@86.webp",
+     "size": [
+      389,
+      183
+     ],
+     "anchor_px": [
+      194.27,
+      91.16
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "glow-floor-spill@172.webp",
+     "size": [
+      777,
+      365
+     ],
+     "anchor_px": [
+      388.54,
+      182.32
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "glow-floor-spill@343.webp",
+     "size": [
+      1554,
+      730
+     ],
+     "anchor_px": [
+      777.09,
+      364.63
+     ]
+    }
+   ],
+   "doc": "low warm spill on the floor in front of an active bench",
+   "blend": "lighter"
+  },
+  "shadow-bench-3": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    -2.85,
+    -0.79,
+    0,
+    2.85,
+    0.79,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "shadow-bench-3@86.webp",
+     "size": [
+      494,
+      183
+     ],
+     "anchor_px": [
+      247.02,
+      91.22
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "shadow-bench-3@172.webp",
+     "size": [
+      986,
+      365
+     ],
+     "anchor_px": [
+      493.03,
+      182.43
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "shadow-bench-3@343.webp",
+     "size": [
+      1971,
+      730
+     ],
+     "anchor_px": [
+      985.07,
+      364.87
+     ]
+    }
+   ],
+   "doc": "the soft contact shadow of a 3-seat bench, as one piece"
+  },
+  "shadow-bench-4": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    -3.65,
+    -0.79,
+    0,
+    3.65,
+    0.79,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "shadow-bench-4@86.webp",
+     "size": [
+      609,
+      218
+     ],
+     "anchor_px": [
+      304.56,
+      108.76
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "shadow-bench-4@172.webp",
+     "size": [
+      1216,
+      436
+     ],
+     "anchor_px": [
+      608.12,
+      217.52
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "shadow-bench-4@343.webp",
+     "size": [
+      2431,
+      871
+     ],
+     "anchor_px": [
+      1215.24,
+      435.04
+     ]
+    }
+   ],
+   "doc": "the soft contact shadow of a 4-seat bench, as one piece"
+  },
+  "floor-sheen": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    -1.0,
+    -0.7,
+    0,
+    1.0,
+    0.7,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "floor-sheen@86.webp",
+     "size": [
+      219,
+      96
+     ],
+     "anchor_px": [
+      109.15,
+      47.61
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "floor-sheen@172.webp",
+     "size": [
+      437,
+      191
+     ],
+     "anchor_px": [
+      218.31,
+      95.22
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "floor-sheen@343.webp",
+     "size": [
+      873,
+      381
+     ],
+     "anchor_px": [
+      436.62,
+      190.44
+     ]
+    }
+   ],
+   "doc": "a ceiling light's soft reflection in the satin floor; one per bay, idle or not",
+   "blend": "lighter"
+  },
+  "glow-wall-wash": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "light",
+   "hit": "none",
+   "footprint": [
+    -0.65,
+    -0.01,
+    -1.8,
+    0.65,
+    0,
+    0.0
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "glow-wall-wash@86.webp",
+     "size": [
+      99,
+      172
+     ],
+     "anchor_px": [
+      49.39,
+      17.83
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "glow-wall-wash@172.webp",
+     "size": [
+      198,
+      344
+     ],
+     "anchor_px": [
+      98.78,
+      35.67
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "glow-wall-wash@343.webp",
+     "size": [
+      396,
+      688
+     ],
+     "anchor_px": [
+      197.56,
+      71.34
+     ]
+    }
+   ],
+   "doc": "a wall washer's scallop on the plan-wall bay; anchor at the fitting",
+   "blend": "lighter"
+  },
+  "glow-lantern-halo": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "light",
+   "hit": "none",
+   "footprint": [
+    -0.5,
+    -0.01,
+    -0.5,
+    0.5,
+    0,
+    0.5
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "glow-lantern-halo@86.webp",
+     "size": [
+      78,
+      105
+     ],
+     "anchor_px": [
+      38.6,
+      52.41
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "glow-lantern-halo@172.webp",
+     "size": [
+      155,
+      210
+     ],
+     "anchor_px": [
+      77.2,
+      104.82
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "glow-lantern-halo@343.webp",
+     "size": [
+      309,
+      420
+     ],
+     "anchor_px": [
+      154.4,
+      209.63
+     ]
+    }
+   ],
+   "doc": "the lantern's magenta halo on the wall behind it (attention only); anchor at its centre",
+   "blend": "lighter"
+  },
+  "glow-shade": {
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "layer": "light",
+   "hit": "none",
+   "footprint": [
+    -0.15,
+    -0.01,
+    -0.15,
+    0.15,
+    0,
+    0.15
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "glow-shade@86.webp",
+     "size": [
+      27,
+      37
+     ],
+     "anchor_px": [
+      13.43,
+      18.23
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "glow-shade@172.webp",
+     "size": [
+      54,
+      73
+     ],
+     "anchor_px": [
+      26.85,
+      36.46
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "glow-shade@343.webp",
+     "size": [
+      108,
+      146
+     ],
+     "anchor_px": [
+      53.71,
+      72.92
+     ]
+    }
+   ],
+   "doc": "a lit lamp shade's mouth; anchor at the lamp's shade slot",
+   "blend": "lighter"
+  }
+ },
+ "textures": {
+  "floor-tile": {
+   "file": "floor-tile.webp",
+   "metres": 4.8,
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "doc": "seamless: wraps left to right and top to bottom; no tile grid"
+  },
+  "wall-tile": {
+   "file": "wall-tile.webp",
+   "metres": 4.0,
+   "source": "procedural",
+   "from": "art/kit/finish.py",
+   "doc": "seamless: wraps left to right and top to bottom; no tile grid"
+  }
+ }
+}

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Fleet · art bake-off</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #dcebf8; font: 13px/1.4 system-ui, sans-serif; color: #3d4450; }
+  canvas { position: fixed; inset: 0; display: block; }
+  #panel { position: fixed; left: 12px; top: 12px; z-index: 5; background: rgba(255, 255, 255, .88);
+           border: 1px solid #c9ced8; border-radius: 10px; padding: 10px 12px; min-width: 250px; }
+  #panel h1 { font-size: 13px; margin: 0 0 6px; }
+  #panel a { display: inline-block; margin: 0 4px 4px 0; padding: 3px 9px; border: 1px solid #c9ced8; border-radius: 7px;
+             color: inherit; text-decoration: none; background: #fff; }
+  #panel a[aria-current] { background: #3d4450; color: #fff; border-color: #3d4450; }
+  #panel label { display: block; margin-top: 4px; }
+  #panel input[type=range] { width: 100%; }
+  #stats { margin-top: 6px; font: 12px/1.35 ui-monospace, monospace; white-space: pre; }
+  #missing { color: #9a3b2a; margin-top: 4px; white-space: pre-line; }
+  #overlay { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: fill; opacity: .5; pointer-events: none;
+             display: none; z-index: 4; }
+  body.shot #panel { display: none; }
+</style>
+</head>
+<body>
+<div id="panel">
+  <h1>Art bake-off</h1>
+  <div id="variants"></div>
+  <div id="views"></div>
+  <label>Zoom: floor ↔ l2 <input id="zoom" type="range" min="0" max="1" step="0.01"></label>
+  <label><input id="l2" type="checkbox"> l2.png overlay</label>
+  <label><input id="layers" type="checkbox"> show occlusion layers</label>
+  <div id="missing"></div>
+  <div id="stats"></div>
+</div>
+<img id="overlay" src="/concept/l2.png" alt="">
+<script type="importmap">{"imports":{"three":"/vendor/three/three.module.js","three/addons/":"/vendor/three/addons/"}}</script>
+<script type="module" src="/prototype/bakeoff.js"></script>
+</body>
+</html>

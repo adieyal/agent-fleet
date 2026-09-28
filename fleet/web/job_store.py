@@ -23,6 +23,7 @@ from typing import Any, Callable, Iterator
 
 from fleet.transport import FleetError
 from fleet.web.documents import STATUS_LINE, render_markdown
+from fleet.web.library import is_private
 
 UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
 MARKDOWN_SUFFIXES = (".md", ".markdown", ".mdx")
@@ -34,6 +35,10 @@ DOCUMENT_FIELDS = ("id", "kind", "name", "step", "path", "size", "mtime")
 
 def fleet_home() -> Path:
     return Path(os.environ.get("FLEET_HOME") or "~/.fleet").expanduser()
+
+
+def private(document: dict[str, Any]) -> bool:
+    return any(is_private(PurePosixPath(str(document.get(key) or "")).name) for key in ("id", "name", "path"))
 
 
 def safe_name(text: str) -> str:
@@ -87,6 +92,8 @@ class ProjectDocuments:
             documents = copy.deepcopy(previous.get("documents", {}))
             stale = []
             for listed in job.get("documents", []):
+                if private(listed):   # an older fleetd may still list someone's local notes
+                    continue
                 entry = documents.setdefault(listed["id"], {})
                 entry.update({key: listed.get(key) for key in DOCUMENT_FIELDS})
                 if entry.get("copied") != [listed.get("mtime"), listed.get("size")]:
@@ -142,7 +149,8 @@ class ProjectDocuments:
             if summary is None:
                 continue
             documents = [{**{key: entry.get(key) for key in DOCUMENT_FIELDS}, "stored": bool(entry.get("file")),
-                          "error": entry.get("error")} for entry in summary.get("documents", {}).values()]
+                          "error": entry.get("error")} for entry in summary.get("documents", {}).values()
+                         if not private(entry)]
             found.append({**{key: value for key, value in summary.items() if key != "documents"},
                           "key": directory.name, "documents": documents})
         return sorted(found, key=lambda job: job.get("created_at") or 0, reverse=True)
@@ -184,7 +192,7 @@ class ProjectDocuments:
             subfolders[:] = sorted(name for name in subfolders if not (Path(folder) / name).is_symlink())
             for name in sorted(files):
                 path = Path(folder) / name
-                if name.lower().endswith(MARKDOWN_SUFFIXES) and not path.is_symlink() and path.is_file():
+                if name.lower().endswith(MARKDOWN_SUFFIXES) and not is_private(name) and not path.is_symlink() and path.is_file():
                     stat = path.stat()
                     documents.append({"id": path.relative_to(root).as_posix(), "name": name, "kind": "working",
                                       "size": stat.st_size, "mtime": stat.st_mtime})
@@ -193,7 +201,7 @@ class ProjectDocuments:
     def read_working(self, project_id: str, document_id: str) -> dict[str, Any] | None:
         requested = PurePosixPath(document_id)
         if (requested.is_absolute() or ".." in requested.parts or "\x00" in document_id
-                or not document_id.lower().endswith(MARKDOWN_SUFFIXES)):
+                or not document_id.lower().endswith(MARKDOWN_SUFFIXES) or is_private(requested.name)):
             return None
         path = self.project_directory(project_id) / "working" / requested
         raw = self._contained(project_id, path)

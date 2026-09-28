@@ -50,6 +50,8 @@ def isolated_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, empty_store:
     monkeypatch.setenv("FLEET_STORE", str(path))
     monkeypatch.setenv("FLEET_CONFIG", str(tmp_path / "config" / "config.json"))
     monkeypatch.setenv("FLEET_HOME", str(tmp_path / "fleet-home"))
+    # fleetd reads Claude's deny rules; the user's own settings must not decide a test
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-config"))
 
 
 @pytest.fixture
@@ -103,3 +105,11 @@ def deck_state() -> FixtureState:
 def base_url(deck_state: FixtureState) -> Iterator[str]:
     with serve_fixture(deck_state) as url:
         yield url
+
+
+@pytest.fixture(scope="session")
+def browser_type_launch_args(browser_type_launch_args: dict[str, Any]) -> dict[str, Any]:
+    """Headless Chromium without a display: an inherited DISPLAY (say a dead SSH X forward) makes WebGL
+    fail to start, and the 3D views then never become ready."""
+    env = {k: v for k, v in os.environ.items() if k not in ("DISPLAY", "WAYLAND_DISPLAY")}
+    return {**browser_type_launch_args, "env": env}

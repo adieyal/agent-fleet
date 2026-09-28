@@ -16,6 +16,21 @@ from fleet.web.library import ProjectLibrary
 from fleet.web.server import FleetState, make_handler
 
 
+def test_a_recursive_library_reads_every_folder_but_hidden_and_tool_ones(tmp_path):
+    for name in ("top.md", "v2-review/REVIEW.md", "slice/notes/format.md", ".git/x.md",
+                 "a/.hidden/y.md", "node_modules/pkg/README.md"):
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text(f"# {name}\n")
+    recursive = ProjectLibrary({"p": {"path": str(tmp_path), "recursive": True}})
+    assert sorted(document["id"] for document in recursive.list()) == [
+        "slice/notes/format.md", "top.md", "v2-review/REVIEW.md"]
+    assert recursive.read("p", "v2-review/REVIEW.md")["name"] == "REVIEW.md"
+    assert recursive.read("p", ".git/x.md") is None
+    assert recursive.read("p", "node_modules/pkg/README.md") is None
+    shallow = ProjectLibrary({"p": str(tmp_path)})
+    assert [document["id"] for document in shallow.list()] == ["top.md"]
+    assert shallow.read("p", "v2-review/REVIEW.md") is None
+
 
 class DashboardHTTPTests(unittest.TestCase):
     @classmethod

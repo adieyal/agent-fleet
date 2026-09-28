@@ -33,6 +33,7 @@ def repository(root: Path) -> Path:
     (root / "docs" / "adr" / "0005-storehouse.md").write_text("# ADR 5: the storehouse\n")
     (root / "docs" / "design" / "workspace-prd.md").write_text("# Workspace PRD\n")
     (root / "notes.txt").write_text("not a document")
+    (root / "CLAUDE.local.md").write_text("# Private working notes\n")   # someone's local notes: never listed
     return root
 
 
@@ -41,7 +42,8 @@ def overview_fixture(agent_fleet_root: Path) -> dict[str, Any]:
     fixture = copy.deepcopy(fixture)
     fixture["projects"][AGENT_FLEET] = {"name": "agent-fleet", "repositories": [],
                                         "links": [{"host": "worker", "label": "agent-fleet"}]}
-    fixture["library_roots"] = {"restoke": str(RALPH), "agent-fleet": str(agent_fleet_root)}
+    # Restoke's library is configured as it is on carbon: recursive, at the ralph folder
+    fixture["library_roots"] = {"restoke": {"path": str(RALPH), "recursive": True}, "agent-fleet": str(agent_fleet_root)}
     for host in fixture["hosts"]:
         for job in host["jobs"]:
             brief = BRIEFS.get((host["name"], job["id"]))

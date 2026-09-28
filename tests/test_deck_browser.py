@@ -961,6 +961,182 @@ def test_decision_reader_choices_and_submission(changed_deck: Deck, answer: str,
         server.close()
 
 
+def shoot(request: pytest.FixtureRequest, page: Page, name: str) -> None:
+    if request.config.getoption("--shots"):
+        page.screenshot(path=f"{request.config.getoption('--shots')}/{name}.png")
+
+
+@pytest.fixture
+def refusing_server(changed_deck: Deck, base_url: str, tmp_path, monkeypatch):
+    """A live deck server holding one job step's refused requests, standing in for the fixture's API where it acts."""
+    from test_web_attention import Deck as ServerDeck, HOSTS
+    from test_web_refusals import REQUESTS, refusal
+    from fleet.projections.attention import attention_display
+    from fleet.web.server import apply_message
+
+    config = tmp_path / "hosts.json"
+    config.write_text(json.dumps({"hosts": {"home": {}}}))
+    monkeypatch.setenv("FLEET_CONFIG", str(config))
+    server = ServerDeck()
+    apply_message(server.state, HOSTS[0], {"type": "hello"})
+    for index, (tool, detail, description, rules) in enumerate(REQUESTS):
+        apply_message(server.state, HOSTS[0], refusal(f"r{index}", tool, detail, description, rules, at=200 + index))
+    page = changed_deck.page
+
+    def proxy(route):
+        response = route.fetch(url=server.url + "/api/" + route.request.url.split("/api/", 1)[1],
+                               headers={"Content-Type": "application/json"})
+        route.fulfill(response=response)
+    for pattern in ("**/api/decision**", "**/api/attention/allow", "**/api/attention/dismiss"):
+        page.route(pattern, proxy)
+    [item] = server.state.document()["attention"]
+    with urlopen(base_url + "/api/state", timeout=5) as response:
+        document = json.load(response)
+    item["project"] = "restoke"
+    document["attention"].append(item)
+    document["attention_display"] = attention_display(document["attention"], document["building"], document["projects"])
+    page.evaluate("doc => fleetDeck.apply(doc)", document)
+    try:
+        yield server, item
+    finally:
+        for pattern in ("**/api/decision**", "**/api/attention/allow", "**/api/attention/dismiss"):
+            page.unroute(pattern, proxy)
+        server.close()
+
+
+def test_refused_commands_are_one_item_answered_with_actions(changed_deck: Deck, refusing_server,
+                                                             monkeypatch, request) -> None:
+    from fleet import transport
+    server, item = refusing_server
+    page = changed_deck.page
+    sent = []
+
+    def call(host, arguments, stdin_text=None):
+        sent.append(json.loads(stdin_text))
+        return {"schema_version": 1, "key": arguments[arguments.index("--key") + 1], "status": "applied",
+                "added": ["Bash"], "continuation": 2}
+    monkeypatch.setattr(transport, "call", call)
+    page.locator('.lantern[data-room="restoke"]').dispatch_event("click")
+    row = page.locator(f'#attnPanel .attn-item[data-id="{item["id"]}"]')
+    expect(row).to_contain_text("restoke step 2: 7 commands refused (Bash ×6, Read ×1)")
+    expect(row.get_by_role("button", name="Answer question", exact=True)).to_have_count(0)
+    shoot(request, page, "attention-popover-batch")
+    row.get_by_role("button", name="Review refused commands", exact=True).click()
+    body = page.locator("#rdBody")
+    expect(body.locator(".refusals li")).to_have_count(7)
+    expect(body).to_contain_text("git status --short")
+    expect(body).to_contain_text("Check worktree state")
+    expect(body).to_contain_text("Read(//etc/restoke.conf)")
+    expect(body.get_by_label("Your answer")).to_have_count(0)
+    for name in ("Allow these for this job", "Allow all Bash for this job", "Dismiss"):
+        expect(body.get_by_role("button", name=name, exact=True)).to_be_enabled()
+    shoot(request, page, "attention-reader-refusals")
+    body.get_by_role("button", name="Allow all Bash for this job", exact=True).click()
+    expect(body.locator(".refusal-done")).to_have_text(
+        "allowed for job j1: Bash; step 2 continues as step 3; still not allowed: /etc/restoke.conf")
+    assert sent == [["Bash"]]
+    assert server.state.attention.get(item["id"]).state == "resolved"
+    expect(body.get_by_role("button", name="Dismiss", exact=True)).to_be_disabled()
+    page.keyboard.press("Escape")
+    expect(page.locator("#reader")).to_be_hidden()
+    expect(page.locator("#attnPanel")).to_be_visible()   # the reader took that Escape, not the list
+    assert changed_deck.errors == []
+
+
+def test_a_session_question_is_shown_with_where_to_answer_it(changed_deck: Deck, base_url: str, tmp_path,
+                                                             monkeypatch, request) -> None:
+    from test_web_attention import Deck as ServerDeck, HOSTS
+    from test_web_session_questions import asked
+    from fleet.projections.attention import attention_display
+    from fleet.web.server import apply_message
+
+    config = tmp_path / "hosts.json"
+    config.write_text(json.dumps({"hosts": {"home": {}}}))
+    monkeypatch.setenv("FLEET_CONFIG", str(config))
+    server = ServerDeck()
+    apply_message(server.state, HOSTS[0], {"type": "hello"})
+    apply_message(server.state, HOSTS[0], asked())
+    page = changed_deck.page
+
+    def proxy(route):
+        route.fulfill(response=route.fetch(url=server.url + "/api/" + route.request.url.split("/api/", 1)[1]))
+    page.route("**/api/decision**", proxy)
+    try:
+        [item] = server.state.document()["attention"]
+        with urlopen(base_url + "/api/state", timeout=5) as response:
+            document = json.load(response)
+        document["attention"].append(item)
+        document["attention_display"] = attention_display(document["attention"], document["building"], document["projects"])
+        page.evaluate("doc => fleetDeck.apply(doc)", document)
+        page.locator('.lantern[data-room="restoke"]').dispatch_event("click")
+        row = page.locator(f'#attnPanel .attn-item[data-id="{item["id"]}"]')
+        expect(row).to_contain_text("Probe run: The agent-friendliness probe needs a live site before it can…")
+        expect(row.get_by_role("button", name="Answer question", exact=True)).to_have_count(0)
+        shoot(request, page, "session-question-popover")
+        row.get_by_role("button", name="Read the question", exact=True).click()
+        body = page.locator("#rdBody")
+        expect(body.get_by_role("note")).to_contain_text("Answer this in the session’s terminal on home")
+        expect(body).to_contain_text("How should I run it?")
+        expect(body.locator(".question-options li")).to_have_count(2)
+        expect(body).to_contain_text("Run against staging now")
+        expect(body).to_contain_text("/srv/restoke")
+        expect(body.locator("textarea, input, form")).to_have_count(0)   # nothing to answer with here
+        shoot(request, page, "session-question-reader")
+        page.keyboard.press("Escape")
+        assert changed_deck.errors == []
+    finally:
+        page.unroute("**/api/decision**", proxy)
+        server.close()
+
+
+def test_the_attention_list_closes_on_escape_or_a_click_away(changed_deck: Deck, base_url: str, request) -> None:
+    from fleet.projections.attention import attention_display
+    page = changed_deck.page
+    with urlopen(base_url + "/api/state", timeout=5) as response:
+        document = json.load(response)
+    model = next(row for row in document["attention"] if row["project"] == "restoke")
+    document["attention"] += [{**model, "id": f"extra{index}", "summary": f"Question {index} waiting on you",
+                               "state": "open"} for index in range(12)]
+    document["attention_display"] = attention_display(document["attention"], document["building"], document["projects"])
+    page.evaluate("doc => fleetDeck.apply(doc)", document)
+    lantern = page.locator('.lantern[data-room="restoke"]')
+    panel, close = page.locator("#attnPanel"), page.locator("#attnPanel [data-close]")
+    lantern.focus()
+    lantern.press("Enter")
+    expect(panel).to_be_visible()
+    expect(close).to_be_focused()
+    panel.evaluate("el => { el.scrollTop = el.scrollHeight; }")
+    assert panel.evaluate("el => el.scrollTop") > 0, "the list should be long enough to scroll"
+    box, frame = close.bounding_box(), panel.bounding_box()
+    assert frame["y"] <= box["y"] and box["y"] + box["height"] <= frame["y"] + frame["height"], "close scrolled away"
+    assert page.evaluate("""() => { const b = document.querySelector('#attnPanel [data-close]').getBoundingClientRect();
+        return document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)?.closest('[data-close]') !== null; }""")
+    shoot(request, page, "attention-popover-open")
+    page.keyboard.press("Escape")
+    expect(panel).to_be_hidden()
+    expect(lantern).to_be_focused()
+    expect(page.locator("#panel")).to_have_attribute("aria-hidden", "true")   # no job panel was opened or closed
+    shoot(request, page, "attention-popover-after-escape")
+    # A closed list follows the state too: no stale entries wait in it for the next opening.
+    page.evaluate("doc => fleetDeck.apply(doc)", {**document, "attention": document["attention"][:-12],
+        "attention_display": attention_display(document["attention"][:-12], document["building"], document["projects"])})
+    expect(page.locator('#attnPanel .attn-item[data-id^="extra"]')).to_have_count(0)
+    page.evaluate("doc => fleetDeck.apply(doc)", document)
+    expect(page.locator('#attnPanel .attn-item[data-id^="extra"]')).to_have_count(12)
+    expect(panel).to_be_hidden()
+    lantern.dispatch_event("click")
+    expect(panel).to_be_visible()
+    away = (frame["x"] + frame["width"] + 200 if frame["x"] < 900 else 40, 800)
+    assert page.evaluate("([x, y]) => document.elementFromPoint(x, y).id", away) == "world"   # the empty deck
+    page.mouse.click(*away)
+    expect(panel).to_be_hidden()
+    lantern.dispatch_event("click")
+    close.click()
+    expect(panel).to_be_hidden()
+    expect(lantern).to_be_focused()
+    assert changed_deck.errors == []
+
+
 def expect_need_you(page: Page, base_url: str) -> None:
     """The header's count is the open items, the same ones the lanterns stand for."""
     open_items = sum(state == "open" for state in attention_on_server(base_url).values())

@@ -156,3 +156,49 @@ def test_library_shapes_and_paths(tmp_path: Path) -> None:
                              ("repo", "src/NOTES.md"), ("repo", "docs/leak.md"), ("repo", "notes.txt"),
                              ("restoke", "/etc/passwd.md")):
         assert library.read(project, refused) is None, refused
+
+
+def test_a_recursive_library_feeds_the_overview_and_never_shows_local_notes(tmp_path: Path) -> None:
+    """Restoke V2 is configured {"path": ".../webapp/ralph", "recursive": true}."""
+    root = tmp_path / "webapp" / "ralph"
+    shutil.copytree(RALPH, root)
+    (root / "CLAUDE.local.md").write_text("# private notes")
+    (root / "v2-suppliers-slice6" / "notes" / "mine.local.md").write_text("# private notes")
+    (root / "worktrees" / "v2-slice6").mkdir(parents=True)
+    (root / "worktrees" / "v2-slice6" / "README.md").write_text("# a checkout, not a document")
+    library = ProjectLibrary({"restoke": {"path": str(root), "recursive": True}})
+    documents = library.list()
+    ids = {document["id"] for document in documents}
+    assert {"v2-suppliers-slice6/notes/format.md", "v2-suppliers/prd.json", "v2-suppliers/logs/REPORT-run2.md"} <= ids
+    assert not [name for name in ids if name.endswith(".local.md") or name.startswith("worktrees/")]
+    for private in ("CLAUDE.local.md", "v2-suppliers-slice6/notes/mine.local.md"):
+        assert library.read("restoke", private) is None
+
+    overview = Overview().build(name="Restoke", project_id=None, library="restoke", root=library.root("restoke"),
+                                documents=documents, jobs=[], read_job=lambda *_: None, attention=[])
+    assert {key: stream["state"] for key, stream in by_id(overview).items()} == {
+        "v2-suppliers": "done", "v2-suppliers-slice4": "in progress", "v2-suppliers-slice5": "done",
+        "v2-suppliers-slice6": "blocked"}
+    traces = [trace["trace"]["id"] for trace in by_id(overview)["v2-suppliers-slice6"]["traces"]]
+    assert "v2-suppliers-slice6/notes/mine.local.md" not in traces
+    listed = [doc["trace"]["id"] for group in overview["other_documents"] for doc in group["documents"]]
+    assert "CLAUDE.local.md" not in listed
+
+
+def test_a_recursive_repository_lists_nested_folders_but_no_local_notes(tmp_path: Path) -> None:
+    repo = repository(tmp_path / "repo")
+    (repo / "src" / "deep").mkdir(parents=True)
+    (repo / "src" / "deep" / "NOTES.md").write_text("# Deep notes")
+    (repo / "CLAUDE.local.md").write_text("# private")
+    (repo / "docs" / "adr" / "draft.local.md").write_text("# private")
+    flat = {doc["id"] for doc in ProjectLibrary({"repo": str(repo)}).list()}
+    deep = {doc["id"] for doc in ProjectLibrary({"repo": {"path": str(repo), "recursive": True}}).list()}
+    assert "src/deep/NOTES.md" not in flat and "src/deep/NOTES.md" in deep
+    assert not [name for name in flat | deep if name.endswith(".local.md")]
+    library = ProjectLibrary({"repo": {"path": str(repo), "recursive": True}})
+    assert library.read("repo", "src/deep/NOTES.md")["markdown"] == "# Deep notes"
+    assert library.read("repo", "CLAUDE.local.md") is None
+    overview = Overview().build(name="repo", project_id=None, library="repo", root=library.root("repo"),
+                                documents=library.list(), jobs=[], read_job=lambda *_: None, attention=[])
+    assert overview["workstreams"] == []
+    assert [group["folder"] for group in overview["other_documents"]] == [".", "docs/adr", "docs/design", "src/deep"]

@@ -171,3 +171,16 @@ def test_reading_stays_inside_the_projects_store(tmp_path: Path) -> None:
     stored_file.unlink()
     stored_file.symlink_to(secret)
     assert store.read("p-1", stored["key"], "outbox-../../../x.md") is None
+
+
+def test_an_older_hosts_local_notes_are_never_stored(tmp_path: Path) -> None:
+    store = ProjectDocuments(tmp_path / "projects")
+    listed = [{"id": "file-0", "kind": "file", "name": "CLAUDE.local.md", "step": 0, "path": "/w/CLAUDE.local.md",
+               "size": 5, "mtime": 1},
+              {"id": "outbox-report.md", "kind": "outbox", "name": "report.md", "step": None, "path": "/j/outbox/report.md",
+               "size": 8, "mtime": 1}]
+    job = {"id": "job1", "project": "p", "description": "d", "status": "done", "created_at": 1, "steps": [],
+           "documents": listed}
+    assert [document["id"] for document in store.observe("p-1", "host", job)] == ["outbox-report.md"]
+    [stored] = store.jobs("p-1")
+    assert [document["id"] for document in stored["documents"]] == ["outbox-report.md"]

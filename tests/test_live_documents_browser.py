@@ -9,6 +9,7 @@ import pytest
 from playwright.sync_api import Browser, Page, Route, expect
 
 from conftest import FIXTURE, serve_fixture
+from fleet.web.documents import render_markdown
 from fleet.web.fixture import FixtureState
 from test_deck_browser import PIN_CLOCK, VIEWPORTS, finish_jobs
 
@@ -191,4 +192,56 @@ def test_a_departed_jobs_report_opens_from_the_library(
     expect(page.locator("#rdBody")).not_to_contain_text("FLEET_STATUS")
     expect(page.locator("#rdMeta")).to_contain_text("worker · 0ld5ob · claude")
     shoot(request, page, "library-departed-report")
+    page.keyboard.press("Escape")
+
+
+RICH = """# Migration notes
+
+```python
+def migrate(rows):
+    return [row for row in rows]  # draft {version}
+```
+
+```mermaid
+graph LR
+  list --> page
+```
+
+{paragraphs}
+"""
+
+
+def rich_document(version: int) -> dict[str, Any]:
+    markdown = RICH.replace("{version}", str(version)).replace(
+        "{paragraphs}", "\n\n".join(f"Paragraph {index}, draft {version}." for index in range(60 + 20 * version)))
+    return {"id": "file-0", "kind": "file", "name": "migration-notes.md", "step": 0, "mtime": None,
+            **render_markdown(markdown)}
+
+
+def test_a_live_refresh_keeps_highlighting_and_diagrams_without_redrawing(
+        page: Page, own_url: str, fixture_data: dict[str, Any]) -> None:
+    served = {"version": 1}
+    page.route("**/api/doc?*", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=json.dumps(rich_document(served["version"]))))
+    page.evaluate("doc => fleetDeck.apply(doc)", with_documents(own_url, [notes(fixture_data, 5, 900)]))
+    page.locator("#tags .tag", has_text="a1c3e9").dispatch_event("click")
+    page.locator('#panelBody [data-doc="file-0"]').click()
+    body = page.locator("#rdBody")
+    expect(body.locator("code.hljs .hljs-keyword").first).to_have_text("def")
+    expect(body.locator('.rd-diagram[data-diagram="mermaid"] .rd-diagram-view svg')).to_have_count(1)
+
+    # from here on, any moment the diagram shows its "Drawing…" placeholder again would be a visible jump
+    page.evaluate("""() => {
+        window.redrawn = false;
+        new MutationObserver(() => {
+            if (document.querySelector('#rdBody .rd-diagram-view[role=status]')) window.redrawn = true;
+        }).observe(document.getElementById('rdBody'), { childList: true, subtree: true });
+    }""")
+    served["version"] = 2
+    page.evaluate("doc => fleetDeck.apply(doc)", with_documents(own_url, [notes(fixture_data, 1, 1200)]))
+    expect(body.locator(".hljs-comment")).to_have_text("# draft 2")          # highlighted again after the swap
+    expect(body).to_contain_text("Paragraph 99, draft 2.")
+    expect(body.locator('.rd-diagram[data-diagram="mermaid"] .rd-diagram-view svg')).to_have_count(1)
+    expect(body.locator(".rd-code-copy")).to_have_count(2)                 # the code block and the diagram's source
+    assert page.evaluate("window.redrawn") is False
     page.keyboard.press("Escape")

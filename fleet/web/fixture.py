@@ -33,7 +33,7 @@ from fleet.projections.workspace import annotate, resolve, registry_config
 from fleet.transport import FleetError
 from fleet.web.documents import STATUS_LINE, render_markdown
 from fleet.web.job_store import ProjectDocuments
-from fleet.web.library import ProjectLibrary
+from fleet.web.library import ProjectLibrary, is_private
 from fleet.web.live import LiveWorkspace
 
 
@@ -93,8 +93,10 @@ class FixtureState(LiveWorkspace):
     @classmethod
     def load(cls, path: str | Path) -> FixtureState:
         fixture = json.loads(Path(path).read_text())
-        fixture["library_roots"] = {project: str(Path(path).parent / folder)
-                                    for project, folder in fixture.get("library_roots", {}).items()}
+        # each a folder relative to the fixture file, or {"path": folder, "recursive": true} as in the Fleet config
+        fixture["library_roots"] = {project: str(Path(path).parent / entry) if isinstance(entry, str)
+                                    else {**entry, "path": str(Path(path).parent / entry["path"])}
+                                    for project, entry in fixture.get("library_roots", {}).items()}
         return cls(fixture)
 
     def host_names(self) -> list[str]:
@@ -143,6 +145,9 @@ class FixtureState(LiveWorkspace):
                 "job_description": job["description"], "host": host_name,
                 **render_markdown(STATUS_LINE.sub("", markdown).strip())}
 
+    def read_asset(self, host_name: str, job_id: str, document_id: str, asset_path: str) -> tuple[str, bytes]:
+        raise FleetError(f"job {job_id} has no asset {asset_path}")  # recorded fleets carry no images
+
 
 class FixtureLibrary:
     """Same surface as ProjectLibrary, over the fixture's `library` section and any real `library_roots`
@@ -159,18 +164,24 @@ class FixtureLibrary:
     def list(self) -> list[dict[str, Any]]:
         return sorted([{"project": project, "id": doc["id"], "name": Path(doc["id"]).name, "title": title(doc),
                         "kind": "file", "size": len(doc["markdown"].encode()), "mtime": doc["mtime"]}
-                       for project, docs in self.projects.items() if project not in self.files.roots for doc in docs]
+                       for project, docs in self.projects.items() if project not in self.files.roots for doc in docs
+                       if not is_private(Path(doc["id"]).name)]
                       + self.files.list(), key=lambda doc: doc["project"])
 
     def read(self, project: str, document_id: str) -> dict[str, Any] | None:
         if project in self.files.roots:
             return self.files.read(project, document_id)
         doc = next((doc for doc in self.projects.get(project, []) if doc["id"] == document_id), None)
-        if doc is None:
+        if doc is None or is_private(Path(document_id).name):
             return None
         return {"project": project, "id": document_id, "name": Path(document_id).name, "kind": "file",
                 "size": len(doc["markdown"].encode()), "mtime": doc["mtime"], "truncated": False,
                 **render_markdown(doc["markdown"])}
+
+    def read_asset(self, project: str, document_id: str, asset_path: str) -> tuple[str, bytes] | None:
+        if project in self.files.roots:
+            return self.files.read_asset(project, document_id, asset_path)
+        return None  # the fixture's own library section is Markdown only
 
 
 def title(doc: dict[str, Any]) -> str:

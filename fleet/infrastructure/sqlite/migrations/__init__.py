@@ -92,4 +92,10 @@ MIGRATIONS = (
         'CREATE TABLE authority_activation (id TEXT PRIMARY KEY, record TEXT NOT NULL)',
         'CREATE TABLE decisions_proposal (id TEXT PRIMARY KEY, record TEXT NOT NULL)',
     ),
+    (
+        "ALTER TABLE attention_item ADD COLUMN refusals TEXT NOT NULL DEFAULT '[]'",
+    ),
+    (
+        "ALTER TABLE attention_item ADD COLUMN questions TEXT NOT NULL DEFAULT '[]'",
+    ),
 )

@@ -1,0 +1,22 @@
+{
+  "description": "the long office workbench from the reference: one long light-oak desk top made of three desks \\\nend to end (about five and a half metres long, eighty centimetres deep) on thin dark-grey metal legs, with \\\nthree grey metal drawer pedestals under it. The desk runs diagonally from the upper left of the image down \\\nto the lower right, exactly as in the reference, seen from the same side. The desk top is completely \\\nempty: no lamps, no computers, no papers, no plants. No chairs at all.",
+  "prompt": "Generate a single game sprite: the long office workbench from the reference: one long light-oak desk top made of three desks \\\nend to end (about five and a half metres long, eighty centimetres deep) on thin dark-grey metal legs, with \\\nthree grey metal drawer pedestals under it. The desk runs diagonally from the upper left of the image down \\\nto the lower right, exactly as in the reference, seen from the same side. The desk top is completely \\\nempty: no lamps, no computers, no papers, no plants. No chairs at all.\n\nStyle: match the attached reference crops from the concept art exactly. Soft, clean, slightly stylised 3D render of an isometric office, three-quarter view from above at the same camera angle as the references (about 30 degrees down). Warm soft key light from the upper left, gentle ambient occlusion, no harsh shadows. Pale, desaturated palette. Render only the object, centred, whole and uncropped, on a fully transparent background: no floor, no ground shadow, no backdrop, no text, no border.",
+  "instructions": "You are a sprite generator. Always answer by calling the image_generation tool exactly once. Do not reply with text.",
+  "references": [
+    {
+      "path": "docs/images/concept/l2.png@370,360,950,540",
+      "sha256": "a33b5f8c127741b3d0a58b79c5c119c7ffbfec2296f0fb79c5d7470a73c3d33b"
+    }
+  ],
+  "model": "gpt-5.5",
+  "image_model": "gpt-image-2-codex",
+  "quality_requested": "high",
+  "quality": "medium",
+  "size": "1663x945",
+  "revised_prompt": "Generate a single game sprite on a fully transparent background: a long office workbench matching the provided concept-art reference style. Object only, centered, whole, uncropped. The desk is one long light-oak desktop made of three desks end-to-end, approximately 5.5 metres long and 80 cm deep, with a pale warm wood surface and subtly bevelled edges. It runs diagonally from the upper left of the image down to the lower right, seen from the same side as the reference, in an isometric three-quarter view from above, about 30 degrees down. Thin dark-grey metal legs support the desktop, including legs at the ends and joins, simple squared tubular frames. Under the desk are exactly three grey metal drawer pedestals, evenly spaced, each with simple drawer fronts and small dark handles/cutouts; they sit beneath the desktop and align with the diagonal perspective. The desktop must be completely empty: no lamps, no computers, no papers, no plants, no accessories. No chairs at all. Style: soft, clean, slightly stylised 3D render like isometric office concept art; pale desaturated palette; warm soft key light from upper left; gentle ambient occlusion; no harsh shadows. Transparent background only: no floor, no ground shadow, no backdrop, no text, no border.",
+  "response_id": "resp_05a9fc4e1a6b27d7016ab84765224087d284470e74a62ddd1d",
+  "request_sha256": "8b628d638f1a5ec0331b3d7406fd9f8065a398cde5845b818dc7ac7e45621637",
+  "output_sha256": "202e509b99785f7bcbe95cb2fe75de7d58f04917959297ae6428e7a5f96e5e06",
+  "timestamp": "2026-09-26T22:30:41Z",
+  "seconds": 48.5
+}

@@ -5,9 +5,10 @@ from fleet.modules.work import WorkFacade
 from fleet.modules.workspace import WorkspaceFacade
 
 from ..domain import Action, Claim, Delivery, Run
-from .dtos import InputResult
+from .dtos import GrantRequest, GrantResult, InputResult
 
 InputSender = Callable[[Run, Delivery], InputResult]
+GrantSender = Callable[[GrantRequest], GrantResult]  # raises when the worker does not confirm
 
 
 class ExecutionRepository(Protocol):

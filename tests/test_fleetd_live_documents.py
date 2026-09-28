@@ -207,3 +207,17 @@ def test_the_stream_re_emits_a_job_when_only_a_document_changes(home: Path, fold
     finally:
         process.kill()
         process.wait(timeout=5)
+
+
+def test_local_notes_are_never_documents(tmp_path: Path, home: Path) -> None:
+    """CLAUDE.local.md and other *.local.md files are private: not recorded when written, not listed in the outbox."""
+    parser = fleetd.ClaudeParser()
+    [event] = parser.parse({"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t1",
+                            "name": "Edit", "input": {"file_path": "/work/CLAUDE.local.md"}}]}})
+    assert "paths" not in event
+    directory = home / "jobs" / "job1"
+    (directory / "outbox").mkdir(parents=True)
+    (directory / "outbox" / "notes.local.md").write_text("private")
+    (directory / "outbox" / "report.md").write_text("# Report")
+    job = {"id": "job1", "steps": [], "written_documents": []}
+    assert [document["id"] for document in fleetd.job_documents(job)] == ["outbox-report.md"]

@@ -1,0 +1,337 @@
+{
+  "px_per_m": 257.292,
+  "sprites": {
+    "bench": {
+      "file": "bench.webp",
+      "from": "raw/bench-v1.png",
+      "size": [
+        1395,
+        789
+      ],
+      "bytes": 167806,
+      "ref_px": [
+        716.1,
+        252.7
+      ],
+      "ref": "desk_top_far_edge_middle"
+    },
+    "plant": {
+      "file": "plant.webp",
+      "from": "raw/plant-v1.png",
+      "size": [
+        224,
+        360
+      ],
+      "bytes": 27888,
+      "ref_px": [
+        112.0,
+        313.7
+      ],
+      "ref": "footprint_centre"
+    },
+    "robot-typing": {
+      "file": "robot-typing.webp",
+      "from": "raw/robot-typing-grey-v2.png",
+      "size": [
+        264,
+        308
+      ],
+      "bytes": 22204,
+      "ref_px": [
+        160,
+        210
+      ],
+      "ref": "seat",
+      "cut": {
+        "x": 160,
+        "y": 240,
+        "slope": 0.2726
+      },
+      "mask": "robot-typing.mask.png",
+      "mask_bytes": 13067,
+      "anim": {
+        "file": "robot-typing.anim.webp",
+        "mask": "robot-typing.anim.mask.png",
+        "bytes": 85318,
+        "mask_bytes": 47537,
+        "from": "raw/anim-typing-v1.png",
+        "frames": 4,
+        "fps": 6,
+        "silhouette_iou_vs_first": [
+          0.993,
+          0.988,
+          0.982
+        ],
+        "widths_px": [
+          264,
+          264,
+          263,
+          263
+        ]
+      }
+    },
+    "robot-pencil": {
+      "file": "robot-pencil.webp",
+      "from": "raw/robot-pencil-grey-v2.png",
+      "size": [
+        214,
+        308
+      ],
+      "bytes": 21888,
+      "ref_px": [
+        140,
+        210
+      ],
+      "ref": "seat",
+      "cut": {
+        "x": 140,
+        "y": 233,
+        "slope": 0.2726
+      },
+      "mask": "robot-pencil.mask.png",
+      "mask_bytes": 13480,
+      "anim": {
+        "file": "robot-pencil.anim.webp",
+        "mask": "robot-pencil.anim.mask.png",
+        "bytes": 85330,
+        "mask_bytes": 49702,
+        "from": "raw/anim-pencil-v1.png",
+        "frames": 4,
+        "fps": 6,
+        "silhouette_iou_vs_first": [
+          0.958,
+          0.9,
+          0.971
+        ],
+        "widths_px": [
+          213,
+          213,
+          214,
+          213
+        ]
+      }
+    },
+    "robot-tube": {
+      "file": "robot-tube.webp",
+      "from": "raw/robot-tube-grey-v2.png",
+      "size": [
+        224,
+        308
+      ],
+      "bytes": 24016,
+      "ref_px": [
+        142,
+        205
+      ],
+      "ref": "seat",
+      "cut": {
+        "x": 142,
+        "y": 205,
+        "slope": 0.2726
+      },
+      "mask": "robot-tube.mask.png",
+      "mask_bytes": 14435
+    },
+    "robot-typing-teal": {
+      "file": "robot-typing-teal.webp",
+      "from": "raw/robot-typing-teal-v2.png",
+      "size": [
+        264,
+        308
+      ],
+      "bytes": 25554,
+      "ref_px": [
+        166.3,
+        209.4
+      ],
+      "ref": "seat",
+      "cut": {
+        "x": 166.3,
+        "y": 239.4,
+        "slope": 0.2726
+      }
+    },
+    "robot-pencil-teal": {
+      "file": "robot-pencil-teal.webp",
+      "from": "raw/robot-pencil-teal-v2.png",
+      "size": [
+        239,
+        308
+      ],
+      "bytes": 24098,
+      "ref_px": [
+        150.6,
+        209.4
+      ],
+      "ref": "seat",
+      "cut": {
+        "x": 150.6,
+        "y": 232.4,
+        "slope": 0.2726
+      }
+    },
+    "robot-tube-teal": {
+      "file": "robot-tube-teal.webp",
+      "from": "raw/robot-tube-teal-v2.png",
+      "size": [
+        218,
+        308
+      ],
+      "bytes": 24220,
+      "ref_px": [
+        137.3,
+        209.4
+      ],
+      "ref": "seat",
+      "cut": {
+        "x": 137.3,
+        "y": 209.4,
+        "slope": 0.2726
+      }
+    },
+    "lantern": {
+      "file": "lantern.webp",
+      "from": "raw/lantern-v1.png",
+      "size": [
+        108,
+        233
+      ],
+      "bytes": 6322,
+      "ref_px": [
+        54.0,
+        163.1
+      ],
+      "ref": "diamond_centre"
+    },
+    "pilaster": {
+      "file": "pilaster.webp",
+      "from": "raw/pilaster-v2.png",
+      "size": [
+        176,
+        660
+      ],
+      "bytes": 13274,
+      "ref_px": [
+        88.0,
+        613.7
+      ],
+      "ref": "footprint_centre"
+    },
+    "mixed/bench": {
+      "file": "mixed/bench.webp",
+      "from": "raw/bench-v3.png",
+      "size": [
+        1395,
+        812
+      ],
+      "bytes": 151330,
+      "ref_px": [
+        748.3,
+        239.0
+      ],
+      "ref": "desk_top_far_edge_middle"
+    },
+    "mixed/plant": {
+      "file": "mixed/plant.webp",
+      "from": "raw/plant-v2.png",
+      "size": [
+        240,
+        360
+      ],
+      "bytes": 28392,
+      "ref_px": [
+        120.0,
+        313.7
+      ],
+      "ref": "footprint_centre"
+    },
+    "mixed/robot-typing": {
+      "file": "mixed/robot-typing.webp",
+      "from": "raw/robot-typing-grey-v1.png",
+      "size": [
+        303,
+        308
+      ],
+      "bytes": 22778,
+      "ref_px": [
+        190.9,
+        209.4
+      ],
+      "ref": "seat",
+      "cut": {
+        "x": 190.9,
+        "y": 239.4,
+        "slope": 0.2726
+      },
+      "mask": "mixed/robot-typing.mask.png",
+      "mask_bytes": 15055
+    },
+    "mixed/robot-pencil": {
+      "file": "mixed/robot-pencil.webp",
+      "from": "raw/robot-pencil-grey-v1.png",
+      "size": [
+        228,
+        308
+      ],
+      "bytes": 22332,
+      "ref_px": [
+        143.6,
+        209.4
+      ],
+      "ref": "seat",
+      "cut": {
+        "x": 143.6,
+        "y": 232.4,
+        "slope": 0.2726
+      },
+      "mask": "mixed/robot-pencil.mask.png",
+      "mask_bytes": 13774
+    },
+    "mixed/robot-tube": {
+      "file": "mixed/robot-tube.webp",
+      "from": "raw/robot-tube-grey-v1.png",
+      "size": [
+        299,
+        308
+      ],
+      "bytes": 27806,
+      "ref_px": [
+        188.4,
+        209.4
+      ],
+      "ref": "seat",
+      "cut": {
+        "x": 188.4,
+        "y": 209.4,
+        "slope": 0.2726
+      },
+      "mask": "mixed/robot-tube.mask.png",
+      "mask_bytes": 18438
+    }
+  },
+  "textures": {
+    "floor-tile": {
+      "file": "floor-tile.webp",
+      "size": [
+        256,
+        256
+      ],
+      "metres": 0.6,
+      "bytes": 2342,
+      "seam": "on the grout line, by construction"
+    },
+    "wall-tile": {
+      "file": "wall-tile.webp",
+      "size": [
+        512,
+        512
+      ],
+      "metres": 2.0,
+      "bytes": 3100,
+      "seam": {
+        "wrap_x": 1.65,
+        "wrap_y": 2.21
+      }
+    }
+  }
+}

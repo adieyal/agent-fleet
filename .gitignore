@@ -1,4 +1,8 @@
 __pycache__/
 *.egg-info/
 .venv/
+
+# art pipeline
+art/sources/
+art/build/
 .import_linter_cache/
