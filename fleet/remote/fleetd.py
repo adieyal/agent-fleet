@@ -108,6 +108,17 @@ def job_directory(job_id: str) -> Path:
     return directory
 
 
+def expand_job_id(job_id: str) -> str:
+    """A job's full id from a unique prefix of it; anything else comes back unchanged."""
+    if not job_id or (JOBS_DIRECTORY / job_id / "job.json").exists() or not JOBS_DIRECTORY.is_dir():
+        return job_id
+    matches = [path.name for path in JOBS_DIRECTORY.iterdir()
+               if path.name.startswith(job_id) and (path / "job.json").exists()]
+    if len(matches) > 1:
+        fail(f"'{job_id}' matches {len(matches)} jobs; use more of the id")
+    return matches[0] if matches else job_id
+
+
 @contextlib.contextmanager
 def locked_job(job_id: str) -> Iterator[JsonObject]:
     """Read-modify-write job.json under an exclusive lock."""
@@ -2355,6 +2366,8 @@ def main() -> None:
     settings.set_defaults(handler=lambda args: emit(input_hook_settings(args.project)))
 
     arguments = parser.parse_args()
+    if getattr(arguments, "job", None) and arguments.handler is not command_start:
+        arguments.job = expand_job_id(arguments.job)
     arguments.handler(arguments)
 
 

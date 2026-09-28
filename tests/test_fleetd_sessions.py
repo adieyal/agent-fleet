@@ -38,3 +38,13 @@ def test_a_message_that_ends_on_a_question_carries_it_as_its_ask():
     assert event["ask"] == "Should I send that sample to fleet?"
     [plain] = fleetd.ClaudeParser().parse({"type": "assistant", "message": {"content": [{"type": "text", "text": "Done."}]}})
     assert "ask" not in plain
+
+
+def test_a_job_id_prefix_expands_to_the_one_job_it_names(tmp_path, monkeypatch):
+    monkeypatch.setattr(fleetd, "JOBS_DIRECTORY", tmp_path)
+    for job_id in ("77ee5565-14cb-4d6c-b3d5-b5b878f48169", "a1c3e9"):
+        (tmp_path / job_id).mkdir()
+        (tmp_path / job_id / "job.json").write_text("{}")
+    assert fleetd.expand_job_id("77ee5565") == "77ee5565-14cb-4d6c-b3d5-b5b878f48169"
+    assert fleetd.expand_job_id("a1c3e9") == "a1c3e9"
+    assert fleetd.expand_job_id("ffff") == "ffff"
