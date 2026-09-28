@@ -29,36 +29,36 @@ def tool(name: str, summary: str = "", **extra: Any) -> dict[str, Any]:
 
 
 @pytest.mark.parametrize(("event", "action"), [
-    (tool("Read", "fleet/web/js/agents.js"), "search"),
+    (tool("Read", "fleet/web/js/agents.js"), "read"),
     (tool("Grep", "actionOf"), "search"),
     (tool("Glob", "**/*.py"), "search"),
-    (tool("WebFetch", "https://example.com"), "search"),
+    (tool("WebFetch", "https://example.com"), "web"),
     (tool("Edit", "fleet/projects.py"), "edit"),
-    (tool("Write", "docs/notes.md"), "edit"),
+    (tool("Write", "docs/notes.md"), "doc"),
     (tool("MultiEdit", "fleet/cli.py"), "edit"),
     (tool("apply_patch", "a.py, b.py"), "edit"),
     (tool("Bash", "cd /src && uv run pytest -q tests"), "test"),
     (tool("Bash", "npm test"), "test"),
     (tool("Bash", "pnpm vitest run suppliers"), "test"),
     (tool("shell", "bash -lc 'pytest -q'"), "test"),
-    (tool("Bash", "git status"), "shell"),
+    (tool("Bash", "git status"), "review"),
     (tool("Bash", "ls -la"), "search"),                 # looking around, as the deck already classes it
-    (tool("BashOutput"), "shell"),
-    ({"kind": "tool", "tool": "bash", "summary": "make build"}, "shell"),
+    (tool("BashOutput"), "wait"),
+    ({"kind": "tool", "tool": "bash", "summary": "make build"}, "build"),
     ({"kind": "text", "summary": "Let me think about this"}, "think"),
-    (tool("TodoWrite"), "think"),
+    (tool("TodoWrite"), "plan"),
     (None, "think"),
-    (tool("AskUserQuestion", "Ship it?"), "ask"),
+    (tool("AskUserQuestion", "Ship it?"), "wait"),
     ({"kind": "error", "summary": "boom"}, "error"),
-    (tool("Task", "explore the repo"), "other"),
-    (tool("mcp__docs__search_everything"), "other"),
+    (tool("Task", "explore the repo"), "delegate"),
+    (tool("mcp__docs__search_everything"), "type"),
 ])
 def test_tool_events_map_to_actions(module_page: Page, event: dict[str, Any] | None, action: str) -> None:
     assert action_of_event(module_page, event) == action
 
 
 @pytest.mark.parametrize(("item", "action"), [
-    ({"status": "idle", "activity": tool("Edit", "a.py")}, "ask"),          # a session waiting on its human
+    ({"status": "idle", "activity": tool("Edit", "a.py")}, "wait"),          # a session waiting on its human
     ({"status": "working", "activity": tool("Edit", "a.py")}, "edit"),
     ({"status": "running", "activity": tool("Bash", "pytest")}, "test"),
     ({"status": "running", "activity": None}, "think"),
@@ -81,7 +81,8 @@ def test_every_action_has_a_labelled_glyph(module_page: Page) -> None:
         return [action, glyph.dataset.action, glyph.getAttribute('role'), glyph.getAttribute('aria-label'),
                 glyph.querySelector('svg path, svg circle') !== null, glyph.textContent.trim()];
     }}))""")
-    assert {row[0] for row in glyphs} >= {"search", "edit", "test", "shell", "think", "ask"}
+    assert {row[0] for row in glyphs} >= {"search", "read", "edit", "test", "type", "think", "wait"}
+    assert not {row[0] for row in glyphs} & {"ask", "shell"}
     for action, data_action, role, label, drawn, text in glyphs:
         assert data_action == action and role == "img" and label and drawn and text == ""
 

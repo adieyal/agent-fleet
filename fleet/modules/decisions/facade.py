@@ -8,7 +8,7 @@ from fleet.modules.execution import ExecutionFacade
 
 from .application import answer_question, propose, record_decision
 from .application.ports import DecisionRepository
-from .domain import Decision
+from .domain import Decision, Proposal
 
 
 class DecisionsFacade:
@@ -41,3 +41,8 @@ class DecisionsFacade:
 
     def proposals(self):
         return self.repository.proposals()
+
+    def proposal_for_attention(self, source: str, source_reference: str) -> Proposal | None:
+        if source != 'proposal':
+            return None
+        return self.repository.get_proposal(source_reference)

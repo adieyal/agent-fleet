@@ -128,6 +128,20 @@ def test_failed_write_and_missing_registration_are_explicit(tmp_path):
         records.write('p', '../escape', 'body', key='escape', actor='author')
 
 
+@pytest.mark.parametrize('key,actor', [(' ', 'author'), ('key', ' ')])
+def test_write_validates_authorship_through_prepare(tmp_path, monkeypatch, key, actor):
+    from unittest.mock import Mock
+    store, records, repo = setup_records(tmp_path)
+    prepare = Mock(wraps=records.authoring.prepare)
+    monkeypatch.setattr(records.authoring, 'prepare', prepare)
+    sequence = store.latest_sequence()
+    with pytest.raises(ValueError, match='key and actor are required'):
+        records.write('p', 'a.md', 'body', key=key, actor=actor)
+    prepare.assert_called_once()
+    assert records.intents() == []
+    assert store.latest_sequence() == sequence
+
+
 def test_recovery_cannot_replace_a_newer_document_revision(tmp_path, monkeypatch):
     store, records, repo = setup_records(tmp_path)
     original = records.writer.commit

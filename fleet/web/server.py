@@ -298,8 +298,8 @@ def make_handler(state: FleetState | FixtureState,
                     return
                 try:
                     item = state.attention.get(query["id"][0])
-                    proposal = next((p for p in open_decisions(state.store).proposals()
-                                     if item.source == "proposal" and p.id == item.source_reference), None)
+                    proposal = open_decisions(state.store).proposal_for_attention(
+                        item.source, item.source_reference)
                     detail = {"id": item.id, "question": item.headline,
                               "context": item.context_reference, "options": item.options,
                               "proposal": asdict(proposal) if proposal is not None else None}

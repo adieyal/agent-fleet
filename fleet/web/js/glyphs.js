@@ -5,27 +5,18 @@
 
 import { activityOf } from './activity.js';
 
-const SHELL_TOOLS = new Set(['Bash', 'shell', 'BashOutput']);
-
-// The action for one tool event: search (read, grep, glob, web), edit, test, shell, think, ask, error, or other.
+// Tool glyphs use the server's activity class, just like activity phrases.
 export function actionOfEvent(ev) {
   if (!ev || ev.kind === 'text') return 'think';
   if (ev.kind === 'error') return 'error';
   if (ev.kind !== 'tool') return 'other';
-  if (ev.name === 'AskUserQuestion') return 'ask';
-  switch (activityOf(ev)) {
-    case 'read': case 'search': case 'web': return 'search';
-    case 'edit': case 'doc': return 'edit';
-    case 'test': return 'test';
-    case 'think': case 'plan': return 'think';
-  }
-  return SHELL_TOOLS.has(ev.name) || ev.tool === 'bash' ? 'shell' : 'other';
+  return activityOf(ev);
 }
 
 // The action for a job or session: its status first (an idle session waits on its human), then its latest event.
 export function actionOf(item) {
   switch (item.status) {
-    case 'idle': return 'ask';
+    case 'idle': return 'wait';
     case 'queued': case 'done': case 'failed': case 'stalled': case 'cancelled': return item.status;
   }
   return actionOfEvent(item.activity);
@@ -34,9 +25,9 @@ export function actionOf(item) {
 export const svg = paths => `<svg viewBox="0 0 24 24" aria-hidden="true">${paths}</svg>`;
 export const ACTIONS = {
   read:      { label: 'reading',        svg: svg('<circle cx="10.5" cy="10.5" r="5.5"/><path d="M14.5 14.5 20 20"/>') },
+  search:    { label: 'searching',      svg: svg('<circle cx="10.5" cy="10.5" r="5.5"/><path d="M14.5 14.5 20 20"/>') },
   edit:      { label: 'editing',        svg: svg('<path d="M4 20l1-4.5L16 4.5l3.5 3.5L8.5 19z"/><path d="M13.5 7l3.5 3.5"/>') },
   test:      { label: 'running tests',  svg: svg('<path d="M9.5 3.5h5M10.5 3.5v6L5 19a1.3 1.3 0 0 0 1.2 1.5h11.6A1.3 1.3 0 0 0 19 19l-5.5-9.5v-6"/><path d="M7.5 15h9"/>') },
-  shell:     { label: 'at the terminal', svg: svg('<path d="M5 7l5 5-5 5"/><path d="M12 18h7"/>') },
   think:     { label: 'thinking',       svg: svg('<circle cx="6" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="18" cy="12" r="1.2"/>') },
   wait:      { label: 'waiting for you', svg: svg('<path d="M9 9a3 3 0 1 1 4.2 2.8c-.8.4-1.2 1-1.2 1.8V15"/><path d="M12 18.5v.01"/>') },
   web:       { label: 'browsing', svg: svg('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3v18"/>') },
@@ -56,8 +47,6 @@ export const ACTIONS = {
   stalled:   { label: 'stalled',        svg: svg('<path d="M9 6v12M15 6v12"/>') },
   cancelled: { label: 'cancelled',      svg: svg('<path d="M6 12h12"/>') },
 };
-ACTIONS.search = ACTIONS.read;
-ACTIONS.ask = ACTIONS.wait;
 
 // The glyph's markup: labelled for screen readers, keyed by action for styling.
 export function glyphHtml(action) {
