@@ -98,17 +98,20 @@ def test_a_headline_with_many_tools_stays_within_twelve_words(deck):
     assert batch.headline == "restoke step 2: 5 commands refused (Bash ×1, Read ×1, +3 more)"
 
 
-def test_a_batch_left_alone_closes_when_its_step_ends(deck):
+def test_a_batch_stays_answerable_after_its_step_until_the_job_moves_on(deck):
     apply_message(deck.state, HOSTS[0], refusal("r1"))
     apply_message(deck.state, HOSTS[0], refusal("r2", step=0, job_id="gone"))
     [batch] = [item for item in deck.state.attention.list() if item.stream_context.owner_id == "j1"]
-    running = job("j1", "running", [("done", 100), ("running", 150)])
-    apply_message(deck.state, HOSTS[0], {"type": "job", "job": running})
-    apply_message(deck.state, HOSTS[0], {"type": "heartbeat"})
-    assert deck.state.attention.get(batch.id).state == "open"
-    apply_message(deck.state, HOSTS[0], {"type": "job", "job": job("j1", "done", [("done", 100), ("done", 150)])})
+    for steps in ([("done", 100), ("running", 150)],                  # its step still runs
+                  [("done", 100), ("failed", 150)],                   # its step ended: now is when it is noticed
+                  [("done", 100), ("failed", 150), ("pending", None)]):  # a queued step has not started
+        apply_message(deck.state, HOSTS[0], {"type": "job", "job": job("j1", "failed", steps)})
+        apply_message(deck.state, HOSTS[0], {"type": "heartbeat"})
+        assert deck.state.attention.get(batch.id).state == "open"
+    moved_on = job("j1", "running", [("done", 100), ("failed", 150), ("running", 300)])
+    apply_message(deck.state, HOSTS[0], {"type": "job", "job": moved_on})
     closed = deck.state.attention.get(batch.id)
-    assert (closed.state, closed.resolution_details) == ("resolved", "refused; step finished")
+    assert (closed.state, closed.resolution_details) == ("resolved", "refused; the job went on to step 3")
     # A job the host no longer reports (finished long ago, or removed) closes at the first full report.
     [gone] = [item for item in deck.state.attention.list() if item.stream_context.owner_id == "gone"]
     assert deck.state.attention.get(gone.id).resolution_details == "refused; job finished or removed"

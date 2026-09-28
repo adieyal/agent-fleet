@@ -114,3 +114,67 @@ def test_a_grant_that_cannot_apply_changes_nothing(tmp_path, monkeypatch, capsys
         fleetd.command_grant(argparse.Namespace(job="j1", step=0, key="k", schema_version=1))
     assert error in capsys.readouterr().out
     assert json.loads((tmp_path / "jobs" / "j1" / "job.json").read_text()) == job
+
+
+STREAM = Path(__file__).parent / "fixtures" / "permission-denied-stream.jsonl"   # trimmed from a real probe job
+CURL = {"command": "curl -s -o /dev/null -w '%{http_code}' https://example.com",
+        "description": "Fetch example.com and print HTTP status code"}
+PROBE = {"id": "probe", "project": "fleet-selftest", "cwd": "/tmp/fleet-allow-probe", "session_id": None}
+
+
+def stream_records(keep=lambda record: True):
+    return [record for record in map(json.loads, STREAM.read_text().splitlines()) if keep(record)]
+
+
+def refusals_seen(records):
+    tracker = fleetd.StreamRefusals(PROBE, 0)
+    for record in records:
+        tracker.consume(record)
+    return [(item["owner_type"], item["job_id"], item["step_index"], item["kind"], item["request"]["rules"])
+            for item in fleetd.input_observations()]
+
+
+def test_a_refusal_reported_only_in_the_stream_is_recorded(tmp_path, monkeypatch):
+    monkeypatch.setattr(fleetd, "FLEET_HOME", tmp_path)
+    assert refusals_seen(stream_records()) == [("job", "probe", 0, "input_requested", ["Bash(curl:*)"])]
+    [observation] = fleetd.input_observations()
+    assert observation["request"]["detail"] == CURL["command"]
+    assert observation["session_id"] == "e01a0183-a092-4256-8d77-7e432ff21e68"
+
+
+def test_the_results_permission_denials_are_the_backstop(tmp_path, monkeypatch):
+    monkeypatch.setattr(fleetd, "FLEET_HOME", tmp_path)
+    only_result = stream_records(lambda record: record["type"] == "result")
+    assert refusals_seen(only_result) == [("job", "probe", 0, "input_requested", ["Bash(curl:*)"])]
+
+
+@pytest.mark.parametrize("hook_first", [True, False])
+def test_a_refusal_the_hook_also_reports_is_one_entry(tmp_path, monkeypatch, hook_first):
+    monkeypatch.setattr(fleetd, "FLEET_HOME", tmp_path)
+    hook = {"hook_event_name": "PermissionRequest", "session_id": "e01a0183-a092-4256-8d77-7e432ff21e68",
+            "cwd": "/tmp/fleet-allow-probe", "tool_name": "Bash", "tool_input": CURL}
+    record_hook = lambda: fleetd.record_input_hook(hook, project="fleet-selftest", job_id="probe", step_index=0)
+    if hook_first:
+        record_hook()
+    refusals_seen(stream_records())
+    if not hook_first:
+        record_hook()
+    assert len(fleetd.input_observations()) == 1
+
+
+def test_a_running_step_records_what_its_stream_refuses(tmp_path, monkeypatch):
+    monkeypatch.setattr(fleetd, "FLEET_HOME", tmp_path)
+    monkeypatch.setattr(fleetd, "JOBS_DIRECTORY", tmp_path / "jobs")
+    monkeypatch.setattr(fleetd, "CONFIG_PATH", tmp_path / "config.json")
+    claude = tmp_path / "claude"
+    claude.write_text(f"#!/bin/sh\ncat {STREAM}\n")
+    claude.chmod(0o755)
+    (tmp_path / "config.json").write_text(json.dumps({"claude": str(claude)}))
+    job = {**PROBE, "agent": "claude", "description": "probe", "permission": "acceptEdits", "cwd": str(tmp_path),
+           "steps": [fleetd.make_step(0, "run curl", None)]}
+    (tmp_path / "jobs" / "probe").mkdir(parents=True)
+    (tmp_path / "jobs" / "probe" / "job.json").write_text(json.dumps(job))
+    fleetd.run_step(job, job["steps"][0])
+    [observation] = fleetd.input_observations()
+    assert (observation["job_id"], observation["step_index"], observation["request"]["rules"]) == (
+        "probe", 0, ["Bash(curl:*)"])

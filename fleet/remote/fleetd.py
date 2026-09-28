@@ -531,6 +531,7 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
     result_recorded = False
     last_text = ""
     raw_path = JOBS_DIRECTORY / job_id / f"raw-{step['index']}.jsonl"
+    refusals = StreamRefusals(job, step["index"]) if job["agent"] == "claude" else None
     with open(raw_path, "a") as raw_file:
         process = subprocess.Popen(command, cwd=job["cwd"], env=environment, stdin=subprocess.DEVNULL,
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
@@ -546,6 +547,10 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
                 if line.strip():
                     append_event(job_id, {"kind": "log", "step": step["index"], "summary": shorten(line)})
                 continue
+            if refusals is not None:
+                # an unexpected record shape must not cost the step
+                with contextlib.suppress(OSError, ValueError, TypeError, KeyError, AttributeError):
+                    refusals.consume(record)
             events, result = runtime.parse(record)
             if result is not None:
                 result_recorded = True
@@ -1377,6 +1382,48 @@ def record_input_hook(record: JsonObject, *, project: str, job_id: Optional[str]
         temporary = path.with_suffix(".tmp")
         temporary.write_text(json.dumps(records))
         temporary.replace(path)
+
+
+class StreamRefusals:
+    """Records the refusals a job's Claude reports in its stream-json output.
+
+    In -p mode Claude does not always run the PermissionRequest hook before refusing: some
+    refusals (e.g. decision_reason_type subcommandResults) show only as a `permission_denied`
+    system event and in the result's `permission_denials`. Each is recorded as the hook would
+    have recorded it, into the same per-step observations, so a refusal reported by both paths
+    is one entry (record_input_hook matches on tool name and input).
+    """
+
+    def __init__(self, job: JsonObject, step_index: int) -> None:
+        self.job, self.step_index = job, step_index
+        self.tool_uses: Dict[str, Tuple[str, JsonObject]] = {}   # tool_use_id → (tool name, input)
+        self.recorded: set = set()
+
+    def consume(self, record: JsonObject) -> None:
+        kind = record.get("type")
+        if kind == "assistant":
+            for block in (record.get("message") or {}).get("content") or []:
+                if isinstance(block, dict) and block.get("type") == "tool_use" and isinstance(block.get("input"), dict):
+                    self.tool_uses[block.get("id")] = (block.get("name"), block["input"])
+        elif kind == "system" and record.get("subtype") == "permission_denied":
+            tool_use = self.tool_uses.get(record.get("tool_use_id"))
+            if tool_use is not None:   # otherwise the result's permission_denials names it
+                self.refused(record, record.get("tool_use_id"), record.get("tool_name") or tool_use[0], tool_use[1])
+        elif kind == "result":
+            for denial in record.get("permission_denials") or []:
+                if isinstance(denial, dict) and isinstance(denial.get("tool_input"), dict):
+                    self.refused(record, denial.get("tool_use_id"), denial.get("tool_name"), denial["tool_input"])
+
+    def refused(self, record: JsonObject, tool_use_id: Optional[str], tool_name: Optional[str],
+                tool_input: JsonObject) -> None:
+        session_id = record.get("session_id") or self.job.get("session_id")
+        if not tool_name or not session_id or (tool_use_id is not None and tool_use_id in self.recorded):
+            return
+        self.recorded.add(tool_use_id)
+        record_input_hook({"hook_event_name": "PermissionRequest", "session_id": session_id, "cwd": self.job["cwd"],
+                           "tool_name": tool_name, "tool_input": tool_input, "tool_use_id": tool_use_id,
+                           "reported_by": "stream"},
+                          project=self.job["project"], job_id=self.job["id"], step_index=self.step_index)
 
 
 def input_observations() -> List[JsonObject]:

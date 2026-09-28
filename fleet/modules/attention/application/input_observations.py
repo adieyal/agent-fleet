@@ -18,7 +18,6 @@ from ..domain import AttentionItem, Question, QuestionOption, Refusal, StreamCon
 if TYPE_CHECKING:
     from .observations import HostObservation
 
-FINISHED_STEPS = ("done", "failed", "cancelled")
 
 
 @dataclass(frozen=True)
@@ -206,9 +205,11 @@ def ingest_refusal(repository: AttentionRepository, host: str, observation: Inpu
 
 def close_refusals(repository: AttentionRepository, host: "HostObservation", *, complete: bool,
                    now: datetime) -> bool:
-    """Resolve refusal batches whose step has ended; nothing is left to answer there.
+    """Resolve refusal batches the job has moved past; nothing is left to answer there.
 
-    `complete` means the host has reported every job it still keeps since reconnecting, so a
+    A batch stays answerable after its own step ends, since that is when a refused step is
+    usually noticed and allowing it queues a continuation. It closes once a later step of the
+    job has started, or once the job is gone. `complete` means the host has reported every job it still keeps since reconnecting, so a
     batch whose job is absent belongs to a job that finished long ago or was removed, and a
     per-request job item that was not folded on replay is superseded.
     """
@@ -227,8 +228,9 @@ def close_refusals(repository: AttentionRepository, host: "HostObservation", *, 
         elif job is None:
             details = "refused; job finished or removed" if complete else None
         else:
-            step = next((step for step in job["steps"] if step["index"] == context.step), None)
-            details = "refused; step finished" if step is not None and step["status"] in FINISHED_STEPS else None
+            later = [step["index"] for step in job["steps"] if step["index"] > context.step
+                     and (step["status"] == "running" or step.get("started_at") is not None)]
+            details = f"refused; the job went on to step {max(later) + 1}" if later else None
         if details is not None:
             closing.append((item.id, details))
     if not closing:
