@@ -48,3 +48,21 @@ def test_a_job_id_prefix_expands_to_the_one_job_it_names(tmp_path, monkeypatch):
     assert fleetd.expand_job_id("77ee5565") == "77ee5565-14cb-4d6c-b3d5-b5b878f48169"
     assert fleetd.expand_job_id("a1c3e9") == "a1c3e9"
     assert fleetd.expand_job_id("ffff") == "ffff"
+
+
+def test_a_session_moved_by_mv_reports_that_project_not_its_repository(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(fleetd, "CLAUDE_PROJECTS_DIRECTORY", tmp_path / "projects")
+    monkeypatch.setattr(fleetd, "CODEX_SESSIONS_DIRECTORY", tmp_path / "codex")
+    monkeypatch.setattr(fleetd, "JOBS_DIRECTORY", tmp_path / "jobs")
+    monkeypatch.setattr(fleetd, "FLEET_HOME", tmp_path)
+    monkeypatch.setattr(fleetd, "SESSION_PROJECTS_PATH", tmp_path / "session-projects.json")
+    transcript = tmp_path / "projects" / "-work-agent-fleet" / "343fc897-5ed8.jsonl"
+    transcript.parent.mkdir(parents=True)
+    transcript.write_text(json.dumps({"type": "user", "cwd": "/work/agent-fleet", "timestamp": stamp(60),
+                                      "message": {"role": "user", "content": "Plan the invoices"}}) + "\n")
+    [session] = fleetd.SessionTracker().scan().values()
+    assert session["project"] == "agent-fleet"
+    fleetd.command_move(fleetd.argparse.Namespace(job="343fc897", project="invoice-training"))
+    assert json.loads(capsys.readouterr().out)["id"] == "343fc897-5ed8"
+    [session] = fleetd.SessionTracker().scan().values()
+    assert session["project"] == "invoice-training"

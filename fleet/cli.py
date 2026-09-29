@@ -539,9 +539,24 @@ def command_cancel(arguments: argparse.Namespace) -> None:
     console.print(f"{host.name}:{job_id} {job['status']}")
 
 
+def resolve_job_or_session(reference: str) -> tuple[Host, str]:
+    """`host:id`, or a bare id of a job, else of an interactive session, searched on every host."""
+    try:
+        return resolve(reference)
+    except FleetError:
+        hosts = transport.configured_hosts()
+        sessions = transport.gather_sessions(hosts)
+        matches = [(host, session["id"]) for host in hosts for session in sessions.get(host.name, [])
+                   if session["id"].startswith(reference)]
+        if len(matches) != 1:
+            raise
+        return matches[0]
+
+
 def command_move(arguments: argparse.Namespace) -> None:
+    """Move jobs, or interactive sessions started outside fleet, to a project (its label on that host)."""
     for reference in arguments.jobs:
-        host, job_id = resolve(reference)
+        host, job_id = resolve_job_or_session(reference)
         transport.call(host, ["mv", job_id, arguments.project])
         console.print(f"{host.name}:{job_id} → {arguments.project}")
 

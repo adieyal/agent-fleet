@@ -1295,8 +1295,22 @@ class SessionTracker:
             active = min(stat.st_mtime, transcript.last_record_at or stat.st_mtime)
             status = "working" if clock - active < SESSION_WORKING_SECONDS else "idle"
             sessions[transcript.id] = transcript.summary(status, round(active, 3))
+        moved = session_projects()
+        for identity in sessions.keys() & moved.keys():
+            sessions[identity]["project"] = moved[identity]
         self.transcripts = live
         return sessions
+
+
+SESSION_PROJECTS_PATH = FLEET_HOME / "session-projects.json"
+
+
+def session_projects() -> Dict[str, str]:
+    """Sessions moved to a project other than their repository's, by `fleet mv`: session id → project label."""
+    try:
+        return json.loads(SESSION_PROJECTS_PATH.read_text())
+    except (OSError, ValueError):
+        return {}
 
 
 # --------------------------------------------------------------- pipelines
@@ -2210,6 +2224,19 @@ def command_result(arguments: argparse.Namespace) -> None:
 
 
 def command_move(arguments: argparse.Namespace) -> None:
+    if not (JOBS_DIRECTORY / arguments.job / "job.json").exists():
+        sessions = [identity for identity in SessionTracker().scan() if identity.startswith(arguments.job)]
+        if len(sessions) == 1:
+            moved = session_projects()
+            moved[sessions[0]] = arguments.project
+            FLEET_HOME.mkdir(parents=True, exist_ok=True)
+            temporary_path = SESSION_PROJECTS_PATH.with_suffix(".tmp")
+            temporary_path.write_text(json.dumps(moved, indent=1))
+            temporary_path.replace(SESSION_PROJECTS_PATH)
+            emit({"id": sessions[0], "project": arguments.project, "session": True})
+            return
+        if sessions:
+            fail(f"'{arguments.job}' matches {len(sessions)} sessions; use more of the id")
     with locked_job(arguments.job) as job:
         job["project"] = arguments.project
     emit(job_summary(read_job(arguments.job), 0))
