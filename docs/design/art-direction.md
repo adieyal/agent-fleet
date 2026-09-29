@@ -8,7 +8,32 @@ This document says what to match, gives a palette sampled from the concept image
 
 **Mass and ground.** Everything is solid and heavy. Walls have a visible cut thickness (about 25 cm at scale) with a pale cap; floors sit on a plinth; the building casts a long, soft, blue-tinted shadow on a pale ground. Every object meets the floor through contact shadow and AO: chair casters, pedestals, plant pots, desk legs. Edges are bevelled (2–5 mm at scale) so they catch a highlight line. Nothing floats, and nothing is a flat-shaded box.
 
-**Three-quarter view.** An orthographic camera looking down about 28–32° and yawed about 20–25° from square-on to the long back wall, so the back wall reads almost frontally and the side wall steeply (measured from wall edges in `l1.png`: back wall descends right at ~12°, side wall descends left at ~46°). Verticals stay vertical. The near and side walls are cut away. L0 keeps the same three-quarter idea (the building's front face wide, side face narrow). The spike fits the exact camera to `l2.png` in Blender and carries the numbers into `camera.js`.
+**Three-quarter view.** One oblique projection for every render: yaw 30°, rays falling at atan(½) = 26.57°, verticals vertical and at full length (see *Camera*). The long back wall descends right at 16.1°, the side wall rises right at 40.9°. The near and side walls are cut away.
+
+## Camera
+
+Every render (the building, floors, workareas, robots, props, the world floor) uses `artlib.canonical_camera(scene, target, px_per_m)`. One metre along world X, Y and Z (x along the back wall, y towards it, z up) lands at (0.866, 0.25), (0.5, −0.433) and (0, −1) × px/m, in pixels right and down (`artlib.canonical_projection`). Blender has no oblique camera, so `canonical_camera` renders an orthographic camera at pitch 26.57°, yaw 30°, with `pixel_aspect_x = 1/cos 26.57° = 1.118` and `sensor_fit = 'HORIZONTAL'`. A square-pixel PNG of that render is the orthographic image stretched 1/cos in y, which is exactly the oblique projection. The stretch happens in image space, so lighting and shadows are the orthographic render's. `tests/test_canonical_camera.py` renders axis markers and checks where they land. `shoot_projection.py` checks the shadows: the render matches a stretched plain orthographic render to 0.94/255 mean, and its cast shadow lies inside the analytic one (IoU 0.93).
+
+**What the concepts are.** They are not orthographic. Each is a level-camera, shift-lens perspective, like architectural photography: verticals are parallel (mean 89.9–90.1°, RMS 0.24–0.92° over 54–183 segments), while ground lines converge and steepen down the image. In l0 the X edges go from −7.6° in the top third to −16.3° in the bottom third. Two vanishing points on one level horizon fit 1.3–3.4× better than one direction per axis. A vertical picture plane leaves verticals at full length, so the parallel projection closest to these images is oblique, not a tilted orthographic camera. The l2 wall lights confirm it: they measure h/w 1.27. An oblique projection predicts 1.28, and an orthographic camera at the same ground slope predicts 1.17.
+
+| Image | Parallel fit RMS | Two-point perspective RMS | Equivalent at centre (yaw, depression) | Depression, top → bottom |
+|---|---|---|---|---|
+| l1 | 2.83° | 2.12° | 26.8°, 26.6° | 24.8° → 28.4° |
+| lobby | 3.24° | 1.80° | 29.9°, 26.1° | 22.9° → 29.2° |
+| l2 | 3.05° | 1.21° | 36.8°, 25.1° | 21.0° → 28.9° |
+| l0 | 3.70° | 1.10° | 42.5°, 13.0° | 7.7° → 18.0° |
+| no vacancies | 3.94° | 1.48° | 41.7°, 13.3° | 7.6° → 18.8° |
+
+**The concepts disagree.** The floor views (l1, lobby, l2) look down about 26° at yaw 27–37°; their pooled best parallel projection is yaw 30.0°, depression 26.5°, which is where the canonical numbers come from. The building views (l0, no vacancies) look down only about 13° at yaw about 42°: their slab and plinth lines are shallow on both axes, and their plant-pot rims are flat ellipses (soil minor/major 0.25, i.e. 14°). The canonical camera follows the floors. The building therefore renders steeper than l0: the side faces rise at 41° instead of 11–19°, and the floor plates show more of their depth. No single projection serves both groups: the best compromise, yaw 35°, depression 20°, misses every image by 5.7–8.8° RMS. Earlier numbers were fits of positions with the sizes free, and sizes trade against pitch. The building job's pitch 9°, yaw 25.75° also took the points where the slab sides meet the lift (1147, 232…635) for the slab fronts' right ends; the fronts actually end at x ≈ 940–962. The world's pitch 28°, yaw 33° orthographic camera is within 1–9° of the floors' ground directions (the canonical camera is within 0.4–9°), but its verticals are 12% short.
+
+**Method** (`art/scripts/measure_projection.py`, then `shoot_projection.py` in Blender, then `measure_projection.py --overlays DIR`):
+
+1. Find LSD line segments of 60 px or longer and sort them by screen angle into the X, Y and vertical families.
+2. Fit one direction per family (parallel) and two vanishing points on one horizontal horizon (level perspective), and compare the length-weighted angular RMS.
+3. Convert slopes to a projection without using any size. For a parallel view with yaw ψ and ground factor g, tan|aX| · tan aY = g² and tan|aX| / tan aY = tan²ψ. Here g is tan(depression) for oblique projections and sin(pitch) for orthographic ones.
+4. Check circles. Ground circles give g directly as minor/major: the lobby side table gives 0.43; pot soil gives 0.37–0.50 in the floor views and 0.25–0.33 in l0. Wall circles separate oblique from orthographic.
+5. Tiles do not count. Painted joint spacing varies ±12% (l2: 98, 85, 108 px), and no square fits both sides.
+6. Render box proxies at each candidate (landmark picks, per-axis sizes free) and overlay them at 50%. The overlays and the per-candidate landmark and line RMS are in the camera job's report.
 
 **Restrained neutral palette.** The shell and furniture are warm whites, putty greys and steel greys with pale oak desk tops. Saturation belongs to three things only: warm light (activity), host colours on the agents, and plants. Magenta is reserved for the attention lantern and its halo. The concept's lobby uses magenta pendants as decoration; we do not. That is stricter than the PRD, which allows decorative magenta if the lantern's form carries meaning; reserving the colour as well costs nothing and removes any ambiguity.
 
