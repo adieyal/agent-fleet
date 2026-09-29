@@ -782,9 +782,10 @@ def test_a_jobs_workarea_shows_its_plan_desk_and_tray(deck: Deck, fixture_data: 
 
     # a bench's title opens that job's panel, and the entrance leaves
     page.locator("#panelTabs [data-workarea]").click()
-    workarea.locator('[data-bench="worker:d4f7a2"] [data-job]').click()
+    expect(workarea.locator('[data-bench="worker:d4f7a2"] [data-job]')).to_be_disabled()   # finished: not on the deck
+    workarea.locator('[data-bench="home:b7d042"] [data-job]').click()
     expect(workarea).to_be_hidden()
-    expect(page.locator("#panelHead h2")).to_have_text(jobs["worker:d4f7a2"]["description"])
+    expect(page.locator("#panelHead h2")).to_have_text(jobs["home:b7d042"]["description"])
     page.locator("#panelTabs [data-workarea]").click()
     workarea.locator("[data-entrance]").click()
     expect(workarea).to_be_hidden()

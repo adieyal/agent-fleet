@@ -47,7 +47,7 @@ function render() {
   const bench = b => {
     const job = jobs.get(b.key)?.job;
     return `<section class="bench" data-bench="${esc(b.key)}" data-status="${esc(b.status)}"${b.recent ? ' data-recent' : ''} style="--hc:${hostLook(b.host).color}">
-      <div class="bench-head">${job ? glyphHtml(actionOf(job)) : ''}<button class="bench-title" data-job="${esc(b.key)}" title="Open this job’s panel: ${esc(b.title)}">${esc(b.title)}</button><small>${esc(b.host)} · ${esc(b.id)}</small></div>
+      <div class="bench-head">${job ? glyphHtml(actionOf(job)) : ''}<button class="bench-title" data-job="${esc(b.key)}"${ents.has(b.key) ? ` title="Open this job’s panel: ${esc(b.title)}"` : ` disabled title="${esc(b.title)} (finished: not on the deck)"`}>${esc(b.title)}</button><small>${esc(b.host)} · ${esc(b.id)}</small></div>
       <ol class="plan-wall" aria-label="Plan">${b.tiles.map(t => `<li class="tile" data-tile="${t.index}" data-status="${esc(t.status)}" data-mark="${t.mark}"><button
         data-step="${t.index}" title="Step ${t.index + 1}: ${esc(t.title)} (${esc(t.status)}). Read its ${stepDoc(job, t.index)?.kind === 'report' ? 'report' : 'brief'}"${
         stepDoc(job, t.index) ? '' : ' disabled'}><span class="mk" aria-hidden="true">${MARK[t.mark]}</span><span class="tt">${esc(t.title)}</span></button></li>`).join('')}</ol>
@@ -109,7 +109,7 @@ el.addEventListener('click', ev => {
     return;
   }
   const title = ev.target.closest('[data-job]');
-  if (title) { closeWorkarea(); select(title.dataset.job); return; }
+  if (title) { if (!title.disabled) { closeWorkarea(); select(title.dataset.job); } return; }
   const slip = ev.target.closest('[data-item]');
   if (slip) {
     const item = (doc.attention || []).find(i => i.id === slip.dataset.item);
