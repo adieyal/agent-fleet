@@ -4,6 +4,7 @@ import io
 import json
 import re
 import subprocess
+import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
@@ -1032,6 +1033,14 @@ def focus_on_server(base_url: str, room: str) -> set[str]:
     return {item["focus"] for host in hosts for item in host["jobs"] + host["sessions"] if item["project"] == room}
 
 
+def settled_focus_on_server(base_url: str, room: str, focus: str) -> set[str]:
+    """The room's focus once the switch's POST has landed: the deck dims a room before the server confirms it."""
+    deadline = time.monotonic() + 5
+    while (found := focus_on_server(base_url, room)) != {focus} and time.monotonic() < deadline:
+        time.sleep(0.05)
+    return found
+
+
 def room_colour(page: Page, room: str) -> tuple[float, float, float]:
     """Mean brightness, saturation and warmth (red over blue) of the rendered floor around a room's centre, with
     overlays hidden."""
@@ -1109,7 +1118,7 @@ def test_the_switch_sends_the_crew_away_and_brings_it_back(deck: Deck, base_url:
     switch.locator('[data-set="background"]').dispatch_event("click")
     expect(switch).to_have_attribute("data-focus", "background")
     wait_for_dim(page, "restoke", 1)
-    assert focus_on_server(base_url, "restoke") == {"background"}
+    assert settled_focus_on_server(base_url, "restoke", "background") == {"background"}
     dim, _, warm = room_colour(page, "restoke")
     assert dim < bright * 0.75 and warm > cool + 20                            # its work runs: dim, but lit warm
     assert crew(page, "restoke") == set()
@@ -1126,7 +1135,7 @@ def test_the_switch_sends_the_crew_away_and_brings_it_back(deck: Deck, base_url:
 
     switch.locator('[data-set="priority"]').dispatch_event("click")
     wait_for_dim(page, "restoke", 0)
-    assert focus_on_server(base_url, "restoke") == {"priority"}
+    assert settled_focus_on_server(base_url, "restoke", "priority") == {"priority"}
     assert crew(page, "restoke") == crew_before
     assert rooms_by_name(page)["restoke"]["lit"] is False
     assert not tag_is_calm(page, "c90e11")
@@ -1138,7 +1147,7 @@ def test_focus_of_an_unregistered_room_survives_reload(deck: Deck, base_url: str
     page = deck.page
     page.locator('.focus-switch[data-room="agent-fleet"] [data-set="background"]').dispatch_event("click")
     wait_for_dim(page, "agent-fleet", 1)
-    assert focus_on_server(base_url, "agent-fleet") == {"background"}
+    assert settled_focus_on_server(base_url, "agent-fleet", "background") == {"background"}
     page.reload()
     crew_of_agent_fleet = {"worker:f20a6d", REVIEWING}
     page.wait_for_function("window.fleetDeck && (fleetDeck.advanceTime(0), fleetDeck.agents().length === "
@@ -1148,7 +1157,7 @@ def test_focus_of_an_unregistered_room_survives_reload(deck: Deck, base_url: str
     assert crew(page, "agent-fleet") == set()
     page.locator('.focus-switch[data-room="agent-fleet"] [data-set="priority"]').dispatch_event("click")
     wait_for_dim(page, "agent-fleet", 0)
-    assert focus_on_server(base_url, "agent-fleet") == {"priority"}
+    assert settled_focus_on_server(base_url, "agent-fleet", "priority") == {"priority"}
     assert crew(page, "agent-fleet") == crew_of_agent_fleet
     assert deck.errors == []
 
