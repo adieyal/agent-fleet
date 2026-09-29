@@ -873,6 +873,8 @@ def print_status_item(item: dict[str, Any], depth: int = 0) -> None:
         print(f"{indent}  Interruptions: {item['interruptions']}")
     next_step = "not recorded" if item["next_step"] is None else item["next_step"]
     print(f"{indent}  Next step: {next_step}")
+    if item["plan"] is not None:
+        print(f"{indent}  Plan: {item['plan'].splitlines()[0]}" + (" …" if "\n" in item["plan"].strip() else ""))
     if item["no_follow_up_yet"] is True:
         print(f"{indent}  No follow-up yet")
     elif item["no_follow_up_yet"] is None:
@@ -946,10 +948,10 @@ def add_work_parsers(commands) -> None:
             action.add_argument("--project", required=True)
             action.add_argument("--goal", required=True)
             action.add_argument("--kind", default="task")
-            for field in ("parent", "focus", "next-step"):
+            for field in ("parent", "focus", "next-step", "plan"):
                 action.add_argument(f"--{field}")
         elif name == "set":
-            for field in ("title", "goal", "kind", "condition", "resume-condition", "next-step", "focus"):
+            for field in ("title", "goal", "kind", "condition", "resume-condition", "next-step", "focus", "plan"):
                 action.add_argument(f"--{field}", default=argparse.SUPPRESS)
         elif name == "move":
             parent = action.add_mutually_exclusive_group(required=True)

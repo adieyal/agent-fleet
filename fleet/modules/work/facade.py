@@ -21,9 +21,10 @@ class WorkFacade:
         self.authority = authority
 
     def add(self, *, project: str, title: str, goal: str, actor: str, kind: str = "task",
-            parent: str | None = None, focus: str | None = None, next_step: str | None = None) -> WorkItem:
+            parent: str | None = None, focus: str | None = None, next_step: str | None = None,
+            plan: str | None = None) -> WorkItem:
         return self.commands.add(project=project, title=title, goal=goal, actor=actor, kind=kind,
-            parent=parent, focus=focus, next_step=next_step, condition="none", resume_condition=None)
+            parent=parent, focus=focus, next_step=next_step, plan=plan, condition="none", resume_condition=None)
 
     def set(self, identity: str, *, actor: str, activation: str | None = None, **changes) -> WorkItem:
         authorization = None

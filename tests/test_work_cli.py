@@ -18,6 +18,7 @@ def test_work_commands_end_to_end(tmp_path, capsys, project_id):
     task = run("work", "add", "Task", "--project", "p", "--goal", "Check", "--actor", "user")
     assert run("work", "move", task["id"], "--parent", epic["id"], "--actor", "user")["parent"] == epic["id"]
     run("work", "relate", task["id"], epic["id"], "--actor", "user")
+    assert run("work", "set", task["id"], "--plan", "1. Read\n2. Check", "--actor", "user")["plan"] == "1. Read\n2. Check"
     run("work", "set", task["id"], "--condition", "waiting", "--resume-condition", "Data", "--actor", "user")
     assert run("work", "ready", task["id"], "--actor", "user")["condition"] == "ready for review"
     evidence = tmp_path / "result.json"

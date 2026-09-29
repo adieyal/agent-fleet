@@ -88,6 +88,14 @@ def test_status_prefers_recorded_condition_over_runs(condition, running, expecte
     assert status(node) == expected
 
 
+def test_a_step_carries_its_plan_before_it_starts():
+    epic = item("epic", kind="epic", goal="Ship")
+    room, = bench_rooms(project([epic, item("s0", parent="epic", plan="1. Transcribe\n2. Time it"),
+                                 item("a1", parent="epic")]))["rooms"]
+    assert [(t["id"], t["status"], t["plan"]) for t in room["tasks"]] == [
+        ("s0", "next", "1. Transcribe\n2. Time it"), ("a1", "next", None)]
+
+
 def test_epic_without_milestones_or_work_records_nothing():
     room, = bench_rooms(project([item("epic", kind="epic", goal="Explore")]))["rooms"]
     assert room["milestones"] == {"complete": 0, "total": 0}

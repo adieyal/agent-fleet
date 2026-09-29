@@ -37,7 +37,7 @@ class Commands:
 
     def change(self, identity: str, actor: str, *, ready: bool = False, authorization=None, **changes) -> WorkItem:
         required(actor, "actor")
-        allowed = {"title", "goal", "condition", "resume_condition", "next_step", "focus", "kind", "parent"}
+        allowed = {"title", "goal", "condition", "resume_condition", "next_step", "focus", "kind", "parent", "plan"}
         if changes.keys() - allowed:
             raise ValueError("unknown work fields")
         changes['activation'] = None if authorization is None else authorization.id

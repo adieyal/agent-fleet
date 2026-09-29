@@ -28,7 +28,8 @@ def status(item: dict) -> str:
 
 def line_item(item: dict) -> dict[str, Any]:
     return {"id": item["id"], "title": item["title"], "headline": headline(item["goal"]),
-            "condition": item["condition"], "status": status(item), "next_step": item["next_step"]}
+            "condition": item["condition"], "status": status(item), "next_step": item["next_step"],
+            "plan": item["plan"]}
 
 
 def milestone_groups(epic: dict) -> tuple[list[dict], list[tuple[dict, list[dict]]]]:

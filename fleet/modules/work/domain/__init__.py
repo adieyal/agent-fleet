@@ -60,6 +60,8 @@ class WorkItem:
     next_step_recorded_at: datetime | None = None
     activation: str | None = None
     mandate_version: str | None = None
+    # How the step will be done, recorded before it starts.
+    plan: str | None = None
 
     def __post_init__(self) -> None:
         for name in ("project", "kind", "title", "goal"):

@@ -114,7 +114,8 @@ function planLine(item, opens) {
   const title = opens ? `<button data-slice="${esc(item.id)}">${esc(item.title)}</button>` : `<b>${esc(item.title)}</b>`;
   return `<li data-plan-item="${esc(item.id)}" data-status="${esc(item.status)}">
     <span data-glyph role="img" aria-label="${esc(item.status)}" title="${esc(item.status)} · ${esc(item.condition)}">${statuses[item.status]}</span>
-    <div>${title}<p>${esc(item.headline)}</p><small data-next-step>${item.next_step === null ? 'Next step not recorded' : `Next: ${esc(item.next_step)}`}</small></div></li>`;
+    <div>${title}<p>${esc(item.headline)}</p><small data-next-step>${item.next_step === null ? 'Next step not recorded' : `Next: ${esc(item.next_step)}`}</small>${
+      item.plan === null ? '' : `<details data-step-plan><summary>Plan</summary><div>${esc(item.plan)}</div></details>`}</div></li>`;
 }
 
 function epicPage(r) {
