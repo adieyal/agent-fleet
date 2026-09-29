@@ -96,6 +96,19 @@ def test_a_step_carries_its_plan_before_it_starts():
         ("s0", "next", "1. Transcribe\n2. Time it"), ("a1", "next", None)]
 
 
+@pytest.mark.parametrize("runs, expected", [
+    ([{"status": "done", "start": "2026-09-29T15:36:53+00:00"}], "ran"),
+    ([{"status": "done", "start": "2026-09-29T14:00:00+00:00"},
+      {"status": "failed", "start": "2026-09-29T15:00:00+00:00"}], "next"),
+    ([{"status": "failed", "start": "2026-09-29T14:00:00+00:00"},
+      {"status": "done", "start": "2026-09-29T15:00:00+00:00"}], "ran"),
+    ([], "next")])
+def test_work_whose_latest_run_finished_ran_but_is_not_complete(runs, expected):
+    node, = project([item("t")])["work_items"]
+    node["runs"] = runs
+    assert status(node) == expected
+
+
 def test_a_running_step_says_when_its_earliest_running_run_started():
     epic = item("epic", kind="epic", goal="Ship")
     doc = project([epic, item("s0", parent="epic"), item("a1", parent="epic")])

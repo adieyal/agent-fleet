@@ -99,7 +99,10 @@ function epicCard(r) {
   </article>`;
 }
 
-const statuses = { complete: svg('<path d="M5 12.5 10 17.5 19 7"/>'),
+const STATUS_LABELS = { ran: 'run finished, not yet accepted as complete' };
+const TICK ='<path d="M8 12.5 11 15.5 16.5 9"/>';
+const statuses = { complete: svg(`<circle cx="12" cy="12" r="9" fill="currentColor"/>${TICK.replace('/>', ' stroke="#0b111d"/>')}`),
+  ran: svg(`<circle cx="12" cy="12" r="8"/>${TICK}`),
   active: svg('<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3" fill="currentColor"/>'),
   next: svg('<circle cx="12" cy="12" r="8"/>'),
   blocked: svg('<circle cx="12" cy="12" r="8"/><path d="M6.5 17.5 17.5 6.5"/>'),
@@ -126,7 +129,7 @@ setInterval(() => el.querySelectorAll('[data-running-since]').forEach(line => {
 function planLine(item, opens) {
   const title = opens ? `<button data-slice="${esc(item.id)}">${esc(item.title)}</button>` : `<b>${esc(item.title)}</b>`;
   return `<li data-plan-item="${esc(item.id)}" data-status="${esc(item.status)}">
-    <span data-glyph role="img" aria-label="${esc(item.status)}" title="${esc(item.status)} · ${esc(item.condition)}">${statuses[item.status]}</span>
+    <span data-glyph role="img" aria-label="${esc(STATUS_LABELS[item.status] ?? item.status)}" title="${esc(STATUS_LABELS[item.status] ?? item.status)} · ${esc(item.condition)}">${statuses[item.status]}</span>
     <div>${title}<p>${esc(item.headline)}</p>${item.running_since ? runningLine(item.running_since) : ''}<small data-next-step>${item.next_step === null ? 'Next step not recorded' : `Next: ${esc(item.next_step)}`}</small>${
       item.plan === null ? '' : `<details data-step-plan><summary>Plan</summary><div>${esc(item.plan)}</div></details>`}</div></li>`;
 }
