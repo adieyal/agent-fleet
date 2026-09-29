@@ -757,12 +757,37 @@ def test_a_jobs_workarea_shows_its_plan_desk_and_tray(deck: Deck, fixture_data: 
     workarea.locator('[data-tray="worker:d4f7a2"]').click()
     expect(page.locator("#reader")).to_be_visible()
     expect(page.locator("#rdTitle")).to_have_text("Step 2: Draft the article")
+
+    # ← → and the buttons step through the job's documents in the panel's order (newest produced first)
+    expect(page.locator("#rdPos")).to_have_text("2 / 2")
+    expect(page.locator("#rdNext")).to_be_disabled()
+    page.keyboard.press("ArrowLeft")
+    expect(page.locator("#rdPos")).to_have_text("1 / 2")
+    expect(page.locator("#rdTitle")).to_have_text("par-by-weekday.md")
+    page.locator("#rdNext").click()
+    expect(page.locator("#rdTitle")).to_have_text("Step 2: Draft the article")
     page.keyboard.press("Escape")
     expect(page.locator("#reader")).to_be_hidden()
     expect(workarea).to_be_visible()
+
+    # a plan tile opens its step's report; a step with nothing to read is disabled
+    workarea.locator('[data-bench="worker:d4f7a2"] [data-step="1"]').click()
+    expect(page.locator("#rdTitle")).to_have_text("Step 2: Draft the article")
+    page.keyboard.press("Escape")
+    expect(workarea.locator('[data-bench="home:a1c3e9"] [data-step="0"]')).to_be_disabled()
+
     page.keyboard.press("Escape")
     expect(workarea).to_be_hidden()
     expect(page.locator("#panel")).to_have_class(re.compile("open"))   # one level at a time
+
+    # a bench's title opens that job's panel, and the entrance leaves
+    page.locator("#panelTabs [data-workarea]").click()
+    workarea.locator('[data-bench="worker:d4f7a2"] [data-job]').click()
+    expect(workarea).to_be_hidden()
+    expect(page.locator("#panelHead h2")).to_have_text(jobs["worker:d4f7a2"]["description"])
+    page.locator("#panelTabs [data-workarea]").click()
+    workarea.locator("[data-entrance]").click()
+    expect(workarea).to_be_hidden()
     page.locator("#panel #close").click()
     assert deck.errors == []
 
@@ -779,17 +804,7 @@ def test_document_reader_opens_from_a_failed_jobs_panel(deck: Deck) -> None:
     expect(page.locator("#rdBody h1")).to_have_text("Django 5.2 upgrade blocked")
     expect(page.locator("#rdBody")).not_to_contain_text("FLEET_STATUS")
 
-    listed = page.locator('#panelBody [data-tab="documents"] [data-doc]').evaluate_all("bs => bs.map(b => b.dataset.doc)")
-    at = listed.index("report-0")
-    expect(page.locator("#rdPos")).to_have_text(f"{at + 1} / {len(listed)}")   # the panel's order
-    expect(page.locator("#rdPrev")).to_be_disabled() if at == 0 else expect(page.locator("#rdPrev")).to_be_enabled()
-    title = page.locator("#rdTitle").inner_text()
-    page.keyboard.press("ArrowRight")
-    expect(page.locator("#rdPos")).to_have_text(f"{at + 2} / {len(listed)}")
-    expect(page.locator("#rdTitle")).not_to_have_text(title)
-    page.locator("#rdPrev").click()
-    expect(page.locator("#rdTitle")).to_have_text(title)
-
+    expect(page.locator("#rdStep")).to_be_hidden()   # its only document: nothing to step to
     page.keyboard.press("Escape")
     expect(page.locator("#reader")).to_be_hidden()
     page.locator("#panel #close").click()

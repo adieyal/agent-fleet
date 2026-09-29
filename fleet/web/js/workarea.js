@@ -4,15 +4,17 @@
 // hour. Every place carries a data attribute (data-entrance, data-desk, data-bench, data-tile, data-tray) so new art
 // can re-skin it without changing the model.
 //
-// Opened from a job's panel ("Workarea") or with ?workarea=<room>; Esc or ✕ closes it. The tray opens the job's
-// latest step report in the document reader; each paper in it opens its own.
+// Opened from a job's panel ("Workarea") or with ?workarea=<room>; Esc, ✕ or the entrance closes it. A plan tile opens
+// its step's report (or its brief before there is one); the tray opens the latest report and each paper its own; a
+// bench's title opens the job's panel; a slip on the question desk opens that attention item.
 
 import { QS } from './env.js';
 import { esc } from './util.js';
 import { hostLook } from './looks.js';
 import { actionOf, glyphHtml } from './glyphs.js';
 import { ents } from './model.js';
-import { openReader } from './reader.js';
+import { openAttentionReader, openReader } from './reader.js';
+import { select } from './panel.js';
 import { workareaOf } from './workarea-model.js';
 
 const el = document.getElementById('workarea');
@@ -45,9 +47,10 @@ function render() {
   const bench = b => {
     const job = jobs.get(b.key)?.job;
     return `<section class="bench" data-bench="${esc(b.key)}" data-status="${esc(b.status)}"${b.recent ? ' data-recent' : ''} style="--hc:${hostLook(b.host).color}">
-      <div class="bench-head">${job ? glyphHtml(actionOf(job)) : ''}<b title="${esc(b.title)}">${esc(b.title)}</b><small>${esc(b.host)} · ${esc(b.id)}</small></div>
-      <ol class="plan-wall" aria-label="Plan">${b.tiles.map(t => `<li class="tile" data-tile="${t.index}" data-status="${esc(t.status)}" data-mark="${t.mark}"
-        title="Step ${t.index + 1}: ${esc(t.title)} (${esc(t.status)})"><span class="mk" aria-hidden="true">${MARK[t.mark]}</span><span class="tt">${esc(t.title)}</span></li>`).join('')}</ol>
+      <div class="bench-head">${job ? glyphHtml(actionOf(job)) : ''}<button class="bench-title" data-job="${esc(b.key)}" title="Open this job’s panel: ${esc(b.title)}">${esc(b.title)}</button><small>${esc(b.host)} · ${esc(b.id)}</small></div>
+      <ol class="plan-wall" aria-label="Plan">${b.tiles.map(t => `<li class="tile" data-tile="${t.index}" data-status="${esc(t.status)}" data-mark="${t.mark}"><button
+        data-step="${t.index}" title="Step ${t.index + 1}: ${esc(t.title)} (${esc(t.status)}). Read its ${stepDoc(job, t.index)?.kind === 'report' ? 'report' : 'brief'}"${
+        stepDoc(job, t.index) ? '' : ' disabled'}><span class="mk" aria-hidden="true">${MARK[t.mark]}</span><span class="tt">${esc(t.title)}</span></button></li>`).join('')}</ol>
       <div class="criteria" role="img" aria-label="${b.criteria.met} of ${b.criteria.total} steps done">${
         b.criteria.lights.map(on => `<i${on ? ' data-on' : ''}></i>`).join('')}<b>${b.criteria.met}/${b.criteria.total}</b></div>
       <button class="tray" data-tray="${esc(b.key)}"${b.reports.length ? '' : ' disabled'} aria-label="Report tray: ${b.reports.length} report${b.reports.length === 1 ? '' : 's'}"
@@ -56,15 +59,16 @@ function render() {
   };
   const html = `<div class="wa-sheet">
     <div class="wa-head"><h2>${esc(room)}</h2><button data-wa-close aria-label="Close workarea">✕</button></div>
+    ${w ? '<p class="wa-hint">Click a step to read it, the tray for reports, a title for the job’s panel, a slip on the desk for what needs you. The door or Esc leaves.</p>' : ''}
     ${w ? `<div class="wa-floor">
       <svg class="wa-steps" aria-hidden="true"></svg>
       <div class="wa-front">
-        <div class="wa-door" data-entrance title="Entrance" aria-label="Entrance"></div>
+        <button class="wa-door" data-entrance title="Leave the workarea (Esc)" aria-label="Leave the workarea"></button>
         <div class="wa-desk" data-desk>
           ${lantern ? `<span class="wa-lantern${lantern.level === 'acknowledged' ? ' ack' : ''}" data-state="${lantern.level}" data-kind="${lantern.kind}"
             data-count="${lantern.count}" role="img" aria-label="${lantern.count > 1 ? `${lantern.count} things need you` : 'something needs you'}"><span class="lg">${
             lantern.kind === 'blocker' ? '✋' : '?'}</span><b>${lantern.count > 1 ? lantern.count : ''}</b></span>` : ''}
-          <div class="desk-top" title="Question desk">${w.desk.items.map(i => `<span class="slip" data-kind="${esc(i.kind)}" title="${esc(i.summary)}"></span>`).join('')}</div>
+          <div class="desk-top" title="Question desk">${w.desk.items.map(i => `<button class="slip" data-kind="${esc(i.kind)}" data-item="${esc(i.id)}" title="Read: ${esc(i.summary)}" aria-label="${esc(i.summary)}"></button>`).join('')}</div>
         </div>
       </div>
       <div class="wa-benches">${w.benches.length ? w.benches.map(bench).join('') : '<p class="none">Nobody’s working here right now.</p>'}</div>
@@ -91,8 +95,27 @@ function drawFootprints(w) {
 }
 window.addEventListener('resize', () => { if (room !== null && doc) drawFootprints(workareaOf(doc, room, Date.now() / 1000)); });
 
+// A step's own report when it has one, otherwise the brief it was given.
+function stepDoc(job, index) {
+  const docs = job?.documents || [];
+  return docs.find(d => d.kind === 'report' && d.step === index) || docs.find(d => d.kind === 'brief' && d.step === index) || null;
+}
 el.addEventListener('click', ev => {
-  if (ev.target.closest('[data-wa-close]') || ev.target === el) { closeWorkarea(); return; }
+  if (ev.target.closest('[data-wa-close],[data-entrance]') || ev.target === el) { closeWorkarea(); return; }
+  const step = ev.target.closest('[data-step]'), key = ev.target.closest('[data-bench]')?.dataset.bench;
+  if (step && !step.disabled) {
+    const found = jobs.get(key), d = found && stepDoc(found.job, Number(step.dataset.step));
+    if (d) openReader(ents.get(key) || found, d);
+    return;
+  }
+  const title = ev.target.closest('[data-job]');
+  if (title) { closeWorkarea(); select(title.dataset.job); return; }
+  const slip = ev.target.closest('[data-item]');
+  if (slip) {
+    const item = (doc.attention || []).find(i => i.id === slip.dataset.item);
+    if (item) openAttentionReader(item);
+    return;
+  }
   const tray = ev.target.closest('[data-tray]');
   if (!tray || tray.disabled) return;
   const found = jobs.get(tray.dataset.tray);
