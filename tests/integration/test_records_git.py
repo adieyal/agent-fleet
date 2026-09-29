@@ -1,7 +1,10 @@
 import json
+import shutil
 import subprocess
 import sys
+import tempfile
 from contextlib import closing
+from pathlib import Path
 
 import pytest
 
@@ -24,7 +27,22 @@ def setup_records(tmp_path):
     return store, records, repo
 
 
-def test_concurrent_records_are_serialized(tmp_path):
+@pytest.fixture
+def memory_path(tmp_path, monkeypatch, empty_store):
+    """A temp dir in memory (/dev/shm) holding the store: the test is about ordering, not durability, and 48 synced
+    commits and store writes take longer than its limit on a slow disk. Where there is no /dev/shm, tmp_path."""
+    if not Path('/dev/shm').is_dir():
+        yield tmp_path
+        return
+    with tempfile.TemporaryDirectory(dir='/dev/shm', prefix='fleet-test-') as name:
+        path = Path(name)
+        shutil.copyfile(empty_store, path / 'fleet.db')
+        monkeypatch.setenv('FLEET_STORE', str(path / 'fleet.db'))
+        yield path
+
+
+def test_concurrent_records_are_serialized(memory_path):
+    tmp_path = memory_path
     store, records, repo = setup_records(tmp_path)
     signal = tmp_path / 'start'
     script = '''
