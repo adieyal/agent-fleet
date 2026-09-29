@@ -26,10 +26,17 @@ def status(item: dict) -> str:
     return "active" if running or condition == "ready for review" else "next"
 
 
+def running_since(item: dict) -> str | None:
+    """When the item's earliest running run started (ISO time), or None when nothing runs or its start is unknown."""
+    starts = [run["start"] for node in descendants(item) for run in node["runs"]
+              if run["status"] == "running" and run.get("start")]
+    return min(starts, default=None)
+
+
 def line_item(item: dict) -> dict[str, Any]:
     return {"id": item["id"], "title": item["title"], "headline": headline(item["goal"]),
             "condition": item["condition"], "status": status(item), "next_step": item["next_step"],
-            "plan": item["plan"]}
+            "plan": item["plan"], "running_since": running_since(item)}
 
 
 def milestone_groups(epic: dict) -> tuple[list[dict], list[tuple[dict, list[dict]]]]:

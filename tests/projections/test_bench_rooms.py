@@ -96,6 +96,18 @@ def test_a_step_carries_its_plan_before_it_starts():
         ("s0", "next", "1. Transcribe\n2. Time it"), ("a1", "next", None)]
 
 
+def test_a_running_step_says_when_its_earliest_running_run_started():
+    epic = item("epic", kind="epic", goal="Ship")
+    doc = project([epic, item("s0", parent="epic"), item("a1", parent="epic")])
+    s0, a1 = doc["work_items"][0]["children"]
+    s0["runs"] = [{"status": "running", "start": "2026-09-29T15:40:00+00:00"},
+                  {"status": "running", "start": "2026-09-29T15:36:53+00:00"},
+                  {"status": "failed", "start": "2026-09-29T14:00:00+00:00"}]
+    a1["runs"] = [{"status": "done", "start": "2026-09-29T15:00:00+00:00"}]
+    room, = bench_rooms(doc)["rooms"]
+    assert [t["running_since"] for t in room["tasks"]] == ["2026-09-29T15:36:53+00:00", None]
+
+
 def test_epic_without_milestones_or_work_records_nothing():
     room, = bench_rooms(project([item("epic", kind="epic", goal="Explore")]))["rooms"]
     assert room["milestones"] == {"complete": 0, "total": 0}
