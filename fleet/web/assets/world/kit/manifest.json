@@ -2,8 +2,25 @@
  "version": 1,
  "about": "The floor kit: see art/kit/README.md. Sprites are anchored at their base centre unless their doc says otherwise; footprints and slots are metres from the anchor (x along the back wall, y towards it, z up). layer is a hint: ground (in the ground snapshot), standing (sorted), light (additive).",
  "camera": {
-  "pitch": 28.0,
-  "yaw": 33.0
+  "name": "canonical",
+  "projection": "oblique",
+  "yaw_deg": 30.0,
+  "depression_deg": 26.5651,
+  "axes_px_per_m": [
+   [
+    0.86603,
+    0.25
+   ],
+   [
+    0.5,
+    -0.43301
+   ],
+   [
+    0.0,
+    -1.0
+   ]
+  ],
+  "px_per_m_1x": 171.528
  },
  "scale": {
   "px_per_m_1x": 171.528,
@@ -12,7 +29,7 @@
    171.528,
    343.055
   ],
-  "basis": "l2.png's framing as fitted by art/scripts/fit_camera.py: 941 px over 5.486 m (171.528 px/m). Every object is modelled or scaled from its real size in metres; the tiers are 0.5x, 1x and 2x that density, plus an AI prop's own density when it is finer.",
+  "basis": "l2.png's framing as fitted by art/scripts/fit_camera.py: 941 px over 5.486 m (171.528 px/m). Every object is modelled at its real size in metres; the tiers are 0.5x, 1x and 2x that density.",
   "measured": {
    "l2": {
     "bench_width_px": 930,
@@ -32,278 +49,6 @@
   }
  },
  "sprites": {
-  "bench": {
-   "source": "ai",
-   "from": "art/kit/raw/bench-v2.png",
-   "size_m": [
-    5.4,
-    0.8,
-    0.74
-   ],
-   "scale": {
-    "fit": "w",
-    "source_px_per_m": 300.9
-   },
-   "footprint": [
-    -2.7,
-    -0.4,
-    0.0,
-    2.7,
-    0.4,
-    0.74
-   ],
-   "hit": "alpha",
-   "tiers": [
-    {
-     "ppm": 85.764,
-     "file": "bench@86.webp",
-     "size": [
-      483,
-      255
-     ],
-     "anchor_px": [
-      241.89,
-      157.84
-     ]
-    },
-    {
-     "ppm": 171.528,
-     "file": "bench@172.webp",
-     "size": [
-      966,
-      511
-     ],
-     "anchor_px": [
-      482.78,
-      315.68
-     ]
-    },
-    {
-     "ppm": 300.935,
-     "file": "bench@301.webp",
-     "size": [
-      1694,
-      896
-     ],
-     "anchor_px": [
-      847.0,
-      553.85
-     ]
-    }
-   ],
-   "slots": {
-    "seats": [
-     [
-      -1.8,
-      0.54,
-      0.47
-     ],
-     [
-      0.0,
-      0.54,
-      0.47
-     ],
-     [
-      1.8,
-      0.54,
-      0.47
-     ]
-    ],
-    "lamps": [
-     [
-      -2.52,
-      0.28,
-      0.74
-     ],
-     [
-      -0.72,
-      0.28,
-      0.74
-     ],
-     [
-      1.08,
-      0.28,
-      0.74
-     ]
-    ],
-    "desk_top": [
-     [
-      -1.8,
-      0,
-      0.74
-     ],
-     [
-      0.0,
-      0,
-      0.74
-     ],
-     [
-      1.8,
-      0,
-      0.74
-     ]
-    ]
-   },
-   "doc": "three desks end to end; top empty; no lamps, no chairs"
-  },
-  "terminal-desk": {
-   "source": "ai",
-   "from": "art/kit/raw/terminal-desk.png",
-   "size_m": [
-    1.6,
-    0.8,
-    0.74
-   ],
-   "scale": {
-    "fit": "w",
-    "source_px_per_m": 645.8
-   },
-   "footprint": [
-    -0.8,
-    -0.4,
-    0.0,
-    0.8,
-    0.4,
-    0.74
-   ],
-   "hit": "alpha",
-   "tiers": [
-    {
-     "ppm": 85.764,
-     "file": "terminal-desk@86.webp",
-     "size": [
-      210,
-      147
-     ],
-     "anchor_px": [
-      105.23,
-      91.12
-     ]
-    },
-    {
-     "ppm": 171.528,
-     "file": "terminal-desk@172.webp",
-     "size": [
-      419,
-      294
-     ],
-     "anchor_px": [
-      209.45,
-      182.25
-     ]
-    },
-    {
-     "ppm": 343.055,
-     "file": "terminal-desk@343.webp",
-     "size": [
-      838,
-      588
-     ],
-     "anchor_px": [
-      418.9,
-      364.5
-     ]
-    },
-    {
-     "ppm": 645.82,
-     "file": "terminal-desk@646.webp",
-     "size": [
-      1578,
-      1107
-     ],
-     "anchor_px": [
-      789.0,
-      686.18
-     ]
-    }
-   ],
-   "slots": {
-    "seat": [
-     0,
-     -0.55,
-     0.47
-    ],
-    "screen": [
-     0,
-     0.2,
-     1.05
-    ]
-   },
-   "doc": "one desk with monitor and keyboard"
-  },
-  "librarian-desk": {
-   "source": "ai",
-   "from": "art/kit/raw/librarian-desk.png",
-   "size_m": [
-    1.5,
-    0.7,
-    0.95
-   ],
-   "scale": {
-    "fit": "w",
-    "source_px_per_m": 664.3
-   },
-   "footprint": [
-    -0.75,
-    -0.35,
-    0.0,
-    0.75,
-    0.35,
-    0.95
-   ],
-   "hit": "alpha",
-   "tiers": [
-    {
-     "ppm": 85.764,
-     "file": "librarian-desk@86.webp",
-     "size": [
-      198,
-      139
-     ],
-     "anchor_px": [
-      99.29,
-      85.73
-     ]
-    },
-    {
-     "ppm": 171.528,
-     "file": "librarian-desk@172.webp",
-     "size": [
-      395,
-      277
-     ],
-     "anchor_px": [
-      197.59,
-      171.46
-     ]
-    },
-    {
-     "ppm": 343.055,
-     "file": "librarian-desk@343.webp",
-     "size": [
-      791,
-      555
-     ],
-     "anchor_px": [
-      395.18,
-      342.91
-     ]
-    },
-    {
-     "ppm": 664.327,
-     "file": "librarian-desk@664.webp",
-     "size": [
-      1531,
-      1075
-     ],
-     "anchor_px": [
-      765.5,
-      664.05
-     ]
-    }
-   ],
-   "doc": "the librarian's desk with card drawers"
-  },
   "pilaster": {
    "source": "blender",
    "from": "art/scripts/build_kit.py",
@@ -321,36 +66,36 @@
      "ppm": 85.764,
      "file": "pilaster@86.webp",
      "size": [
-      54,
-      264
+      55,
+      296
      ],
      "anchor_px": [
-      32.5,
-      250.16
+      32.2,
+      282.12
      ]
     },
     {
      "ppm": 171.528,
      "file": "pilaster@172.webp",
      "size": [
-      108,
-      527
+      109,
+      592
      ],
      "anchor_px": [
-      64.99,
-      500.33
+      64.41,
+      564.25
      ]
     },
     {
      "ppm": 343.055,
      "file": "pilaster@343.webp",
      "size": [
-      216,
-      1053
+      217,
+      1183
      ],
      "anchor_px": [
-      129.99,
-      1000.66
+      128.82,
+      1128.5
      ]
     }
    ],
@@ -374,36 +119,36 @@
      "ppm": 85.764,
      "file": "wall-cap-x@86.webp",
      "size": [
-      286,
-      107
+      292,
+      108
      ],
      "anchor_px": [
-      3.58,
-      265.29
+      3.43,
+      299.73
      ]
     },
     {
      "ppm": 171.528,
      "file": "wall-cap-x@172.webp",
      "size": [
-      571,
-      213
+      584,
+      215
      ],
      "anchor_px": [
-      7.17,
-      530.58
+      6.86,
+      599.46
      ]
     },
     {
      "ppm": 343.055,
      "file": "wall-cap-x@343.webp",
      "size": [
-      1142,
-      426
+      1168,
+      430
      ],
      "anchor_px": [
-      14.33,
-      1061.15
+      13.72,
+      1198.93
      ]
     }
    ],
@@ -427,36 +172,36 @@
      "ppm": 85.764,
      "file": "wall-cap-y@86.webp",
      "size": [
-      207,
-      144
+      195,
+      157
      ],
      "anchor_px": [
-      34.08,
-      381.53
+      35.14,
+      426.36
      ]
     },
     {
      "ppm": 171.528,
      "file": "wall-cap-y@172.webp",
      "size": [
-      414,
-      287
+      389,
+      313
      ],
      "anchor_px": [
-      68.17,
-      763.05
+      70.28,
+      852.72
      ]
     },
     {
      "ppm": 343.055,
      "file": "wall-cap-y@343.webp",
      "size": [
-      828,
-      574
+      777,
+      625
      ],
      "anchor_px": [
-      136.33,
-      1526.1
+      140.55,
+      1705.45
      ]
     }
    ],
@@ -480,36 +225,36 @@
      "ppm": 85.764,
      "file": "wall-corner@86.webp",
      "size": [
-      64,
-      290
+      63,
+      324
      ],
      "anchor_px": [
-      36.81,
-      276.01
+      37.71,
+      310.24
      ]
     },
     {
      "ppm": 171.528,
      "file": "wall-corner@172.webp",
      "size": [
-      127,
-      579
+      126,
+      648
      ],
      "anchor_px": [
-      73.62,
-      552.03
+      75.42,
+      620.48
      ]
     },
     {
      "ppm": 343.055,
      "file": "wall-corner@343.webp",
      "size": [
-      254,
-      1157
+      251,
+      1296
      ],
      "anchor_px": [
-      147.23,
-      1104.06
+      150.85,
+      1240.95
      ]
     }
    ],
@@ -533,36 +278,36 @@
      "ppm": 85.764,
      "file": "wall-end-back@86.webp",
      "size": [
-      54,
-      347
+      52,
+      390
      ],
      "anchor_px": [
-      27.73,
-      274.44
+      28.29,
+      308.74
      ]
     },
     {
      "ppm": 171.528,
      "file": "wall-end-back@172.webp",
      "size": [
-      107,
-      694
+      104,
+      780
      ],
      "anchor_px": [
-      55.47,
-      548.88
+      56.57,
+      617.47
      ]
     },
     {
      "ppm": 343.055,
      "file": "wall-end-back@343.webp",
      "size": [
-      213,
-      1387
+      208,
+      1560
      ],
      "anchor_px": [
-      110.94,
-      1097.76
+      113.14,
+      1234.95
      ]
     }
    ],
@@ -587,11 +332,11 @@
      "file": "wall-end-left@86.webp",
      "size": [
       58,
-      345
+      388
      ],
      "anchor_px": [
-      36.66,
-      272.66
+      37.71,
+      306.38
      ]
     },
     {
@@ -599,11 +344,11 @@
      "file": "wall-end-left@172.webp",
      "size": [
       116,
-      690
+      776
      ],
      "anchor_px": [
-      73.31,
-      545.33
+      75.42,
+      612.77
      ]
     },
     {
@@ -611,11 +356,11 @@
      "file": "wall-end-left@343.webp",
      "size": [
       232,
-      1380
+      1551
      ],
      "anchor_px": [
-      146.62,
-      1090.66
+      150.85,
+      1225.53
      ]
     }
    ],
@@ -639,36 +384,36 @@
      "ppm": 85.764,
      "file": "slab-front@86.webp",
      "size": [
-      267,
-      153
+      276,
+      160
      ],
      "anchor_px": [
-      4.91,
-      2.91
+      4.72,
+      2.94
      ]
     },
     {
      "ppm": 171.528,
      "file": "slab-front@172.webp",
      "size": [
-      534,
-      306
+      551,
+      320
      ],
      "anchor_px": [
-      9.82,
-      5.82
+      9.43,
+      5.89
      ]
     },
     {
      "ppm": 343.055,
      "file": "slab-front@343.webp",
      "size": [
-      1068,
-      611
+      1101,
+      640
      ],
      "anchor_px": [
-      19.63,
-      11.64
+      18.87,
+      11.78
      ]
     }
    ],
@@ -692,36 +437,36 @@
      "ppm": 85.764,
      "file": "slab-side@86.webp",
      "size": [
-      178,
-      196
+      164,
+      217
      ],
      "anchor_px": [
-      3.29,
-      124.36
+      3.32,
+      136.48
      ]
     },
     {
      "ppm": 171.528,
      "file": "slab-side@172.webp",
      "size": [
-      356,
-      391
+      328,
+      433
      ],
      "anchor_px": [
-      6.58,
-      248.71
+      6.63,
+      272.96
      ]
     },
     {
      "ppm": 343.055,
      "file": "slab-side@343.webp",
      "size": [
-      711,
-      781
+      656,
+      865
      ],
      "anchor_px": [
-      13.17,
-      497.43
+      13.26,
+      545.92
      ]
     }
    ],
@@ -745,12 +490,12 @@
      "ppm": 85.764,
      "file": "lift@86.webp",
      "size": [
-      247,
-      374
+      251,
+      404
      ],
      "anchor_px": [
-      120.15,
-      301.39
+      121.76,
+      331.56
      ],
      "frames": 5
     },
@@ -758,12 +503,12 @@
      "ppm": 171.528,
      "file": "lift@172.webp",
      "size": [
-      493,
-      747
+      501,
+      808
      ],
      "anchor_px": [
-      240.3,
-      602.79
+      243.52,
+      663.12
      ],
      "frames": 5
     },
@@ -771,12 +516,12 @@
      "ppm": 343.055,
      "file": "lift@343.webp",
      "size": [
-      985,
-      1494
+      1002,
+      1615
      ],
      "anchor_px": [
-      480.6,
-      1205.57
+      487.04,
+      1326.24
      ],
      "frames": 5
     }
@@ -821,11 +566,11 @@
      "file": "lift-panel@86.webp",
      "size": [
       64,
-      269
+      302
      ],
      "anchor_px": [
-      40.83,
-      250.71
+      40.06,
+      282.66
      ]
     },
     {
@@ -833,11 +578,11 @@
      "file": "lift-panel@172.webp",
      "size": [
       128,
-      538
+      604
      ],
      "anchor_px": [
-      81.67,
-      501.42
+      80.13,
+      565.32
      ]
     },
     {
@@ -845,11 +590,11 @@
      "file": "lift-panel@343.webp",
      "size": [
       256,
-      1076
+      1208
      ],
      "anchor_px": [
-      163.34,
-      1002.85
+      160.26,
+      1130.64
      ]
     }
    ],
@@ -907,36 +652,36 @@
      "ppm": 85.764,
      "file": "alcove@86.webp",
      "size": [
-      279,
-      327
+      280,
+      360
      ],
      "anchor_px": [
-      68.9,
-      214.48
+      63.47,
+      243.77
      ]
     },
     {
      "ppm": 171.528,
      "file": "alcove@172.webp",
      "size": [
-      557,
-      654
+      560,
+      719
      ],
      "anchor_px": [
-      137.8,
-      428.96
+      126.93,
+      487.54
      ]
     },
     {
      "ppm": 343.055,
      "file": "alcove@343.webp",
      "size": [
-      1114,
-      1308
+      1119,
+      1438
      ],
      "anchor_px": [
-      275.61,
-      857.93
+      253.86,
+      975.08
      ]
     }
    ],
@@ -972,36 +717,36 @@
      "ppm": 85.764,
      "file": "plan-wall@86.webp",
      "size": [
-      277,
-      272
+      310,
+      321
      ],
      "anchor_px": [
-      139.63,
-      270.66
+      156.05,
+      314.39
      ]
     },
     {
      "ppm": 171.528,
      "file": "plan-wall@172.webp",
      "size": [
-      553,
-      544
+      620,
+      641
      ],
      "anchor_px": [
-      279.26,
-      541.32
+      312.09,
+      628.79
      ]
     },
     {
      "ppm": 343.055,
      "file": "plan-wall@343.webp",
      "size": [
-      1106,
-      1088
+      1239,
+      1282
      ],
      "anchor_px": [
-      558.52,
-      1082.64
+      624.19,
+      1257.57
      ]
     }
    ],
@@ -1073,36 +818,36 @@
      "ppm": 85.764,
      "file": "tile-blank@86.webp",
      "size": [
-      29,
-      35
+      38,
+      47
      ],
      "anchor_px": [
-      15.05,
-      16.93
+      19.55,
+      22.47
      ]
     },
     {
      "ppm": 171.528,
      "file": "tile-blank@172.webp",
      "size": [
-      58,
-      70
+      76,
+      93
      ],
      "anchor_px": [
-      30.1,
-      33.86
+      39.09,
+      44.95
      ]
     },
     {
      "ppm": 343.055,
      "file": "tile-blank@343.webp",
      "size": [
-      115,
-      140
+      152,
+      185
      ],
      "anchor_px": [
-      60.21,
-      67.73
+      78.19,
+      89.9
      ]
     }
    ],
@@ -1125,36 +870,36 @@
      "ppm": 85.764,
      "file": "tile-done@86.webp",
      "size": [
-      29,
-      35
+      38,
+      47
      ],
      "anchor_px": [
-      15.05,
-      16.93
+      19.55,
+      22.47
      ]
     },
     {
      "ppm": 171.528,
      "file": "tile-done@172.webp",
      "size": [
-      58,
-      70
+      76,
+      93
      ],
      "anchor_px": [
-      30.1,
-      33.86
+      39.09,
+      44.95
      ]
     },
     {
      "ppm": 343.055,
      "file": "tile-done@343.webp",
      "size": [
-      115,
-      140
+      152,
+      185
      ],
      "anchor_px": [
-      60.21,
-      67.73
+      78.19,
+      89.9
      ]
     }
    ],
@@ -1177,36 +922,36 @@
      "ppm": 85.764,
      "file": "tile-running@86.webp",
      "size": [
-      29,
-      35
+      38,
+      47
      ],
      "anchor_px": [
-      15.05,
-      16.93
+      19.55,
+      22.47
      ]
     },
     {
      "ppm": 171.528,
      "file": "tile-running@172.webp",
      "size": [
-      58,
-      70
+      76,
+      93
      ],
      "anchor_px": [
-      30.1,
-      33.86
+      39.09,
+      44.95
      ]
     },
     {
      "ppm": 343.055,
      "file": "tile-running@343.webp",
      "size": [
-      115,
-      140
+      152,
+      185
      ],
      "anchor_px": [
-      60.21,
-      67.73
+      78.19,
+      89.9
      ]
     }
    ],
@@ -1229,36 +974,36 @@
      "ppm": 85.764,
      "file": "tile-failed@86.webp",
      "size": [
-      29,
-      35
+      38,
+      47
      ],
      "anchor_px": [
-      15.05,
-      16.93
+      19.55,
+      22.47
      ]
     },
     {
      "ppm": 171.528,
      "file": "tile-failed@172.webp",
      "size": [
-      58,
-      70
+      76,
+      93
      ],
      "anchor_px": [
-      30.1,
-      33.86
+      39.09,
+      44.95
      ]
     },
     {
      "ppm": 343.055,
      "file": "tile-failed@343.webp",
      "size": [
-      115,
-      140
+      152,
+      185
      ],
      "anchor_px": [
-      60.21,
-      67.73
+      78.19,
+      89.9
      ]
     }
    ],
@@ -1281,36 +1026,36 @@
      "ppm": 85.764,
      "file": "criteria-off@86.webp",
      "size": [
-      25,
-      26
+      34,
+      36
      ],
      "anchor_px": [
-      13.02,
-      12.22
+      17.41,
+      17.38
      ]
     },
     {
      "ppm": 171.528,
      "file": "criteria-off@172.webp",
      "size": [
-      50,
-      51
+      68,
+      72
      ],
      "anchor_px": [
-      26.04,
-      24.43
+      34.81,
+      34.76
      ]
     },
     {
      "ppm": 343.055,
      "file": "criteria-off@343.webp",
      "size": [
-      99,
-      102
+      135,
+      144
      ],
      "anchor_px": [
-      52.08,
-      48.86
+      69.62,
+      69.52
      ]
     }
    ],
@@ -1333,36 +1078,36 @@
      "ppm": 85.764,
      "file": "criteria-on@86.webp",
      "size": [
-      25,
-      26
+      34,
+      36
      ],
      "anchor_px": [
-      13.02,
-      12.22
+      17.41,
+      17.38
      ]
     },
     {
      "ppm": 171.528,
      "file": "criteria-on@172.webp",
      "size": [
-      50,
-      51
+      68,
+      72
      ],
      "anchor_px": [
-      26.04,
-      24.43
+      34.81,
+      34.76
      ]
     },
     {
      "ppm": 343.055,
      "file": "criteria-on@343.webp",
      "size": [
-      99,
-      102
+      135,
+      144
      ],
      "anchor_px": [
-      52.08,
-      48.86
+      69.62,
+      69.52
      ]
     }
    ],
@@ -1413,35 +1158,35 @@
      "file": "bench-left@86.webp",
      "size": [
       158,
-      121
+      130
      ],
      "anchor_px": [
-      39.73,
-      2.25
+      36.67,
+      2.23
      ]
     },
     {
      "ppm": 171.528,
      "file": "bench-left@172.webp",
      "size": [
-      315,
-      242
+      316,
+      260
      ],
      "anchor_px": [
-      79.47,
-      4.5
+      73.35,
+      4.46
      ]
     },
     {
      "ppm": 343.055,
      "file": "bench-left@343.webp",
      "size": [
-      629,
-      483
+      632,
+      519
      ],
      "anchor_px": [
-      158.93,
-      9.0
+      146.69,
+      8.91
      ]
     }
    ],
@@ -1473,36 +1218,36 @@
      "ppm": 85.764,
      "file": "bench-left-shadow@86.webp",
      "size": [
-      378,
-      341
+      379,
+      350
      ],
      "anchor_px": [
-      149.85,
-      112.37
+      146.79,
+      112.35
      ]
     },
     {
      "ppm": 171.528,
      "file": "bench-left-shadow@172.webp",
      "size": [
-      755,
-      682
+      757,
+      700
      ],
      "anchor_px": [
-      299.71,
-      224.74
+      293.59,
+      224.7
      ]
     },
     {
      "ppm": 343.055,
      "file": "bench-left-shadow@343.webp",
      "size": [
-      1510,
-      1364
+      1513,
+      1400
      ],
      "anchor_px": [
-      599.41,
-      449.48
+      587.17,
+      449.4
      ]
     }
    ],
@@ -1553,35 +1298,35 @@
      "file": "bench-mid@86.webp",
      "size": [
       158,
-      121
+      130
      ],
      "anchor_px": [
-      39.73,
-      2.25
+      36.67,
+      2.23
      ]
     },
     {
      "ppm": 171.528,
      "file": "bench-mid@172.webp",
      "size": [
-      315,
-      242
+      316,
+      260
      ],
      "anchor_px": [
-      79.47,
-      4.5
+      73.35,
+      4.46
      ]
     },
     {
      "ppm": 343.055,
      "file": "bench-mid@343.webp",
      "size": [
-      629,
-      483
+      632,
+      519
      ],
      "anchor_px": [
-      158.93,
-      9.0
+      146.69,
+      8.91
      ]
     }
    ],
@@ -1613,36 +1358,36 @@
      "ppm": 85.764,
      "file": "bench-mid-shadow@86.webp",
      "size": [
-      378,
-      341
+      379,
+      350
      ],
      "anchor_px": [
-      149.85,
-      112.37
+      146.79,
+      112.35
      ]
     },
     {
      "ppm": 171.528,
      "file": "bench-mid-shadow@172.webp",
      "size": [
-      755,
-      682
+      757,
+      700
      ],
      "anchor_px": [
-      299.71,
-      224.74
+      293.59,
+      224.7
      ]
     },
     {
      "ppm": 343.055,
      "file": "bench-mid-shadow@343.webp",
      "size": [
-      1510,
-      1364
+      1513,
+      1400
      ],
      "anchor_px": [
-      599.41,
-      449.48
+      587.17,
+      449.4
      ]
     }
    ],
@@ -1693,35 +1438,35 @@
      "file": "bench-right@86.webp",
      "size": [
       158,
-      121
+      130
      ],
      "anchor_px": [
-      39.73,
-      2.25
+      36.67,
+      2.23
      ]
     },
     {
      "ppm": 171.528,
      "file": "bench-right@172.webp",
      "size": [
-      315,
-      242
+      316,
+      260
      ],
      "anchor_px": [
-      79.47,
-      4.5
+      73.35,
+      4.46
      ]
     },
     {
      "ppm": 343.055,
      "file": "bench-right@343.webp",
      "size": [
-      629,
-      483
+      632,
+      519
      ],
      "anchor_px": [
-      158.93,
-      9.0
+      146.69,
+      8.91
      ]
     }
    ],
@@ -1753,36 +1498,36 @@
      "ppm": 85.764,
      "file": "bench-right-shadow@86.webp",
      "size": [
-      378,
-      341
+      379,
+      350
      ],
      "anchor_px": [
-      149.85,
-      112.37
+      146.79,
+      112.35
      ]
     },
     {
      "ppm": 171.528,
      "file": "bench-right-shadow@172.webp",
      "size": [
-      755,
-      682
+      757,
+      700
      ],
      "anchor_px": [
-      299.71,
-      224.74
+      293.59,
+      224.7
      ]
     },
     {
      "ppm": 343.055,
      "file": "bench-right-shadow@343.webp",
      "size": [
-      1510,
-      1364
+      1513,
+      1400
      ],
      "anchor_px": [
-      599.41,
-      449.48
+      587.17,
+      449.4
      ]
     }
    ],
@@ -1818,11 +1563,11 @@
      "file": "question-desk@86.webp",
      "size": [
       124,
-      109
+      118
      ],
      "anchor_px": [
-      61.87,
-      83.26
+      61.94,
+      91.56
      ]
     },
     {
@@ -1830,23 +1575,23 @@
      "file": "question-desk@172.webp",
      "size": [
       248,
-      217
+      235
      ],
      "anchor_px": [
-      123.74,
-      166.52
+      123.88,
+      183.11
      ]
     },
     {
      "ppm": 343.055,
      "file": "question-desk@343.webp",
      "size": [
-      495,
-      434
+      496,
+      470
      ],
      "anchor_px": [
-      247.48,
-      333.05
+      247.76,
+      366.22
      ]
     }
    ],
@@ -1871,11 +1616,11 @@
      "file": "question-desk-shadow@86.webp",
      "size": [
       375,
-      359
+      368
      ],
      "anchor_px": [
-      187.08,
-      208.48
+      187.15,
+      216.77
      ]
     },
     {
@@ -1883,27 +1628,410 @@
      "file": "question-desk-shadow@172.webp",
      "size": [
       749,
-      718
+      736
      ],
      "anchor_px": [
-      374.17,
-      416.95
+      374.31,
+      433.54
      ]
     },
     {
      "ppm": 343.055,
      "file": "question-desk-shadow@343.webp",
      "size": [
-      1497,
-      1436
+      1498,
+      1472
      ],
      "anchor_px": [
-      748.34,
-      833.91
+      748.62,
+      867.08
      ]
     }
    ],
    "doc": "the contact shadow of question-desk, rendered: place it with the prop"
+  },
+  "bench": {
+   "source": "blender",
+   "from": "model objects/drawers + boxes (art/scripts/render_props.py)",
+   "footprint": [
+    -2.4000000000000004,
+    -0.4,
+    0,
+    2.4000000000000004,
+    0.4,
+    0.74
+   ],
+   "hit": "alpha",
+   "slots": {
+    "seats": [
+     [
+      -1.6,
+      0.559,
+      0.549
+     ],
+     [
+      0.0,
+      0.559,
+      0.549
+     ],
+     [
+      1.6,
+      0.559,
+      0.549
+     ]
+    ],
+    "lamps": [
+     [
+      -2.22,
+      0.28,
+      0.74
+     ],
+     [
+      -0.62,
+      0.28,
+      0.74
+     ],
+     [
+      0.98,
+      0.28,
+      0.74
+     ]
+    ],
+    "desk_top": [
+     [
+      -1.6,
+      0,
+      0.74
+     ],
+     [
+      0.0,
+      0,
+      0.74
+     ],
+     [
+      1.6,
+      0,
+      0.74
+     ]
+    ]
+   },
+   "doc": "three desks end to end; top empty; no lamps, no chairs",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "bench@86.webp",
+     "size": [
+      396,
+      199
+     ],
+     "anchor_px": [
+      197.78,
+      132.01
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "bench@172.webp",
+     "size": [
+      792,
+      397
+     ],
+     "anchor_px": [
+      395.55,
+      264.01
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "bench@343.webp",
+     "size": [
+      1583,
+      794
+     ],
+     "anchor_px": [
+      791.11,
+      528.03
+     ]
+    }
+   ],
+   "shadow": "bench-shadow"
+  },
+  "bench-shadow": {
+   "source": "blender",
+   "from": "model objects/drawers + boxes (art/scripts/render_props.py)",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    -2.4000000000000004,
+    -0.4,
+    0,
+    2.4000000000000004,
+    0.4,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "bench-shadow@86.webp",
+     "size": [
+      616,
+      419
+     ],
+     "anchor_px": [
+      307.9,
+      242.13
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "bench-shadow@172.webp",
+     "size": [
+      1232,
+      838
+     ],
+     "anchor_px": [
+      615.79,
+      484.25
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "bench-shadow@343.webp",
+     "size": [
+      2464,
+      1675
+     ],
+     "anchor_px": [
+      1231.59,
+      968.51
+     ]
+    }
+   ],
+   "doc": "the contact shadow of bench, rendered: place it with the prop"
+  },
+  "terminal-desk": {
+   "source": "blender",
+   "from": "model coffee/keyboard + coffee/mouse + objects/drawers + objects/monitor + boxes (art/scripts/render_props.py)",
+   "footprint": [
+    -0.8,
+    -0.4,
+    0,
+    0.8,
+    0.4,
+    1.2
+   ],
+   "hit": "alpha",
+   "slots": {
+    "seat": [
+     0,
+     -0.55,
+     0.47
+    ],
+    "screen": [
+     0,
+     0.2,
+     1.05
+    ]
+   },
+   "doc": "one desk with monitor and keyboard",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "terminal-desk@86.webp",
+     "size": [
+      158,
+      143
+     ],
+     "anchor_px": [
+      78.94,
+      110.98
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "terminal-desk@172.webp",
+     "size": [
+      316,
+      286
+     ],
+     "anchor_px": [
+      157.88,
+      221.96
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "terminal-desk@343.webp",
+     "size": [
+      632,
+      572
+     ],
+     "anchor_px": [
+      315.75,
+      443.92
+     ]
+    }
+   ],
+   "shadow": "terminal-desk-shadow"
+  },
+  "terminal-desk-shadow": {
+   "source": "blender",
+   "from": "model coffee/keyboard + coffee/mouse + objects/drawers + objects/monitor + boxes (art/scripts/render_props.py)",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    -0.8,
+    -0.4,
+    0,
+    0.8,
+    0.4,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "terminal-desk-shadow@86.webp",
+     "size": [
+      465,
+      451
+     ],
+     "anchor_px": [
+      232.46,
+      264.5
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "terminal-desk-shadow@172.webp",
+     "size": [
+      930,
+      901
+     ],
+     "anchor_px": [
+      464.91,
+      528.99
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "terminal-desk-shadow@343.webp",
+     "size": [
+      1860,
+      1801
+     ],
+     "anchor_px": [
+      929.82,
+      1057.99
+     ]
+    }
+   ],
+   "doc": "the contact shadow of terminal-desk, rendered: place it with the prop"
+  },
+  "librarian-desk": {
+   "source": "blender",
+   "from": "model objects/drawers + boxes (art/scripts/render_props.py)",
+   "footprint": [
+    -0.75,
+    -0.35,
+    0,
+    0.75,
+    0.35,
+    0.95
+   ],
+   "hit": "alpha",
+   "doc": "the librarian's desk with card drawers",
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "librarian-desk@86.webp",
+     "size": [
+      147,
+      142
+     ],
+     "anchor_px": [
+      73.08,
+      112.78
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "librarian-desk@172.webp",
+     "size": [
+      293,
+      284
+     ],
+     "anchor_px": [
+      146.16,
+      225.56
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "librarian-desk@343.webp",
+     "size": [
+      585,
+      568
+     ],
+     "anchor_px": [
+      292.32,
+      451.13
+     ]
+    }
+   ],
+   "shadow": "librarian-desk-shadow"
+  },
+  "librarian-desk-shadow": {
+   "source": "blender",
+   "from": "model objects/drawers + boxes (art/scripts/render_props.py)",
+   "layer": "ground",
+   "hit": "none",
+   "footprint": [
+    -0.75,
+    -0.35,
+    0,
+    0.75,
+    0.35,
+    0.01
+   ],
+   "tiers": [
+    {
+     "ppm": 85.764,
+     "file": "librarian-desk-shadow@86.webp",
+     "size": [
+      407,
+      402
+     ],
+     "anchor_px": [
+      203.01,
+      242.71
+     ]
+    },
+    {
+     "ppm": 171.528,
+     "file": "librarian-desk-shadow@172.webp",
+     "size": [
+      813,
+      804
+     ],
+     "anchor_px": [
+      406.03,
+      485.43
+     ]
+    },
+    {
+     "ppm": 343.055,
+     "file": "librarian-desk-shadow@343.webp",
+     "size": [
+      1625,
+      1607
+     ],
+     "anchor_px": [
+      812.05,
+      970.86
+     ]
+    }
+   ],
+   "doc": "the contact shadow of librarian-desk, rendered: place it with the prop"
   },
   "chair-back": {
    "source": "blender",
@@ -1924,35 +2052,35 @@
      "file": "chair-back@86.webp",
      "size": [
       72,
-      98
+      108
      ],
      "anchor_px": [
-      35.62,
-      80.43
+      35.89,
+      90.23
      ]
     },
     {
      "ppm": 171.528,
      "file": "chair-back@172.webp",
      "size": [
-      143,
-      195
+      144,
+      216
      ],
      "anchor_px": [
-      71.24,
-      160.86
+      71.77,
+      180.46
      ]
     },
     {
      "ppm": 343.055,
      "file": "chair-back@343.webp",
      "size": [
-      285,
-      389
+      287,
+      432
      ],
      "anchor_px": [
-      142.48,
-      321.72
+      143.54,
+      360.92
      ]
     }
    ],
@@ -1977,35 +2105,35 @@
      "file": "chair-back-shadow@86.webp",
      "size": [
       350,
-      376
+      387
      ],
      "anchor_px": [
-      174.8,
-      219.61
+      175.06,
+      229.41
      ]
     },
     {
      "ppm": 171.528,
      "file": "chair-back-shadow@172.webp",
      "size": [
-      699,
-      751
+      700,
+      773
      ],
      "anchor_px": [
-      349.6,
-      439.21
+      350.13,
+      458.82
      ]
     },
     {
      "ppm": 343.055,
      "file": "chair-back-shadow@343.webp",
      "size": [
-      1398,
-      1502
+      1400,
+      1545
      ],
      "anchor_px": [
-      699.19,
-      878.43
+      700.25,
+      917.63
      ]
     }
    ],
@@ -2030,35 +2158,35 @@
      "file": "chair-front@86.webp",
      "size": [
       72,
-      106
+      118
      ],
      "anchor_px": [
-      35.44,
-      93.09
+      35.7,
+      104.13
      ]
     },
     {
      "ppm": 171.528,
      "file": "chair-front@172.webp",
      "size": [
-      143,
-      212
+      144,
+      236
      ],
      "anchor_px": [
-      70.88,
-      186.18
+      71.41,
+      208.25
      ]
     },
     {
      "ppm": 343.055,
      "file": "chair-front@343.webp",
      "size": [
-      285,
-      424
+      287,
+      472
      ],
      "anchor_px": [
-      141.77,
-      372.37
+      142.81,
+      416.51
      ]
     }
    ],
@@ -2083,35 +2211,35 @@
      "file": "chair-front-shadow@86.webp",
      "size": [
       350,
-      385
+      397
      ],
      "anchor_px": [
-      174.62,
-      232.27
+      174.88,
+      243.3
      ]
     },
     {
      "ppm": 171.528,
      "file": "chair-front-shadow@172.webp",
      "size": [
-      699,
-      769
+      700,
+      793
      ],
      "anchor_px": [
-      349.24,
-      464.54
+      349.76,
+      486.61
      ]
     },
     {
      "ppm": 343.055,
      "file": "chair-front-shadow@343.webp",
      "size": [
-      1398,
-      1538
+      1400,
+      1586
      ],
      "anchor_px": [
-      698.47,
-      929.08
+      699.52,
+      973.22
      ]
     }
    ],
@@ -2136,36 +2264,36 @@
      "ppm": 85.764,
      "file": "shelf@86.webp",
      "size": [
-      130,
-      188
+      131,
+      207
      ],
      "anchor_px": [
-      77.21,
-      152.99
+      76.84,
+      170.64
      ]
     },
     {
      "ppm": 171.528,
      "file": "shelf@172.webp",
      "size": [
-      259,
-      376
+      262,
+      414
      ],
      "anchor_px": [
-      154.43,
-      305.98
+      153.69,
+      341.28
      ]
     },
     {
      "ppm": 343.055,
      "file": "shelf@343.webp",
      "size": [
-      518,
-      752
+      523,
+      828
      ],
      "anchor_px": [
-      308.85,
-      611.95
+      307.38,
+      682.57
      ]
     }
    ],
@@ -2189,36 +2317,36 @@
      "ppm": 85.764,
      "file": "shelf-shadow@86.webp",
      "size": [
-      550,
-      609
+      551,
+      628
      ],
      "anchor_px": [
-      287.33,
-      363.11
+      286.97,
+      380.76
      ]
     },
     {
      "ppm": 171.528,
      "file": "shelf-shadow@172.webp",
      "size": [
-      1100,
-      1217
+      1102,
+      1255
      ],
      "anchor_px": [
-      574.67,
-      726.22
+      573.93,
+      761.53
      ]
     },
     {
      "ppm": 343.055,
      "file": "shelf-shadow@343.webp",
      "size": [
-      2199,
-      2433
+      2204,
+      2509
      ],
      "anchor_px": [
-      1149.34,
-      1452.44
+      1147.86,
+      1523.05
      ]
     }
    ],
@@ -2244,11 +2372,11 @@
      "file": "shelf-low@86.webp",
      "size": [
       75,
-      125
+      138
      ],
      "anchor_px": [
-      46.99,
-      100.4
+      46.24,
+      112.23
      ]
     },
     {
@@ -2256,11 +2384,11 @@
      "file": "shelf-low@172.webp",
      "size": [
       149,
-      249
+      275
      ],
      "anchor_px": [
-      93.98,
-      200.81
+      92.48,
+      224.46
      ]
     },
     {
@@ -2268,11 +2396,11 @@
      "file": "shelf-low@343.webp",
      "size": [
       298,
-      497
+      549
      ],
      "anchor_px": [
-      187.95,
-      401.62
+      184.95,
+      448.92
      ]
     }
    ],
@@ -2297,35 +2425,35 @@
      "file": "shelf-low-shadow@86.webp",
      "size": [
       382,
-      432
+      445
      ],
      "anchor_px": [
-      200.51,
-      253.92
+      199.76,
+      265.75
      ]
     },
     {
      "ppm": 171.528,
      "file": "shelf-low-shadow@172.webp",
      "size": [
-      763,
-      863
+      764,
+      889
      ],
      "anchor_px": [
-      401.01,
-      507.84
+      399.51,
+      531.49
      ]
     },
     {
      "ppm": 343.055,
      "file": "shelf-low-shadow@343.webp",
      "size": [
-      1526,
-      1725
+      1527,
+      1777
      ],
      "anchor_px": [
-      802.02,
-      1015.68
+      799.02,
+      1062.99
      ]
     }
    ],
@@ -2350,11 +2478,11 @@
      "file": "book-cart@86.webp",
      "size": [
       92,
-      94
+      103
      ],
      "anchor_px": [
-      45.75,
-      75.05
+      45.91,
+      83.06
      ]
     },
     {
@@ -2362,23 +2490,23 @@
      "file": "book-cart@172.webp",
      "size": [
       184,
-      188
+      205
      ],
      "anchor_px": [
-      91.49,
-      150.1
+      91.81,
+      166.12
      ]
     },
     {
      "ppm": 343.055,
      "file": "book-cart@343.webp",
      "size": [
-      367,
-      376
+      368,
+      410
      ],
      "anchor_px": [
-      182.99,
-      300.2
+      183.62,
+      332.24
      ]
     }
    ],
@@ -2403,35 +2531,35 @@
      "file": "book-cart-shadow@86.webp",
      "size": [
       320,
-      322
+      331
      ],
      "anchor_px": [
-      159.64,
-      188.94
+      159.8,
+      196.96
      ]
     },
     {
      "ppm": 171.528,
      "file": "book-cart-shadow@172.webp",
      "size": [
-      639,
-      644
+      640,
+      661
      ],
      "anchor_px": [
-      319.28,
-      377.89
+      319.6,
+      393.91
      ]
     },
     {
      "ppm": 343.055,
      "file": "book-cart-shadow@343.webp",
      "size": [
-      1278,
-      1287
+      1279,
+      1321
      ],
      "anchor_px": [
-      638.57,
-      755.78
+      639.2,
+      787.82
      ]
     }
    ],
@@ -2456,36 +2584,36 @@
      "ppm": 85.764,
      "file": "whiteboard@86.webp",
      "size": [
-      179,
-      200
+      180,
+      219
      ],
      "anchor_px": [
-      106.55,
-      152.68
+      105.99,
+      170.11
      ]
     },
     {
      "ppm": 171.528,
      "file": "whiteboard@172.webp",
      "size": [
-      357,
-      399
+      360,
+      437
      ],
      "anchor_px": [
-      213.1,
-      305.35
+      211.97,
+      340.22
      ]
     },
     {
      "ppm": 343.055,
      "file": "whiteboard@343.webp",
      "size": [
-      713,
-      797
+      720,
+      874
      ],
      "anchor_px": [
-      426.19,
-      610.71
+      423.94,
+      680.43
      ]
     }
    ],
@@ -2509,36 +2637,36 @@
      "ppm": 85.764,
      "file": "whiteboard-shadow@86.webp",
      "size": [
-      618,
-      639
+      620,
+      658
      ],
      "anchor_px": [
-      326.1,
-      372.23
+      325.54,
+      389.66
      ]
     },
     {
      "ppm": 171.528,
      "file": "whiteboard-shadow@172.webp",
      "size": [
-      1235,
-      1277
+      1239,
+      1315
      ],
      "anchor_px": [
-      652.21,
-      744.46
+      651.08,
+      779.33
      ]
     },
     {
      "ppm": 343.055,
      "file": "whiteboard-shadow@343.webp",
      "size": [
-      2470,
-      2553
+      2477,
+      2630
      ],
      "anchor_px": [
-      1304.41,
-      1488.93
+      1302.17,
+      1558.65
      ]
     }
    ],
@@ -2562,36 +2690,36 @@
      "ppm": 85.764,
      "file": "podium@86.webp",
      "size": [
-      105,
-      132
+      104,
+      146
      ],
      "anchor_px": [
-      52.51,
-      110.02
+      51.86,
+      122.41
      ]
     },
     {
      "ppm": 171.528,
      "file": "podium@172.webp",
      "size": [
-      210,
-      264
+      208,
+      291
      ],
      "anchor_px": [
-      105.01,
-      220.05
+      103.72,
+      244.82
      ]
     },
     {
      "ppm": 343.055,
      "file": "podium@343.webp",
      "size": [
-      420,
-      528
+      415,
+      581
      ],
      "anchor_px": [
-      210.03,
-      440.09
+      207.43,
+      489.65
      ]
     }
    ],
@@ -2615,36 +2743,36 @@
      "ppm": 85.764,
      "file": "podium-shadow@86.webp",
      "size": [
-      403,
-      430
+      402,
+      443
      ],
      "anchor_px": [
-      201.31,
-      258.82
+      200.66,
+      271.21
      ]
     },
     {
      "ppm": 171.528,
      "file": "podium-shadow@172.webp",
      "size": [
-      806,
-      859
+      803,
+      886
      ],
      "anchor_px": [
-      402.61,
-      517.65
+      401.32,
+      542.43
      ]
     },
     {
      "ppm": 343.055,
      "file": "podium-shadow@343.webp",
      "size": [
-      1611,
-      1718
+      1606,
+      1772
      ],
      "anchor_px": [
-      805.23,
-      1035.3
+      802.63,
+      1084.85
      ]
     }
    ],
@@ -2668,36 +2796,36 @@
      "ppm": 85.764,
      "file": "plant-tall@86.webp",
      "size": [
-      106,
-      135
+      107,
+      150
      ],
      "anchor_px": [
-      61.55,
-      118.4
+      61.33,
+      132.78
      ]
     },
     {
      "ppm": 171.528,
      "file": "plant-tall@172.webp",
      "size": [
-      212,
-      270
+      214,
+      300
      ],
      "anchor_px": [
-      123.11,
-      236.8
+      122.65,
+      265.56
      ]
     },
     {
      "ppm": 343.055,
      "file": "plant-tall@343.webp",
      "size": [
-      424,
-      539
+      428,
+      600
      ],
      "anchor_px": [
-      246.21,
-      473.61
+      245.31,
+      531.12
      ]
     }
    ],
@@ -2721,36 +2849,36 @@
      "ppm": 85.764,
      "file": "plant-tall-shadow@86.webp",
      "size": [
-      432,
-      461
+      433,
+      476
      ],
      "anchor_px": [
-      224.5,
-      281.35
+      224.28,
+      295.73
      ]
     },
     {
      "ppm": 171.528,
      "file": "plant-tall-shadow@172.webp",
      "size": [
-      864,
-      922
+      866,
+      952
      ],
      "anchor_px": [
-      449.01,
-      562.71
+      448.56,
+      591.46
      ]
     },
     {
      "ppm": 343.055,
      "file": "plant-tall-shadow@343.webp",
      "size": [
-      1727,
-      1843
+      1731,
+      1903
      ],
      "anchor_px": [
-      898.02,
-      1125.41
+      897.11,
+      1182.93
      ]
     }
    ],
@@ -2774,36 +2902,36 @@
      "ppm": 85.764,
      "file": "plant-bush@86.webp",
      "size": [
-      86,
-      106
+      85,
+      118
      ],
      "anchor_px": [
-      44.66,
-      93.01
+      44.51,
+      103.97
      ]
     },
     {
      "ppm": 171.528,
      "file": "plant-bush@172.webp",
      "size": [
-      171,
-      211
+      170,
+      235
      ],
      "anchor_px": [
-      89.32,
-      186.02
+      89.03,
+      207.94
      ]
     },
     {
      "ppm": 343.055,
      "file": "plant-bush@343.webp",
      "size": [
-      342,
-      422
+      340,
+      469
      ],
      "anchor_px": [
-      178.64,
-      372.03
+      178.05,
+      415.87
      ]
     }
    ],
@@ -2828,35 +2956,35 @@
      "file": "plant-bush-shadow@86.webp",
      "size": [
       355,
-      375
+      387
      ],
      "anchor_px": [
-      179.31,
-      227.66
+      179.16,
+      238.62
      ]
     },
     {
      "ppm": 171.528,
      "file": "plant-bush-shadow@172.webp",
      "size": [
-      710,
-      750
+      709,
+      773
      ],
      "anchor_px": [
-      358.62,
-      455.32
+      358.33,
+      477.24
      ]
     },
     {
      "ppm": 343.055,
      "file": "plant-bush-shadow@343.webp",
      "size": [
-      1419,
-      1500
+      1417,
+      1546
      ],
      "anchor_px": [
-      717.23,
-      910.63
+      716.65,
+      954.47
      ]
     }
    ],
@@ -2880,11 +3008,11 @@
      "file": "plant-small@86.webp",
      "size": [
       38,
-      49
+      53
      ],
      "anchor_px": [
-      17.23,
-      39.61
+      17.11,
+      44.04
      ]
     },
     {
@@ -2892,23 +3020,23 @@
      "file": "plant-small@172.webp",
      "size": [
       75,
-      97
+      106
      ],
      "anchor_px": [
-      34.46,
-      79.22
+      34.23,
+      88.07
      ]
     },
     {
      "ppm": 343.055,
      "file": "plant-small@343.webp",
      "size": [
-      150,
-      193
+      149,
+      212
      ],
      "anchor_px": [
-      68.91,
-      158.44
+      68.45,
+      176.14
      ]
     }
    ],
@@ -2932,36 +3060,36 @@
      "ppm": 85.764,
      "file": "plant-small-shadow@86.webp",
      "size": [
-      198,
-      209
+      197,
+      213
      ],
      "anchor_px": [
-      97.16,
-      119.54
+      97.05,
+      123.97
      ]
     },
     {
      "ppm": 171.528,
      "file": "plant-small-shadow@172.webp",
      "size": [
-      395,
-      417
+      394,
+      426
      ],
      "anchor_px": [
-      194.32,
-      239.08
+      194.09,
+      247.93
      ]
     },
     {
      "ppm": 343.055,
      "file": "plant-small-shadow@343.webp",
      "size": [
-      790,
-      833
+      788,
+      851
      ],
      "anchor_px": [
-      388.64,
-      478.17
+      388.18,
+      495.87
      ]
     }
    ],
@@ -2986,11 +3114,11 @@
      "file": "floor-lamp@86.webp",
      "size": [
       59,
-      122
+      135
      ],
      "anchor_px": [
-      29.07,
-      112.73
+      29.13,
+      126.7
      ]
     },
     {
@@ -2998,11 +3126,11 @@
      "file": "floor-lamp@172.webp",
      "size": [
       117,
-      243
+      270
      ],
      "anchor_px": [
-      58.15,
-      225.45
+      58.27,
+      253.4
      ]
     },
     {
@@ -3010,11 +3138,11 @@
      "file": "floor-lamp@343.webp",
      "size": [
       233,
-      485
+      540
      ],
      "anchor_px": [
-      116.29,
-      450.9
+      116.53,
+      506.81
      ]
     }
    ],
@@ -3039,35 +3167,35 @@
      "file": "floor-lamp-shadow@86.webp",
      "size": [
       394,
-      457
+      471
      ],
      "anchor_px": [
-      196.74,
-      280.39
+      196.8,
+      294.37
      ]
     },
     {
      "ppm": 171.528,
      "file": "floor-lamp-shadow@172.webp",
      "size": [
-      787,
-      913
+      788,
+      941
      ],
      "anchor_px": [
-      393.48,
-      560.79
+      393.6,
+      588.74
      ]
     },
     {
      "ppm": 343.055,
      "file": "floor-lamp-shadow@343.webp",
      "size": [
-      1574,
-      1826
+      1575,
+      1882
      ],
      "anchor_px": [
-      786.96,
-      1121.57
+      787.21,
+      1177.48
      ]
     }
    ],
@@ -3091,36 +3219,36 @@
      "ppm": 85.764,
      "file": "crate@86.webp",
      "size": [
-      87,
-      95
+      86,
+      104
      ],
      "anchor_px": [
-      43.27,
-      73.76
+      42.78,
+      81.67
      ]
     },
     {
      "ppm": 171.528,
      "file": "crate@172.webp",
      "size": [
-      174,
-      190
+      172,
+      208
      ],
      "anchor_px": [
-      86.54,
-      147.52
+      85.56,
+      163.35
      ]
     },
     {
      "ppm": 343.055,
      "file": "crate@343.webp",
      "size": [
-      347,
-      379
+      343,
+      415
      ],
      "anchor_px": [
-      173.08,
-      295.03
+      171.12,
+      326.7
      ]
     }
    ],
@@ -3144,36 +3272,36 @@
      "ppm": 85.764,
      "file": "crate-shadow@86.webp",
      "size": [
-      300,
-      308
+      299,
+      317
      ],
      "anchor_px": [
-      149.52,
-      180.01
+      149.03,
+      187.93
      ]
     },
     {
      "ppm": 171.528,
      "file": "crate-shadow@172.webp",
      "size": [
-      599,
-      615
+      597,
+      633
      ],
      "anchor_px": [
-      299.04,
-      360.02
+      298.07,
+      375.85
      ]
     },
     {
      "ppm": 343.055,
      "file": "crate-shadow@343.webp",
      "size": [
-      1197,
-      1229
+      1193,
+      1265
      ],
      "anchor_px": [
-      598.09,
-      720.04
+      596.13,
+      751.71
      ]
     }
    ],
@@ -3197,36 +3325,36 @@
      "ppm": 85.764,
      "file": "crate-stack@86.webp",
      "size": [
-      161,
-      186
+      160,
+      205
      ],
      "anchor_px": [
-      83.67,
-      149.92
+      82.54,
+      167.75
      ]
     },
     {
      "ppm": 171.528,
      "file": "crate-stack@172.webp",
      "size": [
-      322,
-      371
+      319,
+      409
      ],
      "anchor_px": [
-      167.33,
-      299.84
+      165.08,
+      335.51
      ]
     },
     {
      "ppm": 343.055,
      "file": "crate-stack@343.webp",
      "size": [
-      643,
-      741
+      637,
+      818
      ],
      "anchor_px": [
-      334.67,
-      599.67
+      330.15,
+      671.01
      ]
     }
    ],
@@ -3250,36 +3378,36 @@
      "ppm": 85.764,
      "file": "crate-stack-shadow@86.webp",
      "size": [
-      552,
-      576
+      550,
+      596
      ],
      "anchor_px": [
-      278.98,
-      345.23
+      277.85,
+      363.06
      ]
     },
     {
      "ppm": 171.528,
      "file": "crate-stack-shadow@172.webp",
      "size": [
-      1103,
-      1152
+      1100,
+      1191
      ],
      "anchor_px": [
-      557.95,
-      690.46
+      555.7,
+      726.13
      ]
     },
     {
      "ppm": 343.055,
      "file": "crate-stack-shadow@343.webp",
      "size": [
-      2205,
-      2304
+      2199,
+      2381
      ],
      "anchor_px": [
-      1115.91,
-      1380.91
+      1111.39,
+      1452.25
      ]
     }
    ],
@@ -3304,36 +3432,36 @@
      "ppm": 85.764,
      "file": "crate-shelf@86.webp",
      "size": [
-      143,
-      229
+      138,
+      254
      ],
      "anchor_px": [
-      44.38,
-      179.45
+      40.93,
+      202.01
      ]
     },
     {
      "ppm": 171.528,
      "file": "crate-shelf@172.webp",
      "size": [
-      285,
-      457
+      275,
+      508
      ],
      "anchor_px": [
-      88.76,
-      358.9
+      81.86,
+      404.01
      ]
     },
     {
      "ppm": 343.055,
      "file": "crate-shelf@343.webp",
      "size": [
-      570,
-      914
+      550,
+      1015
      ],
      "anchor_px": [
-      177.51,
-      717.79
+      163.73,
+      808.02
      ]
     }
    ],
@@ -3357,36 +3485,36 @@
      "ppm": 85.764,
      "file": "crate-shelf-shadow@86.webp",
      "size": [
-      601,
-      687
+      596,
+      712
      ],
      "anchor_px": [
-      273.37,
-      408.44
+      269.92,
+      430.99
      ]
     },
     {
      "ppm": 171.528,
      "file": "crate-shelf-shadow@172.webp",
      "size": [
-      1201,
-      1373
+      1191,
+      1424
      ],
      "anchor_px": [
-      546.74,
-      816.87
+      539.84,
+      861.99
      ]
     },
     {
      "ppm": 343.055,
      "file": "crate-shelf-shadow@343.webp",
      "size": [
-      2402,
-      2746
+      2382,
+      2847
      ],
      "anchor_px": [
-      1093.47,
-      1633.75
+      1079.68,
+      1723.98
      ]
     }
    ],
@@ -3412,35 +3540,35 @@
      "file": "wall-light@86.webp",
      "size": [
       22,
-      56
+      62
      ],
      "anchor_px": [
-      11.51,
-      50.03
+      11.6,
+      56.0
      ]
     },
     {
      "ppm": 171.528,
      "file": "wall-light@172.webp",
      "size": [
-      43,
-      112
+      44,
+      124
      ],
      "anchor_px": [
-      23.01,
-      100.07
+      23.21,
+      112.0
      ]
     },
     {
      "ppm": 343.055,
      "file": "wall-light@343.webp",
      "size": [
-      86,
-      224
+      87,
+      248
      ],
      "anchor_px": [
-      46.03,
-      200.14
+      46.41,
+      224.0
      ]
     }
    ],
@@ -3465,11 +3593,11 @@
      "file": "wall-light-shadow@86.webp",
      "size": [
       216,
-      250
+      256
      ],
      "anchor_px": [
-      108.42,
-      146.95
+      108.52,
+      152.91
      ]
     },
     {
@@ -3477,23 +3605,23 @@
      "file": "wall-light-shadow@172.webp",
      "size": [
       431,
-      500
+      512
      ],
      "anchor_px": [
-      216.84,
-      293.9
+      217.03,
+      305.83
      ]
     },
     {
      "ppm": 343.055,
      "file": "wall-light-shadow@343.webp",
      "size": [
-      861,
-      999
+      862,
+      1023
      ],
      "anchor_px": [
-      433.68,
-      587.79
+      434.06,
+      611.65
      ]
     }
    ],
@@ -3518,11 +3646,11 @@
      "file": "monitor@86.webp",
      "size": [
       209,
-      206
+      210
      ],
      "anchor_px": [
-      106.1,
-      114.88
+      105.81,
+      118.8
      ]
     },
     {
@@ -3530,23 +3658,23 @@
      "file": "monitor@172.webp",
      "size": [
       418,
-      411
+      420
      ],
      "anchor_px": [
-      213.21,
-      230.76
+      212.61,
+      238.6
      ]
     },
     {
      "ppm": 343.055,
      "file": "monitor@343.webp",
      "size": [
-      836,
-      821
+      835,
+      839
      ],
      "anchor_px": [
-      425.41,
-      460.53
+      424.22,
+      476.21
      ]
     }
    ]
@@ -3569,35 +3697,35 @@
      "file": "laptop@86.webp",
      "size": [
       162,
-      158
+      161
      ],
      "anchor_px": [
-      80.93,
-      87.51
+      80.86,
+      90.01
      ]
     },
     {
      "ppm": 171.528,
      "file": "laptop@172.webp",
      "size": [
-      324,
-      316
+      323,
+      322
      ],
      "anchor_px": [
-      161.86,
-      175.02
+      161.72,
+      180.02
      ]
     },
     {
      "ppm": 343.055,
      "file": "laptop@343.webp",
      "size": [
-      647,
-      632
+      646,
+      643
      ],
      "anchor_px": [
-      322.72,
-      349.03
+      322.43,
+      359.05
      ]
     }
    ]
@@ -3627,36 +3755,36 @@
      "ppm": 85.764,
      "file": "lamp@86.webp",
      "size": [
-      198,
-      205
+      197,
+      209
      ],
      "anchor_px": [
-      99.07,
-      119.13
+      98.63,
+      123.44
      ]
     },
     {
      "ppm": 171.528,
      "file": "lamp@172.webp",
      "size": [
-      395,
-      409
+      393,
+      417
      ],
      "anchor_px": [
-      197.15,
-      237.26
+      196.26,
+      245.89
      ]
     },
     {
      "ppm": 343.055,
      "file": "lamp@343.webp",
      "size": [
-      790,
-      818
+      786,
+      834
      ],
      "anchor_px": [
-      395.29,
-      475.52
+      393.52,
+      492.78
      ]
     }
    ]
@@ -3679,11 +3807,11 @@
      "file": "pen-pot@86.webp",
      "size": [
       134,
-      138
+      140
      ],
      "anchor_px": [
-      66.72,
-      73.98
+      66.63,
+      75.75
      ]
     },
     {
@@ -3691,23 +3819,23 @@
      "file": "pen-pot@172.webp",
      "size": [
       268,
-      275
+      279
      ],
      "anchor_px": [
-      134.44,
-      148.95
+      134.27,
+      152.51
      ]
     },
     {
      "ppm": 343.055,
      "file": "pen-pot@343.webp",
      "size": [
-      536,
-      550
+      535,
+      558
      ],
      "anchor_px": [
-      267.88,
-      296.91
+      267.53,
+      304.01
      ]
     }
    ]
@@ -3729,36 +3857,36 @@
      "ppm": 85.764,
      "file": "paper-stack@86.webp",
      "size": [
-      138,
-      125
+      137,
+      127
      ],
      "anchor_px": [
-      68.22,
-      65.11
+      68.01,
+      66.38
      ]
     },
     {
      "ppm": 171.528,
      "file": "paper-stack@172.webp",
      "size": [
-      275,
-      249
+      274,
+      253
      ],
      "anchor_px": [
-      137.44,
-      131.23
+      137.02,
+      133.76
      ]
     },
     {
      "ppm": 343.055,
      "file": "paper-stack@343.webp",
      "size": [
-      549,
-      498
+      547,
+      505
      ],
      "anchor_px": [
-      273.89,
-      261.45
+      273.03,
+      266.52
      ]
     }
    ]
@@ -3781,35 +3909,35 @@
      "file": "sketch@86.webp",
      "size": [
       125,
-      106
+      107
      ],
      "anchor_px": [
-      62.25,
-      52.87
+      62.04,
+      53.4
      ]
     },
     {
      "ppm": 171.528,
      "file": "sketch@172.webp",
      "size": [
-      250,
-      211
+      249,
+      213
      ],
      "anchor_px": [
-      124.51,
-      105.73
+      124.08,
+      106.8
      ]
     },
     {
      "ppm": 343.055,
      "file": "sketch@343.webp",
      "size": [
-      500,
-      422
+      498,
+      426
      ],
      "anchor_px": [
-      250.01,
-      212.47
+      249.16,
+      214.59
      ]
     }
    ]
@@ -3832,11 +3960,11 @@
      "file": "mug@86.webp",
      "size": [
       114,
-      116
+      118
      ],
      "anchor_px": [
-      56.65,
-      62.34
+      56.69,
+      63.49
      ]
     },
     {
@@ -3844,11 +3972,11 @@
      "file": "mug@172.webp",
      "size": [
       227,
-      232
+      235
      ],
      "anchor_px": [
-      112.29,
-      123.68
+      112.39,
+      125.97
      ]
     },
     {
@@ -3856,11 +3984,11 @@
      "file": "mug@343.webp",
      "size": [
       453,
-      464
+      469
      ],
      "anchor_px": [
-      225.59,
-      248.37
+      225.77,
+      252.94
      ]
     }
    ]
@@ -3883,11 +4011,11 @@
      "file": "desk-plant@86.webp",
      "size": [
       129,
-      133
+      135
      ],
      "anchor_px": [
-      63.16,
-      71.68
+      63.11,
+      73.37
      ]
     },
     {
@@ -3895,11 +4023,11 @@
      "file": "desk-plant@172.webp",
      "size": [
       257,
-      265
+      269
      ],
      "anchor_px": [
-      127.31,
-      144.36
+      127.22,
+      147.74
      ]
     },
     {
@@ -3907,11 +4035,11 @@
      "file": "desk-plant@343.webp",
      "size": [
       513,
-      530
+      537
      ],
      "anchor_px": [
-      254.62,
-      288.73
+      254.45,
+      295.47
      ]
     }
    ]
@@ -3935,35 +4063,35 @@
      "file": "books@86.webp",
      "size": [
       126,
-      114
+      115
      ],
      "anchor_px": [
-      62.2,
-      58.71
+      61.87,
+      59.66
      ]
     },
     {
      "ppm": 171.528,
      "file": "books@172.webp",
      "size": [
-      252,
-      227
+      251,
+      230
      ],
      "anchor_px": [
-      125.39,
-      118.41
+      124.74,
+      120.32
      ]
     },
     {
      "ppm": 343.055,
      "file": "books@343.webp",
      "size": [
-      504,
-      454
+      502,
+      459
      ],
      "anchor_px": [
-      250.79,
-      236.82
+      249.48,
+      240.63
      ]
     }
    ]
@@ -3986,35 +4114,35 @@
      "file": "paper-tray@86.webp",
      "size": [
       161,
-      154
+      157
      ],
      "anchor_px": [
-      80.22,
-      83.8
+      80.01,
+      86.13
      ]
     },
     {
      "ppm": 171.528,
      "file": "paper-tray@172.webp",
      "size": [
-      322,
-      307
+      321,
+      313
      ],
      "anchor_px": [
-      160.45,
-      167.59
+      160.01,
+      172.27
      ]
     },
     {
      "ppm": 343.055,
      "file": "paper-tray@343.webp",
      "size": [
-      643,
-      614
+      641,
+      626
      ],
      "anchor_px": [
-      320.89,
-      335.18
+      320.03,
+      344.54
      ]
     }
    ]
@@ -4050,35 +4178,35 @@
      "file": "lantern@86.webp",
      "size": [
       36,
-      56
+      63
      ],
      "anchor_px": [
-      17.91,
-      27.9
+      17.73,
+      31.23
      ]
     },
     {
      "ppm": 171.528,
      "file": "lantern@172.webp",
      "size": [
-      72,
-      112
+      71,
+      125
      ],
      "anchor_px": [
-      35.81,
-      55.79
+      35.46,
+      62.45
      ]
     },
     {
      "ppm": 343.055,
      "file": "lantern@343.webp",
      "size": [
-      144,
-      224
+      142,
+      250
      ],
      "anchor_px": [
-      71.63,
-      111.58
+      70.93,
+      124.91
      ]
     }
    ]
@@ -4101,36 +4229,36 @@
      "ppm": 85.764,
      "file": "ao-floor-x@86.webp",
      "size": [
-      320,
-      121
+      324,
+      123
      ],
      "anchor_px": [
-      55.92,
-      2.04
+      52.15,
+      2.15
      ]
     },
     {
      "ppm": 171.528,
      "file": "ao-floor-x@172.webp",
      "size": [
-      639,
-      241
+      647,
+      245
      ],
      "anchor_px": [
-      111.85,
-      4.08
+      103.3,
+      4.3
      ]
     },
     {
      "ppm": 343.055,
      "file": "ao-floor-x@343.webp",
      "size": [
-      1277,
-      481
+      1294,
+      490
      ],
      "anchor_px": [
-      223.7,
-      8.17
+      206.6,
+      8.59
      ]
     }
    ],
@@ -4154,36 +4282,36 @@
      "ppm": 85.764,
      "file": "ao-floor-y@86.webp",
      "size": [
-      257,
-      150
+      246,
+      162
      ],
      "anchor_px": [
-      4.77,
-      123.61
+      4.78,
+      135.84
      ]
     },
     {
      "ppm": 171.528,
      "file": "ao-floor-y@172.webp",
      "size": [
-      513,
-      300
+      491,
+      324
      ],
      "anchor_px": [
-      9.54,
-      247.21
+      9.55,
+      271.68
      ]
     },
     {
      "ppm": 343.055,
      "file": "ao-floor-y@343.webp",
      "size": [
-      1025,
-      600
+      980,
+      647
      ],
      "anchor_px": [
-      18.07,
-      494.43
+      18.11,
+      543.36
      ]
     }
    ],
@@ -4207,36 +4335,36 @@
      "ppm": 85.764,
      "file": "ao-wall-x@86.webp",
      "size": [
-      265,
-      140
+      273,
+      146
      ],
      "anchor_px": [
-      2.64,
-      56.59
+      2.72,
+      63.97
      ]
     },
     {
      "ppm": 171.528,
      "file": "ao-wall-x@172.webp",
      "size": [
-      529,
-      279
+      546,
+      291
      ],
      "anchor_px": [
-      5.27,
-      113.18
+      5.45,
+      127.93
      ]
     },
     {
      "ppm": 343.055,
      "file": "ao-wall-x@343.webp",
      "size": [
-      1057,
-      557
+      1092,
+      581
      ],
      "anchor_px": [
-      10.55,
-      226.35
+      10.89,
+      255.86
      ]
     }
    ],
@@ -4260,36 +4388,36 @@
      "ppm": 85.764,
      "file": "ao-wall-y@86.webp",
      "size": [
-      172,
-      184
+      158,
+      204
      ],
      "anchor_px": [
-      1.71,
-      179.55
+      1.57,
+      198.82
      ]
     },
     {
      "ppm": 171.528,
      "file": "ao-wall-y@172.webp",
      "size": [
-      344,
-      367
+      316,
+      406
      ],
      "anchor_px": [
-      3.43,
-      358.09
+      3.14,
+      396.64
      ]
     },
     {
      "ppm": 343.055,
      "file": "ao-wall-y@343.webp",
      "size": [
-      687,
-      732
+      631,
+      812
      ],
      "anchor_px": [
-      6.85,
-      715.18
+      6.29,
+      793.27
      ]
     }
    ],
@@ -4313,36 +4441,36 @@
      "ppm": 85.764,
      "file": "glow-window@86.webp",
      "size": [
-      234,
-      128
+      227,
+      137
      ],
      "anchor_px": [
-      117.28,
-      63.57
+      113.39,
+      68.08
      ]
     },
     {
      "ppm": 171.528,
      "file": "glow-window@172.webp",
      "size": [
-      467,
-      255
+      452,
+      273
      ],
      "anchor_px": [
-      233.57,
-      127.14
+      225.79,
+      136.15
      ]
     },
     {
      "ppm": 343.055,
      "file": "glow-window@343.webp",
      "size": [
-      933,
-      509
+      902,
+      545
      ],
      "anchor_px": [
-      466.13,
-      254.29
+      450.58,
+      272.3
      ]
     }
    ],
@@ -4367,36 +4495,36 @@
      "ppm": 85.764,
      "file": "footprints-000@86.webp",
      "size": [
-      104,
-      49
+      103,
+      52
      ],
      "anchor_px": [
-      52.01,
-      24.32
+      51.71,
+      25.58
      ]
     },
     {
      "ppm": 171.528,
      "file": "footprints-000@172.webp",
      "size": [
-      208,
-      98
+      205,
+      103
      ],
      "anchor_px": [
-      104.02,
-      48.64
+      102.42,
+      51.16
      ]
     },
     {
      "ppm": 343.055,
      "file": "footprints-000@343.webp",
      "size": [
-      416,
-      195
+      410,
+      205
      ],
      "anchor_px": [
-      208.05,
-      97.28
+      204.83,
+      102.32
      ]
     }
    ],
@@ -4420,36 +4548,36 @@
      "ppm": 85.764,
      "file": "footprints-045@86.webp",
      "size": [
-      104,
-      49
+      103,
+      52
      ],
      "anchor_px": [
-      52.01,
-      24.32
+      51.71,
+      25.58
      ]
     },
     {
      "ppm": 171.528,
      "file": "footprints-045@172.webp",
      "size": [
-      208,
-      98
+      205,
+      103
      ],
      "anchor_px": [
-      104.02,
-      48.64
+      102.42,
+      51.16
      ]
     },
     {
      "ppm": 343.055,
      "file": "footprints-045@343.webp",
      "size": [
-      416,
-      195
+      410,
+      205
      ],
      "anchor_px": [
-      208.05,
-      97.28
+      204.83,
+      102.32
      ]
     }
    ],
@@ -4473,36 +4601,36 @@
      "ppm": 85.764,
      "file": "footprints-090@86.webp",
      "size": [
-      104,
-      49
+      103,
+      52
      ],
      "anchor_px": [
-      52.01,
-      24.32
+      51.71,
+      25.58
      ]
     },
     {
      "ppm": 171.528,
      "file": "footprints-090@172.webp",
      "size": [
-      208,
-      98
+      205,
+      103
      ],
      "anchor_px": [
-      104.02,
-      48.64
+      102.42,
+      51.16
      ]
     },
     {
      "ppm": 343.055,
      "file": "footprints-090@343.webp",
      "size": [
-      416,
-      195
+      410,
+      205
      ],
      "anchor_px": [
-      208.05,
-      97.28
+      204.83,
+      102.32
      ]
     }
    ],
@@ -4526,36 +4654,36 @@
      "ppm": 85.764,
      "file": "footprints-135@86.webp",
      "size": [
-      104,
-      49
+      103,
+      52
      ],
      "anchor_px": [
-      52.01,
-      24.32
+      51.71,
+      25.58
      ]
     },
     {
      "ppm": 171.528,
      "file": "footprints-135@172.webp",
      "size": [
-      208,
-      98
+      205,
+      103
      ],
      "anchor_px": [
-      104.02,
-      48.64
+      102.42,
+      51.16
      ]
     },
     {
      "ppm": 343.055,
      "file": "footprints-135@343.webp",
      "size": [
-      416,
-      195
+      410,
+      205
      ],
      "anchor_px": [
-      208.05,
-      97.28
+      204.83,
+      102.32
      ]
     }
    ],
@@ -4579,36 +4707,36 @@
      "ppm": 85.764,
      "file": "footprints-180@86.webp",
      "size": [
-      104,
-      49
+      103,
+      52
      ],
      "anchor_px": [
-      52.01,
-      24.32
+      51.71,
+      25.58
      ]
     },
     {
      "ppm": 171.528,
      "file": "footprints-180@172.webp",
      "size": [
-      208,
-      98
+      205,
+      103
      ],
      "anchor_px": [
-      104.02,
-      48.64
+      102.42,
+      51.16
      ]
     },
     {
      "ppm": 343.055,
      "file": "footprints-180@343.webp",
      "size": [
-      416,
-      195
+      410,
+      205
      ],
      "anchor_px": [
-      208.05,
-      97.28
+      204.83,
+      102.32
      ]
     }
    ],
@@ -4632,36 +4760,36 @@
      "ppm": 85.764,
      "file": "footprints-225@86.webp",
      "size": [
-      104,
-      49
+      103,
+      52
      ],
      "anchor_px": [
-      52.01,
-      24.32
+      51.71,
+      25.58
      ]
     },
     {
      "ppm": 171.528,
      "file": "footprints-225@172.webp",
      "size": [
-      208,
-      98
+      205,
+      103
      ],
      "anchor_px": [
-      104.02,
-      48.64
+      102.42,
+      51.16
      ]
     },
     {
      "ppm": 343.055,
      "file": "footprints-225@343.webp",
      "size": [
-      416,
-      195
+      410,
+      205
      ],
      "anchor_px": [
-      208.05,
-      97.28
+      204.83,
+      102.32
      ]
     }
    ],
@@ -4685,36 +4813,36 @@
      "ppm": 85.764,
      "file": "footprints-270@86.webp",
      "size": [
-      104,
-      49
+      103,
+      52
      ],
      "anchor_px": [
-      52.01,
-      24.32
+      51.71,
+      25.58
      ]
     },
     {
      "ppm": 171.528,
      "file": "footprints-270@172.webp",
      "size": [
-      208,
-      98
+      205,
+      103
      ],
      "anchor_px": [
-      104.02,
-      48.64
+      102.42,
+      51.16
      ]
     },
     {
      "ppm": 343.055,
      "file": "footprints-270@343.webp",
      "size": [
-      416,
-      195
+      410,
+      205
      ],
      "anchor_px": [
-      208.05,
-      97.28
+      204.83,
+      102.32
      ]
     }
    ],
@@ -4738,36 +4866,36 @@
      "ppm": 85.764,
      "file": "footprints-315@86.webp",
      "size": [
-      104,
-      49
+      103,
+      52
      ],
      "anchor_px": [
-      52.01,
-      24.32
+      51.71,
+      25.58
      ]
     },
     {
      "ppm": 171.528,
      "file": "footprints-315@172.webp",
      "size": [
-      208,
-      98
+      205,
+      103
      ],
      "anchor_px": [
-      104.02,
-      48.64
+      102.42,
+      51.16
      ]
     },
     {
      "ppm": 343.055,
      "file": "footprints-315@343.webp",
      "size": [
-      416,
-      195
+      410,
+      205
      ],
      "anchor_px": [
-      208.05,
-      97.28
+      204.83,
+      102.32
      ]
     }
    ],
@@ -4791,36 +4919,36 @@
      "ppm": 85.764,
      "file": "glow-desk-pool@86.webp",
      "size": [
-      146,
-      69
+      144,
+      72
      ],
      "anchor_px": [
-      73.42,
-      34.07
+      72.2,
+      35.83
      ]
     },
     {
      "ppm": 171.528,
      "file": "glow-desk-pool@172.webp",
      "size": [
-      291,
-      137
+      287,
+      144
      ],
      "anchor_px": [
-      145.85,
-      68.14
+      143.4,
+      71.66
      ]
     },
     {
      "ppm": 343.055,
      "file": "glow-desk-pool@343.webp",
      "size": [
-      581,
-      273
+      574,
+      287
      ],
      "anchor_px": [
-      290.7,
-      136.27
+      286.81,
+      143.32
      ]
     }
    ],
@@ -4845,36 +4973,36 @@
      "ppm": 85.764,
      "file": "glow-floor-spill@86.webp",
      "size": [
-      389,
-      183
+      385,
+      192
      ],
      "anchor_px": [
-      194.27,
-      91.16
+      192.38,
+      95.87
      ]
     },
     {
      "ppm": 171.528,
      "file": "glow-floor-spill@172.webp",
      "size": [
-      777,
-      365
+      768,
+      384
      ],
      "anchor_px": [
-      388.54,
-      182.32
+      383.76,
+      191.74
      ]
     },
     {
      "ppm": 343.055,
      "file": "glow-floor-spill@343.webp",
      "size": [
-      1554,
-      730
+      1535,
+      767
      ],
      "anchor_px": [
-      777.09,
-      364.63
+      767.51,
+      383.49
      ]
     }
    ],
@@ -4899,36 +5027,36 @@
      "ppm": 85.764,
      "file": "shadow-bench-3@86.webp",
      "size": [
-      494,
-      183
+      500,
+      186
      ],
      "anchor_px": [
-      247.02,
-      91.22
+      249.95,
+      92.59
      ]
     },
     {
      "ppm": 171.528,
      "file": "shadow-bench-3@172.webp",
      "size": [
-      986,
-      365
+      1000,
+      371
      ],
      "anchor_px": [
-      493.03,
-      182.43
+      499.91,
+      185.19
      ]
     },
     {
      "ppm": 343.055,
      "file": "shadow-bench-3@343.webp",
      "size": [
-      1971,
-      730
+      2000,
+      741
      ],
      "anchor_px": [
-      985.07,
-      364.87
+      999.82,
+      370.37
      ]
     }
    ],
@@ -4952,36 +5080,36 @@
      "ppm": 85.764,
      "file": "shadow-bench-4@86.webp",
      "size": [
-      609,
-      218
+      619,
+      220
      ],
      "anchor_px": [
-      304.56,
-      108.76
+      309.37,
+      109.75
      ]
     },
     {
      "ppm": 171.528,
      "file": "shadow-bench-4@172.webp",
      "size": [
-      1216,
-      436
+      1238,
+      439
      ],
      "anchor_px": [
-      608.12,
-      217.52
+      618.75,
+      219.49
      ]
     },
     {
      "ppm": 343.055,
      "file": "shadow-bench-4@343.webp",
      "size": [
-      2431,
-      871
+      2475,
+      878
      ],
      "anchor_px": [
-      1215.24,
-      435.04
+      1237.49,
+      438.98
      ]
     }
    ],
@@ -5005,36 +5133,36 @@
      "ppm": 85.764,
      "file": "floor-sheen@86.webp",
      "size": [
-      219,
-      96
+      218,
+      100
      ],
      "anchor_px": [
-      109.15,
-      47.61
+      109.41,
+      49.58
      ]
     },
     {
      "ppm": 171.528,
      "file": "floor-sheen@172.webp",
      "size": [
-      437,
-      191
+      435,
+      199
      ],
      "anchor_px": [
-      218.31,
-      95.22
+      217.81,
+      99.17
      ]
     },
     {
      "ppm": 343.055,
      "file": "floor-sheen@343.webp",
      "size": [
-      873,
-      381
+      869,
+      397
      ],
      "anchor_px": [
-      436.62,
-      190.44
+      434.63,
+      198.34
      ]
     }
    ],
@@ -5059,36 +5187,36 @@
      "ppm": 85.764,
      "file": "glow-wall-wash@86.webp",
      "size": [
-      99,
-      172
+      103,
+      191
      ],
      "anchor_px": [
-      49.39,
-      17.83
+      51.0,
+      17.87
      ]
     },
     {
      "ppm": 171.528,
      "file": "glow-wall-wash@172.webp",
      "size": [
-      198,
-      344
+      205,
+      381
      ],
      "anchor_px": [
-      98.78,
-      35.67
+      102.0,
+      35.73
      ]
     },
     {
      "ppm": 343.055,
      "file": "glow-wall-wash@343.webp",
      "size": [
-      396,
-      688
+      409,
+      761
      ],
      "anchor_px": [
-      197.56,
-      71.34
+      204.0,
+      71.47
      ]
     }
    ],
@@ -5113,36 +5241,36 @@
      "ppm": 85.764,
      "file": "glow-lantern-halo@86.webp",
      "size": [
-      78,
-      105
+      80,
+      116
      ],
      "anchor_px": [
-      38.6,
-      52.41
+      39.86,
+      57.53
      ]
     },
     {
      "ppm": 171.528,
      "file": "glow-lantern-halo@172.webp",
      "size": [
-      155,
-      210
+      160,
+      231
      ],
      "anchor_px": [
-      77.2,
-      104.82
+      79.72,
+      115.07
      ]
     },
     {
      "ppm": 343.055,
      "file": "glow-lantern-halo@343.webp",
      "size": [
-      309,
-      420
+      319,
+      461
      ],
      "anchor_px": [
-      154.4,
-      209.63
+      159.44,
+      230.13
      ]
     }
    ],
@@ -5167,36 +5295,36 @@
      "ppm": 85.764,
      "file": "glow-shade@86.webp",
      "size": [
-      27,
-      37
+      28,
+      41
      ],
      "anchor_px": [
-      13.43,
-      18.23
+      13.86,
+      20.01
      ]
     },
     {
      "ppm": 171.528,
      "file": "glow-shade@172.webp",
      "size": [
-      54,
-      73
+      56,
+      81
      ],
      "anchor_px": [
-      26.85,
-      36.46
+      27.73,
+      40.02
      ]
     },
     {
      "ppm": 343.055,
      "file": "glow-shade@343.webp",
      "size": [
-      108,
-      146
+      111,
+      161
      ],
      "anchor_px": [
-      53.71,
-      72.92
+      55.46,
+      80.05
      ]
     }
    ],

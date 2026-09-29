@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Build the floor kit (fleet/web/assets/world/kit/) from its three sources:
+"""Build the floor kit (fleet/web/assets/world/kit/) from its sources:
 
-- AI props: the kept generations in raw/ (see generate.sh), trimmed, split where one generation drew several
-  objects, scaled from each object's real size, given a soft contact shadow, and anchored at their base centre;
+- props from 3D models: art/build/props/ as rendered by art/scripts/render_props.py (on host home);
 - Blender pieces: art/build/kit/ as rendered by art/scripts/build_kit.py (on host home), already anchored;
 - procedural sprites: footprints and the glow sprites (lamp pools, wall wash, shade glow, floor spill,
   lantern halo), drawn here in their plane and mapped onto the screen by the camera's affine projection.
@@ -16,23 +15,24 @@ import json
 import math
 import shutil
 import sys
-from dataclasses import dataclass, field
 from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 KIT = Path(__file__).resolve().parent
 REPO = KIT.parent.parent
-RAW = KIT / 'raw'
 BLENDER = REPO / 'art' / 'build' / 'kit'
 OUT = REPO / 'fleet' / 'web' / 'assets' / 'world' / 'kit'
 B2 = REPO / 'art' / 'bakeoff' / 'B2'
 
-PITCH, YAW = 28.0, 33.0   # the world camera (build_kit.py): the image model's, measured
-_p, _y = math.radians(PITCH), math.radians(YAW)
-# a world offset (x, y, z) in metres to screen metres (right, down): the engine's projection.js
+# The canonical camera (artlib.canonical_projection; docs/design/art-direction.md, "Camera"): oblique, yaw 30 deg,
+# rays falling at atan(1/2). A world offset (x, y, z) in metres to screen metres (right, down): the engine's projection.js
+YAW, DEPRESSION = 30.0, math.degrees(math.atan(0.5))
+_y, _t = math.radians(YAW), 0.5
 PX = (math.cos(_y), math.sin(_y), 0.0)
-PY = (math.sin(_p) * math.sin(_y), -math.sin(_p) * math.cos(_y), -math.cos(_p))
+PY = (_t * math.sin(_y), -_t * math.cos(_y), -1.0)
+CAMERA = {'name': 'canonical', 'projection': 'oblique', 'yaw_deg': YAW, 'depression_deg': round(DEPRESSION, 4),
+          'axes_px_per_m': [[round(PX[i], 5), round(PY[i], 5)] for i in range(3)]}
 PPM_1X = 941 / 5.486                  # l2's framing, 171.528 px/m
 TIERS = (PPM_1X / 2, PPM_1X, PPM_1X * 2)
 QUALITY = 88
@@ -41,142 +41,6 @@ QUALITY = 88
 def plane(p) -> tuple[float, float]:
     x, y, z = p
     return PX[0] * x + PX[1] * y, PY[0] * x + PY[1] * y + PY[2] * z
-
-
-def box_rect(b) -> tuple[float, float, float, float]:
-    """(x0, y0, x1, y1) in screen metres of a world box [x0, y0, z0, x1, y1, z1]."""
-    pts = [plane((x, y, z)) for x in (b[0], b[3]) for y in (b[1], b[4]) for z in (b[2], b[5])]
-    return min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts)
-
-
-# --- AI props -------------------------------------------------------------------------------------
-
-@dataclass
-class Prop:
-    raw: str                         # generation (raw/<raw>.png)
-    size: tuple[float, float, float]  # real width (x), depth (y), height (z), metres
-    fit: str = 'w'                   # scale by the image's width ('w') or height ('h') against the box's
-    part: int | None = None          # which object, when the generation drew several (row-major order)
-    parts: int = 1                   # how many objects that generation drew
-    rows: int = 1
-    base: float = 0.0                # anchor height within the box (the lantern hangs from its centre)
-    shadow: float = 0.42             # contact shadow opacity; 0 for none
-    slots: dict = field(default_factory=dict)
-    doc: str = ''
-
-
-# (only what has no 3D model: every other prop is rendered from its model, see model_props)
-PROPS: dict[str, Prop] = {
-    'bench': Prop('bench-v2', (5.4, 0.8, 0.74), doc='three desks end to end; top empty; no lamps, no chairs',
-                  slots={'seats': [[-1.8 + 1.8 * i, 0.54, 0.47] for i in range(3)],
-                         'lamps': [[-2.52 + 1.8 * i, 0.28, 0.74] for i in range(3)],
-                         'desk_top': [[-1.8 + 1.8 * i, 0, 0.74] for i in range(3)]}),
-    'terminal-desk': Prop('terminal-desk', (1.6, 0.8, 0.74), doc='one desk with monitor and keyboard',
-                          slots={'seat': [0, -0.55, 0.47], 'screen': [0, 0.2, 1.05]}),
-    'librarian-desk': Prop('librarian-desk', (1.5, 0.7, 0.95), doc="the librarian's desk with card drawers"),
-}
-
-
-def components(im: Image.Image, n: int, rows: int, close: int = 5) -> list[tuple[int, int, int, int]]:
-    """The bounding boxes of the n largest separate objects in a generation, row-major: alpha closed over small
-    gaps (chair castors, pens) and flood-filled on a quarter-size grid."""
-    k = 4
-    a = im.getchannel('A').point(lambda v: 255 if v > 40 else 0).reduce(k).point(lambda v: 255 if v > 0 else 0)
-    if close > 1:
-        a = a.filter(ImageFilter.MaxFilter(close))
-    w, h = a.size
-    px = a.load()
-    seen = bytearray(w * h)
-    boxes = []
-    for y0 in range(h):
-        for x0 in range(w):
-            if seen[y0 * w + x0] or not px[x0, y0]:
-                continue
-            stack, box, count = [(x0, y0)], [x0, y0, x0, y0], 0
-            seen[y0 * w + x0] = 1
-            while stack:
-                x, y = stack.pop()
-                count += 1
-                box = [min(box[0], x), min(box[1], y), max(box[2], x), max(box[3], y)]
-                for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
-                    if 0 <= nx < w and 0 <= ny < h and not seen[ny * w + nx] and px[nx, ny]:
-                        seen[ny * w + nx] = 1
-                        stack.append((nx, ny))
-            boxes.append((count, [box[0] * k, box[1] * k, (box[2] + 1) * k, (box[3] + 1) * k]))
-    boxes = [b for _, b in sorted(boxes, reverse=True)[:n]]
-    if len(boxes) < n:
-        sys.exit(f'finish: expected {n} objects, found {len(boxes)}')
-    boxes.sort(key=lambda b: (b[1] + b[3]) / 2)
-    per = math.ceil(n / rows)
-    ordered = []
-    for r in range(rows):
-        ordered += sorted(boxes[r * per:(r + 1) * per], key=lambda b: b[0])
-    return [tuple(b) for b in ordered]
-
-
-def trim(im: Image.Image) -> Image.Image:
-    return im.crop(im.getchannel('A').point(lambda a: 255 if a > 8 else 0).getbbox())
-
-
-def contact_shadow(size: tuple[float, float, float], ppm: float) -> tuple[Image.Image, tuple[float, float]]:
-    """A soft shadow of the footprint on the floor: the base rectangle projected, blurred. Returns the image (alpha
-    only, dark) and where the anchor falls in it."""
-    w, d, _ = size
-    grow = 0.06
-    corners = [plane((x, y, 0)) for x, y in ((-w / 2 - grow, -d / 2 - grow), (w / 2 + grow, -d / 2 - grow),
-                                               (w / 2 + grow, d / 2 + grow), (-w / 2 - grow, d / 2 + grow))]
-    pad = 0.25
-    x0, y0 = min(c[0] for c in corners) - pad, min(c[1] for c in corners) - pad
-    x1, y1 = max(c[0] for c in corners) + pad, max(c[1] for c in corners) + pad
-    W, H = max(1, round((x1 - x0) * ppm)), max(1, round((y1 - y0) * ppm))
-    # two layers, as a baked contact shadow reads: a tight dark core where the object meets the floor, and a wide
-    # soft falloff around it
-    def layer(g_m, blur_m, strength):
-        cs = [plane((x, y, 0)) for x, y in ((-w / 2 - g_m, -d / 2 - g_m), (w / 2 + g_m, -d / 2 - g_m),
-                                              (w / 2 + g_m, d / 2 + g_m), (-w / 2 - g_m, d / 2 + g_m))]
-        m = Image.new('L', (W, H), 0)
-        ImageDraw.Draw(m).polygon([((cx - x0) * ppm, (cy - y0) * ppm) for cx, cy in cs], fill=strength)
-        return m.filter(ImageFilter.GaussianBlur(max(1, blur_m * ppm)))
-    a = ImageChops.lighter(layer(-0.02, 0.025, 255), layer(grow + 0.06, 0.1, 150))
-    img = Image.new('RGBA', (W, H), (38, 48, 70, 0))
-    img.putalpha(a)
-    return img, (-x0 * ppm, -y0 * ppm)
-
-
-def fit_prop(name: str, p: Prop) -> dict:
-    im = Image.open(RAW / f'{p.raw}.png').convert('RGBA')
-    if p.part is not None:
-        im = im.crop(components(im, p.parts, p.rows)[p.part])
-    im = trim(im)
-    w, d, h = p.size
-    box = [-w / 2, -d / 2, p.base, w / 2, d / 2, p.base + h]
-    rx0, ry0, rx1, ry1 = box_rect(box)
-    src_ppm = im.width / (rx1 - rx0) if p.fit == 'w' else im.height / (ry1 - ry0)
-    # the image's centre line and bottom sit on the box's: the anchor (0, 0, 0) is then here in the image
-    anchor = (im.width / 2 - (rx0 + rx1) / 2 * src_ppm, im.height - ry1 * src_ppm)
-    tiers = [t for t in TIERS if t <= src_ppm * 1.02]
-    if src_ppm > TIERS[-1] * 1.2 or not tiers or src_ppm > tiers[-1] * 1.2:
-        tiers.append(min(src_ppm, TIERS[-1] * 2))
-    out = []
-    for ppm in tiers:
-        k = ppm / src_ppm
-        spr = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))), Image.Resampling.LANCZOS)
-        ax, ay = anchor[0] * k, anchor[1] * k
-        if p.shadow:
-            sh, (sx, sy) = contact_shadow(p.size, ppm)
-            sh.putalpha(sh.getchannel('A').point(lambda v: int(v * p.shadow)))
-            left, top = min(0, round(ax - sx)), min(0, round(ay - sy))
-            W = max(spr.width, round(ax - sx) + sh.width) - left
-            H = max(spr.height, round(ay - sy) + sh.height) - top
-            canvas = Image.new('RGBA', (W, H), (0, 0, 0, 0))
-            canvas.alpha_composite(sh, (round(ax - sx) - left, round(ay - sy) - top))
-            canvas.alpha_composite(spr, (-left, -top))
-            spr, ax, ay = canvas, ax - left, ay - top
-        out.append(save(name, ppm, spr, (ax, ay)))
-    return {'source': 'ai', 'from': f'art/kit/raw/{p.raw}.png' + (f' (object {p.part + 1} of {p.parts})' if p.part is not None else ''),
-            'size_m': list(p.size), 'scale': {'fit': p.fit, 'source_px_per_m': round(src_ppm, 1)},
-            'footprint': [round(v, 3) for v in box], 'hit': 'alpha', 'tiers': out,
-            **({'slots': p.slots} if p.slots else {}), **({'doc': p.doc} if p.doc else {})}
 
 
 # --- model props: rendered from the 3D models by art/scripts/render_props.py (floor review 2) ------------------------
@@ -551,9 +415,6 @@ def main() -> None:
         shutil.rmtree(OUT)
     OUT.mkdir(parents=True)
     sprites = {}
-    for name, p in PROPS.items():
-        sprites[name] = fit_prop(name, p)
-        print(f'{name:16s} ai {sprites[name]["scale"]["source_px_per_m"]:7.1f} px/m src', flush=True)
     sprites.update(blender_pieces())
     models = model_props()
     sprites.update(models)
@@ -563,7 +424,7 @@ def main() -> None:
         'about': 'The floor kit: see art/kit/README.md. Sprites are anchored at their base centre unless their doc '
                  'says otherwise; footprints and slots are metres from the anchor (x along the back wall, y towards '
                  'it, z up). layer is a hint: ground (in the ground snapshot), standing (sorted), light (additive).',
-        'camera': {'pitch': PITCH, 'yaw': YAW},
+        'camera': {**CAMERA, 'px_per_m_1x': round(PPM_1X, 3)},
         'scale': SCALE,
         'sprites': sprites,
         'textures': textures(),
@@ -580,8 +441,7 @@ SCALE = {
     'px_per_m_1x': round(PPM_1X, 3),
     'tiers_px_per_m': [round(t, 3) for t in TIERS],
     'basis': "l2.png's framing as fitted by art/scripts/fit_camera.py: 941 px over 5.486 m (171.528 px/m). "
-             'Every object is modelled or scaled from its real size in metres; the tiers are 0.5x, 1x and 2x that '
-             'density, plus an AI prop\'s own density when it is finer.',
+             'Every object is modelled at its real size in metres; the tiers are 0.5x, 1x and 2x that density.',
     'measured': {
         'l2': {'bench_width_px': 930, 'bench_m': '3 desks of 1.8 m (5.4 m x 0.8 m)', 'px_per_m': 171.5,
                'note': 'the bench, desks and robots agree with the fitted camera within a few percent'},

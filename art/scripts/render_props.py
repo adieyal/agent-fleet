@@ -218,10 +218,52 @@ def question_desk(models: Path):
             'from': 'objects/drawers + boxes', 'on': 'floor'}
 
 
+BENCH_DESKS = 3
+
+
+def bench(models: Path):
+    """A whole bench: three desk modules end to end, top empty, no lamps or chairs. Anchor: its base centre."""
+    w = 1.6
+    for i in range(BENCH_DESKS):
+        x0 = (i - BENCH_DESKS / 2) * w
+        desk(models, w, 0.8, x0, 0.4, pedestal_x=x0 + 0.36)
+    xs = [round((i - (BENCH_DESKS - 1) / 2) * w, 3) for i in range(BENCH_DESKS)]
+    slots = {'seats': [[x, round(0.4 + 0.159, 3), SEAT_H] for x in xs],
+             'lamps': [[round(x - 0.62, 3), 0.28, DESK_Z] for x in xs],
+             'desk_top': [[x, 0, DESK_Z] for x in xs]}
+    half = w * BENCH_DESKS / 2
+    return {'footprint': [-half, -0.4, 0, half, 0.4, DESK_Z], 'slots': slots,
+            'from': 'objects/drawers + boxes', 'on': 'floor', 'doc': 'three desks end to end; top empty; no lamps, no chairs'}
+
+
+def terminal_desk(models: Path):
+    """One desk worked from its near side, facing the back wall: monitor, keyboard and mouse on it. Anchor: base centre."""
+    desk(models, 1.6, 0.8, -0.8, 0.4, pedestal_x=-0.5)
+    # (the monitor faces the worker on the near side: the models' fronts face -y)
+    place(models, part('objects/monitor', ('x', 0.55), at=(0, 0.2, DESK_Z)), 'screen')
+    place(models, part('coffee/keyboard', ('x', 0.42), at=(-0.04, -0.08, DESK_Z)), 'keyboard')
+    place(models, part('coffee/mouse', ('y', 0.1), at=(0.26, -0.08, DESK_Z)), 'mouse')
+    return {'footprint': [-0.8, -0.4, 0, 0.8, 0.4, 1.2], 'slots': {'seat': [0, -0.55, 0.47], 'screen': [0, 0.2, 1.05]},
+            'from': 'coffee/keyboard + coffee/mouse + objects/drawers + objects/monitor + boxes', 'on': 'floor',
+            'doc': 'one desk with monitor and keyboard'}
+
+
+def librarian_desk(models: Path):
+    """The librarian's desk: a counter-height top on two drawer pedestals (the card drawers). Anchor: base centre."""
+    h = 0.95
+    desk(models, 1.5, 0.7, -0.75, 0.35, pedestal_x=-0.42, h=h)
+    place(models, part('objects/drawers', ('z', 0.6), at=(0.42, -0.35 + 0.3, 0)), 'pedestal_r')
+    return {'footprint': [-0.75, -0.35, 0, 0.75, 0.35, h], 'from': 'objects/drawers + boxes', 'on': 'floor',
+            'doc': "the librarian's desk with card drawers"}
+
+
 PROPS = {
     # --- furniture on the floor ---
     'desk-module': desk_module,
     'question-desk': question_desk,
+    'bench': bench,
+    'terminal-desk': terminal_desk,
+    'librarian-desk': librarian_desk,
     # (the seat raised to the robot sprites' seat_furniture.seat_height_m: the rebuilt robot is 1.081 m and sits at
     # 0.549 m, so its face clears the desk as in l2; docs/design/robot-sprites.md)
     'chair-back': dict(parts=[part('objects/chair', ('z', 1.0), backrest='-y', seat=SEAT_H)], doc='office chair, near side of a desk, seen from behind; seat at 0.549 m'),
@@ -331,7 +373,7 @@ def main() -> None:
         return
     only = [a for a in args[2:] if not a.startswith('--')]
     K.studio()
-    info = {'camera': {'pitch': K.PITCH, 'yaw': K.YAW}, 'blender': bpy.app.version_string, 'props': {}}
+    info = {'camera': A.canonical_record(K.PPM_1X), 'blender': bpy.app.version_string, 'props': {}}
     if only and (out / 'props.json').exists():   # re-rendering some props keeps the others
         info['props'] = json.loads((out / 'props.json').read_text())['props']
     for name in PROPS:

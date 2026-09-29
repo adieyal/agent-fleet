@@ -59,8 +59,7 @@ async function main() {
   }
   S['plan-wall'].slots.lights.forEach((p, i) => add('light' + i, i < 3 ? 'criteria-on' : 'criteria-off', plus(BOARD, p)));
   for (const dx of [-1.4, 0, 1.4]) add('wash' + dx, 'glow-wall-wash', [BOARD[0] + dx, D - 0.01, 3.05], { intensity: 0.9 });
-  add('bench', 'bench', BENCH, { place: 'workarea' });
-  add('bench-shadow', 'shadow-bench-3', BENCH);
+  add('bench', 'bench', BENCH, { place: 'workarea' });   // (with its rendered shadow)
   // a four-seat bench from the kit's pieces (left end, two middles, right end), with its one shadow
   const M = S['bench-mid'].module_m, front = [9.6, 1.6, 0];
   add('front-shadow', 'shadow-bench-4', front);
@@ -80,8 +79,8 @@ async function main() {
     add('lamp-glow' + i, 'glow-shade', plus(at, S.lamp.slots.shade));
     add('pool' + i, 'glow-desk-pool', plus(at, [0.3, -0.25, 0.005]), { intensity: 0.85 });
   });
-  const props = [['laptop', -1.95, -0.1], ['pen-pot', -1.2, 0.05], ['paper-stack', -0.4, -0.2], ['sketch', 0.3, -0.18],
-    ['mug', 0.8, 0.0], ['books', 1.5, -0.15], ['desk-plant', 2.05, 0.1], ['paper-tray', 2.35, -0.15]];
+  const props = [['laptop', -1.75, -0.1], ['pen-pot', -1.05, 0.05], ['paper-stack', -0.4, -0.2], ['sketch', 0.3, -0.18],
+    ['mug', 0.7, 0.0], ['books', 1.3, -0.15], ['desk-plant', 1.8, 0.1], ['paper-tray', 2.1, -0.15]];
   for (const [p, dx, dy] of props) add('prop-' + p, p, plus(BENCH, [dx, dy, 0.74]));
   add('spill', 'glow-floor-spill', plus(BENCH, [0, -1.3, 0]), { intensity: 0.8 });
   // arrival: footprints from the lift towards the bench

@@ -415,6 +415,45 @@ def canonical_camera(scene: bpy.types.Scene, target, px_per_m: float, name: str 
     return cam
 
 
+def canonical_axes() -> tuple[Vector, Vector, Vector]:
+    """(right, down, towards): a world point p lands p.dot(right), p.dot(down) screen metres right and down under
+    the canonical camera; `towards` is the rays' direction towards the viewer (larger p.dot(towards) is nearer)."""
+    (xr, xd), (yr, yd), (zr, zd) = canonical_projection()
+    t = math.tan(math.radians(CANONICAL_DEPRESSION))
+    y = math.radians(CANONICAL_YAW)
+    return Vector((xr, yr, zr)), Vector((xd, yd, zd)), Vector((math.sin(y), -math.cos(y), t)).normalized()
+
+
+def canonical_record(px_per_m_1x: float | None = None) -> dict:
+    """The camera as a sprite manifest records it; the world (fleet/web/js/world/projection.js) checks the axes."""
+    return {'name': 'canonical', 'projection': 'oblique', 'yaw_deg': CANONICAL_YAW,
+            'depression_deg': round(CANONICAL_DEPRESSION, 4),
+            'axes_px_per_m': [[round(a, 5), round(b, 5)] for a, b in canonical_projection()],
+            **({'px_per_m_1x': round(px_per_m_1x, 3)} if px_per_m_1x else {})}
+
+
+def canonical_frame(scene: bpy.types.Scene, points, px_per_m: float, margin: float, name: str = 'camera',
+                    distance: float = 60.0, grid: int = 1) -> dict:
+    """Frame world `points` (plus `margin` metres all round) with the canonical camera at `px_per_m`, in whole pixels
+    (the size rounded up to a multiple of `grid`, the extra on the right and bottom). Sets the scene's resolution and camera; returns the size and the screen-metre origin (u0, v0) of the image's top
+    left, so a world point p lands at ((p.dot(right) - u0) * px_per_m, (p.dot(down) - v0) * px_per_m)."""
+    right, down, _ = canonical_axes()
+    us, vs = [p.dot(right) for p in points], [p.dot(down) for p in points]
+    u0, v0 = min(us) - margin, min(vs) - margin
+    w, h = math.ceil((max(us) + margin - u0) * px_per_m), math.ceil((max(vs) + margin - v0) * px_per_m)
+    w, h = -(-w // grid) * grid, -(-h // grid) * grid
+    uc, vc = u0 + w / px_per_m / 2, v0 + h / px_per_m / 2
+    old = bpy.data.objects.get(name)
+    if old:
+        data = old.data
+        bpy.data.objects.remove(old)
+        bpy.data.cameras.remove(data)
+    scene.render.resolution_x, scene.render.resolution_y, scene.render.resolution_percentage = w, h, 100
+    # the world point under the image's centre: uc along right, and vc down is straight down (0, 0, -vc)
+    canonical_camera(scene, right * uc + Vector((0, 0, -vc)), px_per_m, name, distance)
+    return {'size': [w, h], 'origin': (u0, v0)}
+
+
 # --- lightmap UVs ---------------------------------------------------------------
 
 def baked_objects() -> list[bpy.types.Object]:

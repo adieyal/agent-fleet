@@ -2,8 +2,9 @@
 
     blender -b --factory-startup -P art/scripts/build_kit.py -- OUT_DIR
 
-Each piece is modelled at real size and rendered in Cycles with the sprite world's camera (orthographic, pitch
-28 deg, yaw 33 deg: the image model's, so AI furniture matches) at 85.75, 171.5 and 343 px/m, on transparent film with shadow catchers for its contact
+Each piece is modelled at real size and rendered in Cycles with the canonical camera (artlib.canonical_camera:
+oblique, yaw 30 deg, rays falling at atan(1/2); docs/design/art-direction.md) at 85.75, 171.5 and 343 px/m, on
+transparent film with shadow catchers for its contact
 shadows. OUT_DIR gets <piece>@<ppm>.png and pieces.json (per piece: tiers with size and the pixel its anchor
 lands on, footprint, slots). art/kit/finish.py turns them into the kit. Only Blender 4.2+ and the GPU are
 needed: no downloaded sources.
@@ -25,9 +26,7 @@ import bpy  # noqa: E402
 import numpy as np  # noqa: E402
 from mathutils import Vector  # noqa: E402
 
-# The world camera: the image model's own (measured from the AI furniture's silhouettes, and l1's and l2's), so
-# rendered architecture and generated furniture share one projection (floor review 1, point 1)
-PITCH, YAW = 28.0, 33.0
+# The world camera is artlib's canonical camera: every render shares it (docs/design/art-direction.md, "Camera")
 PPM_1X = 941 / 5.486            # l2's framing: 171.528 px/m
 TIERS = (0.5, 1, 2)
 WALL_H, WALL_T = 3.2, 0.45      # back and left walls: l1's thick cut-away walls
@@ -46,14 +45,6 @@ PAL = {  # docs/design/art-direction.md, rendered targets; albedo a little lower
 
 # --- scene ----------------------------------------------------------------------------------
 
-def axes():
-    p, y = math.radians(PITCH), math.radians(YAW)
-    back = Vector((math.sin(y) * math.cos(p), -math.cos(y) * math.cos(p), math.sin(p)))
-    right = (-back).cross(Vector((0, 0, 1))).normalized()
-    up = right.cross(-back).normalized()
-    return right, up, back
-
-
 def studio() -> None:
     """Soft high-key daylight: a pale sky and a large soft key from the upper left, as l2."""
     s = bpy.context.scene
@@ -63,7 +54,6 @@ def studio() -> None:
     bg.inputs['Color'].default_value = A.srgb('#d7ecfd')
     bg.inputs['Strength'].default_value = 0.9
     s.world = world
-    right, up, back = axes()
     key = A.light('key', 'AREA', Vector((-6, -5, 9)), 1500, '#fff6ec', shape='DISK', size=5.0)
     A.aim(key, Vector((0, 0, 0.5)))
     B.gpu()
@@ -131,25 +121,13 @@ def render(name: str, out: Path, anchor: Vector, extra: list, margin: float, fra
     """Render the scene's meshes at every tier; `frames` is a list of callables that pose frame i (a sheet)."""
     objs = [o for o in bpy.data.objects if o.type == 'MESH' and not o.is_shadow_catcher and not o.hide_render]
     pts = points(objs) + extra
-    right, up, back = axes()
-    us, vs = [p.dot(right) for p in pts], [p.dot(up) for p in pts]
+    right, down, _ = A.canonical_axes()
     tiers = []
+    s = bpy.context.scene
     for mult in TIERS:
         ppm = PPM_1X * mult
-        u0, v1 = min(us) - margin, max(vs) + margin
-        w, h = math.ceil((max(us) + margin - u0) * ppm), math.ceil((v1 - min(vs) + margin) * ppm)
-        u1, v0 = u0 + w / ppm, v1 - h / ppm
-        cam = bpy.data.cameras.get('kit_cam') or bpy.data.cameras.new('kit_cam')
-        cam.type, cam.clip_end, cam.ortho_scale = 'ORTHO', 200, max(u1 - u0, v1 - v0)
-        ob = bpy.data.objects.get('kit_cam') or bpy.data.objects.new('kit_cam', cam)
-        if ob.name not in bpy.context.scene.collection.objects:
-            bpy.context.scene.collection.objects.link(ob)
-        centre = right * (u0 + u1) / 2 + up * (v0 + v1) / 2
-        ob.location = centre + back * 60
-        A.aim(ob, centre)
-        s = bpy.context.scene
-        s.camera = ob
-        s.render.resolution_x, s.render.resolution_y, s.render.resolution_percentage = w, h, 100
+        framed = A.canonical_frame(s, pts, ppm, margin, 'kit_cam')
+        (w, h), (u0, v0) = framed['size'], framed['origin']
         paths = []
         for i, pose in enumerate(frames or [None]):
             if pose:
@@ -161,7 +139,7 @@ def render(name: str, out: Path, anchor: Vector, extra: list, margin: float, fra
             paths.append(p)
         file = paths[0] if not frames else sheet(paths, out / f'{name}@{ppm:g}.png')
         tiers.append({'ppm': round(ppm, 3), 'file': file.name, 'size': [w, h],
-                      'anchor_px': [round((anchor.dot(right) - u0) * ppm, 2), round((v1 - anchor.dot(up)) * ppm, 2)],
+                      'anchor_px': [round((anchor.dot(right) - u0) * ppm, 2), round((anchor.dot(down) - v0) * ppm, 2)],
                       **({'frames': len(frames)} if frames else {})})
     return tiers
 
@@ -370,7 +348,7 @@ def plan_wall():
                   'col': [PITCH_T, 0, 0], 'row': [0, 0, PITCH_T], 'cols': COLS, 'rows': ROWS},
         'lights': [[round(-0.48 + i * 0.24, 3), -0.05, round(z0 + gh + 0.38, 3)] for i in range(5)],
     }
-    return Vector((0, 0, 0)), [-(gw + 0.16) / 2, -0.07, z0, (gw + 0.16) / 2, 0, z0 + gh + 0.5], slots, [], 0.25
+    return Vector((0, 0, 0)), [-(gw + 0.16) / 2, -0.07, z0, (gw + 0.16) / 2, 0, z0 + gh + 0.5], slots, [], 0.4
 
 
 def tile(state):
@@ -391,7 +369,8 @@ def tile(state):
         stroke('cross_a', 0.2, 0, 0, math.radians(45))
         stroke('cross_b', 0.2, 0, 0, math.radians(-45))
     wall_catcher(0.0)
-    return Vector((0, 0, 0)), [-TILE / 2, -0.04, -TILE / 2, TILE / 2, 0, TILE / 2], {}, [], 0.05
+    # (margins wide enough for the cast shadow on the wall to fade out inside the sprite)
+    return Vector((0, 0, 0)), [-TILE / 2, -0.04, -TILE / 2, TILE / 2, 0, TILE / 2], {}, [], 0.1
 
 
 def criteria(on):
@@ -400,7 +379,7 @@ def criteria(on):
     A.cylinder('lens', 0.072, 0.03, (0, -0.012, 0), emissive('lamp_on', 1.2) if on else M('lamp_off', rough=0.15),
                rot=(math.pi / 2, 0, 0), segments=32)
     wall_catcher(0.0)
-    return Vector((0, 0, 0)), [-0.09, -0.045, -0.09, 0.09, 0, 0.09], {}, [], 0.06
+    return Vector((0, 0, 0)), [-0.09, -0.045, -0.09, 0.09, 0, 0.09], {}, [], 0.11
 
 
 PIECES = {
@@ -421,7 +400,7 @@ def main() -> None:
     only = sys.argv[sys.argv.index('--') + 2:]
     A.reset()
     studio()
-    info = {'camera': {'pitch': PITCH, 'yaw': YAW}, 'blender': bpy.app.version_string, 'pieces': {}}
+    info = {'camera': A.canonical_record(PPM_1X), 'blender': bpy.app.version_string, 'pieces': {}}
     if only and (out / 'pieces.json').exists():  # re-rendering some pieces keeps the others
         info['pieces'] = json.loads((out / 'pieces.json').read_text())['pieces']
     info['pieces'] = {k: v for k, v in info['pieces'].items() if k in PIECES}

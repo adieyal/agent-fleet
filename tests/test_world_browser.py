@@ -1,4 +1,4 @@
-"""The sprite engine in the browser, on /prototype/world (the bake-off's l2 scene): pan and zoom stay between the
+"""The sprite engine in the browser, on /prototype/world (an l2-like scene from the floor kit): pan and zoom stay between the
 whole-room and the l2 framing, sprite tiers load only when the zoom needs them and crossfade in, a still scene
 stops drawing, ambient animation slows when frames run over budget, and clicks find what was drawn there."""
 
@@ -115,24 +115,25 @@ def test_zoomed_in_a_drag_pans_but_stops_at_the_room_edge(world: Page) -> None:
 def test_the_smallest_sharp_tier_is_drawn_the_next_loads_ahead_and_they_fade(browser: Browser, base_url: str) -> None:
     page, errors = open_world(browser, base_url, scale=2)
     try:
-        # the room at 2x device pixels needs under 171.5 px/m: the plant's 1x tier, and at rest its 2x loads ahead
-        assert page.evaluate("world.engine.stats.requested").count("B1/plant@1x.png") == 1
-        assert page.evaluate("world.engine.sprites.get('plant').shown") == 0
-        page.wait_for_function("world.engine.stats.requested.includes('B1/plant@2x.png')")
+        # the room at 2x device pixels needs under 171.5 px/m: the plant's 1x tier (its tiers are 0.5x, 1x and 2x),
+        # and at rest its 2x loads ahead
+        plant = "world.engine.sprites.get('kit/plant-bush')"
+        assert page.evaluate("world.engine.stats.requested").count("plant-bush@172.webp") == 1
+        assert page.evaluate(plant + ".shown") == 1
+        page.wait_for_function("world.engine.stats.requested.includes('plant-bush@343.webp')")
         shown = []
         page.expose_function("noteShown", lambda s: shown.append(s))
         page.evaluate("""(() => { const w = world.engine, f = w.frame.bind(w);
-          w.frame = () => { f(); noteShown(w.sprites.get('plant').shown); }; })()""")
+          w.frame = () => { f(); noteShown(w.sprites.get('kit/plant-bush').shown); }; })()""")
         wheel(page, -400, 25)
-        page.wait_for_function("world.engine.stats.loaded.includes('B1/plant@2x.png')")
+        page.wait_for_function("world.engine.stats.loaded.includes('plant-bush@343.webp')")
         settle(page)
         requested = page.evaluate("world.engine.stats.requested")
-        assert requested.count("B1/plant@2x.png") == 1
+        assert requested.count("plant-bush@343.webp") == 1
         assert page.evaluate("world.engine.stats.fades") >= 1
         assert -1 not in shown  # never a frame without the plant
-        # l2 at 2x device pixels is 219 px/m: 2x (343) is drawn, and 4x has loaded ahead of a closer zoom
-        assert page.evaluate("world.engine.sprites.get('plant').shown") == 1
-        page.wait_for_function("world.engine.stats.requested.includes('B1/plant@4x.png')")
+        # l2 at 2x device pixels is 219 px/m: 2x (343) is drawn
+        assert page.evaluate(plant + ".shown") == 2
     finally:
         page.close()
     assert errors == []
@@ -202,7 +203,7 @@ def test_clicks_find_the_robot_the_lantern_and_the_floor(world: Page) -> None:
     for point in ([3.1, 5.25, 2.25], [2.0, 1.0, 0]):   # the lantern and a spot of floor, in the whole-room view
         world.mouse.click(*screen(world, point))
     wheel(world, -400, 25)
-    world.mouse.click(*screen(world, [4.7, 4.91, 0.95]))   # the typing robot's head, above the desk top
+    world.mouse.click(*screen(world, [4.6, 4.91, 0.95]))   # the typing robot's head, above the desk top
     lantern, floor, robot = world.evaluate("world.taps")
     assert (lantern["id"], lantern["place"]) == ("lantern", "attention")
     assert floor["floor"] == pytest.approx([2.0, 1.0], abs=0.05)
@@ -212,14 +213,18 @@ def test_clicks_find_the_robot_the_lantern_and_the_floor(world: Page) -> None:
 def test_a_seated_robots_legs_are_behind_the_desk(world: Page) -> None:
     # below the desk-top line the bench is in front: a click there finds the bench, not the robot's lower layer
     wheel(world, -400, 25)
-    pedestal = screen(world, [4.45, 4.45, 0.45])
+    pedestal = screen(world, [4.16, 4.2, 0.45])   # the first desk's drawer pedestal
     assert world.evaluate("([x, y]) => world.engine.pick(x, y)", pedestal)["id"] == "bench"
 
 
 def test_a_frame_of_a_sheet_is_drawn_without_its_neighbours_pixels(world: Page) -> None:
     # the bake-off pencil robot's frame 2 is opaque down its right edge; frame 3, scaled up, must not show that column
-    # down its left edge (the thin line beside a seated robot, floor review 2)
-    world.evaluate("world.engine.use('robot-pencil')")
+    # down its left edge (the thin line beside a seated robot, floor review 2). (The scene no longer places it: it is
+    # defined here from the bake-off's manifest, as a sheet with that edge.)
+    world.evaluate("""(async () => {
+      const url = new URL('/art/bakeoff/world.json', location.href), s = (await fetch(url).then(r => r.json())).sprites['robot-pencil'];
+      world.engine.define('robot-pencil', { ...s, tiers: s.tiers.map(t => ({ ...t, url: new URL(t.file, url).href })) });
+      world.engine.use('robot-pencil'); })()""")
     world.wait_for_function("world.engine.sprites.get('robot-pencil').loaded.size > 0", timeout=20_000)
     out = world.evaluate("""(() => {
       const e = world.engine, s = e.sprites.get('robot-pencil'), i = [...s.loaded][0], t = s.tiers[i];
