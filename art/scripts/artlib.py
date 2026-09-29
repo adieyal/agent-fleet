@@ -380,6 +380,41 @@ def ortho_camera(name, target, pitch_deg, yaw_deg, scale, distance=40.0) -> bpy.
     return ob
 
 
+# The one projection every Fleet render shares (docs/design/art-direction.md, "Camera"). The concepts are level-camera
+# (shift-lens) perspectives: verticals stay vertical and keep their length, the ground recedes. The parallel projection
+# closest to l1, lobby and l2 is oblique onto a vertical picture plane: yaw 30 deg, rays falling at atan(1/2), so one
+# metre along X, Y and Z lands (cos 30, sin 30 / 2), (sin 30, -cos 30 / 2) and (0, -1) px-per-metre from its start.
+CANONICAL_YAW = 30.0
+CANONICAL_DEPRESSION = math.degrees(math.atan(0.5))
+
+
+def canonical_projection(px_per_m: float = 1.0) -> tuple[tuple[float, float], ...]:
+    """Screen offset (px right, px down) of one metre along world +X, +Y and +Z under the canonical camera."""
+    y, t = math.radians(CANONICAL_YAW), math.tan(math.radians(CANONICAL_DEPRESSION))
+    return ((px_per_m * math.cos(y), px_per_m * math.sin(y) * t),
+            (px_per_m * math.sin(y), -px_per_m * math.cos(y) * t),
+            (0.0, -px_per_m))
+
+
+def canonical_camera(scene: bpy.types.Scene, target, px_per_m: float, name: str = 'camera',
+                     distance: float = 40.0) -> bpy.types.Object:
+    """The canonical oblique camera, `px_per_m` wide at the scene's resolution, centred on `target`.
+
+    Blender has no oblique camera. An orthographic camera at pitch d draws verticals cos(d) short; stretching its
+    image by 1/cos(d) gives the oblique projection exactly, and because the stretch is in image space the lighting
+    and shadows are the orthographic render's. The stretch is Blender's pixel aspect: X pixels 1/cos(d) wide, which
+    a square-pixel PNG shows as a 1/cos(d) vertical stretch.
+    """
+    if bpy.context.scene != scene:
+        raise ValueError('canonical_camera: scene must be the context scene')
+    cam = ortho_camera(name, target, CANONICAL_DEPRESSION, CANONICAL_YAW, scene.render.resolution_x / px_per_m,
+                       distance)
+    cam.data.sensor_fit = 'HORIZONTAL'
+    scene.render.pixel_aspect_x = 1 / math.cos(math.radians(CANONICAL_DEPRESSION))
+    scene.render.pixel_aspect_y = 1.0
+    return cam
+
+
 # --- lightmap UVs ---------------------------------------------------------------
 
 def baked_objects() -> list[bpy.types.Object]:
