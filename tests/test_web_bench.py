@@ -6,6 +6,8 @@ from urllib.request import urlopen
 
 import pytest
 
+from fleet.composition import open_execution, open_store, open_work
+
 
 def test_bench_endpoint(base_url):
     with urlopen(base_url + '/api/bench?project=p-5e1f0a01', timeout=5) as response:
@@ -25,3 +27,24 @@ def test_bench_endpoint(base_url):
     with pytest.raises(HTTPError) as invalid:
         urlopen(base_url + '/api/bench', timeout=5)
     assert invalid.value.code == 400
+
+
+def test_state_work_links_follow_store_changes(base_url, deck_state, monkeypatch):
+    store = open_store()
+    monkeypatch.setattr(deck_state, 'store', store)
+    work = open_work(store)
+    epic = work.add(project='links', title='Links epic', goal='Deliver', kind='epic', actor='user')
+    milestone = work.add(project='links', title='Links slice', goal='Deliver', kind='milestone',
+                         parent=epic.id, actor='user')
+
+    def linked():
+        with urlopen(base_url + '/api/state', timeout=5) as response:
+            doc = json.load(response)
+        job, = [job for host in doc['hosts'] if host['name'] == 'home' for job in host['jobs'] if job['id'] == 'a1c3e9']
+        return job['work'] and [node['title'] for node in job['work']['chain']]
+
+    assert linked() is None
+    open_execution(store).link('home', 'a1c3e9', milestone.id, actor='user')
+    assert linked() == ['Links epic', 'Links slice']
+    work.set(milestone.id, title='Renamed slice', actor='user')
+    assert linked() == ['Links epic', 'Renamed slice']

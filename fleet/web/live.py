@@ -38,6 +38,7 @@ class LiveWorkspace:
     capacity: int
     pipeline_config: dict[str, dict[str, str]]           # name → {"host", "project": room label}, as configured
     pipeline_runs: dict[tuple[str, str], dict[str, Any]]  # (host, name) → {"run", "baseline", "seq"} as last reported
+    work_links: tuple[tuple[Any, int], dict[tuple[str, str], dict[str, Any]]] | None = None  # (store, revision), links
     pipeline_seq: int
     documents: ProjectDocuments   # each project's document store (see fleet.web.job_store)
 
@@ -234,7 +235,13 @@ class LiveWorkspace:
 
     def with_work(self, document: dict[str, Any]) -> dict[str, Any]:
         """Give each job and session the work item its run is linked to, or null when none is."""
-        links = run_work(open_work(self.store), open_execution(self.store))
+        # Every store write records a history entry, so the latest sequence is the store's revision.
+        # Read it before the links so a write in between is picked up by the next request.
+        revision = (self.store, self.store.latest_sequence())
+        cached = self.work_links
+        if cached is None or cached[0] != revision:
+            cached = self.work_links = (revision, run_work(open_work(self.store), open_execution(self.store)))
+        links = cached[1]
         return {**document, "hosts": [{**host, **{kind: [{**item, "work": links.get((host["name"], item["id"]))}
                                                          for item in host[kind]] for kind in ("jobs", "sessions")}}
                                       for host in document["hosts"]]}
