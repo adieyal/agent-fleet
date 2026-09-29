@@ -69,7 +69,7 @@ STATIC_TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; char
                 ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".json": "application/json",
                 ".md": "text/markdown; charset=utf-8", ".txt": "text/plain; charset=utf-8"}
 ASSET_POLICY = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox"
-ATTENTION_ACTIONS = ("acknowledge", "snooze", "reopen")
+ATTENTION_ACTIONS = ("acknowledge", "snooze", "reopen", "resolve")
 REFUSAL_ACTIONS = ("allow", "dismiss")   # a job step's permission refusals
 FLOOR_CHANGES = ("/api/move-in", "/api/link", "/api/merge", "/api/shutter", "/api/restore")
 EVENTS_PER_JOB = "15"
@@ -581,7 +581,7 @@ def make_handler(state: FleetState | FixtureState,
             self.respond(200, "application/json", json.dumps({"id": body["id"], "resolution": details}).encode())
 
         def attention(self, action: str, body: dict[str, Any]) -> None:
-            """POST /api/attention/acknowledge|snooze|reopen {"id": item id, "seconds": snooze length}"""
+            """POST /api/attention/acknowledge|snooze|reopen|resolve {"id": item id, "seconds": snooze length}"""
             if not isinstance(body.get("id"), str):
                 self.error(400, "the item's id is required")
                 return

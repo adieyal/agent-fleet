@@ -224,6 +224,8 @@ class LiveWorkspace:
             self.attention.snooze(item_id, until=self.attention.clock() + timedelta(seconds=seconds), actor="web-user")
         elif action == "reopen":
             self.attention.reopen(item_id, actor="web-user")
+        elif action == "resolve":
+            self.attention.resolve(item_id, details="resolved from the deck", actor="web-user")
         else:
             raise FleetError(f"unknown attention action '{action}'")
         self.bump()

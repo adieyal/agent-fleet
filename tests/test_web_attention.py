@@ -312,6 +312,14 @@ def test_refused_actions_change_nothing(deck, action, body, headers, status):
     assert deck.items()["home:f1"]["state"] == "open"
 
 
+def test_a_stale_item_is_resolved_from_the_deck(deck):
+    deck.report("home", jobs=[job("f1", "failed", [("failed", 100)])])
+    item_id = deck.items()["home:f1"]["id"]
+    assert deck.act("resolve", {"id": item_id}) == 200
+    assert deck.items().get("home:f1", {"state": "resolved"})["state"] == "resolved"   # the lantern goes out
+    assert deck.act("acknowledge", {"id": item_id}) == 409                            # and it stays done
+
+
 def test_a_resolved_item_cannot_be_acted_on(deck):
     deck.report("home", jobs=[job("f1", "failed", [("failed", 100)])])
     item_id = deck.items()["home:f1"]["id"]

@@ -136,9 +136,10 @@ function renderPanel() {
     <ul>${listed.map(i => {
       const owner = i.owner, present = !!workOf(owner.key);
       const state = i.state === 'snoozed' ? `snoozed until ${esc(clock(i.snoozed_until).slice(0, 5))}` : i.state;
-      const actions = i.state === 'open' ? `<button data-act="acknowledge">Acknowledge</button><button data-act="snooze">Snooze 1h</button>`
+      const actions = (i.state === 'open' ? `<button data-act="acknowledge">Acknowledge</button><button data-act="snooze">Snooze 1h</button>`
         : i.state === 'acknowledged' ? `<button data-act="snooze">Snooze 1h</button><button data-act="reopen">Reopen</button>`
-        : `<button data-act="reopen">Reopen</button>`;
+        : `<button data-act="reopen">Reopen</button>`)
+        + '<button data-act="resolve" title="Done with it: the lantern goes out for this item">Resolve</button>';
       return `<li class="attn-item" data-id="${esc(i.id)}" data-state="${esc(i.state)}" data-kind="${esc(i.kind)}">
         <span class="ak">${GLYPH[i.kind]}</span>
         <div class="ab"><b>${esc(i.summary)}</b>
