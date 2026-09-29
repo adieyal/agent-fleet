@@ -212,9 +212,11 @@ def test_bench_real_endpoint(changed_deck: Deck, deck_state, monkeypatch, tmp_pa
     bench.locator('[data-open-report]').click()
     expect(page.locator('#reader')).to_be_visible()
     expect(page.locator('#rdTitle')).to_have_text('Step 1 report')
+    # the seeded run has no job on any host, so the reader's fetch 404s; that is expected here, not a page error.
+    # Wait for the reader to say so: the browser logs the 404 only once the fetch lands, after the reader opens.
+    expect(page.locator('#reader .rd-error')).to_contain_text('Couldn’t open this document')
     page.keyboard.press('Escape')
-    # the seeded run has no job on any host, so the reader's fetch 404s; that is expected here, not a page error
-    changed_deck.errors[:] = [e for e in changed_deck.errors if 'Not Found' not in e and '404' not in e]
+    changed_deck.errors[:] =[e for e in changed_deck.errors if 'Not Found' not in e and '404' not in e]
     expect(page.locator('#reader')).to_be_hidden()
     bench.locator('[data-briefing]').click()
     for text in ['Find suppliers', 'Evidence gathered', 'Review results', 'Accept results']:
