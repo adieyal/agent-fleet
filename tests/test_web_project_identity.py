@@ -14,11 +14,8 @@ def test_state_work_and_bench_use_workspace_id():
     try:
         with urlopen(deck.url + '/api/state', timeout=5) as response:
             state = json.load(response)
-        assert state['work'][identity]['work_items'][0]['id'] == epic.id
-        document = {'attention': state['attention'], 'projects': state['projects']}
-        projected = deck.state.with_building(document, open_workspace().registry())
-        assert 'work' not in document
-        assert projected['work'] == state['work']
+        assert 'work' not in state                         # project work is read from /api/bench, keyed the same way
+        assert identity in {project['id'] for project in state['projects']}
         with urlopen(deck.url + '/api/bench?project=' + identity, timeout=5) as response:
             bench = json.load(response)
         assert bench['project'] == identity
