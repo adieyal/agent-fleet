@@ -43,7 +43,8 @@ SKY, SUN, EXPOSURE = 0.85, 6.0, -1.1   # the sun well over a blue sky: l0's blue
 # fronts pale, as l0's are
 SUN_FROM = Vector((-1.0, 0.3, 0.45))
 FRONT_FILL, FRONT_FROM = 2.0, Vector((-0.3, -1.0, 0.5))
-PLINTH_LIFT = 0.5                # the plinth's exposure over the rest's: it is rendered without the front fill
+GLASS_GLOW = 3000                 # W per warm panel behind a working glass floor's panes
+PLINTH_LIFT = 0.5              # the plinth's exposure over the rest's: it is rendered without the front fill
 GLASS_SETBACK = 0.45               # glazing stands behind the slab edge, which reads as a ledge (l0)
 W, D = 31.5, 16.0                  # a floor's width along the front and depth: the fit's 31.6 x 15.9 m
 H = F2F - SLAB                     # a storey's clear height
@@ -500,10 +501,12 @@ def floor(kind: str, lit: bool, top: bool) -> dict:
         to_let()
     if lit:
         wall_wash()
-        A.light('amber', 'AREA', (W / 2, D / 2, H - 0.1), 3200, PAL['warm'], shape='RECTANGLE', size=W, size_y=D)
+        # (behind glass a working floor glows, but stays quieter than any working open floor: busy never looks important;
+        # tests/test_building_browser.py measures it)
+        A.light('amber', 'AREA', (W / 2, D / 2, H - 0.1), 2200 if kind == 'glass' else 3200, PAL['warm'], shape='RECTANGLE', size=W, size_y=D)
         if kind == 'glass':
             for cx in (5.5, 15.75, 26.0):
-                A.light('glow', 'AREA', (cx, D / 2, H - 0.2), 6000, PAL['warm'], shape='RECTANGLE', size=9.0, size_y=D - 2)
+                A.light('glow', 'AREA', (cx, D / 2, H - 0.2), GLASS_GLOW, PAL['warm'], shape='RECTANGLE', size=9.0, size_y=D - 2)
     ceiling_fill(H, {'open': 250, 'lab': 250, 'glass': 60, 'free': 220}[kind] * (0.6 if lit else 1.0))
     context(top)
     slots = {'shutter_handle': Vector((W - 1.6, -0.2, -SLAB / 2)), 'focus_hit': Vector((W / 2, D / 2, 1.5))}
