@@ -84,3 +84,12 @@ def test_a_resumed_codex_step_can_still_write_its_job_directory(tmp_path, monkey
     job = {"id": "job", "agent": "codex", "permission": "workspace-write", "cwd": str(tmp_path), "project": "p"}
     command = fleetd._runtime("codex").command(job, {"index": 1, "prompt": "Report"}, "session")
     assert f'sandbox_workspace_write.writable_roots=["{fleetd.JOBS_DIRECTORY / "job"}"]' in command
+
+
+@pytest.mark.parametrize("session", [None, "session"])
+def test_a_codex_step_can_write_the_jobs_extra_directories(tmp_path, monkeypatch, session):
+    monkeypatch.setattr(fleetd, "CONFIG_PATH", tmp_path / "config.json")
+    job = {"id": "job", "agent": "codex", "permission": "workspace-write", "cwd": str(tmp_path), "project": "p",
+           "description": "d", "add_dirs": ["/extra"]}
+    command = " ".join(fleetd._runtime("codex").command(job, {"index": 0, "prompt": "Work"}, session))
+    assert "/extra" in command and str(fleetd.JOBS_DIRECTORY / "job") in command

@@ -97,11 +97,11 @@ def test_a_step_carries_its_plan_before_it_starts():
 
 
 @pytest.mark.parametrize("runs, expected", [
-    ([{"status": "done", "start": "2026-09-29T15:36:53+00:00"}], "ran"),
-    ([{"status": "done", "start": "2026-09-29T14:00:00+00:00"},
+    ([{"status": "succeeded", "start": "2026-09-29T15:36:53+00:00"}], "ran"),
+    ([{"status": "succeeded", "start": "2026-09-29T14:00:00+00:00"},
       {"status": "failed", "start": "2026-09-29T15:00:00+00:00"}], "next"),
     ([{"status": "failed", "start": "2026-09-29T14:00:00+00:00"},
-      {"status": "done", "start": "2026-09-29T15:00:00+00:00"}], "ran"),
+      {"status": "succeeded", "start": "2026-09-29T15:00:00+00:00"}], "ran"),
     ([], "next")])
 def test_work_whose_latest_run_finished_ran_but_is_not_complete(runs, expected):
     node, = project([item("t")])["work_items"]
@@ -116,7 +116,7 @@ def test_a_running_step_says_when_its_earliest_running_run_started():
     s0["runs"] = [{"status": "running", "start": "2026-09-29T15:40:00+00:00"},
                   {"status": "running", "start": "2026-09-29T15:36:53+00:00"},
                   {"status": "failed", "start": "2026-09-29T14:00:00+00:00"}]
-    a1["runs"] = [{"status": "done", "start": "2026-09-29T15:00:00+00:00"}]
+    a1["runs"] = [{"status": "succeeded", "start": "2026-09-29T15:00:00+00:00"}]
     room, = bench_rooms(doc)["rooms"]
     assert [t["running_since"] for t in room["tasks"]] == ["2026-09-29T15:36:53+00:00", None]
 

@@ -154,12 +154,17 @@ def test_one_dispatch_version_and_runtime_permission_defaults(worker, capsys):
     assert json.loads(capsys.readouterr().out)['status'] == 'absent'
 
 
-@pytest.mark.parametrize('field,value', [('allowed_tools', '["Bash"]'), ('add_dir', ['/tmp'])])
-def test_worker_refuses_claude_only_flags_for_codex(worker, capsys, field, value):
-    setattr(worker, field, value)
+def test_worker_refuses_claude_only_flags_for_codex(worker, capsys):
+    worker.allowed_tools = '["Bash"]'
     with pytest.raises(SystemExit):
         fleetd.command_create(worker)
     assert 'claude' in capsys.readouterr().out
+
+
+def test_worker_accepts_extra_writable_directories_for_codex(worker):
+    worker.add_dir = ['/tmp']
+    fleetd.command_create(worker)
+    assert fleetd.read_job(worker.id)["add_dirs"] == ['/tmp']
 
 
 def test_dead_runner_requires_confirmed_agent_death(worker, monkeypatch):

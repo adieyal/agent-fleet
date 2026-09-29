@@ -28,7 +28,7 @@ def status(item: dict) -> str:
     if condition == "ready for review" or any(run["status"] == "running" for run in runs):
         return "active"
     latest = max(runs, key=lambda run: run.get("start") or "", default=None)
-    return "ran" if latest is not None and latest["status"] == "done" else "next"
+    return "ran" if latest is not None and latest["status"] == "succeeded" else "next"
 
 
 def running_since(item: dict) -> str | None:

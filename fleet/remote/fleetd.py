@@ -426,15 +426,17 @@ def _runtime_command(job: JsonObject, step: JsonObject, session_id: Optional[str
                      "workspace-write": ["--sandbox", "workspace-write"],
                      "danger-full-access": ["--dangerously-bypass-approvals-and-sandbox"]}[job["permission"]]
     model_flags = ["--model", job["model"]] if job.get("model") else []
+    writable_directories = [str(JOBS_DIRECTORY / job["id"]), *job.get("add_dirs", [])]
     if session_id:
         # `exec resume` has neither --sandbox nor --add-dir, so the job's sandbox and its job directory
         # (the outbox a later step writes to) are passed as config overrides.
         return [codex, "exec", "resume", "--json", "--skip-git-repo-check",
                 "-c", f'sandbox_mode="{job["permission"]}"',
-                "-c", f'sandbox_workspace_write.writable_roots={json.dumps([str(JOBS_DIRECTORY / job["id"])])}',
+                "-c", f'sandbox_workspace_write.writable_roots={json.dumps(writable_directories)}',
                 *model_flags, session_id, prompt]
+    add_dir_flags = [flag for directory in writable_directories for flag in ("--add-dir", directory)]
     return [codex, "exec", "--json", "--skip-git-repo-check", *sandbox_flags, *model_flags,
-            "-C", job["cwd"], "--add-dir", str(JOBS_DIRECTORY / job["id"]), prompt]
+            "-C", job["cwd"], *add_dir_flags, prompt]
 
 
 class _Runtime:
@@ -483,11 +485,8 @@ class _Runtime:
             fail("codex permission must be read-only, workspace-write or danger-full-access")
 
     def dispatch_permission(self, permission: Optional[str], allow: List[str], add_dirs: List[str]) -> str:
-        if self.name != "claude":
-            if allow:
-                raise ValueError("--allow applies to claude jobs only (codex uses its sandbox)")
-            if add_dirs:
-                raise ValueError("--add-dir applies to claude jobs only")
+        if self.name != "claude" and allow:
+            raise ValueError("--allow applies to claude jobs only (codex uses its sandbox)")
         if permission is not None:
             return permission
         return {"claude": "acceptEdits", "codex": "workspace-write"}[self.name]
