@@ -121,6 +121,20 @@ def test_a_running_step_says_when_its_earliest_running_run_started():
     assert [t["running_since"] for t in room["tasks"]] == ["2026-09-29T15:36:53+00:00", None]
 
 
+def test_a_finished_step_carries_its_latest_finished_runs_start_and_end():
+    epic = item("epic", kind="epic", goal="Ship")
+    doc = project([epic, item("h0", parent="epic"), item("a8", parent="epic")])
+    h0, _ = doc["work_items"][0]["children"]
+    h0["runs"] = [{"id": "r0", "host": "home", "status": "failed", "start": "2026-09-29T14:00:00+00:00",
+                   "end": "2026-09-29T14:05:00+00:00"},
+                  {"id": "r1", "host": "home", "status": "succeeded", "start": "2026-09-29T15:36:53+00:00",
+                   "end": "2026-09-29T15:45:45+00:00"},
+                  {"id": "r2", "host": "home", "status": "unknown outcome", "start": None, "end": None}]
+    room, = bench_rooms(doc)["rooms"]
+    assert [t["last_run"] for t in room["tasks"]] == [
+        {"start": "2026-09-29T15:36:53+00:00", "end": "2026-09-29T15:45:45+00:00"}, None]
+
+
 def test_epic_without_milestones_or_work_records_nothing():
     room, = bench_rooms(project([item("epic", kind="epic", goal="Explore")]))["rooms"]
     assert room["milestones"] == {"complete": 0, "total": 0}

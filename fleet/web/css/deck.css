@@ -1052,6 +1052,7 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 [data-plan-item] small { color:#94a3b8; }
 #benchRoute [data-plan-item] button { margin:0; padding:4px 8px; font-weight:bold; }
 [data-plan-item] small[data-running-since] { display:block; color:#38bdf8; }
+[data-plan-item] small[data-ran-for] { display:block; }
 [data-step-plan] { margin-top:4px; font-size:13px; }
 [data-step-plan] summary { cursor:pointer; color:#7dd3fc; }
 [data-step-plan] div { white-space:pre-wrap; margin-top:4px; padding:6px 8px; border-left:2px solid #334155; color:#cbd5e1; }

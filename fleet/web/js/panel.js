@@ -2,7 +2,7 @@
 
 import * as THREE from 'three';
 import { BOT_H, DEBUG, DEMO, PI, QS } from './env.js';
-import { age, clock, esc, mix, store, trunc } from './util.js';
+import { age, clock, duration, esc, mix, store, trunc } from './util.js';
 import { AGENT_COLOR, TOOL_ICON, hostLook } from './looks.js';
 import { isSession, shortId } from './activity.js';
 import { ROBOT, renderer } from './scene.js';
@@ -126,7 +126,7 @@ export function renderPanel() {
         <span class="chip"><i style="background:${e.look.color}"></i><b>${esc(e.host)}</b></span>
         <span class="chip"><i style="background:${AGENT_COLOR[j.agent] || '#ccc'}"></i>${esc(j.agent)}</span>
         ${projectChip(j)}
-        <span class="chip st-${esc(j.status)}">${esc(j.status)}</span>
+        <span class="chip st-${esc(j.status)}" title="${esc(jobTimeTitle(j))}">${esc(j.status)}${jobTime(j) ? ` · ${jobTime(j)}` : ''}</span>
       </div></div>
     ${j.status !== 'running' ? DISMISS_BUTTON : ''}
     <button id="close" aria-label="Close">✕</button>`;
@@ -146,7 +146,7 @@ export function renderPanel() {
     </dl>`, `
     <h3>Steps · ${steps.filter(s => s.status === 'done').length}/${steps.length}</h3>
     <ol class="steps">${steps.map(s => `<li class="${esc(s.status)}"><span class="si">${stepIcon[s.status] || '?'}</span>
-      <span class="t">${s.index + 1}. ${esc(s.title)}</span>${s.result ? `<span class="r">${esc(trunc(s.result, 400))}</span>` : ''}</li>`).join('')}</ol>`,
+      <span class="t">${s.index + 1}. ${esc(s.title)}${s.started_at ? ` <small class="muted">${duration((s.finished_at ?? Date.now() / 1000) - s.started_at)}</small>` : ''}</span>${s.result ? `<span class="r">${esc(trunc(s.result, 400))}</span>` : ''}</li>`).join('')}</ol>`,
     (j.todos && j.todos.length) ? `<h3>Agent's own todo list</h3><ul class="todos">${j.todos.map(td => `<li class="${esc(td.status)}">${td.status === 'completed' ? '✓' : td.status === 'in_progress' ? '▸' : '·'} ${esc(td.text)}</li>`).join('')}</ul>` : '', `
     <h3>Recent activity</h3>
     ${traceHtml(rows, 'No events yet.')}`, `
@@ -161,6 +161,22 @@ export function renderPanel() {
     ...(docs ? { documents: [docs] } : {}),
   }, e, j.status === 'done' ? 'off' : j.status === 'stalled' ? 'slump' : 'normal');
 }
+// How long a job ran: its first step's start to its last step's finish, or to now while it runs.
+function jobSpan(j) {
+  const steps = j.steps || [];
+  const starts = steps.map(s => s.started_at).filter(Boolean), ends = steps.map(s => s.finished_at).filter(Boolean);
+  if (!starts.length) return null;
+  const start = Math.min(...starts);
+  const end = j.status === 'running' || !ends.length ? (j.status === 'running' ? Date.now() / 1000 : null) : Math.max(...ends);
+  return end === null ? null : { start, end, running: j.status === 'running' };
+}
+const jobTime = j => { const span = jobSpan(j); return span ? duration(span.end - span.start) : ''; };
+const jobTimeTitle = j => {
+  const span = jobSpan(j);
+  if (!span) return j.status;
+  return span.running ? `running for ${duration(span.end - span.start)}, since ${new Date(span.start * 1000).toLocaleString()}`
+    : `ran for ${duration(span.end - span.start)}: ${new Date(span.start * 1000).toLocaleString()} – ${new Date(span.end * 1000).toLocaleString()}`;
+};
 const DISMISS_BUTTON = '<button id="dismiss" title="Hide this agent from the deck until it has new activity">Dismiss</button>';
 
 // ------------------------------------------------------------------ moving an agent to another project

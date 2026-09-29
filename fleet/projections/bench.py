@@ -41,10 +41,19 @@ def running_since(item: dict) -> str | None:
     return min(starts, default=None)
 
 
+def last_run(item: dict) -> dict[str, str] | None:
+    """The start and end (ISO times) of the item's latest finished run, or None when none has both recorded."""
+    finished = [run for node in descendants(item) for run in node["runs"]
+                if run["status"] != "running" and run.get("start") and run.get("end")]
+    latest = max(finished, key=lambda run: run["start"], default=None)
+    return None if latest is None else {"start": latest["start"], "end": latest["end"]}
+
+
 def line_item(item: dict) -> dict[str, Any]:
     return {"id": item["id"], "title": item["title"], "headline": headline(item["goal"]),
             "condition": item["condition"], "status": status(item), "next_step": item["next_step"],
-            "plan": item["plan"], "running_since": running_since(item)}
+            "plan": item["plan"], "running_since": running_since(item),
+            "last_run": last_run(item)}
 
 
 def milestone_groups(epic: dict) -> tuple[list[dict], list[tuple[dict, list[dict]]]]:

@@ -1,5 +1,5 @@
 // Floor → epic room → milestone bench. All business state comes from /api/bench.
-import { esc, store } from './util.js';
+import { duration, esc, store } from './util.js';
 import { hostLook } from './looks.js';
 import { glyphHtml, svg } from './glyphs.js';
 import { ents } from './model.js';
@@ -141,13 +141,8 @@ function progressText({ basis, complete, total }) {
   return `<progress max="${total}" value="${complete}"></progress> ${complete} of ${total} ${basis === 'milestones' ? 'milestones' : 'criteria met'}`;
 }
 
-// How long since an ISO time, to the minute: "40s", "12m", "1h 12m", "2d 3h".
-function runningFor(since) {
-  const s = Math.max(0, Math.round((Date.now() - Date.parse(since)) / 1000));
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60), h = Math.floor(m / 60), d = Math.floor(h / 24);
-  return d ? `${d}d ${h % 24}h` : h ? `${h}h ${m % 60}m` : `${m}m`;
-}
+const runningFor = since => duration((Date.now() - Date.parse(since)) / 1000);
+const ranLine = ({ start, end }) => `<small data-ran-for title="${esc(new Date(start).toLocaleString())} – ${esc(new Date(end).toLocaleString())}">Ran for ${duration((Date.parse(end) - Date.parse(start)) / 1000)}</small>`;
 const runningLine = since => `<small data-running-since="${esc(since)}" title="Started ${esc(new Date(since).toLocaleString())}">Running for ${runningFor(since)}</small>`;
 // The page is re-rendered only when the work changes, so the running times tick on their own.
 setInterval(() => el.querySelectorAll('[data-running-since]').forEach(line => {
@@ -158,7 +153,7 @@ function planLine(item, opens) {
   const title = opens ? `<button data-slice="${esc(item.id)}">${esc(item.title)}</button>` : `<b>${esc(item.title)}</b>`;
   return `<li data-plan-item="${esc(item.id)}" data-status="${esc(item.status)}">
     <span data-glyph role="img" aria-label="${esc(STATUS_LABELS[item.status] ?? item.status)}" title="${esc(STATUS_LABELS[item.status] ?? item.status)} · ${esc(item.condition)}">${statuses[item.status]}</span>
-    <div>${title}<p>${esc(item.headline)}</p>${item.running_since ? runningLine(item.running_since) : ''}<small data-next-step>${item.next_step === null ? 'Next step not recorded' : `Next: ${esc(item.next_step)}`}</small>${
+    <div>${title}<p>${esc(item.headline)}</p>${item.running_since ? runningLine(item.running_since) : item.last_run ? ranLine(item.last_run) : ''}<small data-next-step>${item.next_step === null ? 'Next step not recorded' : `Next: ${esc(item.next_step)}`}</small>${
       item.plan === null ? '' : `<details data-step-plan><summary>Plan</summary><div>${esc(item.plan)}</div></details>`}</div></li>`;
 }
 

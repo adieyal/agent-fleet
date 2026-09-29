@@ -23,6 +23,13 @@ export function age(ts) {
   const s = Math.max(0, Math.round(Date.now() / 1000 - ts));
   if (s < 60) return s + 's'; if (s < 3600) return Math.floor(s / 60) + 'm'; if (s < 86400) return Math.floor(s / 3600) + 'h'; return Math.floor(s / 86400) + 'd';
 }
+// A length of time to the minute: "40s", "12m", "1h 12m", "2d 3h".
+export function duration(seconds) {
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60), h = Math.floor(m / 60), d = Math.floor(h / 24);
+  return d ? `${d}d ${h % 24}h` : h ? `${h}h ${m % 60}m` : `${m}m`;
+}
 export function trunc(s, n) { s = String(s ?? '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s; }
 export function rr(c, x, y, w, h, r) {
   r = Math.max(0, Math.min(r, w / 2, h / 2));
