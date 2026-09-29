@@ -78,7 +78,7 @@ def test_epic_page_lists_milestones_then_direct_tasks_with_status():
 
 @pytest.mark.parametrize("condition, running, expected", [
     ("complete", True, "complete"), ("blocked", True, "blocked"), ("on hold", False, "on hold"),
-    ("waiting", True, "on hold"), ("ready for review", False, "active"), ("none", True, "active"),
+    ("waiting", True, "on hold"), ("ready for review", False, "ran"), ("ready for review", True, "active"), ("none", True, "active"),
     ("none", False, "next")])
 def test_status_prefers_recorded_condition_over_runs(condition, running, expected):
     milestone = item("m", kind="milestone", condition=condition,
@@ -113,8 +113,8 @@ def test_a_running_step_says_when_its_earliest_running_run_started():
     epic = item("epic", kind="epic", goal="Ship")
     doc = project([epic, item("s0", parent="epic"), item("a1", parent="epic")])
     s0, a1 = doc["work_items"][0]["children"]
-    s0["runs"] = [{"status": "running", "start": "2026-09-29T15:40:00+00:00"},
-                  {"status": "running", "start": "2026-09-29T15:36:53+00:00"},
+    s0["runs"] = [{"id": "r2", "host": "home", "status": "running", "start": "2026-09-29T15:40:00+00:00"},
+                  {"id": "r1", "host": "home", "status": "running", "start": "2026-09-29T15:36:53+00:00"},
                   {"status": "failed", "start": "2026-09-29T14:00:00+00:00"}]
     a1["runs"] = [{"status": "succeeded", "start": "2026-09-29T15:00:00+00:00"}]
     room, = bench_rooms(doc)["rooms"]

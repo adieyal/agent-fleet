@@ -18,15 +18,18 @@ def headline(goal: str) -> str:
 def status(item: dict) -> str:
     """One of complete, blocked, on hold, active, ran or next; recorded condition outranks runs.
 
-    `ran` is work whose latest run finished but which nobody has accepted as complete: a run never completes work."""
+    `ran` is work that is ready for review, or whose latest run finished, but which nobody has accepted as complete:
+    a run never completes work."""
     condition = item["condition"]
     if condition in ("complete", "blocked", "on hold"):
         return condition
     if condition == "waiting":
         return "on hold"
     runs = [run for node in descendants(item) for run in node["runs"]]
-    if condition == "ready for review" or any(run["status"] == "running" for run in runs):
+    if any(run["status"] == "running" for run in runs):
         return "active"
+    if condition == "ready for review":
+        return "ran"
     latest = max(runs, key=lambda run: run.get("start") or "", default=None)
     return "ran" if latest is not None and latest["status"] == "succeeded" else "next"
 
