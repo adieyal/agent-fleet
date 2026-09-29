@@ -18,8 +18,13 @@ const kinds = { checked: '<rect x="5" y="5" width="14" height="14"/>',
 const figure = svg('<circle cx="12" cy="5" r="3"/><path d="M6 21V11h12v10M12 14v7M3 12v6M21 12v6"/>');
 const lantern = svg('<path d="M8 7V5a4 4 0 0 1 8 0v2M6 7h12l2 13H4ZM9 10v7m6-7v7"/>');
 
+// State arrives many times a second; the floor and epic pages re-read their work at most this often.
+const ROOMS_REFRESH_MS = 3000;
+let roomsReadAt = 0, roomsTimer = null;
+
 export async function refreshBench() {
-  if (!bench || el.hidden) return;
+  if (el.hidden || project === null) return;
+  if (!bench) { refreshRooms(); return; }
   const request = ++revision;
   try {
     const doc = await read(bench.id);
@@ -32,6 +37,29 @@ export async function refreshBench() {
   } catch (error) {
     if (request === revision) el.innerHTML = `<p role="alert">${esc(error.message)}</p>`;
   }
+}
+
+// The floor's epic cards and an epic's page: re-read, and redraw only when the work changed, keeping the
+// scroll position and which step plans are open.
+function refreshRooms() {
+  const wait = roomsReadAt + ROOMS_REFRESH_MS - Date.now();
+  if (wait > 0) { roomsTimer ??= setTimeout(() => { roomsTimer = null; refreshBench(); }, wait); return; }
+  roomsReadAt = Date.now();
+  // Its own check, not `revision`: a background read must never cancel a page the user just asked for.
+  const asked = { project, revision };
+  read().then(doc => {
+    if (asked.project !== project || asked.revision !== revision || bench
+        || JSON.stringify(doc.rooms) === JSON.stringify(rooms)) return;
+    rooms = doc.rooms;
+    if (room) room = rooms.find(r => r.id === room.id) ?? null;
+    const open = new Set([...el.querySelectorAll('[data-step-plan][open]')].map(d => d.closest('[data-plan-item]')?.dataset.planItem));
+    const scroll = el.scrollTop;
+    render();
+    el.querySelectorAll('[data-plan-item]').forEach(line => {
+      if (open.has(line.dataset.planItem)) line.querySelector('[data-step-plan]')?.setAttribute('open', '');
+    });
+    el.scrollTop = scroll;
+  }).catch(() => {});   // a missed refresh keeps the last good page; the next state update tries again
 }
 
 function agentMarkup(agent) {
