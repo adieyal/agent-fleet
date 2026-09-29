@@ -6,6 +6,8 @@
 //   ?mode=walk|pose  &clip=Idle&dir=S  &host=%23ff9340&kit=antenna&face=codex&look=stalled  &zoom=0..1 | &ppm=171.5
 //   &scene=bench (desk 2 types; the walker only walks, so it passes behind the bench)  &t=seconds (frozen)  &shot
 
+import { depth, plane, sameCamera } from '/js/world/projection.js';   // (depth: larger is nearer the camera)
+
 const params = new URLSearchParams(location.search);
 const SPRITES = '/assets/world/robot/sprites/';
 const FROZEN = params.has('t') ? Number(params.get('t')) : null;
@@ -17,17 +19,9 @@ const LOOKS = ['normal', 'stalled', 'resting'];  // motion.js tone
 const SPEED = 0.9;  // m/s
 const POSE_AT = [6.4, 2.9];
 
-let PITCH = 28 * Math.PI / 180, YAW = 33 * Math.PI / 180;  // replaced by the manifest's camera
-let RIGHT, UP, BACK;
-function camera(c) {
-  PITCH = c.pitch_deg * Math.PI / 180;
-  YAW = c.yaw_deg * Math.PI / 180;
-  RIGHT = [Math.cos(YAW), Math.sin(YAW), 0];
-  UP = [-Math.sin(PITCH) * Math.sin(YAW), Math.sin(PITCH) * Math.cos(YAW), Math.cos(PITCH)];
-  BACK = [Math.sin(YAW) * Math.cos(PITCH), -Math.cos(YAW) * Math.cos(PITCH), Math.sin(PITCH)];  // towards the camera
+function camera(c) {   // the sprites must be the world's camera
+  if (!sameCamera(c)) throw new Error(`sprites.json was made for camera ${JSON.stringify(c)}, not the world's`);
 }
-const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const depth = p => dot(p, BACK);  // larger is nearer the camera
 
 const canvas = document.getElementById('view');
 const g = canvas.getContext('2d');
@@ -50,8 +44,8 @@ function setZoom(z) {
   if (params.has('ppm')) view.ppm = Number(params.get('ppm'));  // a fixed density: the floor's 1x is 171.5 px/m
 }
 function screen(p) {
-  const d = [p[0] - view.target[0], p[1] - view.target[1], p[2] - view.target[2]];
-  return [view.W / 2 + dot(d, RIGHT) * view.ppm, view.H / 2 - dot(d, UP) * view.ppm];
+  const [u, v] = plane([p[0] - view.target[0], p[1] - view.target[1], p[2] - view.target[2]]);
+  return [view.W / 2 + u * view.ppm, view.H / 2 + v * view.ppm];
 }
 
 // --- loading ---------------------------------------------------------------------------------------------

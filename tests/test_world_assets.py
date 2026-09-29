@@ -47,7 +47,8 @@ def test_output_matches_its_manifest_and_budget(scene: str) -> None:
 
 def test_the_robot_sprites_are_complete_and_small() -> None:
     """art/scripts/build_robot_sprites.py: every page the manifest names exists and nothing else does; the sets
-    loaded up front (1x, 2x and the manifest) stay under 8 MB; every frame of every clip has a body."""
+    loaded up front (1x, 2x and the manifest) stay under 9 MB (8 MB at the old orthographic camera; the canonical
+    camera draws verticals full length, so every frame is about 12% taller); every frame of every clip has a body."""
     folder = WORLD / "robot" / "sprites"
     m = json.loads((folder / "sprites.json").read_text())
     named = {p[k] for r in m["resolutions"].values() for p in r["pages"] for k in ("color", "mask")}
@@ -55,7 +56,7 @@ def test_the_robot_sprites_are_complete_and_small() -> None:
     on_disk = {str(f.relative_to(folder)) for f in folder.rglob("*") if f.is_file()} - {"sprites.json"}
     assert on_disk == named
     eager = [f for r, meta in m["resolutions"].items() if meta["load"] == "eager" for f in (folder / r).iterdir()]
-    assert sum(f.stat().st_size for f in eager) + (folder / "sprites.json").stat().st_size < 8 * 1000 * 1000
+    assert sum(f.stat().st_size for f in eager) + (folder / "sprites.json").stat().st_size < 9 * 1000 * 1000
     for clip, c in m["clips"].items():
         assert c["dirs"], clip
         for d, dd in c["dirs"].items():

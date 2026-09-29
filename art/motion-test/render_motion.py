@@ -25,7 +25,9 @@ import build_workbench as W  # noqa: E402
 import motion_rig as R  # noqa: E402
 
 MIX = Path.home() / '.local/state/fleet/renovation/mixamo'
-FLOOR_VIEW = dict(pitch=28.0, yaw=33.0)  # the floor's camera since floor review 1
+# the canonical camera's angle (artlib.canonical_camera): the sprites render it oblique; the previews here are the
+# plain orthographic camera at that angle
+FLOOR_VIEW = dict(pitch=A.CANONICAL_DEPRESSION, yaw=A.CANONICAL_YAW)
 SCALE_FILE = HERE / 'robot_scale.json'
 # where the kit's normal-size chair and desk stand around the seat point (the pelvis's rest), fitted to the robot by
 # cmd_fit: the chair's centre (y) and how far ahead the desk's far edge is. Defaults: build_robot's human layout.

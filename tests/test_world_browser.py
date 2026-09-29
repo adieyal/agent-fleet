@@ -34,7 +34,9 @@ def camera(page: Page) -> dict[str, Any]:
 
 
 def settle(page: Page) -> None:
-    page.wait_for_function("!world.engine.camera.moving && !world.engine.raf", timeout=10_000)
+    # (and no ground snapshot still painting in its worker: its arrival repaints the whole view)
+    page.wait_for_function("!world.engine.camera.moving && !world.engine.raf && !world.engine.ground.building"
+                           " && !world.engine.ground.prev", timeout=10_000)
 
 
 def wheel(page: Page, dy: float, times: int, at: tuple[int, int] = (500, 300)) -> None:
