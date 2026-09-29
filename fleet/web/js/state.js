@@ -23,6 +23,7 @@ import { patchScene } from './dim.js';
 import { applyBuilding } from './building.js';
 import { applyWorkarea } from './workarea.js';
 import { refreshBench } from './bench.js';
+import { applyRadio } from './radio.js';
 import { applyPipeline, buildScreens, pipelineRooms, pipelines, setPipelines } from './pipelines.js';
 import { updateSankey } from './sankey.js';
 
@@ -120,6 +121,7 @@ export function applyState(doc) {
   applyBuilding(doc);   // from the whole document: dismissed and finished work still counts there
   applyWorkarea(doc);
   refreshBench();
+  applyRadio(doc, entered);
   const shown = visibleHosts(doc);
   setHosts(entered ? shown.map(h => ({ ...h, jobs: h.jobs.filter(j => j.project_id === entered),
     sessions: h.sessions.filter(s => s.project_id === entered) })) : shown);

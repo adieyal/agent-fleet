@@ -1115,3 +1115,13 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 #moveMenu p[role=alert]{text-transform:none;letter-spacing:0;color:#fca5a5;font-size:12px}
 #moveMenu button{border:0;background:none;text-align:left;padding:6px 8px;border-radius:6px;color:var(--text);font:13px inherit;cursor:pointer}
 #moveMenu button:hover,#moveMenu button:focus-visible{background:rgba(255,255,255,.07)}
+
+/* room radio: a speaker toggle in the top bar; when on, the room's station and a volume slider */
+.radio{flex:none;display:flex;align-items:center;gap:8px}
+#radioToggle{display:grid;place-items:center;width:32px;height:30px;border:1px solid var(--line2);border-radius:8px;
+  background:rgba(56,189,248,.08);color:var(--muted);cursor:pointer}
+#radioToggle[aria-pressed="true"]{color:var(--text);border-color:var(--run)}
+#radioToggle:hover,#radioToggle:focus-visible{border-color:var(--run);outline:none}
+.radio-station{font:500 12px var(--mono);color:var(--muted);white-space:nowrap;max-width:160px;overflow:hidden;text-overflow:ellipsis}
+#radioVolume{width:80px;accent-color:var(--run)}
+@media (max-width:760px){.radio-station,#radioVolume{display:none}}
