@@ -77,3 +77,10 @@ def test_runtime_seam_resumes_answer_in_same_session(tmp_path, monkeypatch, agen
     command = fleetd._runtime(agent).command(job, {"index": 1, "prompt": "Answer"}, "session")
     assert "session" in command and "Answer" in command
     assert "--resume" in command if agent == "claude" else command[1:3] == ["exec", "resume"]
+
+
+def test_a_resumed_codex_step_can_still_write_its_job_directory(tmp_path, monkeypatch):
+    monkeypatch.setattr(fleetd, "CONFIG_PATH", tmp_path / "config.json")
+    job = {"id": "job", "agent": "codex", "permission": "workspace-write", "cwd": str(tmp_path), "project": "p"}
+    command = fleetd._runtime("codex").command(job, {"index": 1, "prompt": "Report"}, "session")
+    assert f'sandbox_workspace_write.writable_roots=["{fleetd.JOBS_DIRECTORY / "job"}"]' in command

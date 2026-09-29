@@ -423,13 +423,16 @@ def _runtime_command(job: JsonObject, step: JsonObject, session_id: Optional[str
         return command
     codex = config.get("codex", "codex")
     sandbox_flags = {"read-only": ["--sandbox", "read-only"],
-                     "workspace-write": ["--full-auto"],
+                     "workspace-write": ["--sandbox", "workspace-write"],
                      "danger-full-access": ["--dangerously-bypass-approvals-and-sandbox"]}[job["permission"]]
     model_flags = ["--model", job["model"]] if job.get("model") else []
     if session_id:
-        # `exec resume` has no --sandbox flag, so the job's sandbox is passed as a config override.
+        # `exec resume` has neither --sandbox nor --add-dir, so the job's sandbox and its job directory
+        # (the outbox a later step writes to) are passed as config overrides.
         return [codex, "exec", "resume", "--json", "--skip-git-repo-check",
-                "-c", f'sandbox_mode="{job["permission"]}"', *model_flags, session_id, prompt]
+                "-c", f'sandbox_mode="{job["permission"]}"',
+                "-c", f'sandbox_workspace_write.writable_roots={json.dumps([str(JOBS_DIRECTORY / job["id"])])}',
+                *model_flags, session_id, prompt]
     return [codex, "exec", "--json", "--skip-git-repo-check", *sandbox_flags, *model_flags,
             "-C", job["cwd"], "--add-dir", str(JOBS_DIRECTORY / job["id"]), prompt]
 
