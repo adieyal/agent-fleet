@@ -179,7 +179,8 @@ el.addEventListener('click', async ev => {
 window.addEventListener('keydown', ev => {
   if (ev.key !== 'Escape' || el.hidden) return;
   if (!document.getElementById('reader').hidden) return;
-  if (!room) { enterFloor(null); return; }
+  // A milestone with no epic above it opens with no room; stepping back from it lands on the floor list.
+  if (!room && !bench) { enterFloor(null); return; }
   ev.stopImmediatePropagation();
   ++revision;
   if (bench) bench = null; else room = null;

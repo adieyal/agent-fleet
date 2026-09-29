@@ -402,6 +402,37 @@ def test_panel_breadcrumb_names_the_linked_work_and_opens_it(changed_deck: Deck,
     assert changed_deck.errors == []
 
 
+def test_lone_milestone_steps_back_to_the_floor(changed_deck: Deck, deck_state, monkeypatch, base_url: str) -> None:
+    store = open_store()
+    monkeypatch.setattr(deck_state, 'store', store)
+    work = open_work(store)
+    milestone = work.add(project='lone', title='Lone slice', goal='Deliver', kind='milestone', actor='user')
+    work.add(project='lone', title='Solo', goal='Deliver', kind='epic', actor='user')
+    open_execution(store).link('home', 'a1c3e9', milestone.id, actor='user')
+    with urlopen(base_url + '/api/state', timeout=5) as response:
+        doc = json.load(response)
+    page = changed_deck.page
+    route = page.locator('#benchRoute')
+    page.evaluate('doc => fleetDeck.apply(doc)', doc)
+    page.evaluate("fleetDeck.select('home:a1c3e9')")
+    page.locator('#panel .work-crumbs').get_by_role('button', name='Lone slice').click()
+    expect(route).to_have_attribute('data-level', 'bench')
+    page.keyboard.press('Escape')
+    expect(route).to_have_attribute('data-level', 'floor')
+    expect(route.locator('[data-epic-card]')).to_have_count(1)
+    page.keyboard.press('Escape')
+    expect(route).to_be_hidden()
+
+    page.evaluate("fleetDeck.select('home:a1c3e9')")
+    page.locator('#panel .work-crumbs').get_by_role('button', name='Lone slice').click()
+    expect(route).to_have_attribute('data-level', 'bench')
+    page.locator('[data-back-floor]').click()
+    expect(route).to_have_attribute('data-level', 'floor')
+    page.evaluate('fleetDeck.enterFloor(null)')
+    page.locator('#panel #close').click()
+    assert changed_deck.errors == []
+
+
 def test_bench_route_steps_out_one_level(changed_deck: Deck) -> None:
     page = changed_deck.page
     page.locator('#viewToggle [data-view="building"]').click()
