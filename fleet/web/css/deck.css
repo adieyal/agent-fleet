@@ -1005,7 +1005,7 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 .tray .paper{width:14px;height:12px;border-radius:1px;background:#e8dcc2;box-shadow:0 -2px 0 #cdbf9f}
 /* Persisted work route over the existing deck. */
 #benchRoute { position:fixed; z-index:30; right:72px; top:64px; width:min(380px, calc(100vw - 32px)); max-height:calc(100vh - 150px);
-  overflow:auto; padding:12px 14px 14px; background:#101a29f2; border:1px solid #334155; border-radius:12px; color:#e2e8f0;
+  overflow:auto; padding:12px 14px 14px; background:#101a29; border:1px solid #334155; border-radius:12px; color:#e2e8f0;
   font:13px/1.45 var(--sans); box-shadow:0 12px 32px rgba(0,0,0,.45); }
 #benchRoute[data-level="room"] { width:min(460px, calc(100vw - 32px)); }
 #benchRoute[data-level="bench"] { width:min(600px, calc(100vw - 32px)); }
