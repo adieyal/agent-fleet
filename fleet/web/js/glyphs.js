@@ -17,7 +17,7 @@ export function actionOfEvent(ev) {
 export function actionOf(item) {
   switch (item.status) {
     case 'idle': return 'wait';
-    case 'queued': case 'done': case 'failed': case 'stalled': case 'cancelled': return item.status;
+    case 'queued': case 'done': case 'failed': case 'blocked': case 'stalled': case 'cancelled': return item.status;
   }
   return actionOfEvent(item.activity);
 }
@@ -44,6 +44,7 @@ export const ACTIONS = {
   queued:    { label: 'queued',         svg: svg('<path d="M7 3.5h10M7 20.5h10M8 3.5c0 5 8 5 8 8.5s-8 3.5-8 8.5M16 3.5c0 5-8 5-8 8.5s8 3.5 8 8.5"/>') },
   done:      { label: 'done',           svg: svg('<path d="M5 12.5l4.5 4.5L19 7"/>') },
   failed:    { label: 'failed',         svg: svg('<path d="M6 6l12 12M18 6L6 18"/>') },
+  blocked:   { label: 'blocked',        svg: svg('<path d="M6 21V4M6 4h11l-2.5 4 2.5 4H6"/>') },
   stalled:   { label: 'stalled',        svg: svg('<path d="M9 6v12M15 6v12"/>') },
   cancelled: { label: 'cancelled',      svg: svg('<path d="M6 12h12"/>') },
 };

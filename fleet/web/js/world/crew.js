@@ -23,6 +23,7 @@ export function settle(run, act) {
   switch (run.status) {
     case 'failed': return { clip: 'Death', stand: true, tone: 'normal' };
     case 'stalled': return { clip: 'SitSlump', tone: 'stalled' };
+    case 'blocked': return { clip: 'SitIdle', tone: 'normal' };   // waiting on its supervisor, not broken
     case 'queued': return { clip: 'SitIdle', tone: 'normal' };
     case 'done': case 'cancelled': return { clip: 'SitIdle', tone: 'resting', first: 'SitThumbsUp' };
   }

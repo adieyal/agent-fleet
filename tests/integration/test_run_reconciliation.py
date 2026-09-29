@@ -8,7 +8,7 @@ from fleet.transport import Host
 from fleet.web.server import FleetState, apply_message
 
 
-@pytest.mark.parametrize("outcome", ["done", "failed", "cancelled"])
+@pytest.mark.parametrize("outcome", ["done", "failed", "blocked", "cancelled"])
 def test_recorded_stream_reconciles_without_changing_work(outcome):
     store = composition.open_store()
     work = composition.open_work(store)
@@ -41,7 +41,8 @@ def test_recorded_stream_reconciles_without_changing_work(outcome):
     apply_message(state, host, final)
     reconciled = execution.runs()[0]
     assert reconciled.id == run.id
-    assert reconciled.status == {"done": "succeeded", "failed": "failed", "cancelled": "stopped"}[outcome]
+    assert reconciled.status == {"done": "succeeded", "failed": "failed", "blocked": "failed", "cancelled": "stopped"}[outcome]
+    assert reconciled.reason == ("blocked" if outcome == "blocked" else None)
     assert reconciled.runtime == "codex"
     assert reconciled.start.timestamp() == 100
     assert reconciled.end.timestamp() == 120
@@ -59,7 +60,7 @@ def test_recorded_stream_reconciles_without_changing_work(outcome):
     assert pruned.id == trace.id and pruned.availability == "unavailable"
     sequence, version = store.latest_sequence(), state.version
     apply_message(state, host, final)
-    if outcome == "failed":
+    if outcome in ("failed", "blocked"):
         attention, = composition.open_attention(store).list()
         change, = store.history_after(sequence)
         assert change["subject"] == f"attention:{attention.id}"

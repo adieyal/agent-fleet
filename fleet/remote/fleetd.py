@@ -46,7 +46,7 @@ TMUX_SOCKET = ("fleet" if FLEET_HOME == (Path.home() / ".fleet").resolve() else
                "fleet-" + hashlib.sha256(str(FLEET_HOME).encode()).hexdigest()[:16])
 TMUX_COMMAND = ["tmux", "-L", TMUX_SOCKET, "-f", "/dev/null"]
 SUMMARY_LENGTH = 160
-TERMINAL_STATUSES = ("done", "failed", "cancelled", "lost")
+TERMINAL_STATUSES = ("done", "failed", "blocked", "cancelled", "lost")
 STREAM_PROTOCOL_VERSION = 3
 DISPATCH_SCHEMA_VERSION = 4
 USAGE_SCHEMA_VERSION = 1
@@ -202,6 +202,8 @@ def derive_status(job: JsonObject) -> str:
         return "stalled"
     if any(step["status"] == "failed" for step in steps):
         return "failed"
+    if any(step["status"] == "blocked" for step in steps):
+        return "blocked"
     if any(step["status"] == "pending" for step in steps):
         return "queued"
     return "done"
@@ -512,13 +514,22 @@ def agent_command(job: JsonObject, step: JsonObject, session_id: Optional[str]) 
     return _runtime(job["agent"]).command(job, step, session_id)
 
 
-STATUS_LINE = re.compile(r"FLEET_STATUS:\s*\**\s*(done|blocked|failed)\b", re.IGNORECASE)
+STATUS_LINE = re.compile(r"FLEET_STATUS:\s*\**\s*(done|blocked|failed)\b\**[ \t]*(?:[—–:-]+[ \t]*([^\n]*))?",
+                         re.IGNORECASE)
 
 
 def reported_status(text: str) -> Optional[str]:
     """The agent's own verdict from its last FLEET_STATUS line; None when it gave none."""
     matches = STATUS_LINE.findall(text or "")
-    return matches[-1].lower() if matches else None
+    return matches[-1][0].lower() if matches else None
+
+
+def reported_reason(text: str) -> Optional[str]:
+    """What the agent gave after the dash on its last FLEET_STATUS line; None when it gave nothing."""
+    matches = STATUS_LINE.findall(text or "")
+    if not matches:
+        return None
+    return matches[-1][1].strip().strip("*").strip() or None
 
 
 def record_written_documents(job_id: str, cwd: str, paths: List[str], step_index: int) -> List[Tuple[int, str]]:
@@ -680,6 +691,12 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
     reported = reported_status(outcome.get("text") or outcome["summary"])
     if reported is not None:
         outcome["reported_status"] = reported
+        if reported == "blocked" and outcome["ok"]:
+            # The agent finished its turn and says it needs the supervisor: not broken work.
+            outcome["blocked"] = True
+            reason = reported_reason(outcome.get("text") or outcome["summary"])
+            if reason is not None:
+                outcome["reason"] = reason
         if reported != "done":
             outcome["ok"] = False
     copy_written_documents(job_id)
@@ -710,7 +727,7 @@ def run_job(job_id: str) -> None:
                 if job.get("cancelled"):
                     live_step["status"] = "cancelled"
                 else:
-                    live_step["status"] = "done" if outcome["ok"] else "failed"
+                    live_step["status"] = "done" if outcome["ok"] else "blocked" if outcome.get("blocked") else "failed"
                 live_step["finished_at"] = now()
                 live_step["result"] = outcome["summary"]
                 live_step["usage"] = outcome.get("usage")
@@ -2007,8 +2024,9 @@ def command_add(arguments: argparse.Namespace) -> None:
             job["steps"].append(make_step(len(job["steps"]), item["prompt"], item.get("title")))
         if arguments.retry:
             for step in job["steps"]:
-                if step["status"] in ("failed", "cancelled"):
+                if step["status"] in ("failed", "blocked", "cancelled"):
                     step["status"] = "pending"
+                    step.pop("reason", None)
         write_briefs(arguments.job, job["steps"])
     append_event(arguments.job, {"kind": "job", "status": "queued", "summary": f"{len(new_steps)} step(s) added"})
     if not arguments.hold:

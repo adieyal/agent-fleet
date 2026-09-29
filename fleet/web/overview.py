@@ -30,7 +30,7 @@ RECENT = 24 * 3600   # a file changed this recently is evidence the work is goin
 RUNNING = {"running"}
 WAITING = {"queued", "pending"}
 FINISHED = {"done", "cancelled"}
-FAILED = {"failed", "stalled"}
+FAILED = {"failed", "blocked", "stalled"}
 QUESTION = re.compile(r"(?m)^(?=\d+\. \*\*)")
 ANSWER = re.compile(r"(?m)^\s*(\*\*Answer[:*]|-?\s*Answer\b)")
 STATUS_LINE = re.compile(r"^\*\*Status\.?\*\*\s*(.+)$")
@@ -275,7 +275,7 @@ class Overview:
                 elif step.get("status") in WAITING:
                     upcoming.append({"label": "Queued: " + label, "trace": job_trace(project_id, job, brief)})
                 elif step.get("status") in FAILED:
-                    needs.append({"label": f"Failed: {label}" + (f" — {line}" if line else ""),
+                    needs.append({"label": f"{step['status'].capitalize()}: {label}" +(f" — {line}" if line else ""),
                                   "trace": job_trace(project_id, job, report or brief)})
             owner = f"{job['host']}:{job['id']}"
             needs += [{"label": f"{item['kind']}: {item.get('summary') or ''}".strip(), "trace": None, "attention": item["id"]}

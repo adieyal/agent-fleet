@@ -12,7 +12,7 @@
 
 export const RECENT_S = 3600;
 const ACTIVE = new Set(['running', 'queued', 'stalled']);
-const MARK = { done: 'check', running: 'glow', failed: 'cross', cancelled: 'dash', pending: 'blank' };
+const MARK = { done: 'check', running: 'glow', failed: 'cross', blocked: 'dash', cancelled: 'dash', pending: 'blank' };
 const SHOWN = new Set(['open', 'acknowledged']);
 
 // When a job last did anything: its own update time or a step starting or finishing, whichever is latest.

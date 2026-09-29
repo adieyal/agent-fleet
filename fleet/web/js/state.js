@@ -58,7 +58,7 @@ function visibleHosts(doc) {
   return out;
 }
 // Finished jobs leave the deck: one that finishes while you watch walks out through the door (motion.js), one
-// already finished never shows. A header chip counts them and shows them again. Failed and stalled jobs have no
+// already finished never shows. A header chip counts them and shows them again. Failed, blocked and stalled jobs have no
 // android either: their room's lantern (attention.js) carries them and opens their panel. Nor has any work in a
 // background room: the room is lit warm while it runs (focus.js).
 // (the rules: behaviour.js)

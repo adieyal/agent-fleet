@@ -40,7 +40,7 @@ class JobObservation:
     action_observed_at: datetime | None = None
 
     def run_status(self) -> str:
-        return {"running": "running", "done": "succeeded", "failed": "failed",
+        return {"running": "running", "done": "succeeded", "failed": "failed", "blocked": "failed",
                 "cancelled": "stopped", "lost": "failed", "queued": "unknown outcome", "stalled": "unknown outcome"}[self.status]
 
 

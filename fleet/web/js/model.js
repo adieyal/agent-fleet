@@ -3,7 +3,7 @@
 // ------------------------------------------------------------------ state
 export let hosts = [];
 export const ents = new Map();        // "host:id" → android entity
-export const offFloor = new Map();    // "host:id" → work with no android: a failed or stalled job, or any in a background room
+export const offFloor = new Map();    // "host:id" → work with no android: a failed, blocked or stalled job, or any in a background room
 export const workOf = key => ents.get(key) || offFloor.get(key);   // what the side panel shows for a key
 
 export let selectedKey = null;

@@ -3,7 +3,7 @@
 // memory. Each renderer turns the answers into its own motion and clips.
 //
 // - Presence: which work has an android. Finished jobs leave (one that finishes while watched says goodbye first),
-//   failed and stalled ones have none (their lantern carries them), an idle session leaves after half an hour quiet
+//   failed, blocked and stalled ones have none (their lantern carries them), an idle session leaves after half an hour quiet
 //   unless a decision waits on it.
 // - Activity: what it does (activityFor), held for a minimum dwell before it walks off to another station.
 // - Reactions: a nod when a test run is followed by anything but an error, a head shake at an error.
@@ -40,7 +40,7 @@ export function stationOf(act, stage = 0) {
 
 // ------------------------------------------------------------------ presence
 export const FINISHED = new Set(['done', 'cancelled']);
-export const BLOCKED = new Set(['failed', 'stalled']);
+export const BLOCKED = new Set(['failed', 'blocked', 'stalled']);
 export const LEAVE_WITHIN_S = 30;        // a finished android is off the floor within this, however slow the frames
 export const IDLE_LEAVE_S = 30 * 60;
 
@@ -50,7 +50,7 @@ export function retired(job, prev, { showFinished = false, reduced = false } = {
   if (showFinished || !FINISHED.has(job.status)) return false;
   return reduced || !prev || !(prev.leaving || !FINISHED.has(prev.lastStatus));
 }
-// Work shown by its lantern, not an android: failed and stalled jobs, and any in a quiet (background) room.
+// Work shown by its lantern, not an android: failed, blocked and stalled jobs, and any in a quiet (background) room.
 export const offFloor = (job, quiet = false) => BLOCKED.has(job.status) || quiet;
 // A job that finished while watched says goodbye before it leaves: a thumbs-up when done, a wave when cancelled.
 // null when there is nothing to say.

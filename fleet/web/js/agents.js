@@ -199,7 +199,7 @@ export function updateTag(e) {
   }
   const steps = j.steps || [];
   const done = steps.filter(s => s.status === 'done').length;
-  const cur = steps.findIndex(s => s.status === 'running' || s.status === 'failed');
+  const cur = steps.findIndex(s => s.status === 'running' || s.status === 'failed' || s.status === 'blocked');
   const [words, cls] = jobWords(j, done, steps.length), action = actionOf(j);
   let window0 = 0;
   if (steps.length > 12) window0 = clamp((cur < 0 ? done : cur) - 5, 0, steps.length - 12);
