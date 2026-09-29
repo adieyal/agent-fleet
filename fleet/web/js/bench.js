@@ -67,6 +67,11 @@ export async function enterFloor(identity, { epic = null, milestone = null } = {
   }
 }
 
+function streamProgress({ milestones: { complete, total }, next }) {
+  if (!total) return '<small data-stream-progress>No milestones recorded</small>';
+  return `<small data-stream-progress>${complete} of ${total} milestones · ${next ? `next ${esc(next.title)}` : 'all complete'}</small>`;
+}
+
 function epicCard(r) {
   const { complete, total } = r.milestones;
   const now = r.agents.length
@@ -80,6 +85,8 @@ function epicCard(r) {
     <div data-epic-head><button data-epic="${esc(r.id)}">${esc(r.title)}</button>${r.parent ? `<small data-parent-epic>in ${esc(r.parent.title)}</small>` : ''}</div>
     <p data-goal title="${esc(r.goal)}">${esc(r.headline)}</p>
     <p data-milestones>${total ? `<progress max="${total}" value="${complete}"></progress> ${complete} of ${total} milestones` : 'No milestones recorded'}</p>
+    ${r.workstreams.length ? `<ul data-workstreams aria-label="Workstreams">${r.workstreams.map(w =>
+      `<li data-workstream="${esc(w.id)}"><b>${esc(w.title)}</b> ${streamProgress(w)}</li>`).join('')}</ul>` : ''}
     <p data-now>Now: ${now}</p>
     <div data-next>Next: ${next}</div>
     ${r.children.length ? `<p data-child-epics>Epics: ${r.children.map(c => esc(c.title)).join(', ')}</p>` : ''}
@@ -111,7 +118,10 @@ function epicPage(r) {
     ${r.criteria.length ? `<section data-epic-criteria aria-label="Criteria"><h3>Criteria</h3><ul>${r.criteria.map(c =>
       `<li data-criterion-state="${esc(c.state)}">${esc(c.text)} <small>${esc(c.verification)} · ${esc(c.state)}</small></li>`).join('')}</ul></section>` : ''}
     <p data-progress>${progressText(r.progress)}</p>
-    <h3>Milestones</h3>${r.plan.length ? `<ol data-plan-list>${r.plan.map(m => planLine(m, true)).join('')}</ol>` : '<p>No milestones recorded</p>'}
+    <h3>Milestones</h3>${r.plan.length ? `<ol data-plan-list>${r.plan.map(m => planLine(m, true)).join('')}</ol>`
+      : r.workstreams.length ? '' : '<p>No milestones recorded</p>'}
+    ${r.workstreams.map(w => `<section data-workstream="${esc(w.id)}" aria-label="${esc(w.title)}"><h4>${esc(w.title)} ${streamProgress(w)}</h4>${
+      w.plan.length ? `<ol data-plan-list>${w.plan.map(m => planLine(m, true)).join('')}</ol>` : ''}</section>`).join('')}
     ${r.tasks.length ? `<h3>Tasks</h3><ol data-plan-list>${r.tasks.map(t => planLine(t, false)).join('')}</ol>` : ''}
     ${r.children.length ? `<h3>Epics</h3><p data-child-epics>${r.children.map(c => `<button data-epic="${esc(c.id)}">${esc(c.title)}</button>`).join('')}</p>` : ''}
   </article>`;

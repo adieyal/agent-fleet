@@ -989,6 +989,9 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 [data-epic-page] [data-goal] { white-space:pre-line; }
 [data-epic-page] h3 { margin:16px 0 6px; font-size:14px; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; }
 [data-epic-page] progress { width:160px; vertical-align:middle; accent-color:#34d399; }
+[data-epic-page] h4 { margin:14px 0 6px; font-size:14px; }
+[data-epic-page] h4 small { font-weight:normal; color:#94a3b8; margin-left:6px; }
+[data-epic-page] [data-workstream] [data-plan-list] { padding-left:12px; border-left:2px solid #334155; }
 [data-plan-list] { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
 [data-plan-item] { display:flex; gap:10px; align-items:flex-start; }
 [data-plan-item] p { margin:2px 0; }

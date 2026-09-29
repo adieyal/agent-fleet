@@ -10,11 +10,6 @@ def descendants(node: dict) -> list[dict]:
     return [node, *(child for branch in node["children"] for child in descendants(branch))]
 
 
-def own_scope(epic: dict) -> list[dict]:
-    """The epic and its descendants, stopping at child epics, which have their own rooms."""
-    return [epic, *(item for child in epic["children"] if child["kind"] != "epic" for item in own_scope(child))]
-
-
 def headline(goal: str) -> str:
     line = goal.strip().splitlines()[0]
     return re.split(r"(?<=[.!?])\s", line, maxsplit=1)[0]
@@ -36,22 +31,58 @@ def line_item(item: dict) -> dict[str, Any]:
             "condition": item["condition"], "status": status(item), "next_step": item["next_step"]}
 
 
+def milestone_groups(epic: dict) -> tuple[list[dict], list[tuple[dict, list[dict]]]]:
+    """The epic's milestones outside any workstream, then each workstream with its own; child epics have their own rooms."""
+    direct: list[dict] = []
+    streams: list[tuple[dict, list[dict]]] = []
+
+    def visit(node: dict, bucket: list[dict]) -> None:
+        for child in node["children"]:
+            if child["kind"] == "epic":
+                continue
+            if child["kind"] == "workstream":
+                streams.append((child, own := []))
+                visit(child, own)
+                continue
+            if child["kind"] == "milestone":
+                bucket.append(child)
+            visit(child, bucket)
+
+    visit(epic, direct)
+    return direct, streams
+
+
+def milestone_count(milestones: list[dict]) -> dict[str, int]:
+    return {"complete": sum(item["condition"] == "complete" for item in milestones), "total": len(milestones)}
+
+
+def upcoming(item: dict) -> dict[str, Any]:
+    return {"id": item["id"], "title": item["title"], "next_step": item["next_step"]}
+
+
+def workstream(stream: dict, milestones: list[dict]) -> dict[str, Any]:
+    pending = [item for item in milestones if item["condition"] != "complete"]
+    return {"id": stream["id"], "title": stream["title"], "milestones": milestone_count(milestones),
+            "next": upcoming(pending[0]) if pending else None,
+            "plan": [line_item(item) for item in milestones]}
+
+
 def epic_room(epic: dict, parent: dict | None, depth: int) -> dict[str, Any]:
     scope = descendants(epic)
-    milestones = [item for item in own_scope(epic) if item["kind"] == "milestone"]
+    direct, streams = milestone_groups(epic)
+    milestones = direct + [item for _, own in streams for item in own]
     return {
         "id": epic["id"], "title": epic["title"], "depth": depth,
         "parent": None if parent is None else {"id": parent["id"], "title": parent["title"]},
         "goal": epic["goal"], "headline": headline(epic["goal"]),
         "criteria": epic["criteria"], "progress": epic["progress"],
-        "plan": [line_item(item) for item in milestones],
+        "plan": [line_item(item) for item in direct],
+        "workstreams": [workstream(stream, own) for stream, own in streams],
         "tasks": [line_item(child) for child in epic["children"] if child["kind"] == "task"],
-        "milestones": {"complete": sum(item["condition"] == "complete" for item in milestones),
-                       "total": len(milestones)},
+        "milestones": milestone_count(milestones),
         "agents": [{"run": run["id"], "host": run["host"], "work_item": item["id"], "title": item["title"]}
                    for item in scope for run in item["runs"] if run["status"] == "running"],
-        "upcoming": [{"id": item["id"], "title": item["title"], "next_step": item["next_step"]}
-                     for item in milestones if item["condition"] != "complete"][:UPCOMING],
+        "upcoming": [upcoming(item) for item in milestones if item["condition"] != "complete"][:UPCOMING],
         "children": [{"id": child["id"], "title": child["title"]}
                      for child in epic["children"] if child["kind"] == "epic"],
         "attention": [{"id": entry["id"], "kind": entry["kind"], "headline": entry["headline"],

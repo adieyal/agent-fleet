@@ -319,6 +319,50 @@ def test_epic_page_lists_milestones_tasks_and_child_epics(changed_deck: Deck, ro
     assert changed_deck.errors == []
 
 
+@pytest.fixture
+def supplier_migration(deck_state, monkeypatch) -> None:
+    """V2 frontend overhaul with a milestone of its own and workstream Supplier migration at 6 of 7."""
+    store = open_store()
+    work = open_work(store)
+    monkeypatch.setattr(deck_state, 'store', store)
+    add = lambda title, **fields: work.add(project='v2-overhaul', title=title, goal=f'{title}.', actor='user', **fields)
+    overhaul = add('V2 frontend overhaul', kind='epic')
+    add('Design tokens', kind='milestone', parent=overhaul.id)
+    stream = add('Supplier migration', kind='workstream', parent=overhaul.id)
+    topics = ['routes', 'list', 'detail', 'search', 'exports', 'supplier imports', 'cleanup']
+    for n, topic in enumerate(topics, 1):
+        slice_ = add(f'Slice {n}: {topic}', kind='milestone', parent=stream.id)
+        if n != 6:
+            work.set(slice_.id, condition='complete', actor='user')
+    add('Order migration', kind='workstream', parent=overhaul.id)
+
+
+def test_epic_card_and_page_name_each_workstream(changed_deck: Deck, supplier_migration) -> None:
+    page = changed_deck.page
+    route = page.locator('#benchRoute')
+    page.evaluate("fleetDeck.enterFloor('v2-overhaul')")
+    card = page.locator('[data-epic-card]')
+    expect(card.locator('[data-milestones]')).to_have_text('6 of 8 milestones')
+    expect(card.locator('[data-workstream]')).to_have_text([
+        'Supplier migration 6 of 7 milestones · next Slice 6: supplier imports',
+        'Order migration No milestones recorded'])
+
+    card.get_by_role('button', name='V2 frontend overhaul').click()
+    epic = page.locator('[data-epic-page]')
+    expect(epic.locator('[data-plan-list]').first.locator('[data-slice]')).to_have_text(['Design tokens'])
+    stream = epic.get_by_role('region', name='Supplier migration')
+    expect(stream.get_by_role('heading', level=4)).to_have_text(
+        'Supplier migration 6 of 7 milestones · next Slice 6: supplier imports')
+    expect(stream.locator('[data-slice]')).to_have_count(7)
+    expect(stream.locator('[data-plan-item][data-status="next"]')).to_have_text(re.compile('Slice 6: supplier imports'))
+    expect(epic.get_by_role('region', name='Order migration')).to_contain_text('No milestones recorded')
+    assert epic.evaluate('e => e.textContent.indexOf("Design tokens") < e.textContent.indexOf("Supplier migration")')
+    stream.get_by_role('button', name='Slice 6: supplier imports').click()
+    expect(route).to_have_attribute('data-level', 'bench')
+    page.evaluate('fleetDeck.enterFloor(null)')
+    assert changed_deck.errors == []
+
+
 def test_panel_breadcrumb_names_the_linked_work_and_opens_it(changed_deck: Deck, route_migration,
                                                               base_url: str) -> None:
     milestone = route_migration['milestones'][2]
@@ -409,7 +453,7 @@ def test_l3_bench_projection(changed_deck: Deck, base_url: str, redact: bool) ->
                                           'progress': {'basis': 'milestones', 'complete': 0, 'total': 1},
                                           'plan': [{'id': 'slice', 'title': 'Supplier slice', 'headline': 'Find',
                                                     'condition': 'none', 'status': 'next', 'next_step': None}],
-                                          'tasks': [],
+                                          'tasks': [], 'workstreams': [],
                                           'benches': [{'id': 'slice', 'title': 'Supplier slice'}]}]})
     page.route('**/api/bench?*', respond)
     try:
