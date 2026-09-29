@@ -38,11 +38,12 @@ error_console = Console(stderr=True)
 
 STATUS_STYLE = {
     "running": ("●", "bold green"), "queued": ("◌", "yellow"), "stalled": ("◍", "magenta"),
-    "failed": ("✗", "bold red"), "done": ("✓", "dim green"), "cancelled": ("⊘", "dim"),
+    "failed": ("✗", "bold red"), "blocked": ("⚑", "bold yellow"), "done": ("✓", "dim green"),
+    "cancelled": ("⊘", "dim"),
 }
 STEP_STYLE = {
     "running": ("▶", "bold green"), "pending": ("○", "dim"), "done": ("✓", "green"),
-    "failed": ("✗", "red"), "cancelled": ("⊘", "dim"),
+    "failed": ("✗", "red"), "blocked": ("⚑", "yellow"), "cancelled": ("⊘", "dim"),
 }
 TODO_STYLE = {"in_progress": ("▸", "cyan"), "pending": ("·", "dim"), "completed": ("✓", "dim green")}
 TOOL_ICON = {"bash": "$", "edit": "✎", "read": "📖", "search": "🔍", "web": "🌐", "think": "💭",
@@ -106,7 +107,7 @@ def add_steps(node: Tree, job: dict[str, Any], *, brief: bool) -> None:
     for step in steps:
         icon, style = STEP_STYLE.get(step["status"], ("?", ""))
         line = Text(f"{icon} {step['index'] + 1}. {step['title']}", style)
-        if step["status"] in ("done", "failed") and step.get("result") and not brief:
+        if step["status"] in ("done", "failed", "blocked") and step.get("result") and not brief:
             line.append(f"  — {step['result'][:100]}", "dim")
         step_node = node.add(line)
         if step["status"] == "running" and job.get("todos"):
@@ -579,12 +580,12 @@ def command_notify(arguments: argparse.Namespace) -> None:
                 for step in job["steps"]:
                     key = f"{reference}#{step['index']}"
                     if known.get(key) != step["status"]:
-                        if not first_pass and step["status"] in ("done", "failed", "cancelled", "running"):
+                        if not first_pass and step["status"] in ("done", "failed", "blocked", "cancelled", "running"):
                             print(f"STEP {step['status'].upper()} {reference} step {step['index'] + 1}/{len(job['steps'])}: "
                                   f"{step['title']}" + (f" — {step['result'][:200]}" if step.get("result") else ""), flush=True)
                         known[key] = step["status"]
                 if known.get(reference) != job["status"]:
-                    if not first_pass and job["status"] in ("done", "failed", "cancelled", "stalled"):
+                    if not first_pass and job["status"] in ("done", "failed", "blocked", "cancelled", "stalled"):
                         print(f"JOB {job['status'].upper()} {reference} ({job['project']}): {job['description']}", flush=True)
                     known[reference] = job["status"]
         first_pass = False
@@ -1128,7 +1129,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     add = commands.add_parser("add", help="append steps to a job (restarts it if idle)")
     add.add_argument("job")
-    add.add_argument("--retry", action="store_true", help="also re-queue failed/cancelled steps")
+    add.add_argument("--retry", action="store_true", help="also re-queue failed/blocked/cancelled steps")
     add_step_options(add)
     add.set_defaults(handler=command_add)
 

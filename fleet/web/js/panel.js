@@ -131,7 +131,7 @@ export function renderPanel() {
     ${j.status !== 'running' ? DISMISS_BUTTON : ''}
     <button id="close" aria-label="Close">✕</button>`;
   const steps = j.steps || [];
-  const stepIcon = { done: '✓', running: '▶', failed: '✗', cancelled: '⊘', pending: '○' };
+  const stepIcon = { done: '✓', running: '▶', failed: '✗', blocked: '⚑', cancelled: '⊘', pending: '○' };
   const rows = traceRows(noteTrace(selectedKey, j.events));
   const cmds = [`fleet attach ${ref}`, `fleet tail ${ref} -f`, `fleet show ${ref}`];
   const activity = [`

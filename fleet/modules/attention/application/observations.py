@@ -71,9 +71,9 @@ def ingest_attention(attention: "AttentionFacade", host: HostObservation, *,
                              stream_context=context, actor="host-stream")
 
     for job in host["jobs"]:
-        if job.get("status") not in ("failed", "stalled"):
+        if job.get("status") not in ("failed", "blocked", "stalled"):
             continue
-        wanted = "failed" if job["status"] == "failed" else "running"
+        wanted = "running" if job["status"] == "stalled" else job["status"]
         step = next((step for step in job.get("steps", []) if step.get("status") == wanted), None)
         since = step.get("started_at") if step else job.get("updated_at")
         occurrence = f"{step['index']}@{since}" if step else f"@{since}"

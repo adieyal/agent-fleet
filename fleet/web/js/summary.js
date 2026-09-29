@@ -97,7 +97,7 @@ export const RECENT_MAX = 5, FINISHED_MAX = 4, TODOS_MAX = 7;
 export const SUMMARY_BUDGET = { now: 90, progress: 125, recently: 140, finished: 80, total: 420 };
 
 const TODO_MARK = { completed: '✓', in_progress: '▸' };
-const STEP_MARK = { done: '✓', failed: '✗', cancelled: '⊘' };
+const STEP_MARK = { done: '✓', failed: '✗', blocked: '⚑', cancelled: '⊘' };
 const ago = ts => ts ? `${age(ts)} ago` : '';
 
 // What the agent is waiting on you for, if anything: an idle session, or an unresolved decision or blocker it owns.

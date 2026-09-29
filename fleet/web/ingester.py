@@ -27,7 +27,7 @@ def observe_runs(execution: ExecutionFacade, library: LibraryFacade, host: dict,
             continue
         starts = [step["started_at"] for step in job["steps"] if step["started_at"] is not None]
         ends = [step["finished_at"] for step in job["steps"] if step["finished_at"] is not None]
-        end = max(ends) if ends and job["status"] in ("done", "failed", "cancelled") else None
+        end = max(ends) if ends and job["status"] in ("done", "failed", "blocked", "cancelled") else None
         event = job.get("activity")
         observation = JobObservation(job["id"], job["status"], job.get("agent"),
                                      timestamp(min(starts)) if starts else None, timestamp(end),

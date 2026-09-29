@@ -152,7 +152,7 @@ def test_decision_reader_shows_proposal_without_writes(deck, monkeypatch):
 
 def test_only_genuine_signals_become_items(deck):
     deck.report("home", jobs=[job("f1", "failed", [("done", 90), ("failed", 100), ("pending", None)]),
-                              job("s1", "stalled", [("running", 120)]),
+                              job("s1", "stalled", [("running", 120)]), job("b1", "blocked", [("blocked", 110)]),
                               job("r1", "running", [("running", 130)]), job("d1", "done"), job("q1", "queued", [("pending", None)])],
                 sessions=[session("ask", "idle", tool("AskUserQuestion")),
                           session("plan", "working", tool("ExitPlanMode", summary="Plan: split the importer")),
@@ -162,11 +162,13 @@ def test_only_genuine_signals_become_items(deck):
     assert {key: (item["kind"], item["state"], item["source"]) for key, item in items.items()} == {
         "home:f1": ("blocker", "open", "job status failed"),
         "home:s1": ("blocker", "open", "job status stalled"),
+        "home:b1": ("blocker", "open", "job status blocked"),
         "home:ask": ("decision", "open", "session tool AskUserQuestion"),
         "home:plan": ("decision", "open", "session tool ExitPlanMode")}
     failed = items["home:f1"]
     assert failed["owner"] == {"type": "job", "host": "home", "id": "f1", "key": "home:f1"}
     assert failed["summary"] == "step 2 failed: step 1" and failed["since"] == 100
+    assert items["home:b1"]["summary"] == "step 1 blocked: step 0"
     assert (failed["project"], failed["project_id"]) == ("restoke", None)
     assert items["home:ask"]["owner"]["type"] == "session"
     assert "Keep the flag?" in items["home:ask"]["summary"]
