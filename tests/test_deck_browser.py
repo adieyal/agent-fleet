@@ -349,6 +349,7 @@ def test_epic_card_and_page_name_each_workstream(changed_deck: Deck, supplier_mi
 
     card.get_by_role('button', name='V2 frontend overhaul').click()
     epic = page.locator('[data-epic-page]')
+    expect(epic.locator('[data-progress]')).to_have_text('6 of 8 milestones')   # the card's count, workstreams included
     expect(epic.locator('[data-plan-list]').first.locator('[data-slice]')).to_have_text(['Design tokens'])
     stream = epic.get_by_role('region', name='Supplier migration')
     expect(stream.get_by_role('heading', level=4)).to_have_text(

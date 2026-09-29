@@ -117,7 +117,8 @@ function epicPage(r) {
     <p data-goal>${esc(r.goal)}</p>
     ${r.criteria.length ? `<section data-epic-criteria aria-label="Criteria"><h3>Criteria</h3><ul>${r.criteria.map(c =>
       `<li data-criterion-state="${esc(c.state)}">${esc(c.text)} <small>${esc(c.verification)} · ${esc(c.state)}</small></li>`).join('')}</ul></section>` : ''}
-    <p data-progress>${progressText(r.progress)}</p>
+    <p data-progress>${r.milestones.total
+      ? progressText({ basis: 'milestones', ...r.milestones }) : progressText(r.progress)}</p>
     <h3>Milestones</h3>${r.plan.length ? `<ol data-plan-list>${r.plan.map(m => planLine(m, true)).join('')}</ol>`
       : r.workstreams.length ? '' : '<p>No milestones recorded</p>'}
     ${r.workstreams.map(w => `<section data-workstream="${esc(w.id)}" aria-label="${esc(w.title)}"><h4>${esc(w.title)} ${streamProgress(w)}</h4>${
