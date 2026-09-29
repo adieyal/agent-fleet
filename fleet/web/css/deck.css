@@ -1063,8 +1063,12 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 #benchRoute [data-tray] { border-bottom:6px double #aa805b; }
 #benchRoute [data-tray] small { display:block; }
 #benchRoute [data-tray] li { margin:6px 0; }
-#benchRoute [data-open-report] { margin:0; padding:4px 8px; text-align:left; }
-#benchRoute [data-open-report]:hover { border-color:#e2e8f0; }
+#benchRoute [data-report-title] { display:inline-block; max-width:calc(100% - 40px); vertical-align:middle; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#benchRoute :is([data-open-report],[data-copy]) { display:inline-flex; align-items:center; justify-content:center; margin:0 0 0 6px; padding:0; width:24px; height:24px; vertical-align:middle; }
+#benchRoute [data-copy] { width:20px; height:20px; border-color:transparent; background:none; }
+#benchRoute :is([data-open-report],[data-copy]) svg { width:14px; height:14px; }
+#benchRoute :is([data-open-report],[data-copy]):hover { border-color:#e2e8f0; }
+#benchRoute [data-copy][data-copied] { color:#34d399; border-color:#34d399; }
 #benchRoute [data-empty] { margin:0; color:#94a3b8; font-style:italic; }
 #benchRoute [data-flipped="true"] { animation:bench-flip .5s ease-out; }
 @keyframes bench-flip { from { transform:rotateX(180deg); } to { transform:rotateX(0); } }

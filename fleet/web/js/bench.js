@@ -4,6 +4,7 @@ import { hostLook } from './looks.js';
 import { glyphHtml, svg } from './glyphs.js';
 import { ents } from './model.js';
 import { openReader } from './reader.js';
+import { fallbackCopy } from './panel.js';
 
 const el = document.body.appendChild(document.createElement('section'));
 el.id = 'benchRoute';
@@ -130,6 +131,13 @@ function epicPage(r) {
   </article>`;
 }
 
+// A location shortened for reading: the host and the file name (fleet://home/…/result-0.md → home · result-0.md).
+function reportWhere(location) {
+  const m = /^fleet:\/\/([^/]+)\/(?:.*\/)?([^/]+)$/.exec(location || '');
+  return m ? `${m[1]} · ${m[2]}` : (location || '');
+}
+const OPEN_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M4 1.8h5.2L12.5 5v9.2H4z"/><path d="M9 1.8V5.3h3.5M6 8.2h4.3M6 10.8h4.3"/></svg>';
+const COPY_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.6"/><path d="M10.5 5.5V3.6A1.1 1.1 0 0 0 9.4 2.5H3.6a1.1 1.1 0 0 0-1.1 1.1v5.8a1.1 1.1 0 0 0 1.1 1.1h1.9"/></svg>';
 // A step report's reader address from its fleet:// location: the host, and the report's document id (report-<step>).
 function reportRef(report) {
   const m = /^fleet:\/\/([^/]+)\/.*\/result-(\d+)\.md$/.exec(report.canonical_location || '');
@@ -152,7 +160,9 @@ function render(flipped = new Set()) {
       <section data-desk aria-label="Question desk">${bench.attention.length ? `<span data-lantern aria-label="Open attention">${lantern}</span>` : '<p data-empty>Desk clear</p>'}</section>
       <details data-tray><summary>Reports <b>${bench.reports.length}</b></summary><ul>${bench.reports.map(report => {
         const at = reportRef(report), title = report.title === null ? 'Title unknown' : esc(report.title);
-        return `<li data-availability="${esc(report.availability)}">${at ? `<button data-open-report data-host="${esc(at.host)}" data-job="${esc(report.run)}" data-doc="${esc(at.doc)}" title="Read this report">${title}</button>` : title}<small>${esc(report.availability)} · ${esc(report.canonical_location)}</small></li>`;
+        const where = reportWhere(report.canonical_location);
+        return `<li data-availability="${esc(report.availability)}"><span data-report-title title="${title}">${title}</span>${at ? `<button data-open-report data-host="${esc(at.host)}" data-job="${esc(report.run)}" data-doc="${esc(at.doc)}" data-title="${title}" title="Read this report" aria-label="Read ${title}">${OPEN_ICON}</button>` : ''}
+          <small>${esc(report.availability)} · <span title="${esc(report.canonical_location)}">${esc(where)}</span>${report.canonical_location ? `<button data-copy="${esc(report.canonical_location)}" title="Copy the full location" aria-label="Copy the full location">${COPY_ICON}</button>` : ''}</small></li>`;
       }).join('')}</ul></details>
       <section><button data-briefing aria-expanded="${briefing}">Briefing</button><div data-summary ${briefing ? '' : 'hidden'}>${bench.summary === null ? 'Summary unknown' : ['purpose', 'done', 'doing', 'next'].map(key => `<p><b>${key}</b> ${esc(bench.summary[key])}</p>`).join('')}</div></section></div>`;
   } else if (room) {
@@ -174,8 +184,15 @@ el.addEventListener('click', async ev => {
   const open = ev.target.closest('[data-open-report]');
   if (open) {
     const { host, job, doc } = open.dataset;
-    openReader(ents.get(`${host}:${job}`) || { host, job: { id: job, description: open.textContent } },
-      { id: doc, kind: 'report', name: open.textContent });
+    const name = open.dataset.title;
+    openReader(ents.get(`${host}:${job}`) || { host, job: { id: job, description: name } }, { id: doc, kind: 'report', name });
+    return;
+  }
+  const copy = ev.target.closest('[data-copy]');
+  if (copy) {
+    const done = () => { copy.dataset.copied = ''; setTimeout(() => delete copy.dataset.copied, 1400); };
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(copy.dataset.copy).then(done, () => fallbackCopy(copy.dataset.copy, done));
+    else fallbackCopy(copy.dataset.copy, done);
     return;
   }
   if (ev.target.closest('[data-back-floor]')) { ++revision; room = bench = null; render(); return; }

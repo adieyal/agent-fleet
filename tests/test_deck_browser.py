@@ -200,10 +200,13 @@ def test_bench_real_endpoint(changed_deck: Deck, deck_state, monkeypatch, tmp_pa
     expect(bench.locator('[data-lantern]')).to_be_visible()
     bench.locator('[data-tray] summary').click()
     expect(bench.locator('[data-tray]')).to_contain_text('Contract report')
-    expect(bench.locator('[data-tray]')).to_contain_text('fleet://worker/bench-job/report')
+    expect(bench.locator('[data-tray]')).to_contain_text('worker · report')   # the host and file; the full location copies
+    expect(bench.locator('[data-copy]').first).to_have_attribute('data-copy', 'fleet://worker/bench-job/report')
+    expect(bench.locator('[data-tray]')).not_to_contain_text('fleet://')
     expect(bench.locator('[data-availability]').first).to_have_attribute('data-availability', 'available')
     # a step report opens in the reader; a location that names no step report stays text
-    expect(bench.locator('[data-open-report]')).to_have_text(['Step 1 report'])
+    expect(bench.locator('[data-open-report]')).to_have_count(1)
+    expect(bench.locator('[data-open-report]')).to_have_attribute('data-title', 'Step 1 report')
     expect(bench.locator('[data-open-report]')).to_have_attribute('data-doc', 'report-0')
     bench.locator('[data-open-report]').click()
     expect(page.locator('#reader')).to_be_visible()
