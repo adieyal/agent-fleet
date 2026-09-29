@@ -778,6 +778,18 @@ def test_document_reader_opens_from_a_failed_jobs_panel(deck: Deck) -> None:
     expect(page.locator("#reader")).to_be_visible()
     expect(page.locator("#rdBody h1")).to_have_text("Django 5.2 upgrade blocked")
     expect(page.locator("#rdBody")).not_to_contain_text("FLEET_STATUS")
+
+    listed = page.locator('#panelBody [data-tab="documents"] [data-doc]').evaluate_all("bs => bs.map(b => b.dataset.doc)")
+    at = listed.index("report-0")
+    expect(page.locator("#rdPos")).to_have_text(f"{at + 1} / {len(listed)}")   # the panel's order
+    expect(page.locator("#rdPrev")).to_be_disabled() if at == 0 else expect(page.locator("#rdPrev")).to_be_enabled()
+    title = page.locator("#rdTitle").inner_text()
+    page.keyboard.press("ArrowRight")
+    expect(page.locator("#rdPos")).to_have_text(f"{at + 2} / {len(listed)}")
+    expect(page.locator("#rdTitle")).not_to_have_text(title)
+    page.locator("#rdPrev").click()
+    expect(page.locator("#rdTitle")).to_have_text(title)
+
     page.keyboard.press("Escape")
     expect(page.locator("#reader")).to_be_hidden()
     page.locator("#panel #close").click()

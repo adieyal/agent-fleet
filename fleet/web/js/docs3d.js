@@ -238,6 +238,8 @@ export function inputDocsOf(job) {
   const inputs = (job.documents || []).filter(d => INPUT_KINDS.has(d.kind));
   return [...inputs.filter(d => d.kind === 'brief').sort((a, b) => (a.step ?? 0) - (b.step ?? 0)), ...inputs.filter(d => d.kind === 'context')];
 }
+// The order the panel lists a job's documents in, and the reader steps through: produced newest first, then inputs.
+export function jobDocSequence(job) { return [...docsOf(job).reverse(), ...inputDocsOf(job)]; }
 export function isUpdating(job, doc) {
   return job.status === 'running' && !INPUT_KINDS.has(doc.kind) && doc.mtime != null && Date.now() / 1000 - doc.mtime < DOC_UPDATING_SECONDS;
 }

@@ -3,7 +3,7 @@
 import { DEMO, REDUCED } from './env.js';
 import { age, clamp, esc, store } from './util.js';
 import { hostLook } from './looks.js';
-import { DOC_KIND, isUpdating, kindOf } from './docs3d.js';
+import { DOC_KIND, isUpdating, jobDocSequence, kindOf } from './docs3d.js';
 import { hideDocTip } from './camera.js';
 import { fallbackCopy } from './panel.js';
 import { libraryDocs } from './library.js';
@@ -266,13 +266,37 @@ function renderReaderHead() {
       : rd.source === 'stored' && !rd.host ? `<span>working · ${esc(doc.id)}</span>`
       : `<span title="${esc(d.job_description || rd.job.description)}"><i class="hd" style="background:${hostLook(rd.host).color}"></i>${esc(rd.host)} · ${esc(rd.job.id)} · ${esc(d.agent || rd.job.agent)}</span>`,
     step != null ? `<span>step ${step + 1}</span>` : '',
-    d.minutes ? `<span>${d.minutes} min read</span>` : '',
+    d.minutes && d.media !== 'image' ? `<span>${d.minutes} min read</span>` : '',
     (d.mtime || doc.mtime) ? `<span>updated ${age(d.mtime || doc.mtime)} ago</span>` : '',
     rd.source === 'job' && isUpdating(rd.job, doc) ? '<span class="rd-live">updating live</span>' : '',
     rd.source === 'job' && rd.refreshError ? `<span class="rd-stale" title="${esc(rd.refreshError)}">couldn’t refresh: showing an older version</span>` : '',
   ].join('');
+  const image = d.media === 'image' || doc.media === 'image';
+  document.getElementById('rdCopy').hidden = image;
   document.getElementById('rdCopy').disabled = !rd.data;
-  document.getElementById('rdDownload').disabled = !rd.data;
+  const download = document.getElementById('rdDownload');
+  download.disabled = !rd.data;
+  download.title = image ? 'Download the image' : 'Download as .md';
+  download.querySelector('.lb').textContent = image ? 'Image' : '.md';
+  const list = siblings(), at = list.findIndex(x => x.id === doc.id);
+  document.getElementById('rdStep').hidden = list.length < 2 || at < 0;
+  document.getElementById('rdPos').textContent = at < 0 ? '' : `${at + 1} / ${list.length}`;
+  document.getElementById('rdPrev').disabled = at <= 0;
+  document.getElementById('rdNext').disabled = at < 0 || at >= list.length - 1;
+}
+// The documents Previous and Next step through: a job's, in the panel's order, or the same project's in the library.
+function siblings() {
+  if (rd.source === 'job' && rd.job) return jobDocSequence(rd.job);
+  if (rd.source === 'library') return libraryDocs.filter(x => x.project === rd.doc.project);
+  return [];
+}
+function stepDoc(delta) {
+  if (reader.hidden) return;
+  const list = siblings(), at = list.findIndex(x => x.id === rd.doc.id), next = list[at + delta];
+  if (at < 0 || !next) return;
+  saveReaderScroll();
+  if (rd.source === 'library') openLibraryReader(next);
+  else openReader({ host: rd.host, job: rd.job }, next);
 }
 function renderReaderLoading() {
   document.getElementById('rdProgress').style.transform = 'scaleX(0)';
@@ -467,6 +491,15 @@ document.getElementById('rdDownload').addEventListener('click', () => {
   const a = Object.assign(document.createElement('a'), { href: url, download: base + '.md' });
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+document.getElementById('rdPrev').addEventListener('click', () => stepDoc(-1));
+document.getElementById('rdNext').addEventListener('click', () => stepDoc(1));
+// ← and → step between documents, except while typing or when a modifier asks for something else
+reader.addEventListener('keydown', ev => {
+  if ((ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight') || ev.altKey || ev.ctrlKey || ev.metaKey || ev.shiftKey) return;
+  if (ev.target.closest('input,textarea,select,[contenteditable="true"]')) return;
+  ev.preventDefault();
+  stepDoc(ev.key === 'ArrowLeft' ? -1 : 1);
 });
 // keep Tab inside the open reader
 reader.addEventListener('keydown', ev => {

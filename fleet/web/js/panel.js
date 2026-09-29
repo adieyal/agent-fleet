@@ -9,7 +9,7 @@ import { ROBOT, renderer } from './scene.js';
 import {
   ents, everLoaded, feed, feedSeeded, hosts, live, seenEvents, selectedKey, setFanned, setFeedSeeded, setSelectedKey, workOf,
 } from './model.js';
-import { DOC_KIND, DOC_UPDATING_SECONDS, docMeta, docsOf, inputDocsOf, isUpdating, kindOf } from './docs3d.js';
+import { DOC_KIND, DOC_UPDATING_SECONDS, docMeta, isUpdating, jobDocSequence, kindOf } from './docs3d.js';
 import { action, buildRobot } from './agents.js';
 import { dismiss, entered, hiddenCount, restoreDismissed, retiredCount, showFinished, toggleFinished } from './state.js';
 import { focusOn } from './camera.js';
@@ -265,7 +265,7 @@ function renderSessionPanel(e) {
 // minute says so; the panel re-renders when that runs out, even if no state update arrives.
 let docsExpiry = 0;
 function docsPanelHtml(e) {
-  const docs = [...docsOf(e.job).reverse(), ...inputDocsOf(e.job)];
+  const docs = jobDocSequence(e.job);
   if (!docs.length) return '';
   const updating = docs.filter(d => isUpdating(e.job, d));
   if (updating.length) {
