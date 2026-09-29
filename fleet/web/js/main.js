@@ -18,6 +18,7 @@ import { lanternState } from './building.js';
 import { fit, resize, setRenderScale } from './camera.js';
 import { miniBot, panelScrollUntil, renderLive, select } from './panel.js';
 import './library.js';
+import { lowerQuality, quality } from './quality.js';
 import { reader } from './reader.js';
 import { demoSource } from './demo.js';
 import { buildingReady, buildingShown, stepBuilding } from './building.js';
@@ -30,10 +31,11 @@ import { worldShown } from './world/floor-view.js';
 // ------------------------------------------------------------------ frame loop
 let lastT = 0;
 let frameNo = 0;
-const SHADOW_EVERY = 3;   // frames per shadow-map refresh (scene.js turns the automatic one off)
+const SHADOW_EVERY = 3;   // frames per shadow-map refresh at low quality (scene.js turns the automatic one off); every frame at high
 
-// Adaptive resolution: over each window of frames, many late ones step the deck's rendering resolution down, and two
-// windows in a row with almost none step it back up. A GPU that keeps up never leaves full resolution.
+// Adaptive resolution: over each window of frames, many late ones step the deck's rendering resolution down (on auto
+// quality, the first such window drops to low quality instead), and two windows in a row with almost none step it back
+// up. A GPU that keeps up never leaves full resolution.
 const RENDER_SCALES = [1, 0.85, 0.7], PACE_WINDOW = 120;
 let scaleStep = 0, paced = 0, late = 0, goodWindows = 0;
 function pace(interval) {
@@ -42,6 +44,7 @@ function pace(interval) {
   if (paced < PACE_WINDOW) return;
   const share = late / paced;
   paced = late = 0;
+  if (share > 0.2 && lowerQuality()) { goodWindows = 0; return; }
   if (share > 0.2 && scaleStep < RENDER_SCALES.length - 1) { scaleStep++; goodWindows = 0; }
   else if (share < 0.03 && scaleStep > 0 && ++goodWindows >= 2) { scaleStep--; goodWindows = 0; }
   else return;
@@ -94,7 +97,7 @@ function frame(ts) {
   if (lastT) pace(t - lastT);
   const dt = Math.min(0.1, lastT ? t - lastT : 0.016) * WARP;
   lastT = t;
-  if (++frameNo % SHADOW_EVERY === 0) renderer.shadowMap.needsUpdate = true;
+  if (quality === 'high' || ++frameNo % SHADOW_EVERY === 0) renderer.shadowMap.needsUpdate = true;
   updateFrame(dt, t, now, true);
 }
 function updateFrame(dt, t, now, draw) {
