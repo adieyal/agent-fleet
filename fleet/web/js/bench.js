@@ -1,5 +1,5 @@
 // Floor → epic room → milestone bench. All business state comes from /api/bench.
-import { esc } from './util.js';
+import { esc, store } from './util.js';
 import { hostLook } from './looks.js';
 import { glyphHtml, svg } from './glyphs.js';
 import { ents } from './model.js';
@@ -11,6 +11,8 @@ el.id = 'benchRoute';
 el.hidden = true;
 let project = null, rooms = [], room = null, bench = null, revision = 0;
 let briefing = false;
+// Collapsed to its header so the floor shows; remembered per browser.
+let collapsed = store('localStorage', 'fleet.bench.collapsed') === '1';
 const kinds = { checked: '<rect x="5" y="5" width="14" height="14"/>',
   judged: '<path d="M12 2 22 12 12 22 2 12Z"/>', accepted: '<circle cx="12" cy="12" r="9"/>' };
 const figure = svg('<circle cx="12" cy="5" r="3"/><path d="M6 21V11h12v10M12 14v7M3 12v6M21 12v6"/>');
@@ -90,8 +92,8 @@ function epicCard(r) {
     <p data-milestones>${total ? `<progress max="${total}" value="${complete}"></progress> ${complete} of ${total} milestones` : 'No milestones recorded'}</p>
     ${r.workstreams.length ? `<ul data-workstreams aria-label="Workstreams">${r.workstreams.map(w =>
       `<li data-workstream="${esc(w.id)}"><b>${esc(w.title)}</b> ${streamProgress(w)}</li>`).join('')}</ul>` : ''}
-    <p data-now>Now: ${now}</p>
-    <div data-next>Next: ${next}</div>
+    <p data-now><b data-label>Now:</b> ${now}</p>
+    <div data-next><b data-label>Next:</b> ${next}</div>
     ${r.children.length ? `<p data-child-epics>Epics: ${r.children.map(c => esc(c.title)).join(', ')}</p>` : ''}
     <p data-attention-count="${count}">${count ? `${lantern} ${count} open ${count === 1 ? 'decision or blocker' : 'decisions or blockers'}` : 'No open decisions or blockers'}</p>
   </article>`;
@@ -146,8 +148,10 @@ function reportRef(report) {
 
 function render(flipped = new Set()) {
   el.dataset.level = bench ? 'bench' : room ? 'room' : 'floor';
-  const crumbs = `<nav id="benchBreadcrumb" aria-label="Breadcrumb"><button data-back-floor>Floor</button>${
-    room ? ` / <button data-back-room>${esc(room.title)}</button>` : ''}${bench ? ` / <span>${esc(bench.title)}</span>` : ''}</nav>`;
+  el.toggleAttribute('data-collapsed', collapsed);
+  const crumbs = `<header data-bench-head><nav id="benchBreadcrumb" aria-label="Breadcrumb"><button data-back-floor>Floor</button>${
+    room ? ` / <button data-back-room>${esc(room.title)}</button>` : ''}${bench ? ` / <span>${esc(bench.title)}</span>` : ''}</nav>
+    <button data-collapse aria-expanded="${!collapsed}" title="${collapsed ? 'Show' : 'Hide'} the plan" aria-label="${collapsed ? 'Show' : 'Hide'} the plan">${collapsed ? '▸' : '▾'}</button></header>`;
   let content;
   if (bench) {
     content = `<h2>${esc(bench.title)}</h2><div class="slice-bench"><section data-plan aria-label="Plan wall">${bench.tasks.length ? '' : '<p data-empty>No tasks</p>'}<ol>${bench.tasks.map(task =>
@@ -193,6 +197,13 @@ el.addEventListener('click', async ev => {
     const done = () => { copy.dataset.copied = ''; setTimeout(() => delete copy.dataset.copied, 1400); };
     if (navigator.clipboard?.writeText) navigator.clipboard.writeText(copy.dataset.copy).then(done, () => fallbackCopy(copy.dataset.copy, done));
     else fallbackCopy(copy.dataset.copy, done);
+    return;
+  }
+  if (collapsed && ev.target.closest('#benchBreadcrumb button')) { collapsed = false; store('localStorage', 'fleet.bench.collapsed', '0'); }
+  if (ev.target.closest('[data-collapse]')) {
+    collapsed = !collapsed;
+    store('localStorage', 'fleet.bench.collapsed', collapsed ? '1' : '0');
+    render();
     return;
   }
   if (ev.target.closest('[data-back-floor]')) { ++revision; room = bench = null; render(); return; }

@@ -1004,26 +1004,48 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 .tray:disabled{cursor:default;opacity:.55}
 .tray .paper{width:14px;height:12px;border-radius:1px;background:#e8dcc2;box-shadow:0 -2px 0 #cdbf9f}
 /* Persisted work route over the existing deck. */
-#benchRoute { position:fixed; z-index:30; left:76px; top:80px; max-width:calc(100vw - 100px); max-height:75vh; overflow:auto; padding:20px; background:#142031ee; border:1px solid #64748b; border-radius:12px; color:#e2e8f0; }
+#benchRoute { position:fixed; z-index:30; right:72px; top:64px; width:min(380px, calc(100vw - 32px)); max-height:calc(100vh - 150px);
+  overflow:auto; padding:12px 14px 14px; background:#101a29f2; border:1px solid #334155; border-radius:12px; color:#e2e8f0;
+  font:13px/1.45 var(--sans); box-shadow:0 12px 32px rgba(0,0,0,.45); backdrop-filter:blur(6px); }
+#benchRoute[data-level="room"] { width:min(460px, calc(100vw - 32px)); }
+#benchRoute[data-level="bench"] { width:min(600px, calc(100vw - 32px)); }
 #benchRoute[hidden] { display:none; }
-#benchRoute button { color:inherit; background:#26374c; border:1px solid #64748b; border-radius:6px; padding:10px; margin:4px; cursor:pointer; }
-#benchBreadcrumb { margin-bottom:16px; }
-.epic-cards { display:grid; gap:12px; }
-[data-epic-card] { margin-left:calc(var(--depth) * 28px); padding:10px 14px; border:1px solid #64748b; border-left:4px solid #38bdf8; border-radius:8px; background:#1b2a3d; }
+#benchRoute button { color:inherit; background:#1e2c40; border:1px solid #3b4a60; border-radius:6px; padding:5px 9px; margin:2px; cursor:pointer; font:inherit; }
+#benchRoute button:hover { border-color:#94a3b8; }
+[data-bench-head] { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:-2px 0 10px; }
+#benchBreadcrumb { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#94a3b8; font-size:12px; }
+#benchBreadcrumb button { padding:2px 8px; font-size:12px; }
+#benchRoute [data-collapse] { flex:none; width:26px; height:26px; padding:0; margin:0; background:none; border-color:transparent; color:#94a3b8; }
+#benchRoute[data-collapsed] { width:auto; max-width:min(380px, calc(100vw - 32px)); padding:6px 8px; }
+#benchRoute[data-collapsed] [data-bench-head] { margin:0; }
+#benchRoute[data-collapsed] > :not([data-bench-head]) { display:none; }
+#benchRoute h2 { margin:0 0 10px; font:600 15px/1.3 var(--sans); }
+.epic-cards { display:grid; gap:10px; }
+[data-epic-card] { margin-left:calc(var(--depth) * 14px); padding:10px 12px; border:1px solid #2b3a50; border-left:3px solid #38bdf8; border-radius:8px; background:#16233a; }
 [data-epic-card][data-depth="0"] { border-left-color:#a78bfa; }
-[data-epic-head] { display:flex; align-items:baseline; gap:8px; }
-#benchRoute [data-epic-head] button { font-weight:bold; margin:0; }
-[data-epic-card] p, [data-epic-card] [data-next] { margin:6px 0; }
-[data-epic-card] ul { margin:4px 0 0; padding-left:22px; }
+[data-epic-head] { display:flex; align-items:baseline; gap:6px; flex-wrap:wrap; }
+#benchRoute [data-epic-head] button { margin:0; padding:0; border:0; background:none; font-weight:600; font-size:14px; text-align:left; }
+#benchRoute [data-epic-head] button:hover { text-decoration:underline; }
+[data-epic-card] [data-parent-epic] { font-size:11px; }
+[data-epic-card] p, [data-epic-card] [data-next] { margin:5px 0 0; }
+[data-epic-card] [data-goal] { color:#cbd5e1; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+[data-epic-card] [data-milestones] { display:flex; align-items:center; gap:8px; font-size:12px; color:#94a3b8; }
+[data-epic-card] [data-milestones] progress { flex:1; width:auto; height:6px; }
+#benchRoute [data-label] { display:inline-block; min-width:40px; font:600 10.5px var(--mono); letter-spacing:.06em; text-transform:uppercase; color:#94a3b8; }
+[data-epic-card] ul { margin:3px 0 0; padding-left:18px; }
+[data-epic-card] li { margin:1px 0; }
 [data-epic-card] small, [data-epic-card] i { color:#94a3b8; }
-[data-epic-card] progress { width:120px; vertical-align:middle; accent-color:#34d399; }
-[data-epic-page] { max-width:720px; }
-[data-epic-page] [data-goal] { white-space:pre-line; }
-[data-epic-page] h3 { margin:16px 0 6px; font-size:14px; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; }
-[data-epic-page] progress { width:160px; vertical-align:middle; accent-color:#34d399; }
-[data-epic-page] h4 { margin:14px 0 6px; font-size:14px; }
+[data-epic-card] [data-workstreams] { list-style:none; padding:0; }
+[data-epic-card] [data-attention-count] { font-size:12px; color:#94a3b8; }
+[data-epic-card] [data-attention-count]:not([data-attention-count="0"]) { color:#fbbf24; }
+[data-epic-card] [data-child-epics] { font-size:12px; color:#94a3b8; }
+#benchRoute progress { accent-color:#34d399; }
+[data-epic-page] [data-goal] { white-space:pre-line; color:#cbd5e1; }
+[data-epic-page] h3 { margin:14px 0 6px; font:600 11px var(--mono); color:#94a3b8; text-transform:uppercase; letter-spacing:.06em; }
+[data-epic-page] progress { width:140px; vertical-align:middle; }
+[data-epic-page] h4 { margin:12px 0 6px; font-size:13px; }
 [data-epic-page] h4 small { font-weight:normal; color:#94a3b8; margin-left:6px; }
-[data-epic-page] [data-workstream] [data-plan-list] { padding-left:12px; border-left:2px solid #334155; }
+[data-epic-page] [data-workstream] [data-plan-list] { padding-left:10px; border-left:2px solid #334155; }
 [data-plan-list] { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
 [data-plan-item] { display:flex; gap:10px; align-items:flex-start; }
 [data-plan-item] p { margin:2px 0; }
@@ -1073,3 +1095,7 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 #benchRoute [data-flipped="true"] { animation:bench-flip .5s ease-out; }
 @keyframes bench-flip { from { transform:rotateX(180deg); } to { transform:rotateX(0); } }
 @media (prefers-reduced-motion:reduce) { #benchRoute [data-flipped="true"] { animation:none; } }
+@media (max-width:700px) {
+  #benchRoute, #benchRoute[data-level] { left:12px; right:12px; top:auto; bottom:64px; width:auto; max-height:45vh; }
+  #benchRoute[data-collapsed] { left:auto; }
+}
