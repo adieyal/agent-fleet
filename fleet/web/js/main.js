@@ -15,7 +15,7 @@ import { applyState, departIdle, stream } from './state.js';
 import { positionSwitches, stepFocus } from './focus.js';
 import { positionLanterns, stepLanterns } from './attention.js';
 import { lanternState } from './building.js';
-import { fit, resize } from './camera.js';
+import { fit, resize, setRenderScale } from './camera.js';
 import { miniBot, panelScrollUntil, renderLive, select } from './panel.js';
 import './library.js';
 import { reader } from './reader.js';
@@ -29,6 +29,24 @@ import { worldShown } from './world/floor-view.js';
 
 // ------------------------------------------------------------------ frame loop
 let lastT = 0;
+let frameNo = 0;
+const SHADOW_EVERY = 3;   // frames per shadow-map refresh (scene.js turns the automatic one off)
+
+// Adaptive resolution: over each window of frames, many late ones step the deck's rendering resolution down, and two
+// windows in a row with almost none step it back up. A GPU that keeps up never leaves full resolution.
+const RENDER_SCALES = [1, 0.85, 0.7], PACE_WINDOW = 120;
+let scaleStep = 0, paced = 0, late = 0, goodWindows = 0;
+function pace(interval) {
+  paced++;
+  if (interval > 1.5 / 60) late++;
+  if (paced < PACE_WINDOW) return;
+  const share = late / paced;
+  paced = late = 0;
+  if (share > 0.2 && scaleStep < RENDER_SCALES.length - 1) { scaleStep++; goodWindows = 0; }
+  else if (share < 0.03 && scaleStep > 0 && ++goodWindows >= 2) { scaleStep--; goodWindows = 0; }
+  else return;
+  setRenderScale(RENDER_SCALES[scaleStep]);
+}
 let needsFrame = true;
 for (const event of ['pointermove', 'pointerup', 'click', 'keydown', 'wheel', 'resize']) {
   window.addEventListener(event, () => { needsFrame = true; });
@@ -63,13 +81,16 @@ function frame(ts) {
   if (ts < panelScrollUntil) { lastT = 0; return; }             // hold the deck still while the panel scrolls, so the scroll gets the frame
   if (isStepping()) {
     const now = animationNow() / 1000;
+    renderer.shadowMap.needsUpdate = true;   // stepped frames stay exact
     if (needsFrame) updateFrame(0, now, now, true);
     needsFrame = false;
     return;
   }
   const t = ts / 1000, now = animationNow() / 1000;
+  if (lastT) pace(t - lastT);
   const dt = Math.min(0.1, lastT ? t - lastT : 0.016) * WARP;
   lastT = t;
+  if (++frameNo % SHADOW_EVERY === 0) renderer.shadowMap.needsUpdate = true;
   updateFrame(dt, t, now, true);
 }
 function updateFrame(dt, t, now, draw) {
@@ -121,7 +142,7 @@ function updateFrame(dt, t, now, draw) {
   positionLanterns();
   if (fpsEl) {
     fpsN++;
-    if (t - fpsT > 1) { fpsEl.textContent = `${Math.round(fpsN / (t - fpsT))} fps · ${renderer.info.render.calls} calls`; fpsN = 0; fpsT = t; }
+    if (t - fpsT > 1) { fpsEl.textContent = `${Math.round(fpsN / (t - fpsT))} fps · ${renderer.info.render.calls} calls · ${RENDER_SCALES[scaleStep]}x`; fpsN = 0; fpsT = t; }
   }
 }
 const fpsEl = DEBUG ? document.body.appendChild(Object.assign(document.createElement('div'), { style: 'position:fixed;right:70px;bottom:14px;z-index:99;font:12px monospace;color:#9fe' })) : null;

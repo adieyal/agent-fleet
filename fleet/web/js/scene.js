@@ -15,6 +15,9 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.1;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;   // r186 folded PCFSoft into PCF; shadow.radius softens it
+// The shadow pass redraws the whole scene; the frame loop asks for it every few frames (the sun only moves with the
+// layout, and a walking robot's shadow a frame or two behind can't be seen), which integrated GPUs feel.
+renderer.shadowMap.autoUpdate = false;
 renderer.setClearColor(0x000000, 0);
 
 export const scene = new THREE.Scene();

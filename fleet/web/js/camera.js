@@ -114,10 +114,18 @@ function drawStars() {
   }
 }
 
+// The deck's rendering resolution as a share of the screen's; the frame loop lowers it while frames run slow.
+let renderScale = 1;
+export function setRenderScale(scale) {
+  if (scale === renderScale) return;
+  renderScale = scale;
+  renderer.setPixelRatio(dpr * renderScale);
+  renderer.setSize(vw, vh, false);
+}
 export function resize() {
   setDpr(Math.min(window.devicePixelRatio || 1, 2));
   setVw(window.innerWidth); setVh(window.innerHeight);
-  renderer.setPixelRatio(dpr);
+  renderer.setPixelRatio(dpr * renderScale);
   renderer.setSize(vw, vh, false);
   drawStars();
   if (!ROBOT) return;
