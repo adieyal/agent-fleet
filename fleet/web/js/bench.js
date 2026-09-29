@@ -2,6 +2,8 @@
 import { esc } from './util.js';
 import { hostLook } from './looks.js';
 import { glyphHtml, svg } from './glyphs.js';
+import { ents } from './model.js';
+import { openReader } from './reader.js';
 
 const el = document.body.appendChild(document.createElement('section'));
 el.id = 'benchRoute';
@@ -128,21 +130,30 @@ function epicPage(r) {
   </article>`;
 }
 
+// A step report's reader address from its fleet:// location: the host, and the report's document id (report-<step>).
+function reportRef(report) {
+  const m = /^fleet:\/\/([^/]+)\/.*\/result-(\d+)\.md$/.exec(report.canonical_location || '');
+  return m && report.run ? { host: m[1], doc: `report-${m[2]}` } : null;
+}
+
 function render(flipped = new Set()) {
   el.dataset.level = bench ? 'bench' : room ? 'room' : 'floor';
   const crumbs = `<nav id="benchBreadcrumb" aria-label="Breadcrumb"><button data-back-floor>Floor</button>${
     room ? ` / <button data-back-room>${esc(room.title)}</button>` : ''}${bench ? ` / <span>${esc(bench.title)}</span>` : ''}</nav>`;
   let content;
   if (bench) {
-    content = `<h2>${esc(bench.title)}</h2><div class="slice-bench"><section data-plan aria-label="Plan wall"><ol>${bench.tasks.map(task =>
+    content = `<h2>${esc(bench.title)}</h2><div class="slice-bench"><section data-plan aria-label="Plan wall">${bench.tasks.length ? '' : '<p data-empty>No tasks recorded</p>'}<ol>${bench.tasks.map(task =>
       `<li data-task="${esc(task.id)}" data-flipped="${flipped.has(task.id)}" data-lane="${task.lane}" data-condition="${esc(task.condition)}" title="${esc(task.condition)}"><i></i>${esc(task.title)}</li>`).join('')}</ol></section>
-      <section aria-label="Criteria">${bench.criteria.map(c => `<span data-verification="${c.verification}" data-state="${c.state}" aria-label="${c.verification} ${c.state}" title="${esc(c.text)}">${svg(kinds[c.verification])}</span>`).join('')}
+      <section aria-label="Criteria">${bench.criteria.length ? '' : '<p data-empty>No criteria recorded</p>'}${bench.criteria.map(c => `<span data-verification="${c.verification}" data-state="${c.state}" aria-label="${c.verification} ${c.state}" title="${esc(c.text)}">${svg(kinds[c.verification])}</span>`).join('')}
       <p>${bench.progress.total === null ? 'Progress unknown' : `${bench.progress.complete} / ${bench.progress.total}`}</p></section>
       <section data-agents aria-label="Agents">${bench.agents.length > 5
         ? `<div data-agent-group data-count="${bench.agents.length}" aria-label="${bench.agents.length} agents">${figure}${figure}<b>${bench.agents.length}</b></div>`
         : bench.agents.map(agentMarkup).join('')}</section>
-      <section data-desk aria-label="Question desk">${bench.attention.length ? `<span data-lantern aria-label="Open attention">${lantern}</span>` : ''}</section>
-      <details data-tray><summary>Reports <b>${bench.reports.length}</b></summary><ul>${bench.reports.map(report => `<li data-availability="${esc(report.availability)}">${report.title === null ? 'Title unknown' : esc(report.title)}<small>${esc(report.availability)} · ${esc(report.canonical_location)}</small></li>`).join('')}</ul></details>
+      <section data-desk aria-label="Question desk">${bench.attention.length ? `<span data-lantern aria-label="Open attention">${lantern}</span>` : '<p data-empty>Nothing needs you here</p>'}</section>
+      <details data-tray><summary>Reports <b>${bench.reports.length}</b></summary><ul>${bench.reports.map(report => {
+        const at = reportRef(report), title = report.title === null ? 'Title unknown' : esc(report.title);
+        return `<li data-availability="${esc(report.availability)}">${at ? `<button data-open-report data-host="${esc(at.host)}" data-job="${esc(report.run)}" data-doc="${esc(at.doc)}" title="Read this report">${title}</button>` : title}<small>${esc(report.availability)} · ${esc(report.canonical_location)}</small></li>`;
+      }).join('')}</ul></details>
       <section><button data-briefing aria-expanded="${briefing}">Briefing</button><div data-summary ${briefing ? '' : 'hidden'}>${bench.summary === null ? 'Summary unknown' : ['purpose', 'done', 'doing', 'next'].map(key => `<p><b>${key}</b> ${esc(bench.summary[key])}</p>`).join('')}</div></section></div>`;
   } else if (room) {
     content = epicPage(room);
@@ -158,6 +169,13 @@ el.addEventListener('click', async ev => {
     briefing = !briefing;
     el.querySelector('[data-summary]').hidden = !briefing;
     el.querySelector('[data-briefing]').setAttribute('aria-expanded', briefing);
+    return;
+  }
+  const open = ev.target.closest('[data-open-report]');
+  if (open) {
+    const { host, job, doc } = open.dataset;
+    openReader(ents.get(`${host}:${job}`) || { host, job: { id: job, description: open.textContent } },
+      { id: doc, kind: 'report', name: open.textContent });
     return;
   }
   if (ev.target.closest('[data-back-floor]')) { ++revision; room = bench = null; render(); return; }

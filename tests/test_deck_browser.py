@@ -174,6 +174,8 @@ def test_bench_real_endpoint(changed_deck: Deck, deck_state, monkeypatch, tmp_pa
         context_reference='work:' + milestone.id, actor='user')
     open_library(store).index_run(run=run.id, work_item=task.id, kind='report', title='Contract report',
                                 location='fleet://worker/bench-job/report', availability='available')
+    open_library(store).index_run(run=run.id, work_item=task.id, kind='report', title='Step 1 report',
+                                location='fleet://worker/home/u/.fleet/jobs/bench-job/result-0.md', availability='available')
     repo = tmp_path / 'management'
     subprocess.run(['git', 'init', str(repo)], check=True, capture_output=True, timeout=10)
     open_records(store).register('bench-contract', repo, actor='user')
@@ -199,7 +201,15 @@ def test_bench_real_endpoint(changed_deck: Deck, deck_state, monkeypatch, tmp_pa
     bench.locator('[data-tray] summary').click()
     expect(bench.locator('[data-tray]')).to_contain_text('Contract report')
     expect(bench.locator('[data-tray]')).to_contain_text('fleet://worker/bench-job/report')
-    expect(bench.locator('[data-availability]')).to_have_attribute('data-availability', 'available')
+    expect(bench.locator('[data-availability]').first).to_have_attribute('data-availability', 'available')
+    # a step report opens in the reader; a location that names no step report stays text
+    expect(bench.locator('[data-open-report]')).to_have_text(['Step 1 report'])
+    expect(bench.locator('[data-open-report]')).to_have_attribute('data-doc', 'report-0')
+    bench.locator('[data-open-report]').click()
+    expect(page.locator('#reader')).to_be_visible()
+    expect(page.locator('#rdTitle')).to_have_text('Step 1 report')
+    page.keyboard.press('Escape')
+    expect(page.locator('#reader')).to_be_hidden()
     bench.locator('[data-briefing]').click()
     for text in ['Find suppliers', 'Evidence gathered', 'Review results', 'Accept results']:
         expect(bench.locator('[data-summary]')).to_contain_text(text)

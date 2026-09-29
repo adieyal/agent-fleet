@@ -1062,6 +1062,10 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 #benchRoute [data-agent-group] { border:4px double #94a3b8; border-radius:50%; padding:8px; }
 #benchRoute [data-tray] { border-bottom:6px double #aa805b; }
 #benchRoute [data-tray] small { display:block; }
+#benchRoute [data-tray] li { margin:6px 0; }
+#benchRoute [data-open-report] { margin:0; padding:4px 8px; text-align:left; }
+#benchRoute [data-open-report]:hover { border-color:#e2e8f0; }
+#benchRoute [data-empty] { margin:0; color:#94a3b8; font-style:italic; }
 #benchRoute [data-flipped="true"] { animation:bench-flip .5s ease-out; }
 @keyframes bench-flip { from { transform:rotateX(180deg); } to { transform:rotateX(0); } }
 @media (prefers-reduced-motion:reduce) { #benchRoute [data-flipped="true"] { animation:none; } }
