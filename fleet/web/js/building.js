@@ -318,18 +318,19 @@ const levelOffset = i => i === 0 ? 0 : manifest.tiers['1'].lobby_step_px + (i - 
 const levelY = i => view.oy - levelOffset(i) * view.z;
 function fit() {
   if (!vw || !manifest || !floors.length) { view = null; return; }
+  // on a phone the storeys get the width: the storehouse runs off the right edge (its sign stays on screen)
+  const narrow = vw < 760;
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
   for (const [name, level] of stack()) {
-    if (name.startsWith('plinth-')) continue;
+    if (name.startsWith('plinth-') || (narrow && name.startsWith('annex-'))) continue;
     const t = one(name), x = -t.anchor_px[0], y = -levelOffset(level) - t.anchor_px[1];
     x0 = Math.min(x0, x); x1 = Math.max(x1, x + t.size[0]); y0 = Math.min(y0, y); y1 = Math.max(y1, y + t.size[1]);
   }
   y1 += PLINTH_STRIP;
-  // on a phone the building takes the width and stands on the lobby's list
-  const narrow = vw < 760;
+  // (and the lobby's list goes below it)
   const l = MARGIN + (narrow ? 0 : LOBBY_ROOM), r = vw - MARGIN, t = TOP_UI + MARGIN, b = vh - MARGIN - (narrow ? NARROW_LOBBY_H : 0);
   const z = Math.min(MAX_Z, (r - l) / (x1 - x0), (b - t) / (y1 - y0));
-  view = { z, ox: (l + r) / 2 - (x0 + x1) / 2 * z, oy: narrow ? b - y1 * z : (t + b) / 2 - (y0 + y1) / 2 * z };
+  view = { z, ox: (l + r) / 2 - (x0 + x1) / 2 * z, oy: (t + b) / 2 - (y0 + y1) / 2 * z };
 }
 // A floor's front on screen, from the manifest's camera: its front edge runs from the level point to the right end,
 // descending a little, and the storey rises one step above it.
@@ -693,6 +694,12 @@ function placeUi() {
     const level = Number(el.dataset.floor), p = slotAt('spine', level, 'plate'), [w, h] = boxOf('spine', 'plate');
     const ring = slotAt('spine', level, 'ring'), [rd] = boxOf('spine', 'ring');
     const sw = slotAt('spine', level, 'focus_switch'), [fw, sh] = boxOf('spine', 'focus_switch');
+    if (vw < 760) {   // a phone: no room beside the spine, so the plate sits just inside its floor, controls in a row
+      Object.assign(el.style, { height: '', minWidth: '', maxWidth: px(vw - view.ox - MARGIN - 6) });
+      for (const child of el.querySelectorAll('.progress,.fswitch,.merge-handle')) child.removeAttribute('style');
+      moveTo(el, view.ox + 4, p.y, ' translate(0,-50%)');
+      continue;
+    }
     // right-aligned to its slot (short of the ring), the plate grows to the left past the spine's edge for a longer
     // name, as l0's do
     const right = Math.min(p.x + w / 2, ring.x - rd / 2 - 3), top = p.y - h / 2;

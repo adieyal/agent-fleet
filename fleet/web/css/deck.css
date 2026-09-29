@@ -388,6 +388,10 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
   .fswitch button{font-size:0;width:12px;height:12px;padding:0}   /* two dots on a phone; the names stay in their titles */
   #lift{right:6px}
   .plate .progress{width:16px;height:16px}
+  #buildingUi .plate{height:22px;font-size:11px;padding:0 4px;gap:4px}
+  #buildingUi .plate :is(.fswitch,.merge-handle){position:static;width:auto;height:auto}
+  #buildingUi .plate .progress{position:relative;width:16px;height:16px}   /* (its ring is inset in it) */
+  #buildingUi .plate .fswitch button{font-size:0;width:10px;height:10px;padding:0}
 }
 
 /* ---------- detail panel */
