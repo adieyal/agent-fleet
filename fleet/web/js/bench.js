@@ -96,7 +96,9 @@ export async function enterFloor(identity, { epic = null, milestone = null } = {
     }
     render();
   } catch (error) {
-    if (request === revision) el.innerHTML = `<p role="alert">${esc(error.message)}</p>`;
+    if (request !== revision) return;
+    rooms = [];   // so the next refresh draws the rooms over this error (the server may just be restarting)
+    el.innerHTML = `<p role="alert">${esc(error.message)}</p>`;
   }
 }
 
