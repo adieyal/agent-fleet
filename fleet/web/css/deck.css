@@ -1,6 +1,6 @@
 :root{
   --bg:#05080f;
-  --panel:rgba(10,16,28,.9);   /* no backdrop blur behind panels: re-blurring the live deck each frame costs integrated GPUs most of their frame */
+  --panel:rgb(10,16,28);   /* opaque, with no backdrop blur: re-blurring the live deck each frame costs integrated GPUs most of their frame */
   --panel-solid:#0b111d;
   --line:rgba(140,170,220,.13);
   --line2:rgba(140,170,220,.26);
@@ -33,7 +33,7 @@ button{font:inherit;color:inherit}
 
 /* ---------- header */
 header{position:fixed;top:0;left:0;right:0;height:52px;display:flex;align-items:center;gap:14px;padding:0 16px;
-  background:linear-gradient(180deg,rgba(5,8,15,.94),rgba(5,8,15,.72));
+  background:rgb(5,8,15);
   border-bottom:1px solid var(--line);z-index:30}
 .brand{display:flex;align-items:center;gap:9px;font-family:var(--display);font-weight:700;letter-spacing:.14em;font-size:15px;white-space:nowrap}
 .brand em{font-style:normal;font-weight:500;letter-spacing:.06em;color:var(--run);font-family:var(--mono);font-size:12px;
@@ -106,16 +106,16 @@ header{position:fixed;top:0;left:0;right:0;height:52px;display:flex;align-items:
 
 /* ---------- android tags */
 .tag{position:absolute;left:0;top:0;display:flex;flex-direction:column;align-items:center;gap:4px;pointer-events:auto;cursor:pointer;will-change:transform}
-.bubble{position:relative;font:500 13px/1.4 var(--sans);color:#eef4ff;background:rgba(7,12,22,.95);border:1px solid var(--hc,#38bdf8);
+.bubble{position:relative;font:500 13px/1.4 var(--sans);color:#eef4ff;background:rgb(7,12,22);border:1px solid var(--hc,#38bdf8);
   padding:6px 10px;border-radius:9px;max-width:300px;white-space:normal;box-shadow:0 4px 14px rgba(0,0,0,.45);overflow-wrap:anywhere}
 /* the clamp sits on an inner box so a third line can't peek through the bubble's bottom padding */
 .bubble .bt{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .bubble.code{font:12.5px/1.45 var(--mono)}
 .bubble .ic{color:var(--hc);margin-right:5px;font-weight:600}
-.bubble.quiet{color:var(--muted);border-color:var(--line2);background:rgba(7,12,22,.78)}
+.bubble.quiet{color:var(--muted);border-color:var(--line2);background:rgb(7,12,22)}
 .bubble.bad{border-color:var(--bad);color:#fecaca}
 .bubble.done{border-color:rgba(74,222,128,.6);color:#bbf7d0}
-.stack{display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:999px;background:rgba(5,9,17,.88);border:1px solid var(--line2)}
+.stack{display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:999px;background:rgb(5,9,17);border:1px solid var(--line2)}
 .stack .id{font:600 11px var(--mono);color:var(--hc);margin-right:4px}
 .stack .id .sid{font-style:normal;font-weight:400;opacity:.55}
 .pip{width:8px;height:8px;border-radius:2px;border:1px solid #6b7c9c}
@@ -131,7 +131,7 @@ header{position:fixed;top:0;left:0;right:0;height:52px;display:flex;align-items:
 .lv{font:700 9.5px/1 var(--sans);letter-spacing:.12em;padding:3px 5px 2px;border-radius:4px;color:#05080f;background:var(--live);margin-right:5px}
 .lv.idle{background:transparent;color:var(--live);box-shadow:inset 0 0 0 1px var(--live)}
 .stack .ag{font:500 11px var(--mono);color:var(--muted)}
-.bubble.wait{border-style:dashed;border-color:rgba(251,191,36,.7);color:#fde68a;background:rgba(7,12,22,.85)}
+.bubble.wait{border-style:dashed;border-color:rgba(251,191,36,.7);color:#fde68a;background:rgb(7,12,22)}
 .bubble.wait .ic{color:var(--warn)}
 /* action glyphs instead of sentences: one small picture per android, its words in the tooltip and the panel */
 .bubble.glyphs{display:grid;place-items:center;width:30px;height:30px;padding:0;border-radius:50%;max-width:none}
@@ -156,7 +156,7 @@ header{position:fixed;top:0;left:0;right:0;height:52px;display:flex;align-items:
 
 /* ---------- focus switch: priority · background on each room's front corner */
 #floorUi{position:fixed;inset:0;pointer-events:none;overflow:hidden}
-.focus-switch{position:absolute;left:0;top:0;display:flex;padding:2px;border-radius:999px;background:rgba(5,9,17,.88);
+.focus-switch{position:absolute;left:0;top:0;display:flex;padding:2px;border-radius:999px;background:rgb(5,9,17);
   border:1px solid var(--line2);pointer-events:auto;will-change:transform}
 .focus-switch button{border:0;background:none;padding:2px 8px;border-radius:999px;font:600 10px/1.2 var(--sans);letter-spacing:.03em;
   color:var(--dim);cursor:pointer}
@@ -217,10 +217,10 @@ body[data-view=building] :is(#world,#tags,#floorUi,#legend,#feed,#zoom,#hint,#at
 #floorWorldUi{position:absolute;inset:0;pointer-events:none;overflow:hidden}
 #floorWorldUi [hidden]{display:none!important}
 #floorWorldCanvas.hot{cursor:pointer}
-#floorWorldUi .shelf-tip{position:absolute;padding:5px 10px;border-radius:8px;background:rgba(7,12,22,.92);border:1px solid var(--line2);
+#floorWorldUi .shelf-tip{position:absolute;padding:5px 10px;border-radius:8px;background:rgb(7,12,22);border:1px solid var(--line2);
   box-shadow:0 6px 18px rgba(0,0,0,.45);font:600 12px/1.3 var(--sans);color:#f2f6fc;white-space:nowrap}
 #floorWorldBar{position:absolute;left:14px;bottom:14px;display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:10px;
-  background:rgba(5,9,17,.82);border:1px solid var(--line2);font:500 12px var(--mono);color:var(--muted)}
+  background:rgb(5,9,17);border:1px solid var(--line2);font:500 12px var(--mono);color:var(--muted)}
 #floorWorldBar select{margin-left:6px;font:500 12px var(--mono);color:var(--text);background:#0b111d;border:1px solid var(--line2);border-radius:6px;padding:2px 4px}
 #floorWorldNote:empty{display:none}
 body[data-view=world] #floorWorld{display:block}
@@ -234,7 +234,7 @@ body[data-view=world] #panel:not(.open){visibility:hidden}   /* (its shadow show
 #floorWorldUi .bubble .glyph,#floorWorldUi .bubble svg{display:block;width:20px;height:20px}
 #floorWorldUi .bubble svg{fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
 /* a robot's name at close zoom: the first words of its job */
-#floorWorldUi .name{position:absolute;transform:translate(-50%,0);transform-origin:50% 0;padding:1px 7px;border-radius:999px;background:rgba(21,23,28,.78);
+#floorWorldUi .name{position:absolute;transform:translate(-50%,0);transform-origin:50% 0;padding:1px 7px;border-radius:999px;background:rgb(21,23,28);
   color:#f1f3f7;font:600 11px/16px var(--sans);white-space:nowrap}
 #floorWorldUi .floor-button{position:absolute;width:18px;height:18px;border-radius:50%;font:700 11px/18px var(--sans);text-align:center;color:#e8e8ee}
 #floorWorldUi .floor-button.here{background:#f7f5ef;color:#3d4450;box-shadow:0 0 6px rgba(255,244,214,.9)}
@@ -243,7 +243,7 @@ body[data-view=world] #panel:not(.open){visibility:hidden}   /* (its shadow show
   font:700 15px/20px var(--mono);text-align:center;text-shadow:0 0 6px rgba(255,170,80,.8)}
 /* name plates on the spine: floor number, name (three words at most), progress ring */
 .plate{position:absolute;left:0;top:0;display:flex;align-items:center;gap:7px;max-width:320px;height:min(34px,calc(var(--h,60px) - 14px));
-  padding:0 9px 0 6px;border-radius:7px;background:rgba(5,9,17,.9);border:1px solid var(--line2);border-left:3px solid var(--accent,var(--dim));
+  padding:0 9px 0 6px;border-radius:7px;background:rgb(5,9,17);border:1px solid var(--line2);border-left:3px solid var(--accent,var(--dim));
   font:600 12.5px/1.1 var(--display);color:var(--text);white-space:nowrap;pointer-events:auto;will-change:transform}
 .plate .fn{font:600 11px var(--mono);color:var(--dim)}
 .plate b{font-weight:600;overflow:hidden;text-overflow:ellipsis}
@@ -254,11 +254,11 @@ body[data-view=world] #panel:not(.open){visibility:hidden}   /* (its shadow show
    name; its ring and focus switch sit at their own slots, so they are placed absolutely inside it */
 #buildingUi .plate{font-size:max(9px,calc(13px * var(--z,1)));padding:0 6px 0 5px;gap:5px}
 #buildingUi .plate :is(.progress,.fswitch,.merge-handle){position:absolute}
-#buildingUi .plate .fswitch{align-items:center;padding:1px;background:rgba(5,9,17,.82)}
+#buildingUi .plate .fswitch{align-items:center;padding:1px;background:rgb(5,9,17)}
 #buildingUi .plate .fswitch button{font-size:max(8.5px,calc(10px * var(--z,1)));padding:0 6px}
-#buildingUi .plate .merge-handle{display:grid;place-items:center;padding:0 4px;border-radius:6px;background:rgba(5,9,17,.82)}
+#buildingUi .plate .merge-handle{display:grid;place-items:center;padding:0 4px;border-radius:6px;background:rgb(5,9,17)}
 #buildingUi .plate .progress i{font-size:max(8px,calc(11px * var(--z,1)))}
-#buildingUi .plate .progress .ring{border-radius:50%;background:rgba(5,9,17,.82)}
+#buildingUi .plate .progress .ring{border-radius:50%;background:rgb(5,9,17)}
 .hostdots{position:absolute;left:0;top:0;display:flex;gap:max(4px,calc(10px * var(--z,1)));pointer-events:none;will-change:transform}
 .hostdots i{width:max(7px,calc(16px * var(--z,1)));aspect-ratio:1;border-radius:50%;box-shadow:0 1px 3px rgba(40,50,70,.35)}
 /* the focus switch: open · windows */
@@ -351,7 +351,7 @@ body[data-view=floor] #lift{display:flex}
   background:#2a2118;border:1px solid #7a6040;color:#e8dcc2;font:600 11.5px var(--sans);letter-spacing:.04em}
 body[data-readonly] #readonlyTag{display:block}
 body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
-.plate[data-mode=to-let]{border-style:dashed;border-left-style:dashed;background:rgba(5,9,17,.6)}
+.plate[data-mode=to-let]{border-style:dashed;border-left-style:dashed;background:rgb(5,9,17)}
 .plate[data-mode=to-let] b{color:var(--muted);font-weight:500}
 .progress{position:relative;flex:none;width:20px;height:20px;display:grid;place-items:center}
 .progress .ring{position:absolute;inset:0}
@@ -359,7 +359,7 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 .progress i{font:700 10.5px var(--sans);font-style:normal;color:var(--muted)}
 /* the lobby: host key, visitors, projects without a floor */
 .lobby{position:absolute;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;align-content:flex-start;padding:7px 10px;border-radius:10px;
-  background:rgba(5,9,17,.78);border:1px solid var(--line);font-size:12px;pointer-events:auto;overflow:auto}
+  background:rgb(5,9,17);border:1px solid var(--line);font-size:12px;pointer-events:auto;overflow:auto}
 .lobby h3{margin:0 0 4px;font:600 10.5px var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
 .lobby ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px}
 .hostkey{display:flex;flex-wrap:wrap;gap:4px 12px;flex:1 1 auto}
@@ -513,7 +513,7 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 .docs li.updating button{border-color:color-mix(in srgb,var(--run) 45%,var(--line))}
 @media (prefers-reduced-motion:reduce){.docs .upd::before{animation:none}}
 #docTip{position:fixed;left:0;top:0;z-index:35;pointer-events:none;max-width:320px;padding:9px 12px 10px;border-radius:10px;
-  background:rgba(7,12,22,.96);border:1px solid var(--hc,var(--line2));box-shadow:0 8px 24px rgba(0,0,0,.5);font:13px/1.4 var(--sans)}
+  background:rgb(7,12,22);border:1px solid var(--hc,var(--line2));box-shadow:0 8px 24px rgba(0,0,0,.5);font:13px/1.4 var(--sans)}
 #docTip[hidden]{display:none}
 #docTip .th{display:flex;align-items:baseline;gap:8px}
 #docTip b{font-weight:600;color:#f2f6fc;overflow-wrap:anywhere}
@@ -945,7 +945,7 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 }
 
 /* ---------- the workarea (L3): a room's benches, flat and minimal until the baked scene replaces it */
-#workarea{position:fixed;inset:0;z-index:55;display:flex;align-items:center;justify-content:center;background:rgba(3,6,12,.6)}
+#workarea{position:fixed;inset:0;z-index:55;display:flex;align-items:center;justify-content:center;background:rgb(3,6,12)}
 #workarea[hidden]{display:none}
 .wa-sheet{width:min(980px,calc(100vw - 24px));max-height:calc(100vh - 80px);overflow:auto;padding:14px 18px 18px;border-radius:14px;
   background:var(--panel-solid);border:1px solid var(--line2);box-shadow:0 18px 50px rgba(0,0,0,.55)}
