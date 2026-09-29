@@ -149,9 +149,9 @@ function reportRef(report) {
 function render(flipped = new Set()) {
   el.dataset.level = bench ? 'bench' : room ? 'room' : 'floor';
   el.toggleAttribute('data-collapsed', collapsed);
-  const crumbs = `<header data-bench-head><nav id="benchBreadcrumb" aria-label="Breadcrumb"><button data-back-floor>Floor</button>${
+  const crumbs = `<div data-bench-head><nav id="benchBreadcrumb" aria-label="Breadcrumb"><button data-back-floor>Floor</button>${
     room ? ` / <button data-back-room>${esc(room.title)}</button>` : ''}${bench ? ` / <span>${esc(bench.title)}</span>` : ''}</nav>
-    <button data-collapse aria-expanded="${!collapsed}" title="${collapsed ? 'Show' : 'Hide'} the plan" aria-label="${collapsed ? 'Show' : 'Hide'} the plan">${collapsed ? '▸' : '▾'}</button></header>`;
+    <button data-collapse aria-expanded="${!collapsed}" title="${collapsed ? 'Show' : 'Hide'} the plan" aria-label="${collapsed ? 'Show' : 'Hide'} the plan">${collapsed ? '▸' : '▾'}</button></div>`;
   let content;
   if (bench) {
     content = `<h2>${esc(bench.title)}</h2><div class="slice-bench"><section data-plan aria-label="Plan wall">${bench.tasks.length ? '' : '<p data-empty>No tasks</p>'}<ol>${bench.tasks.map(task =>
