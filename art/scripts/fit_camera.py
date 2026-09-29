@@ -45,7 +45,53 @@ def fit(pitch: float, yaw: float):
     return err, s, ox, oy, right, up
 
 
+# l0 (the building, L0): the building's size is unknown too, so a landmark is (x, y, z) in units of its width, depth
+# and storey height (front-left corner of the North slab's top edge next to the spine at x = 0, the lift at x = 1;
+# floors counted up from the lobby), with the l0 pixel. l0 is painted, not projected: its slabs descend 3-5 deg
+# (more lower down) and its roof sides rise 12-20 deg, so the slab lines weigh most and the roof least.
+L0_LANDMARKS = [
+    ((0, 0, 6), (440, 193), 3), ((1, 0, 6), (1147, 232), 3),    # North slab top, spine end and lift end
+    ((0, 0, 5), (440, 293), 3), ((1, 0, 5), (1147, 336), 3),    # Atlas
+    ((0, 0, 4), (440, 389), 3), ((1, 0, 4), (1147, 445), 3),    # Lab
+    ((0, 0, 3), (440, 477), 3), ((1, 0, 3), (1147, 540), 3),    # Harbor
+    ((0, 0, 2), (440, 568), 3), ((1, 0, 2), (1147, 635), 3),    # Delta
+    ((0, 1, 7), (655, 25), 1), ((1, 1, 7), (1270, 100), 1),     # roof: back-left and back-right corners
+    ((0, 0, 7), (420, 108), 1), ((1, 0, 7), (1140, 128), 1),    # roof: front corners
+]
+
+
+def fit_l0(pitch: float, yaw: float):
+    """x = ox + a x (e_x.right) + b y (e_y.right) + c z (e_z.right), likewise y with -up: a, b, c are the width, depth
+    and storey height in pixels, linear given the pose."""
+    right, up = axes(pitch, yaw)
+    P = np.array([p for p, _, _ in L0_LANDMARKS], float)
+    S = np.array([s for _, s, _ in L0_LANDMARKS], float)
+    wt = np.repeat(np.sqrt([w for _, _, w in L0_LANDMARKS]), 2)
+    A = np.zeros((2 * len(P), 5))
+    b = np.zeros(2 * len(P))
+    for k in range(3):
+        A[0::2, k] = P[:, k] * right[k]
+        A[1::2, k] = -P[:, k] * up[k]
+    A[0::2, 3], A[1::2, 4] = 1, 1
+    b[0::2], b[1::2] = S[:, 0], S[:, 1]
+    sol, *_ = np.linalg.lstsq(A * wt[:, None], b * wt, rcond=None)
+    err = np.sqrt(np.mean(((A @ sol - b) * wt) ** 2))
+    return err, sol
+
+
+def main_l0() -> None:
+    err, sol, pitch, yaw = min((fit_l0(p, y) + (p, y) for p in np.arange(2, 60, 0.25) for y in np.arange(0, 45, 0.25)),
+                               key=lambda r: r[0])
+    width, depth, storey = sol[:3]
+    s = storey / 4.0   # px per metre, with a 4 m storey
+    print(f'rms error {err:.1f} px; pitch {pitch:.2f}, yaw {yaw:.2f}')
+    print(f'storey {storey:.1f} px; with a 4 m storey: {s:.2f} px/m, width {width / s:.1f} m, depth {depth / s:.1f} m')
+
+
 def main() -> None:
+    import sys
+    if '--l0' in sys.argv:
+        return main_l0()
     best = min((fit(p, y) + (p, y) for p in np.arange(20, 55, 0.25) for y in np.arange(5, 40, 0.25)),
                key=lambda r: r[0])
     err, s, ox, oy, right, up, pitch, yaw = best

@@ -250,12 +250,14 @@ def test_priority_floors_are_open_and_background_floors_windowed(reading_page: P
     for floor in floors:
         built = floor["built"]
         assert floor["active"] == (floor["project"] in active)
+        top = "-top" if floor["floor"] == len(floors) else ""
+        lit = "-lit" if floor["active"] else "-unlit"
         if floor["project"] in background:
             assert built["mode"] == "windowed" and built["front"] == "windowed"
-            assert built["furniture"] == 0 and not built["pennant"]
+            assert built["piece"] == f"floor-glass{top}{lit}"      # behind glass
         else:
             assert built["mode"] == "open" and built["front"] == "none"
-            assert built["furniture"] > 0 and built["pennant"]
+            assert built["piece"] == f"floor-open{top}{lit}"       # the furnished open office
         assert built["glow"] == floor["active"]
         expect(page.locator(f'.plate[data-floor="{floor["floor"]}"]')).to_have_attribute("data-mode", built["mode"])
 
@@ -283,18 +285,17 @@ def test_priority_floors_are_open_and_background_floors_windowed(reading_page: P
     assert len(heights) == 1
 
 
-def test_open_floors_show_their_projects_rooms(reading_page: Page, ten_floors_url: str) -> None:
+def test_open_floors_are_lit_while_their_projects_rooms_work(reading_page: Page, ten_floors_url: str) -> None:
     page = reading_page
     floors = {floor["floor"]: floor for floor in open_building(page, ten_floors_url)}
     # Agent Fleet (floor 3) has two rooms on the deck: agent-fleet, working, and agent-fleet-docs, idle
-    rooms = floors[3]["built"]["rooms"]
+    rooms = floors[3]["rooms"]
     assert [(room["label"], room["active"]) for room in rooms] == [("agent-fleet", True), ("agent-fleet-docs", False)]
-    assert all(room["furniture"] > 0 for room in rooms)
+    assert floors[3]["built"]["glow"]
     open_floors = [floor for floor in floors.values() if floor["mode"] == "open"]
-    for floor in open_floors:   # warm light only where runs are working
-        assert floor["built"]["glow"] == any(room["active"] for room in floor["built"]["rooms"])
-    # floors differ by what is in them: the rooms take their themes from the deck
-    assert len({room["theme"] for floor in open_floors for room in floor["built"]["rooms"]}) > 1
+    assert any(floor["built"]["glow"] for floor in open_floors) and not all(floor["built"]["glow"] for floor in open_floors)
+    for floor in open_floors:   # warm light only while one of its rooms is working
+        assert floor["built"]["glow"] == any(room["active"] for room in floor["rooms"])
 
 
 def test_free_floors_are_to_let(reading_page: Page, restoke_url: str) -> None:
