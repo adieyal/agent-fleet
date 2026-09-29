@@ -101,3 +101,52 @@ def test_every_building_piece_records_the_canonical_projection() -> None:
             assert record[axis] == pytest.approx(vector, abs=1e-5), axis
     # a storey is its full height on screen: verticals are not foreshortened
     assert manifest['tiers']['1']['step_px'] == pytest.approx(manifest['floor']['f2f'] * manifest['camera']['ppm_1x'])
+
+
+FRAMED = {'a': ((1.2, -0.7, 0.0), '#ff0000'), 'b': ((-0.9, 0.8, 1.6), '#00ff00'), 'c': ((0.3, 0.2, 0.4), '#0000ff')}
+
+FRAME_SCENE = f"""
+import sys, json
+sys.path.insert(0, {str(ROOT / 'art' / 'scripts')!r})
+import bpy
+from mathutils import Vector
+import artlib as A
+A.reset()
+sc = bpy.context.scene
+sc.render.engine = 'BLENDER_WORKBENCH'
+sc.display.shading.light = 'FLAT'
+sc.display.shading.color_type = 'OBJECT'
+sc.display.render_aa = 'OFF'
+sc.view_settings.view_transform = 'Standard'
+pts = {{k: Vector(p) for k, (p, _) in {FRAMED!r}.items()}}
+for name, (loc, col) in {FRAMED!r}.items():
+    ob = A.ball(name, 0.05, loc, A.material(name, col))
+    ob.color = A.srgb(col)
+f = A.canonical_frame(sc, list(pts.values()), {PX_PER_M}, 0.3, 'cam', grid=8)
+right, down, _ = A.canonical_axes()
+u0, v0 = f['origin']
+want = {{k: [(p.dot(right) - u0) * {PX_PER_M}, (p.dot(down) - v0) * {PX_PER_M}] for k, p in pts.items()}}
+sc.render.filepath = sys.argv[-1]
+bpy.ops.render.render(write_still=True)
+print('framed', json.dumps({{'size': f['size'], 'want': want}}))
+"""
+
+
+def test_a_framing_puts_points_where_its_origin_says() -> None:
+    """canonical_frame (the kit, props and robot sprites' framing): a world point lands at its screen metres minus the
+    returned origin, times px/m, in an image of the returned size (a multiple of the grid)."""
+    if not BLENDER.exists():
+        pytest.skip(f'no Blender at {BLENDER}')
+    import json
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        script, png = Path(d) / 'scene.py', Path(d) / 'framed.png'
+        script.write_text(FRAME_SCENE)
+        out = subprocess.run([str(BLENDER), '-b', '--factory-startup', '-P', str(script), '--', str(png)],
+                             capture_output=True, text=True, timeout=300)
+        assert png.exists(), out.stdout[-2000:] + out.stderr[-2000:]
+        img = np.asarray(Image.open(png).convert('RGB')).astype(int)
+    info = json.loads(next(l for l in out.stdout.splitlines() if l.startswith('framed')).removeprefix('framed'))
+    assert [img.shape[1], img.shape[0]] == info['size'] and all(v % 8 == 0 for v in info['size'])
+    for name, (_, colour) in FRAMED.items():
+        assert np.allclose(centroid(img, colour), info['want'][name], atol=0.5), name

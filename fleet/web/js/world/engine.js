@@ -9,7 +9,7 @@ import { GroundCache } from './ground.js';
 import { pickAt } from './hit.js';
 import { Painter } from './raster.js';
 import { alphaOf, affineFill, canvas, glowDisc, hitMask, loadImage, tinted } from './paint.js';
-import { EDGE_SLOPE, PITCH, YAW, depth, fromScreen, plane, toScreen } from './projection.js';
+import { AXES, EDGE_SLOPE, depth, fromScreen, plane, sameCamera, toScreen } from './projection.js';
 import { sortEntries } from './sort.js';
 import { drawableTier, fadeAlpha, nextTier, pickTier } from './tiers.js';
 
@@ -58,13 +58,13 @@ export class World {
 
   // --- content --------------------------------------------------------------------------------------------------
 
-  // manifest: { camera: {pitch, yaw}, sprites: { id: { footprint, hit, tiers: [{ ppm, file, size, anchor_px, mask?,
+  // manifest: { camera: { projection: 'oblique', axes_px_per_m }, sprites: { id: { footprint, hit, tiers: [{ ppm, file, size, anchor_px, mask?,
   // frames?, fps?, cut? }] } }, textures: { id: { file, metres } } }. Files are relative to the manifest.
   // A prefix namespaces the manifest's sprite and texture ids, so two manifests can both have a 'bench'.
   async load(url, { prefix = '' } = {}) {
     const m = await fetch(url).then(r => (r.ok ? r.json() : Promise.reject(new Error('missing ' + url))));
-    if (Math.abs(m.camera.pitch - PITCH) > 0.01 || Math.abs(m.camera.yaw - YAW) > 0.01) {
-      throw new Error(`${url} was made for pitch ${m.camera.pitch}°, yaw ${m.camera.yaw}°; the world is ${PITCH}°, ${YAW}°`);
+    if (!sameCamera(m.camera)) {
+      throw new Error(`${url} was made for camera ${JSON.stringify(m.camera)}; the world's axes are ${JSON.stringify(AXES)} px/m`);
     }
     const base = new URL(url, location.href);
     for (const [id, s] of Object.entries(m.sprites || {})) {

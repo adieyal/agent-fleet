@@ -20,7 +20,8 @@ LONGEST_TASK_MS = 200
 # or softer per size. Placement data can't fix this; the pieces need their tiers made again from one render.
 EDGES_DIFFER = {"podium-shadow", "plant-tall-shadow", "glow-floor-spill", "terminal-desk", "plant-bush-shadow",
                 "crate-stack-shadow", "crate-shelf-shadow", "lamp", "ao-wall-y", "wall-light-shadow", "ao-wall-x",
-                "whiteboard-shadow", "laptop", "mug", "slab-side", "paper-stack", "chair-back-shadow", "pen-pot"}
+                "whiteboard-shadow", "laptop", "mug", "slab-side", "paper-stack", "chair-back-shadow", "pen-pot",
+                "desk-plant"}
 # ...and two soft shadows whose mass sits differently per tier (0.79 and 0.59 px)
 CENTRE_DIFFERS = {"crate-shelf-shadow", "whiteboard-shadow"}
 # Tiers loaded as ImageBitmaps (decoded once, never in a frame) are downscaled a little differently from <img>s: the

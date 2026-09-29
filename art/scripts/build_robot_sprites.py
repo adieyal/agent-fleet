@@ -16,8 +16,8 @@ runs itself inside Blender (BLENDER, default ~/.local/bin/blender) to render, th
 fleet/web/assets/world/robot/sprites/ (atlases per resolution and sprites.json); the format is documented in
 docs/design/robot-sprites.md.
 
-Render (Cycles on the GPU, the floor's one world camera: orthographic, pitch 28°, yaw 33°, 171.5 px/m at 1x, with
-bakeoff.py's studio: a soft disk key from the upper left and a dim white_studio_06 fill):
+Render (Cycles on the GPU, the canonical camera every Fleet render shares: artlib.canonical_camera, oblique, yaw 30°,
+rays falling at atan(1/2), 171.5 px/m at 1x, with bakeoff.py's studio: a soft disk key from the upper left and a dim white_studio_06 fill):
 - Every frame is rendered once per layer, each layer a view layer of the same scene: `body` (the robot, its teal
   shell rendered in neutral grey, with its tint mask and, seated, a world-height split at the desk top), `shadow`
   (the contact shadow alone), the faces (`face_eyes`, `face_band`: white, emissive), the host kits (`acc_*`, with
@@ -97,6 +97,9 @@ MASK_LEVELS = 8
 MASK_SCALE = {1: 4, 2: 8, 4: 4}  # a tint mask is stored this many times smaller than its colour layer (it is blurred:
 # the shell's colour changes slowly, and the budget needs the bytes)
 SHADOW_OPACITY = 0.55  # B2's contact shadows are soft grey, not black
+# artlib.canonical_record() (the packer runs outside Blender, so without artlib): the world checks the axes
+CAMERA = {'name': 'canonical', 'projection': 'oblique', 'yaw_deg': 30.0, 'depression_deg': 26.5651,
+          'axes_px_per_m': [[0.86603, 0.25], [0.5, -0.43301], [0.0, -1.0]]}
 DEDUPE_MEAN, DEDUPE_P99 = 1.5, 24  # of 255: a layer this close (mean, and 99th percentile) to one already
 # stored in the same clip and direction is reused; render noise alone differs by less
 
@@ -240,7 +243,7 @@ def render_all() -> None:
             print('cached', clip, flush=True)
             continue
         A.reset()
-        K.VIEW.update(pitch=RM.FLOOR_VIEW['pitch'], yaw=RM.FLOOR_VIEW['yaw'])
+        K.VIEW.update(pitch=RM.FLOOR_VIEW['pitch'], yaw=RM.FLOOR_VIEW['yaw'])   # (the studio's key light follows it)
         arm, turn, groups, info = clip_scene(bpy, clip, opt)
         manifest['height_m'] = RM.R.body_meta()['height_m']
         scene = bpy.context.scene
@@ -256,7 +259,7 @@ def render_all() -> None:
         meta_file.write_text(json.dumps(meta, default=str))
         manifest['clips'][clip] |= meta
         views, catcher, tmp = setup_layers(bpy, A, K, scene, groups, opt.get('seated', False))
-        right, up, _ = K.axes()
+        right, down, _ = A.canonical_axes()
         watched = groups['body'] + [o for k, v in groups.items() if k.startswith(('acc_', 'item_')) for o in v]
         for d in todo:
             turn.rotation_euler.z = math.radians(dict(DIRS)[d])
@@ -266,21 +269,15 @@ def render_all() -> None:
                 pts += points(bpy, watched)
             floor = [Vector((p.x, p.y, 0.0)) for p in pts]
             ref = Vector((0, 0, 0))
-            cam = K.frame_camera(pts + floor, ref, 4, margin=0.25)
-            w, h = cam['size']
-            w4, h4 = -(-w // 8) * 8, -(-h // 8) * 8  # the crop grid (see collect)
-            scene.render.resolution_x, scene.render.resolution_y = w4, h4
-            cam_ob = bpy.data.objects['sprite_cam']
-            cam_ob.data.ortho_scale = max(w4, h4) / cam['px_per_m']
-            ppm = cam['px_per_m']
-            cam_ob.location += right * ((w4 - w) / 2 / ppm) - up * ((h4 - h) / 2 / ppm)
-            ref_px = cam['ref_px']
+            ppm = round(K.PX_PER_M * 4, 3)
+            framed = A.canonical_frame(scene, pts + floor, ppm, 0.25, 'sprite_cam', grid=8)   # (8: the crop grid, see collect)
+            (w4, h4), (u0, v0) = framed['size'], framed['origin']
             print('canvas', clip, d, w4, h4, flush=True)
             if os.environ.get('SPRITES_DRY'):
                 continue
 
             def to_px(p):
-                return [round(ref_px[0] + (p - ref).dot(right) * ppm, 2), round(ref_px[1] - (p - ref).dot(up) * ppm, 2)]
+                return [round((p.dot(right) - u0) * ppm, 2), round((p.dot(down) - v0) * ppm, 2)]
 
             frames = []
             for i, t in enumerate(times):
@@ -639,8 +636,7 @@ def pack() -> None:
     uniq, ref = dedupe(entries)
     manifest = {
         'version': 2,
-        'camera': {'name': 'world', 'projection': 'orthographic', 'pitch_deg': meta['view']['pitch'],
-                   'yaw_deg': meta['view']['yaw'], 'px_per_m_1x': round(ppm1, 3)},
+        'camera': CAMERA | {'px_per_m_1x': round(ppm1, 3)},
         'robot': {'height_m': meta['height_m'], 'source': 'art/motion-test (whole-body model, Mixamo clips)'},
         'resolutions': {},
         'directions': {d: {'facing_deg': a} for d, a in DIRS},
@@ -662,7 +658,7 @@ def pack() -> None:
         'clips': {},
     }
     footprint_m = 0.3
-    pitch = math.radians(meta['view']['pitch'])
+    depression = math.radians(CAMERA['depression_deg'])
 
     def s4(p):  # 4x pixels to 1x, a tenth of a pixel is plenty
         return [round(p[0] / 4, 1), round(p[1] / 4, 1)]
@@ -683,7 +679,7 @@ def pack() -> None:
                     'hit': [hb[0] / 4, hb[1] / 4, hb[2] / 4, hb[3] / 4],
                     'layers': {}})
             mc['dirs'][d] = {'canvas': [dd['canvas'][0] // 4, dd['canvas'][1] // 4], 'foot': s4(dd['foot']),
-                             'footprint': [round(footprint_m * ppm1, 2), round(footprint_m * ppm1 * math.sin(pitch), 2)],
+                             'footprint': [round(footprint_m * ppm1, 2), round(footprint_m * ppm1 * math.tan(depression), 2)],
                              **({'seat': s4(dd['seat'])} if 'seat' in dd else {}), 'frames': frames}
         manifest['clips'][clip] = mc
     sizes = {}

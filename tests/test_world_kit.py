@@ -3,7 +3,6 @@ files, every piece asked for is there, tiers agree on scale, the scale is record
 scene at /prototype/kit draws without missing files."""
 
 import json
-import re
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -38,8 +37,11 @@ def test_every_piece_asked_for_is_in_the_kit() -> None:
     assert {"floor-tile", "wall-tile"} <= set(MANIFEST["textures"])
 
 
-def test_it_is_made_for_the_sprite_worlds_camera_and_records_its_scale() -> None:
-    assert MANIFEST["camera"] == {"pitch": 28.0, "yaw": 33.0}   # the image model's camera (floor review 1)
+def test_it_is_made_for_the_canonical_camera_and_records_its_scale() -> None:
+    # docs/design/art-direction.md, "Camera": oblique, yaw 30, rays falling at atan(1/2)
+    camera = MANIFEST["camera"]
+    assert (camera["projection"], camera["yaw_deg"], camera["depression_deg"]) == ("oblique", 30.0, pytest.approx(26.5651))
+    assert camera["axes_px_per_m"] == [[0.86603, 0.25], [0.5, -0.43301], [0.0, -1.0]]
     scale = MANIFEST["scale"]
     assert scale["px_per_m_1x"] == pytest.approx(941 / 5.486, abs=0.01)
     assert {"l1", "l2"} <= set(scale["measured"])
@@ -49,7 +51,7 @@ def test_it_is_made_for_the_sprite_worlds_camera_and_records_its_scale() -> None
 @pytest.mark.parametrize("name", sorted(SPRITES))
 def test_each_sprite_matches_its_files(name: str) -> None:
     s = SPRITES[name]
-    assert s["source"] in ("ai", "blender", "procedural")
+    assert s["source"] in ("blender", "procedural")
     assert len(s["footprint"]) == 6 and all(a <= b for a, b in zip(s["footprint"][:3], s["footprint"][3:]))
     ppms = [t["ppm"] for t in s["tiers"]]
     assert ppms == sorted(ppms) and len(ppms) >= 2
@@ -65,15 +67,6 @@ def test_each_sprite_matches_its_files(name: str) -> None:
         assert t["anchor_px"][1] == pytest.approx(first["anchor_px"][1] * k, abs=2 + 0.02 * t["size"][1])
 
 
-@pytest.mark.parametrize("name", sorted(n for n, s in SPRITES.items() if s["source"] == "ai"))
-def test_ai_sprites_name_a_logged_generation(name: str) -> None:
-    raw = re.match(r"art/kit/raw/([\w-]+)\.png", SPRITES[name]["from"])
-    assert raw
-    sidecar = json.loads((REPO / "art" / "kit" / "raw" / f"{raw.group(1)}.json").read_text())
-    assert sidecar["references"]
-    assert raw.group(1) in (REPO / "art" / "kit" / "generations.log").read_text()
-
-
 def test_the_lift_has_door_states_and_the_lantern_a_glyph_slot() -> None:
     lift = SPRITES["lift"]
     assert all(t["frames"] == len(lift["cells"]) == 5 for t in lift["tiers"])
@@ -86,15 +79,14 @@ def test_the_lift_has_door_states_and_the_lantern_a_glyph_slot() -> None:
     assert all(SPRITES[g]["layer"] == "light" or SPRITES[g].get("blend") == "lighter" for g in SPRITES if g.startswith("glow-"))
 
 
-# floor review 2: props are rendered from the 3D models with the world camera, so they sit square to the walls; AI
-# sprites remain only where no model exists (and none of them is placed on the floor)
+# floor review 2: props are rendered from the 3D models with the world camera, so they sit square to the walls; the
+# last AI sprites (bench, terminal desk, librarian's desk) went with the canonical camera
 FROM_MODELS = [
-    "bench-left", "bench-mid", "bench-right", "question-desk", "chair-back", "chair-front", "shelf", "shelf-low",
+    "bench", "terminal-desk", "librarian-desk", "bench-left", "bench-mid", "bench-right", "question-desk", "chair-back", "chair-front", "shelf", "shelf-low",
     "book-cart", "whiteboard", "podium", "plant-tall", "plant-bush", "plant-small", "floor-lamp", "crate",
     "crate-stack", "crate-shelf", "wall-light", "monitor", "laptop", "lamp", "pen-pot", "paper-stack", "sketch", "mug",
     "desk-plant", "books", "paper-tray", "lantern",
 ]
-NO_MODEL = {"bench", "terminal-desk", "librarian-desk"}
 # pieces that butt against their neighbours or the shell's planes, so they end at their edge on purpose
 BUTTING = {"slab-front", "slab-side", "wall-cap-x", "wall-cap-y", "wall-end-back", "wall-end-left"}
 
@@ -102,7 +94,7 @@ BUTTING = {"slab-front", "slab-side", "wall-cap-x", "wall-cap-y", "wall-end-back
 def test_props_are_rendered_from_their_models() -> None:
     for name in FROM_MODELS:
         assert SPRITES[name]["source"] == "blender" and SPRITES[name]["from"].startswith("model "), name
-    assert {n for n, s in SPRITES.items() if s["source"] == "ai"} == NO_MODEL
+    assert [n for n, s in SPRITES.items() if s["source"] not in ("blender", "procedural")] == []
 
 
 def test_a_props_shadow_is_its_own_ground_sprite() -> None:
@@ -112,7 +104,7 @@ def test_a_props_shadow_is_its_own_ground_sprite() -> None:
             assert shadow["layer"] == "ground" and shadow["hit"] == "none", name
 
 
-@pytest.mark.parametrize("name", sorted(n for n, s in SPRITES.items() if s["source"] != "ai" and n not in BUTTING))
+@pytest.mark.parametrize("name", sorted(n for n in SPRITES if n not in BUTTING))
 def test_sprites_fade_out_inside_their_edges(name: str) -> None:
     # a sprite that still has alpha at its edge draws a faint line where it stops: the rectangles round the lamps'
     # glow and the shade steps in the wall of floor review 2
@@ -144,7 +136,8 @@ def test_the_kit_scene_draws_every_piece_it_places(kit: Page) -> None:
     assert kit.evaluate("window.kit.error") is None
     assert kit.evaluate("kit.engine.stats.missing") == []
     placed = kit.evaluate("[...new Set([...kit.engine.items.values()].map(it => it.sprite))]")
-    assert set(REQUIRED) - {"chair-front", "footprints-000", "footprints-045", "footprints-090", "footprints-135",
+    # (the whole bench brings its rendered shadow; shadow-bench-3 is for a bench of modules, as the floor lays them)
+    assert set(REQUIRED) - {"chair-front", "shadow-bench-3", "footprints-000", "footprints-045", "footprints-090", "footprints-135",
                             "footprints-180", "footprints-225", "footprints-270"} <= set(placed)
 
 

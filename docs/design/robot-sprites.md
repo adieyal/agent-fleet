@@ -14,7 +14,7 @@ The format is the same (`version` 2); these are the differences a reader of v1 m
 
 | Change | v1 | v2 |
 |---|---|---|
-| Camera | `l2`, pitch 44.5°, yaw 21.25° | `world`, pitch 28°, yaw 33° (the floor's one camera); 171.528 px/m at 1x as before |
+| Camera | `l2`, pitch 44.5°, yaw 21.25° | `canonical`: oblique, yaw 30°, rays falling at atan(1/2) (every render's camera); 171.528 px/m at 1x as before |
 | Robot | RobotExpressive rig, about 1.33 m | the rebuilt robot, 1.081 m (`robot.height_m`) |
 | Seated frames | the robot's frame had its seat at `seat_point_m` = [0, 0.19, 0.21]; the floor lifted the frame onto the chair | the frame is rendered on the floor it will stand on: `foot` is the floor under the seat point, `seat_point_m` = [0, 0, 0.549]. Place a seated frame by its `foot` on the floor point under the chair's seat anchor (or by `seat` on a seat anchor 0.549 m up). |
 | Chair and desk | the kit's chair (seat 0.47 m) and desk (0.74 m) | the kit's desk unchanged; the kit's chair with its gas lift raised to **0.549 m**. `seat_furniture` gives the seat height, the chair's centre behind the seat point (0.244 m) and the desk's far edge ahead of it (0.159 m), fitted so the seated robot matches l2 at this camera (chest emblem 21 px, helmet top 112 px above the desk's far edge at 1x). |
@@ -42,7 +42,7 @@ Every layer is a separate Cycles view layer of the same scene. Overlay layers (f
 
 **Desk split.** Seated frames split the body at the desk top (world height 0.74 m): draw `body_low`, then the desk, then `body_high`. At the bench (facing S) the desk hides the legs; at a terminal (facing N) the robot is in front of its desk, so both halves go after it.
 
-**Camera and look.** The floor's one world camera: orthographic, pitch 28°, yaw 33° (`docs/design/sprite-world.md` on `renovate/floor`), 171.528 px per metre at 1x, 343 at 2x, 686 at 4x. The studio is the bake-off's (`art/scripts/bakeoff.py`): a soft disk key from the upper left of the view and a dim `white_studio_06` fill. Cycles on the GPU renders every frame at 4x; 2x and 1x are scaled down from it.
+**Camera and look.** The canonical camera every render shares (`artlib.canonical_camera`, `docs/design/art-direction.md`, "Camera"): oblique, yaw 30°, rays falling at atan(1/2), 171.528 px per metre at 1x, 343 at 2x, 686 at 4x. The studio is the bake-off's (`art/scripts/bakeoff.py`): a soft disk key from the upper left of the view and a dim `white_studio_06` fill. Cycles on the GPU renders every frame at 4x; 2x and 1x are scaled down from it.
 
 **Directions.** Four facings along the room's axes, named by the deck's facing: `S` 0° (towards the door, the camera side), `E` 90°, `N` 180° (the back wall), `W` 270°. All four are rendered: the camera is yawed, so a mirror would face off the room's axes, and the robot's motion is not symmetric. Seated clips come in the two seat facings, `S` (the bench, sofas, armchair) and `N` (the terminals), as are `StandUp`, `ThumbsUp` and `BoxIdle` (budget). Eight facings do not fit the 8 MB budget alongside the full clip list (see *Budget*); the manifest's `directions` carries the count.
 
@@ -173,7 +173,7 @@ Drawn by the runtime; the sprite set supplies anchors.
 ```jsonc
 {
   "version": 2,
-  "camera": { "name": "world", "projection": "orthographic", "pitch_deg": 28.0, "yaw_deg": 33.0, "px_per_m_1x": 171.528 },
+  "camera": { "name": "canonical", "projection": "oblique", "yaw_deg": 30.0, "depression_deg": 26.5651, "axes_px_per_m": [[0.86603, 0.25], [0.5, -0.43301], [0.0, -1.0]], "px_per_m_1x": 171.528 },
   "robot": { "height_m": 1.081, "source": "art/motion-test (whole-body model, Mixamo clips)" },
   "resolutions": {
     "1x": { "scale": 1, "load": "eager", "mask_scale": 4,     // masks are stored this many times smaller
@@ -203,7 +203,7 @@ Drawn by the runtime; the sprite set supplies anchors.
         "S": {
           "canvas": [202, 330],            // the frame's size
           "foot": [101.4, 250.2],          // where the robot's root (its floor point) lands
-          "footprint": [51.46, 24.16],     // radii of the floor ellipse it stands on
+          "footprint": [51.46, 25.73],     // radii of the floor ellipse it stands on
           "seat": [...],                   // seated clips only: where seat_point lands
           "frames": [ {
             "anchors": { "head_top": [...], "kit_top": { "halo": [...], ... }, "hand_l": [...], "hand_r": [...] },

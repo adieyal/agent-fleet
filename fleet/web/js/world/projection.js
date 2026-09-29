@@ -1,14 +1,22 @@
-// The sprite world's one camera: orthographic, pitch 28°, yaw 33°.
+// The sprite world's one camera: the canonical camera every Fleet render shares (docs/design/art-direction.md,
+// "Camera"; art/scripts/artlib.py canonical_projection): oblique onto a vertical picture plane, yaw 30°, rays falling
+// at atan(1/2), so verticals stay vertical and full length.
 // World space is metres: x along the back wall, y towards it, z up. "Plane" coordinates (u, v) are screen axes in
 // metres, so a view is just a centre (u, v) and a zoom in pixels per metre (ppm); see docs/design/sprite-world.md.
 
-// The image model's own camera, measured from the AI furniture and the concept images (sprite-world.md, floor review
-// 1): rendered architecture uses it too, so walls and furniture share one projection.
-export const PITCH = 28, YAW = 33;
-const P = PITCH * Math.PI / 180, Y = YAW * Math.PI / 180;
+export const YAW = 30, DEPRESSION = Math.atan(0.5) * 180 / Math.PI;
+const Y = YAW * Math.PI / 180, T = 0.5;   // T: tan of the depression
 const RIGHT = [Math.cos(Y), Math.sin(Y), 0];
-const DOWN = [Math.sin(P) * Math.sin(Y), -Math.sin(P) * Math.cos(Y), -Math.cos(P)];
-const TOWARDS = [Math.sin(Y) * Math.cos(P), -Math.cos(Y) * Math.cos(P), Math.sin(P)];
+const DOWN = [T * Math.sin(Y), -T * Math.cos(Y), -1];
+// the rays' direction, towards the viewer: every point along it lands on the same screen point
+const TOWARDS = [Math.sin(Y), -Math.cos(Y), T].map(c => c / Math.hypot(1, T));
+// one metre along world x, y and z on the screen (right, down) at 1 px/m: what a sprite's manifest records
+export const AXES = [0, 1, 2].map(i => [RIGHT[i], DOWN[i]]);
+// true when a manifest's camera ({ projection, axes_px_per_m }) is this one
+export function sameCamera(c) {
+  return c?.projection === 'oblique' && Array.isArray(c.axes_px_per_m) && c.axes_px_per_m.length === 3
+    && c.axes_px_per_m.every((a, i) => Math.abs(a[0] - AXES[i][0]) < 1e-3 && Math.abs(a[1] - AXES[i][1]) < 1e-3);
+}
 // the screen slope (down per right) of any line along x: the back wall's foot, a bench's long edges
 export const EDGE_SLOPE = DOWN[0] / RIGHT[0];
 
