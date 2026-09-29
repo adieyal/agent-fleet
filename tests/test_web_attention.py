@@ -302,7 +302,7 @@ def test_changes_and_ending_snoozes_are_pushed(config_path):
     ("snooze", {"id": "ITEM"}, {}, 400),
     ("acknowledge", {"id": "ITEM"}, {"Origin": "http://evil.example"}, 403),
     ("acknowledge", {"id": "ITEM"}, {"Content-Type": "text/plain"}, 415),
-    ("resolve", {"id": "ITEM"}, {}, 404),
+    ("delete", {"id": "ITEM"}, {}, 404),   # not an action; resolving is (a person may close a stale item)
 ])
 def test_refused_actions_change_nothing(deck, action, body, headers, status):
     deck.report("home", jobs=[job("f1", "failed", [("failed", 100)])])
