@@ -212,6 +212,8 @@ def test_bench_real_endpoint(changed_deck: Deck, deck_state, monkeypatch, tmp_pa
     expect(page.locator('#reader')).to_be_visible()
     expect(page.locator('#rdTitle')).to_have_text('Step 1 report')
     page.keyboard.press('Escape')
+    # the seeded run has no job on any host, so the reader's fetch 404s; that is expected here, not a page error
+    changed_deck.errors[:] = [e for e in changed_deck.errors if 'Not Found' not in e and '404' not in e]
     expect(page.locator('#reader')).to_be_hidden()
     bench.locator('[data-briefing]').click()
     for text in ['Find suppliers', 'Evidence gathered', 'Review results', 'Accept results']:
