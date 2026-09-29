@@ -8,7 +8,7 @@
 // Parts: 'all' (a standing or walking robot, shadow included), 'low' and 'high' (a seated robot's body below and above
 // the desk top: drawn before and after its desk), 'shadow' (a seated robot's shadow alone, for the ground).
 
-import { PITCH, YAW } from './projection.js';
+import { AXES, sameCamera } from './projection.js';
 import { canvas, loadImage } from './paint.js';
 
 export const ROBOT_SPRITES = '/assets/world/robot/sprites/';
@@ -30,9 +30,8 @@ export class Robots {
   static async load(world, url = ROBOT_SPRITES + 'sprites.json') {
     const man = await fetch(url).then(r => (r.ok ? r.json() : Promise.reject(new Error('missing ' + url))));
     if (man.version !== 2) throw new Error(`${url}: robot sprites version ${man.version}, the floor reads 2`);
-    const c = man.camera;
-    if (Math.abs(c.pitch_deg - PITCH) > 0.01 || Math.abs(c.yaw_deg - YAW) > 0.01) {
-      throw new Error(`${url} was made for pitch ${c.pitch_deg}°, yaw ${c.yaw_deg}°; the world is ${PITCH}°, ${YAW}°`);
+    if (!sameCamera(man.camera)) {
+      throw new Error(`${url} was made for camera ${JSON.stringify(man.camera)}; the world's axes are ${JSON.stringify(AXES)} px/m`);
     }
     const robots = new Robots(world, man, new URL(url, location.href));
     await Promise.all(robots.res.filter(r => man.resolutions[r].load === 'eager').map(r => robots.ready(r)));

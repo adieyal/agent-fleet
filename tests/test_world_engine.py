@@ -191,15 +191,38 @@ def test_the_next_finer_tier_loads_ahead_unless_on_demand(page: Page, want: int,
 
 # --- projection ------------------------------------------------------------------------------------------------------
 
-def test_projection_round_trips_and_matches_the_l2_camera(page: Page) -> None:
+def test_projection_is_the_canonical_camera(page: Page) -> None:
+    # docs/design/art-direction.md, "Camera": oblique, yaw 30, rays falling at atan(1/2); verticals full length
+    out = run(page, "projection", """m => ({
+      x: m.plane([1, 0, 0]), y: m.plane([0, 1, 0]), z: m.plane([0, 0, 1]), axes: m.AXES, slope: m.EDGE_SLOPE,
+      two: m.plane([2, -3, 1.5]) })""")
+    assert out["x"] == pytest.approx([0.866, 0.25], abs=1e-3)
+    assert out["y"] == pytest.approx([0.5, -0.433], abs=1e-3)
+    assert out["z"] == pytest.approx([0, -1], abs=1e-9)
+    assert out["axes"] == [out["x"], out["y"], out["z"]]
+    assert out["slope"] == pytest.approx(math.tan(math.radians(30)) / 2)
+    # linear: any point is the sum of its axes
+    assert out["two"] == pytest.approx([2 * 0.8660254 - 3 * 0.5, 2 * 0.25 + 3 * 0.4330127 - 1.5], abs=1e-6)
+
+
+def test_projection_round_trips_and_depth_follows_the_rays(page: Page) -> None:
     out = run(page, "projection", """m => {
-      const p = [3.2, -1.7, 0], [u, v] = m.plane(p), back = m.unplane(u, v, 0);
-      const x = m.plane([1, 0, 0]), y = m.plane([0, 1, 0]), z = m.plane([0, 0, 1]);
-      return { back, slope: x[1] / x[0], y, z, nearer: m.depth([0, -1, 0]) > m.depth([0, 0, 0]) };
+      const p = [3.2, -1.7, 0.6], [u, v] = m.plane(p), back = m.unplane(u, v, 0.6);
+      // a point moved along the ray (towards the viewer) lands on the same screen point
+      const ray = [0.5, -0.8660254, 0.5], q = p.map((c, i) => c + ray[i] * 2), [qu, qv] = m.plane(q);
+      return { back, same: [qu - u, qv - v], nearer: m.depth(q) > m.depth(p), front: m.depth([0, -1, 0]) > m.depth([0, 0, 0]) };
     }""")
-    assert out["back"] == pytest.approx([3.2, -1.7, 0])
-    # pitch 28, yaw 33: the image model's camera (floor review 1)
-    assert out["slope"] == pytest.approx(math.sin(math.radians(28)) * math.tan(math.radians(33)), abs=1e-4)
-    assert out["y"] == pytest.approx([math.sin(math.radians(33)), -math.sin(math.radians(28)) * math.cos(math.radians(33))], abs=1e-4)
-    assert out["z"] == pytest.approx([0, -math.cos(math.radians(28))], abs=1e-4)
-    assert out["nearer"]
+    assert out["back"] == pytest.approx([3.2, -1.7, 0.6])
+    assert out["same"] == pytest.approx([0, 0], abs=1e-6)
+    assert out["nearer"] and out["front"]
+
+
+def test_the_camera_check_accepts_only_the_canonical_projection(page: Page) -> None:
+    out = run(page, "projection", """m => [
+      m.sameCamera({ projection: 'oblique', axes_px_per_m: [[0.866, 0.25], [0.5, -0.433], [0, -1]] }),
+      m.sameCamera({ projection: 'orthographic', axes_px_per_m: [[0.866, 0.25], [0.5, -0.433], [0, -1]] }),
+      m.sameCamera({ projection: 'oblique', axes_px_per_m: [[0.839, 0.256], [0.545, -0.394], [0, -0.883]] }),
+      m.sameCamera({ pitch: 28, yaw: 33 }),
+      m.sameCamera(undefined),
+    ]""")
+    assert out == [True, False, False, False, False]
