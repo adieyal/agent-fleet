@@ -91,6 +91,37 @@ class WorkFacade:
     def criteria(self, identity: str) -> list[Criterion]:
         return [item for item in self.repository.list("criterion") if item.work_item == identity]
 
+    def criteria_by_item(self) -> dict[str, list[Criterion]]:
+        """Every criterion grouped by its work item, read once: for views over many items."""
+        grouped: dict[str, list[Criterion]] = {}
+        for criterion in self.repository.list("criterion"):
+            grouped.setdefault(criterion.work_item, []).append(criterion)
+        return grouped
+
+    def progress_within(self, item: WorkItem, items: list[WorkItem], criteria: list[Criterion]) -> Progress:
+        """progress() from records already read: `items` is the item's project, `criteria` its own."""
+        return accepted_progress([child for child in items if child.parent == item.id], criteria)
+
+    def summaries(self, items: list[WorkItem]) -> dict[str, Summary]:
+        """summary() for many items at once, reading the legacy summary table a single time."""
+        legacy = {summary.id: summary for summary in self.repository.list("summary")}
+        found = {}
+        for item in items:
+            summary = self.recorded_summary(item) or legacy.get(item.id)
+            if summary is not None:
+                found[item.id] = summary
+        return found
+
+    def recorded_summary(self, item: WorkItem) -> Summary | None:
+        if self.records is None:
+            return None
+        body = self.records.read(item.project, f'summaries/{item.id}.json')
+        if body is None:
+            return None
+        fields = json.loads(body)
+        fields['updated'] = datetime.fromisoformat(fields['updated'])
+        return Summary(**fields)
+
     def relate(self, from_item: str, to_item: str, *, actor: str, type: str = "depends-on") -> Relation:
         return self.commands.relate(from_item, to_item, type=type, actor=actor)
 
@@ -114,13 +145,8 @@ class WorkFacade:
         return summary
 
     def summary(self, identity: str) -> Summary | None:
-        if self.records is not None:
-            body = self.records.read(self.get(identity).project, f'summaries/{identity}.json')
-            if body is not None:
-                fields = json.loads(body)
-                fields['updated'] = datetime.fromisoformat(fields['updated'])
-                return Summary(**fields)
-        return next((item for item in self.repository.list("summary") if item.id == identity), None)
+        recorded = self.recorded_summary(self.get(identity)) if self.records is not None else None
+        return recorded or next((item for item in self.repository.list("summary") if item.id == identity), None)
 
     def legacy_summaries(self, project: str) -> list[Summary]:
         identities = {item.id for item in self.list(project=project)}

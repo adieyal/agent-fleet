@@ -63,14 +63,18 @@ def project_status(project: str, work: WorkFacade, attention: AttentionFacade,
     runs = execution.runs()
     entries = library.list()
     answers = decisions.list()
+    # Each kind of record is read once for the whole project; per-item reads made this quadratic in its items.
+    criteria = work.criteria_by_item()
+    summaries = work.summaries(items)
     nodes = {}
     for item in items:
-        summary = work.summary(item.id)
+        summary = summaries.get(item.id)
+        own_criteria = criteria.get(item.id, [])
         item_runs = [run for run in runs if actions[run.action] == item.id]
         nodes[item.id] = {
             **asdict(item),
-            "progress": asdict(work.progress(item.id)),
-            "criteria": [asdict(criterion) for criterion in work.criteria(item.id)],
+            "progress": asdict(work.progress_within(item, items, own_criteria)),
+            "criteria": [asdict(criterion) for criterion in own_criteria],
             "summary": asdict(summary) if summary is not None else None,
             "attention": [asdict(entry) for entry in open_items if entry.work_item == item.id],
             "decisions": [asdict(answer) for answer in answers if item.id in answer.affected_work_items],
