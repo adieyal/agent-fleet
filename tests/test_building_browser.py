@@ -515,6 +515,9 @@ def test_shuttering_packs_a_floor_away_and_undo_brings_it_back(page: Page, resto
     assert set(lanterns(page)) == {1, "lobby", "store"}
     expect(page.locator('.floor-lantern[data-place="2"]')).to_have_count(0)
     assert state(url)["building"]["shuttered"][INVOICES]["floor"] == 2
+    # what is painted follows: the floor is drawn empty and the storehouse holds a crate, without a reload
+    page.wait_for_function("fleetBuilding.floors().find(f => f.floor === 2).built?.piece === 'floor-free'", timeout=5000)
+    page.wait_for_function("fleetBuilding.pieces().some(p => p.name === 'annex-1')", timeout=5000)
 
     toast.locator("[data-undo]").click()
     expect(plate).to_have_attribute("data-mode", "windowed")          # as it was: its floor, its focus

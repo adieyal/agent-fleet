@@ -5,6 +5,7 @@ happen and are fanned out to every connected browser.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import asdict
 from copy import deepcopy
@@ -47,6 +48,19 @@ PROTOTYPES = {"/prototype/bakeoff": "/prototype/bakeoff.html",  # art prototypes
               "/prototype/floor": "/prototype/floor.html",
               "/prototype/robot": "/prototype/robot.html"}
 REPO_ROOT = WEB_ROOT.parent.parent
+
+
+def build_id(root: Path = WEB_ROOT) -> str:
+    """A fingerprint of the files the deck serves (path, size, mtime), taken at startup. Every state document carries
+    it, so a page opened before a redeploy sees it change and reloads instead of mixing old code with new assets."""
+    digest = hashlib.sha256()
+    for path in sorted(p for p in root.rglob("*") if p.is_file() and "__pycache__" not in p.parts):
+        stat = path.stat()
+        digest.update(f"{path.relative_to(root)}\0{stat.st_size}\0{stat.st_mtime_ns}\n".encode())
+    return digest.hexdigest()[:16]
+
+
+BUILD = build_id()
 # Source-checkout folders the art prototypes read; absent from an installed package, so they 404 there.
 CHECKOUT_FOLDERS = {"/art/bakeoff/": REPO_ROOT / "art" / "bakeoff", "/concept/": REPO_ROOT / "docs" / "images" / "concept"}
 STATIC_TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -193,7 +207,7 @@ class FleetState(LiveWorkspace):
         capacity_error = self.refresh_capacity()
         registry = self.registry
         with self.changed:
-            document = self.with_attention({"time": time.time(), "project_labels": self.project_labels,
+            document = self.with_attention({"time": time.time(), "build": BUILD, "project_labels": self.project_labels,
                     "projects": [{"id": project_id, **entry} for project_id, entry in registry_config(registry).items()],
                     "projects_error": projects_error, "hosts": [
                 {**{key: value for key, value in self.by_host[host.name].items() if key not in ("jobs", "sessions")},

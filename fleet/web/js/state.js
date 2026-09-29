@@ -107,7 +107,14 @@ export function enterProject(projectId) {
   fit(false);
 }
 
+// The server's build when this page loaded: a document from a newer build means the deck was redeployed under us, and
+// old code would draw new assets wrongly, so the page reloads (the view, tab and theme are remembered across it).
+let pageBuild = null;
 export function applyState(doc) {
+  if (doc.build) {
+    if (pageBuild === null) pageBuild = doc.build;
+    else if (doc.build !== pageBuild) { location.reload(); return; }
+  }
   lastDoc = doc;
   setPipelines(doc.pipelines);
   applyBuilding(doc);   // from the whole document: dismissed and finished work still counts there
