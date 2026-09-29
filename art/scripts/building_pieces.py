@@ -3,8 +3,9 @@ bracket, the roof, the plinth with its ground shadow per capacity, and the store
 
     blender -b --factory-startup -P art/scripts/building_pieces.py -- OUT_DIR [--mult 4] [--samples 64] [piece ...]
 
-Every piece is modelled at real size in one building frame and rendered with one orthographic camera (pitch 30 deg,
-yaw 20 deg: docs/design/art-direction.md) at PPM_1X x mult px/m, on transparent film. A piece is rendered in context:
+Every piece is modelled at real size in one building frame and rendered with the canonical camera
+(artlib.canonical_camera: yaw 30 deg, rays falling at atan(1/2), verticals vertical and full length; the Camera section of
+docs/design/art-direction.md) at PPM_1X x mult px/m, on transparent film. A piece is rendered in context:
 the floor above (its slab is this floor's ceiling), the spine and the lift are present but invisible to the camera,
 so they still cast shadows and bounce light. OUT_DIR gets <render>@<ppm>.png and pieces.json (per piece: its render,
 an optional crop, size, the pixel its anchor lands on, and DOM slots as pixel offsets from that anchor).
@@ -32,10 +33,14 @@ import bpy  # noqa: E402
 from mathutils import Vector  # noqa: E402
 
 MODELS = Path.home() / 'Development' / 'agent-fleet-assets' / 'models'
-# The camera is fitted to l0 (art/scripts/fit_camera.py --l0: pitch 9.00, yaw 25.75, 15 px rms), which the concept
-# wins over art-direction.md's older 28-32 / 20-25 deg range: l0's front is nearly frontal, its slabs almost level.
-PITCH, YAW = 9.0, 25.75
-F2F, SLAB = 4.0, 0.85              # floor to floor; slab thickness shown at the cut edge (l0's heavy bands)
+# The canonical projection: one metre along world x, y and z lands at these screen offsets (px right, px down) per px/m.
+# It is steeper than l0's building (art-direction.md, The concepts disagree): the front edge descends 16 deg to the
+# right and the floors show their depth, so the building is narrower and shallower than l0's to fit ten floors.
+PX, PY, PZ = A.canonical_projection(1.0)
+# what every piece records in the manifest: the projection it was rendered with
+PROJECTION = {'projection': 'canonical', 'yaw': A.CANONICAL_YAW, 'depression': round(A.CANONICAL_DEPRESSION, 4),
+              'x_px': [round(v, 6) for v in PX], 'y_px': [round(v, 6) for v in PY], 'z_px': [round(v, 6) for v in PZ]}
+F2F, SLAB = 4.0, 0.85             # floor to floor; slab thickness shown at the cut edge (l0's heavy bands)
 CAP = 0.16                         # the slab edge's pale cap (l0's bright band along every slab)
 SKY, SUN, EXPOSURE = 0.85, 6.0, -1.1   # the sun well over a blue sky: l0's blue ground shadow, fronts still pale
 # towards the sun: the left, a little behind, and low, so the long shadow runs off to the right and a little towards
@@ -43,17 +48,20 @@ SKY, SUN, EXPOSURE = 0.85, 6.0, -1.1   # the sun well over a blue sky: l0's blue
 # fronts pale, as l0's are
 SUN_FROM = Vector((-1.0, 0.3, 0.45))
 FRONT_FILL, FRONT_FROM = 2.0, Vector((-0.3, -1.0, 0.5))
-GLASS_GLOW = 3000                 # W per warm panel behind a working glass floor's panes
+GLASS_GLOW = 18.0                  # W per square metre of the warm panels behind a working glass floor's panes
 PLINTH_LIFT = 0.5              # the plinth's exposure over the rest's: it is rendered without the front fill
 GLASS_SETBACK = 0.45               # glazing stands behind the slab edge, which reads as a ledge (l0)
-W, D = 31.5, 16.0                  # a floor's width along the front and depth: the fit's 31.6 x 15.9 m
+# a floor's width along the front and depth: the front drops W / 4 m across the screen, and the slab above hides a
+# floor beyond about H / 0.433 = 7.3 m, so 24 x 9 m keeps ten floors on a 1440 x 900 screen with every floor's two
+# rows of desks in view
+W, D = 24.0, 9.0
 H = F2F - SLAB                     # a storey's clear height
-STEP_PX = 98                       # the fit's storey on screen at l0's size (98.6 px), a whole pixel
-PPM_1X = STEP_PX / (F2F * math.cos(math.radians(PITCH)))   # 24.80 px/m
-LOBBY_STEP_PX = 120                # the lobby is a little taller than a storey (l0), a whole pixel too
-LOBBY_H = LOBBY_STEP_PX / STEP_PX * F2F                     # 4.90 m
-SPINE_W, SPINE_FRONT = 6.5, 1.5    # the spine's width (l0: 155 px) and how far it stands proud of the floors' front
-LIFT_W = 4.0                       # l0's lift: 90 px
+PPM_1X = 20.0                      # tier 1: about the scale ten floors show at on a desktop (zoom ~0.7)
+STEP_PX = round(F2F * PPM_1X)      # 80 px: verticals are full length
+LOBBY_STEP_PX = 98                 # the lobby is a little taller than a storey (l0), a whole pixel too
+LOBBY_H = LOBBY_STEP_PX / PPM_1X   # 4.90 m
+SPINE_W, SPINE_FRONT = 6.0, 1.5    # the spine's width and how far it stands proud of the floors' front
+LIFT_W = 4.0
 COLUMN_FLOORS = 4                  # floors in the tall spine and lift renders the bands are cut from
 MAX_CAPACITY = 10                  # fleet/modules/workspace/domain/building.py: one plinth shadow per capacity
 MAX_CRATES = 6                     # annex states: 0..6 crates (more shows as 6)
@@ -63,21 +71,13 @@ PAL = {
     'shell': '#fbf1e6', 'shell_edge': '#e2d9d0', 'floor': '#b4b3bb', 'wall': '#d2d4dc', 'wall_warm': '#ddd2c8',
     'oak': '#b98f6c', 'frame': '#45434a', 'cabinet': '#6b6b73', 'mullion': '#26272c', 'blind': '#9a9ca3',
     'walnut': '#8f5e3a', 'plinth': '#fbe9d6', 'grout': '#c2b1a2', 'ground': '#ffffff', 'door': '#8a8890', 'lip': '#9c8878',
-    'lift_glass': '#c2ccd8', 'lobby_glaze': '#c4d6ea', 'bulb': '#fff3d0', 'warm': '#ffbf78', 'card': '#f6f4ef',
+    'lift_glass': '#d3dbe5', 'lobby_glaze': '#c4d6ea', 'bulb': '#fff3d0', 'warm': '#ffbf78', 'card': '#f6f4ef',
     'ink': '#2f3136', 'dots': '#f4f7fb', 'steel': '#5d5d64', 'car': '#2c2d33', 'slab_face': '#d9d3cd',
     'lab_top': '#dcdde2', 'lab_base': '#5f6068', 'flask': '#cfe6ee', 'plate': '#34363c',
 }
 
 
 # --- scene ------------------------------------------------------------------------------------------
-
-def axes():
-    p, y = math.radians(PITCH), math.radians(YAW)
-    back = Vector((math.sin(y) * math.cos(p), -math.cos(y) * math.cos(p), math.sin(p)))
-    right = (-back).cross(Vector((0, 0, 1))).normalized()
-    up = right.cross(-back).normalized()
-    return right, up, back
-
 
 def studio(samples: int) -> None:
     """High-key daylight: a pale sky, a soft sun from the front left whose shadow runs off to the right."""
@@ -363,9 +363,10 @@ def ceiling_fill(z_top, energy):
 
 def wall_wash() -> None:
     """Working light on the back wall: warm scallops from spots under the ceiling (l0's amber back walls)."""
-    for i in range(7):
-        x = 2.2 + i * 4.3
-        sp = A.light('washer', 'SPOT', (x, D - 1.0, H - 0.25), 260, PAL['warm'], spot_size=math.radians(80),
+    n = round(W / 4.3)
+    for i in range(n):
+        x = (i + 0.5) * W / n
+        sp = A.light('washer', 'SPOT', (x, D - 1.0, H - 0.25), 180, PAL['warm'], spot_size=math.radians(80),
                      spot_blend=0.8, shadow_soft_size=0.2)
         A.aim(sp, (x, D, 0.8))
 
@@ -434,14 +435,15 @@ def lab_bench(x, y, n, rnd, lit):
             A.light('task', 'POINT', (cx, y + 0.5, 1.7), 45, PAL['warm'], shadow_soft_size=0.2)
 
 
-# l0 paints furniture about 1.5x the building's scale (a desk is 29 px high on a 99 px storey, 18 px at true scale),
-# so furniture is laid out on a floor of W / FURN x D / FURN and then blown up by FURN about the floor's corner
-FURN = 1.5
-WF, DF = W / FURN, D / FURN        # 21 x 10.7 furniture metres
+# l0 paints furniture larger than the building's scale; here it is 1.3x, which keeps a desk legible (about 30 px wide)
+# when ten floors share a desktop screen. Furniture is laid out on a floor of W / FURN x D / FURN and then blown up by
+# FURN about the floor's corner.
+FURN = 1.3
+WF, DF = W / FURN, D / FURN        # 18.5 x 6.9 furniture metres
 BENCHES = {   # (x, y, desks per row) of each bench in furniture metres: two rows deep, as l0's floors
-    'open': ((1.0, 1.3, 3), (8.0, 1.1, 3), (15.0, 1.4, 3), (3.0, 5.3, 3), (11.5, 5.0, 3)),
-    'glass': ((1.0, 1.5, 3), (8.0, 1.5, 3), (15.0, 1.5, 3), (3.5, 5.6, 3), (12.0, 5.6, 3)),
-    'lab': ((1.5, 1.6, 3), (9.5, 1.8, 3), (16.0, 1.6, 3), (3.0, 5.6, 4), (12.5, 5.8, 4)),
+    'open': ((0.8, 1.0, 3), (7.0, 0.9, 3), (13.2, 1.1, 3), (3.0, 3.9, 3), (9.8, 4.0, 3)),
+    'glass': ((0.8, 1.2, 3), (7.0, 1.2, 3), (13.2, 1.2, 3), (3.5, 4.1, 3), (10.5, 4.1, 3)),
+    'lab': ((1.0, 1.2, 3), (7.4, 1.3, 3), (13.4, 1.2, 3), (2.5, 4.3, 4), (10.0, 4.4, 4)),
 }
 
 
@@ -464,20 +466,20 @@ def furnish(kind, rnd, lit) -> None:
             (lab_bench if kind == 'lab' else bench)(x, y, n, rnd, lit)
         back = DF - 0.45
         if kind == 'open':
-            meeting(17.0, 5.6, rnd)
-            bookcases(1.2, 3, DF)
-            cabinets(6.0, 5, back)
-            bookcases(12.0, 3, DF)
-            cabinets(17.0, 4, back)
+            meeting(15.3, 4.3, rnd)
+            bookcases(1.0, 3, DF)
+            cabinets(5.0, 5, back)
+            bookcases(10.0, 3, DF)
+            cabinets(14.0, 4, back)
         elif kind == 'lab':
             for i in range(10):
                 span('tall_cabinet', 2.0 + i * 1.0, DF - 0.6, 0, 2.95 + i * 1.0, DF, 1.9, M('lab_base', rough=0.5), bevel=0.015)
-            cabinets(14.0, 6, back)
+            cabinets(13.0, 5, back)
         else:
-            cabinets(6.0, 5, back)
-            bookcases(13.0, 3, DF)
-        plants = ((0.6, DF - 0.6, 'plant_tall'), (WF - 0.6, DF - 0.6, 'plant_tall'), (0.6, 0.7, 'plant_bush'),
-                  (WF - 0.7, 0.7, 'plant_bush'), (10.5, DF - 0.5, 'plant_tall'), (7.0, 3.8, 'plant_bush'), (15.5, 8.2, 'plant_bush'))
+            cabinets(5.0, 5, back)
+            bookcases(11.0, 3, DF)
+        plants = ((0.5, DF - 0.6, 'plant_tall'), (WF - 0.5, DF - 0.6, 'plant_tall'), (0.5, 0.6, 'plant_bush'),
+                  (WF - 0.6, 0.6, 'plant_bush'), (8.8, DF - 0.5, 'plant_tall'), (6.2, 3.3, 'plant_bush'))
         for x, y, k in plants:
             put(k, (x, y, 0), rnd.uniform(0, 6.28))
     scaled(build)
@@ -503,10 +505,13 @@ def floor(kind: str, lit: bool, top: bool) -> dict:
         wall_wash()
         # (behind glass a working floor glows, but stays quieter than any working open floor: busy never looks important;
         # tests/test_building_browser.py measures it)
-        A.light('amber', 'AREA', (W / 2, D / 2, H - 0.1), 2200 if kind == 'glass' else 3200, PAL['warm'], shape='RECTANGLE', size=W, size_y=D)
+        # (per square metre of floor: the same warmth on any floor plate)
+        A.light('amber', 'AREA', (W / 2, D / 2, H - 0.1), W * D * (4.4 if kind == 'glass' else 6.4), PAL['warm'],
+                shape='RECTANGLE', size=W, size_y=D)
         if kind == 'glass':
-            for cx in (5.5, 15.75, 26.0):
-                A.light('glow', 'AREA', (cx, D / 2, H - 0.2), GLASS_GLOW, PAL['warm'], shape='RECTANGLE', size=9.0, size_y=D - 2)
+            for cx in (W * 0.18, W * 0.5, W * 0.82):
+                A.light('glow', 'AREA', (cx, D / 2, H - 0.2), GLASS_GLOW * 7.0 * (D - 2), PAL['warm'], shape='RECTANGLE',
+                        size=7.0, size_y=D - 2)
     ceiling_fill(H, {'open': 250, 'lab': 250, 'glass': 60, 'free': 220}[kind] * (0.6 if lit else 1.0))
     context(top)
     slots = {'shutter_handle': Vector((W - 1.6, -0.2, -SLAB / 2)), 'focus_hit': Vector((W / 2, D / 2, 1.5))}
@@ -617,7 +622,7 @@ def spine_column() -> dict:
              'focus_switch': Vector((-SPINE_W * 0.7, -SPINE_FRONT, 2.25)),
              'lantern_bracket': Vector((x + 0.35, -SPINE_FRONT, 3.0))}
     boxes = {'plate': (3.4, 1.13), 'ring': (1.3, 1.3), 'focus_switch': (2.6, 0.6)}
-    return {'column': 'spine', 'slots': slots, 'boxes': boxes}
+    return {'column': 'spine', 'corner': Vector((0, 0, 0)), 'slots': slots, 'boxes': boxes}
 
 
 def lift_storey(z: float, h: float, doors_open: bool) -> None:
@@ -637,8 +642,10 @@ def lift_storey(z: float, h: float, doors_open: bool) -> None:
     span('lift_door_l', x0 + 0.75 - shift, -0.1, z, x0 + 0.75 + leaf - shift, -0.06, z + 2.5, M('door', rough=0.35, metal=0.5), bevel=0.005)
     span('lift_door_r', x1 - 0.75 - leaf + shift, -0.1, z, x1 - 0.75 + shift, -0.06, z + 2.5, M('door', rough=0.35, metal=0.5), bevel=0.005)
     span('lift_head', x0 + 0.5, -0.12, z + 2.5, x1 - 0.5, -0.02, z + 2.7, M('steel', rough=0.4, metal=0.5), bevel=0.005)
-    for y in (3.2, 6.4, 9.6, 12.8):
-        span('side_mullion', x1 - 0.35, y - 0.05, z, x1 - 0.2, y + 0.05, z + h - 0.45, M('mullion', rough=0.4), bevel=0.0)
+    # the side, which the canonical camera shows square on: a white lattice (l0's lift is a pale frame, not a wall)
+    for y in (D * k / 3 for k in (1, 2)):
+        span('side_post', x1 - 0.45, y - 0.18, z, x1 - 0.1, y + 0.18, z + h - 0.45, fr, bevel=0.02)
+    span('side_rail', x1 - 0.4, 0.15, z + (h - 0.45) / 2 - 0.08, x1 - 0.15, D - 0.5, z + (h - 0.45) / 2 + 0.08, fr, bevel=0.01)
 
 
 def lift_column(doors_open: bool) -> dict:
@@ -651,7 +658,7 @@ def lift_column(doors_open: bool) -> dict:
     building_occluders(top)
     # (one frame for both door states, so the open and shut bands swap in place)
     frame = [Vector((x, y, z)) for x in (W - 0.05, W + LIFT_W + 0.05) for y in (-0.45, D) for z in (0, top + 0.95)]
-    return {'column': 'lift-open' if doors_open else 'lift', 'frame': frame,
+    return {'column': 'lift-open' if doors_open else 'lift', 'frame': frame, 'corner': Vector((W, -0.35, 0)),
             'slots': {'lift_door': Vector((W + LIFT_W / 2, -0.1, 1.25))}}
 
 
@@ -684,10 +691,10 @@ def roof() -> dict:
 # --- ground ---------------------------------------------------------------------------------------------
 
 # l0's annex: a third of the building's width, about two storeys high, as deep as the lift's side
-ANNEX_X0, ANNEX_W, ANNEX_D, ANNEX_H = W + LIFT_W + 1.0, 11.0, 12.0, 6.5
-ANNEX_Y0 = 0.5
+ANNEX_X0, ANNEX_W, ANNEX_D, ANNEX_H = W + LIFT_W + 1.0, 10.0, 8.5, 6.0
+ANNEX_Y0 = 0.3
 # the plinth: a rectangle square to the building, reaching well in front (l0) and past the spine and the annex
-PLINTH = (-SPINE_W - 4.0, -32.0, ANNEX_X0 + ANNEX_W + 3.0, D + 3.0)   # x0, y0, x1, y1
+PLINTH = (-SPINE_W - 4.0, -9.0, ANNEX_X0 + ANNEX_W + 3.0, D + 3.0)   # x0, y0, x1, y1
 
 
 def whole_building(floors: int) -> None:
@@ -722,8 +729,8 @@ def plinth(floors: int) -> dict:
 ANNEX_FRAME = [Vector((x, y, z)) for x in (ANNEX_X0 - 0.4, ANNEX_X0 + ANNEX_W + 0.4)
                for y in (ANNEX_Y0 - 0.6, ANNEX_Y0 + ANNEX_D + 0.5) for z in (0, ANNEX_H + 0.95)]
 # crate places (x from the annex's left, depth from its front, z), filled in order: two stacks of three as l0
-CRATE = 1.2 * FURN                 # a crate's width at l0's furniture scale; it is 0.8 x that high
-CRATES = [(2.3, 3.5, 0), (4.3, 3.8, 0), (3.3, 3.6, 1.44), (6.6, 3.2, 0), (8.6, 3.5, 0), (7.6, 3.3, 1.44)]
+CRATE = 1.2 * FURN                 # a crate's width at the furniture scale; it is 0.8 x that high
+CRATES = [(2.0, 3.5, 0), (3.8, 3.8, 0), (2.9, 3.6, CRATE * 0.8), (6.0, 3.2, 0), (7.8, 3.5, 0), (6.9, 3.3, CRATE * 0.8)]
 
 
 def annex(crates: int) -> dict:
@@ -755,9 +762,14 @@ def annex(crates: int) -> dict:
 # --- rendering -------------------------------------------------------------------------------------------
 
 def project(p: Vector) -> tuple[float, float]:
-    """World point to screen metres (right, up)."""
-    right, up, _ = axes()
-    return p.dot(right), p.dot(up)
+    """World point to screen metres (right, down) under the canonical projection."""
+    return p.x * PX[0] + p.y * PY[0] + p.z * PZ[0], p.x * PX[1] + p.y * PY[1] + p.z * PZ[1]
+
+
+def ground_point(u: float, v: float) -> Vector:
+    """The point on z = 0 that projects to screen metres (u, v): where to aim the camera."""
+    det = PX[0] * PY[1] - PY[0] * PX[1]
+    return Vector(((u * PY[1] - PY[0] * v) / det, (PX[0] * v - u * PX[1]) / det, 0.0))
 
 
 def visible_points():
@@ -777,26 +789,18 @@ def render(name: str, out: Path, mult: int, frame=None, opaque=False) -> dict:
     ppm = PPM_1X * mult
     us, vs = zip(*(project(p) for p in (frame or visible_points())))
 
+    q = mult if isinstance(mult, int) else 1   # (a fractional scale is for comparisons: whole pixels are enough)
+
     def snap(m):
-        return math.ceil((m * ppm + 2 * mult) / mult) * mult
-    left, right_, top, bottom = snap(-min(us)), snap(max(us)), snap(max(vs)), snap(-min(vs))
+        return math.ceil((m * ppm + 2 * q) / q) * q
+    left, right_, top, bottom = snap(-min(us)), snap(max(us)), snap(-min(vs)), snap(max(vs))
     w, h = left + right_, top + bottom
-    u0, v1 = -left / ppm, top / ppm
-    u1, v0 = u0 + w / ppm, v1 - h / ppm
-    right, up, back = axes()
-    cam = bpy.data.cameras.get('b_cam') or bpy.data.cameras.new('b_cam')
-    cam.type, cam.clip_end, cam.ortho_scale = 'ORTHO', 600, max(w, h) / ppm
-    ob = bpy.data.objects.get('b_cam') or bpy.data.objects.new('b_cam', cam)
-    if ob.name not in bpy.context.scene.collection.objects:
-        bpy.context.scene.collection.objects.link(ob)
-    ob['proto'] = True   # (kept across pieces)
-    centre = right * (u0 + u1) / 2 + up * (v0 + v1) / 2
-    ob.location = centre + back * 250
-    A.aim(ob, centre)
     s = bpy.context.scene
-    s.camera = ob
     s.render.film_transparent = not opaque
     s.render.resolution_x, s.render.resolution_y, s.render.resolution_percentage = w, h, 100
+    # the canonical camera centred on the window (it sets the scale from the resolution, so that comes first); far
+    # enough out that nothing of the building or its plinth is behind it
+    A.canonical_camera(s, ground_point((right_ - left) / 2 / ppm, (bottom - top) / 2 / ppm), ppm, name='b_cam', distance=300.0)
     p = out / f'{name}@{ppm:.0f}.png'
     s.render.filepath = str(p)
     bpy.ops.render.render(write_still=True)
@@ -806,25 +810,29 @@ def render(name: str, out: Path, mult: int, frame=None, opaque=False) -> dict:
 def px(offset: Vector, mult: int) -> list[float]:
     """A world offset from the anchor to screen pixels (x right, y down) at tier `mult`."""
     u, v = project(offset)
-    return [round(u * PPM_1X * mult, 2), round(-v * PPM_1X * mult, 2)]
+    return [round(u * PPM_1X * mult, 2), round(v * PPM_1X * mult, 2)]
 
 
 def box_px(size, mult: int) -> list[float]:
     """A w x h metre rectangle on the front face (x along the front, z up) to its screen extent in pixels."""
     w, h = size
-    return [round(w * math.cos(math.radians(YAW)) * PPM_1X * mult, 2), round(h * math.cos(math.radians(PITCH)) * PPM_1X * mult, 2)]
+    return [round(w * PX[0] * PPM_1X * mult, 2), round(h * -PZ[1] * PPM_1X * mult, 2)]
 
 
-def bands(column: str, shot: dict, mult: int) -> dict:
+def bands(column: str, shot: dict, mult: int, corner: Vector) -> dict:
     """Cut a tall column render into its pieces: <column>-lobby (level 0 to 1), <column> (one storey, taken from the
-    middle so it repeats) and <column>-cap (above the roof level). Each crop is whole rows; the anchor is its level's."""
+    middle so it repeats) and <column>-cap (above the roof level). Each crop is whole rows; the anchor is its level's.
+    The cuts follow the level rows shifted by how far the column's front `corner` lies below the level point on screen
+    (the lift, at the front's far end, sits lower than the level points at x = 0); a vertical prism repeats every
+    storey on screen at any shift."""
     ax, ay = shot['anchor_px']
     w, h = shot['size']
+    shift = round(project(corner)[1] * PPM_1X) * mult   # (a whole tier-1 pixel, so smaller tiers cut clean)
 
     def row(i):
         return ay - (0 if i == 0 else (LOBBY_STEP_PX + (i - 1) * STEP_PX) * mult)
-    cuts = {f'{column}-lobby': (row(1), h, row(0)), column: (row(3), row(2), row(2)),
-            f'{column}-cap': (0, row(COLUMN_FLOORS + 1), row(COLUMN_FLOORS + 1))}
+    cuts = {f'{column}-lobby': (row(1) + shift, h, row(0)), column: (row(3) + shift, row(2) + shift, row(2)),
+            f'{column}-cap': (0, row(COLUMN_FLOORS + 1) + shift, row(COLUMN_FLOORS + 1))}
     return {name: {**shot, 'crop': [0, r0, w, r1], 'size': [w, r1 - r0], 'anchor_px': [ax, level - r0]}
             for name, (r0, r1, level) in cuts.items()}
 
@@ -869,8 +877,9 @@ def main() -> None:
     argv = sys.argv[sys.argv.index('--') + 1:]
     out = Path(argv.pop(0)).resolve()
     mult, samples = 2, 32
-    if '--mult' in argv:
-        i = argv.index('--mult'); mult = int(argv[i + 1]); del argv[i:i + 2]
+    if '--mult' in argv:   # (a fraction renders at some other scale, e.g. l2's 171.5 px/m = 8.576, for comparison only)
+        i = argv.index('--mult'); mult = float(argv[i + 1]); del argv[i:i + 2]
+        mult = int(mult) if mult.is_integer() else mult
     if '--samples' in argv:
         i = argv.index('--samples'); samples = int(argv[i + 1]); del argv[i:i + 2]
     only = argv
@@ -878,7 +887,7 @@ def main() -> None:
     A.reset()
     studio(samples)
     load_protos()
-    info = {'camera': {'pitch': PITCH, 'yaw': YAW, 'ppm_1x': round(PPM_1X, 4)}, 'step_px': STEP_PX,
+    info = {'camera': {**PROJECTION, 'ppm_1x': PPM_1X}, 'step_px': STEP_PX,
             'lobby_step_px': LOBBY_STEP_PX, 'floor': {'w': W, 'd': D, 'f2f': F2F, 'slab': SLAB},
             'blender': bpy.app.version_string, 'stack': stack_doc(), 'pieces': {}}
     manifest = out / 'pieces.json'
@@ -895,8 +904,9 @@ def main() -> None:
         shot = render(name, out, m, spec.get('frame'), spec.get('opaque', False))
         shot['slots'] = {k: px(v, m) for k, v in spec.get('slots', {}).items()}
         shot['boxes'] = {k: box_px(v, m) for k, v in spec.get('boxes', {}).items()}
+        shot['projection'] = PROJECTION
         if 'column' in spec:
-            made = bands(spec['column'], shot, m)
+            made = bands(spec['column'], shot, m, spec['corner'])
             if spec['column'] == 'lift-open':   # (the cap is the shut column's)
                 del made['lift-open-cap']
             info['pieces'].update(made)

@@ -332,11 +332,11 @@ function fit() {
   const z = Math.min(MAX_Z, (r - l) / (x1 - x0), (b - t) / (y1 - y0));
   view = { z, ox: (l + r) / 2 - (x0 + x1) / 2 * z, oy: (t + b) / 2 - (y0 + y1) / 2 * z };
 }
-// A floor's front on screen, from the manifest's camera: its front edge runs from the level point to the right end,
-// descending a little, and the storey rises one step above it.
+// A floor's front on screen, from the manifest's projection (one metre along x lands at x_px, in px right and down per
+// px/m): its front edge runs from the level point to the right end, descending, and the storey rises one step above it.
 function front() {
-  const { pitch, yaw, ppm_1x: ppm } = manifest.camera, w = manifest.floor.w, rad = Math.PI / 180;
-  return { dx: w * Math.cos(yaw * rad) * ppm, dy: w * Math.sin(yaw * rad) * Math.sin(pitch * rad) * ppm };
+  const { x_px: [xr, xd], ppm_1x: ppm } = manifest.camera, w = manifest.floor.w;
+  return { dx: w * xr * ppm, dy: w * xd * ppm };
 }
 function storeyRect(level) {
   const { dx, dy } = front(), step = level === 0 ? manifest.tiers['1'].lobby_step_px : manifest.tiers['1'].step_px, y = levelY(level);
