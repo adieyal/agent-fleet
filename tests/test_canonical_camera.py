@@ -84,3 +84,20 @@ def test_screen_directions_match_the_concepts(render) -> None:
     assert angle['y'] == pytest.approx(40.89, abs=0.3)
     assert angle['z'] == pytest.approx(90.0, abs=0.3)
     assert np.linalg.norm(centroid(img, MARKERS['z'][1]) - o) == pytest.approx(PX_PER_M, abs=0.5)
+
+
+def test_every_building_piece_records_the_canonical_projection() -> None:
+    """The building's pieces (art/scripts/building_pieces.py) are rendered with canonical_camera, and the manifest the
+    view stacks them by says so, piece by piece, with the same screen vectors (no Blender needed)."""
+    import json
+    manifest = json.loads((ROOT / 'fleet' / 'web' / 'assets' / 'world' / 'building' / 'manifest.json').read_text())
+    y, t = math.radians(30), 0.5
+    want = {'x_px': [math.cos(y), math.sin(y) * t], 'y_px': [math.sin(y), -math.cos(y) * t], 'z_px': [0, -1]}
+    assert manifest['pieces']
+    for record in [manifest['camera']] + [piece['projection'] for piece in manifest['pieces'].values()]:
+        assert record['projection'] == 'canonical'
+        assert record['yaw'] == pytest.approx(30.0) and record['depression'] == pytest.approx(math.degrees(math.atan(0.5)), abs=1e-3)
+        for axis, vector in want.items():
+            assert record[axis] == pytest.approx(vector, abs=1e-5), axis
+    # a storey is its full height on screen: verticals are not foreshortened
+    assert manifest['tiers']['1']['step_px'] == pytest.approx(manifest['floor']['f2f'] * manifest['camera']['ppm_1x'])
