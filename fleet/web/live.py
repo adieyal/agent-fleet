@@ -79,6 +79,26 @@ class LiveWorkspace:
         self.bump()
         return asdict(result)
 
+    def move_on_host(self, host: str, identity: str, label: str) -> None:
+        """Give a job or session on the host a new project label (fleetd `mv`)."""
+        raise NotImplementedError
+
+    def move_agent(self, host: str, identity: str, project_id: str) -> dict[str, Any]:
+        """Move a job, or a session started outside fleet, to a project: it takes the project's label on that host,
+        and a host the project has no label on is linked under the project's first label."""
+        if host not in self.host_names() or not identity:
+            raise FleetError("a known host and an agent id are required")
+        if project_id not in self.known_projects():
+            raise LookupError(f"no project '{project_id}'")
+        project = self.registry.get(project_id)
+        label = next((link.label for link in project.links if link.host == host), None)
+        if label is None:
+            label = project.links[0].label if project.links else project.name
+            self.edit_registry(lambda registry: registry.link(project_id, host, label))
+        self.move_on_host(host, identity, label)
+        self.bump()
+        return {"host": host, "id": identity, "project": label, "project_id": project_id}
+
     def move_in_options(self, label: str, hosts: list[str]) -> dict[str, Any]:
         """What moving the label in on `hosts` could mean: projects it may belong to (see Registry.link_candidates),
         each with its floor or crate, and hosts whose repositories couldn't be read."""

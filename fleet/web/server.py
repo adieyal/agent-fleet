@@ -228,6 +228,16 @@ class FleetState(LiveWorkspace):
     def host_names(self) -> list[str]:
         return [host.name for host in self.hosts]
 
+    def move_on_host(self, host_name: str, identity: str, label: str) -> None:
+        host = next(host for host in self.hosts if host.name == host_name)
+        moved = transport.call(host, ["mv", identity, label], timeout=30)
+
+        def relabel(state: dict[str, Any]) -> None:   # shown at once, before fleetd's stream reports it
+            for kind in ("jobs", "sessions"):
+                if moved["id"] in state[kind]:
+                    state[kind][moved["id"]]["project"] = label
+        self.update(host_name, relabel)
+
     def read_document(self, host_name: str, job_id: str, document_id: str) -> dict[str, Any]:
         host = next(host for host in self.hosts if host.name == host_name)
         return fetch_document(host, job_id, document_id)
@@ -429,7 +439,7 @@ def make_handler(state: FleetState | FixtureState,
         def do_POST(self) -> None:  # noqa: N802 — http.server naming
             path = self.path.split("?", 1)[0]
             action = path.removeprefix("/api/attention/") if path.startswith("/api/attention/") else None
-            if (path not in FLOOR_CHANGES + ("/api/focus", "/api/decision/answer")
+            if (path not in FLOOR_CHANGES + ("/api/focus", "/api/decision/answer", "/api/agent/move")
                     and action not in ATTENTION_ACTIONS + REFUSAL_ACTIONS):
                 self.respond(404, "text/plain", b"not found")
             elif not self.same_origin():
@@ -452,6 +462,8 @@ def make_handler(state: FleetState | FixtureState,
                     self.move_in(path.removeprefix("/api/"), body)
                 elif path == "/api/merge":
                     self.merge(body)
+                elif path == "/api/agent/move":
+                    self.move_agent(body)
                 elif path in ("/api/shutter", "/api/restore"):
                     self.storehouse(path.removeprefix("/api/"), body)
                 else:
@@ -508,6 +520,13 @@ def make_handler(state: FleetState | FixtureState,
                 self.change_floors(lambda: state.link_in(body["project"], hosts, body["label"]))
             else:
                 self.change_floors(lambda: state.move_in(hosts, body["label"], body.get("shutter")))
+
+        def move_agent(self, body: dict[str, Any]) -> None:
+            """POST /api/agent/move {"host": host, "id": job or session id, "project": ID} — move it to that project."""
+            if not all(isinstance(body.get(key), str) for key in ("host", "id", "project")):
+                self.error(400, "host, id and project are required")
+                return
+            self.change_floors(lambda: state.move_agent(body["host"], body["id"], body["project"]))
 
         def merge(self, body: dict[str, Any]) -> None:
             """POST /api/merge {"keep": ID, "other": ID} — fold a project registered by mistake into the older one."""

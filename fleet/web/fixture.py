@@ -105,6 +105,13 @@ class FixtureState(LiveWorkspace):
     def host_names(self) -> list[str]:
         return [host["name"] for host in self.fixture["hosts"]]
 
+    def move_on_host(self, host_name: str, identity: str, label: str) -> None:
+        host = next(host for host in self.fixture["hosts"] if host["name"] == host_name)
+        agents = [agent for agent in host["jobs"] + host["sessions"] if agent["id"].startswith(identity)]
+        if len(agents) != 1:
+            raise LookupError(f"no agent '{identity}' on {host_name}")
+        agents[0]["project"] = label
+
     def edit_registry(self, change: Callable[[Registry], Any]) -> Any:
         result = self.workspace.edit_registry(change)
         self.registry = self.workspace.registry()

@@ -11,7 +11,7 @@ import {
 } from './model.js';
 import { DOC_KIND, DOC_UPDATING_SECONDS, docMeta, isUpdating, jobDocSequence, kindOf } from './docs3d.js';
 import { action, buildRobot } from './agents.js';
-import { dismiss, entered, hiddenCount, restoreDismissed, retiredCount, showFinished, toggleFinished } from './state.js';
+import { dismiss, entered, hiddenCount, lastDoc, restoreDismissed, retiredCount, showFinished, toggleFinished } from './state.js';
 import { focusOn } from './camera.js';
 import { attentionFor, openCount } from './attention.js';
 import { openAttentionReader, openReader } from './reader.js';
@@ -125,6 +125,7 @@ export function renderPanel() {
       <div class="sub">
         <span class="chip"><i style="background:${e.look.color}"></i><b>${esc(e.host)}</b></span>
         <span class="chip"><i style="background:${AGENT_COLOR[j.agent] || '#ccc'}"></i>${esc(j.agent)}</span>
+        ${projectChip(j)}
         <span class="chip st-${esc(j.status)}">${esc(j.status)}</span>
       </div></div>
     ${j.status !== 'running' ? DISMISS_BUTTON : ''}
@@ -161,6 +162,46 @@ export function renderPanel() {
   }, e, j.status === 'done' ? 'off' : j.status === 'stalled' ? 'slump' : 'normal');
 }
 const DISMISS_BUTTON = '<button id="dismiss" title="Hide this agent from the deck until it has new activity">Dismiss</button>';
+
+// ------------------------------------------------------------------ moving an agent to another project
+const FOLDER_ICON = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M1.8 4.2h4.4l1.4 1.6h6.6v7.4H1.8z"/></svg>';
+const projectName = agent => (lastDoc?.projects || []).find(p => p.id === agent.project_id)?.name ?? agent.project ?? 'no project';
+function projectChip(agent) {
+  return `<button class="chip move-agent" id="moveAgent" aria-haspopup="menu" title="Move to another project" aria-label="Project ${esc(projectName(agent))}: move to another project">${FOLDER_ICON}${esc(projectName(agent))}</button>`;
+}
+function closeMoveMenu() { document.getElementById('moveMenu')?.remove(); }
+function openMoveMenu(button) {
+  if (document.getElementById('moveMenu')) { closeMoveMenu(); return; }
+  const key = selectedKey, e = workOf(key);
+  if (!e) return;
+  const agent = e.job;
+  const projects = (lastDoc?.projects || []).filter(p => p.id !== agent.project_id).sort((a, b) => a.name.localeCompare(b.name));
+  const menu = document.body.appendChild(document.createElement('div'));
+  menu.id = 'moveMenu';
+  menu.setAttribute('role', 'menu');
+  menu.innerHTML = `<p>Move to project</p>${projects.length ? projects.map(p =>
+    `<button role="menuitem" data-project="${esc(p.id)}">${esc(p.name)}</button>`).join('') : '<p class="muted">No other projects</p>'}<p role="alert" hidden></p>`;
+  const at = button.getBoundingClientRect();
+  menu.style.top = `${at.bottom + 4}px`;
+  menu.style.left = `${Math.max(8, Math.min(at.left, innerWidth - menu.offsetWidth - 8))}px`;
+  menu.querySelector('button')?.focus();
+  menu.addEventListener('click', async ev => {
+    const choice = ev.target.closest('[data-project]');
+    if (!choice) return;
+    menu.querySelectorAll('button').forEach(b => { b.disabled = true; });
+    const response = await fetch('/api/agent/move', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ host: e.host, id: agent.id, project: choice.dataset.project }) }).catch(error => ({ ok: false, error }));
+    if (response.ok) { closeMoveMenu(); return; }
+    const alert = menu.querySelector('[role=alert]');
+    alert.textContent = response.json ? (await response.json().catch(() => ({}))).error || 'Move failed' : String(response.error);
+    alert.hidden = false;
+    menu.querySelectorAll('button').forEach(b => { b.disabled = false; });
+  });
+}
+document.addEventListener('pointerdown', ev => {
+  if (!ev.target.closest('#moveMenu, #moveAgent')) closeMoveMenu();
+});
+document.addEventListener('keydown', ev => { if (ev.key === 'Escape') closeMoveMenu(); });
 
 // ------------------------------------------------------------------ tabs: Summary (default), Activity, Documents
 // The chosen tab is remembered per browser; jumping from a summary line to its moment in Activity is not a choice.
@@ -203,6 +244,7 @@ function patchPanel(headHtml, extraHtml, panes, e, pose) {
     miniBot(head.querySelector('canvas'), e.look, e.job.agent, pose);
     head.querySelector('#close').addEventListener('click', closePanel);
     head.querySelector('#dismiss')?.addEventListener('click', () => dismiss(selectedKey));
+    head.querySelector('#moveAgent')?.addEventListener('click', ev => openMoveMenu(ev.currentTarget));
   }
   const show = panes[shownTab] ? shownTab : 'summary';   // no documents yet: the Summary stands in, the choice stays
   const tabs = document.getElementById('panelTabs');
@@ -238,6 +280,7 @@ function renderSessionPanel(e) {
         <span class="chip sess st-${esc(s.status)}"><i></i>live · ${esc(s.status === 'idle' ? 'waiting for you' : s.status)}</span>
         <span class="chip"><i style="background:${e.look.color}"></i><b>${esc(e.host)}</b></span>
         <span class="chip"><i style="background:${AGENT_COLOR[s.agent] || '#ccc'}"></i>${esc(s.agent)}</span>
+        ${projectChip(s)}
       </div></div>
     ${s.status === 'idle' ? DISMISS_BUTTON : ''}
     <button id="close" aria-label="Close">✕</button>`;

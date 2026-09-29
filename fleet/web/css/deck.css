@@ -1051,6 +1051,7 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 [data-plan-item] p { margin:2px 0; }
 [data-plan-item] small { color:#94a3b8; }
 #benchRoute [data-plan-item] button { margin:0; padding:4px 8px; font-weight:bold; }
+[data-plan-item] small[data-running-since] { display:block; color:#38bdf8; }
 [data-step-plan] { margin-top:4px; font-size:13px; }
 [data-step-plan] summary { cursor:pointer; color:#7dd3fc; }
 [data-step-plan] div { white-space:pre-wrap; margin-top:4px; padding:6px 8px; border-left:2px solid #334155; color:#cbd5e1; }
@@ -1102,3 +1103,13 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
   #benchRoute, #benchRoute[data-level] { left:12px; right:12px; top:auto; bottom:64px; width:auto; max-height:45vh; }
   #benchRoute[data-collapsed] { left:auto; }
 }
+
+/* the agent panel's project chip, and the menu that moves the agent to another project */
+.chip.move-agent{cursor:pointer;max-width:220px;overflow:hidden;text-overflow:ellipsis}
+.chip.move-agent:hover,.chip.move-agent[aria-expanded="true"]{color:var(--text);border-color:var(--line2)}
+#moveMenu{position:fixed;z-index:60;min-width:200px;max-height:320px;overflow:auto;padding:6px;border-radius:10px;
+  background:var(--panel-solid);border:1px solid var(--line2);box-shadow:0 10px 30px rgba(0,0,0,.45);display:grid;gap:2px}
+#moveMenu p{margin:4px 8px;font:500 11px var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+#moveMenu p[role=alert]{text-transform:none;letter-spacing:0;color:#fca5a5;font-size:12px}
+#moveMenu button{border:0;background:none;text-align:left;padding:6px 8px;border-radius:6px;color:var(--text);font:13px inherit;cursor:pointer}
+#moveMenu button:hover,#moveMenu button:focus-visible{background:rgba(255,255,255,.07)}
