@@ -41,8 +41,9 @@ SKY, SUN, EXPOSURE = 0.85, 6.0, -1.1   # the sun well over a blue sky: l0's blue
 # towards the sun: the left, a little behind, and low, so the long shadow runs off to the right and a little towards
 # the viewer (l0's lower right) without covering the plinth in front; a shadowless fill from the front keeps the
 # fronts pale, as l0's are
-SUN_FROM = Vector((-1.0, 0.3, 0.55))
+SUN_FROM = Vector((-1.0, 0.3, 0.45))
 FRONT_FILL, FRONT_FROM = 2.0, Vector((-0.3, -1.0, 0.5))
+PLINTH_LIFT = 0.5                # the plinth's exposure over the rest's: it is rendered without the front fill
 GLASS_SETBACK = 0.45               # glazing stands behind the slab edge, which reads as a ledge (l0)
 W, D = 31.5, 16.0                  # a floor's width along the front and depth: the fit's 31.6 x 15.9 m
 H = F2F - SLAB                     # a storey's clear height
@@ -60,8 +61,8 @@ FACE_CAP = 6000                    # decimate models to this: a chair is ~25 px 
 PAL = {
     'shell': '#fbf1e6', 'shell_edge': '#e2d9d0', 'floor': '#b4b3bb', 'wall': '#d2d4dc', 'wall_warm': '#ddd2c8',
     'oak': '#b98f6c', 'frame': '#45434a', 'cabinet': '#6b6b73', 'mullion': '#26272c', 'blind': '#9a9ca3',
-    'walnut': '#8f5e3a', 'plinth': '#e2d4c8', 'grout': '#b3a598', 'ground': '#ffffff', 'door': '#8a8890', 'lip': '#9c8878',
-    'lift_glass': '#9aa6b4', 'lobby_glaze': '#c4d6ea', 'bulb': '#fff3d0', 'warm': '#ffbf78', 'card': '#f6f4ef',
+    'walnut': '#8f5e3a', 'plinth': '#fbe9d6', 'grout': '#c2b1a2', 'ground': '#ffffff', 'door': '#8a8890', 'lip': '#9c8878',
+    'lift_glass': '#c2ccd8', 'lobby_glaze': '#c4d6ea', 'bulb': '#fff3d0', 'warm': '#ffbf78', 'card': '#f6f4ef',
     'ink': '#2f3136', 'dots': '#f4f7fb', 'steel': '#5d5d64', 'car': '#2c2d33', 'slab_face': '#d9d3cd',
     'lab_top': '#dcdde2', 'lab_base': '#5f6068', 'flask': '#cfe6ee', 'plate': '#34363c',
 }
@@ -530,7 +531,7 @@ def lobby() -> dict:
     for i in range(int(W / 3) + 1):
         x = min(i * 3.0, W)
         span('front_mullion', x - 0.03, g - 0.08, 0, x + 0.03, g, h, frame, bevel=0.0)
-    A.box('front_pane', (W, 0.01, h - 0.18), (W / 2, g - 0.04, 0.08), glass('b_lobby_glass', '#e6eef4', 0.04), bevel=0.0)
+    A.box('front_pane', (W, 0.01, h - 0.18), (W / 2, g - 0.04, 0.08), glass('b_lobby_glass', '#eef3f7', 0.02), bevel=0.0)
     for x in (W * 0.34, W * 0.7):
         span('column', x - 0.45, -0.1, 0, x + 0.45, 0.8, h, M('shell', rough=0.5), bevel=0.04)
     # the furniture, in furniture metres (FURN): the reception desk in the foreground, a long white body with a
@@ -560,7 +561,7 @@ def lobby() -> dict:
     for i in range(3):
         A.cylinder('key_disc', 0.32, 0.03, (rx + 1.8 + i * 1.0, D - 0.001, 2.7), M('shell_edge', rough=0.4),
                    rot=(math.pi / 2, 0, 0), segments=32)
-    ceiling_fill(h, 1600)
+    ceiling_fill(h, 1100)   # (less than an office's: the furniture keeps its contrast behind the glass)
     A.light('lobby_glow', 'AREA', (rx + rw / 2, D - 1.0, h - 0.2), 300, '#fff0dc', shape='RECTANGLE', size=8, size_y=2)
     hidden((0, -0.2, h, W, D + 0.3, h + 3.0), (-SPINE_W, -SPINE_FRONT, 0, 0, D + 0.3, LOBBY_H + F2F),
            (W, -0.35, 0, W + LIFT_W, D, LOBBY_H + F2F))
@@ -683,7 +684,7 @@ def roof() -> dict:
 ANNEX_X0, ANNEX_W, ANNEX_D, ANNEX_H = W + LIFT_W + 1.0, 11.0, 12.0, 6.5
 ANNEX_Y0 = 0.5
 # the plinth: a rectangle square to the building, reaching well in front (l0) and past the spine and the annex
-PLINTH = (-SPINE_W - 4.0, -20.0, ANNEX_X0 + ANNEX_W + 3.0, D + 3.0)   # x0, y0, x1, y1
+PLINTH = (-SPINE_W - 4.0, -32.0, ANNEX_X0 + ANNEX_W + 3.0, D + 3.0)   # x0, y0, x1, y1
 
 
 def whole_building(floors: int) -> None:
@@ -710,7 +711,9 @@ def plinth(floors: int) -> dict:
     pts = [Vector((x, y, -0.5)) for x in (x0 - 3, x1 + 3) for y in (y0 - 3, y1 + 3)]
     pts += [shadow_tip(Vector((x, y, top))) + Vector((3, 3, 0)) for x in (-SPINE_W, W + LIFT_W) for y in (-SPINE_FRONT, D + 0.3)]
     pts += [Vector((x0, y1, top))]   # (the frame reaches the building's top: the view's canvas)
-    return {'frame': pts, 'opaque': True, 'mult': 2}
+    # (no front fill here: it lit the shadow as much as the ground round it and greyed it out; the ground is then lit
+    # by the sun and the blue sky alone, so the shadow is sky blue, and a brighter exposure brings the ground to l0's)
+    return {'frame': pts, 'opaque': True, 'mult': 2, 'fill': 0.0, 'exposure': EXPOSURE + PLINTH_LIFT}
 
 
 ANNEX_FRAME = [Vector((x, y, z)) for x in (ANNEX_X0 - 0.4, ANNEX_X0 + ANNEX_W + 0.4)
@@ -883,6 +886,8 @@ def main() -> None:
             continue
         clear()
         spec = build()
+        bpy.data.objects['front_fill'].data.energy = spec.get('fill', FRONT_FILL)
+        bpy.context.scene.view_settings.exposure = spec.get('exposure', EXPOSURE)
         m = min(mult, spec.get('mult', mult))
         shot = render(name, out, m, spec.get('frame'), spec.get('opaque', False))
         shot['slots'] = {k: px(v, m) for k, v in spec.get('slots', {}).items()}
