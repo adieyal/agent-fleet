@@ -391,6 +391,9 @@ def job_preamble(job: JsonObject) -> str:
         f"Job goal: {job['description']}\n"
         f"Context files from the orchestrator (read what is relevant): {directory / 'context'}\n"
         f"Put any files the orchestrator should collect in: {directory / 'outbox'}\n"
+        "When you make images (screenshots, renders, charts), save them in the outbox and show the important ones "
+        "in your step summary and reports with Markdown image syntax, e.g. `![Mock beside the concept](outbox/mock.png)` "
+        "in the step summary, or a path relative to the report file. The deck displays them inline.\n"
         f"{WRITING_GUIDE}"
         "Finish each step with a short plain summary of what you did and anything left open, then a final line "
         "`FLEET_STATUS: done`, `FLEET_STATUS: blocked — <reason>` (you could not do the work, e.g. tools or "
@@ -835,8 +838,11 @@ def job_documents(job: JsonObject) -> List[JsonObject]:
     outbox = directory / "outbox"
     if outbox.exists():
         for path in sorted(outbox.rglob("*")):
-            if is_markdown(path.name):
+            if is_markdown(path.name) or path.suffix.lower() in ASSET_TYPES:
                 describe(f"outbox-{path.relative_to(outbox)}", path, "outbox", str(path.relative_to(outbox)), None)
+    for document in documents:
+        if Path(document["path"]).suffix.lower() in ASSET_TYPES:
+            document["media"] = "image"
     return documents
 
 
@@ -875,6 +881,12 @@ def command_read(arguments: argparse.Namespace) -> None:
     written = document["kind"] == "file" and safe_document_source(recorded)
     if not written and not approved(job, path):
         fail(f"document path outside approved document roots: {document['path']}")
+    if document.get("media") == "image":  # shown as a page holding the image, which loads through read-asset
+        document.update({"truncated": False, "content": f"![{document['name']}](<{path.name}>)\n",
+                         "job": job["id"], "project": job["project"], "agent": job["agent"],
+                         "host": os.uname().nodename, "job_description": job["description"]})
+        emit(document)
+        return
     with open(path, "rb") as handle:
         raw = handle.read(DOCUMENT_READ_LIMIT + 1)
     document["truncated"] = len(raw) > DOCUMENT_READ_LIMIT
@@ -889,10 +901,10 @@ def command_read_asset(arguments: argparse.Namespace) -> None:
     under the same approved roots as the document itself."""
     job = read_job(arguments.job)
     document = listed_document(job, arguments.document)
-    requested = Path(arguments.path)
-    if "\x00" in arguments.path or requested.is_absolute():
+    if "\x00" in arguments.path:
         fail(f"asset path outside approved document roots: {arguments.path}")
-    path = (Path(document["path"]).parent / requested).resolve()
+    # Relative paths resolve beside the document; absolute ones (agents often write them) stand as they are.
+    path = (Path(document["path"]).parent / arguments.path).resolve()
     if not approved(job, path):
         fail(f"asset path outside approved document roots: {arguments.path}")
     content_type = ASSET_TYPES.get(path.suffix.lower())

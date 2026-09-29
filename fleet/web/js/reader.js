@@ -456,6 +456,11 @@ document.getElementById('rdCopy').addEventListener('click', ev => {
 });
 document.getElementById('rdDownload').addEventListener('click', () => {
   if (!rd.data) return;
+  if (rd.data.media === 'image') {   // an outbox image downloads as itself, not as the page that shows it
+    const a = Object.assign(document.createElement('a'), { href: assetUrl(rd.data.path.split('/').pop()), download: rd.data.path.split('/').pop() });
+    document.body.appendChild(a); a.click(); a.remove();
+    return;
+  }
   const prefix = rd.source === 'attention' ? 'attention' : rd.source === 'library' ? rd.doc.project : rd.job.id;
   const base = `${prefix}-${(rd.data.name || rd.doc.name).replace(/\.(md|markdown|mdx)$/i, '')}`.replace(/[^\w.-]+/g, '-').replace(/-+/g, '-');
   const url = URL.createObjectURL(new Blob([rd.data.markdown], { type: 'text/markdown;charset=utf-8' }));

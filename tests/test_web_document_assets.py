@@ -130,3 +130,9 @@ def test_rendering_escapes_html_in_prose_code_and_diagrams() -> None:
     assert "<script>" not in html and "<img src=x" not in html and "<b>" not in html
     assert "&lt;script&gt;" in html and "&lt;img src=x onerror=alert(1)&gt;" in html
     assert '<code class="language-mermaid">' in html and '<code class="language-python">' in html
+
+
+def test_an_absolute_image_path_inside_the_job_is_served(job_server: str, tmp_path: Path) -> None:
+    status, headers, body = get(job_server, str(tmp_path / "fleet" / "jobs" / "job1" / "outbox" / "img" / "diagram.svg"))
+    assert status == 200
+    assert body == SVG

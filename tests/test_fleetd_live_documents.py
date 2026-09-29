@@ -221,3 +221,15 @@ def test_local_notes_are_never_documents(tmp_path: Path, home: Path) -> None:
     (directory / "outbox" / "report.md").write_text("# Report")
     job = {"id": "job1", "steps": [], "written_documents": []}
     assert [document["id"] for document in fleetd.job_documents(job)] == ["outbox-report.md"]
+
+
+def test_outbox_images_are_documents_shown_as_the_image(tmp_path: Path, home: Path, capsys) -> None:
+    job = {"id": "job1", "project": "example", "agent": "claude", "description": "render", "steps": []}
+    outbox = home / "jobs" / "job1" / "outbox"
+    outbox.mkdir(parents=True)
+    (outbox.parent / "job.json").write_text(json.dumps(job))
+    (outbox / "mock vs l0.png").write_bytes(b"\x89PNG render")
+    (outbox / "scene.blend").write_bytes(b"BLENDER")
+    [image] = fleetd.job_documents(job)
+    assert (image["id"], image["kind"], image["media"]) == ("outbox-mock vs l0.png", "outbox", "image")
+    assert read_document("job1", "outbox-mock vs l0.png", capsys)["content"] == "![mock vs l0.png](<mock vs l0.png>)\n"

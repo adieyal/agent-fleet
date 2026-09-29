@@ -71,8 +71,8 @@ def fetch_document(host: Host, job_id: str, document_id: str) -> dict[str, Any]:
 
 def fetch_asset(host: Host, job_id: str, document_id: str, asset_path: str) -> tuple[str, bytes]:
     """An image a job document links to, as (content type, bytes); fleetd applies the document's roots."""
-    document, asset = PurePosixPath(document_id), PurePosixPath(asset_path)
-    if document.is_absolute() or ".." in document.parts or asset.is_absolute() or "\x00" in asset_path:
+    document = PurePosixPath(document_id)
+    if document.is_absolute() or ".." in document.parts or "\x00" in asset_path:
         raise DocumentAccessDenied(f"asset path outside approved document roots: {asset_path}")
     try:
         result = transport.call(host, ["read-asset", job_id, document_id, asset_path], timeout=30)
