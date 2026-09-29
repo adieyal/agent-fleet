@@ -250,6 +250,17 @@ body[data-view=world] #panel:not(.open){visibility:hidden}   /* (its shadow show
 .plate .enter{display:flex;align-items:center;gap:7px;min-width:0;border:0;background:none;padding:0;font:inherit;color:inherit;cursor:pointer}
 .plate .enter:hover b,.plate .enter:focus-visible b{text-decoration:underline;text-underline-offset:3px}
 .plate .enter:focus-visible{outline:none}
+/* on the building's spine (building.js places them on the manifest's slots and sets --z, its zoom): the plate is the
+   name; its ring and focus switch sit at their own slots, so they are placed absolutely inside it */
+#buildingUi .plate{font-size:max(9px,calc(13px * var(--z,1)));padding:0 6px 0 5px;gap:5px}
+#buildingUi .plate :is(.progress,.fswitch,.merge-handle){position:absolute}
+#buildingUi .plate .fswitch{align-items:center;padding:1px;background:rgba(5,9,17,.82)}
+#buildingUi .plate .fswitch button{font-size:max(8.5px,calc(10px * var(--z,1)));padding:0 6px}
+#buildingUi .plate .merge-handle{display:grid;place-items:center;padding:0 4px;border-radius:6px;background:rgba(5,9,17,.82)}
+#buildingUi .plate .progress i{font-size:max(8px,calc(11px * var(--z,1)))}
+#buildingUi .plate .progress .ring{border-radius:50%;background:rgba(5,9,17,.82)}
+.hostdots{position:absolute;left:0;top:0;display:flex;gap:max(4px,calc(10px * var(--z,1)));pointer-events:none;will-change:transform}
+.hostdots i{width:max(7px,calc(16px * var(--z,1)));aspect-ratio:1;border-radius:50%;box-shadow:0 1px 3px rgba(40,50,70,.35)}
 /* the focus switch: open · windows */
 .fswitch{display:flex;flex:none;padding:2px;border-radius:999px;background:rgba(255,255,255,.04);border:1px solid var(--line2)}
 .fswitch button{border:0;background:none;padding:1px 7px;border-radius:999px;font:600 10px/1.3 var(--sans);letter-spacing:.03em;color:var(--dim);cursor:pointer}
@@ -279,6 +290,7 @@ body[data-view=floor] #lift{display:flex}
 .lantern-hang .bob{position:absolute;left:0;top:0;width:34px;height:52px;transform-origin:17px 1px}
 .lantern-hang .bob::before{content:"";position:absolute;left:16px;top:2px;width:2px;height:9px;background:#8b98ad}
 .lantern-hang .floor-lantern{top:10px}
+.lantern-hang.cord::before,.lantern-hang.cord::after{display:none}   /* the lobby's and the storehouse's: a cord, no bracket */
 .floor-lantern::before{box-shadow:0 0 0 2px #05080f,0 0 7px 1px rgba(255,79,176,.4)}
 .floor-lantern.ack::before{box-shadow:0 0 0 2px #05080f}
 /* the shutter handle: a pull bar with a ring, on the floor's top corner */
