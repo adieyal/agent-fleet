@@ -20,8 +20,8 @@ from fleet.projections.attention import attention_display, attention_items
 from fleet.projections.building import building_state
 from fleet.modules.workspace import Registry, WorkspaceFacade, AlreadyHoused
 from fleet.transport import FleetError
-from fleet.composition import open_work, open_execution, open_library, open_decisions
-from fleet.projections.project import project_status, run_work
+from fleet.composition import open_work, open_execution
+from fleet.projections.project import run_work
 from fleet.web.job_store import ProjectDocuments
 from fleet.web.overview import Overview
 T = TypeVar("T")
@@ -150,15 +150,11 @@ class LiveWorkspace:
 
     def with_building(self, document: dict[str, Any], registry: Registry) -> dict[str, Any]:
         """Add the floors registered projects occupy within capacity with each one's focus, the projects in the
-        storehouse, and the live projects that have no floor."""
+        storehouse, and the live projects that have no floor. Project work is not sent with every update: the plan
+        panel reads it from /api/bench when it is open."""
         self.workspace.settle()
         building = building_state(self.workspace, registry, self.capacity)
-        work = open_work(self.store)
-        execution, library = open_execution(self.store), open_library(self.store)
-        decisions = open_decisions(self.store)
         return {**document, "building": building,
-                "work": {project: project_status(project, work, self.attention, execution, library, decisions)
-                         for project in registry.projects},
                 "attention_display": attention_display(document["attention"], building, document["projects"])}
 
     def bump(self) -> None:

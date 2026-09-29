@@ -93,3 +93,23 @@ def test_a_codex_step_can_write_the_jobs_extra_directories(tmp_path, monkeypatch
            "description": "d", "add_dirs": ["/extra"]}
     command = " ".join(fleetd._runtime("codex").command(job, {"index": 0, "prompt": "Work"}, session))
     assert "/extra" in command and str(fleetd.JOBS_DIRECTORY / "job") in command
+
+
+def test_a_run_document_is_indexed_again_only_when_it_changes(project_id):
+    store = composition.open_store()
+    item = composition.open_work(store).add(project=project_id, title="Index", goal="Once", actor="user")
+    execution, library = composition.open_execution(store), composition.open_library(store)
+    execution.link("host", "job", item.id, actor="user")
+    calls = []
+    index_run = library.index_run
+    library.index_run = lambda **fields: calls.append(fields["availability"]) or index_run(**fields)
+    job = {"id": "job", "status": "running", "steps": [], "updated_at": 1,
+           "documents": [{"kind": "report", "name": "Step 1", "path": "/jobs/job/result-0.md"}],
+           "trace": {"path": "/jobs/job/events.jsonl", "availability": "available"}}
+    host, indexed = {"ok": True, "name": "host", "jobs": {"job": job}}, {}
+    observe_runs(execution, library, host, indexed)
+    observe_runs(execution, library, host, indexed)
+    assert calls == ["available", "available"]            # the report and the trace, once each
+    job["trace"]["availability"] = "unavailable"
+    observe_runs(execution, library, host, indexed)
+    assert calls == ["available", "available", "unavailable"]  # only the changed trace

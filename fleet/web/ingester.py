@@ -11,7 +11,12 @@ def timestamp(value: float | None) -> datetime | None:
     return datetime.fromtimestamp(value, timezone.utc) if value is not None else None
 
 
-def observe_runs(execution: ExecutionFacade, library: LibraryFacade, host: dict) -> None:
+def observe_runs(execution: ExecutionFacade, library: LibraryFacade, host: dict,
+                 indexed: dict | None = None) -> None:
+    """Record the host's jobs as runs, and index each linked run's documents in the library.
+
+    `indexed`, kept by the caller across calls, remembers each entry as last indexed so an unchanged one is not
+    written again: hosts report many times a minute, and every job's documents come with every report."""
     execution.observe_host(host['name'], reachable=host['ok'])
     if not host["ok"]:
         execution.unavailable(host["name"])
@@ -39,5 +44,10 @@ def observe_runs(execution: ExecutionFacade, library: LibraryFacade, host: dict)
             outputs.append(("trace", "Run trace", trace["path"], trace["availability"]))
         for kind, title, path, availability in outputs:
             location = f"fleet://{quote(host['name'], safe='')}{quote(path, safe='/')}"
-            library.index_run(run=run.id, work_item=actions[run.action].work_item, kind=kind,
+            work_item = actions[run.action].work_item
+            if indexed is not None and indexed.get((run.id, kind, location)) == (work_item, title, availability):
+                continue
+            library.index_run(run=run.id, work_item=work_item, kind=kind,
                               title=title, location=location, availability=availability)
+            if indexed is not None:
+                indexed[run.id, kind, location] = (work_item, title, availability)
