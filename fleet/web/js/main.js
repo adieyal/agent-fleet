@@ -75,10 +75,14 @@ function advanceTime(seconds, draw = true) {
 }
 function frame(ts) {
   requestAnimationFrame(frame);
-  if (document.hidden || !reader.hidden || !sankeyPane.hidden) { lastT = 0; return; }   // a sheet covers the deck; don't render under it
-  if (buildingShown) { lastT = 0; return; }                      // the building has the screen and draws itself
-  if (worldShown) { lastT = 0; return; }                         // so has the sprite-world floor
-  if (ts < panelScrollUntil) { lastT = 0; return; }             // hold the deck still while the panel scrolls, so the scroll gets the frame
+  if (document.hidden || !reader.hidden || !sankeyPane.hidden   // a sheet covers the deck; don't render under it
+    || buildingShown                                             // the building has the screen and draws itself
+    || worldShown                                                // so has the sprite-world floor
+    || ts < panelScrollUntil) {                                  // hold the deck still while the panel scrolls, so the scroll gets the frame
+    lastT = 0;
+    if (fpsEl && fpsT) { fpsEl.textContent = 'deck paused'; fpsN = 0; fpsT = 0; }   // not a stale reading from the last deck frame
+    return;
+  }
   if (isStepping()) {
     const now = animationNow() / 1000;
     renderer.shadowMap.needsUpdate = true;   // stepped frames stay exact
@@ -141,6 +145,7 @@ function updateFrame(dt, t, now, draw) {
   positionSwitches();
   positionLanterns();
   if (fpsEl) {
+    if (!fpsT) fpsT = t;
     fpsN++;
     if (t - fpsT > 1) { fpsEl.textContent = `${Math.round(fpsN / (t - fpsT))} fps · ${renderer.info.render.calls} calls · ${RENDER_SCALES[scaleStep]}x`; fpsN = 0; fpsT = t; }
   }
