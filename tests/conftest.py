@@ -49,6 +49,9 @@ def isolated_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, empty_store:
     shutil.copyfile(empty_store, path)
     monkeypatch.setenv("FLEET_STORE", str(path))
     monkeypatch.setenv("FLEET_CONFIG", str(tmp_path / "config" / "config.json"))
+    config = tmp_path / "config" / "config.json"
+    config.parent.mkdir()
+    config.write_text('{"hosts": {}}')
     monkeypatch.setenv("FLEET_HOME", str(tmp_path / "fleet-home"))
     # fleetd reads Claude's deny rules; the user's own settings must not decide a test
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-config"))

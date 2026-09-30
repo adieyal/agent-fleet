@@ -3,10 +3,13 @@ import os
 import subprocess
 import sys
 
+from fleet.composition import open_store
+
 
 def test_attention_commands_end_to_end(tmp_path):
     env = {**os.environ, "FLEET_CONFIG": str(tmp_path / "config.json"), "FLEET_STORE": str(tmp_path / "store.db")}
     (tmp_path / 'config.json').write_text(json.dumps({'projects': {'p-00000001': {'name': 'p1'}}}))
+    open_store(tmp_path / "store.db")
 
     def run(*args):
         result = subprocess.run([sys.executable, "-m", "fleet.cli", "attention", *args],

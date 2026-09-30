@@ -1093,6 +1093,7 @@ def build_parser() -> argparse.ArgumentParser:
     dispatch.add_argument("--host", required=True)
     dispatch.add_argument("--runtime", dest="agent", choices=("claude", "codex"), required=True)
     dispatch.add_argument("--cwd", required=True)
+    dispatch.add_argument("--permission", help="runtime permission, as for fleet send")
     dispatch.add_argument("--id")
     dispatch.add_argument("--json", action="store_true")
     dispatch.set_defaults(handler=command_dispatch_work, permission=None, model=None, allow=None,
@@ -1340,10 +1341,20 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> None:
     arguments = build_parser().parse_args(argv)
     try:
+        for name in ("FLEET_CONFIG", "FLEET_STORE"):
+            if name not in os.environ:
+                continue
+            path = Path(os.environ[name])
+            if path.exists():
+                continue
+            if name == "FLEET_STORE" and arguments.command == "web":
+                error_console.print(f"Creating new store at {path} (FLEET_STORE)", markup=False)
+            else:
+                raise FleetError(f"{name} points to a missing file: {path}")
         open_store()
         arguments.handler(arguments)
     except FleetError as error:
-        error_console.print(f"[red]fleet: {error}[/]")
+        error_console.print(f"fleet: {error}", style="red", markup=False)
         sys.exit(2)
     except KeyboardInterrupt:
         sys.exit(130)
