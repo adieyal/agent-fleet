@@ -1457,3 +1457,12 @@ body[data-readonly] #attnPanel[data-scope=all] .aa{display:flex}
   .rd-actions:has(.rd-step:not([hidden])){flex:1 0 100%;flex-wrap:wrap;justify-content:flex-end}
   .rd-actions .rd-step:not([hidden]){width:100%;justify-content:center;margin-right:0}
 }
+
+/* Audit 2 batch 2: Deck-log buttons and explicit absent-subject availability. */
+#feed .feed-open{display:flex;align-items:baseline;gap:8px;width:100%;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;min-width:0}
+#feed .feed-open:focus-visible{outline:2px solid var(--run);outline-offset:3px;border-radius:4px}
+#feed li[data-unavailable]{cursor:default;flex-wrap:wrap}
+#feed .feed-unavailable{flex:0 0 100%;padding-left:15px;font:11px var(--sans);color:var(--muted);white-space:normal}
+
+/* Audit 2 batch 2: long subject IDs must leave History's close control visible. */
+#itemHistoryPanel header>div{flex:1;min-width:0;white-space:normal;overflow-wrap:anywhere}

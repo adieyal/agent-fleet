@@ -2151,7 +2151,8 @@ def test_p5_all_rooms_attention_from_header(changed_deck: Deck, base_url: str, r
     panel = page.locator('#attnPanel')
     expect(panel).to_have_attribute('data-scope', 'all')
     expect(panel.locator('[data-attention-group="open"] .attn-item')).to_have_count(5)
-    expect(panel.locator('[data-id="p5-resolved"]')).to_have_count(0)
+    expect(panel.locator('[data-attention-group="open"] [data-id="p5-resolved"]')).to_have_count(0)
+    expect(panel.locator('[data-attention-group="resolved"] [data-id="p5-resolved"]')).to_have_attribute('data-state', 'resolved')
     expect(panel.locator('[data-id="p5-front-desk"]')).to_contain_text('Owner not reported')
     expect(panel.locator('[data-id="p5-owned"]')).to_contain_text('dispatcher')
     expect(panel.locator('[data-id="p5-owned"] .attn-place')).to_contain_text('Front desk')
@@ -2216,7 +2217,9 @@ def test_p5_global_actions_and_owner_navigation(changed_deck: Deck, base_url: st
     row.locator('[data-act="reopen"]').click()
     expect(panel.locator('[data-attention-group="open"] .attn-item')).to_have_count(3)
     row.locator('[data-act="resolve"]').click()
-    expect(row).to_have_count(0)
+    expect(row).to_have_attribute('data-state', 'resolved')
+    expect(panel.locator('[data-attention-group="open"] .attn-item')).to_have_count(2)
+    expect(row.locator('[data-act]')).to_have_count(0)
     page.locator('#toast [data-undo]').click()
     expect(row).to_have_attribute('data-state', 'open')
     expect(page.locator('#needYou')).to_have_attribute('aria-expanded', 'true')
@@ -2690,11 +2693,11 @@ def test_previous_and_next_step_through_open_attention_items(changed_deck: Deck,
     page.locator('.lantern[data-room="restoke"]').dispatch_event("click")
     page.locator('#attnPanel .attn-item[data-id="step2"] [data-context]').first.click()   # the newest
     expect(page.locator("#rdTitle")).to_have_text("Question 2")
-    expect(page.locator("#rdPos")).to_have_text(f"1 / {total}")
+    expect(page.locator("#rdPos")).to_have_text(f"1 / {total} · All rooms and owners")
     expect(page.locator("#rdPrev")).to_be_disabled()
     page.locator("#rdNext").click()
     expect(page.locator("#rdTitle")).to_have_text("Question 1")
-    expect(page.locator("#rdPos")).to_have_text(f"2 / {total}")
+    expect(page.locator("#rdPos")).to_have_text(f"2 / {total} · All rooms and owners")
     page.keyboard.press("ArrowLeft")
     expect(page.locator("#rdTitle")).to_have_text("Question 2")
     assert changed_deck.errors == []
@@ -3040,3 +3043,111 @@ def test_audit2_batch1_reader_drafts_and_legacy_session(changed_deck: Deck, requ
     expect(page.locator('#rdBody')).to_contain_text('session:home:session-id')
     shoot(request, page, f'audit2-batch1-session-{viewport}')
     page.unroute('**/api/decision?*')
+
+
+@pytest.mark.parametrize('viewport', VIEWPORTS)
+def test_audit2_batch2_resolved_context_and_real_history(changed_deck: Deck, deck_state, monkeypatch,
+                                                       request, viewport) -> None:
+    from fleet.projections.attention import attention_display, attention_items
+    store = open_store()
+    attention = open_attention(store)
+    monkeypatch.setattr(deck_state, 'store', store)
+    monkeypatch.setattr(deck_state, 'attention', attention)
+    item = attention.raise_item(project='restoke', kind='decision', owner='user', source='manual',
+        source_reference='batch2-resolved', headline='Which recovery?', context_reference='report:failure', actor='reporter')
+    attention.delegate(item.id, actor='adi', note='Review under the charter')
+    attention.take(item.id, actor='supervisor', reason='Choose recovery in person')
+    attention.resolve(item.id, details='Recovery discussed in the terminal', actor='adi')
+    page = changed_deck.page
+    page.set_viewport_size(VIEWPORTS[viewport])
+    document = deck_state.document()
+    document['attention'] = attention_items(attention, document['hosts'])
+    document['attention_display'] = attention_display(document['attention'], document['building'], document['projects'])
+    page.evaluate('doc => fleetDeck.apply(doc)', document)
+    page.locator('#needYou').click()
+    panel = page.locator('#attnPanel')
+    expect(panel.locator('.attn-empty')).to_contain_text('No open attention')
+    fold = panel.locator('[data-attention-group=resolved]')
+    expect(fold.locator('summary')).to_have_text('Resolved · 1')
+    expect(fold).not_to_have_attribute('open', '')
+    fold.locator('summary').click()
+    row = fold.locator(f'[data-id="{item.id}"]')
+    expect(row).to_contain_text('Recovery discussed in the terminal')
+    expect(row).to_contain_text('Resolved at')
+    expect(row.locator('[data-act], [data-owner]')).to_have_count(0)
+    before = store.latest_sequence()
+    row.get_by_role('button', name='History', exact=True).click()
+    history = page.locator('#itemHistoryPanel')
+    expect(history.locator('[data-audit-results]')).to_contain_text('Choose recovery in person')
+    expect(history.locator('[data-audit-results]')).to_contain_text('Review under the charter')
+    expect(history.locator('.audit-entries li')).to_have_count(4)
+    close_box = page.get_by_role('button', name='Close item history').bounding_box()
+    assert close_box['x'] >= 0 and close_box['x'] + close_box['width'] <= VIEWPORTS[viewport]['width'], close_box
+    shoot(request, page, f'audit2-batch2-history-{viewport}')
+    page.get_by_role('button', name='Close item history').click()
+    expect(fold).to_have_attribute('open', '')
+    row.get_by_role('button', name='Read context', exact=True).click()
+    expect(page.locator('#rdBody')).to_contain_text('Recovery discussed in the terminal')
+    expect(page.locator('#rdBody')).to_contain_text('Read-only')
+    expect(page.locator('#rdBody form, #rdBody [data-dismiss], #rdBody [data-scope]')).to_have_count(0)
+    page.get_by_role('button', name='Close reader', exact=True).click()
+    shoot(request, page, f'audit2-batch2-resolved-{viewport}')
+    fold.locator('summary').click()
+    expect(fold).not_to_have_attribute('open', '')
+    assert store.latest_sequence() == before
+    page.locator('#attnPanel [data-close]').click()
+    document['attention'] = []
+    document['attention_display'] = attention_display([], document['building'], document['projects'])
+    page.evaluate('doc => fleetDeck.apply(doc)', document)
+    page.locator('#needYou').click()
+    expect(panel.locator('.attn-empty')).to_contain_text('No open attention')
+    expect(panel.locator('[data-attention-group=resolved]')).to_have_count(0)
+    shoot(request, page, f'audit2-batch2-empty-{viewport}')
+    page.locator('#attnPanel [data-close]').click()
+
+
+@pytest.mark.parametrize('viewport', VIEWPORTS)
+def test_audit2_batch2_feed_availability(changed_deck: Deck, request, viewport) -> None:
+    page = changed_deck.page
+    page.set_viewport_size(VIEWPORTS[viewport])
+    page.evaluate("""async viewport => {
+        const { feed } = await import('/js/model.js');
+        feed.unshift({host: 'home', id: 'absent-batch2-' + viewport, label: 'absent', live: false,
+                      ev: {kind: 'tool', tool: 'bash', summary: 'Retained absent subject activity', ts: 200}});
+        (await import('/js/panel.js')).renderFeed();
+    }""", viewport)
+    absent = page.locator(f'#feedList li[data-key="home:absent-batch2-{viewport}"]')
+    expect(absent).to_contain_text('Subject unavailable')
+    expect(absent).to_have_attribute('title', re.compile('not available in the current deck'))
+    expect(absent.locator('button')).to_have_count(0)
+    assert absent.locator('.s').bounding_box()['width'] > 30
+    absent.scroll_into_view_if_needed()
+    shoot(request, page, f'audit2-batch2-feed-{viewport}')
+    live = page.locator('#feedList li[data-key="home:a1c3e9"] button').first
+    expect(live).to_have_attribute('title', re.compile('Open job'))
+    live.click()
+    expect(page.locator('#panel')).to_have_class('open')
+    page.locator('#panel #close').click()
+    page.evaluate("""async viewport => {
+        const { feed } = await import('/js/model.js');
+        const index = feed.findIndex(f => f.id === 'absent-batch2-' + viewport);
+        feed.splice(index, 1);
+        (await import('/js/panel.js')).renderFeed();
+    }""", viewport)
+
+
+@pytest.mark.parametrize('viewport', VIEWPORTS)
+def test_audit2_batch2_missing_workarea(changed_deck: Deck, request, viewport) -> None:
+    page = changed_deck.page
+    page.set_viewport_size(VIEWPORTS[viewport])
+    page.evaluate("""async () => {
+        const { workOf } = await import('/js/model.js');
+        const job = workOf('home:a1c3e9').job;
+        job.project = null;
+        fleetDeck.select('home:a1c3e9');
+    }""")
+    workarea = page.locator('#panel [data-workarea]')
+    expect(workarea).to_be_disabled()
+    expect(workarea).to_have_attribute('title', 'No project label reported; no room workarea is available')
+    shoot(request, page, f'audit2-batch2-workarea-{viewport}')
+    page.locator('#panel #close').click()

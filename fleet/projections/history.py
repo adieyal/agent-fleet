@@ -135,8 +135,13 @@ def subject_history(store: Store, reference: str, since: datetime | None = None)
             entries.append(entry(row, kind, identity, change_list))
     else:
         parts = WORK_PARTS if kind == "work item" else ("records:",) if kind == "decision" else ()
-        for row in store.history(subjects=(subject,), prefixes=parts, since=since):
+        owner_subject = subject + ':owner' if kind == 'attention' else None
+        subjects = (subject, owner_subject) if owner_subject is not None else (subject,)
+        for row in store.history(subjects=subjects, prefixes=parts, since=since):
             before, after = parse(row["from"]), parse(row["to"])
+            if row["subject"] == owner_subject:
+                entries.append(entry(row, 'attention ownership', identity, changes(before, after)))
+                continue
             if row["subject"] != subject:
                 record = after if isinstance(after, dict) else before if isinstance(before, dict) else {}
                 if identity not in (record.get("work_item"), record.get("from_item"), record.get("to_item"),

@@ -114,7 +114,9 @@ export function openAttentionReader(item) {
   renderReaderHead();
   renderReaderBody();
   rdSheet.focus();
-  if (item.kind === 'decision' || item.blocked) loadDecision(item.id, rd.req);
+  if (item.state === 'resolved') {
+    rdBody.querySelector('.prose').insertAdjacentHTML('beforeend', `<p role="note">Read-only: this attention item is resolved. Reading changes no stored state.</p><p>${esc(item.resolution_details || 'Resolution details not recorded')}</p>`);
+  } else if (item.kind === 'decision' || item.blocked) loadDecision(item.id, rd.req);
   else if (item.kind === 'blocker') renderBlockerHelp(rdBody.querySelector('.prose'));
 }
 async function loadDecision(id, req) {

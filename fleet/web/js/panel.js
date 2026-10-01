@@ -220,7 +220,7 @@ export function renderPanel() {
     ${cmds.map(c => `<div class="cmd"><code>${esc(c)}</code><button data-copy="${esc(c)}">copy</button></div>`).join('')}`];
   const docs = docsPanelHtml(e);
   const workarea = `<button class="wa-open" data-workarea="${esc(j.project ?? '')}"${
-    j.project ? '' : ' disabled'} title="Open this room's workarea: plan wall, question desk and report tray">Workarea</button>`;
+    j.project ? '' : ' disabled'} title="${j.project ? "Open this room's workarea: plan wall, question desk and report tray" : "No project label reported; no room workarea is available"}">Workarea</button>`;
   patchPanel(headHtml, workarea, {
     summary: summarySections(selectedKey, j, false, rows, attentionFor(selectedKey), expanded),
     activity,
@@ -564,14 +564,21 @@ function isCodeEvent(ev) { return ev.kind === 'tool' && CODE_TOOLS.has(ev.tool);
 export function renderFeed() {
   const ul = document.getElementById('feedList');
   if (!feed.length) { ul.innerHTML = '<li class="empty">Nothing has happened yet.</li>'; return; }
-  ul.innerHTML = feed.map(f => `<li class="${f.ev.kind === 'error' ? 'err ' : ''}${f.isNew ? 'new' : ''}" data-key="${esc(f.host + ':' + f.id)}">
-    <i style="background:${hostLook(f.host).color}"></i>${f.live ? '<span class="lv">LIVE</span>' : ''}<b>${esc(f.host)}:${esc(f.label)}</b><span class="k">${esc(eventIcon(f.ev))}</span>
-    <span class="s${isCodeEvent(f.ev) ? ' code' : ''}">${esc(f.ev.summary)}</span><time>${clock(f.ev.ts)}</time></li>`).join('');
+  ul.innerHTML = feed.map(f => {
+    const key = f.host + ':' + f.id, present = !!workOf(key);
+    const content = `<i style="background:${hostLook(f.host).color}"></i>${f.live ? '<span class="lv">LIVE</span>' : ''}<b>${esc(f.host)}:${esc(f.label)}</b><span class="k">${esc(eventIcon(f.ev))}</span>
+      <span class="s${isCodeEvent(f.ev) ? ' code' : ''}">${esc(f.ev.summary)}</span><time>${clock(f.ev.ts)}</time>`;
+    const unavailable = 'This subject is not available in the current deck; retained activity is read-only and no live panel is available';
+    return `<li class="${f.ev.kind === 'error' ? 'err ' : ''}${f.isNew ? 'new' : ''}" data-key="${esc(key)}"${present ? '' : ` data-unavailable title="${unavailable}"`}>
+      ${present ? `<button class="feed-open" data-feed-open="${esc(key)}" title="Open ${f.live ? 'session' : 'job'} ${esc(key)}; changes no stored state">${content}</button>` : `${content}<small class="feed-unavailable">Subject unavailable</small>`}</li>`;
+  }).join('');
   for (const f of feed) f.isNew = false;
 }
 document.getElementById('feedList').addEventListener('click', ev => {
-  const li = ev.target.closest('li[data-key]');
-  if (li && workOf(li.dataset.key)) select(li.dataset.key);
+  const button = ev.target.closest('[data-feed-open]');
+  if (!button) return;
+  if (workOf(button.dataset.feedOpen)) select(button.dataset.feedOpen);
+  else { renderFeed(); showToast('This subject is not available in the current deck; retained activity remains in Deck log.'); }
 });
 export function updateHint() {
   const hint = document.getElementById('hint');

@@ -180,6 +180,16 @@ function readerConsequence(item) {
 function renderItem(i, global) {
   const owner = typeof i.owner === 'object' ? i.owner : null;
   const present = owner?.key && !!workOf(owner.key);
+  if (i.state === 'resolved') {
+    return `<li class="attn-item" data-id="${esc(i.id)}" data-state="resolved" data-kind="${esc(i.kind)}">
+      <span class="ak">${GLYPH[i.kind]}</span><div class="ab"><b>${esc(i.summary)}</b>
+        <small class="attn-place">${esc(placeName(i))} · ${idChip(i.id)}</small><small class="attn-owner">${ownerMeta(i.owner)}</small>
+        <small>${itemKind(i)} · resolved · ${i.resolved_at ? `Resolved at ${esc(new Date(i.resolved_at * 1000).toLocaleString())}` : 'Resolution time not recorded'}</small>
+        <p class="attn-resolution">${esc(i.resolution_details || 'Resolution details not recorded')}</p>
+        <p class="attn-consequence">Read-only: context and History change no stored state.</p>
+        <div class="aa"><button data-context="${esc(i.id)}" title="Read this resolved item's context; changes no stored state">Read context</button><button data-item-attention-history="${esc(i.id)}" title="Read who changed this item; opening changes no stored state">History</button></div>
+      </div></li>`;
+  }
   const state = i.state === 'snoozed' ? `snoozed until ${esc(clock(i.snoozed_until).slice(0, 5))}` : i.state;
   const ownership = i.owned_by === 'agent'
     ? '<button data-act="take" title="Move this to you; the agent stops acting on it">Take back</button>'
@@ -212,9 +222,10 @@ function renderPanel() {
   const agentRows = (global ? items.filter(i => i.state !== 'resolved') : listed).filter(i => i.owned_by === 'agent');
   const userRows = listed.filter(i => i.owned_by !== 'agent');
   const room = global ? null : lanterns.get(listRoom)?.room;
+  const resolved = global ? items.filter(i => i.state === 'resolved').sort((a, b) => (b.resolved_at ?? b.last_seen) - (a.resolved_at ?? a.last_seen)) : [];
   const others = global ? items.filter(i => i.owned_by !== 'agent' && (i.state === 'acknowledged' || i.state === 'snoozed')) : [];
   panel.innerHTML = `<div class="ah"><h3>${global ? 'All-rooms attention' : esc(room ? room.label : listRoom)}</h3><button data-close aria-label="Close">✕</button></div>
-    ${global ? `<p class="attn-guide">Every room and the front desk. Existing items stay with you; new items can route to an agent when a triage mandate is confirmed. Acknowledge marks seen; Snooze hides for 1 hour. Reopen returns either to open attention; work stays unchanged.</p><p class="attn-status" role="status">${esc(panelStatus)}</p>${userRows.length ? renderGroup(userRows, 'open', 'Open') : `<p class="attn-empty">${agentRows.length ? 'No open items need you; agent-owned items remain below.' : 'No open attention items across the fleet.'}</p>`}${agentRows.length ? renderGroup(agentRows, 'agent', 'With agent', true) : ''}${others.length ? renderGroup(others, 'other', 'Acknowledged and snoozed', true) : ''}`
+    ${global ? `<p class="attn-guide">Every room and the front desk. Existing items stay with you; new items can route to an agent when a triage mandate is confirmed. Acknowledge marks seen; Snooze hides for 1 hour. Reopen returns either to open attention; work stays unchanged.</p><p class="attn-status" role="status">${esc(panelStatus)}</p>${userRows.length ? renderGroup(userRows, 'open', 'Open') : `<p class="attn-empty">${agentRows.length ? 'No open items need you; agent-owned items remain below.' : 'No open attention items across the fleet.'}</p>`}${agentRows.length ? renderGroup(agentRows, 'agent', 'With agent', true) : ''}${others.length ? renderGroup(others, 'other', 'Acknowledged and snoozed', true) : ''}${resolved.length ? renderGroup(resolved, 'resolved', 'Resolved', true) : ''}`
       : `<ul>${userRows.map(i => renderItem(i, false)).join('')}</ul>${agentRows.length ? renderGroup(agentRows, 'agent', 'With agent', true) : ''}`}`;
   for (const fold of panel.querySelectorAll('details[data-attention-group]')) fold.addEventListener('toggle', ev => {
     const key = ev.target.dataset.attentionGroup;

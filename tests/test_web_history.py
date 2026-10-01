@@ -53,3 +53,35 @@ def test_bad_requests_say_what_is_wrong(base_url, item):
     assert failure(base_url) == (400, "subject is required")
     assert failure(base_url, subject=item.id, since="soon") == (400, "not an ISO date or time: soon")
     assert failure(base_url, subject="zzzz") == (404, "no history for 'zzzz'")
+
+
+def test_attention_history_includes_ownership_and_reasons(base_url, deck_state, monkeypatch, project_id, capsys):
+    store = composition.open_store()
+    monkeypatch.setattr(deck_state, 'store', store)
+    attention = composition.open_attention(store)
+    item = attention.raise_item(project=project_id, kind='alert', owner='user', source='manual',
+        source_reference='ownership-history', headline='Review failure', context_reference='report', actor='reporter')
+    other = attention.raise_item(project=project_id, kind='alert', owner='user', source='manual',
+        source_reference='other-history', headline='Unrelated', context_reference='other', actor='reporter')
+    attention.delegate(item.id, actor='adi', note='Triage under the charter')
+    attention.take(item.id, actor='supervisor', reason='User must choose the recovery')
+    attention.delegate(other.id, actor='other-actor', note='Unrelated handover')
+    attention.acknowledge(item.id, actor='adi')
+    before = store.latest_sequence()
+    result = get(base_url, subject='attention:' + item.id)
+    assert [e['actor'] for e in result['entries']] == ['adi', 'supervisor', 'adi', 'reporter']
+    owners = [e for e in result['entries'] if e['subject'].endswith(':owner')]
+    assert [e['subject'] for e in owners] == ['attention:' + item.id + ':owner'] * 2
+    assert all(e['kind'] == 'attention ownership' and e['id'] == item.id for e in owners)
+    assert owners[0]['changes'] == [
+        {'field': 'owner', 'before': 'agent', 'after': 'user'},
+        {'field': 'reason', 'before': None, 'after': 'User must choose the recovery'}]
+    assert owners[1]['changes'] == [
+        {'field': 'owner', 'before': 'user', 'after': 'agent'},
+        {'field': 'reason', 'before': None, 'after': 'Triage under the charter'}]
+    assert get(base_url, subject='attention:' + item.id[:8]) == result
+    assert get(base_url, subject=item.id) == result
+    assert get(base_url, subject=item.id, since='2999-01-01')['entries'] == []
+    cli.main(['history', '--subject', item.id[:8], '--json'])
+    assert json.loads(capsys.readouterr().out) == result
+    assert store.latest_sequence() == before
