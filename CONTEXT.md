@@ -149,7 +149,7 @@ A project's prose principles for every agent working in it: goals, anti-goals, h
 _Avoid_: policy, rules file
 
 **Charter**:
-An epic's prose guidance: its goal, what done means, anti-goals, canonical line, dated decisions in force and open questions. It is `charters/<epic-id>.md` in the management repository and inherits the constitution version in force when it was written. A task brief overrides the charter, and the charter overrides the constitution.
+An epic's prose guidance: its goal, what done means, anti-goals, canonical line, dated decisions in force and open questions. It is `charters/<epic-id>.md` in the management repository and inherits the constitution version in force when it was written. A task brief overrides the charter, and the charter overrides the constitution. A job dispatched on a work item receives the constitution and its nearest epic's charter as `CONSTITUTION.md` and `CHARTER.md`; the dispatch action pins their versions, so a retry gets the same text and a decision can name what it relied on.
 
 **Acceptance**:
 The transition that marks a work item complete against its completion criteria. It records the actor, mandate version, evidence and outcome, and is separate from any run finishing. Every criterion must be met in the way it declares: an orchestrator cannot accept a checked criterion without the check, or one reserved for the user. An orchestrator may accept only within its mandate; otherwise the decision becomes an attention item.

@@ -53,6 +53,15 @@ class WorkFacade:
     def get(self, identity: str) -> WorkItem:
         return self.repository.get("item", identity)
 
+    def nearest_epic(self, identity: str) -> WorkItem | None:
+        """The item itself if it is an epic, else its closest epic ancestor."""
+        item = self.get(identity)
+        while item.kind != "epic":
+            if item.parent is None:
+                return None
+            item = self.get(item.parent)
+        return item
+
     def list(self, *, project: str | None = None) -> list[WorkItem]:
         return [item for item in self.repository.list("item") if project is None or item.project == project]
 

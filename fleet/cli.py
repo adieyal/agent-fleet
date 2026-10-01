@@ -8,6 +8,7 @@ import re
 import shlex
 import subprocess
 import sys
+import tempfile
 import time
 from collections import defaultdict
 from dataclasses import asdict
@@ -29,7 +30,7 @@ from fleet.projections.project import project_status
 from fleet.modules.work import RELATION_TYPES, EvidenceSpecification
 from fleet.modules.execution import Run
 from fleet.transport import FleetError, Host, HostReport
-from fleet.orchestration import ControllerCommands, orchestrator_prompt
+from fleet.orchestration import ControllerCommands, guide, orchestrator_prompt
 from fleet.composition import open_authority
 from fleet.web.server import serve, serve_fixture
 
@@ -288,9 +289,11 @@ def command_dispatch(arguments: argparse.Namespace) -> None:
     execution = open_execution()
     key = str(uuid4()) if arguments.id is None else arguments.id
     try:
+        payload, guidance = guide(open_records(), arguments.work_item,
+            {"cwd": arguments.cwd, "arguments": fleetd_arguments, "steps": steps,
+             "context": arguments.context, "hold": arguments.hold})
         intent = execution.dispatch(arguments.work_item, host=host.name, runtime=arguments.agent,
-            payload={"cwd": arguments.cwd, "arguments": fleetd_arguments, "steps": steps,
-                     "context": arguments.context, "hold": arguments.hold}, project=project_id,
+            payload=payload, project=project_id, guidance=guidance,
             actor="user", reason=arguments.description, idempotency_key=key, remote_job_id=arguments.id)
     except (ValueError, LookupError) as error:
         raise FleetError(str(error)) from error
@@ -315,7 +318,16 @@ def deliver_dispatch(run: Run, *, reconcile: bool = False) -> dict:
     host = transport.host_by_name(run.host)
     return open_execution().deliver(run,
         lambda arguments, stdin: transport.call(host, arguments, stdin_text=stdin),
-        lambda job, context: push_context(host, job, context), reconcile=reconcile)
+        lambda job, context, guidance: push_guided_context(host, job, context, guidance), reconcile=reconcile)
+
+
+def push_guided_context(host: Host, job_id: str, paths: list[str], guidance: dict | None) -> None:
+    """Context paths plus the pinned constitution and charter, written as CONSTITUTION.md and CHARTER.md."""
+    if guidance is None:
+        push_context(host, job_id, paths)
+        return
+    with tempfile.TemporaryDirectory(prefix="fleet-guidance-") as directory:
+        push_context(host, job_id, paths + open_records().write_guidance_files(guidance, directory))
 
 
 def command_orchestrate(arguments: argparse.Namespace) -> None:
@@ -329,8 +341,9 @@ def command_orchestrate(arguments: argparse.Namespace) -> None:
         records = open_records(store)
         _, mandate = records.mandate_version(activation.project, activation.mandate_path,
                                              revision=activation.mandate_version)
-        prompt = orchestrator_prompt(activation, mandate)
-        worker = ['create', '--project', activation.project, '--description', 'Orchestrate work item',
+        payload, guidance = guide(records, activation.work_item, dict(
+            steps=[dict(prompt=orchestrator_prompt(activation, mandate), title='Orchestrate')], context=None))
+        worker =['create', '--project', activation.project, '--description', 'Orchestrate work item',
                   '--agent', arguments.agent, '--cwd', arguments.cwd, '--steps-file', '/dev/stdin', '--hold']
         if arguments.permission is not None:
             worker += ['--permission', arguments.permission]
@@ -338,9 +351,9 @@ def command_orchestrate(arguments: argparse.Namespace) -> None:
             if name in os.environ:
                 worker += ['--env', name + '=' + os.environ[name]]
         intent = open_execution(store).dispatch(activation.work_item, actor=activation.actor,
-            activation=activation.id, host=host.name, runtime=arguments.agent,
-            payload=dict(cwd=arguments.cwd, arguments=worker, steps=[dict(prompt=prompt, title='Orchestrate')],
-                         context=None, hold=False), reason='Orchestrate work item', idempotency_key=activation.id)
+            activation=activation.id, host=host.name, runtime=arguments.agent, guidance=guidance,
+            payload=dict(payload, cwd=arguments.cwd, arguments=worker, hold=False),
+            reason='Orchestrate work item', idempotency_key=activation.id)
         deliver_dispatch(intent.run)
     except (ValueError, LookupError) as error:
         raise FleetError(str(error)) from error
@@ -969,6 +982,11 @@ def print_status_item(item: dict[str, Any], depth: int = 0) -> None:
         for field in ("runtime", "reason", "start", "end", "last_observed", "usage"):
             value = "unknown" if run[field] is None else run[field]
             print(f"{indent}      {field.replace('_', ' ').capitalize()}: {value}")
+        guidance = run["guidance"]
+        attached = "none attached" if guidance is None else ", ".join(
+            f"{name} version {guidance[name]['version']}" for name in ("constitution", "charter")
+            if guidance[name] is not None)
+        print(f"{indent}      Guidance: {attached}")
     print(f"{indent}  Library:")
     for entry in item["library"]:
         title = "unknown" if entry["title"] is None else entry["title"]

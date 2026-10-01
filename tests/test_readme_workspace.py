@@ -31,7 +31,9 @@ def test_workspace_guide(tmp_path, monkeypatch, capsys):
                     status='running' if arguments[0] == 'start' else 'queued',
                     steps=[{}], description='Review')
 
+    pushed = []
     monkeypatch.setattr(cli.transport, 'call', call)
+    monkeypatch.setattr(cli, 'push_context', lambda host, job, paths: pushed.append(sorted(Path(p).name for p in paths)))
     for language, block in re.findall(r'```(bash|python)\n(.*?)```', section, re.S):
         for name, value in values.items():
             block = block.replace(name, value)
@@ -64,6 +66,7 @@ def test_workspace_guide(tmp_path, monkeypatch, capsys):
             elif args[1:3] == ['run', 'link']:
                 values['RUN_ID'] = json.loads(output)['id']
     assert len(calls) == 6  # dispatch, send and orchestrate each create then start
+    assert pushed == [['CONSTITUTION.md']] * 3  # the guide's constitution reaches each job
     for create in calls[::2]:
         assert create[create.index('--permission') + 1] == 'workspace-write'
     assert composition.open_work().summary(values['WORK_ID']).purpose == 'Ship the guide'

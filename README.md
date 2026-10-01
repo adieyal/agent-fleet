@@ -177,7 +177,10 @@ A project's constitution and each epic's charter are Markdown in the management
 repository; every edit is a new version committed with its actor. Give an epic ID
 instead of a project to work on its charter, which shows the constitution version
 it inherits. Without `--file`, `edit` reads stdin; `show --version N` prints an
-older version from `history`.
+older version from `history`. A job sent, dispatched or orchestrated on a work item
+gets the constitution and its nearest epic's charter as `CONSTITUTION.md` and
+`CHARTER.md` in its context directory, and a short paragraph on applying them;
+`fleet status` shows the versions each run received.
 
 ```bash
 fleet guidance edit PROJECT_ID --file CONSTITUTION_PATH --actor user

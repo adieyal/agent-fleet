@@ -2,10 +2,11 @@
 
 import json
 from dataclasses import asdict, replace
+from pathlib import Path
 from uuid import uuid4
 
 from .application import Authoring
-from .domain import CONSTITUTION, Guidance, Mandate, Version, charter_path
+from .domain import CONSTITUTION, GUIDANCE_FILES, Guidance, Mandate, Version, charter_path
 
 
 class RecordsFacade:
@@ -110,6 +111,35 @@ class RecordsFacade:
         if record is None:
             return []
         return self.versions(root, path, record['revision'])
+
+    def dispatch_guidance(self, work_item: str) -> dict | None:
+        """Current constitution and nearest-epic charter versions for a job on work_item; None when neither is
+        recorded, so an unguided project dispatches as before."""
+        project = self.work.get(work_item).project
+        epic = self.work.nearest_epic(work_item)
+        paths = dict(constitution=CONSTITUTION, charter=None if epic is None else charter_path(epic.id))
+        records = {name: None if path is None else self.repository.current(project, path)
+                   for name, path in paths.items()}
+        if not any(records.values()):
+            return None
+        root = self.workspace.management_repository(project)
+        guidance = dict(project=project, epic=None if epic is None else epic.id)
+        for name, record in records.items():
+            version = None if record is None else self.versions(root, paths[name], record['revision'])[0]
+            guidance[name] = None if version is None else dict(path=paths[name], revision=version.revision,
+                                                                 version=version.number)
+        return guidance
+
+    def write_guidance_files(self, guidance: dict, directory) -> list[str]:
+        """Write the pinned versions as CONSTITUTION.md and CHARTER.md into directory."""
+        root = self.workspace.management_repository(guidance['project'])
+        written = []
+        for name, file in GUIDANCE_FILES.items():
+            if guidance[name] is not None:
+                target = Path(directory) / file
+                target.write_text(self.writer.read(root, guidance[name]['path'], guidance[name]['revision']))
+                written.append(str(target))
+        return written
 
     def guidance_path(self, project: str, epic: str | None) -> str:
         if epic is None:

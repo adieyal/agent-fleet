@@ -34,6 +34,20 @@ class Guidance:
     constitution: Version | None = None
 
 
+GUIDANCE_FILES = {'constitution': 'CONSTITUTION.md', 'charter': 'CHARTER.md'}
+GUIDANCE_ROLES = {'constitution': "the project's constitution", 'charter': "your epic's charter"}
+
+
+def guidance_brief(guidance: dict, work_item: str) -> str:
+    """The paragraph a guided job's first step opens with."""
+    files = ' and '.join(f'{GUIDANCE_FILES[name]} ({GUIDANCE_ROLES[name]})' for name in GUIDANCE_FILES
+                         if guidance[name] is not None)
+    return (f"Guidance: your context directory has {files}. This brief overrides the "
+            "charter, and the charter overrides the constitution. Decide yourself what they allow, and record each "
+            f"decision with `fleet decision record --work-item {work_item} --question Q --answer A --principle P "
+            "--actor A`, naming the principle you relied on. Escalate what they say to escalate.")
+
+
 @dataclass(frozen=True)
 class Mandate:
     goal: str

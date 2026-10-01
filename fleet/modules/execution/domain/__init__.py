@@ -57,6 +57,8 @@ class Action:
     payload: dict | None = None
     activation: str | None = None
     mandate_version: str | None = None
+    # The constitution and charter versions attached to the job, pinned for retries and decisions.
+    guidance: dict | None = None
 
 
 @dataclass(frozen=True)
