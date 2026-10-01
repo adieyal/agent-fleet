@@ -17,6 +17,7 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from rich.console import Console, Group
 from rich.live import Live
@@ -1169,27 +1170,42 @@ def describe_guidance(guidance: dict) -> str:
                      if guidance[name] is not None)
 
 
-def decision_run(reference: str | None) -> str | None:
-    """The run named, else the run of the fleet job this agent runs in (FLEET_JOB_ID), else None."""
-    if reference is not None:
-        return reference
-    job = os.environ.get("FLEET_JOB_ID")
-    if job is None:
-        return None
+def job_run(job: str) -> str | None:
+    """The run this machine's store holds for the fleet job, or None when it holds none."""
     runs = [run for run in open_execution().runs() if run.remote_job_id == job]
     if len(runs) > 1:
         raise FleetError(f"job {job} matches runs on several hosts; give --run")
-    if not runs:
-        error_console.print(f"fleet: job {job} is not a recorded run; the decision has no source run", markup=False)
-        return None
-    return runs[0].id
+    return runs[0].id if runs else None
+
+
+def hand_decision_to_job(job: str, arguments: argparse.Namespace) -> str:
+    """Give the decision to this host's fleetd to hold on the job; the controller records it from the job's stream."""
+    decision = {"id": str(uuid4()), "work_item": arguments.work_item, "question": arguments.question,
+                "answer": arguments.answer, "principle": arguments.principle, "actor": arguments.actor,
+                "context": arguments.context, "time": time.time()}
+    if not all(decision[name].strip() for name in ("work_item", "question", "answer", "principle", "actor")):
+        raise FleetError("work item, question, answer, principle and actor are required")
+    held = transport.call(Host(os.uname().nodename, None), ["decision", job, "--schema-version", "1"],
+                          stdin_text=json.dumps(decision))
+    return held["id"]
 
 
 def command_decision_record(arguments: argparse.Namespace) -> None:
+    """Record into this machine's store, unless inside a fleet job whose run another machine's store holds.
+
+    That store dispatched the job, so it is the job's controller; the decision reaches it on the job's stream.
+    """
+    job = os.environ.get("FLEET_JOB_ID")
+    run = arguments.run if arguments.run is not None or job is None else job_run(job)
+    if run is None and job is not None:
+        identity = hand_decision_to_job(job, arguments)
+        print(f"Decision {identity} handed to the controller via job {job}'s stream; "
+              f"it is recorded there when the controller next hears from this host.")
+        return
     try:
         decision = open_decisions().record_guided(arguments.work_item, actor=arguments.actor,
             question=arguments.question, answer=arguments.answer, principle=arguments.principle,
-            context=arguments.context, source_run=decision_run(arguments.run))
+            context=arguments.context, source_run=run)
     except (ValueError, LookupError) as error:
         raise FleetError(str(error)) from error
     print(json.dumps(asdict(decision), default=lambda value: value.isoformat()))

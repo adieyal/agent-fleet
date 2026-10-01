@@ -190,7 +190,11 @@ fleet guidance history PROJECT_ID
 
 An agent records what it decided itself, naming the principle it relied on. Inside
 a fleet job the decision is linked to the job's run and the guidance versions it
-received; elsewhere give `--run` or leave the versions unknown. List decisions for
+received; elsewhere give `--run` or leave the versions unknown. When the job's
+run is held by another machine's store (a job on `home` dispatched from the
+controller on `carbon`), the command hands the decision to the host's fleetd and
+prints its id: the controller records it from the job's stream when `fleet web`
+next hears from that host, and raises an alert if it cannot. List decisions for
 a project or an epic (`--epic EPIC_ID`), newest first.
 
 ```bash
