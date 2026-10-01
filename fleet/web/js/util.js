@@ -18,6 +18,13 @@ export function seeded(seed) { let a = seed >>> 0; return () => { a |= 0; a = a 
 export function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 export function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 export function clock(ts) { if (!ts) return ''; return new Date(ts * 1000).toTimeString().slice(0, 8); }
+// A moment to the minute: "08:15" today, "29 Sep 08:15" before.
+export function stamp(ts) {
+  if (!ts) return '';
+  const d = new Date(ts * 1000), time = d.toTimeString().slice(0, 5);
+  return d.toDateString() === new Date().toDateString() ? time
+    : `${d.getDate()} ${d.toLocaleString('en', { month: 'short' })} ${time}`;
+}
 export function age(ts) {
   if (!ts) return '';
   const s = Math.max(0, Math.round(Date.now() / 1000 - ts));

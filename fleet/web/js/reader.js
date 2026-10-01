@@ -1,7 +1,7 @@
 // Document reader: loads a job or library document and renders it with a table of contents.
 
 import { DEMO, REDUCED } from './env.js';
-import { age, clamp, esc, store } from './util.js';
+import { age, clamp, esc, stamp, store } from './util.js';
 import { hostLook } from './looks.js';
 import { DOC_KIND, isUpdating, jobDocSequence, kindOf } from './docs3d.js';
 import { hideDocTip } from './camera.js';
@@ -85,7 +85,7 @@ export function openAttentionReader(item) {
   rd.req++;
   rd.key = `attention:${item.id}`;
   rd.source = 'attention';
-  rd.doc = { id: item.id, name: item.summary, kind: 'file' };
+  rd.doc = { id: item.id, name: item.summary, kind: 'file', seen: item.last_seen };
   const lines = [item.summary, `Source: ${item.source}`, `Context: ${item.context_reference}`,
     `State: ${item.state}`, `Last seen: ${new Date(item.last_seen * 1000).toISOString()}`];
   rd.data = { name: item.summary, markdown: lines.join('\n\n'), html: lines.map(line => `<p>${esc(line)}</p>`).join(''), toc: [] };
@@ -261,7 +261,7 @@ function renderReaderHead() {
   document.getElementById('rdTitle').textContent = rd.source === 'library' ? (d.title || doc.title || d.name || doc.name) : (d.name || doc.name);
   const step = d.step ?? doc.step;
   document.getElementById('rdMeta').innerHTML = [
-    rd.source === 'attention' ? `<span>Attention item · ${esc(doc.id)}</span>`
+    rd.source === 'attention' ? `<span>Attention item · ${esc(doc.id)}</span><span title="${esc(new Date(doc.seen * 1000).toLocaleString())}">${stamp(doc.seen)} · ${age(doc.seen)} ago</span>`
       : rd.source === 'library' ? `<span>${esc(doc.project)} · ${esc(doc.id)}</span>`
       : rd.source === 'stored' && !rd.host ? `<span>working · ${esc(doc.id)}</span>`
       : `<span title="${esc(d.job_description || rd.job.description)}"><i class="hd" style="background:${hostLook(rd.host).color}"></i>${esc(rd.host)} · ${esc(rd.job.id)} · ${esc(d.agent || rd.job.agent)}</span>`,

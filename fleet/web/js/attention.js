@@ -9,7 +9,7 @@
 import * as THREE from 'three';
 import { animationNow } from './clock.js';
 import { BOT_H, RD, REDUCED, RW, vh, vw } from './env.js';
-import { clock, esc } from './util.js';
+import { clock, esc, stamp } from './util.js';
 import { G, deckGroup, softDot, toScreen } from './scene.js';
 import { workOf } from './model.js';
 import { select } from './panel.js';
@@ -143,7 +143,7 @@ function renderPanel() {
       return `<li class="attn-item" data-id="${esc(i.id)}" data-state="${esc(i.state)}" data-kind="${esc(i.kind)}">
         <span class="ak">${GLYPH[i.kind]}</span>
         <div class="ab"><b>${esc(i.summary)}</b>
-          <small>${KIND[i.kind]} · ${state}${i.stale ? ' · host unreachable' : ''}</small>
+          <small>${KIND[i.kind]} · ${state} · <time title="${esc(new Date(i.last_seen * 1000).toLocaleString())}">${stamp(i.last_seen)}</time>${i.stale ? ' · host unreachable' : ''}</small>
           ${present ? `<button class="owner" data-owner="${esc(owner.key)}" title="${esc(owner.key)}">${owner.type === 'job' ? 'Open job' : 'Open session'} ${esc(ownerName(owner))}</button>`
                     : `<button class="owner" data-context="${esc(i.id)}">Open context</button>`}
           ${i.refusals ? `<button class="owner" data-context="${esc(i.id)}">Review refused commands</button>`
