@@ -107,6 +107,9 @@ def changed_deck(request: pytest.FixtureRequest, loaded_decks: Callable[[str, st
     try:
         yield deck
     finally:
+        # the test has asserted on its own errors; a failed one must not fail every later test on this page
+        deck.errors.clear()
+        deck.page.set_viewport_size(VIEWPORTS["desktop"])
         deck.page.keyboard.press("Escape")
         deck.page.keyboard.press("Escape")
         deck.page.evaluate("""doc => {
@@ -502,6 +505,7 @@ def test_room_guidance_edit_history_decisions_and_promote(changed_deck: Deck, de
     page.evaluate("fleetDeck.enterFloor('restoke-v2')")
     card = page.locator('[data-constitution-card]')
     expect(card).to_contain_text('Not recorded')
+    shoot(request, page, 'guidance-floor')
     card.get_by_role('button', name='Constitution').click()
     expect(route).to_have_attribute('data-level', 'constitution')
     expect(route.locator('[data-guidance="constitution"]')).to_contain_text('No constitution recorded.')
@@ -511,6 +515,7 @@ def test_room_guidance_edit_history_decisions_and_promote(changed_deck: Deck, de
     page.get_by_role('button', name='Save a new version').click()
     expect(route.locator('[data-guidance-version]')).to_contain_text('version 1 · web-user')
     expect(route.locator('[data-guidance-body] h2')).to_have_text('Decide yourself')
+    shoot(request, page, 'guidance-constitution')
     page.keyboard.press('Escape')
     expect(card).to_contain_text('version 1 · web-user')
 
@@ -522,6 +527,7 @@ def test_room_guidance_edit_history_decisions_and_promote(changed_deck: Deck, de
     expect(decisions.first.locator('[data-promote]')).to_have_count(0)   # nothing to promote into yet
     page.get_by_role('button', name='Write the charter').click()
     page.locator('[data-guidance-text]').fill('# Charter\n\n## Decisions in force\n\n1. One.\n')
+    shoot(request, page, 'guidance-editor')
     page.get_by_role('button', name='Save a new version').click()
     charter = route.locator('[data-guidance="charter"]')
     expect(charter.locator('[data-inherits]')).to_have_text('Inherits constitution version 1')
@@ -530,15 +536,23 @@ def test_room_guidance_edit_history_decisions_and_promote(changed_deck: Deck, de
     expect(charter.locator('[data-guidance-body] li')).to_have_count(2)
     expect(charter.locator('[data-guidance-body] li').nth(1)).to_contain_text(f'decision {decision.id[:8]} by codex')
     expect(decisions.first.locator('[data-in-force]')).to_have_text('In force')
+    shoot(request, page, 'room-guidance')
     if request.config.getoption('--shots'):
-        page.screenshot(path=f"{request.config.getoption('--shots')}/room-guidance.png")
+        page.set_viewport_size(VIEWPORTS['narrow'])
+        shoot(request, page, 'room-guidance-narrow')
+        page.set_viewport_size(VIEWPORTS['desktop'])
 
     charter.get_by_role('button', name='Edit the charter').click()
     page.locator('[data-guidance-text]').fill('Edited elsewhere first.')
     open_records(store).write_guidance('restoke-v2', '# Charter\n\nNewer.\n', epic=epic.id, actor='claude')
     page.get_by_role('button', name='Save a new version').click()
     expect(charter.locator('[role="alert"]')).to_contain_text('it is now version 3')
+    alert, panel = charter.locator('[role="alert"]').bounding_box(), route.bounding_box()
+    assert alert['y'] + alert['height'] <= panel['y'] + panel['height'], (alert, panel)   # not lost under the long editor
     expect(page.locator('[data-guidance-text]')).to_have_value('Edited elsewhere first.')
+    shoot(request, page, 'guidance-conflict')
+    # the stale save is refused with a 409 on purpose; the browser logs it, which is expected here, not a page error
+    changed_deck.errors[:] = [e for e in changed_deck.errors if '409 (Conflict)' not in e]
     page.get_by_role('button', name='Discard the edit').click()
     page.get_by_role('button', name='Versions').click()
     expect(charter.locator('[data-guidance-version]')).to_contain_text('version 3 · claude')

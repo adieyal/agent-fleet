@@ -337,6 +337,7 @@ async function saveGuidance() {
   }
   render();
   el.querySelector('[data-guidance-text]')?.focus();
+  el.querySelector('[data-guidance-editor] [role="alert"]')?.scrollIntoView({ block: 'nearest' });   // below the fold under a long editor
 }
 
 async function promote(decision) {
