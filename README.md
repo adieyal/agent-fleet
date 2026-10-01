@@ -213,6 +213,11 @@ Use the front desk and lanterns, or these commands, to manage attention:
 ```bash
 fleet attention add "Review the guide" --project PROJECT_ID --work-item WORK_ID --kind decision --owner user --source manual --source-reference guide-review --context-reference README.md --actor user
 fleet attention list --project PROJECT_ID
+fleet attention delegate ATTENTION_ID --actor user --note "retry once"   # stays open, listed as the agent's
+fleet attention list --owner agent                  # items an agent must act on; --owner user: yours
+fleet attention escalate ATTENTION_ID --actor triage --reason "needs a push to GitHub"   # agent to user
+fleet attention delegate ATTENTION_ID --actor user
+fleet attention take ATTENTION_ID --actor user      # back to you; the agent may no longer act on it
 fleet attention ack ATTENTION_ID --actor user
 fleet attention snooze ATTENTION_ID --until 2099-01-01T09:00:00+00:00 --actor user
 fleet attention resolve ATTENTION_ID --details "Review handled separately" --actor user
@@ -220,7 +225,9 @@ fleet attention add "May we publish?" --project PROJECT_ID --work-item WORK_ID -
 fleet answer ATTENTION_ID "Yes, publish the guide" --next-step "Publish"
 ```
 
-Use the second attention ID for the answer. Answering in the CLI or reader records
+An item's `owner` is who must act on it (`agent` or `user`), and its `subject` is the
+job, session or run it is about. Each hand-over keeps who made it and why
+(`owner_actor`, `owner_reason`) and leaves a history row. Use the second attention ID for the answer. Answering in the CLI or reader records
 a decision and resolves the item; live-session answers have separately tracked
 delivery, so an offline host does not lose the answer.
 

@@ -163,7 +163,7 @@ class FleetState(LiveWorkspace):
                 self.bump()
             stop.wait(0.25)
 
-    def update(self, host_name: str, mutate: Any, *, owners: set[str] | None = None,
+    def update(self, host_name: str, mutate: Any, *, subjects: set[str] | None = None,
                ingest: bool = True, heartbeat: bool = False) -> None:
         with self.changed:
             previous = snapshot(self.by_host[host_name])
@@ -180,7 +180,7 @@ class FleetState(LiveWorkspace):
                 reconciled = self.attention.observe({**host,
                     "jobs": [resolve(self.registry, host_name, job) for job in host["jobs"].values()],
                     "sessions": [resolve(self.registry, host_name, session) for session in host["sessions"].values()]},
-                    owners=owners, raise_items=not heartbeat)
+                    subjects=subjects, raise_items=not heartbeat)
                 # A heartbeat follows a full pass over the host's jobs, so absent jobs are gone.
                 reconciled = self.attention.close_refusals(
                     {**host, "jobs": list(host["jobs"].values()), "sessions": []}, complete=heartbeat) or reconciled
@@ -320,18 +320,18 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
     elif kind == "job":
         job = message["job"]
         state.update(host.name, lambda entry: entry["jobs"].__setitem__(job["id"], job),
-                     owners={f"job:{host.name}:{job['id']}"})
+                     subjects={f"job:{host.name}:{job['id']}"})
         state.keep_documents(host.name, job)
     elif kind == "removed":
         state.update(host.name, lambda entry: entry["jobs"].pop(message["id"], None),
-                     owners={f"job:{host.name}:{message['id']}"})
+                     subjects={f"job:{host.name}:{message['id']}"})
     elif kind == "session":
         session = message["session"]
         state.update(host.name, lambda entry: entry["sessions"].__setitem__(session["id"], session),
-                     owners={f"session:{host.name}:{session['id']}"})
+                     subjects={f"session:{host.name}:{session['id']}"})
     elif kind == "session_removed":
         state.update(host.name, lambda entry: entry["sessions"].pop(message["id"], None),
-                     owners={f"session:{host.name}:{message['id']}"})
+                     subjects={f"session:{host.name}:{message['id']}"})
     elif kind == "heartbeat":
         state.update(host.name, lambda entry: None, heartbeat=True)
     elif kind == "pipeline" and isinstance(message.get("pipeline"), str):

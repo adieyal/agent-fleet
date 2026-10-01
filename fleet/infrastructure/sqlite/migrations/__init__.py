@@ -98,4 +98,14 @@ MIGRATIONS = (
     (
         "ALTER TABLE attention_item ADD COLUMN questions TEXT NOT NULL DEFAULT '[]'",
     ),
+    (
+        # owner said both who must act ('user') and, for host-observed items, what the item is about
+        # (job:<host>:<id>, session:…, run:…). The latter moves to subject; every existing item stays the user's.
+        "ALTER TABLE attention_item ADD COLUMN subject TEXT",
+        "ALTER TABLE attention_item ADD COLUMN owner_reason TEXT",
+        "ALTER TABLE attention_item ADD COLUMN owner_actor TEXT",
+        "ALTER TABLE attention_item ADD COLUMN owner_at TEXT",
+        "UPDATE attention_item SET subject = owner WHERE owner != 'user'",
+        "UPDATE attention_item SET owner = 'user'",
+    ),
 )

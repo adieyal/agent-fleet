@@ -1268,11 +1268,18 @@ def command_attention(arguments: argparse.Namespace) -> None:
                 project=arguments.project, kind=arguments.kind, owner=arguments.owner,
                 source=arguments.source, source_reference=arguments.source_reference,
                 headline=arguments.headline, context_reference=arguments.context_reference,
-                work_item=arguments.work_item, run=arguments.run, actor=arguments.actor)
+                work_item=arguments.work_item, run=arguments.run, actor=arguments.actor,
+                owner_reason=arguments.reason)
         elif command == "list":
-            items = attention.list(project=arguments.project, state=arguments.state)
+            items = attention.list(project=arguments.project, state=arguments.state, owner=arguments.owner)
             console.print_json(json.dumps([asdict(item) for item in items], default=str))
             return
+        elif command == "delegate":
+            item = attention.delegate(arguments.id, actor=arguments.actor, note=arguments.note)
+        elif command == "take":
+            item = attention.take(arguments.id, actor=arguments.actor, reason=arguments.reason)
+        elif command == "escalate":
+            item = attention.escalate(arguments.id, actor=arguments.actor, reason=arguments.reason)
         elif command == "ack":
             item = attention.acknowledge(arguments.id, actor=arguments.actor)
         elif command == "snooze":
@@ -1599,15 +1606,31 @@ def build_parser() -> argparse.ArgumentParser:
         dest="attention_command", required=True)
     attention_add = attention.add_parser("add")
     attention_add.add_argument("headline")
-    for field in ("project", "kind", "owner", "source", "source-reference", "context-reference", "actor"):
+    for field in ("project", "kind", "source", "source-reference", "context-reference", "actor"):
         attention_add.add_argument(f"--{field}", required=True)
+    attention_add.add_argument("--owner", required=True, choices=("agent", "user"),
+                               help="who must act: user puts it in 'need you'; agent leaves it to the project's agent")
+    attention_add.add_argument("--reason", help="why the owner must act, shown with the item "
+                                                "(for --owner user: why an agent cannot decide it)")
     attention_add.add_argument("--work-item")
     attention_add.add_argument("--run")
     attention_add.set_defaults(handler=command_attention)
     attention_list = attention.add_parser("list")
     attention_list.add_argument("--project")
     attention_list.add_argument("--state", choices=("open", "acknowledged", "snoozed", "resolved"))
+    attention_list.add_argument("--owner", choices=("agent", "user"), help="only items this owner must act on")
     attention_list.set_defaults(handler=command_attention)
+    delegate = attention.add_parser(
+        "delegate", help="hand your item to the project's agent; it stays open and listed, and you can take it back")
+    take = attention.add_parser("take", help="take an item back from the agent; the agent may no longer act on it")
+    escalate = attention.add_parser("escalate", help="(agents) hand an agent's item to the user, saying why")
+    for action in (delegate, take, escalate):
+        action.add_argument("id")
+        action.add_argument("--actor", required=True)
+        action.set_defaults(handler=command_attention, note=None, reason=None)
+    delegate.add_argument("--note", help="what you want the agent to do, kept with the item")
+    take.add_argument("--reason", help="why you are taking it back, kept with the item")
+    escalate.add_argument("--reason", required=True, help="why the user must decide it")
     for name in ("ack", "snooze", "resolve"):
         action = attention.add_parser(name)
         action.add_argument("id")

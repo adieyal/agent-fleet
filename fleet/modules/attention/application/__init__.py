@@ -18,13 +18,17 @@ class Commands:
                    headline: str, context_reference: str, actor: str,
                    work_item: str | None = None, run: str | None = None,
                    stream_context: StreamContext | None = None, reopen: bool = False,
-                   options: tuple[str, ...] = ()) -> AttentionItem:
+                   options: tuple[str, ...] = (), subject: str | None = None,
+                   owner_reason: str | None = None) -> AttentionItem:
         required(actor, "actor")
         now = self.clock()
         with self.repository.transaction() as repository:
             previous = repository.find(source, source_reference)
+            # Seen again, an item keeps the owner it was handed to; the owner given applies to a new item.
+            handed = (dict(owner=previous.owner, owner_reason=previous.owner_reason, owner_actor=previous.owner_actor,
+                           owner_at=previous.owner_at) if previous else dict(owner=owner, owner_reason=owner_reason))
             item = AttentionItem(
-                id=previous.id if previous else str(uuid4()), project=project, kind=kind, owner=owner,
+                id=previous.id if previous else str(uuid4()), project=project, kind=kind, subject=subject, **handed,
                 source=source, source_reference=source_reference, headline=headline,
                 context_reference=context_reference, work_item=work_item, run=run,
                 state=previous.state if previous else "open",
@@ -45,16 +49,29 @@ class Commands:
         return item.effective(now)
 
     def reconcile(self, source: str, references: set[str], *, actor: str,
-                  owners: set[str] | None = None) -> bool:
+                  subjects: set[str] | None = None) -> bool:
         changed = False
         for item in self.repository.list():
             if (item.source == source and item.source_reference not in references
-                    and item.state != "resolved" and (owners is None or item.owner in owners)):
+                    and item.state != "resolved" and (subjects is None or item.subject in subjects)):
                 details = ("answered in session or session removed" if item.kind == "decision"
                            else "job retried, finished or removed")
                 self.change(item.id, "resolved", actor, details=details)
                 changed = True
         return changed
+
+    def hand_over(self, item_id: str, owner: str, actor: str, *, reason: str | None,
+                  expected: str) -> AttentionItem:
+        """Give an item owned by `expected` to `owner`, recording who did it and why."""
+        now = self.clock()
+        with self.repository.transaction() as repository:
+            previous = repository.get(item_id)
+            if previous.owner != expected:
+                raise ValueError(f"attention item is {'with the agent' if previous.owner == 'agent' else 'yours'}, "
+                                 f"not {'the agent' if expected == 'agent' else 'yours'}")
+            item = previous.hand_over(owner, now, actor, reason=reason)
+            repository.save_owner(item, previous.owner, actor)
+        return item.effective(now)
 
     def change(self, item_id: str, state: str, actor: str, *, until: datetime | None = None,
                details: str | None = None) -> AttentionItem:

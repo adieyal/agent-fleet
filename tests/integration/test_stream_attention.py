@@ -96,3 +96,22 @@ def test_offline_restart_and_reconnect_preserve_open_items(recorded):
     apply_message(restarted, worker, {'type': 'job', 'job': job})
     apply_message(restarted, worker, {'type': 'heartbeat'})
     assert open_attention(store).get(first.id).state == 'open'
+
+
+def test_a_failed_job_is_the_users_item_about_that_job(recorded):
+    state, worker, job, store, now = recorded
+    report(state, worker, job)
+    [item] = open_attention(store).list()
+    assert (item.owner, item.subject) == ('user', f"job:{worker.name}:{job['id']}")
+
+
+def test_an_item_handed_to_the_agent_stays_the_agents_when_its_job_is_seen_again(recorded):
+    state, worker, job, store, now = recorded
+    report(state, worker, job)
+    attention = open_attention(store)
+    [item] = attention.list()
+    attention.delegate(item.id, actor='user', note='retry it')
+    now[0] += timedelta(seconds=1)
+    apply_message(state, worker, {'type': 'job', 'job': job})
+    seen = open_attention(store).get(item.id)
+    assert (seen.owner, seen.owner_reason, seen.owner_actor, seen.state) == ('agent', 'retry it', 'user', 'open')

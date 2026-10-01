@@ -7,7 +7,7 @@ from .application import Commands
 from .application.ports import AttentionRepository
 from .application.observations import HostObservation, ingest_attention
 from .application.input_observations import InputObservation, close_refusals, ingest_input
-from .domain import AttentionItem, ItemResolved, StreamContext, STATES
+from .domain import AttentionItem, ItemResolved, OWNERS, StreamContext, STATES
 
 
 class AttentionFacade:
@@ -20,12 +20,29 @@ class AttentionFacade:
                    headline: str, context_reference: str, actor: str,
                    work_item: str | None = None, run: str | None = None,
                    stream_context: StreamContext | None = None, reopen: bool = False,
-                   options: tuple[str, ...] = ()) -> AttentionItem:
+                   options: tuple[str, ...] = (), subject: str | None = None,
+                   owner_reason: str | None = None) -> AttentionItem:
+        """Raise an item for its owner (agent or user), about its subject; seen again, it keeps its owner."""
         return self.commands.raise_item(project=project, kind=kind, owner=owner, source=source,
                                         source_reference=source_reference, headline=headline,
                                         context_reference=context_reference, actor=actor,
                                         work_item=work_item, run=run, stream_context=stream_context,
-                                        reopen=reopen, options=options)
+                                        reopen=reopen, options=options, subject=subject,
+                                        owner_reason=owner_reason)
+
+    def delegate(self, item_id: str, *, actor: str, note: str | None = None) -> AttentionItem:
+        """Hand a user's item to the agent; it stays open and listed as the agent's."""
+        return self.commands.hand_over(item_id, "agent", actor, reason=note, expected="user")
+
+    def take(self, item_id: str, *, actor: str, reason: str | None = None) -> AttentionItem:
+        """Take an item back from the agent; the agent may no longer act on it."""
+        return self.commands.hand_over(item_id, "user", actor, reason=reason, expected="agent")
+
+    def escalate(self, item_id: str, *, actor: str, reason: str) -> AttentionItem:
+        """An agent hands its item to the user, saying why the user is needed."""
+        if reason is None or not reason.strip():
+            raise ValueError("an escalation needs a reason: why the user must decide")
+        return self.commands.hand_over(item_id, "user", actor, reason=reason, expected="agent")
 
     def acknowledge(self, item_id: str, *, actor: str) -> AttentionItem:
         return self.commands.change(item_id, "acknowledged", actor)
@@ -46,18 +63,18 @@ class AttentionFacade:
         return self.commands.change(item_id, "resolved", actor,
                                     details="dismissed; the job's permissions are unchanged")
 
-    def observe(self, host: HostObservation, *, owners: set[str] | None = None,
+    def observe(self, host: HostObservation, *, subjects: set[str] | None = None,
                 raise_items: bool = True) -> bool:
         """Ingest observations and report whether any cleared items were resolved."""
-        return ingest_attention(self, host, owners=owners, raise_items=raise_items)
+        return ingest_attention(self, host, subjects=subjects, raise_items=raise_items)
 
     def reopen(self, item_id: str, *, actor: str) -> AttentionItem:
         return self.commands.change(item_id, "open", actor)
 
     def reconcile(self, source: str, references: set[str], *, actor: str,
-                  owners: set[str] | None = None) -> bool:
+                  subjects: set[str] | None = None) -> bool:
         """Resolve cleared occurrences after a reachable source reports its current state."""
-        return self.commands.reconcile(source, references, actor=actor, owners=owners)
+        return self.commands.reconcile(source, references, actor=actor, subjects=subjects)
 
     def snooze(self, item_id: str, *, until: datetime, actor: str) -> AttentionItem:
         return self.commands.change(item_id, "snoozed", actor, until=until)
@@ -68,10 +85,13 @@ class AttentionFacade:
     def get(self, item_id: str) -> AttentionItem:
         return self.repository.get(item_id).effective(self.clock())
 
-    def list(self, *, project: str | None = None, state: str | None = None) -> list[AttentionItem]:
+    def list(self, *, project: str | None = None, state: str | None = None,
+             owner: str | None = None) -> list[AttentionItem]:
         if state is not None and state not in STATES:
             raise ValueError(f"unknown attention state: {state}")
+        if owner is not None and owner not in OWNERS:
+            raise ValueError(f"owner must be agent or user, not {owner!r}")
         now = self.clock()
         items = [item.effective(now) for item in self.repository.list()]
         return [item for item in items if (project is None or item.project == project)
-                and (state is None or item.state == state)]
+                and (state is None or item.state == state) and (owner is None or item.owner == owner)]

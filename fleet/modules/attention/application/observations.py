@@ -63,7 +63,7 @@ def asking(message: str) -> str:
 
 
 def ingest_attention(attention: "AttentionFacade", host: HostObservation, *,
-                     owners: set[str] | None = None, raise_items: bool = True) -> bool:
+                     subjects: set[str] | None = None, raise_items: bool = True) -> bool:
     if not host["ok"]:
         return False
     source = f"stream:{host['name']}"
@@ -72,16 +72,16 @@ def ingest_attention(attention: "AttentionFacade", host: HostObservation, *,
     def record(work: WorkObservation, owner_type: str, occurrence: str, kind: str,
                reason: str, summary: str, since: float | None, *, step: int | None = None,
                message: str | None = None) -> None:
-        owner_reference = f"{owner_type}:{host['name']}:{work['id']}"
-        reference = f"{owner_reference}:{occurrence}"
+        subject = f"{owner_type}:{host['name']}:{work['id']}"
+        reference = f"{subject}:{occurrence}"
         references.add(reference)
-        if not raise_items or (owners is not None and owner_reference not in owners):
+        if not raise_items or (subjects is not None and subject not in subjects):
             return
         context = StreamContext(host["name"], owner_type, work["id"], work["project"],
                                 work.get("project_id"), reason, summary, since, step=step, message=message)
         attention.raise_item(project=work["project_id"] if work.get("project_id") is not None else work["project"],
-                             kind=kind, owner=owner_reference, source=source, source_reference=reference,
-                             headline=" ".join(summary.split()[:12]), context_reference=owner_reference,
+                             kind=kind, owner="user", subject=subject, source=source, source_reference=reference,
+                             headline=" ".join(summary.split()[:12]), context_reference=subject,
                              stream_context=context, actor="host-stream")
 
     for job in host["jobs"]:
@@ -107,4 +107,4 @@ def ingest_attention(attention: "AttentionFacade", host: HostObservation, *,
             summary += f": {activity['summary']}"
         record(session, "session", f"{activity['name']}@{activity.get('ts')}", "decision",
                f"session tool {activity['name']}", summary, activity.get("ts"))
-    return attention.reconcile(source, references, owners=owners, actor="host-stream")
+    return attention.reconcile(source, references, subjects=subjects, actor="host-stream")
