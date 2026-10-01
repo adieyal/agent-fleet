@@ -2360,7 +2360,7 @@ def test_batch7_guidance_draft_exits(changed_deck: Deck, deck_state, monkeypatch
         dialog.accept() if accepting else dialog.dismiss()
 
     def open_editor() -> None:
-        page.evaluate("fleetDeck.enterFloor('restoke-v2')")
+        page.evaluate("async () => { (await import('/js/building.js')).showView('floor', 1); await fleetDeck.enterFloor('restoke-v2'); }")
         expect(route).to_have_attribute('data-level', 'floor')
         if kind == 'constitution':
             page.locator('[data-open-constitution]').click()
@@ -2370,7 +2370,13 @@ def test_batch7_guidance_draft_exits(changed_deck: Deck, deck_state, monkeypatch
         expect(text).to_have_value('')
 
     def exit_editor(exit: str) -> None:
-        if exit == 'escape':
+        if exit == 'header':
+            page.locator('#viewToggle [data-view=deck]').click()
+        elif exit in ('lift', 'storehouse'):
+            button = page.locator('#lift [data-lift=' + ('L' if exit == 'lift' else 'S') + ']')
+            # The expanded plan covers the lift on phones; exercise its handler there.
+            button.dispatch_event('click') if viewport == 'narrow' else button.click()
+        elif exit == 'escape':
             page.keyboard.press('Escape')
         else:
             page.locator({'discard': '[data-guidance-cancel]', 'floor': '[data-back-floor]',
@@ -2378,7 +2384,7 @@ def test_batch7_guidance_draft_exits(changed_deck: Deck, deck_state, monkeypatch
 
     page.on('dialog', handle_dialog)
     try:
-        for exit in ['discard', 'escape', 'floor'] + (['room'] if kind == 'charter' else []):
+        for exit in ['discard', 'escape', 'floor', 'header', 'lift', 'storehouse'] + (['room'] if kind == 'charter' else []):
             open_editor()
             draft = f'# Unsaved {kind}\n\nKeep this {exit} draft.'
             text.fill(draft)
@@ -2394,7 +2400,10 @@ def test_batch7_guidance_draft_exits(changed_deck: Deck, deck_state, monkeypatch
             exit_editor(exit)
             assert len(dialogs) == 1
             expect(text).to_have_count(0)
-            expect(route.locator('[data-guidance-feedback]')).to_contain_text('Discarded')
+            if exit not in ('header', 'lift', 'storehouse'):
+                expect(route.locator('[data-guidance-feedback]')).to_contain_text('Discarded')
+            else:
+                expect(page.locator('#toast')).to_contain_text('Discarded')
             assert records.guidance('restoke-v2', epic=epic.id if kind == 'charter' else None) is None
             dialogs.clear()
             accepting = False
@@ -2407,12 +2416,12 @@ def test_batch7_guidance_draft_exits(changed_deck: Deck, deck_state, monkeypatch
         expect(page.locator('[data-guidance-save]')).to_have_text('Save version 1')
         expect(page.locator('[data-guidance-cancel]')).to_have_text('Discard')
         expect(route.locator('[data-guidance-scope]')).to_contain_text('epic' if kind == 'charter' else 'project')
-        shoot(request, page, f'batch7-{kind}-{viewport}-editor')
+        shoot(request, page, f'audit2-batch1-{kind}-{viewport}-editor')
         page.locator('[data-guidance-save]').scroll_into_view_if_needed()
         for control in ['[data-guidance-save]', '[data-guidance-cancel]']:
             box = page.locator(control).bounding_box()
             assert box['x'] >= 0 and box['x'] + box['width'] <= VIEWPORTS[viewport]['width'], box
-        shoot(request, page, f'batch7-{kind}-{viewport}-actions')
+        shoot(request, page, f'audit2-batch1-{kind}-{viewport}-actions')
         pending = []
         page.route('**/api/guidance', lambda request: pending.append(request))
         page.locator('[data-guidance-save]').click()
@@ -2420,6 +2429,9 @@ def test_batch7_guidance_draft_exits(changed_deck: Deck, deck_state, monkeypatch
         expect(page.locator('[data-guidance-cancel]')).to_be_disabled()
         page.keyboard.press('Escape')
         page.locator('[data-back-floor]').click()
+        page.locator('#viewToggle [data-view=deck]').click()
+        exit_editor('lift')
+        exit_editor('storehouse')
         expect(text).to_have_value('# Safe guidance\n\nAgents follow these rules.')
         assert dialogs == []
         assert len(pending) == 1
@@ -2430,7 +2442,7 @@ def test_batch7_guidance_draft_exits(changed_deck: Deck, deck_state, monkeypatch
         page.unroute('**/api/guidance')
         expect(route.locator('[data-guidance-feedback]')).to_contain_text('Saved')
         expect(route.locator('[data-guidance-version]')).to_contain_text('version 1')
-        shoot(request, page, f'batch7-{kind}-{viewport}-saved')
+        shoot(request, page, f'audit2-batch1-{kind}-{viewport}-saved')
         page.get_by_role('button', name=f'Edit the {kind}').click()
         expect(page.locator('[data-guidance-save]')).to_have_text('Save version 2')
         # An intentional deletion is also an edit worth protecting.
@@ -2988,3 +3000,43 @@ def test_triage_policy_room(changed_deck: Deck, route_migration, request, viewpo
     shoot(request, page, f'triage-policy-{viewport}')
     page.locator('[data-room-policy] [data-open-constitution]').click()
     expect(page.locator('[data-constitution-page] [data-triage-policy]')).to_contain_text('version 1')
+
+
+@pytest.mark.parametrize('viewport', VIEWPORTS)
+def test_audit2_batch1_reader_drafts_and_legacy_session(changed_deck: Deck, request, viewport) -> None:
+    page = changed_deck.page
+    page.set_viewport_size(VIEWPORTS[viewport])
+    page.route('**/api/decision?*', lambda route: route.fulfill(json={
+        'question': 'Which route?', 'context': 'Review', 'options': ['Direct', 'Scenic'], 'proposal': None}))
+    items = [dict(project='restoke-v2', owned_by='user', owner=None, age=0, id=f'a2-first-{viewport}', kind='decision', summary='Which route?', source='manual',
+                  source_reference='review', context_reference='Review', state='open', last_seen=200),
+             dict(project='other', owned_by='agent', owner=None, age=0, id=f'a2-second-{viewport}', kind='decision', summary='Another room', source='manual',
+                  source_reference='other', context_reference='Other', state='open', last_seen=100)]
+    page.evaluate("""async items => {
+        const doc = await (await fetch('/api/state')).json();
+        doc.attention.push(...items); fleetDeck.apply(doc);
+        (await import('/js/reader.js')).openAttentionReader(items[0]);
+    }""", items)
+    answer = page.get_by_label('Your answer', exact=True)
+    answer.fill('Keep this typed answer')
+    page.get_by_role('radio', name='Scenic', exact=True).check()
+    page.locator('#rdNext').click()
+    expect(answer).to_have_value('')
+    answer.fill('Separate second answer')
+    page.locator('#rdPrev').click()
+    expect(answer).to_have_value('Keep this typed answer')
+    expect(page.locator('#rdNext')).to_have_attribute('title', re.compile('all rooms and owners'))
+    expect(page.get_by_role('radio', name='Scenic', exact=True)).to_be_checked()
+    close_box = page.get_by_role('button', name='Close reader', exact=True).bounding_box()
+    assert close_box['x'] >= 0 and close_box['x'] + close_box['width'] <= VIEWPORTS[viewport]['width'], close_box
+    shoot(request, page, f'audit2-batch1-reader-{viewport}')
+    page.locator('#rdNext').click()
+    expect(answer).to_have_value('Separate second answer')
+    legacy = dict(items[0], id='a2-session', source='stream:home',
+                  source_reference='session:home:session-id:question', context_reference='session:home:session-id')
+    page.evaluate("async item => (await import('/js/reader.js')).openAttentionReader(item)", legacy)
+    expect(page.locator('#rdBody')).to_contain_text('session’s terminal')
+    expect(page.locator('#rdBody form')).to_have_count(0)
+    expect(page.locator('#rdBody')).to_contain_text('session:home:session-id')
+    shoot(request, page, f'audit2-batch1-session-{viewport}')
+    page.unroute('**/api/decision?*')

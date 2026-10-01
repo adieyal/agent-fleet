@@ -189,7 +189,7 @@ def answer_question(repository: DecisionRepository, clock: Callable[[], datetime
             raise ValueError("attention item is resolved")
         if item.refusals:
             raise ValueError("a job's permission refusals are answered by allowing or dismissing them")
-        if item.questions:
+        if item.questions or item.at_terminal:
             raise ValueError("a session's question is answered in its terminal")
         if item.stream_context is not None and item.stream_context.blocked_step:
             raise ValueError("a blocked job step is answered by a step added to its job (execution answer_blocked)")

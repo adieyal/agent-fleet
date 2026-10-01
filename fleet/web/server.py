@@ -552,7 +552,7 @@ def make_handler(state: FleetState | FixtureState,
                               # a job step's refused requests, answered with actions rather than words
                               "refusals": refusal_detail(item) if item.refusals else None,
                               "session_question": (question_detail(item, state.known_projects())
-                                                   if item.questions else None),
+                                                   if item.questions or item.at_terminal else None),
                               # a blocked job step's question, answered by adding a step to the job
                               "blocked": (blocked_detail(item) if item.stream_context is not None
                                           and item.stream_context.blocked_step else None)}

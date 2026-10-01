@@ -18,6 +18,20 @@ const rdBody = document.getElementById('rdBody');
 const WIDE = matchMedia('(min-width: 1101px)');
 const rdProgress = document.getElementById('rdProgress');
 const rd = { key: null, source: 'job', host: null, job: null, doc: null, data: null, req: 0, raf: 0, lastFocus: null, tocLinks: [], tocCurrent: null };
+// Unsent answers stay per attention item until submitted or this page is closed.
+const answerDrafts = new Map();
+function saveAnswerDraft() {
+  const form = rdBody.querySelector('.decision-answer');
+  if (rd.source !== 'attention' || !form?.elements.answer || form.elements.answer.disabled) return;
+  answerDrafts.set(rd.doc.id, { answer: form.elements.answer.value, choice: form.querySelector('input[name="choice"]:checked')?.value });
+}
+function restoreAnswerDraft(form, id) {
+  const draft = answerDrafts.get(id);
+  if (!draft || !form) return;
+  form.elements.answer.value = draft.answer;
+  for (const radio of form.querySelectorAll('input[name="choice"]')) radio.checked = radio.value === draft.choice;
+  if (draft.answer) form.querySelector('[role="status"]').textContent = 'Unsent answer restored. Submit to send it.';
+}
 const THEME_ICON = {
   dark: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></svg><span class="lb">Paper</span>',
   paper: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M13.2 9.6A5.6 5.6 0 0 1 6.4 2.8a5.6 5.6 0 1 0 6.8 6.8Z"/></svg><span class="lb">Dark</span>',
@@ -33,6 +47,7 @@ function setReaderTheme(theme) {
 setReaderTheme(store('localStorage','fleet.reader.theme') === 'paper' ? 'paper' : 'dark');
 
 export function openReader(e, doc) {
+  saveAnswerDraft();
   hideDocTip();
   rd.req++;
   rd.key = `${e.host}:${e.job.id}:${doc.id}`;
@@ -46,6 +61,7 @@ export function openReader(e, doc) {
   loadDoc(rd.req);
 }
 export function openLibraryReader(doc) {
+  saveAnswerDraft();
   if (!reader.hidden) saveReaderScroll();
   rd.req++;
   rd.key = `library:${doc.project}:${doc.id}`;
@@ -61,6 +77,7 @@ export function openLibraryReader(doc) {
 // A copy from a project's document store: a job's document (shown as from the job panel, though the job may have
 // left the floor or its host) or one of the project's working documents (no job).
 export function openStoredReader(url, doc, job) {
+  saveAnswerDraft();
   if (!reader.hidden) saveReaderScroll();
   rd.req++;
   rd.key = 'stored:' + url;
@@ -77,16 +94,18 @@ export function openStoredReader(url, doc, job) {
 }
 export function closeReader() {
   if (reader.hidden) return;
+  saveAnswerDraft();
   saveReaderScroll();
   rd.req++; rd.key = null;
   reader.hidden = true;
   if (rd.lastFocus && rd.lastFocus.focus) rd.lastFocus.focus();
 }
 export function openAttentionReader(item) {
+  saveAnswerDraft();
   rd.req++;
   rd.key = `attention:${item.id}`;
   rd.source = 'attention';
-  rd.doc = { id: item.id, name: item.summary, kind: 'file', attentionKind: item.kind, recipient: `${item.source}: ${item.source_reference || item.context_reference}`, seen: item.last_seen };
+  rd.doc = { id: item.id, name: item.summary, kind: 'file', attentionKind: item.kind, terminal: item.context_reference?.startsWith('session:') && item.source?.startsWith('stream:'), recipient: `${item.source}: ${item.source_reference || item.context_reference}`, seen: item.last_seen };
   const lines = [item.summary, `Source: ${item.source}`, `Context: ${item.context_reference}`,
     `State: ${item.state}`, `Last seen: ${new Date(item.last_seen * 1000).toISOString()}`];
   rd.data = { name: item.summary, markdown: lines.join('\n\n'), html: lines.map(line => `<p>${esc(line)}</p>`).join(''), toc: [] };
@@ -107,6 +126,10 @@ async function loadDecision(id, req) {
     const prose = rdBody.querySelector('.prose');
     if (detail.refusals) { renderRefusals(prose, id, detail); return; }
     if (detail.session_question) { renderSessionQuestion(prose, detail.session_question); return; }
+    if (rd.doc.terminal) {
+      prose.innerHTML = `<h2>${esc(detail.question)}</h2><p role="note">Answer this in the session’s terminal. Fleet cannot send an answer there. Close this reader and use Open session in the attention list. Resolving attention does not answer the question.</p><p>${esc(rd.doc.recipient)}</p>`;
+      return;
+    }
     if (detail.blocked) { renderBlocked(prose, id, detail.blocked); return; }
     if (rd.doc.attentionKind === 'blocker') { renderBlockerHelp(prose); return; }
     prose.innerHTML = `<h2>${esc(detail.question)}</h2><p class="decision-context">${esc(detail.context)}</p>
@@ -119,6 +142,7 @@ async function loadDecision(id, req) {
         <button type="submit">Submit answer</button><p role="alert"></p><p role="status"></p>
       </form>`;
     const form = prose.querySelector('form');
+    restoreAnswerDraft(form, id);
     let choiceAnswer = null;
     form.elements.answer.addEventListener('input', () => { choiceAnswer = null; });
     form.addEventListener('change', ev => {
@@ -140,6 +164,7 @@ async function loadDecision(id, req) {
           body: JSON.stringify({ id, answer: form.elements.answer.value }) });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error);
+        answerDrafts.delete(id);
         form.querySelector('[role="status"]').textContent = 'Answer recorded; request resolved';
         for (const input of form.querySelectorAll('input, textarea')) input.disabled = true;
       } catch (error) {
@@ -162,6 +187,7 @@ function renderSessionQuestion(prose, s) {
       Fleet cannot type there; this item closes once the session has its answer.</p>
     <p class="session-where">${where}${s.cwd ? `<code>${esc(s.cwd)}</code>` : `${esc(s.label)} (working directory not reported)`} · ${esc(s.host)} · session ${esc(s.session)}</p>
     ${s.state === 'resolved' ? `<p role="status">${esc(s.resolution)}</p>` : ''}
+    ${s.questions.length ? '' : `<h2>${esc(rd.doc.name)}</h2>`}
     ${s.questions.map(q => `<section class="session-question">
       ${q.header ? `<p class="qh">${esc(q.header)}</p>` : ''}<h2>${esc(q.question)}</h2>
       ${q.multi_select ? '<p class="qm">More than one may be chosen.</p>' : ''}
@@ -181,6 +207,7 @@ function renderBlocked(prose, id, b) {
       </form>` : `<p role="status">${esc(b.resolution)}</p>`}`;
   const form = prose.querySelector('form');
   if (!form) return;
+  restoreAnswerDraft(form, id);
   form.addEventListener('submit', async ev => {
     ev.preventDefault();
     const button = form.querySelector('button[type="submit"]');
@@ -191,6 +218,7 @@ function renderBlocked(prose, id, b) {
         body: JSON.stringify({ id, answer: form.elements.answer.value }) });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error);
+      answerDrafts.delete(id);
       form.querySelector('[role="status"]').textContent = result.resolution;
       form.insertAdjacentHTML('beforeend', '<p class="decision-receipt">Answer recorded as a Decision.</p>');
       form.elements.answer.disabled = true;
@@ -330,7 +358,12 @@ function renderReaderHead() {
   download.querySelector('.lb').textContent = image ? 'Image' : '.md';
   const list = siblings(), at = list.findIndex(x => x.id === doc.id);
   document.getElementById('rdStep').hidden = list.length < 2 || at < 0;
-  document.getElementById('rdPos').textContent = at < 0 ? '' : `${at + 1} / ${list.length}`;
+  document.getElementById('rdPos').textContent = at < 0 ? '' : `${at + 1} / ${list.length}${rd.source === 'attention' ? ' · All rooms and owners' : ''}`;
+  for (const [id, direction] of [['rdPrev', 'Previous'], ['rdNext', 'Next']]) {
+    const button = document.getElementById(id);
+    button.title = rd.source === 'attention' ? `${direction} unresolved attention item across all rooms and owners; unsent answers are kept until this page closes` : `${direction} document`;
+    button.setAttribute('aria-label', button.title);
+  }
   document.getElementById('rdPrev').disabled = at <= 0;
   document.getElementById('rdNext').disabled = at < 0 || at >= list.length - 1;
 }

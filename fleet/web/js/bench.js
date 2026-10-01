@@ -1,3 +1,4 @@
+import { showToast } from './building.js';
 import { openItemHistory } from './item-history.js';
 import { mountRunHistory } from './run-history.js';
 // Floor → epic room → milestone bench. All business state comes from /api/bench.
@@ -129,11 +130,12 @@ function openRoom(r) {
 
 // `epic` and `milestone` open straight at that epic's page or that milestone's bench.
 export async function enterFloor(identity, { epic = null, milestone = null } = {}) {
+  if (!discardGuidance()) return false;
   const request = ++revision;
   project = identity; room = bench = page = editing = guidanceFeedback = null;
   views.clear(); decisionLists.clear(); historyOpen.clear();
   el.hidden = identity === null;
-  if (identity === null) return;
+  if (identity === null) { el.replaceChildren(); return; }
   el.innerHTML = '<p>Loading work…</p>';
   try {
     const doc = await read();
@@ -406,13 +408,14 @@ el.addEventListener('input', ev => {
 });
 
 // Every editor exit uses the same check; cancelling leaves the text and route untouched.
-function discardGuidance() {
+export function discardGuidance() {
   if (!editing) return true;
   if (editing.saving) return false;
   if ((editing.text.trim() || editing.text !== editing.original)
       && !window.confirm(`Discard the unsaved ${editing.kind} edit? Its text cannot be recovered. No new version will be saved.`)) return false;
   guidanceFeedback = `Discarded the ${editing.kind} edit. No new version was saved.`;
   editing = null;
+  showToast(guidanceFeedback);
   return true;
 }
 

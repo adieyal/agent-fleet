@@ -98,3 +98,22 @@ def test_batch12_stream_and_hook_question_share_one_open_item(deck, order):
     apply_message(deck.state, HOSTS[0], {"type": "session", "session": session})
     [later] = deck.state.attention.list(state='open')
     assert later.source == 'stream:home'
+
+
+def test_legacy_stream_session_question_is_terminal_only(deck):
+    from fleet.modules.attention.domain import StreamContext
+    from fleet.composition import open_decisions
+    item = deck.state.attention.raise_item(project='restoke', kind='decision', owner='user',
+        source='stream:home', source_reference='session:home:legacy:question',
+        headline='Keep the double fetch behind a flag?', context_reference='session:home:legacy',
+        stream_context=StreamContext('home', 'session', 'legacy', 'restoke', None,
+                                     'question', 'Keep the double fetch behind a flag?', 200), actor='host-stream')
+    detail = decision(deck, item.id)
+    assert detail['session_question']['session'] == 'legacy'
+    assert detail['session_question']['questions'] == []
+    sequence = deck.state.store.latest_sequence()
+    status, body = post(deck, '/api/decision/answer', {'id': item.id, 'answer': 'Keep it'})
+    assert status == 400 and 'terminal' in body['error']
+    assert deck.state.attention.get(item.id).state == 'open'
+    assert deck.state.store.latest_sequence() == sequence
+    assert open_decisions(deck.state.store).list() == []

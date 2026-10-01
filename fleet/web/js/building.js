@@ -41,7 +41,7 @@ import { THEMES, hostLook, projectLook, themeFor } from './looks.js';
 import { working } from './activity.js';
 import { enterProject } from './state.js';
 import { openAttentionReader } from './reader.js';
-import { enterFloor } from './bench.js';
+import { discardGuidance, enterFloor } from './bench.js';
 import { openAllAttention } from './attention.js';
 
 // ------------------------------------------------------------------ views: the deck, the building (L0), a floor (L1)
@@ -53,6 +53,7 @@ const toggle = document.getElementById('viewToggle');
 const lift = document.getElementById('lift');
 // ('world' is a project floor in the sprite world, world/floor-view.js; opened from inside a floor, it shows that one)
 export function showView(view, where = null) {
+  if (!discardGuidance()) return false;
   const leaving = current !== null;
   const project = view === 'world' && typeof current === 'number' ? floors.find(f => f.floor === current)?.projectId ?? null : null;
   current = view === 'floor' ? where : view === 'crate' ? 'S' : null;
@@ -71,12 +72,12 @@ export function showView(view, where = null) {
   renderLift();
   draw();
   document.dispatchEvent(new CustomEvent('fleet:view', { detail: { view, project } }));
+  return true;
 }
 toggle.addEventListener('click', ev => {
   const b = ev.target.closest('button[data-view]');
   if (!b) return;
-  store('localStorage', VIEW_KEY, b.dataset.view);
-  showView(b.dataset.view);
+  if (showView(b.dataset.view)) store('localStorage', VIEW_KEY, b.dataset.view);
 });
 function enter(floor) {
   const f = floors.find(x => x.floor === floor);
@@ -591,7 +592,7 @@ function hideToast() { clearTimeout(toastTimer); toast.hidden = true; toast.oncl
 // ------------------------------------------------------------------ the storehouse, and the "No vacancies" prompt
 let storehouseOpen = false, vacancy = null;   // vacancy: what is waiting for a floor, { kind: 'move-in' | 'restore', … }
 function openStorehouse() {
-  if (!buildingShown) showView('building');
+  if (!buildingShown && !showView('building')) return;
   vacancy = null;
   storehouseOpen = true;
   renderUi();
