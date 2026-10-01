@@ -5,8 +5,15 @@ from __future__ import annotations
 import json
 import re
 from datetime import datetime, timedelta, timezone
+from typing import Protocol
 
-from fleet.infrastructure.sqlite import Store
+
+class Store(Protocol):
+    def history_subjects(self) -> list[str]: ...
+
+    def history(self, subjects: tuple[str, ...] = (), prefixes: tuple[str, ...] = (),
+                since: datetime | None = None) -> list[dict[str, object]]: ...
+
 
 # Fields every write refreshes; showing them would bury the change that mattered.
 NOISE = {"updated", "next_step_recorded_at"}
