@@ -103,4 +103,29 @@ MIGRATIONS = (
         "ALTER TABLE state_history ADD COLUMN job TEXT",
         "CREATE INDEX state_history_subject ON state_history(subject)",
     ),
+    (
+        # P2 store foundations. A run's latest reading (last observed, activity glyph, live usage) leaves the run
+        # record for a table without history; a run's final usage stays in its record. Steps and hosts follow.
+        """CREATE TABLE execution_run_observation (
+            run TEXT PRIMARY KEY REFERENCES execution_run(id), record TEXT NOT NULL)""",
+        """CREATE TABLE execution_step (
+            run TEXT NOT NULL REFERENCES execution_run(id), idx INTEGER NOT NULL, record TEXT NOT NULL,
+            PRIMARY KEY (run, idx))""",
+        "CREATE TABLE execution_host (name TEXT PRIMARY KEY, record TEXT NOT NULL)",
+        """INSERT INTO execution_run_observation (run, record)
+            SELECT id, json_object('last_observed', record -> '$.last_observed',
+                                   'current_action', record -> '$.current_action',
+                                   'action_observed_at', record -> '$.action_observed_at',
+                                   'usage', record -> '$.usage')
+            FROM execution_run""",
+        """INSERT INTO state_history (subject, "from", "to", actor, time)
+            SELECT 'execution:run:' || id, 'observation fields in the run record',
+                   'observation fields moved to execution_run_observation', 'migration',
+                   strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now')
+            FROM execution_run""",
+        """UPDATE execution_run SET record = CASE
+            WHEN record ->> '$.status' IN ('succeeded', 'failed', 'stopped')
+                THEN json_remove(record, '$.last_observed', '$.current_action', '$.action_observed_at')
+            ELSE json_remove(record, '$.last_observed', '$.current_action', '$.action_observed_at', '$.usage') END""",
+    ),
 )
