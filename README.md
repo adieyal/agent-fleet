@@ -130,10 +130,9 @@ first use still creates the store at the default location.
 
 The examples below use a local host. Replace `PROJECT_ID`, `DUPLICATE_ID`, `WORK_ID`,
 `CRITERION_ID`, `ATTENTION_ID` and `RUN_ID` with IDs printed by preceding commands.
-Use an absolute clean Git repository path for `MANAGEMENT_PATH`, and an existing
-host directory for `WORKING_DIRECTORY`. `JOB_ID` means an existing job on that host.
-To experiment independently, set `FLEET_CONFIG`, `FLEET_STORE` and `FLEET_HOME` to
-paths in a temporary directory before starting. Create the config file first
+Use an existing host directory for `WORKING_DIRECTORY`. `JOB_ID` means an existing job on that host.
+To experiment independently, set `FLEET_CONFIG`, `FLEET_STORE`, `FLEET_HOME` and
+`FLEET_MANAGEMENT` to paths in a temporary directory before starting. Create the config file first
 (for example, `{"hosts": {"workspace-demo": {"ssh": null}}}`), then run
 `fleet web` once to initialize the store before using the commands below.
 
@@ -162,13 +161,14 @@ fleet criterion add WORK_ID "Guide reviewed" --verification accepted --actor use
 fleet criterion meet CRITERION_ID --actor user
 ```
 
-Register a management repository before writing summaries. Registration migrates
-legacy summaries once; new summaries and mandates are committed there, with paths
-and confirmed revisions in the store. Structured decisions remain store-owned.
+A project's management repository is created for it on its first record, under
+`~/.local/share/fleet/management/PROJECT_ID` (`FLEET_MANAGEMENT` moves that home), so
+nobody has to choose a path. To keep it somewhere else, register an existing Git
+repository before the first record with `fleet project management PROJECT_ID PATH`;
+registration is permanent and migrates legacy summaries once. Summaries, mandates and guidance are committed there, with paths and
+confirmed revisions in the store. Structured decisions remain store-owned.
 
 ```bash
-git init MANAGEMENT_PATH
-fleet project management PROJECT_ID MANAGEMENT_PATH
 fleet summary set WORK_ID --purpose "Ship the guide" --done "Draft written" --doing "Review" --next "Publish" --authoring-role user --actor user
 fleet status PROJECT_ID
 ```

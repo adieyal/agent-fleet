@@ -51,18 +51,17 @@ def register(room):
     composition.open_records().register(room["project"], room["repo"], actor="user")
 
 
-def test_unregistered_project_names_the_register_command(room):
+def test_a_project_without_a_repository_shows_nothing_recorded_and_its_first_save_creates_one(room):
     view = get(room, "/api/guidance", project=room["project"])
-    assert (view["registered"], view["guidance"], view["history"]) == (False, None, [])
-    assert view["register"] == f"fleet project management {room['project']} <path>"
-    code, message = refused(room, "/api/guidance", dict(project=room["project"], epic=None, markdown="x", base=0))
-    assert code == 400 and "fleet project management" in message
+    assert (view["guidance"], view["history"]) == (None, [])
+    saved = post(room, "/api/guidance", dict(project=room["project"], epic=None, markdown=CONSTITUTION, base=0))
+    assert saved["guidance"]["version"]["number"] == 1
 
 
 def test_edit_history_and_older_versions(room):
     register(room)
     empty = get(room, "/api/guidance", project=room["project"])
-    assert (empty["registered"], empty["guidance"], empty["name"]) == (True, None, "Constitution")
+    assert (empty["guidance"], empty["name"]) == (None, "Constitution")
     first = post(room, "/api/guidance", dict(project=room["project"], epic=None, markdown=CONSTITUTION, base=0))
     assert first["guidance"]["version"]["number"] == 1 and first["guidance"]["version"]["actor"] == "web-user"
     assert first["name"] == "Constitution · version 1" and "<h2" in first["html"] and first["markdown"] == CONSTITUTION

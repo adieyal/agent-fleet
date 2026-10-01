@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -155,8 +156,6 @@ def test_failed_write_and_missing_registration_are_explicit(tmp_path):
     assert result['revision'] is None
     assert 'uncommitted' in result['error']
     assert records.read('p', 'a.md') is None
-    with pytest.raises(ValueError, match='not registered'):
-        records.write('missing', 'a.md', 'body', key='x', actor='author')
     with pytest.raises(ValueError, match='path'):
         records.write('p', '../escape', 'body', key='escape', actor='author')
 
@@ -203,3 +202,14 @@ def test_management_registration_cli_and_summary_command(tmp_path, capsys, proje
     capsys.readouterr()
     cli.main(['status', 'p', '--json'])
     assert json.loads(capsys.readouterr().out)['work_items'][0]['summary']['purpose'] == 'Purpose'
+
+
+def test_a_projects_first_record_creates_its_management_repository(tmp_path):
+    store, records, repo = setup_records(tmp_path)
+    assert not records.registered('fresh')
+    result = records.write('fresh', 'a.md', 'body', key='first', actor='author')
+    assert result['state'] == 'confirmed'
+    created = Path(os.environ['FLEET_MANAGEMENT']) / 'fresh'
+    assert records.registered('fresh') and records.read('fresh', 'a.md') == 'body'
+    assert subprocess.run(['git', '-C', str(created), 'log', '--format=%s'], capture_output=True, text=True,
+                          check=True).stdout.strip() != ''

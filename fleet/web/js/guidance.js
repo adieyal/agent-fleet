@@ -21,7 +21,6 @@ export const versionLine = v => `version ${v.number} · ${esc(v.actor)} · ${whe
 export function guidanceSummary(view) {
   if (!view) return 'Loading…';
   if (view.error) return esc(view.error);
-  if (!view.registered) return 'No management repository registered';
   return view.guidance ? versionLine(view.guidance.version) : 'Not recorded';
 }
 
@@ -38,11 +37,6 @@ export function guidancePanel(kind, view, { editing = null, history = false } = 
   const label = kind === 'charter' ? 'Charter' : 'Constitution';
   if (!view) return `<section data-guidance="${kind}" aria-label="${label}"><h3>${label}</h3><p data-empty>Loading…</p></section>`;
   if (view.error) return `<section data-guidance="${kind}" aria-label="${label}"><h3>${label}</h3><p role="alert">${esc(view.error)}</p></section>`;
-  if (!view.registered) {
-    return `<section data-guidance="${kind}" aria-label="${label}"><h3>${label}</h3>
-      <p data-empty>No management repository is registered for this project, so there is nowhere to keep a ${kind}.</p>
-      <p data-register><code>${esc(view.register)}</code><button data-copy="${esc(view.register)}" title="Copy the command" aria-label="Copy the command">${ICONS.copy}</button></p></section>`;
-  }
   const g = view.guidance;
   const tools = editing ? '' : `<span data-guidance-tools><button data-guidance-edit="${kind}" title="${g ? 'Edit' : 'Write'} the ${kind}" aria-label="${g ? 'Edit' : 'Write'} the ${kind}">${ICONS.edit}</button>${
     view.history.length ? `<button data-guidance-history="${kind}" aria-expanded="${history}" title="Versions" aria-label="Versions">${ICONS.history}</button>` : ''}</span>`;

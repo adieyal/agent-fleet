@@ -10,9 +10,11 @@ from .domain import CONSTITUTION, GUIDANCE_FILES, Guidance, GuidanceConflict, Ma
 
 
 class RecordsFacade:
-    def __init__(self, repository, writer, workspace, work):
+    def __init__(self, repository, writer, workspace, work, home: Path | None = None):
+        """home: where fleet keeps the management repositories it creates; None leaves creation to registration."""
         self.repository, self.writer, self.workspace = repository, writer, workspace
         self._work = work
+        self.home = home
         self.authoring = Authoring(repository, writer, workspace)
 
     @property
@@ -30,10 +32,23 @@ class RecordsFacade:
             self.work.retire_summary(summary.id, actor=actor)
 
     def write(self, project: str, path: str, body: str, **fields) -> dict:
+        self.provide(project, actor=fields['actor'])
         return self.authoring.write(project, path, body, **fields)
 
     def prepare(self, project: str, path: str, body: str, **fields) -> dict:
+        self.provide(project, actor=fields['actor'])
         return self.authoring.prepare(project, path, body, **fields)
+
+    def provide(self, project: str, *, actor: str) -> None:
+        """A project's first record creates its management repository under fleet's home for them, so no author has
+        to choose or register one; a repository registered earlier, anywhere, is kept."""
+        if self.registered(project) or self.home is None:
+            return
+        root = self.home / project
+        root.mkdir(parents=True, exist_ok=True)
+        if not (root / '.git').exists():
+            self.writer.git(root, 'init', '-q')
+        self.register(project, root, actor=actor)
 
     def publish(self, intent: dict, body: str) -> dict:
         return self.authoring.publish(intent, body)
@@ -76,14 +91,15 @@ class RecordsFacade:
 
     def guidance(self, project: str, epic: str | None = None, *, number: int | None = None) -> Guidance | None:
         """The project's constitution, or the epic's charter with the constitution versions it inherits;
-        the current version unless number names an older one."""
+        the current version unless number names an older one. None when nothing is recorded, including before the
+        project's first record has created its management repository."""
         path = self.guidance_path(project, epic)
-        root = self.workspace.management_repository(project)
-        record = self.repository.current(project, path)
+        record = self.repository.current(project, path) if self.registered(project) else None
         if record is None:
             if number is not None:
                 raise LookupError(f'{path} has no version {number}')
             return None
+        root = self.workspace.management_repository(project)
         versions = self.versions(root, path, record['revision'])
         version = versions[0] if number is None else next((v for v in versions if v.number == number), None)
         if version is None:
@@ -105,6 +121,7 @@ class RecordsFacade:
         if not body.strip():
             raise ValueError('guidance is empty')
         path = self.guidance_path(project, epic)
+        self.provide(project, actor=actor)
         current = self.guidance(project, epic)
         number = 0 if current is None else current.version.number
         if base is not None and base != number:
@@ -130,11 +147,10 @@ class RecordsFacade:
     def guidance_history(self, project: str, epic: str | None = None) -> list[Version]:
         """Versions of the constitution or charter, newest first."""
         path = self.guidance_path(project, epic)
-        root = self.workspace.management_repository(project)
-        record = self.repository.current(project, path)
+        record = self.repository.current(project, path) if self.registered(project) else None
         if record is None:
             return []
-        return self.versions(root, path, record['revision'])
+        return self.versions(self.workspace.management_repository(project), path, record['revision'])
 
     def dispatch_guidance(self, work_item: str) -> dict | None:
         """Current constitution and nearest-epic charter versions for a job on work_item; None when neither is

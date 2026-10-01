@@ -15,7 +15,7 @@ JS = Path(__file__).resolve().parents[1] / "fleet" / "web" / "js"
 pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 
 VERSION = dict(revision="abc", number=2, actor="web-user", time="2026-10-01T09:00:00+02:00", source_run=None)
-VIEW = dict(registered=True, name="Charter: T · version 2", html="<h2>Goal</h2><p>Read &amp; store.</p>",
+VIEW = dict(name="Charter: T · version 2", html="<h2>Goal</h2><p>Read &amp; store.</p>",
             markdown="## Goal\n\nRead & store.\n",
             guidance=dict(path="charters/e.md", version=VERSION, inherits=dict(VERSION, number=1),
                           constitution=dict(VERSION, number=3)),
@@ -64,9 +64,7 @@ def test_editor_holds_escaped_text_and_its_error(tmp_path):
 
 
 @pytest.mark.parametrize("view, expected", [
-    (dict(registered=False, register="fleet project management p-1 <path>", guidance=None, history=[]),
-     ["No management repository is registered", "fleet project management p-1 &lt;path&gt;", 'data-copy="fleet']),
-    (dict(registered=True, guidance=None, history=[]), ["No charter recorded.", 'title="Write the charter"']),
+    (dict(guidance=None, history=[]), ["No charter recorded.", 'title="Write the charter"']),
     (dict(error="boom"), ['role="alert">boom']),
 ])
 def test_empty_states_are_named(tmp_path, view, expected):
@@ -88,7 +86,7 @@ def test_decisions_show_principle_promote_and_in_force(tmp_path):
 
 
 def test_floor_summary(tmp_path):
-    summaries = render(tmp_path, "[g.guidanceSummary(VIEW), g.guidanceSummary({ registered: true, guidance: null }), "
-                                 "g.guidanceSummary({ registered: false }), g.guidanceSummary(undefined)]")
+    summaries = render(tmp_path, "[g.guidanceSummary(VIEW), g.guidanceSummary({ guidance: null }), "
+                                 "g.guidanceSummary(undefined)]")
     assert summaries[0].startswith("version 2 · web-user")
-    assert summaries[1:] == ["Not recorded", "No management repository registered", "Loading…"]
+    assert summaries[1:] == ["Not recorded", "Loading…"]

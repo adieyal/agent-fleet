@@ -190,7 +190,7 @@ The logical authority for a project's identity, accepted workspace state and lin
 The single writer of shared structured state: project identity and floors, focus, work items, actions and claims, run links, attention and library metadata. The CLI and web app both write through it. While it is unavailable, workers may finish and record already-dispatched runs but cannot claim new shared work.
 
 **Management repository**:
-A per-project Git repository for the durable records Fleet authors: the plans it owns, summaries, decisions, dossiers and retained space definitions. It is separate from any product repository and never holds raw traces or live state. Writes are serialised and carry author and source-run provenance.
+A per-project Git repository for the durable records Fleet authors: the plans it owns, summaries, decisions, dossiers and retained space definitions. It is separate from any product repository and never holds raw traces or live state. Writes are serialised and carry author and source-run provenance. Fleet creates it under its own home on the project's first record, so no author chooses or registers one; registering a repository beforehand keeps it elsewhere.
 
 **Project library**:
 The project's orderly index of produced and linked assets: PRDs, plans, task summaries, decisions, run traces, images, datasets and other documents. Each entry records its source, related work, canonical location, availability, and whether it is current or historical. Indexing a resource does not copy it or grant access to it.

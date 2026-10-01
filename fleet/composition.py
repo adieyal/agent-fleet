@@ -38,6 +38,11 @@ def store_path() -> Path:
     return Path(os.environ["FLEET_STORE"]) if "FLEET_STORE" in os.environ else transport.config_path().parent / "fleet.db"
 
 
+def management_home() -> Path:
+    """Where fleet creates projects' management repositories when they first need one."""
+    return Path(os.environ.get("FLEET_MANAGEMENT") or Path.home() / ".local" / "share" / "fleet" / "management")
+
+
 def open_store(path: Path | None = None, *, clock: Callable[[], datetime] | None = None) -> Store:
     return Store(path if path is not None else store_path(), clock)
 
@@ -63,7 +68,8 @@ class Facades:
 
     @cached_property
     def records(self):
-        return RecordsFacade(RecordsRepository(self.store, self.unit), RepositoryWriter(), self.workspace, lambda: self.work)
+        return RecordsFacade(RecordsRepository(self.store, self.unit), RepositoryWriter(), self.workspace, lambda: self.work,
+                             management_home())
 
     @cached_property
     def work(self):

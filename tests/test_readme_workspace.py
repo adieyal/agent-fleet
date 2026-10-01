@@ -17,7 +17,7 @@ def test_workspace_guide(tmp_path, monkeypatch, capsys):
     section = text.split('## Getting started with the workspace\n', 1)[1].split('\n## ', 1)[0]
     constitution = tmp_path / 'constitution.md'
     constitution.write_text('# Constitution\n\nDecide yourself: test-only fixes.\n')
-    values = {'MANAGEMENT_PATH': str(tmp_path / 'management'), 'WORKING_DIRECTORY': str(tmp_path),
+    values = {'WORKING_DIRECTORY': str(tmp_path),
               'JOB_ID': 'existing-job', 'CONSTITUTION_PATH': str(constitution)}
     calls = []
 

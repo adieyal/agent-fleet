@@ -98,13 +98,14 @@ def test_charter_shows_the_constitution_version_it_inherits(registered, epic, tm
     assert output.endswith(CHARTER + "\nRevised.\n")
 
 
-def test_unregistered_project_names_the_register_command(project_id, tmp_path, capsys):
-    with pytest.raises(SystemExit):
-        edit(project_id, CONSTITUTION, tmp_path, "--actor", "user")
-    assert f"fleet project management {project_id} <path>" in capsys.readouterr().err
+def test_a_project_without_a_repository_gets_one_on_its_first_edit(project_id, tmp_path, capsys):
     with pytest.raises(SystemExit):
         cli.main(["guidance", "show", project_id])
-    assert "fleet project management" in capsys.readouterr().err
+    assert f"no constitution of {project_id} recorded" in capsys.readouterr().err
+    edit(project_id, CONSTITUTION, tmp_path, "--actor", "user")
+    assert "version 1" in capsys.readouterr().out
+    cli.main(["guidance", "show", project_id])
+    assert CONSTITUTION.strip().splitlines()[0] in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("body, message", [("  \n", "guidance is empty"), (CONSTITUTION, "unchanged from version 1")])
