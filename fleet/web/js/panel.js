@@ -159,7 +159,7 @@ export function renderPanel() {
         <span class="chip"><i style="background:${e.look.color}"></i><b>${esc(e.host)}</b></span>
         <span class="chip"><i style="background:${AGENT_COLOR[j.agent] || '#ccc'}"></i>${esc(j.agent)}</span>
         ${projectChip(j)}
-        <span class="chip st-${esc(j.status)}" title="${esc(jobTimeTitle(j))}">${esc(j.status)}${jobTime(j) ? ` · ${jobTime(j)}` : ''}</span>
+        <span class="chip st-${esc(j.status)}" title="${esc(jobTimeTitle(j))}">${esc(j.status === 'running' && j.activity?.kind === 'retry' ? j.activity.summary : j.status)}${jobTime(j) ? ` · ${jobTime(j)}` : ''}</span>
       </div></div>
     ${j.status !== 'running' ? DISMISS_BUTTON : ''}
     <button id="close" aria-label="Close">✕</button>`;

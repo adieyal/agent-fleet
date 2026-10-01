@@ -270,6 +270,10 @@ class ExecutionFacade:
     def unavailable(self, host: str) -> bool:
         return unavailable(self.repository, host)
 
+    def job_identities(self, host: str | None = None) -> list[tuple[str, str]]:
+        """Locally retained worker job identities, excluding interactive sessions."""
+        return self.repository.job_identities(host)
+
     def runs(self) -> list[Run]:
         return self.repository.runs()
 

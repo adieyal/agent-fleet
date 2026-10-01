@@ -218,7 +218,7 @@ def test_fleetd_wait_returns_for_a_blocked_job(jobs, capsys):
 def test_fleet_wait_exits_1_and_says_blocked(monkeypatch, capsys):
     finished = {"status": "blocked", "description": "Gather notes",
                 "results": [{"index": 0, "title": "Gather", "status": "blocked", "result": "no access"}]}
-    host = SimpleNamespace(name="h", fleetd_command=lambda arguments: arguments)
+    host = SimpleNamespace(name="h", is_local=True, fleetd_command=lambda arguments: arguments)
     monkeypatch.setattr(cli, "resolve", lambda reference: (host, "job"))
     monkeypatch.setattr(cli.subprocess, "Popen", lambda command, **kwargs: SimpleNamespace(
         poll=lambda: 0, stdout=StringIO(json.dumps(finished) + "\n"), terminate=lambda: None))

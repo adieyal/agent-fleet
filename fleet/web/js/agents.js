@@ -167,6 +167,7 @@ function jobWords(j, done, total) {
   const a = j.activity;
   switch (j.status) {
     case 'running':
+      if (a && a.kind === 'retry') return [trunc(a.summary, 120), 'quiet'];
       if (a && a.kind === 'error') return [trunc(a.summary, 120), 'bad'];
       if (a && a.kind === 'text') return [trunc(a.summary, 120), ''];
       return [a ? mumble(a) : 'warming up…', ''];

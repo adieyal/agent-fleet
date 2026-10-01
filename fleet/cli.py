@@ -63,23 +63,43 @@ LIST_ITEM = re.compile(r"^\s*(?:[-*]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+)(.+)$")
 
 
 def resolve(reference: str) -> tuple[Host, str]:
-    """Accept `host:id` or a bare id (searched on every host); either id may be a unique prefix, expanded to the
-    job's full id, which commands that address the job's directory (push, add -c, pull) need."""
-    if ":" in reference:
-        host_name, job_id = reference.split(":", 1)
-        host = transport.host_by_name(host_name)
-        transport.ensure_master(host)
-        ids = [job["id"] for job in transport.call(host, ["ls", "--all"]).get("jobs", [])]
-        if job_id in ids:
-            return host, job_id
-        matches = [identity for identity in ids if identity.startswith(job_id)]
-        if len(matches) != 1:
-            raise FleetError(f"'{job_id}' matches {len(matches)} jobs on {host_name}")
-        return host, matches[0]
-    matches = [(report.host, job["id"]) for report in transport.gather(transport.configured_hosts(), ["ls", "--all"])
-               for job in report.jobs if job["id"].startswith(reference)]
+    """Expand job prefixes locally first; query workers only for identities not yet retained."""
+    host_name, job_id = reference.split(":", 1) if ":" in reference else (None, reference)
+    if not job_id:
+        raise FleetError("job id must not be empty; use host:id")
+    hosts = [transport.host_by_name(host_name)] if host_name is not None else transport.configured_hosts()
+    # A full worker UUID already names its directory; no listing is needed.
+    if host_name is not None and re.fullmatch(r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", job_id):
+        return hosts[0], job_id
+    by_name = {host.name: host for host in hosts}
+    identities = open_execution().job_identities(host_name)
+    local = [(by_name[name], identity) for name, identity in identities
+             if name in by_name and identity.startswith(job_id)]
+    exact = [match for match in local if match[1] == job_id]
+    matches = exact or local
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        scope = f" on {host_name}" if host_name is not None else "; use host:id"
+        raise FleetError(f"'{job_id}' matches {len(matches)} jobs{scope}")
+    if host_name is not None:
+        try:
+            jobs = transport.call(hosts[0], ["ls", "--all", "--events", "0"]).get("jobs", [])
+        except FleetError as error:
+            raise FleetError(f"cannot resolve '{reference}': {error}") from error
+        remote = [(hosts[0], job["id"]) for job in jobs if job["id"].startswith(job_id)]
+    else:
+        reports = transport.gather(hosts, ["ls", "--all", "--events", "0"])
+        errors = [report.error for report in reports if report.error]
+        if errors:
+            raise FleetError(f"cannot resolve '{reference}': " + "; ".join(errors))
+        remote = [(report.host, job["id"]) for report in reports for job in report.jobs
+                  if job["id"].startswith(job_id)]
+    exact = [match for match in remote if match[1] == job_id]
+    matches = exact or remote
     if len(matches) != 1:
-        raise FleetError(f"'{reference}' matches {len(matches)} jobs; use host:id")
+        scope = f" on {host_name}" if host_name is not None else "; use host:id"
+        raise FleetError(f"'{job_id}' matches {len(matches)} jobs{scope}")
     return matches[0]
 
 
@@ -582,6 +602,7 @@ def workspace_line(job: dict[str, Any]) -> Text:
 
 def command_tail(arguments: argparse.Namespace) -> None:
     host, job_id = resolve(arguments.job)
+    transport.ensure_master(host)
     command = host.fleetd_command(["events", job_id, "--lines", str(arguments.lines)] + (["-f"] if arguments.follow else []))
     process = subprocess.Popen(command, stdout=subprocess.PIPE, text=True)
     assert process.stdout is not None
@@ -606,6 +627,9 @@ def wait_for(references: list[str], *, step: int | None, timeout: float | None, 
              any_job: bool = False) -> None:
     """Block until the jobs finish. Exit code 0 if all finished jobs are done, 1 otherwise."""
     pending = {reference: resolve(reference) for reference in references}
+    # Prepare all connections before opening pipes, so a setup failure cannot orphan another waiter.
+    for host, _ in pending.values():
+        transport.ensure_master(host)
     finished: dict[str, dict[str, Any]] = {}
     processes = {}
     for reference, (host, job_id) in pending.items():
@@ -2212,6 +2236,9 @@ def main(argv: list[str] | None = None) -> None:
         arguments.handler(arguments)
     except FleetError as error:
         error_console.print(f"fleet: {error}", style="red", markup=False)
+        sys.exit(2)
+    except subprocess.TimeoutExpired as error:
+        error_console.print(f"fleet: {arguments.command} timed out after {error.timeout}s", style="red", markup=False)
         sys.exit(2)
     except KeyboardInterrupt:
         sys.exit(130)

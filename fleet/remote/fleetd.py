@@ -22,6 +22,7 @@ import datetime
 import fcntl
 import hashlib
 import json
+import math
 import os
 import re
 import secrets
@@ -809,7 +810,7 @@ class WorkspaceWatch:
         self.thread.join()
 
 
-def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
+def _run_step_attempt(job: JsonObject, step: JsonObject) -> JsonObject:
     job_id = job["id"]
     config = load_config()
     environment = dict(os.environ)
@@ -826,13 +827,11 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
     outcome: JsonObject = {"ok": False, "summary": "", "text": "", "usage": None}
     result_recorded = False
     last_text = ""
+    runtime_error = ""
     mirror = DocumentMirror(job_id)
     raw_path = JOBS_DIRECTORY / job_id / f"raw-{step['index']}.jsonl"
     refusals = StreamRefusals(job, step["index"]) if job["agent"] == "claude" else None
     refresh_workspace(job_id, job["cwd"])
-    step_git = begin_step_git(job["cwd"])
-    with locked_job(job_id) as live_job:
-        live_job["steps"][step["index"]]["git"] = step_git
     with open(raw_path, "a") as raw_file, WorkspaceWatch(job_id, job["cwd"]):
         process = subprocess.Popen(command, cwd=job["cwd"], env=environment, stdin=subprocess.DEVNULL,
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
@@ -853,7 +852,18 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
                 with contextlib.suppress(OSError, ValueError, TypeError, KeyError, AttributeError):
                     refusals.consume(record)
             events, result = runtime.parse(record)
+            # Only runtime errors qualify, never failed tools or agent-authored text.
+            if record.get("type") in ("error", "turn.failed"):
+                runtime_error = next((event["summary"] for event in events if event["kind"] == "error"), "")
+            elif job["agent"] == "claude" and record.get("type") == "result" and record.get("is_error"):
+                runtime_error = " ".join(str(value) for value in [record.get("result") or "", *(record.get("errors") or [])])
             if result is not None:
+                if result.get("ok"):
+                    runtime_error = ""
+                if record.get("session_id"):
+                    with locked_job(job_id) as live_job:
+                        live_job["session_id"] = record["session_id"]
+                    job["session_id"] = record["session_id"]
                 result_recorded = True
                 outcome.update(result)
             for event in events:
@@ -874,10 +884,9 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
             mirror.sync()
         exit_code = process.wait()
     refresh_workspace(job_id, job["cwd"])
-    step_git = end_step_git(job["cwd"], step_git)
-    with locked_job(job_id) as live_job:
-        live_job["steps"][step["index"]]["git"] = step_git
     runtime.finish(outcome, exit_code, last_text)
+    if runtime_error:
+        outcome.update(ok=False, summary=runtime_error, text=runtime_error, runtime_error=runtime_error)
     outcome["exit_code"] = exit_code
     if exit_code < 0 and not result_recorded:
         outcome["reason"] = "lost"
@@ -894,6 +903,76 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
             outcome["ok"] = False
     copy_written_documents(job_id)
     return outcome
+
+
+def transient_runtime_reason(message: str) -> Optional[str]:
+    """Recognize provider failures shared by Codex and Claude runtime envelopes."""
+    lowered = message.lower()
+    if "model is at capacity" in lowered:
+        return "model at capacity"
+    if "overloaded" in lowered or "overload_error" in lowered:
+        return "provider overloaded"
+    if "rate limit" in lowered or "rate_limit" in lowered or "too many requests" in lowered:
+        return "provider rate limited"
+    if re.search(r"(?:http(?: status)?|status(?: code)?|response(?: status)?|api error)[: =]+(?:429|5\d\d)\b", lowered):
+        return "provider HTTP error"
+    if "api_error" in lowered or "internal server error" in lowered or "service unavailable" in lowered:
+        return "provider unavailable"
+    return None
+
+
+def _run_step_with_retries(job: JsonObject, step: JsonObject) -> JsonObject:
+    """Resume transiently failed turns with bounded, observable, cancellable waits."""
+    delays = load_config().get("runtime_retry_delays", [60, 180, 600])
+    if not isinstance(delays, list) or len(delays) > 3 or any(
+            not isinstance(delay, (int, float)) or isinstance(delay, bool) or not math.isfinite(delay) or delay < 0 for delay in delays):
+        return {"ok": False, "summary": "runtime_retry_delays must contain at most three finite nonnegative delays in seconds",
+                "reason": "invalid runtime retry configuration"}
+    retries = 0
+    while True:
+        outcome = _run_step_attempt(job, step)
+        reason = transient_runtime_reason(outcome.get("runtime_error", ""))
+        if outcome["ok"] or reason is None:
+            return outcome
+        if retries == len(delays):
+            outcome.update(reason=f"{reason}; exhausted {retries} runtime retries",
+                           summary=f"{reason}; exhausted {retries} runtime retries: {outcome['summary']}")
+            return outcome
+        retry_at = now() + delays[retries]
+        retries += 1
+        waiting = {"kind": "retry", "step": step["index"], "reason": reason,
+                   "retry": retries, "retry_limit": len(delays), "retry_at": retry_at,
+                   "summary": f"waiting: {reason}, retry {retries}/{len(delays)} at {time.strftime('%H:%M', time.localtime(retry_at))}"}
+        with locked_job(job["id"]) as live_job:
+            live_job["agent_pid"] = None
+            live_job["runtime_wait"] = waiting
+        append_event(job["id"], waiting)
+        while True:
+            live_job = read_job(job["id"])
+            if live_job.get("cancelled") or now() >= retry_at:
+                break
+            time.sleep(max(0, min(0.5, retry_at - now())))
+        with locked_job(job["id"]) as live_job:
+            live_job.pop("runtime_wait", None)
+            job["session_id"] = live_job.get("session_id")
+            cancelled = live_job.get("cancelled")
+        if cancelled:
+            return outcome
+        append_event(job["id"], {"kind": "retry", "step": step["index"],
+                                 "summary": f"resuming after {reason}, retry {retries}/{len(delays)}"})
+
+
+def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
+    # The git evidence spans the entire step, including work before a provider failure.
+    step_git = begin_step_git(job["cwd"])
+    with locked_job(job["id"]) as live_job:
+        live_job["steps"][step["index"]]["git"] = step_git
+    try:
+        return _run_step_with_retries(job, step)
+    finally:
+        step_git = end_step_git(job["cwd"], step_git)
+        with locked_job(job["id"]) as live_job:
+            live_job["steps"][step["index"]]["git"] = step_git
 
 
 def next_step(job: JsonObject) -> Optional[JsonObject]:
@@ -999,7 +1078,7 @@ def launch_runner(job_id: str) -> None:
 def job_summary(job: JsonObject, event_count: int) -> JsonObject:
     status = derive_status(job)
     events = read_events(job["id"], max(event_count, 1))
-    activity = next((event for event in reversed(events) if event.get("kind") in ("tool", "text", "error")), None)
+    activity = job.get("runtime_wait") or next((event for event in reversed(events) if event.get("kind") in ("tool", "text", "error")), None)
     return {
         "id": job["id"], "host": os.uname().nodename, "project": job["project"],
         "schema_version": DISPATCH_SCHEMA_VERSION, "run_id": job.get("run_id"),
