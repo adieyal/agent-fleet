@@ -202,7 +202,7 @@ def derive_status(job: JsonObject) -> str:
         return "stalled"
     if any(step["status"] == "failed" for step in steps):
         return "failed"
-    if any(step["status"] == "blocked" for step in steps):
+    if any(step["status"] == "blocked" and step.get("answered_by") is None for step in steps):
         return "blocked"
     if any(step["status"] == "pending" for step in steps):
         return "queued"
@@ -800,8 +800,9 @@ def job_summary(job: JsonObject, event_count: int) -> JsonObject:
         "description": job["description"], "agent": job["agent"], "model": job.get("model"),
         "cwd": job["cwd"], "permission": job["permission"], "status": status,
         "created_at": job["created_at"], "updated_at": job.get("updated_at"),
-        "steps": [{key: step.get(key) for key in ("index", "title", "status", "started_at", "finished_at", "result")}
-                  for step in job["steps"]],
+        "steps": [{**{key: step.get(key) for key in ("index", "title", "status", "started_at", "finished_at", "result",
+                                                     "answered_by")},
+                   "message": blocked_message(job["id"], step)} for step in job["steps"]],
         "todos": job.get("todos", []),
         "activity": activity,
         "events": events[-event_count:] if event_count else [],
@@ -812,6 +813,18 @@ def job_summary(job: JsonObject, event_count: int) -> JsonObject:
                   "availability": "available" if (JOBS_DIRECTORY / job["id"] / "events.jsonl").is_file()
                   else "unavailable"},
     }
+
+
+def blocked_message(job_id: str, step: JsonObject) -> Optional[str]:
+    """A blocked step's final message in full (its result is shortened): what the agent asks the supervisor.
+
+    None for any other step, an answered one, or when the step left no report.
+    """
+    if step["status"] != "blocked" or step.get("answered_by") is not None:
+        return None
+    with contextlib.suppress(OSError):
+        return (JOBS_DIRECTORY / job_id / f"result-{step['index']}.md").read_text() or None
+    return None
 
 
 def job_documents(job: JsonObject) -> List[JsonObject]:
@@ -2017,6 +2030,11 @@ def command_grant(arguments: argparse.Namespace) -> None:
 
 
 def command_add(arguments: argparse.Namespace) -> None:
+    if arguments.key is not None:
+        add_keyed(arguments)
+        return
+    if arguments.answers is not None:
+        fail("--answers needs --key")
     new_steps = parse_steps(Path(arguments.steps_file).read_text())
     with locked_job(arguments.job) as job:
         job["cancelled"] = False
@@ -2032,6 +2050,47 @@ def command_add(arguments: argparse.Namespace) -> None:
     if not arguments.hold:
         launch_runner(arguments.job)
     emit(job_summary(read_job(arguments.job), 0))
+
+
+def add_keyed(arguments: argparse.Namespace) -> None:
+    """Append steps once per key; with --answers they answer that blocked step, which then no longer blocks the job.
+
+    Idempotent by key: a repeated add reports the first result and queues nothing more.
+    """
+    if arguments.schema_version != 1:
+        fail("unsupported add schema version")
+    new_steps = parse_steps(Path(arguments.steps_file).read_text())
+    if not arguments.key.strip() or not new_steps or arguments.retry:
+        fail("a keyed add needs a key and at least one step, and cannot retry")
+    with locked_job(arguments.job) as job:
+        added = next((added for added in job.get("keyed_additions", []) if added["key"] == arguments.key), None)
+        if added is None:
+            if arguments.answers is not None:
+                if not 0 <= arguments.answers < len(job["steps"]):
+                    fail(f"job has no step {arguments.answers}")
+                answered = job["steps"][arguments.answers]
+                if answered["status"] != "blocked" or answered.get("answered_by") is not None:
+                    fail(f"step {arguments.answers + 1} is not waiting for an answer")
+                answered["answered_by"] = len(job["steps"])
+            job["cancelled"] = False
+            indices = []
+            for item in new_steps:
+                job["steps"].append(make_step(len(job["steps"]), item["prompt"], item.get("title")))
+                indices.append(len(job["steps"]) - 1)
+            added = {"key": arguments.key, "answers": arguments.answers, "steps": indices, "at": now()}
+            job.setdefault("keyed_additions", []).append(added)
+            write_briefs(arguments.job, job["steps"])
+            fresh = True
+        else:
+            fresh = False
+    if fresh:
+        summary = f"{len(added['steps'])} step(s) added" + (
+            f" answering step {added['answers'] + 1}" if added["answers"] is not None else "")
+        append_event(arguments.job, {"kind": "job", "status": "queued", "summary": summary})
+        if not arguments.hold:
+            launch_runner(arguments.job)
+    emit({"schema_version": 1, "key": arguments.key, "status": "applied", "answers": added["answers"],
+          "steps": added["steps"]})
 
 
 def command_start(arguments: argparse.Namespace) -> None:
@@ -2319,6 +2378,9 @@ def main() -> None:
     add.add_argument("--steps-file", required=True)
     add.add_argument("--retry", action="store_true")
     add.add_argument("--hold", action="store_true")
+    add.add_argument("--key", help="add these steps once: a repeat with the same key queues nothing more")
+    add.add_argument("--answers", type=int, help="the blocked step these steps answer (needs --key)")
+    add.add_argument("--schema-version", type=int, help="required with --key")
     add.set_defaults(handler=command_add)
 
     start = commands.add_parser("start")
