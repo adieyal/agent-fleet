@@ -247,10 +247,12 @@ document.getElementById('zoom').addEventListener('click', ev => {
   else if (z === 'fit') fit(false);
 });
 document.addEventListener('keydown', ev => {
-  if (ev.target.closest && ev.target.closest('input,textarea')) return;
+  if (ev.target.closest && ev.target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])')) return;
   if (!reader.hidden) { if (ev.key === 'Escape') closeReader(); return; }
   if (!sankeyPane.hidden) return;   // the Sankey handles its own keys
   if (ev.key === 'Escape') { if (!libraryPane.hidden) closeLibrary(); else closePanel(); }
+  else if (!['deck', 'floor'].includes(document.body.dataset.view) || !libraryPane.hidden
+           || !document.getElementById('workarea').hidden) return;
   else if (ev.key === '+' || ev.key === '=') zoomAt(vw / 2, vh / 2, 1.2);
   else if (ev.key === '-' || ev.key === '_') zoomAt(vw / 2, vh / 2, 1 / 1.2);
   else if (ev.key === 'f' || ev.key === 'F') fit(false);

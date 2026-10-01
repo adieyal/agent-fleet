@@ -508,6 +508,7 @@ def test_the_focus_switch_changes_a_floor_and_moves_nothing(page: Page, ten_floo
 def test_shuttering_packs_a_floor_away_and_undo_brings_it_back(page: Page, restoke_url: str) -> None:
     url = restoke_url
     open_building(page, url)
+    expect(page.locator('.shutter-handle[data-floor="2"]')).to_have_text("Shutter")
     page.locator('.shutter-handle[data-floor="2"]').click()   # one pull, no confirmation
 
     plate = page.locator('.plate[data-floor="2"]')
@@ -547,6 +548,8 @@ def test_a_crate_opens_read_only_and_moves_back_to_its_floor(page: Page, restoke
     expect(crate.locator("b")).to_have_text("Invoice analysis")
     expect(crate.locator(".runs")).to_have_text("2 runs")           # its runs still show, in the storehouse
 
+    expect(crate.locator("[data-open-crate]")).to_have_attribute("title", re.compile("read-only"))
+    expect(crate.locator("[data-restore]")).to_have_attribute("title", re.compile("floor 2"))
     crate.locator("[data-open-crate]").click()
     expect(page.locator("body")).to_have_attribute("data-view", "floor")
     expect(page.locator("body")).to_have_attribute("data-readonly", "")
@@ -561,6 +564,7 @@ def test_a_crate_opens_read_only_and_moves_back_to_its_floor(page: Page, restoke
     page.locator(f'.storehouse .crate[data-project="{INVOICES}"] [data-restore]').click()
     expect(page.locator('.plate[data-floor="2"]')).to_have_attribute("data-project", INVOICES)
     expect(page.locator(".storehouse .crate")).to_have_count(0)
+    expect(page.locator("#toast")).to_contain_text("Invoice analysis is restored to floor 2")
     page.keyboard.press("Escape")
     expect(page.locator(".storehouse")).to_have_count(0)
     assert state(url)["building"]["shuttered"] == {}
@@ -571,7 +575,13 @@ def test_a_visitor_moves_in_to_the_lowest_free_floor(page: Page, restoke_url: st
     open_building(page, restoke_url)
     visitor = page.locator('.lobby .visitor[data-label="agent-fleet"]')
     expect(visitor).to_have_attribute("data-hosts", "worker")
+    before = state(restoke_url)["building"]["floors"]
     visitor.locator("[data-move-in]").click()
+    expect(page.locator(".movein")).to_be_visible()
+    assert state(restoke_url)["building"]["floors"] == before
+    expect(page.locator(".movein")).to_contain_text("floor 3")
+    page.locator("[data-new-project]").click()
+    expect(page.locator("#toast")).to_contain_text("is registered on floor 3")
     expect(page.locator('.plate[data-floor="3"]')).not_to_have_attribute("data-mode", "to-let")
     expect(page.locator('.plate[data-floor="3"] b')).to_have_text("agent-fleet")
     expect(page.locator('.lobby .visitor[data-label="agent-fleet"]')).to_have_count(0)
@@ -586,6 +596,8 @@ def test_a_full_building_offers_only_clearing_a_floor_or_cancelling(page: Page, 
     open_building(page, url)
     notes = page.locator('.lobby .visitor[data-label="notes"] button')
     notes.click()
+    expect(page.locator(".movein")).to_be_visible()
+    page.locator("[data-new-project]").click()
     prompt = page.locator(".vacancy")
     expect(prompt).to_be_visible()
     expect(prompt.locator("[data-clear]")).to_have_count(10)
@@ -595,6 +607,8 @@ def test_a_full_building_offers_only_clearing_a_floor_or_cancelling(page: Page, 
     assert state(url)["building"]["shuttered"] == {}
 
     notes.click()
+    expect(page.locator(".movein")).to_be_visible()
+    page.locator("[data-new-project]").click()
     top = next(project for project, floor in state(url)["building"]["floors"].items() if floor == 10)
     page.locator(f'.vacancy [data-clear="{top}"]').click()
     expect(page.locator('.plate[data-floor="10"] b')).to_have_text("notes")
@@ -602,6 +616,11 @@ def test_a_full_building_offers_only_clearing_a_floor_or_cancelling(page: Page, 
     building = state(url)["building"]
     assert building["capacity"] == 10 and list(building["shuttered"]) == [top]
     assert [crate["name"] for crate in page.evaluate("fleetBuilding.crates()")] == ["Research notes"]
+    expect(page.locator("#toast")).to_contain_text("Undo restores Research notes")
+    page.locator("#toast [data-undo]").click()
+    expect(page.locator('.plate[data-floor="10"] b')).to_have_text("Research notes")
+    expect(page.locator("#toast")).to_contain_text("notes remains registered in the storehouse")
+    assert state(url)["building"]["floors"][top] == 10
 
 
 # ------------------------------------------------------------------ linking and merging: these change their fleet too
@@ -624,7 +643,9 @@ def test_moving_in_offers_linking_first_and_linking_takes_no_floor(page: Page, l
     expect(first).to_have_attribute("data-link", "p-0000fa01")
     expect(first).to_contain_text("Link to Agent Fleet (floor 3)")
     expect(prompt.locator("[data-new-project]")).to_have_text("New project")
+    expect(prompt).to_contain_text("no unlink")
     first.click()
+    expect(page.locator("#toast")).to_contain_text("agent-fleet on home, worker is linked to Agent Fleet")
     expect(prompt).to_have_count(0)
     expect(page.locator('.lobby .visitor[data-label="agent-fleet"]')).to_have_count(0)
     document = state(linking_url)
@@ -646,13 +667,22 @@ def test_a_matching_repository_is_offered_and_a_new_project_stays_possible(page:
     assert {"host": "worker", "label": "fleet-docs"} not in restoke["links"]
 
 
-def test_merging_from_a_floor_keeps_the_older_project_and_frees_the_floor(page: Page, linking_url: str) -> None:
+def test_merging_from_a_floor_keeps_the_older_project_and_frees_the_floor(page: Page, linking_url: str, request) -> None:
     open_building(page, linking_url)
     page.locator('.plate[data-floor="4"] [data-merge]').click()
     dialog = page.locator(".merge")
     dialog.locator('[data-merge-with="p-1c0ce5a2"]').click()
     expect(dialog).to_contain_text("Invoice analysis is older, so it stays")
     dialog.locator('[data-merge-keep="p-1c0ce5a2"]').click()
+    expect(dialog).to_contain_text("Permanently delete")
+    expect(dialog).to_contain_text("This cannot be undone")
+    assert "p-00001c02" in {project["id"] for project in state(linking_url)["projects"]}
+    shots = request.config.getoption("--shots")
+    if shots:
+        from pathlib import Path
+        Path(shots).mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(Path(shots) / "2-safe-merge-confirm.png"))
+    dialog.locator('[data-confirm-merge]').click()
     expect(page.locator('.plate[data-floor="4"]')).to_have_attribute("data-mode", "to-let")
     expect(page.locator("#toast")).to_contain_text("Floor 4 is free")
     document = state(linking_url)
@@ -720,3 +750,60 @@ def test_audit1_batch6_building_focus_uses_same_vocabulary(page: Page, restoke_u
         page.screenshot(path=request.config.getoption('--shots') + '/batch6-building-focus.png')
         page.set_viewport_size({'width': 390, 'height': 844})
         page.screenshot(path=request.config.getoption('--shots') + '/batch6-building-focus-390.png')
+
+
+@pytest.mark.parametrize("width", [1440, 390])
+def test_batch5_building_write_consequences(page: Page, tmp_path: Path, request: pytest.FixtureRequest, width: int) -> None:
+    """Isolated state for screenshots and a restore whose old floor has been taken."""
+    page.set_viewport_size({"width": width, "height": 900 if width == 1440 else 844})
+    shots = request.config.getoption("--shots")
+
+    def shot(name: str) -> None:
+        if shots:
+            target = Path(shots) / f"batch5-{width}-{name}.png"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            page.screenshot(path=str(target))
+
+    with serve_fixture(FIXTURE) as url:
+        open_building(page, url)
+        shot("building")
+        handle = page.locator('.shutter-handle[data-floor="2"]')
+        expect(handle).to_have_text("Shutter")
+        handle.click()
+        expect(page.locator('.plate[data-floor="2"]')).to_have_attribute("data-mode", "to-let")
+        page.locator('.visitor[data-label="agent-fleet"] [data-move-in]').click()
+        expect(page.locator('.movein')).to_contain_text("floor 2")
+        assert INVOICES in state(url)["building"]["shuttered"]
+        shot("move-in")
+        page.locator('[data-new-project]').click()
+        expect(page.locator('.plate[data-floor="2"] b')).to_have_text("agent-fleet")
+        page.locator('.annex-sign').click()
+        crate = page.locator(f'.crate[data-project="{INVOICES}"]')
+        expect(crate.locator('[data-open-crate]')).to_have_attribute("title", re.compile("read-only"))
+        expect(crate.locator('[data-restore]')).to_have_attribute("title", re.compile("floor 3"))
+        shot("storehouse")
+        crate.locator('[data-restore]').click()
+        expect(page.locator('#toast')).to_contain_text("Invoice analysis is restored to floor 3")
+        shot("restored")
+
+    with serve_fixture(TEN_FLOORS) as url:
+        open_building(page, url)
+        page.locator('.visitor[data-label="notes"] [data-move-in]').click()
+        page.locator('[data-new-project]').click()
+        expect(page.locator('.vacancy')).to_contain_text("Undo swaps them back")
+        shot("vacancy")
+        top = next(project for project, floor in state(url)["building"]["floors"].items() if floor == 10)
+        page.locator(f'[data-clear="{top}"]').click()
+        expect(page.locator('#toast [data-undo]')).to_be_visible()
+        shot("swap-undo")
+        page.locator('#toast [data-undo]').click()
+        expect(page.locator('.plate[data-floor="10"] b')).to_have_text("Research notes")
+        incoming = next(c for c in state(url)["building"]["shuttered"] if c != top)
+        page.locator('.annex-sign').click()
+        page.locator(f'.crate[data-project="{incoming}"] [data-restore]').click()
+        expect(page.locator('.vacancy')).to_be_visible()
+        page.locator(f'[data-clear="{top}"]').click()
+        expect(page.locator('#toast')).to_contain_text("notes is restored on floor 10")
+        page.locator('#toast [data-undo]').click()
+        expect(page.locator('.plate[data-floor="10"] b')).to_have_text("Research notes")
+        assert list(state(url)["building"]["shuttered"]) == [incoming]

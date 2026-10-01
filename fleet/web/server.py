@@ -7,13 +7,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from dataclasses import asdict
 import pickle
 import os
 import selectors
 import subprocess
 import threading
+import sys
 import time
+from datetime import datetime, timezone, timedelta
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -25,11 +28,14 @@ from fleet.composition import (Store, facades, open_attention, open_execution, o
                                open_workspace, open_work, open_decisions)
 from fleet.modules.records import GuidanceConflict
 from fleet.orchestration import promote_decision
+from fleet.triage_scheduler import TriageScheduler
+from fleet.composition import deliver_triage
 from fleet.modules.attention import InputObservation, ItemResolved, refusal_rules
 from fleet.modules.workspace import (NoVacancy, FOCUSES, AlreadyShuttered, NotShuttered,
                                      WorkspaceFacade, Registry)
 from fleet.projections.workspace import annotate, resolve, registry_config
 from fleet.projections.project import project_status
+from fleet.projections.run_history import history_runs, run_detail
 from fleet.projections.bench import bench_rooms, bench_state
 from fleet.projections.history import parse_since, subject_history
 from fleet.transport import FleetError, Host
@@ -39,7 +45,7 @@ from fleet.web.guidance import epic_decisions, project_decisions, guidance_view
 from fleet.web.job_store import DocumentKeeper, ProjectDocuments
 from fleet.web.library import ProjectLibrary
 from fleet.web.live import AlreadyHoused, LiveWorkspace
-from fleet.web.ingester import observe_runs, record_decisions
+from fleet.web.ingester import observe_runs, observe_sessions, record_decisions
 
 WEB_ROOT = Path(__file__).parent.resolve()
 INDEX_PATH = WEB_ROOT / "index.html"
@@ -139,7 +145,28 @@ class FleetState(LiveWorkspace):
         self.pipeline_runs = {}
         self.pipeline_seq = 0
         self.documents = documents if documents is not None else ProjectDocuments()
-        self.keeper = DocumentKeeper(self.documents, self.fetch_raw)
+        self.trace_retainer = transport.keep_run_trace
+        self.keeper = DocumentKeeper(self.documents, self.fetch_raw, keep_trace=self.keep_trace)
+        for observed in self.execution.hosts():
+            if observed["name"] in self.by_host and not observed["reachable"]:
+                entry = self.by_host[observed["name"]]
+                entry.update(error=observed["error"], down_since=datetime.fromisoformat(observed["since"]).timestamp())
+                for run in self.execution.runs():
+                    if run.host != observed["name"] or run.status not in ("running", "unknown outcome"):
+                        continue
+                    value = {"id": run.remote_job_id, "project": run.label, "agent": run.runtime, "cwd": run.cwd,
+                             "updated_at": run.last_observed.timestamp() if run.last_observed else None,
+                             "workspace": run.workspace, "workspace_reason": run.workspace_reason,
+                             "stale": True, "stale_since": entry["down_since"]}
+                    if run.kind == "session":
+                        value.update(title=run.title, status="unknown outcome", started_at=run.start.timestamp() if run.start else None)
+                        entry["sessions"][run.remote_job_id] = value
+                    else:
+                        value.update(description=run.title, status="unknown outcome", created_at=run.start.timestamp() if run.start else None,
+                                     steps=[{**step, "started_at": datetime.fromisoformat(step["start"]).timestamp() if step["start"] else None,
+                                             "finished_at": datetime.fromisoformat(step["end"]).timestamp() if step["end"] else None}
+                                            for step in self.execution.steps(run.id)])
+                        entry["jobs"][run.remote_job_id] = value
 
     def fetch_raw(self, host_name: str, job_id: str, document_id: str) -> dict[str, Any]:
         """A job document's Markdown as its host serves it, before rendering."""
@@ -147,41 +174,74 @@ class FleetState(LiveWorkspace):
         return transport.call(host, ["read", job_id, document_id], timeout=30)
 
     def keep_documents(self, host_name: str, job: dict[str, Any]) -> None:
-        """Copy the job's new and changed documents into its project's store; a job with no project has none."""
+        """Keep job documents in its project or under its unregistered host label."""
         project_id = resolve(self.registry, host_name, job)["project_id"]
-        if project_id is not None and job.get("documents"):
-            self.keeper.observe(host_name, project_id, job)
+        if job.get("documents") or job.get("trace"):
+            scope = project_id if project_id is not None else self.documents.label_scope(host_name, job.get("project") or "")
+            self.keeper.observe(host_name, scope, job)
+
+    def keep_trace(self, host_name: str, job: dict) -> None:
+        host = next(host for host in self.hosts if host.name == host_name)
+        self.trace_retainer(self.execution, host, job)
 
     def job_hosts(self) -> dict[str, tuple[bool, set[str]]]:
         with self.changed:
             return {name: (bool(entry["ok"]), set(entry["jobs"])) for name, entry in self.by_host.items()}
 
+    def schedule_triage(self) -> None:
+        services = facades(self.store)
+        bodies = {intent['id']: json.dumps(asdict(services.decisions.get(intent['key'])), default=str)
+                  for intent in services.records.intents()
+                  if intent['state'] == 'pending' and intent['path'] == f"decisions/{intent['key']}.json"}
+        try:
+            services.records.reconcile(bodies)
+        except OSError:
+            logging.getLogger(__name__).exception('Records publication remains pending')
+        TriageScheduler(services, lambda run, **options: deliver_triage(services, run, **options),
+                        transport.host_by_name).schedule()
+
     def follow_history(self, stop: threading.Event) -> None:
         while not stop.is_set():
+            self.schedule_triage()
             changes = self.store.history_after(self.history_cursor)
             if changes:
                 self.history_cursor = int(changes[-1]["sequence"])
                 self.bump()
             stop.wait(0.25)
 
-    def update(self, host_name: str, mutate: Any, *, owners: set[str] | None = None,
-               ingest: bool = True, heartbeat: bool = False) -> None:
+    def update(self, host_name: str, mutate: Any, *, subjects: set[str] | None = None,
+               ingest: bool = True, heartbeat: bool = False, deleted_jobs: set[str] = frozenset()) -> None:
         with self.changed:
             previous = snapshot(self.by_host[host_name])
             sequence = self.store.latest_sequence()
             mutate(self.by_host[host_name])
+            entry = self.by_host[host_name]
+            if not entry["ok"]:
+                entry.setdefault("down_since", self.execution.clock().timestamp())
+                for kind in ("jobs", "sessions"):
+                    for item in entry[kind].values():
+                        item.update(stale=True, stale_since=entry["down_since"])
+            if not entry.get("_syncing"):
+                if entry["ok"]:
+                    entry.pop("down_since", None)
+                self.execution.record_host(host_name, reachable=entry["ok"], error=entry["error"])
             self.by_host[host_name] = snapshot(self.by_host[host_name])
-            retry_deliveries = self.by_host[host_name]["ok"] and previous != self.by_host[host_name]
+            public = lambda value: {key: item for key, item in value.items() if not key.startswith("_")}
+            retry_deliveries = self.by_host[host_name]["ok"] and public(previous) != public(self.by_host[host_name])
             reconciled = False
             if ingest:
-                host = self.by_host[host_name]
-                observe_runs(self.execution, self.run_library, host, self.indexed)
+                entry = self.by_host[host_name]
+                host = {**entry, **{kind: {identity: item for identity, item in entry[kind].items()
+                                          if not item.get("stale")} for kind in ("jobs", "sessions")}}
+                observe_runs(self.execution, self.run_library, host, self.indexed,
+                             lambda job: resolve(self.registry, host_name, job)["project_id"])
+                observe_sessions(self.execution, host, lambda session: resolve(self.registry, host_name, session)["project_id"])
                 record_decisions(self.decisions, self.execution, self.attention, host,
                                  lambda job: resolve(self.registry, host_name, job)["project_id"], self.taken_decisions)
                 reconciled = self.attention.observe({**host,
                     "jobs": [resolve(self.registry, host_name, job) for job in host["jobs"].values()],
                     "sessions": [resolve(self.registry, host_name, session) for session in host["sessions"].values()]},
-                    owners=owners, raise_items=not heartbeat)
+                    subjects=subjects, raise_items=not heartbeat, deleted_jobs=deleted_jobs)
                 # A heartbeat follows a full pass over the host's jobs, so absent jobs are gone.
                 reconciled = self.attention.close_refusals(
                     {**host, "jobs": list(host["jobs"].values()), "sessions": []}, complete=heartbeat) or reconciled
@@ -191,6 +251,7 @@ class FleetState(LiveWorkspace):
             self.changed.notify_all()
         if retry_deliveries:
             self.execution.retry_deliveries(host_name)
+        self.schedule_triage()
 
     def refresh_registry(self) -> str | None:
         try:
@@ -231,10 +292,10 @@ class FleetState(LiveWorkspace):
             document = self.with_attention({"time": time.time(), "build": BUILD, "project_labels": self.project_labels,
                     "projects": [{"id": project_id, **entry} for project_id, entry in registry_config(registry).items()],
                     "projects_error": projects_error, "hosts": [
-                {**{key: value for key, value in self.by_host[host.name].items() if key not in ("jobs", "sessions")},
-                 "jobs": [annotate(self.workspace, resolve(registry, host.name, job)) for job in
-                          sorted(self.by_host[host.name]["jobs"].values(), key=lambda job: job["created_at"])],
-                 "sessions": [annotate(self.workspace, resolve(registry, host.name, session)) for session in
+                {**{key: value for key, value in self.by_host[host.name].items() if key not in ("jobs", "sessions") and not key.startswith("_")},
+                 "jobs": [annotate(self.workspace, resolve(registry, host.name, stale_work(self.by_host[host.name], job))) for job in
+                          sorted(self.by_host[host.name]["jobs"].values(), key=lambda job: job.get("created_at") or 0)],
+                 "sessions": [annotate(self.workspace, resolve(registry, host.name, stale_work(self.by_host[host.name], session))) for session in
                               sorted(self.by_host[host.name]["sessions"].values(),
                                      key=lambda session: session.get("started_at") or 0)]}
                 for host in self.hosts]})
@@ -268,13 +329,19 @@ class FleetState(LiveWorkspace):
         return fetch_asset(host, job_id, document_id, asset_path)
 
 
+def stale_work(host: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
+    stale = not host["ok"] or item.get("stale", False)
+    return {**item, "stale": stale, "stale_reason":
+            (host.get("error") or "awaiting the host’s complete snapshot") if stale else None}
+
+
 def follow_host(state: FleetState, host: Host) -> None:
     """Keep one `fleetd stream` running for the host, reconnecting when it dies or goes quiet."""
     while True:
         error = run_stream(state, host)
 
         def mark_down(entry: dict[str, Any]) -> None:
-            entry.update(ok=False, error=error, jobs={}, sessions={})
+            entry.update(ok=False, error=error, _syncing=False)
 
         state.update(host.name, mark_down)
         time.sleep(RECONNECT_DELAY)
@@ -322,28 +389,78 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
         state.bump()
         return
     if kind == "hello":
-        state.update(host.name, lambda entry: entry.update(ok=True, error=None, jobs={}, sessions={}), ingest=False)
+        def hello(entry):
+            for group in ("jobs", "sessions"):
+                for item in entry[group].values():
+                    item.update(stale=True, stale_since=entry.get("down_since", time.time()))
+            entry.update(ok=True, error=None, _syncing=True, _seen_jobs=set(), _seen_sessions=set())
+        state.update(host.name, hello, ingest=False)
+        try:
+            jobs = transport.catch_up_jobs(host)
+            def catch_jobs(entry):
+                entry["jobs"].update({job["id"]: job for job in jobs})
+                entry["_seen_jobs"].update(job["id"] for job in jobs)
+            state.update(host.name, catch_jobs,
+                         subjects={f"job:{host.name}:{job['id']}" for job in jobs})
+            for job in jobs:
+                state.keep_documents(host.name, job)
+        except (FleetError, ValueError, KeyError, OSError) as error:
+            print(f"fleet: catch-up on {host.name} failed: {error}", file=sys.stderr)
+        known = next((entry for entry in state.execution.hosts() if entry["name"] == host.name), None)
+        lower = datetime.now(timezone.utc) - timedelta(days=30)
+        if known and known["last_observed"]:
+            lower = max(lower, datetime.fromisoformat(known["last_observed"]))
+        try:
+            sessions = transport.catch_up_sessions(host, lower.isoformat())
+            for session in sessions:
+                state.execution.observe_session(host.name, session, resolve(state.registry, host.name, session)["project_id"])
+            def catch_sessions(entry):
+                current = {session["id"]: session for session in sessions if session["status"] != "stopped"}
+                entry["sessions"].update(current)
+                entry["_seen_sessions"].update(current)
+            state.update(host.name, catch_sessions, subjects={f"session:{host.name}:{session['id']}" for session in sessions})
+        except (FleetError, ValueError, KeyError, OSError) as error:
+            print(f"fleet: session catch-up on {host.name} failed: {error}", file=sys.stderr)
     elif kind == "job":
         job = message["job"]
-        state.update(host.name, lambda entry: entry["jobs"].__setitem__(job["id"], job),
-                     owners={f"job:{host.name}:{job['id']}"})
+        def report_job(entry):
+            entry["jobs"][job["id"]] = job
+            if entry.get("_syncing"):
+                entry["_seen_jobs"].add(job["id"])
+        state.update(host.name, report_job,
+                     subjects={f"job:{host.name}:{job['id']}"})
         state.keep_documents(host.name, job)
     elif kind == "removed":
+        if message.get("reason") == "removed by fleet rm":
+            state.execution.removed(host.name, message["id"], at=message.get("removed_at"))
         state.update(host.name, lambda entry: entry["jobs"].pop(message["id"], None),
-                     owners={f"job:{host.name}:{message['id']}"})
+                     subjects={f"job:{host.name}:{message['id']}"},
+                     deleted_jobs={f"job:{host.name}:{message['id']}"} if message.get("reason") in ("deleted", "removed by fleet rm") else frozenset())
     elif kind == "session":
         session = message["session"]
-        state.update(host.name, lambda entry: entry["sessions"].__setitem__(session["id"], session),
-                     owners={f"session:{host.name}:{session['id']}"})
+        def report_session(entry):
+            entry["sessions"][session["id"]] = session
+            if entry.get("_syncing"):
+                entry["_seen_sessions"].add(session["id"])
+        state.update(host.name, report_session,
+                     subjects={f"session:{host.name}:{session['id']}"})
     elif kind == "session_removed":
+        state.execution.stop_session(host.name, message["id"])
         state.update(host.name, lambda entry: entry["sessions"].pop(message["id"], None),
-                     owners={f"session:{host.name}:{message['id']}"})
+                     subjects={f"session:{host.name}:{message['id']}"})
     elif kind == "heartbeat":
-        state.update(host.name, lambda entry: None, heartbeat=True)
+        def heartbeat(entry):
+            if entry.get("_syncing"):
+                for identity in set(entry["sessions"]) - entry["_seen_sessions"]:
+                    state.execution.stop_session(host.name, identity)
+                for group in ("jobs", "sessions"):
+                    entry[group] = {key: item for key, item in entry[group].items() if key in entry[f"_seen_{group}"]}
+                entry["_syncing"] = False
+        state.update(host.name, heartbeat, heartbeat=True)
     elif kind == "pipeline" and isinstance(message.get("pipeline"), str):
         state.report_pipeline(host.name, message["pipeline"], message.get("run"), message.get("baseline"))
     elif kind == "error":
-        state.update(host.name, lambda entry: entry.update(ok=False, error=message.get("error")))
+        state.update(host.name, lambda entry: entry.update(ok=False, error=message.get("error"), _syncing=False))
 
 
 def refusal_detail(item) -> dict[str, Any]:
@@ -387,6 +504,8 @@ def make_handler(state: FleetState | FixtureState,
             path = self.path.split("?", 1)[0]
             if path == "/api/stream":
                 self.stream()
+            elif path == "/api/history/runs" or path.startswith("/api/runs/"):
+                self.run_history(path)
             elif path == "/api/doc":
                 self.document()
             elif path == "/api/doc/asset":
@@ -473,6 +592,37 @@ def make_handler(state: FleetState | FixtureState,
                 self.checkout_file(path)
             else:
                 self.respond(404, "text/plain", b"not found")
+
+        def run_history(self, path: str) -> None:
+            services = facades(state.store)
+            try:
+                if path == "/api/history/runs":
+                    query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+                    allowed = {"project", "work_item", "descendants", "host", "status", "kind", "unlinked", "since", "until", "limit"}
+                    if query.keys() - allowed or any(len(values) != 1 for values in query.values()):
+                        raise ValueError("unknown or repeated history filter")
+                    filters = {key: values[0] for key, values in query.items()}
+                    for key in ("unlinked", "descendants"):
+                        if key in filters:
+                            if filters[key] not in ("true", "false"):
+                                raise ValueError(f"{key} must be true or false")
+                            filters[key] = filters[key] == "true"
+                    if "limit" in filters:
+                        filters["limit"] = int(filters["limit"])
+                    result = history_runs(services.execution, services.work, services.workspace, **filters)
+                else:
+                    identity = path.removeprefix("/api/runs/")
+                    if not identity or "/" in identity:
+                        raise LookupError("a stored run ID is required")
+                    result = run_detail(identity, services.execution, services.work, services.library)
+                    result["kept_documents"] = state.documents.run_documents(result["run"])
+            except LookupError as error:
+                self.error(404, str(error))
+                return
+            except (ValueError, FleetError) as error:
+                self.error(400, str(error))
+                return
+            self.respond(200, "application/json", json.dumps(result).encode())
 
         def do_POST(self) -> None:  # noqa: N802 — http.server naming
             path = self.path.split("?", 1)[0]

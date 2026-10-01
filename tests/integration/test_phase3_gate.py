@@ -43,7 +43,7 @@ def test_status_counts_unique_user_items_for_slice_subtree(capsys, project_id):
     raise_item('resolved', child.id)
     attention.resolve(resolved.id, details='Answered', actor='user')
     raise_item('open', first.id)
-    raise_item('agent', child.id, 'orchestrator')
+    raise_item('agent', child.id, 'agent')
     raise_item('elsewhere', second.id)
     raise_item('project', None)
     reopened = composition.open_store()

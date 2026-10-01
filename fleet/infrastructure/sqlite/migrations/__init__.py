@@ -128,4 +128,16 @@ MIGRATIONS = (
                 THEN json_remove(record, '$.last_observed', '$.current_action', '$.action_observed_at')
             ELSE json_remove(record, '$.last_observed', '$.current_action', '$.action_observed_at', '$.usage') END""",
     ),
+    (
+        # owner said both who must act ('user') and, for host-observed items, what the item is about
+        # (job:<host>:<id>, session:…, run:…). The latter moves to subject; every existing item stays the user's.
+        "ALTER TABLE attention_item ADD COLUMN subject TEXT",
+        "ALTER TABLE attention_item ADD COLUMN owner_reason TEXT",
+        "ALTER TABLE attention_item ADD COLUMN owner_actor TEXT",
+        "ALTER TABLE attention_item ADD COLUMN owner_at TEXT",
+        "UPDATE attention_item SET subject = owner WHERE owner != 'user'",
+        "UPDATE attention_item SET owner = 'user'",
+        # P1 agent ownership and scheduler state, after P3 history and P2 observations.
+        'CREATE TABLE triage_scheduler (project TEXT PRIMARY KEY, record TEXT NOT NULL)',
+    ),
 )

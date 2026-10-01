@@ -32,7 +32,7 @@ window.advanceClock = seconds => { offset += seconds * 1000; };
 window.resetClock = () => { offset = %d * 1000 - realNow(); };
 """
 FINISHED = {"done", "cancelled"}
-BLOCKED = {"failed", "stalled"}
+BLOCKED = {"failed", "lost", "stalled"}
 ASKING = "home:8e1f0c42-2b7d-4a55-9c1e-7f3a2d6b9e10"     # idle two minutes, with a decision waiting
 REVIEWING = "worker:019a7c3e-55d1-7b20-a8f4-3c9e0d1b2a67"  # idle about eighteen minutes
 BACKGROUND = {"invoice-parser"}                            # the fixture's one room in the background
@@ -703,7 +703,7 @@ def test_room_guidance_edit_history_decisions_and_promote(changed_deck: Deck, de
     page.get_by_role('button', name='Write the constitution').click()
     expect(route).to_have_attribute('data-editing', '')
     page.locator('[data-guidance-text]').fill('# Constitution\n\n## Decide yourself\n\n- Test-only fixes.\n')
-    page.get_by_role('button', name='Save a new version').click()
+    page.get_by_role('button', name='Save version 1', exact=True).click()
     expect(route.locator('[data-guidance-version]')).to_contain_text('version 1 · web-user')
     expect(route.locator('[data-guidance-body] h2')).to_have_text('Decide yourself')
     shoot(request, page, 'guidance-constitution')
@@ -719,10 +719,19 @@ def test_room_guidance_edit_history_decisions_and_promote(changed_deck: Deck, de
     page.get_by_role('button', name='Write the charter').click()
     page.locator('[data-guidance-text]').fill('# Charter\n\n## Decisions in force\n\n1. One.\n')
     shoot(request, page, 'guidance-editor')
-    page.get_by_role('button', name='Save a new version').click()
+    page.get_by_role('button', name='Save version 1', exact=True).click()
     charter = route.locator('[data-guidance="charter"]')
     expect(charter.locator('[data-inherits]')).to_have_text('Inherits constitution version 1')
-    decisions.first.get_by_role('button', name="Add to the charter's decisions in force").click()
+    expect(decisions.first.locator('[data-promote]')).to_have_text('Promote to charter')
+    expect(route.locator('[data-promote-consequence]')).to_contain_text('new charter version')
+    shoot(request, page, 'batch7-promote-before')
+    if request.config.getoption('--shots'):
+        page.set_viewport_size(VIEWPORTS['narrow'])
+        decisions.first.locator('[data-promote]').scroll_into_view_if_needed()
+        shoot(request, page, 'batch7-promote-narrow-before')
+        page.set_viewport_size(VIEWPORTS['desktop'])
+    decisions.first.get_by_role('button', name='Promote to charter').click()
+    expect(route.locator('[data-guidance-feedback]')).to_contain_text('Promoted decision to charter version 2')
     expect(charter.locator('[data-guidance-version]')).to_contain_text('version 2 · web-user')
     expect(charter.locator('[data-guidance-body] li')).to_have_count(2)
     expect(charter.locator('[data-guidance-body] li').nth(1)).to_contain_text(f'decision {decision.id[:8]} by codex')
@@ -736,7 +745,7 @@ def test_room_guidance_edit_history_decisions_and_promote(changed_deck: Deck, de
     charter.get_by_role('button', name='Edit the charter').click()
     page.locator('[data-guidance-text]').fill('Edited elsewhere first.')
     open_records(store).write_guidance('restoke-v2', '# Charter\n\nNewer.\n', epic=epic.id, actor='claude')
-    page.get_by_role('button', name='Save a new version').click()
+    page.get_by_role('button', name='Save version 3', exact=True).click()
     expect(charter.locator('[role="alert"]')).to_contain_text('it is now version 3')
     alert, panel = charter.locator('[role="alert"]').bounding_box(), route.bounding_box()
     assert alert['y'] + alert['height'] <= panel['y'] + panel['height'], (alert, panel)   # not lost under the long editor
@@ -744,7 +753,10 @@ def test_room_guidance_edit_history_decisions_and_promote(changed_deck: Deck, de
     shoot(request, page, 'guidance-conflict')
     # the stale save is refused with a 409 on purpose; the browser logs it, which is expected here, not a page error
     changed_deck.errors[:] = [e for e in changed_deck.errors if '409 (Conflict)' not in e]
-    page.get_by_role('button', name='Discard the edit').click()
+    with page.expect_event('dialog') as prompt:
+        page.once('dialog', lambda dialog: dialog.accept())
+        page.get_by_role('button', name='Discard', exact=True).click()
+    assert prompt.value.type == 'confirm'
     page.get_by_role('button', name='Versions').click()
     expect(charter.locator('[data-guidance-version]')).to_contain_text('version 3 · claude')
     expect(charter.locator('[data-guidance-versions] li')).to_have_count(3)
@@ -1273,6 +1285,7 @@ def test_six_androids_at_one_station_gather_into_a_group_figure(changed_deck: De
     badge = page.locator("#tags .crowd")
     expect(badge).to_have_count(1)
     expect(badge).to_have_text("6")
+    expect(badge).to_have_attribute("title", "6 agents here; click to spread them. Click elsewhere to regroup.")
     expect(page.locator("#tags .tag:visible", has_text="f20a6d")).to_have_count(0)
     assert not any(agent["gathered"] for agent in page.evaluate("fleetDeck.agents()")
                    if agent["room"] == "agent-fleet" and agent["station"] != "workbench")
@@ -1436,7 +1449,7 @@ def test_the_switch_sends_the_crew_away_and_brings_it_back(deck: Deck, base_url:
     expect(lantern).to_have_attribute("data-count", "2")
     lantern.dispatch_event("click")
     page.locator(f'#attnPanel [data-owner="{ASKING}"]').click()
-    expect(page.locator("#panelHead .chip.sess")).to_contain_text("waiting for you")
+    expect(page.locator("#panelHead .chip.sess")).to_have_text("live · idle")
     page.locator("#panel #close").click()
     page.keyboard.press("Escape")
     assert {name: (room["x"], room["y"], room["screen"]) for name, room in rooms_by_name(page).items()} == before
@@ -1834,10 +1847,13 @@ def test_the_running_view_lists_live_jobs_by_project_and_work(changed_deck: Deck
     page.evaluate("doc => fleetDeck.apply(doc)", doc)
     chip, panel = page.locator("#workingOpen"), page.locator("#runPanel")
     expect(chip).to_have_text("4 running · list")
+    # done counts the finished job that left the deck; failed has a chip of its own
+    expect(page.locator("#stats .chip", has_text="done")).to_have_text("1 done")
+    expect(page.locator("#failedJobs")).to_have_text("1 failed")
     chip.click()
     expect(panel).to_be_visible()
     expect(chip).to_have_attribute("aria-expanded", "true")
-    expect(panel.locator(".run-sum")).to_have_text("4 running · 1 blocked · 1 queued")
+    expect(panel.locator(".run-sum")).to_have_text("4 running · 1 blocked · 1 failed · 1 queued")
     # restoke's linked jobs under their work path; a task sits under its parent's path and names itself on the row
     restoke = panel.locator('.run-proj-g[data-project="restoke"]')
     expect(restoke.locator("h4")).to_have_text("restoke")
@@ -1862,17 +1878,18 @@ def test_the_running_view_lists_live_jobs_by_project_and_work(changed_deck: Deck
     expect(unknown).to_have_attribute("title", "workspace unknown: not a git repository")
     expect(panel.locator('[data-key="worker:c90e11"] .run-ws')).to_have_attribute(
         "title", "workspace unknown: not reported by this worker")
-    # the unlinked ones apart, saying what they need and how to give it; finished and failed jobs are not listed
+    # the unlinked ones apart, saying what they need and how to give it; failed jobs are listed, finished ones not
     unlinked = panel.locator("[data-unlinked]")
     expect(unlinked.locator("h4")).to_have_text("Not linked to work")
-    expect(unlinked.locator(".run-need")).to_contain_text("need a work item")
-    expect(unlinked.locator(".run-row")).to_have_count(3)
-    for key, status in {"home:e1b5c8": "blocked", "worker:f20a6d": "running", "worker:0a9e3b": "queued"}.items():
+    expect(unlinked.locator(".run-need")).to_have_text("Jobs without a linked work item. The dispatching agent can link them with fleet run link.")
+    expect(unlinked.locator(".run-row")).to_have_count(4)
+    for key, status in {"home:e1b5c8": "blocked", "worker:f20a6d": "running", "worker:0a9e3b": "queued",
+                        "worker:3c71d5": "failed"}.items():
         expect(unlinked.locator(f'.run-row[data-key="{key}"]')).to_have_attribute("data-status", status)
     expect(unlinked.locator('[data-key="worker:0a9e3b"] .run-m')).to_contain_text("step 1/2")
     expect(unlinked.locator('[data-key="worker:f20a6d"] .run-link')).to_have_attribute(
         "data-copy-id", "fleet run link worker f20a6d <work-item>")
-    expect(panel.locator('[data-key="worker:d4f7a2"], [data-key="worker:3c71d5"]')).to_have_count(0)
+    expect(panel.locator('[data-key="worker:d4f7a2"]')).to_have_count(0)
     shoot(request, page, "running-view")
 
     # live: a state update re-renders in place and keeps the scroll
@@ -1881,9 +1898,14 @@ def test_the_running_view_lists_live_jobs_by_project_and_work(changed_deck: Deck
     assert top > 0, "the list should scroll at this height"
     finished = json.loads(json.dumps(doc))
     next(job for host in finished["hosts"] for job in host["jobs"] if job["id"] == "c90e11")["status"] = "done"
+    next(job for host in finished["hosts"] for job in host["jobs"] if job["id"] == "3c71d5")["status"] = "lost"
     page.evaluate("doc => fleetDeck.apply(doc)", finished)
     expect(panel.locator('[data-key="worker:c90e11"]')).to_have_count(0)
-    expect(panel.locator(".run-sum")).to_have_text("3 running · 1 blocked · 1 queued")
+    expect(panel.locator(".run-sum")).to_have_text("3 running · 1 blocked · 1 lost · 1 queued")
+    expect(panel.locator('.run-row[data-key="worker:3c71d5"]')).to_have_attribute("data-status", "lost")
+    expect(page.locator("#failedJobs")).to_have_text("1 failed")   # a lost job counts as failed
+    assert "worker:3c71d5" not in {agent["key"] for agent in page.evaluate("fleetDeck.agents()")}   # its lantern carries it
+    expect(page.locator("#stats .chip", has_text="done")).to_have_text("2 done")
     assert panel.evaluate("el => el.scrollTop") == top
     panel.evaluate("el => { el.style.maxHeight = ''; }")
 
@@ -1909,7 +1931,7 @@ def test_the_running_view_lists_live_jobs_by_project_and_work(changed_deck: Deck
             job["status"] = "done"
     page.evaluate("doc => fleetDeck.apply(doc)", finished)
     chip.click()
-    expect(panel.locator(".run-empty")).to_have_text("Nothing is running, blocked or queued.")
+    expect(panel.locator(".run-empty")).to_have_text("Nothing is running, blocked, failed or queued.")
     page.keyboard.press("Escape")
 
     page.evaluate("doc => fleetDeck.apply(doc)", doc)
@@ -2222,7 +2244,7 @@ def test_audit1_batch6_running_navigation_preserves_saved_view(changed_deck: Dec
 def test_audit1_batch6_header_and_focus_copy(changed_deck: Deck, request) -> None:
     page = changed_deck.page
     expect(page.locator('#workingOpen')).to_have_text('4 running · list')
-    expect(page.locator('#stats .chip-inert')).to_have_count(3)
+    expect(page.locator('#stats .chip-inert')).to_have_count(4)
     expect(page.locator('.focus-switch[data-room="restoke"] [data-set="background"]')).to_have_attribute('title', re.compile('androids.*Running work continues', re.I))
     shoot(request, page, 'batch6-header-focus')
     page.set_viewport_size(VIEWPORTS['narrow'])
@@ -2306,4 +2328,352 @@ def test_batch11_project_decisions_and_room_alerts(changed_deck: Deck, route_mig
     page.locator('[data-room-attention]').evaluate("el => el.scrollIntoView({block: 'center'})")
     shoot(request, page, 'batch11-room-alert')
     page.evaluate('fleetDeck.enterFloor(null)')
+    assert changed_deck.errors == []
+
+
+@pytest.mark.parametrize('kind', ['constitution', 'charter'])
+@pytest.mark.parametrize('viewport', ['desktop', 'narrow'])
+def test_batch7_guidance_draft_exits(changed_deck: Deck, deck_state, monkeypatch, tmp_path,
+                                    request: pytest.FixtureRequest, kind: str, viewport: str) -> None:
+    """Rejecting any discard preserves the draft and route; accepting never writes guidance."""
+    store = open_store()
+    monkeypatch.setattr(deck_state, 'store', store)
+    monkeypatch.setattr(deck_state, 'attention', open_attention(store))
+    epic = open_work(store).add(project='restoke-v2', title='Guidance test', goal='Keep guidance safe.', kind='epic', actor='user')
+    repo = tmp_path / 'management'
+    repo.mkdir()
+    subprocess.run(['git', '-C', str(repo), 'init'], check=True, capture_output=True, timeout=10)
+    records = open_records(store)
+    records.register('restoke-v2', repo, actor='user')
+    page = changed_deck.page
+    page.set_viewport_size(VIEWPORTS[viewport])
+    route = page.locator('#benchRoute')
+    text = page.locator('[data-guidance-text]')
+    dialogs = []
+    accepting = False
+
+    def handle_dialog(dialog) -> None:
+        dialogs.append((dialog.type, dialog.message))
+        dialog.accept() if accepting else dialog.dismiss()
+
+    def open_editor() -> None:
+        page.evaluate("fleetDeck.enterFloor('restoke-v2')")
+        expect(route).to_have_attribute('data-level', 'floor')
+        if kind == 'constitution':
+            page.locator('[data-open-constitution]').click()
+        else:
+            route.get_by_role('button', name='Guidance test', exact=True).click()
+        page.get_by_role('button', name=f'Write the {kind}').click()
+        expect(text).to_have_value('')
+
+    def exit_editor(exit: str) -> None:
+        if exit == 'escape':
+            page.keyboard.press('Escape')
+        else:
+            page.locator({'discard': '[data-guidance-cancel]', 'floor': '[data-back-floor]',
+                          'room': '[data-back-room]'}[exit]).click()
+
+    page.on('dialog', handle_dialog)
+    try:
+        for exit in ['discard', 'escape', 'floor'] + (['room'] if kind == 'charter' else []):
+            open_editor()
+            draft = f'# Unsaved {kind}\n\nKeep this {exit} draft.'
+            text.fill(draft)
+            before = route.get_attribute('data-level')
+            exit_editor(exit)
+            assert len(dialogs) == 1, (exit, dialogs)
+            assert dialogs[-1][0] == 'confirm'
+            assert 'cannot be recovered' in dialogs[-1][1]
+            expect(text).to_have_value(draft)
+            expect(route).to_have_attribute('data-level', before)
+            dialogs.clear()
+            accepting = True
+            exit_editor(exit)
+            assert len(dialogs) == 1
+            expect(text).to_have_count(0)
+            expect(route.locator('[data-guidance-feedback]')).to_contain_text('Discarded')
+            assert records.guidance('restoke-v2', epic=epic.id if kind == 'charter' else None) is None
+            dialogs.clear()
+            accepting = False
+        open_editor()
+        # Untouched empty drafts close without demanding attention.
+        page.locator('[data-guidance-cancel]').click()
+        assert dialogs == []
+        open_editor()
+        text.fill('# Safe guidance\n\nAgents follow these rules.')
+        expect(page.locator('[data-guidance-save]')).to_have_text('Save version 1')
+        expect(page.locator('[data-guidance-cancel]')).to_have_text('Discard')
+        expect(route.locator('[data-guidance-scope]')).to_contain_text('epic' if kind == 'charter' else 'project')
+        shoot(request, page, f'batch7-{kind}-{viewport}-editor')
+        page.locator('[data-guidance-save]').scroll_into_view_if_needed()
+        for control in ['[data-guidance-save]', '[data-guidance-cancel]']:
+            box = page.locator(control).bounding_box()
+            assert box['x'] >= 0 and box['x'] + box['width'] <= VIEWPORTS[viewport]['width'], box
+        shoot(request, page, f'batch7-{kind}-{viewport}-actions')
+        pending = []
+        page.route('**/api/guidance', lambda request: pending.append(request))
+        page.locator('[data-guidance-save]').click()
+        expect(page.locator('[data-guidance-save]')).to_be_disabled()
+        expect(page.locator('[data-guidance-cancel]')).to_be_disabled()
+        page.keyboard.press('Escape')
+        page.locator('[data-back-floor]').click()
+        expect(text).to_have_value('# Safe guidance\n\nAgents follow these rules.')
+        assert dialogs == []
+        assert len(pending) == 1
+        pending[0].continue_()
+        page.unroute('**/api/guidance')
+        expect(route.locator('[data-guidance-feedback]')).to_contain_text('Saved')
+        expect(route.locator('[data-guidance-version]')).to_contain_text('version 1')
+        shoot(request, page, f'batch7-{kind}-{viewport}-saved')
+        page.get_by_role('button', name=f'Edit the {kind}').click()
+        expect(page.locator('[data-guidance-save]')).to_have_text('Save version 2')
+        # An intentional deletion is also an edit worth protecting.
+        text.fill('')
+        page.keyboard.press('Escape')
+        assert len(dialogs) == 1
+        expect(text).to_have_value('')
+        accepting = True
+        page.locator('[data-guidance-cancel]').click()
+    finally:
+        page.remove_listener('dialog', handle_dialog)
+        page.evaluate('fleetDeck.enterFloor(null)')
+    assert changed_deck.errors == []
+
+
+@pytest.mark.parametrize('view', ['building', 'world', 'workarea', 'library'])
+def test_batch12_camera_keys_ignore_other_views(changed_deck: Deck, view: str) -> None:
+    page = changed_deck.page
+    page.locator('#viewToggle [data-view="deck"]').click()
+    page.evaluate("fleetDeck.lookAtRoom('restoke', 60)")
+    if view in ['building', 'world']:
+        page.locator(f'#viewToggle [data-view="{view}"]').click()
+    elif view == 'workarea':
+        page.evaluate("async () => (await import('/js/workarea.js')).openWorkarea('restoke')")
+    else:
+        page.locator('#libraryOpen').click()
+
+    def camera():
+        return page.evaluate("async () => { const {cam} = await import('/js/scene.js'); return [cam.z, cam.c.toArray(), cam.userMoved]; }")
+
+    before = camera()
+    for key in ['+', '-', 'f', '=', '_', 'F']:
+        page.keyboard.press(key)
+        assert camera() == before, (view, key, before, camera())
+    if view in ['workarea', 'library']:
+        page.keyboard.press('Escape')
+    else:
+        page.locator('#viewToggle [data-view="deck"]').click()
+    before = camera()
+    page.keyboard.press('+')
+    assert camera()[0] > before[0]  # The deck itself still handles zoom.
+    page.evaluate('fleetDeck.lookAtRoom(null)')
+    assert changed_deck.errors == []
+
+
+@pytest.mark.parametrize('viewport', ['desktop', 'narrow'])
+def test_batch12_idle_stale_and_control_titles(changed_deck: Deck, base_url: str,
+                                             request: pytest.FixtureRequest, viewport: str) -> None:
+    page = changed_deck.page
+    page.set_viewport_size(VIEWPORTS[viewport])
+    page.locator('#viewToggle [data-view="deck"]').click()
+    doc = session_state(base_url, 0)
+    page.evaluate('doc => fleetDeck.apply(doc)', doc)
+    page.evaluate('key => fleetDeck.select(key)', ASKING)
+    expect(page.locator('#panelHead .sess')).to_contain_text('live · idle')
+    expect(page.locator('#stats .sess')).to_contain_text('waiting')
+    page.locator('#panel #close').click()
+    expect(page.locator('#radioToggle')).to_have_attribute('title', re.compile('Turn on.*SomaFM.*somafm.com'))
+    # No live network audio in the test; verify both action states.
+    page.evaluate("""() => { window.Audio = class {
+        constructor() { this.dataset = {}; }
+        play() { return Promise.resolve(); }
+        pause() {}
+    }; }""")
+    page.locator('#radioToggle').click()
+    expect(page.locator('#radioToggle')).to_have_attribute('aria-pressed', 'true')
+    expect(page.locator('#radioToggle')).to_have_attribute('title', re.compile('Turn off'))
+    page.locator('#radioToggle').click()
+    page.evaluate("async () => (await import('/js/workarea.js')).openWorkarea('restoke')")
+    disabled = page.locator('[data-bench="home:a1c3e9"] [data-step="0"]')
+    expect(disabled).to_be_disabled()
+    expect(disabled).to_have_attribute('title', re.compile('No brief or report recorded'))
+    shoot(request, page, f'batch12-{viewport}-workarea')
+    page.keyboard.press('Escape')
+    worker = next(host for host in doc['hosts'] if host['name'] == 'worker')
+    worker.update(ok=False, error='connection lost')
+    page.evaluate('doc => fleetDeck.apply(doc)', doc)
+    page.evaluate("async () => (await import('/js/workarea.js')).openWorkarea('agent-fleet')")
+    expect(page.locator('[data-bench="worker:f20a6d"] [data-stale]')).to_contain_text('stale')
+    shoot(request, page, f'batch12-{viewport}-stale-workarea')
+    page.keyboard.press('Escape')
+    page.evaluate("fleetDeck.select('worker:f20a6d')")
+    expect(page.locator('#panelHead [data-stale]')).to_contain_text('stale')
+    shoot(request, page, f'batch12-{viewport}-stale-panel')
+    page.locator('#panel #close').click()
+    file_job = next(job for job in worker['jobs'] if job['id'] == 'f20a6d')
+    file_job['documents'] = [{"id": f"outbox-{name}", "name": name, "path": f"/job/outbox/{name}",
+                              "kind": "outbox", "media": "file", "size": size, "mtime": doc['time'], "step": None}
+                             for name, size in [('data.json', 2), ('empty.csv', 0), ('scene.blend', 10)]]
+    page.evaluate('doc => fleetDeck.apply(doc)', doc)
+    page.evaluate("fleetDeck.select('worker:f20a6d')")
+    page.locator('#panelTabs [data-tab="documents"]').click()
+    expect(page.locator('#panelBody .docs .dn')).to_have_text(['scene.blend', 'empty.csv', 'data.json'])
+    expect(page.locator('#panelBody .docs .go')).to_have_text(['Collect →'] * 3)
+    shoot(request, page, f'batch12-{viewport}-outbox')
+    page.locator('#panel #close').click()
+    page.locator('#workingOpen').click()
+    expect(page.locator('#runPanel .run-need')).to_contain_text('Jobs without a linked work item')
+    expect(page.locator('#runPanel .run-need')).not_to_contain_text('need a work item')
+    expect(page.locator('#runPanel [data-key="worker:f20a6d"] [data-stale]')).to_contain_text('stale')
+    shoot(request, page, f'batch12-{viewport}-running')
+    page.keyboard.press('Escape')
+    page.evaluate('doc => fleetDeck.apply(doc)', session_state(base_url, 0))
+    assert changed_deck.errors == []
+
+
+def test_p8_keyboard_help_preserves_context_and_focus(deck: Deck, request: pytest.FixtureRequest) -> None:
+    from pathlib import Path
+    page = deck.page
+    page.locator('#viewToggle [data-view="deck"]').click()
+    page.keyboard.press('?')
+    help = page.locator('#keyboardHelp')
+    expect(help).to_be_visible()
+    expect(help).to_contain_text('Zoom in')
+    expect(help.locator('[data-help-escape]')).to_have_text('No open panel to close.')
+    before = page.evaluate("async () => { const {cam}=await import('/js/scene.js'); return {z:cam.z,c:cam.c}; }")
+    page.keyboard.press('+')
+    assert page.evaluate("async () => { const {cam}=await import('/js/scene.js'); return {z:cam.z,c:cam.c}; }") == before
+    page.keyboard.press('Tab')
+    assert page.evaluate("document.activeElement.closest('#keyboardHelp') !== null")
+    if request.config.getoption('--shots'):
+        page.screenshot(path=str(Path(request.config.getoption('--shots')) / f'p8-{page.viewport_size["width"]}-deck.png'))
+    page.keyboard.press('Escape')
+    expect(help).to_be_hidden()
+    page.locator('#viewToggle [data-view="building"]').click()
+    page.locator('#keyboardHelpOpen').click()
+    expect(help).to_contain_text('Building')
+    expect(help).not_to_contain_text('Zoom in')
+    page.keyboard.press('Escape')
+    assert page.evaluate('document.activeElement.id') == 'keyboardHelpOpen'
+    assert page.evaluate('document.body.dataset.view') == 'building'
+    page.locator('#viewToggle [data-view="world"]').click()
+    page.keyboard.press('?')
+    expect(help.locator('[data-help-context]')).to_have_text('World')
+    expect(help.locator('[data-help-escape]')).to_have_text('Frame the whole project floor.')
+    page.keyboard.press('Escape')
+    assert page.evaluate('document.body.dataset.view') == 'world'
+    page.locator('#viewToggle [data-view="deck"]').click()
+    page.locator('#libraryOpen').click()
+    page.keyboard.press('?')
+    expect(help.locator('[data-help-escape]')).to_have_text('Close the project library.')
+    page.keyboard.press('Escape')
+    expect(page.locator('#libraryPane')).to_be_visible()
+    page.keyboard.press('Escape')
+    expect(page.locator('#libraryPane')).to_be_hidden()
+    page.locator('.lantern[data-room="restoke"]').dispatch_event('click')
+    page.keyboard.press('?')
+    expect(help.locator('[data-help-escape]')).to_have_text('Close the attention list.')
+    page.keyboard.press('Escape')
+    expect(page.locator('#attnPanel')).to_be_visible()
+    page.locator('#attnPanel [data-owner="home:e1b5c8"]').click()
+    page.locator('#attnPanel [data-close]').click()
+    page.locator('#panelTabs [data-workarea]').click()
+    page.keyboard.press('?')
+    expect(help.locator('[data-help-escape]')).to_have_text('Close the workarea; keep the job panel open.')
+    page.keyboard.press('Escape')
+    expect(page.locator('#workarea')).to_be_visible()
+    page.keyboard.press('Escape')
+    expect(page.locator('#panel')).to_have_class('open')
+    page.locator('#panelBody [data-tab="summary"] [data-doc="report-0"]').click()
+    page.keyboard.press('?')
+    expect(help).to_contain_text('Previous / next document')
+    expect(help.locator('[data-help-escape]')).to_have_text('Close the document reader.')
+    if request.config.getoption('--shots'):
+        page.screenshot(path=str(Path(request.config.getoption('--shots')) / f'p8-{page.viewport_size["width"]}-reader.png'))
+    page.keyboard.press('Escape')
+    expect(page.locator('#reader')).to_be_visible()
+    page.keyboard.press('Escape')
+    page.locator('#panel #close').click()
+    # A question mark typed into an editor/search field stays text.
+    page.evaluate("() => { const input=document.createElement('input'); input.id='p8-input'; document.body.append(input); input.focus(); }")
+    page.keyboard.type('?')
+    expect(page.locator('#p8-input')).to_have_value('?')
+    expect(help).to_be_hidden()
+    page.locator('#p8-input').evaluate('(el) => el.remove()')
+    assert deck.errors == []
+
+
+def test_p8_help_keeps_unsaved_guidance(changed_deck: Deck, deck_state, monkeypatch, tmp_path,
+                                        request: pytest.FixtureRequest) -> None:
+    store = open_store()
+    monkeypatch.setattr(deck_state, 'store', store)
+    monkeypatch.setattr(deck_state, 'attention', open_attention(store))
+    repo = tmp_path / 'management'
+    repo.mkdir()
+    subprocess.run(['git', '-C', str(repo), 'init'], check=True, capture_output=True, timeout=10)
+    open_records(store).register('restoke-v2', repo, actor='user')
+    page = changed_deck.page
+    page.locator('#viewToggle [data-view="building"]').click()
+    page.evaluate('fleetDeck.advanceTime(0)')
+    page.locator('.plate[data-floor="1"] .enter').click()
+    page.keyboard.press('?')
+    expect(page.locator('[data-help-context]')).to_have_text('Floor')
+    expect(page.locator('[data-help-escape]')).to_have_text('Return to the building.')
+    page.keyboard.press('Escape')
+    assert page.evaluate('document.body.dataset.view') == 'floor'
+    page.locator('[data-open-constitution]').click()
+    page.get_by_role('button', name='Write the constitution').click()
+    text = page.locator('[data-guidance-text]')
+    text.fill('Unsaved P8 draft?')
+    page.locator('#libraryOpen').click()
+    expect(page.locator('#libraryPane')).to_be_visible()
+    page.keyboard.press('?')
+    expect(page.locator('[data-help-context]')).to_have_text('Guidance editor')
+    expect(page.locator('[data-help-escape]')).to_contain_text('Ask before discarding an unsaved edit')
+    shoot(request, page, 'p8-guidance')
+    # If Escape leaks to the editor, Playwright dismisses its confirmation and the hook records it.
+    dialogs = []
+    def dismiss(dialog):
+        dialogs.append(dialog.message)
+        dialog.dismiss()
+    page.on('dialog', dismiss)
+    page.keyboard.press('Escape')
+    expect(text).to_have_value('Unsaved P8 draft?')
+    expect(page.locator('#benchRoute')).to_have_attribute('data-editing', '')
+    assert dialogs == []
+    page.remove_listener('dialog', dismiss)
+    page.locator('.lib-head [data-lib-close]').click()
+    text.fill('')
+    page.get_by_role('button', name='Discard', exact=True).click()
+    page.keyboard.press('Escape')
+    page.keyboard.press('Escape')
+    page.locator('#viewToggle [data-view="deck"]').click()
+    assert changed_deck.errors == []
+
+
+def test_previous_and_next_step_through_open_attention_items(changed_deck: Deck, base_url: str) -> None:
+    from fleet.projections.attention import attention_display
+    page = changed_deck.page
+    with urlopen(base_url + "/api/state", timeout=5) as response:
+        document = json.load(response)
+    model = next(row for row in document["attention"] if row["project"] == "restoke")
+    document["attention"] = [row for row in document["attention"] if row["state"] != "resolved"] + [
+        {**model, "id": f"step{index}", "summary": f"Question {index}", "state": "open",
+         "last_seen": 1890000000 + index, "kind": "decision"} for index in range(3)]
+    document["attention_display"] = attention_display(document["attention"], document["building"], document["projects"])
+    page.evaluate("doc => fleetDeck.apply(doc)", document)
+    # each decision's detail, as the server would answer it
+    page.route("**/api/decision?**", lambda route: route.fulfill(json={
+        "question": "Which way?", "context": "", "proposal": None, "options": [], "state": "open"}))
+    total = len(document["attention"])
+    page.locator('.lantern[data-room="restoke"]').dispatch_event("click")
+    page.locator('#attnPanel .attn-item[data-id="step2"] [data-context]').first.click()   # the newest
+    expect(page.locator("#rdTitle")).to_have_text("Question 2")
+    expect(page.locator("#rdPos")).to_have_text(f"1 / {total}")
+    expect(page.locator("#rdPrev")).to_be_disabled()
+    page.locator("#rdNext").click()
+    expect(page.locator("#rdTitle")).to_have_text("Question 1")
+    expect(page.locator("#rdPos")).to_have_text(f"2 / {total}")
+    page.keyboard.press("ArrowLeft")
+    expect(page.locator("#rdTitle")).to_have_text("Question 2")
     assert changed_deck.errors == []

@@ -27,7 +27,9 @@ const seen = new Set();   // open item ids already announced: each swings the la
 let items = [], projects = [];
 let display = { rooms: {}, open_count: 0 };
 export let openCount = 0;   // open items under the lanterns: the header's "need you"
-export const attentionFor = key => items.filter(i => i.owner?.key === key && i.state !== 'resolved');   // a job's or session's
+// Every item not yet resolved, newest first: what the reader's Previous and Next step through.
+export const openAttention = () => items.filter(i => i.state !== 'resolved').sort((a, b) => b.last_seen - a.last_seen);
+export const attentionFor = key =>items.filter(i => i.owner?.key === key && i.state !== 'resolved');   // a job's or session's
 export function applyAttention(rooms, doc) {
   if (doc) { items = doc.attention; display = doc.attention_display; projects = doc.projects || []; }
   const now = animationNow() / 1000;

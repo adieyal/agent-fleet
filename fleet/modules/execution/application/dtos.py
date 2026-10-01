@@ -31,3 +31,14 @@ class AnswerRequest:
 class GrantResult:
     added: tuple[str, ...]
     continuation: int  # the index of the step that continues the refused one
+
+
+@dataclass(frozen=True)
+class StepRequest:
+    host: str
+    job: str
+    key: str
+    prompt: str | None = None
+    title: str | None = None
+    answers: int | None = None
+    retry: bool = False

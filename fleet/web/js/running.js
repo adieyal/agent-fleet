@@ -1,4 +1,4 @@
-// Running view (V4): the header's "N running · list" chip opens a list of every running, stalled, blocked and queued job on
+// Running view (V4): the header's "N running · list" chip opens a list of every running, stalled, blocked, failed, lost and queued job on
 // every host, grouped by project and then by the work item its current step serves (epic > milestone). Each row says
 // where the job runs, how far it is, which branch or worktree it works in, and opens the job's panel. Jobs with no work
 // item are listed apart, with the `fleet run link` command that gives them one. Read from the whole state document, so
@@ -10,8 +10,8 @@ import { workOf } from './model.js';
 import { idChip, select } from './panel.js';
 import { showView } from './building.js';
 
-const LISTED = ['running', 'stalled', 'blocked', 'queued'];
-const GLYPH = { running: '▶', stalled: '◍', blocked: '⚑', queued: '○' };
+const LISTED = ['running', 'stalled', 'blocked', 'failed', 'lost', 'queued'];
+const GLYPH = { running: '▶', stalled: '◍', blocked: '⚑', failed: '✕', lost: '?', queued: '○' };
 const UNLINKED = 'Not linked to work';
 
 const panel = document.getElementById('runPanel');
@@ -19,11 +19,12 @@ const stats = document.getElementById('stats');
 let doc = null, opener = null;
 
 // ------------------------------------------------------------------ what each row stands for
-// The step the job is on: the one running, else the blocked one waiting for an answer, else the next pending one.
+// The step the job is on: the one running, else the blocked one waiting for an answer, else the failed one, else the
+// next pending one.
 function currentStep(j) {
   const steps = j.steps || [];
   return steps.find(s => s.status === 'running') || steps.find(s => s.status === 'blocked' && !s.answered_by)
-    || steps.find(s => s.status === 'pending') || null;
+    || steps.find(s => s.status === 'failed') || steps.find(s => s.status === 'pending') || null;
 }
 // The work item the current step serves (root first): the step's own item while it runs, else the job's.
 const workChain = j => j.work?.step?.chain?.length ? j.work.step.chain : j.work?.chain || [];
@@ -31,7 +32,7 @@ const workChain = j => j.work?.step?.chain?.length ? j.work.step.chain : j.work?
 function listed() {
   const rows = [];
   for (const h of doc?.hosts || []) for (const j of h.jobs || []) {
-    if (LISTED.includes(j.status)) rows.push({ key: `${h.name}:${j.id}`, host: h.name, job: j, chain: workChain(j) });
+    if (LISTED.includes(j.status)) rows.push({ key: `${h.name}:${j.id}`, host: h.name, job: { ...j, stale: !!j.stale || h.ok === false, stale_reason: j.stale_reason || h.error }, chain: workChain(j) });
   }
   return rows;
 }
@@ -93,7 +94,7 @@ function rowHtml(r, unlinked) {
   return `<li class="run-row" data-key="${esc(r.key)}" data-status="${esc(j.status)}" ${here
     ? 'tabindex="0" role="button"' : 'aria-disabled="true"'} title="${esc(here ? j.description : `${j.description}\nDismissed from the deck`)}">
     <span class="run-g" title="${esc(j.status)}" aria-label="${esc(j.status)}">${GLYPH[j.status]}</span>
-    <div class="run-b"><b>${esc(trunc(j.description, 90))}</b>
+    <div class="run-b"><b>${esc(trunc(j.description, 90))}</b>${j.stale ? `<span data-stale title="${esc(j.stale_reason || 'host offline')}; showing last-known status, current status unknown">stale · last known</span>` : ''}
       <div class="run-m"><span class="run-host"><i style="background:${hostLook(r.host).color}"></i>${esc(r.host)}:${idChip(j.id)}</span>
         ${stepHtml(j)}${workspaceHtml(j)}${unlinked ? `<span class="run-proj">${esc(doc.project_labels?.[j.project] || j.project)}</span>
         <button class="run-link" data-copy-id="${esc(link)}" title="${esc(`Copy: ${link}`)}">fleet run link</button>` : workHtml(r)}</div></div>
@@ -104,7 +105,7 @@ function rowHtml(r, unlinked) {
 const crumbs = path => path.map(n => `<span title="${esc(n.kind)}">${esc(n.title)}</span>`).join('<i aria-hidden="true"> > </i>');
 function bodyHtml() {
   const rows = listed();
-  if (!rows.length) return '<p class="run-empty">Nothing is running, blocked or queued.</p>';
+  if (!rows.length) return '<p class="run-empty">Nothing is running, blocked, failed or queued.</p>';
   const { projects, unlinked } = grouped(rows);
   const count = s => rows.filter(r => r.job.status === s).length;
   const counts = LISTED.filter(count).map(s => `${count(s)} ${s}`).join(' · ');
@@ -114,7 +115,7 @@ function bodyHtml() {
         <ul>${g.rows.map(r => rowHtml(r, false)).join('')}</ul></div>`).join('')}
     </section>`).join('')}${unlinked.length ? `
     <section class="run-proj-g unlinked" data-unlinked aria-label="${UNLINKED}"><h4>${UNLINKED}</h4>
-      <p class="run-need">These need a work item: copy the link command and fill in the item's ID.</p>
+      <p class="run-need">Jobs without a linked work item. The dispatching agent can link them with fleet run link.</p>
       <ul>${unlinked.map(r => rowHtml(r, true)).join('')}</ul>
     </section>` : ''}`;
 }

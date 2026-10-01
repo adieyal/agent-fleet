@@ -47,7 +47,7 @@ def retry(repository: ExecutionRepository, work: WorkFacade, send: InputSender,
                 action = next(action for action in transaction.actions() if action.id == run.action)
                 item = work.get(action.work_item)
                 transaction.attention.raise_item(project=item.project, work_item=item.id, run=run.id,
-                    kind="alert", owner=f"run:{run.id}", source="input-delivery",
+                    kind="alert", owner="user", subject=f"run:{run.id}", source="input-delivery",
                     source_reference=delivery.key, headline="Answer delivery keeps failing",
                     context_reference=f"decision:{delivery.decision}", actor="delivery")
             if result.status == "applied":

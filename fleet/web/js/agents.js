@@ -157,7 +157,7 @@ export function dropEnt(e) {
 // (a click away) and the deck log.
 function sessionWords(s) {
   const a = s.activity;
-  if (s.status === 'idle') return [`waiting for you since ${clock(s.updated_at).slice(0, 5)}`, 'wait'];
+  if (s.status === 'idle') return [`idle since ${clock(s.updated_at).slice(0, 5)}`, 'wait'];
   if (a && a.kind === 'error') return [trunc(a.summary, 120), 'bad'];
   if (a && a.kind === 'text') return [trunc(a.summary, 120), ''];
   if (a) return [mumble(a), ''];
@@ -167,6 +167,7 @@ function jobWords(j, done, total) {
   const a = j.activity;
   switch (j.status) {
     case 'running':
+      if (a && a.kind === 'retry') return [trunc(a.summary, 120), 'quiet'];
       if (a && a.kind === 'error') return [trunc(a.summary, 120), 'bad'];
       if (a && a.kind === 'text') return [trunc(a.summary, 120), ''];
       return [a ? mumble(a) : 'warming up…', ''];
@@ -186,9 +187,12 @@ function setBubble(e, action, words, cls) {
 }
 export function updateTag(e) {
   const j = e.job;
+  e.el.toggleAttribute('data-stale', !!j.stale);
+  e.el.title = j.stale ? `Stale: ${j.stale_reason || 'host offline'}. Showing last-known ${j.status}; current status is unknown.` : '';
+  const stale = j.stale ? '<span class="stale-label">stale</span>' : '';
   if (isSession(e)) {
     const [words, cls] = sessionWords(j), action = actionOf(j);
-    const stack = `<span class="lv${j.status === 'idle' ? ' idle' : ''}">LIVE</span><span class="id">${esc(trunc(j.title || shortId(j.id), vw < 760 ? 16 : 28))}</span><span class="ag">${esc(j.agent)}</span>`;
+    const stack = `${stale}<span class="lv${j.status === 'idle' ? ' idle' : ''}">LIVE</span><span class="id">${esc(trunc(j.title || shortId(j.id), vw < 760 ? 16 : 28))}</span><span class="ag">${esc(j.agent)}</span>`;
     const sig = action + '|' + words + '|' + cls + '|' + stack;
     if (sig === e.sig) return;
     setBubble(e, action, words, cls);
@@ -206,7 +210,7 @@ export function updateTag(e) {
   const pips = steps.slice(window0, window0 + 12).map(s => `<i class="pip ${esc(s.status)}"></i>`).join('');
   // A job is named by the start of its description; the short id stays, dimmed, to match the CLI.
   const name = trunc(j.description || '', vw < 760 ? 14 : 22);
-  const label = `<span class="id" title="${esc(j.id)}">${name ? `${esc(name)} <i class="sid">${esc(shortId(j.id))}</i>` : esc(shortId(j.id))}</span>`;
+  const label = `${stale}<span class="id" title="${esc(j.id)}">${name ? `${esc(name)} <i class="sid">${esc(shortId(j.id))}</i>` : esc(shortId(j.id))}</span>`;
   const sig = action + '|' + words + '|' + cls + '|' + pips + done + '|' + label;
   if (sig === e.sig) return;
   setBubble(e, action, words, cls);
@@ -223,6 +227,11 @@ export const crowds = new Map();   // "room|station" → { key, room, station, m
 function makeBadge(key) {
   const el = document.createElement('div');
   el.className = 'tag crowd';
+  el.setAttribute('role', 'button');
+  el.tabIndex = 0;
+  el.addEventListener('keydown', ev => {
+    if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); ev.stopPropagation(); setFanned(key); }
+  });
   el.innerHTML = '<div class="stack"><b></b></div>';
   el.addEventListener('click', ev => { ev.stopPropagation(); setFanned(key); });
   tagsEl.appendChild(el);
@@ -241,6 +250,8 @@ function gatherCrowds() {
     let c = crowds.get(key);
     if (!c) { c = { key, room: members[0].room, station: members[0].spotProp, el: makeBadge(key) }; crowds.set(key, c); }
     c.members = members;
+    c.el.title = `${members.length} agents here; click to spread them. Click elsewhere to regroup.`;
+    c.el.setAttribute('aria-label', c.el.title);
     c.el.firstChild.firstChild.textContent = members.length;
     if (fanned !== key) for (const e of members) e.crowd = c;
   }

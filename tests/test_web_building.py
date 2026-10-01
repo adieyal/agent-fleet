@@ -46,11 +46,12 @@ def start_deck():
     def fill_home(entry):
         entry["ok"], entry["error"] = True, None
         for index, label in enumerate(LABELS):
-            entry["jobs"][f"j{index}"] = {"id": f"j{index}", "project": label, "created_at": index, "status": "running"}
+            entry["jobs"][f"j{index}"] = {"id": f"j{index}", "project": label, "created_at": index,
+                                         "status": "running", "steps": []}
 
     def fill_gpu(entry):
         entry["ok"], entry["error"] = True, None
-        entry["sessions"]["s0"] = {"id": "s0", "project": "agent-fleet", "started_at": 0, "cwd": "/src/agent-fleet"}
+        entry["sessions"]["s0"] = {"id": "s0", "project": "agent-fleet", "started_at": 0, "cwd": "/src/agent-fleet", "status": "idle"}
 
     state.update("home", fill_home)
     state.update("gpu", fill_gpu)
@@ -314,7 +315,8 @@ def test_merging_keeps_the_older_project_and_frees_the_others_floor(deck):
 
     assert post(deck, "/api/merge", {"keep": newer, "other": older})[0] == 400   # the newer one isn't kept
     status, body = post(deck, "/api/merge", {"keep": older, "other": newer})
-    assert status == 200 and body == {"project_id": older, "merged": newer, "freed": 3, "floor": 1}
+    assert status == 200 and body == {"project_id": older, "merged": newer, "freed": 3, "floor": 1,
+        "counts": {"work_items": 0, "attention": 0, "runs": 0, "decisions": 0}}
 
     document = fetch_state(deck)
     assert document["building"]["floors"] == {older: 1, restoke: 2}

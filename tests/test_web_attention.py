@@ -202,8 +202,13 @@ def test_items_resolve_when_their_condition_clears(deck, config_path):
     answered = session("ask", "working", {"kind": "text", "summary": "Removing it.", "ts": 260})
     deck.report("home", jobs=[retried], sessions=[answered])
     items = {item["id"]: item for item in deck.items().values()}
-    assert {items[first[key]["id"]]["state"] for key in first} == {"resolved"}
-    assert all(items[first[key]["id"]]["resolved_at"] for key in first)
+    cleared = [key for key in first if key != "home:gone"]
+    assert {items[first[key]["id"]]["state"] for key in cleared} == {"resolved"}
+    assert all(items[first[key]["id"]]["resolved_at"] for key in cleared)
+    # a job that just stopped being reported was not answered: its item stays open until the job is deleted
+    assert items[first["home:gone"]["id"]]["state"] == "open"
+    deck.state.update("home", lambda entry: None, subjects={"job:home:gone"}, deleted_jobs={"job:home:gone"})
+    assert deck.state.attention.get(first["home:gone"]["id"]).state == "resolved"
     assert stored_actions(config_path) == {}   # resolved items no longer carry an active action
     assert all(item.resolution_details for item in open_attention().list())
 
@@ -325,7 +330,7 @@ def test_a_stale_item_is_resolved_from_the_deck(deck):
 def test_a_resolved_item_cannot_be_acted_on(deck):
     deck.report("home", jobs=[job("f1", "failed", [("failed", 100)])])
     item_id = deck.items()["home:f1"]["id"]
-    deck.report("home", jobs=[])
+    deck.report("home", jobs=[job("f1", "running", [("running", 300)])])   # retried
     assert deck.act("acknowledge", {"id": item_id}) == 409
     assert deck.act("reopen", {"id": item_id}) == 409
 
@@ -428,3 +433,35 @@ def test_audit1_batch4_undo_keeps_new_host_observations(deck):
     assert deck.act('undo-resolve', {'id': item['id'], 'undo': result['undo']}) == 200
     restored = deck.state.attention.get(item['id'])
     assert (restored.state, restored.headline, restored.last_seen) == ('open', updated.headline, updated.last_seen)
+
+
+@pytest.mark.parametrize("resolution", ["removed", "user"])
+def test_restreamed_resolved_failure_remains_visible(deck, resolution):
+    import os
+    import subprocess
+    import sys
+
+    failing = job("f1", "failed", [("failed", 100)])
+    deck.report("home", jobs=[failing])
+    first, = deck.state.attention.list()
+    if resolution == "removed":
+        deck.state.attention.reconcile("stream:home", set(), actor="host-stream")
+    else:
+        deck.state.attention.resolve(first.id, actor="user", details="Handled")
+    resolved = deck.state.attention.get(first.id)
+    history = deck.state.store.history_after(0)
+    failing["steps"][0]["started_at"] = 100.0
+    deck.report("home", jobs=[failing])
+    assert deck.state.attention.list(state="open") == []
+    again, = deck.state.attention.list(state="resolved")
+    assert again.id == first.id and again.resolved_at == resolved.resolved_at
+    assert again.resolution_details == resolved.resolution_details
+    assert deck.state.store.history_after(0)[:len(history)] == history
+    document = deck.state.document()
+    assert document["hosts"][0]["jobs"][0]["status"] == "failed"
+    assert deck.state.execution.runs()[0].status == "failed"
+    result = subprocess.run([sys.executable, "-m", "fleet.cli", "attention", "list", "--state", "resolved"],
+                            env=dict(os.environ), capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    listed, = json.loads(result.stdout)
+    assert listed["id"] == first.id and listed["resolution_details"] == resolved.resolution_details

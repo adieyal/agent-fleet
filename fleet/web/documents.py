@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import re
+import shlex
 from pathlib import PurePosixPath
 from typing import Any
 
@@ -66,6 +67,10 @@ def fetch_document(host: Host, job_id: str, document_id: str) -> dict[str, Any]:
             raise DocumentAccessDenied(str(error)) from error
         raise
     markdown = STATUS_LINE.sub("", document.pop("content")).strip()
+    if document.get("media") == "file":
+        command = shlex.join(["fleet", "pull", f"{host.name}:{job_id}"])
+        markdown = "The reader cannot preview this file type. It is listed for collection.\n\n" \
+                   + f"Copy the job’s outbox to your local fleet-{job_id} directory with:\n\n```sh\n{command}\n```"
     return {**document, "host": host.name, **render_markdown(markdown)}
 
 

@@ -28,7 +28,7 @@ def step_work(job: dict) -> list[dict] | None:
 
 
 def observe_runs(execution: ExecutionFacade, library: LibraryFacade, host: dict,
-                 indexed: dict | None = None) -> None:
+                 indexed: dict | None = None, project_of: Callable[[dict], str | None] | None = None) -> None:
     """Record the host's jobs as runs, and index each linked run's documents in the library.
 
     `indexed`, kept by the caller across calls, remembers each entry as last indexed so an unchanged one is not
@@ -39,8 +39,10 @@ def observe_runs(execution: ExecutionFacade, library: LibraryFacade, host: dict,
         return
     actions = {action.id: action for action in execution.actions()}
     for job in host["jobs"].values():
-        if execution.find_run(host["name"], job["id"]) is None:
+        if job.get("stale"):
             continue
+        run = execution.record_observed(host["name"], job, project_of(job) if project_of else None)
+        actions[run.action] = execution.get_action(run.action)
         starts = [step["started_at"] for step in job["steps"] if step["started_at"] is not None]
         ends = [step["finished_at"] for step in job["steps"] if step["finished_at"] is not None]
         end = max(ends) if ends and job["status"] in ("done", "failed", "blocked", "cancelled") else None
@@ -54,6 +56,11 @@ def observe_runs(execution: ExecutionFacade, library: LibraryFacade, host: dict,
         run = execution.observe(host["name"], observation)
         if run is None:
             continue
+        execution.observe_steps(run.id, [{"index": step["index"], "title": step.get("title"),
+            "status": step["status"], "start": iso(step["started_at"]), "end": iso(step["finished_at"]),
+            "work_item": step.get("work_item"),
+            "git": step.get("git", {"reason": "not recorded: the worker did not report per-step git"})}
+            for step in job["steps"]])
         # A step's own documents belong to the work it served; the rest to the job's work item.
         served = {step["index"]: step["work_item"] for step in run.step_work or []}
         outputs = [(document["kind"], document["name"], document["path"], "available", document.get("step"))
@@ -72,6 +79,14 @@ def observe_runs(execution: ExecutionFacade, library: LibraryFacade, host: dict,
                               title=title, location=location, availability=availability)
             if indexed is not None:
                 indexed[run.id, kind, location] = (work_item, title, availability)
+
+
+def observe_sessions(execution: ExecutionFacade, host: dict, project_of: Callable[[dict], str | None]) -> None:
+    if not host["ok"]:
+        return
+    for session in host["sessions"].values():
+        if not session.get("stale"):
+            execution.observe_session(host["name"], session, project_of(session))
 
 
 def record_decisions(decisions: DecisionsFacade, execution: ExecutionFacade, attention: AttentionFacade,

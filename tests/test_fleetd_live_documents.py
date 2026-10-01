@@ -209,8 +209,8 @@ def test_the_stream_re_emits_a_job_when_only_a_document_changes(home: Path, fold
         process.wait(timeout=5)
 
 
-def test_local_notes_are_never_documents(tmp_path: Path, home: Path) -> None:
-    """CLAUDE.local.md and other *.local.md files are private: not recorded when written, not listed in the outbox."""
+def test_private_local_notes_are_not_auto_recorded_or_previewed(tmp_path: Path, home: Path, capsys) -> None:
+    """Private notes are not auto-recorded or previewed; explicit outbox placement exposes metadata only."""
     parser = fleetd.ClaudeParser()
     [event] = parser.parse({"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t1",
                             "name": "Edit", "input": {"file_path": "/work/CLAUDE.local.md"}}]}})
@@ -219,8 +219,13 @@ def test_local_notes_are_never_documents(tmp_path: Path, home: Path) -> None:
     (directory / "outbox").mkdir(parents=True)
     (directory / "outbox" / "notes.local.md").write_text("private")
     (directory / "outbox" / "report.md").write_text("# Report")
-    job = {"id": "job1", "steps": [], "written_documents": []}
-    assert [document["id"] for document in fleetd.job_documents(job)] == ["outbox-report.md"]
+    job = {"id": "job1", "project": "p", "agent": "claude", "description": "work", "steps": [], "written_documents": []}
+    (directory / "job.json").write_text(json.dumps(job))
+    documents = fleetd.job_documents(job)
+    assert [document["id"] for document in documents] == ["outbox-notes.local.md", "outbox-report.md"]
+    assert documents[0]["media"] == "file"
+    content = read_document("job1", "outbox-notes.local.md", capsys)["content"]
+    assert "cannot preview" in content and "private" not in content
 
 
 def test_outbox_images_are_documents_shown_as_the_image(tmp_path: Path, home: Path, capsys) -> None:
@@ -230,6 +235,9 @@ def test_outbox_images_are_documents_shown_as_the_image(tmp_path: Path, home: Pa
     (outbox.parent / "job.json").write_text(json.dumps(job))
     (outbox / "mock vs l0.png").write_bytes(b"\x89PNG render")
     (outbox / "scene.blend").write_bytes(b"BLENDER")
-    [image] = fleetd.job_documents(job)
+    documents = fleetd.job_documents(job)
+    assert [doc["id"] for doc in documents] == ["outbox-mock vs l0.png", "outbox-scene.blend"]
+    assert documents[1]["media"] == "file"
+    image = documents[0]
     assert (image["id"], image["kind"], image["media"]) == ("outbox-mock vs l0.png", "outbox", "image")
     assert read_document("job1", "outbox-mock vs l0.png", capsys)["content"] == "![mock vs l0.png](<mock vs l0.png>)\n"

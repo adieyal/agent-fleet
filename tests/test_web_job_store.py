@@ -22,6 +22,8 @@ from fleet.transport import Host
 from fleet.web.job_store import ProjectDocuments
 from fleet.web.server import FleetState, follow_host, make_handler
 
+real_fetch_raw = FleetState.fetch_raw
+
 
 @pytest.fixture
 def worker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -29,6 +31,7 @@ def worker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     home = tmp_path / "worker"
     monkeypatch.setenv("FLEET_FLEETD_PATH", fleetd.__file__)
     monkeypatch.setenv("FLEET_REMOTE_HOME", str(home))
+    monkeypatch.setattr(FleetState, "fetch_raw", real_fetch_raw)
     return home
 
 
@@ -122,8 +125,8 @@ def test_documents_are_copied_live_and_outlive_the_job_and_the_host(
         (worker / "jobs" / job_id / "job.json").write_text(json.dumps(record))
         eventually(lambda: reads("file-0", "V2 route renders"))
 
-        # fleet rm deletes the worker's job directory; the store keeps the copy
-        worker_fleetd(worker, "rm", job_id)
+        # fleet rm deletes the worker's job directory (it never ran, so only with --force); the store keeps the copy
+        worker_fleetd(worker, "rm", "--force", job_id)
 
         def gone() -> None:
             assert stored_job(url, project_id)["availability"] == "gone from host"

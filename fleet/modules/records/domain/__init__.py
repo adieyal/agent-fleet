@@ -98,3 +98,54 @@ class Mandate:
             return value
         except (TypeError, ValueError) as error:
             raise ValueError(f'invalid mandate: {error}') from error
+
+
+TRIAGE_PATH = 'mandates/triage.json'
+TRIAGE_COMMANDS = ('retry', 'add_step', 'grant', 'resolve_attention', 'escalate', 'record_decision')
+
+
+@dataclass(frozen=True)
+class TriageMandate(Mandate):
+    host: str
+    runtime: str
+    cwd: str
+    permission: str
+    routing: dict[str, str]
+    permissions: dict[str, list[str]]
+    limits: dict[str, int]
+
+    @classmethod
+    def parse(cls, body: str) -> 'TriageMandate':
+        def keys(value: object, valid: tuple[str, ...], name: str, *, complete: bool = True) -> None:
+            if not isinstance(value, dict) or set(value) - set(valid) or (complete and set(value) != set(valid)):
+                raise ValueError(f'{name}: valid keys: {", ".join(valid)}')
+
+        try:
+            data = json.loads(body)
+            keys(data, tuple(cls.__dataclass_fields__), 'mandate')
+            value = cls(**data)
+            for name in ('goal', 'host', 'runtime', 'cwd', 'permission'):
+                entry = getattr(value, name)
+                if not isinstance(entry, str) or not entry.strip():
+                    raise ValueError(f'{name} required')
+            if value.runtime not in ('claude', 'codex'):
+                raise ValueError('runtime: valid values: claude, codex')
+            for name in ('constraints', 'decision_authority', 'escalation_conditions', 'criteria_it_may_judge'):
+                entries = getattr(value, name)
+                if not isinstance(entries, list) or any(not isinstance(x, str) or not x.strip() for x in entries):
+                    raise ValueError(name)
+            if set(value.decision_authority) - set(TRIAGE_COMMANDS):
+                raise ValueError(f'decision_authority: valid names: {", ".join(TRIAGE_COMMANDS)}')
+            keys(value.routing, ('failed', 'stalled', 'lost', 'refusal', 'blocked'), 'routing', complete=False)
+            if any(owner not in ('agent', 'user') for owner in value.routing.values()):
+                raise ValueError('routing: valid owners: agent, user')
+            keys(value.permissions, ('allow', 'escalate'), 'permissions')
+            for entries in value.permissions.values():
+                if not isinstance(entries, list) or any(not isinstance(x, str) or not x.strip() for x in entries):
+                    raise ValueError('permissions must contain lists of nonempty rules')
+            keys(value.limits, ('retries_per_step', 'runs_per_day', 'unclaimed_minutes'), 'limits')
+            if any(type(limit) is not int or limit <= 0 for limit in value.limits.values()):
+                raise ValueError('limits must be positive integers')
+            return value
+        except (TypeError, ValueError) as error:
+            raise ValueError(f'invalid triage mandate: {error}') from error

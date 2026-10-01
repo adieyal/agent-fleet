@@ -141,6 +141,7 @@ function stepWork(j, s) {
     ? `<button ${target} title="Open ${esc(node.kind)}: ${esc(path)}">${esc(trunc(node.title, 60))}</button>`
     : `<span title="${esc(path)}">${esc(trunc(node.title, 60))}</span>`}</span>`;
 }
+const staleChip = job => job.stale ? `<span class="chip" data-stale title="${esc(job.stale_reason || 'host offline')}; current status unknown">stale · last known</span>` : '';
 export function renderPanel() {
   // mid-scroll, updates wait until the scroll settles rather than rewriting content under it
   const wait = panelScrollUntil - performance.now();
@@ -159,8 +160,8 @@ export function renderPanel() {
       <div class="sub">
         <span class="chip"><i style="background:${e.look.color}"></i><b>${esc(e.host)}</b></span>
         <span class="chip"><i style="background:${AGENT_COLOR[j.agent] || '#ccc'}"></i>${esc(j.agent)}</span>
-        ${projectChip(j)}
-        <span class="chip st-${esc(j.status)}" title="${esc(jobTimeTitle(j))}">${esc(j.status)}${jobTime(j) ? ` · ${jobTime(j)}` : ''}</span>
+        ${projectChip(j)}${staleChip(j)}
+        <span class="chip st-${esc(j.status)}" title="${esc(jobTimeTitle(j))}">${esc(j.status === 'running' && j.activity?.kind === 'retry' ? j.activity.summary : j.status)}${jobTime(j) ? ` · ${jobTime(j)}` : ''}</span>
       </div></div>
     ${j.status !== 'running' ? DISMISS_BUTTON : ''}
     <button id="close" aria-label="Close">✕</button>`;
@@ -335,10 +336,10 @@ function renderSessionPanel(e) {
   const headHtml = `<canvas style="width:46px;height:60px"></canvas>
     <div style="min-width:0;flex:1"><h2>${s.title ? esc(s.title) : '<span class="untitled">no title yet</span>'}</h2>${workCrumbs(s.work)}
       <div class="sub">
-        <span class="chip sess st-${esc(s.status)}"><i></i>live · ${esc(s.status === 'idle' ? 'waiting for you' : s.status)}</span>
+        <span class="chip sess st-${esc(s.status)}"><i></i>live · ${esc(s.status)}</span>
         <span class="chip"><i style="background:${e.look.color}"></i><b>${esc(e.host)}</b></span>
         <span class="chip"><i style="background:${AGENT_COLOR[s.agent] || '#ccc'}"></i>${esc(s.agent)}</span>
-        ${projectChip(s)}
+        ${projectChip(s)}${staleChip(s)}
       </div></div>
     ${s.status === 'idle' ? DISMISS_BUTTON : ''}
     <button id="close" aria-label="Close">✕</button>`;
@@ -375,8 +376,8 @@ function docsPanelHtml(e) {
   }
   return `<h3>Documents · ${docs.length}</h3><ul class="docs" style="--hc:${e.look.color}">${docs.map(d => {
     const kind = kindOf(d), live = updating.includes(d);
-    return `<li${live ? ' class="updating"' : ''}><button data-doc="${esc(d.id)}" title="Read ${esc(d.name)}"><span class="dk ${kind}" aria-hidden="true">${DOC_KIND[kind].glyph}</span>
-      <span class="dn">${esc(d.name)}</span><span class="dm">${live ? '<span class="upd">updating</span> · ' : ''}${DOC_KIND[kind].label.toLowerCase()} · ${esc(docMeta(d))}</span><span class="go">Read →</span></button></li>`;
+    return `<li${live ? ' class="updating"' : ''}><button data-doc="${esc(d.id)}" title="${d.media === 'file' ? 'View collection instructions for' : 'Read'} ${esc(d.name)}"><span class="dk ${kind}" aria-hidden="true">${DOC_KIND[kind].glyph}</span>
+      <span class="dn">${esc(d.name)}</span><span class="dm">${live ? '<span class="upd">updating</span> · ' : ''}${DOC_KIND[kind].label.toLowerCase()} · ${esc(docMeta(d))}</span><span class="go">${d.media === 'file' ? 'Collect' : 'Read'} →</span></button></li>`;
   }).join('')}</ul>`;
 }
 panel.addEventListener('click', ev => {
@@ -421,7 +422,7 @@ export function fallbackCopy(text, done) {
   ta.remove();
 }
 // An id shown by its first 8 characters; clicking copies the whole id.
-export const idChip = id => `<button class="id-chip" data-copy-id="${esc(id)}" title="Copy ${esc(id)}" aria-label="Copy id ${esc(id)}">${esc(shortId(id))}</button>`;
+export const idChip = id => `<button type="button" class="id-chip" data-copy-id="${esc(id)}" title="Copy ${esc(id)}" aria-label="Copy id ${esc(id)}">${esc(shortId(id))}</button>`;
 document.addEventListener('click', ev => {
   const chip = ev.target.closest('[data-copy-id]');
   if (!chip) return;
@@ -457,9 +458,9 @@ export function renderLegend() {
   }
 }
 export function renderStats() {
-  const count = { running: 0, queued: 0, done: 0 }, live = { working: 0, idle: 0 };
-  // jobs in a background room count too, though they have no android
-  for (const h of hosts) for (const j of h.jobs || []) if (count[j.status] !== undefined) count[j.status]++;
+  const count = { running: 0, queued: 0, done: 0, failed: 0, lost: 0 }, live = { working: 0, idle: 0 };
+  // from the whole document: jobs in a background room, dismissed ones and finished ones that left the deck count too
+  for (const h of lastDoc?.hosts || []) for (const j of h.jobs || []) if (count[j.status] !== undefined) count[j.status]++;
   // every session counts, including idle ones that have left the deck
   for (const h of hosts) for (const s of h.sessions || []) if (s.project && live[s.status] !== undefined) live[s.status]++;
   document.getElementById('stats').innerHTML = `
@@ -467,6 +468,7 @@ export function renderStats() {
     <button class="chip restore" id="workingOpen" aria-haspopup="dialog" aria-expanded="false" title="Open Running: includes running, queued and jobs needing attention; this number counts running jobs only"><i style="background:var(--run)"></i><b>${count.running}</b> running · list</button>
     <span class="chip chip-inert opt"><i style="background:var(--warn)"></i><b>${count.queued}</b> queued</span>
     <span class="chip chip-inert opt"><i style="background:var(--ok)"></i><b>${count.done}</b> done</span>
+    <span class="chip chip-inert" id="failedJobs" title="failed jobs, and lost ones whose agent died; the working list shows them"><i style="background:var(--bad)"></i><b>${count.failed + count.lost}</b> failed</span>
     <button class="chip restore" id="needYou" aria-haspopup="dialog" aria-controls="attnPanel" aria-expanded="${allAttentionOpen()}" title="Open all-rooms attention: every open item, its owner, age and action consequences; acknowledged and snoozed items are in a fold"><i style="background:var(--bad)"></i><b>${openCount}</b> need you</button>
     ${retiredCount ? `<button class="chip restore" id="toggleFinished" title="Show finished jobs that have left the deck"><b>${retiredCount}</b> finished · show</button>`
       : showFinished ? '<button class="chip restore" id="toggleFinished" title="Let finished jobs leave the deck again">hide finished</button>' : ''}

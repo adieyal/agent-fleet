@@ -16,10 +16,12 @@ def test_trace_availability_survives_pruning(job):
     trace = directory / "events.jsonl"
     trace.write_text('{"kind":"text","summary":"working"}\n')
     signature = fleetd.job_signature(directory)
-    assert fleetd.job_summary(record, 1)["trace"] == {"path": str(trace), "availability": "available"}
+    assert fleetd.job_summary(record, 1)["trace"] == {"path": str(trace), "availability": "available",
+        "size": trace.stat().st_size, "mtime": trace.stat().st_mtime_ns, "raw": []}
     trace.unlink()
     assert fleetd.job_signature(directory) != signature
-    assert fleetd.job_summary(record, 1)["trace"] == {"path": str(trace), "availability": "unavailable"}
+    assert fleetd.job_summary(record, 1)["trace"] == {"path": str(trace), "availability": "unavailable",
+        "size": None, "mtime": None, "raw": []}
 
 
 @pytest.fixture
@@ -31,7 +33,8 @@ def job(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[dict, Path]:
     monkeypatch.setattr(fleetd, "JOBS_DIRECTORY", home / "jobs")
     monkeypatch.setattr(fleetd, "CONFIG_PATH", home / "config.json")
     record = {"id": "job1", "project": "project", "agent": "codex", "description": "work",
-              "cwd": str(tmp_path / "work"), "steps": [], "written_documents": []}
+              "cwd": str(tmp_path / "work"), "steps": [fleetd.make_step(0, "Write notes", "Write notes")],
+              "written_documents": []}
     (directory / "job.json").write_text(json.dumps(record))
     return record, directory
 
@@ -164,3 +167,26 @@ def test_run_step_does_not_copy_a_recorded_symlink(
     with pytest.raises(SystemExit):
         fleetd.command_read(argparse.Namespace(job="job1", document="file-0"))
     assert "outside approved document roots" in capsys.readouterr().out
+
+
+def test_batch12_outbox_lists_every_file_including_empty_and_nested(job, capsys):
+    record, directory = job
+    outbox = directory / 'outbox'
+    (outbox / 'nested').mkdir(parents=True)
+    files = {'report.md': b'# Report', 'notes.txt': b'notes', 'data.json': b'{}',
+             'nested/archive.zip': b'PK\x03\x04', 'empty.csv': b''}
+    for name, content in files.items():
+        (outbox / name).write_bytes(content)
+    documents = fleetd.job_documents(record)
+    assert {doc['name'] for doc in documents} == set(files)
+    assert next(doc for doc in documents if doc['name'] == 'empty.csv')['size'] == 0
+    fleetd.command_read(argparse.Namespace(job='job1', document='outbox-nested/archive.zip'))
+    reply = json.loads(capsys.readouterr().out)
+    assert 'fleet pull' in reply['content'] and 'cannot preview' in reply['content']
+    # Listing arbitrary extensions must not grant access through an outbox symlink.
+    secret = directory.parent.parent.parent / 'secret.bin'
+    secret.write_bytes(b'private')
+    (outbox / 'secret.bin').symlink_to(secret)
+    with pytest.raises(SystemExit):
+        fleetd.command_read(argparse.Namespace(job='job1', document='outbox-secret.bin'))
+    assert 'outside approved document roots' in capsys.readouterr().out

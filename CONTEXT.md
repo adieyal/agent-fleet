@@ -31,7 +31,7 @@ For each work item, the useful read view combines its goal, completion criteria,
 ### Workspace
 
 **Project**:
-An ongoing workspace with an identity independent of its name, repository or host. It may span several hosts and repositories, or have no product repository at all. A known project ID links a host automatically; matching repository information may suggest a link; matching names alone never merge projects.
+An ongoing workspace with an identity independent of its name, repository or host. It may span several hosts and repositories, or have no product repository at all. CLI selectors accept a registered project (ID, prefix or name). Exact IDs resolve first, then exact unique names, then unique ID prefixes. Names and prefixes that identify several projects are refused. A job's host label is derived from the explicit project link to its target host; a missing link or several labels on that host are refused before dispatch. Host labels remain explicit values in `HOST:LABEL` link commands and worker observations; matching repository information may suggest a link; matching names alone never merge projects.
 
 **Live project**:
 A project occupying a floor. Only live projects accept new action claims.
@@ -111,7 +111,11 @@ An event that calls for a role to act on a scope: a user command, a met conditio
 One response by a role to one or more triggers. It resolves the mandate version and context, selects or creates an action, claims it, dispatches a run, records the outcome and evidence, and leaves a next step or a named condition. Once triggers are queued, several triggers for the same role and scope become one activation with several reasons, not several runs.
 
 **Action**:
+
 One concrete intended execution for a work item, with a stable ID. Repeating a dispatch request with the same idempotency key returns the same action rather than creating another. An action may be attempted by several runs over time, one at a time. Claiming the action, not the work item, is what lets several runs serve one epic in parallel.
+
+**Observed action**:
+An action for a job first seen on a worker, even when it serves no work item. It holds no claim. Its run keeps the worker's run ID when supplied, plus host, job ID, label and workspace. Linking later attaches that existing action and run to work; a conflicting registered project is refused. Linking a host label to a project assigns its earlier unregistered runs and moves retained documents from `_labels/<host>/<label>/`. On each stream hello, `fleetd ls --all --events 0` catches up jobs still on that worker. Jobs already removed cannot be reconstructed.
 
 **Claim**:
 An action's exclusive reservation for one run, made in a single controller transaction. An action has at most one active claim; a second claimant receives a conflict or the existing run. The claim is held from dispatch until its run reaches a known end (succeeded, failed or stopped). An unknown outcome keeps the claim, and no timer releases it.
@@ -130,11 +134,20 @@ _Avoid_: Job for the run or for the durable work
 **Job workspace**:
 The git checkout a job's working directory is in, as its worker last read it: the checkout's top level, whether it is a linked worktree and the main repository it belongs to, the branch (or a detached head), the head commit and the count of uncommitted paths, with when it was read. The worker reads it when the job is created, as each step starts and ends, and every 30 seconds while a step runs. A directory outside git, missing, or unreadable has no workspace and says why; nothing is filled in that git did not report.
 
+**Step git record**:
+The worker records full base and head commit IDs around each step, start and end branches, whether base is an ancestor of head, and base..head commits. The commit list is capped at 100 with a total count and an explicit truncation flag; subjects are capped at 72 characters. Push evidence comes from remote-tracking reflogs in the repository's common git directory, including linked worktrees, and only `update by push` entries reaching the step's head or a commit in its range are attributed. Pushes to URLs without remote-tracking refs are not recorded, and a concurrent push of the same commit cannot be distinguished by actor. Capture errors say why without failing the agent's work. A killed runner leaves its base with an explicit missing-end reason; older steps say git was not recorded. The controller retains changed step records with history even after the job is removed from the worker.
+
 **Step work item**:
 The work item one step of a job serves, when it is not the job's own. A run stays linked to its action's work item; its steps may each name another in the same project, and while such a step runs that item (and its ancestors) shows active, and its step's documents join that item's library. A step's work is part of the dispatch payload, so it is covered by the idempotency key and kept on retry, and recorded on the run as observed (`step_work`), not as further actions or claims: a step finishing completes no more than a run finishing does. An answer to a blocked step, or a permission continuation, serves the step it continues unless it names its own.
 
 **Run trace**:
-The detailed activity emitted by one agent run. It stays on the worker under a retention policy and is not the durable project record. The library may link to it; a pruned trace stays visible as unavailable.
+The activity emitted by one agent run. Raw runtime files stay on the worker. For terminal jobs, the controller's document keeper copies the complete normalized `events.jsonl` into `FLEET_HOME/traces/<hashed run ID>/<content SHA>.jsonl`. Run metadata records its hash, byte count and availability; changed traces keep older content-addressed copies. Copy errors name the cause and retry on a later job report. An empty trace is a retained zero-byte file. Missing or corrupt retained files are shown as unavailable. Raw traces are never copied into this archive.
+
+`fleet rm` removes worker files, preserves the run, steps and controller copies, and records `removed by fleet rm` with a timestamp. Worker removal manifests report that provenance to an existing stream and replay it to a fresh stream after reconnect. Disappearance without that provenance does not assert that Fleet deleted the files. Session runs have no worker `events.jsonl` copy; details explicitly say when no trace was recorded.
+
+`fleet history runs` and `GET /api/history/runs` share a store-backed projection, with project, work and descendants, host, status, kind, unlinked, start-time range and limit filters. Unknown start times remain null and are excluded only when a start-time range is requested. `fleet run show` and `GET /api/runs/<id>` expose action metadata, retained steps and git evidence, library references, kept documents and trace availability. Prefixes must identify one run. `fleet store usage` accounts for SQLite files and table rows, project documents and retained traces without changing or pruning them.
+
+Interactive sessions are runs identified by host and transcript ID. Working and idle map to running; quiet removal after 20 minutes stops the run at its last transcript update, and a later update reopens it without claims. The worker persists the first observed base in `FLEET_HOME/sessions/<id>.json`. Hosts persist reachability transitions and retain stale work during outages; a deck restart seeds active/unknown runs from the store, and reconnect confirmation waits for the first complete heartbeat.
 
 ### Authority and attention
 
@@ -170,7 +183,7 @@ A recorded choice with its actor, mandate version, context and affected work. De
 A change awaiting acceptance: an edit beyond its author's authority, a disputed completion, or an offline edit that conflicts with accepted state. Proposals are never applied by order of arrival.
 
 **Attention item**:
-A decision request, genuine blocker or actionable alert that calls for the user. It has an owner, a source, and a state: open, acknowledged, snoozed or resolved. Reading one does not resolve it. Ordinary agent activity, new reports and met waiting conditions do not become attention items merely by happening.
+A decision request, genuine blocker or actionable alert. It has an **owner**, who must act on it: the user or an agent. It also has a **subject**, the job, session or run it is about (none for an item raised by hand or by an orchestrator), a source, and a state: open, acknowledged, snoozed or resolved. The user **delegates** an item to an agent, and can take it back; an agent **escalates** an item to the user with a reason. An item handed over stays open and visible, and keeps who handed it over and why; seen again from its source, it keeps its owner. A session's question cannot go to an agent, since only its terminal can answer it. Reading one does not resolve it. Ordinary agent activity, new reports and met waiting conditions do not become attention items merely by happening.
 
 **Permission refusal**:
 A permission request a job's agent was refused because nobody was at the prompt; the agent carries on without it. A job step's refusals form one attention item, answered by allowing permission rules for the job, which continues the refused step, or by dismissing it. When the job moves on to a later step, or is gone, with the item untouched, it resolves as refused. An interactive session's permission request is a question to the person at its prompt and stays its own item.
@@ -223,8 +236,50 @@ A packaged specialised display for a space: a manifest, an optional collector th
 | Attention item | open, acknowledged, snoozed, resolved |
 | Observation | current, stale, unknown |
 
-State changes to work items, attention items and runs are timestamped and kept for at least a week, independently of raw traces. A run's latest reading (when it was last observed, its current activity, its usage so far) is an observation, not a state change: it is kept current without history, and a finished run's usage is recorded with its end.
+State changes to work items, attention items and runs are timestamped independently of raw traces. P2 retains run, action and step records and controller trace copies indefinitely, with no automatic pruning; P3 owns explicit audit-history pruning. A run's latest reading (when it was last observed, its current activity, its usage so far) is an observation, not a state change: it is kept current without history, and a finished run's usage is recorded with its end.
 
+### Project triage
+
+A confirmed `mandates/triage.json` grants a project's triage role its attention
+commands. The activation pins that record's revision, names actor
+`triage:<activation-id>`, and has no work item. It may retry, add a step, grant
+exact refused rules, resolve attention, escalate, or record a decision only as
+its mandate allows. It cannot judge criteria or complete work. The item stays
+visible with `owner=agent`; `subject` names the job or session it concerns.
+Existing items remain user-owned until explicitly delegated.
+
+`fleet web` schedules one bounded run per project after observations and on its
+history loop. Reservation, activation, execution intent and daily budget are
+committed together. The runtime gets writable directories for the controller store
+and this project's management repository so its scoped commands can record effects
+under `workspace-write`; its worker job directory is already writable. Unknown outcomes retain their reservation; reconciliation
+uses the same run ID. Budgets reset on the controller's UTC calendar day. Every
+system escalation records a Decision and an ownership history entry. A project
+without a confirmed mandate has no automatic triage; `fleet triage status P`
+reports a null mandate version and budget, with its queue still visible.
+
+An unclaimed item times out after `unclaimed_minutes` from its ownership time.
+Items predating ownership timestamps get a grace period from the scheduler's
+first observation. Refusal timestamps survive replay. Failed delivery shows its
+error in triage status; an unconfirmed run eventually escalates its items while
+retaining the unknown run. An ended run's untouched items get one more run;
+a second untouched ending escalates with the run ID. Retry limits count Decisions
+across an Action's runs for the same step and name them on repeated failure.
+A triage run's own failure, stall or refusal always goes to the user.
+
+```mermaid
+flowchart LR
+  Observe[New attention] --> Route{Confirmed mandate?}
+  Route -->|no| User[User ownership]
+  Route -->|yes, within scope| Queue[Visible agent queue]
+  Queue --> Reserve[Serialized reservation and budget]
+  Reserve --> Run[One project triage run]
+  Run --> Controls[Scoped control commands and Decisions]
+  Run -->|unknown outcome| Reconcile[Reconcile same run ID]
+  Reconcile --> Run
+  Queue -->|timeout or exhausted budget| User
+  Run -->|second untouched ending| User
+```
 
 ## Test suite
 

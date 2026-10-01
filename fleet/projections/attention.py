@@ -21,7 +21,9 @@ def attention_items(attention: AttentionFacade, hosts: list[dict[str, Any]]) -> 
                        "project": None, "project_id": item.project, "since": None,
                        "source": item.source, "summary": item.headline}
             stale = False
+        # "owner" above is what the item is about (the deck's subject); owned_by is who must act on it.
         result.append({**context, "id": item.id, "kind": item.kind, "state": item.state, "stale": stale,
+                       "owned_by": item.owner, "owner_reason": item.owner_reason,
                        "context_reference": item.context_reference, "refusals": len(item.refusals),
                        "questions": len(item.questions),
                        "blocked": item.stream_context is not None and item.stream_context.blocked_step,

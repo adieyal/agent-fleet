@@ -93,7 +93,7 @@ def test_a_linked_label_cannot_be_taken_by_another_project(config_path, fleet):
     assert [entry["name"] for entry in stored_projects(config_path).values()] == ["One"]
 
 
-def test_merge_keeps_the_older_id_and_takes_the_others_links_and_repositories(config_path, fleet):
+def test_merge_keeps_the_older_id_and_takes_the_others_links_and_repositories(config_path, fleet, capsys):
     fleet("project", "add", "Agent Fleet", "--link", "home:agent-fleet", "--repo", "git@github.com:adieyal/agent-fleet.git")
     (older,) = stored_projects(config_path)
     fleet("project", "add", "agent-fleet", "--link", "gpu:agent-fleet", "--link", "gpu:fleet-docs",
@@ -106,6 +106,12 @@ def test_merge_keeps_the_older_id_and_takes_the_others_links_and_repositories(co
 
     output = fleet("project", "merge", older, newer)
     assert f"merged {newer} agent-fleet into {older} Agent Fleet" in output
+    assert "0 work items, 0 attention, 0 runs, 0 decisions" in output
+    assert f"deleted project {newer} for good" in output
+    with pytest.raises(SystemExit) as help_exit:
+        fleet("project", "merge", "--help")
+    assert help_exit.value.code == 0
+    assert "cannot be undone" in capsys.readouterr().out
     stored = stored_projects(config_path)
     assert list(stored) == [older] and stored[older]["name"] == "Agent Fleet"
     assert stored[older]["links"] == [{"host": "gpu", "label": "agent-fleet"}, {"host": "gpu", "label": "fleet-docs"},

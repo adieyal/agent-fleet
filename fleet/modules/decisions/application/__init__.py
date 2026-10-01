@@ -1,13 +1,117 @@
 """Answer across Decisions, Attention and Work in one unit of work."""
 
 from datetime import datetime
-from typing import Callable
+from typing import Callable, TYPE_CHECKING
 from uuid import uuid4
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import json
+
+from fleet.modules.authority import AuthorityRejected
+from fleet.modules.attention import AttentionItem
 
 from .ports import DecisionRepository
 from ..domain import Decision, Proposal, selected_answer
+
+if TYPE_CHECKING:
+    from fleet.modules.authority import AuthorityFacade
+    from fleet.modules.records import RecordsFacade
+
+
+def escalation_snapshot(repository: DecisionRepository, item: AttentionItem, activation: str) -> AttentionItem:
+    """Permit reopening only the resolution produced by this activation's recorded action."""
+    if item.owner != 'agent' or item.state != 'resolved':
+        return item
+    identity = (item.resolution_details or '').rpartition('; decision:')[2]
+    if not identity:
+        return item
+    try:
+        previous = repository.get(identity)
+    except LookupError:
+        return item
+    if previous.attention_item != item.id or previous.activation != activation:
+        return item
+    evidence = json.loads(previous.context)
+    if evidence.get('command') not in ('retry', 'add_step', 'grant'):
+        return item
+    return replace(item, state='open')
+
+
+def record_attention(repository: DecisionRepository, clock: Callable[[], datetime], records: 'RecordsFacade',
+                     authority: 'AuthorityFacade', item_id: str, *, actor: str,
+                     activation: str, source_run: str, command: str, answer: str, principle: str,
+                     context: str, question: str | None = None, effect: str | None = None,
+                     completed_item: AttentionItem | None = None, retry_run: str | None = None) -> Decision:
+    """Record triage and its local effect together; completed_item audits an already sent remote effect.
+
+    If ownership or a refusal batch changed during transport, keep that current state while recording
+    what happened to the previously authorized snapshot.
+    """
+    if not principle.strip():
+        raise ValueError('principle is required')
+    if effect not in (None, 'resolve', 'escalate'):
+        raise ValueError('unknown triage attention effect')
+    with repository.transaction() as transaction:
+        item = transaction.attention.get(item_id)
+        authorized_item = (escalation_snapshot(transaction, item, activation) if command == 'escalate'
+                           else item if completed_item is None else completed_item)
+        if (authorized_item.id, authorized_item.project) != (item.id, item.project):
+            raise ValueError('completed effect does not belong to this attention item')
+        authorization = authority.require_triage(command, authorized_item, actor=actor, activation=activation)
+        run = transaction.execution.get_run(source_run)
+        action = transaction.execution.get_action(run.action)
+        if action.activation != activation or action.project != item.project:
+            raise ValueError('source run is not this triage activation')
+        requested = json.loads(context)
+        target = None if retry_run is None else transaction.execution.get_run(retry_run)
+        if target is not None:
+            # execution.retry creates a new remote job. Its action remains stable across the chain.
+            requested['retry_action'] = target.action
+            context = json.dumps(requested)
+        if command == 'retry':
+            previous_retries = []
+            for previous in transaction.list():
+                if previous.activation is None:
+                    continue
+                try:
+                    evidence = json.loads(previous.context)
+                except ValueError:
+                    continue
+                if not isinstance(evidence, dict) or evidence.get('command') != 'retry':
+                    continue
+                if retry_run is None and previous.attention_item == item.id:
+                    raise AuthorityRejected('legacy retry was already requested; inspect or escalate, do not resend')
+                identity = ('project', 'subject', 'step') if target is None else ('project', 'retry_action', 'step')
+                if all(evidence.get(name) == requested.get(name) for name in identity):
+                    previous_retries.append(previous.id)
+            limit = authority.triage_mandate(activation).limits['retries_per_step']
+            if len(previous_retries) >= limit:
+                raise AuthorityRejected(f'retry limit {limit} reached (decisions {", ".join(previous_retries)})')
+        if retry_run is not None:
+            if command != 'retry':
+                raise ValueError('only retry may queue a run')
+            stream = item.stream_context
+            if stream is None or (target.host, target.remote_job_id) != (stream.host, stream.owner_id):
+                raise ValueError('retry run does not belong to the attention subject')
+            result = transaction.execution.retry(retry_run, actor=actor, idempotency_key=f'triage-retry:{item.id}')
+            answer = f'retry queued as run {result.run.id}: {answer}'
+            context = json.dumps(dict(json.loads(context), run=result.run.id, created=result.created))
+        decision = Decision(str(uuid4()), item.id, authorized_item.headline if question is None else question,
+                            answer, actor, context, () if authorized_item.work_item is None else (authorized_item.work_item,),
+                            clock(), activation, authorization.mandate_version, source_run, principle,
+                            run_guidance(transaction.execution, source_run))
+        transaction.insert(decision)
+        if command == 'escalate' and item.state == 'resolved' and authorized_item.state == 'open':
+            item = transaction.attention.reopen_for_escalation(item.id, actor=actor)
+        if item.owner == 'agent' and item.state != 'resolved' and item.refusals == authorized_item.refusals:
+            if effect == 'resolve':
+                transaction.attention.resolve(item.id, details=f'{answer}; decision:{decision.id}', actor=actor)
+            elif effect == 'escalate':
+                transaction.attention.escalate(item.id, reason=answer.removeprefix('escalated to the user: '), actor=actor)
+        body = json.dumps(asdict(decision), default=str)
+        intent = transaction.records.prepare(item.project, f'decisions/{decision.id}.json', body,
+                                             key=decision.id, actor=actor, source_run=source_run)
+    records.publish(intent, body)
+    return decision
 
 
 def record_decision(repository, clock, records, authorization, source_run: str,

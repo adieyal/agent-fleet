@@ -45,6 +45,9 @@ def test_stream_records_actions_without_duplicate_history_or_push():
     sequence, version = store.latest_sequence(), state.version
     apply_message(state, state.hosts[0], {'type': 'heartbeat'})
     assert execution.run_activity(recorded)['action_freshness'] == 'current'
+    change, = store.history_after(sequence)
+    assert change['subject'] == 'execution:host:worker'
+    sequence, version = store.latest_sequence(), state.version
     apply_message(state, state.hosts[0], {'type': 'heartbeat'})
     assert (store.latest_sequence(), state.version) == (sequence, version)
     assert composition.open_execution(composition.open_store()).get_run(run.id) == recorded

@@ -128,3 +128,20 @@ def test_migration_moves_observations_out_of_existing_runs(tmp_path: Path, monke
     execution.observe("one", JobObservation("live", "running", "codex", START, None, START, Usage(**USAGE),
                                             "tool", START))
     assert store.latest_sequence() == sequence
+
+
+def test_store_already_migrated_through_main_17_reopens_without_replaying(tmp_path):
+    """P2 integration uses main's 15/16/17 history, observations and ownership schema."""
+    path = tmp_path / "main-17.db"
+    store = composition.open_store(path)
+    assert store.schema_version() == 17
+    execution, run = dispatched(store)
+    execution.observe(run.host, JobObservation(run.remote_job_id, "running", "codex", START, None, START))
+    before = store.history_after(0)
+    reopened = composition.open_store(path)
+    assert reopened.schema_version() == 17
+    assert reopened.history_after(0) == before
+    assert composition.open_execution(reopened).get_run(run.id).last_observed == START
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("SELECT count(*) FROM execution_run_observation").fetchone()[0] == 1
+        assert "subject" in {row[1] for row in connection.execute("PRAGMA table_info(attention_item)")}

@@ -22,6 +22,7 @@ def jobs(tmp_path, monkeypatch):
     monkeypatch.setattr(fleetd, "CONFIG_PATH", tmp_path / "config.json")
     monkeypatch.setattr(fleetd.signal, "signal", lambda *args: None)
     monkeypatch.setattr(fleetd, "collect_workspace", lambda cwd: (None, "not a git repository"))  # git would use the fake
+    monkeypatch.setattr(fleetd, "begin_step_git", lambda cwd: {"reason": "git transport mocked by blocked test"})
 
     def write(steps, **fields):
         job = {"id": "job", "agent": "claude", "project": "p", "description": "Blocked", "cwd": str(tmp_path),
@@ -217,7 +218,7 @@ def test_fleetd_wait_returns_for_a_blocked_job(jobs, capsys):
 def test_fleet_wait_exits_1_and_says_blocked(monkeypatch, capsys):
     finished = {"status": "blocked", "description": "Gather notes",
                 "results": [{"index": 0, "title": "Gather", "status": "blocked", "result": "no access"}]}
-    host = SimpleNamespace(name="h", fleetd_command=lambda arguments: arguments)
+    host = SimpleNamespace(name="h", is_local=True, fleetd_command=lambda arguments: arguments)
     monkeypatch.setattr(cli, "resolve", lambda reference: (host, "job"))
     monkeypatch.setattr(cli.subprocess, "Popen", lambda command, **kwargs: SimpleNamespace(
         poll=lambda: 0, stdout=StringIO(json.dumps(finished) + "\n"), terminate=lambda: None))
@@ -233,7 +234,7 @@ def test_fleet_notify_says_blocked(monkeypatch, capsys):
                "steps": [{"index": 0, "title": "Gather", "status": "running"}]}
     blocked = {**running, "status": "blocked",
                "steps": [{"index": 0, "title": "Gather", "status": "blocked", "result": "no access"}]}
-    reports = [[SimpleNamespace(host=SimpleNamespace(name="h"), jobs=[job])] for job in (running, blocked)]
+    reports = [[SimpleNamespace(host=SimpleNamespace(name="h"), jobs=[job], error=None)] for job in (running, blocked)]
     monkeypatch.setattr(cli, "selected_hosts", lambda arguments: [])
     monkeypatch.setattr(cli.transport, "gather", lambda hosts, arguments: reports.pop(0))
 
@@ -249,3 +250,27 @@ def test_fleet_notify_says_blocked(monkeypatch, capsys):
 
 def test_a_blocked_job_is_a_failed_run_with_reason_blocked():
     assert JobObservation("job", "blocked", "claude", None, None, None).run_status() == "failed"
+
+
+def test_batch12_notify_reports_host_transitions_once(monkeypatch, capsys):
+    from datetime import datetime
+    reports = [[SimpleNamespace(host=SimpleNamespace(name='h'), jobs=[], error=error)]
+               for error in ('connection refused', 'connection refused', None, None, 'timed out')]
+    monkeypatch.setattr(cli, 'selected_hosts', lambda arguments: [])
+    monkeypatch.setattr(cli.transport, 'gather', lambda *_args: reports.pop(0))
+
+    def sleep(_seconds):
+        if not reports:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli.time, 'sleep', sleep)
+    with pytest.raises(KeyboardInterrupt):
+        cli.command_notify(argparse.Namespace(interval=0))
+    lines = capsys.readouterr().out.splitlines()
+    assert len(lines) == 3
+    assert lines[1] == 'HOST UP h'
+    for line, error in zip((lines[0], lines[2]), ('connection refused', 'timed out')):
+        prefix, detail = line.rsplit(': ', 1)
+        assert detail == error
+        assert prefix.startswith('HOST DOWN h since ')
+        assert datetime.fromisoformat(prefix.removeprefix('HOST DOWN h since ')).tzinfo is not None

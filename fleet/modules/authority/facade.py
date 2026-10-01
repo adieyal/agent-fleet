@@ -1,4 +1,5 @@
 from .application import Commands
+from .domain import Activation
 
 
 class AuthorityFacade:
@@ -7,14 +8,20 @@ class AuthorityFacade:
         self.decisions, self.attention, self.execution = decisions, attention, execution
         self.commands = Commands(repository, records, work)
 
-    def activate(self, work_item: str, **fields):
+    def activate(self, work_item: str | None = None, **fields) -> Activation:
         return self.commands.activate(work_item, **fields)
 
     def get(self, identity: str):
         return self.repository.get(identity)
 
-    def require(self, command: str, work_item: str, **context):
+    def require(self, command: str, work_item: str | None, **context):
         return self.commands.require(command, work_item, **context)
+
+    def triage_mandate(self, activation: str):
+        return self.commands.triage_mandate(activation)
+
+    def require_triage(self, command: str, item, **context) -> Activation:
+        return self.commands.require_triage(command, item, **context)
 
     def raise_attention(self, *, actor: str, activation: str, headline: str, context_reference: str):
         context = self.get(activation)

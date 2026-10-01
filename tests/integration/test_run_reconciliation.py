@@ -25,6 +25,10 @@ def test_recorded_stream_reconciles_without_changing_work(outcome):
     for message in messages[:2]:
         apply_message(state, host, message)
     assert execution.runs()[0].status == "running"
+    sequence = store.latest_sequence()
+    apply_message(state, host, {"type": "heartbeat", "time": 110})
+    change, = store.history_after(sequence)
+    assert change["subject"] == "execution:host:worker"
     sequence, version = store.latest_sequence(), state.version
     apply_message(state, host, messages[1])
     apply_message(state, host, {"type": "heartbeat", "time": 110})

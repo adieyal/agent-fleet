@@ -123,10 +123,16 @@ def ensure_master(host: Host) -> None:
     if host.is_local:
         return
     control = ["-o", next(option for option in host.ssh_options if option.startswith("ControlPath="))]
-    check = subprocess.run(["ssh", *control, "-O", "check", host.ssh_target], capture_output=True)
+    try:
+        check = subprocess.run(["ssh", *control, "-O", "check", host.ssh_target], capture_output=True, timeout=10)
+    except subprocess.TimeoutExpired as error:
+        raise FleetError(f"{host.name}: SSH control connection check timed out after 10s") from error
     if check.returncode != 0:
-        subprocess.run(["ssh", *host.ssh_options, "-o", "ControlMaster=yes", "-M", "-N", "-f", host.ssh_target],
-                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
+        try:
+            subprocess.run(["ssh", *host.ssh_options, "-o", "ControlMaster=yes", "-M", "-N", "-f", host.ssh_target],
+                           stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
+        except subprocess.TimeoutExpired as error:
+            raise FleetError(f"{host.name}: SSH connection setup timed out after 15s") from error
 
 
 def call(host: Host, arguments: list[str], *, stdin_text: str | None = None, timeout: float | None = 30) -> Any:
@@ -159,6 +165,34 @@ def gather(hosts: list[Host], arguments: list[str]) -> list[HostReport]:
         return []
     with ThreadPoolExecutor(max_workers=len(hosts)) as pool:
         return list(pool.map(one, hosts))
+
+
+def catch_up_jobs(host: Host) -> list[dict]:
+    """All jobs still held by a worker, including finishes missed by the stream."""
+    return call(host, ["ls", "--all", "--events", "0"], timeout=30)["jobs"]
+
+
+def catch_up_sessions(host: Host, since: str) -> list[dict]:
+    return call(host, ["sessions", "--since", since], timeout=30)["sessions"]
+
+
+def keep_run_trace(execution, host: Host, job: dict) -> None:
+    """Copy terminal normalized events once; retain an explicit error and retry on the next report."""
+    run = execution.record_observed(host.name, job)
+    if job.get("trace") is None:
+        return
+    source = {**job["trace"], "observed_at": job.get("updated_at")}
+    previous = run.trace or {}
+    if previous.get("events", {}).get("availability") == "kept" and previous.get("source") == source:
+        return
+    if job["status"] not in ("done", "failed", "cancelled", "lost", "blocked"):
+        execution.record_trace(run.id, source)
+        return
+    try:
+        result = call(host, ["read-trace", job["id"]], timeout=30)
+        execution.record_trace(run.id, source, content=result["content"], error=result.get("reason"))
+    except (FleetError, OSError, ValueError, KeyError) as error:
+        execution.record_trace(run.id, source, error=f"trace copy failed: {error}")
 
 
 def gather_sessions(hosts: list[Host]) -> dict[str, list[dict[str, Any]]]:

@@ -97,6 +97,7 @@ class Run:
     # The job workspace as last read (see CONTEXT "Job workspace"), or None with the worker's reason.
     workspace: dict | None = None
     workspace_reason: str | None = None
+    trace: dict | None = None
 
     def __post_init__(self) -> None:
         if not self.host.strip() or not self.remote_job_id.strip():
