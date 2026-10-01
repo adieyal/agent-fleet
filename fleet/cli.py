@@ -13,7 +13,7 @@ import tempfile
 import time
 from collections import defaultdict
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -1240,6 +1240,30 @@ def command_decision_list(arguments: argparse.Namespace) -> None:
         print(f"  Guidance: {'unknown' if entry['guidance'] is None else describe_guidance(entry['guidance'])}")
 
 
+def history_cutoff(text: str) -> datetime:
+    """An ISO date or time; a date means midnight, and a time without a zone means UTC."""
+    try:
+        moment = datetime.fromisoformat(text)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(f"not an ISO date or time: {text}") from error
+    return moment if moment.tzinfo is not None else moment.replace(tzinfo=timezone.utc)
+
+
+def command_history_prune(arguments: argparse.Namespace) -> None:
+    store = open_store()
+    count, oldest, newest = store.history_span_before(arguments.before)
+    if not count:
+        print(f"No history entries before {arguments.before.isoformat()}; nothing to delete.")
+        return
+    if not arguments.yes:
+        print(f"Would delete {count} history entries, from {oldest} to {newest} (everything before "
+              f"{arguments.before.isoformat()}). Who changed what in that period would no longer be readable.")
+        raise FleetError("nothing deleted; run again with --yes to delete them")
+    deleted = store.prune_history(arguments.before, arguments.actor)
+    print(f"Deleted {deleted} history entries from {oldest} to {newest}; "
+          f"one entry by {arguments.actor} records the pruning.")
+
+
 def command_answer(arguments: argparse.Namespace) -> None:
     try:
         context = open_attention().get(arguments.id).stream_context
@@ -1588,6 +1612,16 @@ def build_parser() -> argparse.ArgumentParser:
     decision_scope.add_argument("--epic")
     decision_list.add_argument("--json", action="store_true")
     decision_list.set_defaults(handler=command_decision_list)
+
+    history = commands.add_parser("history", help="the audit trail: who changed what, and when")
+    history_commands = history.add_subparsers(dest="history_command", required=True)
+    history_prune = history_commands.add_parser(
+        "prune", help="delete entries older than a date; shows what it would delete unless --yes")
+    history_prune.add_argument("--before", required=True, type=history_cutoff,
+                               help="an ISO date or time (UTC unless it names a zone)")
+    history_prune.add_argument("--yes", action="store_true", help="delete; without it nothing is deleted")
+    history_prune.add_argument("--actor", default="user")
+    history_prune.set_defaults(handler=command_history_prune)
 
     answer = commands.add_parser("answer", help="record an answer; options use 1-based numbers")
     answer.add_argument("id")
