@@ -165,7 +165,7 @@ class FleetState(LiveWorkspace):
             stop.wait(0.25)
 
     def update(self, host_name: str, mutate: Any, *, owners: set[str] | None = None,
-               ingest: bool = True, heartbeat: bool = False) -> None:
+               ingest: bool = True, heartbeat: bool = False, deleted_jobs: set[str] = frozenset()) -> None:
         with self.changed:
             previous = snapshot(self.by_host[host_name])
             sequence = self.store.latest_sequence()
@@ -181,7 +181,7 @@ class FleetState(LiveWorkspace):
                 reconciled = self.attention.observe({**host,
                     "jobs": [resolve(self.registry, host_name, job) for job in host["jobs"].values()],
                     "sessions": [resolve(self.registry, host_name, session) for session in host["sessions"].values()]},
-                    owners=owners, raise_items=not heartbeat)
+                    owners=owners, raise_items=not heartbeat, deleted_jobs=deleted_jobs)
                 # A heartbeat follows a full pass over the host's jobs, so absent jobs are gone.
                 reconciled = self.attention.close_refusals(
                     {**host, "jobs": list(host["jobs"].values()), "sessions": []}, complete=heartbeat) or reconciled
@@ -329,8 +329,10 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
                      owners={f"job:{host.name}:{job['id']}"})
         state.keep_documents(host.name, job)
     elif kind == "removed":
-        state.update(host.name, lambda entry: entry["jobs"].pop(message["id"], None),
-                     owners={f"job:{host.name}:{message['id']}"})
+        owner = f"job:{host.name}:{message['id']}"
+        # An aged-out job leaves the floor but keeps its open item; only a deleted one resolves it.
+        state.update(host.name, lambda entry: entry["jobs"].pop(message["id"], None), owners={owner},
+                     deleted_jobs={owner} if message.get("reason") == "deleted" else frozenset())
     elif kind == "session":
         session = message["session"]
         state.update(host.name, lambda entry: entry["sessions"].__setitem__(session["id"], session),

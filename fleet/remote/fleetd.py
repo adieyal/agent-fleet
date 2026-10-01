@@ -48,6 +48,10 @@ TMUX_SOCKET = ("fleet" if FLEET_HOME == (Path.home() / ".fleet").resolve() else
 TMUX_COMMAND = ["tmux", "-L", TMUX_SOCKET, "-f", "/dev/null"]
 SUMMARY_LENGTH = 160
 TERMINAL_STATUSES = ("done", "failed", "blocked", "cancelled", "lost")
+# Only these leave ls and the stream after --since-hours; failed and blocked jobs wait for someone.
+AGED_STATUSES = ("done", "cancelled", "lost")
+# `rm` deletes these without --force; others still hold work or a question.
+REMOVABLE_STATUSES = ("done", "failed", "cancelled", "lost")
 STREAM_PROTOCOL_VERSION = 3
 DISPATCH_SCHEMA_VERSION = 4
 USAGE_SCHEMA_VERSION = 1
@@ -2250,7 +2254,7 @@ def command_list(arguments: argparse.Namespace) -> None:
     jobs = all_jobs()
     if not arguments.all:
         horizon = now() - arguments.since_hours * 3600
-        jobs = [job for job in jobs if derive_status(job) not in TERMINAL_STATUSES or job.get("updated_at", 0) >= horizon]
+        jobs = [job for job in jobs if derive_status(job) not in AGED_STATUSES or job.get("updated_at", 0) >= horizon]
     emit({"host": os.uname().nodename, "time": now(),
           "jobs": [job_summary(job, arguments.events) for job in jobs]})
 
@@ -2329,7 +2333,7 @@ def command_stream(arguments: argparse.Namespace) -> None:
                 except (ValueError, OSError):
                     continue
                 status = derive_status(job)
-                if status in TERMINAL_STATUSES and job.get("updated_at", 0) < now() - horizon_seconds:
+                if status in AGED_STATUSES and job.get("updated_at", 0) < now() - horizon_seconds:
                     ignored[job_id] = job_signature(path.parent, documents=False)
                     continue
                 seen.add(job_id)
@@ -2341,7 +2345,9 @@ def command_stream(arguments: argparse.Namespace) -> None:
             for job_id in set(signatures) - seen:
                 signatures.pop(job_id)
                 runner_states.pop(job_id, None)
-                emit({"type": "removed", "id": job_id})
+                # "deleted" only when the directory is gone: an aged-out job's open question stays open.
+                emit({"type": "removed", "id": job_id,
+                      "reason": "aged" if (JOBS_DIRECTORY / job_id).exists() else "deleted"})
             if now() - last_session_scan >= arguments.session_interval:
                 last_session_scan = now()
                 current = tracker.scan()
@@ -2468,10 +2474,18 @@ def command_move(arguments: argparse.Namespace) -> None:
 
 def command_remove(arguments: argparse.Namespace) -> None:
     job = read_job(arguments.job)
-    if derive_status(job) in ("running",):
+    status = derive_status(job)
+    if status == "running":
         fail("job is running; cancel it first")
-    shutil.rmtree(JOBS_DIRECTORY / arguments.job)
-    emit({"removed": arguments.job})
+    if status not in REMOVABLE_STATUSES and not arguments.force:
+        fail(f"job is {status}, not finished; removing it deletes its outbox and results for good "
+             f"(rerun with --force to remove it anyway)")
+    directory = JOBS_DIRECTORY / arguments.job
+    outbox = directory / "outbox"
+    outbox_files = sum(1 for path in outbox.rglob("*") if path.is_file()) if outbox.is_dir() else 0
+    results = len(list(directory.glob("result-*.md")))
+    shutil.rmtree(directory)
+    emit({"removed": arguments.job, "status": status, "outbox_files": outbox_files, "results": results})
 
 
 def command_configure(arguments: argparse.Namespace) -> None:
@@ -2611,6 +2625,7 @@ def main() -> None:
 
     remove = commands.add_parser("rm")
     remove.add_argument("job")
+    remove.add_argument("--force", action="store_true")
     remove.set_defaults(handler=command_remove)
 
     configure = commands.add_parser("configure")

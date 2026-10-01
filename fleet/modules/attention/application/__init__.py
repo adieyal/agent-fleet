@@ -45,13 +45,21 @@ class Commands:
         return item.effective(now)
 
     def reconcile(self, source: str, references: set[str], *, actor: str,
-                  owners: set[str] | None = None) -> bool:
+                  owners: set[str] | None = None, present_jobs: set[str] | None = None,
+                  deleted_jobs: set[str] = frozenset()) -> bool:
+        """Resolve cleared items. With present_jobs, a job's item stays open while its job is absent
+        (aged out of the stream, or not reported yet) unless the job is among deleted_jobs."""
         changed = False
         for item in self.repository.list():
             if (item.source == source and item.source_reference not in references
                     and item.state != "resolved" and (owners is None or item.owner in owners)):
-                details = ("answered in session or session removed" if item.kind == "decision"
-                           else "job retried, finished or removed")
+                if item.owner in deleted_jobs:
+                    details = "job deleted from its host"
+                elif present_jobs is not None and item.owner.startswith("job:") and item.owner not in present_jobs:
+                    continue
+                else:
+                    details = ("answered in session or session removed" if item.kind == "decision"
+                               else "job retried or finished")
                 self.change(item.id, "resolved", actor, details=details)
                 changed = True
         return changed

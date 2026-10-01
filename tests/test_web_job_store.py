@@ -122,8 +122,8 @@ def test_documents_are_copied_live_and_outlive_the_job_and_the_host(
         (worker / "jobs" / job_id / "job.json").write_text(json.dumps(record))
         eventually(lambda: reads("file-0", "V2 route renders"))
 
-        # fleet rm deletes the worker's job directory; the store keeps the copy
-        worker_fleetd(worker, "rm", job_id)
+        # fleet rm deletes the worker's job directory (it never ran, so only with --force); the store keeps the copy
+        worker_fleetd(worker, "rm", "--force", job_id)
 
         def gone() -> None:
             assert stored_job(url, project_id)["availability"] == "gone from host"

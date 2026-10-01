@@ -685,8 +685,12 @@ def command_move(arguments: argparse.Namespace) -> None:
 
 def command_remove(arguments: argparse.Namespace) -> None:
     host, job_id = resolve(arguments.job)
-    transport.call(host, ["rm", job_id])
-    console.print(f"removed {host.name}:{job_id}")
+    removed = transport.call(host, ["rm", job_id, *(["--force"] if arguments.force else [])])
+    if "outbox_files" not in removed:   # fleetd before audit 1 reports only the id
+        console.print(f"removed {host.name}:{job_id} for good (this host's fleetd does not count what it deleted)")
+        return
+    console.print(f"removed {removed['status']} job {host.name}:{job_id} for good: its directory, "
+                  f"{removed['outbox_files']} outbox file(s) and {removed['results']} step result(s)")
 
 
 def command_notify(arguments: argparse.Namespace) -> None:
@@ -706,7 +710,7 @@ def command_notify(arguments: argparse.Namespace) -> None:
                                   f"{step['title']}" + (f" — {step['result'][:200]}" if step.get("result") else ""), flush=True)
                         known[key] = step["status"]
                 if known.get(reference) != job["status"]:
-                    if not first_pass and job["status"] in ("done", "failed", "blocked", "cancelled", "stalled"):
+                    if not first_pass and job["status"] in ("done", "failed", "blocked", "cancelled", "stalled", "lost"):
                         print(f"JOB {job['status'].upper()} {reference} ({job['project']}): {job['description']}", flush=True)
                     known[reference] = job["status"]
         first_pass = False
@@ -834,9 +838,12 @@ def command_project_merge(arguments: argparse.Namespace) -> None:
     workspace = open_workspace()
     registry = workspace.registry()
     other = registry.get(arguments.other)
-    workspace.merge(arguments.keep, arguments.other)
+    result = workspace.merge(arguments.keep, arguments.other)
     keep = workspace.registry().get(arguments.keep)
     console.print(f"merged {arguments.other} {escape(other.name)} into [bold]{keep.id}[/] {escape(keep.name)}")
+    console.print("  moved " + ", ".join(f"{count} {kind.replace('_', ' ')}" for kind, count in result.counts.items()))
+    floor_feedback = f"floor {result.freed} is freed" if result.freed is not None else "it held no floor"
+    console.print(f"  deleted project {arguments.other} for good; {floor_feedback}")
     for link in sorted(keep.links):
         console.print(f"  {escape(link.host)}:{escape(link.label)}")
 
@@ -1743,8 +1750,14 @@ def build_parser() -> argparse.ArgumentParser:
     move.add_argument("project")
     move.set_defaults(handler=command_move)
 
-    remove = commands.add_parser("rm", help="delete a finished job's state")
+    remove = commands.add_parser(
+        "rm", help="delete a finished job's directory on its host, including outbox and results; cannot be undone",
+        description="Delete a job's directory on its host, including its outbox and step results. This cannot be "
+                    "undone. Done, failed, cancelled and lost jobs are removed; queued, blocked and stalled jobs "
+                    "need --force; running jobs must be cancelled first.")
     remove.add_argument("job")
+    remove.add_argument("--force", action="store_true",
+                        help="also remove a queued, blocked or stalled job, losing its pending work or question")
     remove.set_defaults(handler=command_remove)
 
     notify = commands.add_parser("notify", help="stream one line per status change (for monitors)")
@@ -1809,9 +1822,10 @@ def build_parser() -> argparse.ArgumentParser:
     project_unlink = project.add_parser("unlink", help="detach a host's label from its project")
     project_unlink.add_argument("link", metavar="HOST:LABEL")
     project_unlink.set_defaults(handler=command_project_unlink)
-    project_merge = project.add_parser("merge", help="fold a project registered by mistake into the older one")
+    project_merge = project.add_parser("merge", help="irreversibly delete OTHER and move its records, links and repositories into KEEP",
+                                      description="Permanently delete OTHER, free its floor and move its work, attention, runs, decisions, links and repositories into KEEP. This cannot be undone.")
     project_merge.add_argument("keep", metavar="KEEP-ID", help="the older project: keeps its ID and name")
-    project_merge.add_argument("other", metavar="OTHER-ID", help="gives up its links, repositories and floor")
+    project_merge.add_argument("other", metavar="OTHER-ID", help="permanently deleted after its records, links and repositories move to KEEP")
     project_merge.set_defaults(handler=command_project_merge)
     project_repo = project.add_parser("repo", help="repository remotes used to suggest links").add_subparsers(
         dest="project_repo_command", required=True)
