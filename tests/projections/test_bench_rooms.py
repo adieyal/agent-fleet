@@ -52,8 +52,8 @@ def test_epic_rooms_summarise_nested_route_migration():
     assert child["goal"].endswith("Source: plan.md")
     assert child["milestones"] == {"complete": 3, "total": 6}
     assert child["agents"] == [
-        {"run": "r1", "host": "home", "work_item": "m4-task", "title": "Port supplier list"},
-        {"run": "r2", "host": "worker", "work_item": "loose", "title": "Fix redirect loop"}]
+        {"run": "r1", "host": "home", "work_item": "m4-task", "title": "Port supplier list", "step": None},
+        {"run": "r2", "host": "worker", "work_item": "loose", "title": "Fix redirect loop", "step": None}]
     assert child["upcoming"] == [
         {"id": "m4", "title": "4. Supplier pages", "next_step": "Port supplier list"},
         {"id": "m5", "title": "5. Order pages", "next_step": None},

@@ -11,6 +11,18 @@ def timestamp(value: float | None) -> datetime | None:
     return datetime.fromtimestamp(value, timezone.utc) if value is not None else None
 
 
+def iso(value: float | None) -> str | None:
+    return timestamp(value).isoformat() if value is not None else None
+
+
+def step_work(job: dict) -> list[dict] | None:
+    """The job's steps that name their own work item (see Run.step_work), or None when none does."""
+    named = [{"index": step["index"], "work_item": step["work_item"], "status": step["status"],
+              "start": iso(step["started_at"]), "end": iso(step["finished_at"])}
+             for step in job["steps"] if step.get("work_item")]
+    return named or None
+
+
 def observe_runs(execution: ExecutionFacade, library: LibraryFacade, host: dict,
                  indexed: dict | None = None) -> None:
     """Record the host's jobs as runs, and index each linked run's documents in the library.
@@ -33,18 +45,23 @@ def observe_runs(execution: ExecutionFacade, library: LibraryFacade, host: dict,
                                      timestamp(min(starts)) if starts else None, timestamp(end),
                                      timestamp(job.get("updated_at")), Usage.from_worker(job),
                                      execution.classify_activity(event),
-                                     timestamp(event.get("ts")) if event is not None else None)
+                                     timestamp(event.get("ts")) if event is not None else None,
+                                     step_work(job))
         run = execution.observe(host["name"], observation)
-        if run is None or actions[run.action].work_item is None:
+        if run is None:
             continue
-        outputs = [(document["kind"], document["name"], document["path"], "available")
+        # A step's own documents belong to the work it served; the rest to the job's work item.
+        served = {step["index"]: step["work_item"] for step in run.step_work or []}
+        outputs = [(document["kind"], document["name"], document["path"], "available", document.get("step"))
                    for document in job["documents"]] if "documents" in job else []
         if "trace" in job:
             trace = job["trace"]
-            outputs.append(("trace", "Run trace", trace["path"], trace["availability"]))
-        for kind, title, path, availability in outputs:
+            outputs.append(("trace", "Run trace", trace["path"], trace["availability"], None))
+        for kind, title, path, availability, step in outputs:
+            work_item = served.get(step, actions[run.action].work_item)
+            if work_item is None:
+                continue
             location = f"fleet://{quote(host['name'], safe='')}{quote(path, safe='/')}"
-            work_item = actions[run.action].work_item
             if indexed is not None and indexed.get((run.id, kind, location)) == (work_item, title, availability):
                 continue
             library.index_run(run=run.id, work_item=work_item, kind=kind,

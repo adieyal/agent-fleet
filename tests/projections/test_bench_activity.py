@@ -16,7 +16,7 @@ def test_bench_records_unknown_and_expired_actions_with_pinned_clock():
         execution.clock = lambda: now + timedelta(seconds=seconds)
         projected = execution.run_activity(run)
         document = {"project": "p", "work_items": [{"id": "m", "kind": "milestone", "title": "M",
-            "children": [], "runs": [{"id": "r", "host": "worker", "status": "running", **projected}],
+            "children": [], "runs": [{"id": "r", "host": "worker", "status": "running", **projected}], "steps": [],
             "criteria": [], "progress": {}, "summary": None, "attention": [], "library": []}]}
         agent, = bench_state(document, "m")["agents"]
         assert agent["action_glyph"] == "read"

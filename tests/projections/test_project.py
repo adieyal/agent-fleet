@@ -125,7 +125,7 @@ def test_bench_projects_slice_and_orders_tasks_without_host_streams():
         ("done", "done"), ("doing", "doing"), ("next", "next")]
     assert result["criteria"][0]["verification"] == "accepted"
     assert result["agents"] == [{"run": "r", "host": "home", "status": "running", "action_glyph": None,
-                                 "action_observed_at": None, "action_freshness": "unknown"}]
+                                 "action_observed_at": None, "action_freshness": "unknown", "step": None}]
     assert result["attention"][0]["id"] == "a"
     assert result["reports"][0]["id"] == "report"
     assert result["summary"]["purpose"] == "Purpose"
@@ -149,7 +149,7 @@ def test_runs_on_two_hosts_and_unavailable_trace_preserve_work():
     assert node["runs"][0] == dict(id="r1", action="r1", host="host-a", remote_job_id="job",
         runtime="codex", status="failed", reason="lost", start=NOW.isoformat(), end=NOW.isoformat(),
         last_observed=(NOW + timedelta(minutes=1)).isoformat(), usage=None, current_action=None,
-        action_observed_at=None, action_glyph=None, action_freshness="unknown", guidance=None)
+        action_observed_at=None, step_work=None, action_glyph=None, action_freshness="unknown", guidance=None)
     assert node["library"][0]["availability"] == "unavailable"
     assert len(node["library"]) == 1
     assert node["condition"] == "waiting"
@@ -214,7 +214,7 @@ def test_run_work_maps_each_job_to_its_items_ancestry():
     links = run_work(work, execution)
     assert links["home", "job"] == {"project": "p", "chain": [
         {"id": "epic", "kind": "epic", "title": "Overhaul"}, {"id": "m", "kind": "milestone", "title": "3. GET URLs"},
-        {"id": "t", "kind": "task", "title": "Port"}]}
+        {"id": "t", "kind": "task", "title": "Port"}], "step": None}
     assert [node["id"] for node in links["home", "relinked"]["chain"]] == ["epic", "m"]
     assert ("worker", "job") not in links
 

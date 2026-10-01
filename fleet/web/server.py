@@ -685,13 +685,18 @@ def make_handler(state: FleetState | FixtureState,
             self.respond(200, "application/json", json.dumps({"id": body["id"], "resolution": details}).encode())
 
         def answer_blocked(self, body: dict[str, Any]) -> None:
-            """POST /api/attention/answer {"id": item id, "answer": reply} — add the reply as a step to the blocked
-            job on its worker, and resolve the item."""
+            """POST /api/attention/answer {"id": item id, "answer": reply, "work_item"?: id} — add the reply as a
+            step to the blocked job on its worker, serving work_item or else the blocked step's work, and resolve
+            the item."""
             if not isinstance(body.get("id"), str) or not isinstance(body.get("answer"), str):
                 self.error(400, "the item's id and an answer are required")
                 return
+            if not isinstance(body.get("work_item"), (str, type(None))):
+                self.error(400, "work_item must be a work item ID")
+                return
             try:
-                details = open_execution(state.store).answer_blocked(body["id"], body["answer"], actor="web-user")
+                details = open_execution(state.store).answer_blocked(body["id"], body["answer"], actor="web-user",
+                                                                     work_item=body.get("work_item"))
             except LookupError as error:
                 self.error(404, str(error.args[0]))
                 return

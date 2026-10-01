@@ -23,6 +23,12 @@ fleet send -H home -p <project> -d "<one line: what this job is doing>" -C <cwd 
 ```
 
 - Steps can come from `-f tasks.md` (one step per `-`/`1.` list item) or a JSON list.
+- `--work-item W` links the whole job to stored work. When steps work through
+  different items (say one milestone each), name each step's own:
+  `-s "Do M1" --step-work-item <M1> -s "Do M2" --step-work-item <M2>` (the flag
+  names the `-s` just before it), or `{"prompt": "…", "work_item": "<id>"}` in a
+  JSON steps file. The deck then shows each item active while its step runs.
+  Step items must be in the job's project. `fleet add` takes the same flags.
 - Write each step as a self-contained instruction with a checkable outcome. The
   agent can't ask you questions; say what to do when blocked (stop and report).
 - The agent is told its context dir and an **outbox** dir for files meant for you.
@@ -50,7 +56,7 @@ hosts, run `fleet notify` under the Monitor tool.
 | Need | Command |
 |---|---|
 | Everything, grouped by project | `fleet ls` (`--by host`, `-p proj`, `-b` brief, `--json`) |
-| One job: steps, todos, recent activity | `fleet show host:id` |
+| One job: steps, todos, workspace (repo, worktree, branch, uncommitted), recent activity | `fleet show host:id` |
 | Full final message of each step + outbox listing | `fleet result host:id [--step N]` |
 | Fetch files the agent left for you | `fleet pull host:id [dest]` |
 | Send more context mid-job | `fleet push host:id file…` then mention it in the next step |

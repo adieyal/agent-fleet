@@ -1,12 +1,15 @@
 """Answer a job step that ended asking its supervisor, by adding a step with the reply to the job."""
 
+from typing import Callable
+
 from fleet.modules.attention import ItemResolved
 
 from .dtos import AnswerRequest
 from .ports import AnswerSender, ExecutionRepository
 
 
-def answer(repository: ExecutionRepository, send: AnswerSender, item_id: str, reply: str, actor: str) -> str:
+def answer(repository: ExecutionRepository, send: AnswerSender, item_id: str, reply: str, actor: str,
+           work_item: str | None = None, require_step_work: Callable[[str, str, str], None] | None = None) -> str:
     if not reply.strip():
         raise ValueError("an answer is required")
     with repository.transaction() as transaction:
@@ -16,8 +19,13 @@ def answer(repository: ExecutionRepository, send: AnswerSender, item_id: str, re
         raise ValueError("only a blocked job step can be answered here")
     if item.state == "resolved":
         raise ItemResolved("attention item is resolved")
+    if work_item is not None:
+        if require_step_work is None:
+            raise RuntimeError("step work items cannot be checked here")
+        require_step_work(context.host, context.owner_id, work_item)
     # The worker adds a key's step once, so a retry after a lost reply queues nothing more.
-    continuation = send(AnswerRequest(context.host, context.owner_id, context.step, f"{item.id}:answer", reply))
+    continuation = send(AnswerRequest(context.host, context.owner_id, context.step, f"{item.id}:answer", reply,
+                                      work_item))
     details = f"answered; step {context.step + 1} continues as step {continuation + 1}"
     with repository.transaction() as transaction:
         transaction.attention.resolve(item.id, details=details, actor=actor)

@@ -5,7 +5,7 @@ import sys
 import pytest
 
 from fleet import transport
-from fleet.composition import open_execution
+from fleet.composition import open_execution, open_work
 from fleet.infrastructure.answers import send_answer
 from fleet.modules.attention import ItemResolved
 from fleet.modules.execution import AnswerRequest
@@ -125,6 +125,24 @@ def test_the_endpoint_sends_the_reply_through_fleetd_add(deck, monkeypatch):
                      [{"prompt": "Yes, exempt it.", "title": "Answer to step 2"}])]
     assert post(deck, "/api/attention/answer", {"id": item.id, "answer": "Again"})[0] == 409
     assert post(deck, "/api/attention/answer", {"id": "missing", "answer": "Hi"})[0] == 404
+
+
+def test_an_answer_may_name_the_work_its_step_serves(deck, monkeypatch):
+    sent = []
+
+    def call(host, arguments, stdin_text=None):
+        sent.append(json.loads(stdin_text))
+        return {"schema_version": 1, "key": arguments[arguments.index("--key") + 1], "status": "applied",
+                "answers": 1, "steps": [2]}
+    monkeypatch.setattr(transport, "call", call)
+    deck.report("home", jobs=[blocked()])
+    item = only_item(deck)
+    milestone = open_work(deck.state.store).add(project="p", title="M2", goal="Next part", actor="user")
+    assert post(deck, "/api/attention/answer", {"id": item.id, "answer": "Go", "work_item": 3})[0] == 400
+    assert post(deck, "/api/attention/answer", {"id": item.id, "answer": "Go", "work_item": "w-missing"})[0] == 404
+    assert sent == []
+    assert post(deck, "/api/attention/answer", {"id": item.id, "answer": "Go", "work_item": milestone.id})[0] == 200
+    assert sent == [[{"prompt": "Go", "title": "Answer to step 2", "work_item": milestone.id}]]
 
 
 def test_an_unconfirmed_answer_leaves_the_item_open(deck, monkeypatch):

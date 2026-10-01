@@ -10,7 +10,7 @@ from .application.ports import AnswerSender, ExecutionRepository, GrantSender, I
 from .domain import Action, Claim, Delivery, DispatchResult, JobObservation, Run
 from .domain.activity import HOST_FRESHNESS_SECONDS, classify_activity
 from fleet.modules.attention import AttentionItem
-from .application.dispatch import dispatch, retry, resolve_unknown
+from .application.dispatch import dispatch, require_step_work, retry, resolve_unknown
 from .application.worker import deliver
 from fleet.modules.work import WorkFacade
 from fleet.modules.authority import AuthorityRejected
@@ -63,11 +63,22 @@ class ExecutionFacade:
             raise RuntimeError("permission transport is not configured")
         return grant(self.repository, self.grant, item_id, scope, actor)
 
-    def answer_blocked(self, item_id: str, reply: str, *, actor: str) -> str:
-        """Answer a blocked job step: add a step carrying the reply to the job on its host; returns what was done."""
+    def answer_blocked(self, item_id: str, reply: str, *, actor: str, work_item: str | None = None) -> str:
+        """Answer a blocked job step: add a step carrying the reply to the job on its host; returns what was done.
+
+        The reply step serves `work_item` when given, else the work the blocked step served."""
         if self.answer is None:
             raise RuntimeError("answer transport is not configured")
-        return answer(self.repository, self.answer, item_id, reply, actor)
+        return answer(self.repository, self.answer, item_id, reply, actor, work_item, self.require_step_work)
+
+    def require_step_work(self, host: str, job: str, work_item: str) -> None:
+        """A step added to a job may serve a work item in the job's project; any existing one if it has none."""
+        run = self.repository.find(host, job)
+        project = None
+        if run is not None:
+            action = self.repository.get_action(run.action)
+            project = action.project if action.work_item is None else self.work.get(action.work_item).project
+        require_step_work(self.work, work_item, project)
 
     def deliveries(self) -> list[Delivery]:
         return self.repository.deliveries()

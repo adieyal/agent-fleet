@@ -109,6 +109,8 @@ def add_steps(node: Tree, job: dict[str, Any], *, brief: bool) -> None:
     for step in steps:
         icon, style = STEP_STYLE.get(step["status"], ("?", ""))
         line = Text(f"{icon} {step['index'] + 1}. {step['title']}", style)
+        if step.get("work_item") and not brief:
+            line.append(f"  [{step['work_item']}]", "cyan")
         if step["status"] in ("done", "failed", "blocked") and step.get("result") and not brief:
             line.append(f"  — {step['result'][:100]}", "dim")
         step_node = node.add(line)
@@ -230,7 +232,9 @@ def command_watch(arguments: argparse.Namespace) -> None:
 
 
 def read_steps(arguments: argparse.Namespace) -> list[dict[str, Any]]:
-    steps: list[dict[str, Any]] = [{"prompt": step} for step in arguments.step or []]
+    named = arguments.step_work_items or {}
+    steps: list[dict[str, Any]] = [{"prompt": step, "work_item": named[index]} if index in named else {"prompt": step}
+                                   for index, step in enumerate(arguments.step or [])]
     if arguments.steps_file:
         content = Path(arguments.steps_file).read_text()
         if arguments.steps_file.endswith(".json"):
@@ -426,6 +430,14 @@ def command_library_link(arguments: argparse.Namespace) -> None:
 def command_add(arguments: argparse.Namespace) -> None:
     host, job_id = resolve(arguments.job)
     steps = read_steps(arguments)
+    named = [step["work_item"] for step in steps if step.get("work_item") is not None]
+    if named:
+        execution = open_execution()
+        try:
+            for work_item in named:
+                execution.require_step_work(host.name, job_id, work_item)
+        except (ValueError, LookupError) as error:
+            raise FleetError(str(error)) from error
     if arguments.context:
         push_context(host, job_id, arguments.context)
     fleetd_arguments = ["add", job_id, "--steps-file", "/dev/stdin"] + (["--retry"] if arguments.retry else [])
@@ -458,12 +470,32 @@ def command_show(arguments: argparse.Namespace) -> None:
     add_steps(tree, job, brief=False)
     console.print(tree)
     console.print(f"[dim]cwd {job['cwd']} · {job['permission']} · session {job.get('session_id')}[/]")
+    console.print(workspace_line(job), highlight=False)
     for event in job["events"]:
         stamp = time.strftime("%H:%M:%S", time.localtime(event["ts"]))
         kind = event.get("tool") or event["kind"]
         line = Text(f"{stamp} {event.get('step', '')} ", "dim")
         line.append(f"{TOOL_ICON.get(kind, kind)} {event.get('summary', '')}", "red" if event["kind"] == "error" else "")
         console.print(line, highlight=False)
+
+
+def workspace_line(job: dict[str, Any]) -> Text:
+    """Where the job works: repository, worktree, branch or detached head, and uncommitted paths."""
+    workspace = job.get("workspace")
+    if workspace is None:
+        # A worker older than workspace reports sends neither key.
+        return Text(f"workspace unknown: {job.get('workspace_reason') or 'not reported by this worker'}", "dim")
+    line = Text("repo ", "dim")
+    line.append(workspace["repository"])
+    if workspace["linked_worktree"]:
+        line.append(" · worktree ", "dim")
+        line.append(workspace["toplevel"])
+    line.append(" · ", "dim")
+    line.append("detached" if workspace["detached"] else workspace["branch"], "yellow" if workspace["detached"] else "cyan")
+    line.append(f" @ {workspace['head'] or 'no commits'}", "dim")
+    line.append(f" · {workspace['dirty']} uncommitted" if workspace["dirty"] else " · clean",
+                "yellow" if workspace["dirty"] else "dim")
+    return line
 
 
 def command_tail(arguments: argparse.Namespace) -> None:
@@ -1198,9 +1230,25 @@ def add_listing_options(parser: argparse.ArgumentParser) -> None:
                         help="leave out live interactive Claude/Codex sessions")
 
 
+class StepWorkItem(argparse.Action):
+    """--step-work-item ID: the --step just before it serves that work item rather than the job's."""
+
+    def __call__(self, parser, namespace, value, option_string=None) -> None:
+        steps = namespace.step or []
+        named = dict(namespace.step_work_items or {})
+        if not steps or len(steps) - 1 in named:
+            parser.error(f"{option_string} must follow the --step it names, once per step")
+        named[len(steps) - 1] = value
+        namespace.step_work_items = named
+
+
 def add_step_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--step", "-s", action="append", help="a task prompt; repeat for a task list")
-    parser.add_argument("--steps-file", "-f", help="markdown list (one step per item) or JSON list")
+    parser.add_argument("--step-work-item", dest="step_work_items", action=StepWorkItem, metavar="ID",
+                        help="the work item the preceding --step serves, when not the job's own")
+    parser.add_argument("--steps-file", "-f",
+                        help='markdown list (one step per item) or JSON list of prompts or '
+                             '{"prompt", "title"?, "work_item"?} objects')
     parser.add_argument("--context", "-c", action="append", help="file/dir to copy into the job's context dir")
 
 
@@ -1251,7 +1299,7 @@ def build_parser() -> argparse.ArgumentParser:
     dispatch.add_argument("--json", action="store_true")
     dispatch.set_defaults(handler=command_dispatch_work, permission=None, model=None, allow=None,
                           add_dir=None, env=None, keep_going=False, hold=False, wait=False,
-                          context=None, steps_file=None)
+                          context=None, steps_file=None, step_work_items=None)
 
     orchestrate = commands.add_parser('orchestrate', help='start a controller-local orchestrator')
     orchestrate.add_argument('work_item')
