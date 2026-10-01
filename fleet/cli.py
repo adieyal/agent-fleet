@@ -380,6 +380,8 @@ def command_control(arguments: argparse.Namespace) -> None:
                                                                               json.loads(arguments.payload))
         if arguments.operation == 'dispatch':
             deliver_dispatch(result.run, reconcile=not result.created)
+        elif arguments.operation == 'retry' and isinstance(result, dict) and result.get('run') is not None:
+            deliver_dispatch(open_execution().get_run(result['run']), reconcile=not result['created'])
         print(json.dumps(result if isinstance(result, dict) else asdict(result), default=str))
     except (ValueError, LookupError, TypeError) as error:
         raise FleetError(str(error)) from error
@@ -1383,7 +1385,8 @@ def build_parser() -> argparse.ArgumentParser:
     orchestrate.set_defaults(handler=command_orchestrate)
     control = commands.add_parser('control', help='activation-bound controller command')
     control.add_argument('activation')
-    control.add_argument('operation', choices=('state', 'progress', 'meet', 'attention', 'dispatch', 'decide', 'summary', 'propose'))
+    control.add_argument('operation', choices=('state', 'progress', 'meet', 'attention', 'dispatch', 'decide', 'summary', 'propose',
+                                             'retry', 'add_step', 'grant', 'resolve', 'escalate', 'record_decision'))
     control.add_argument('payload', help='JSON object of command fields')
     control.set_defaults(handler=command_control)
 

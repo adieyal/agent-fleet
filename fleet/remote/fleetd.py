@@ -2135,6 +2135,8 @@ def command_grant(arguments: argparse.Namespace) -> None:
             job.setdefault("permission_grants", []).append(grant)
             fresh = True
         else:
+            if (grant['step'], grant['rules']) != (arguments.step, rules):
+                fail('grant key has changed payload')
             fresh = False
     if fresh:
         append_event(arguments.job, {"kind": "job", "status": "queued",
@@ -2230,6 +2232,16 @@ def add_keyed(arguments: argparse.Namespace) -> None:
             write_briefs(arguments.job, job["steps"])
             fresh = True
         else:
+            if added['answers'] != arguments.answers or len(added['steps']) != len(new_steps):
+                fail('add key has changed payload')
+            inherited = (job['steps'][arguments.answers].get('work_item')
+                         if arguments.answers is not None else None)
+            for index, requested in zip(added['steps'], new_steps):
+                expected = make_step(index, requested['prompt'], requested.get('title'),
+                                     requested.get('work_item', inherited))
+                if any(job['steps'][index].get(name) != expected.get(name)
+                       for name in ('prompt', 'title', 'work_item')):
+                    fail('add key has changed payload')
             fresh = False
     if fresh:
         summary = f"{len(added['steps'])} step(s) added" + (

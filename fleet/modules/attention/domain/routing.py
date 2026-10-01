@@ -13,6 +13,21 @@ class RoutingHistory:
     retry_decisions: tuple[str, ...] = ()
 
 
+def refusal_violation(refusals: tuple[Refusal, ...], mandate: TriageMandate) -> str | None:
+    """Why this batch cannot be granted by triage; None means every rule is allowed."""
+    if any(refusal.denied_by for refusal in refusals):
+        return 'outside the triage mandate: a deny rule refused the request'
+    rules = refusal_rules(refusals)
+    if not rules or any(not refusal.rules for refusal in refusals):
+        return 'outside the triage mandate: refusal rules are missing'
+    for rule in rules:
+        if rule in mandate.permissions['escalate']:
+            return f'outside the triage mandate: {rule} is listed under escalate'
+        if rule not in mandate.permissions['allow']:
+            return f'outside the triage mandate: {rule} is not allowed'
+    return None
+
+
 def route(kind: str, context: StreamContext | None, mandate: TriageMandate | None,
           history: RoutingHistory = RoutingHistory(), *, refusals: tuple[Refusal, ...] = (),
           reason: str | None = None) -> tuple[str, str | None]:
@@ -23,16 +38,9 @@ def route(kind: str, context: StreamContext | None, mandate: TriageMandate | Non
     if history.triage_run:
         return 'user', "the triage agent's own run needs attention"
     if refusals:
-        if any(refusal.denied_by for refusal in refusals):
-            return 'user', 'outside the triage mandate: a deny rule refused the request'
-        rules = refusal_rules(refusals)
-        if not rules or any(not refusal.rules for refusal in refusals):
-            return 'user', 'outside the triage mandate: refusal rules are missing'
-        for rule in rules:
-            if rule in mandate.permissions['escalate']:
-                return 'user', f'outside the triage mandate: {rule} is listed under escalate'
-            if rule not in mandate.permissions['allow']:
-                return 'user', f'outside the triage mandate: {rule} is not allowed'
+        violation = refusal_violation(refusals, mandate)
+        if violation is not None:
+            return 'user', violation
         return mandate.routing.get('refusal', 'agent'), None
     status = context.source.removeprefix('job status ')
     if kind != 'blocker' or status not in ('failed', 'stalled', 'lost', 'blocked'):

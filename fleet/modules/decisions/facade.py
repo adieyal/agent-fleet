@@ -5,8 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Callable
 from fleet.modules.execution import ExecutionFacade
+from fleet.modules.attention import AttentionItem
 
-from .application import answer_question, propose, record_decision, record_guided, record_streamed
+from .application import answer_question, propose, record_attention, record_decision, record_guided, record_streamed
 from .application.ports import DecisionRepository
 from .domain import Decision, Proposal
 
@@ -28,6 +29,16 @@ class DecisionsFacade:
                       context: str = "", source_run: str | None = None) -> Decision:
         return record_guided(self.repository, self.clock, work_item, actor=actor, question=question,
                              answer=answer, principle=principle, context=context, source_run=source_run)
+
+    def record_attention(self, item_id: str, *, actor: str, activation: str, source_run: str, command: str,
+                         answer: str, principle: str, context: str, question: str | None = None,
+                         effect: str | None = None, completed_item: AttentionItem | None = None,
+                         retry_run: str | None = None) -> Decision:
+        """Record an activation-bound triage command and its attention effect in one transaction."""
+        return record_attention(self.repository, self.clock, self.records, self.authority(), item_id,
+            actor=actor, activation=activation, source_run=source_run, command=command, answer=answer,
+            principle=principle, context=context, question=question, effect=effect,
+            completed_item=completed_item, retry_run=retry_run)
 
     def record_streamed(self, identity: str, time: datetime, work_item: str, *, actor: str, question: str,
                         answer: str, principle: str, context: str, source_run: str | None) -> Decision:

@@ -16,12 +16,20 @@ class Activation:
     actor: str
     role: str
     project: str
-    work_item: str
+    work_item: str | None
     mandate_path: str
     mandate_version: str
 
+    def __post_init__(self) -> None:
+        if self.role not in ('orchestrator', 'triage'):
+            raise AuthorityRejected('role must be orchestrator or triage')
+        if self.work_item is None and self.role != 'triage':
+            raise AuthorityRejected('only triage may omit a work item')
+        if not self.actor.strip() or not self.project.strip():
+            raise AuthorityRejected('actor and project are required')
 
-def require_scope(activation: Activation, actor: str, work_item: str) -> None:
+
+def require_scope(activation: Activation, actor: str, work_item: str | None) -> None:
     if actor != activation.actor:
         raise AuthorityRejected('actor does not own activation')
     if work_item != activation.work_item:
