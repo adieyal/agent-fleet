@@ -123,10 +123,16 @@ def ensure_master(host: Host) -> None:
     if host.is_local:
         return
     control = ["-o", next(option for option in host.ssh_options if option.startswith("ControlPath="))]
-    check = subprocess.run(["ssh", *control, "-O", "check", host.ssh_target], capture_output=True)
+    try:
+        check = subprocess.run(["ssh", *control, "-O", "check", host.ssh_target], capture_output=True, timeout=10)
+    except subprocess.TimeoutExpired as error:
+        raise FleetError(f"{host.name}: SSH control connection check timed out after 10s") from error
     if check.returncode != 0:
-        subprocess.run(["ssh", *host.ssh_options, "-o", "ControlMaster=yes", "-M", "-N", "-f", host.ssh_target],
-                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
+        try:
+            subprocess.run(["ssh", *host.ssh_options, "-o", "ControlMaster=yes", "-M", "-N", "-f", host.ssh_target],
+                           stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
+        except subprocess.TimeoutExpired as error:
+            raise FleetError(f"{host.name}: SSH connection setup timed out after 15s") from error
 
 
 def call(host: Host, arguments: list[str], *, stdin_text: str | None = None, timeout: float | None = 30) -> Any:

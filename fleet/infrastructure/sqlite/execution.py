@@ -105,6 +105,13 @@ class ExecutionRepository(Repository):
             raise LookupError(f"no run '{identity}'")
         return decode_run(rows[0])
 
+    def job_identities(self, host: str | None = None) -> list[tuple[str, str]]:
+        query = "SELECT host, remote_job_id FROM execution_run WHERE COALESCE(json_extract(record, '$.kind'), 'job') = 'job'"
+        parameters = () if host is None else (host,)
+        if host is not None:
+            query += " AND host = ?"
+        return [(row["host"], row["remote_job_id"]) for row in self.rows(query, parameters)]
+
     def runs(self) -> list[Run]:
         return [decode_run(row) for row in self.rows(RUN_ROWS + " ORDER BY r.rowid")]
 
