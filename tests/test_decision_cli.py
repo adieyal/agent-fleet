@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from fleet import cli, composition
+from fleet.transport import LOCAL_FLEETD_SOURCE
 
 GUIDANCE = dict(project="p", epic=None, constitution=dict(path="constitution.md", revision="abc", version=3),
                 charter=None)
@@ -53,9 +54,58 @@ def test_the_jobs_own_run_is_found_from_fleet_job_id(tree, capsys, monkeypatch):
     run = run_for(tree.task.id, GUIDANCE, key="job-42")
     monkeypatch.setenv("FLEET_JOB_ID", "job-42")
     assert record(capsys, tree.task.id)["source_run"] == run.id
-    monkeypatch.setenv("FLEET_JOB_ID", "unrecorded")
-    decision = record(capsys, tree.task.id)
-    assert decision["source_run"] is None and decision["guidance"] is None
+
+
+@pytest.fixture
+def host_job(tmp_path, monkeypatch):
+    """A fleet job on this host, served by the real fleetd, that this machine's store holds no run for."""
+    home = tmp_path / "worker"
+    (home / "jobs" / "job-7").mkdir(parents=True)
+    (home / "jobs" / "job-7" / "job.json").write_text(json.dumps({"id": "job-7", "steps": [], "cancelled": False}))
+    monkeypatch.setenv("FLEET_REMOTE_HOME", str(home))
+    monkeypatch.setenv("FLEET_FLEETD_PATH", str(LOCAL_FLEETD_SOURCE))
+    monkeypatch.setenv("FLEET_JOB_ID", "job-7")
+    return home / "jobs" / "job-7" / "job.json"
+
+
+def hand(capsys, work_item: str) -> str:
+    capsys.readouterr()
+    cli.main(["decision", "record", "--work-item", work_item, "--question", "Loosen the check?", "--answer", "No",
+              "--principle", "Constitution: anti-goal 2", "--actor", "claude", "--context", "line 4"])
+    return capsys.readouterr().out
+
+
+def test_a_job_whose_run_another_store_holds_hands_the_decision_to_its_stream(tree, host_job, capsys):
+    output = hand(capsys, tree.task.id)
+    [held] = json.loads(host_job.read_text())["decisions"]
+    assert output == (f"Decision {held['id']} handed to the controller via job job-7's stream; "
+                      "it is recorded there when the controller next hears from this host.\n")
+    assert {key: value for key, value in held.items() if key not in ("id", "time")} == dict(
+        work_item=tree.task.id, question="Loosen the check?", answer="No", principle="Constitution: anti-goal 2",
+        actor="claude", context="line 4")
+    assert composition.open_decisions().list() == []
+
+
+def test_a_resent_decision_is_a_new_decision_from_the_cli(tree, host_job, capsys):
+    # Each CLI call is one decision with its own id; only a re-send of the same id is idempotent (fleetd, ingester).
+    hand(capsys, tree.task.id)
+    hand(capsys, tree.task.id)
+    first, second = json.loads(host_job.read_text())["decisions"]
+    assert first["id"] != second["id"]
+
+
+def test_a_named_run_is_recorded_here_even_inside_a_job(tree, host_job, capsys):
+    run = run_for(tree.task.id, GUIDANCE)
+    assert record(capsys, tree.task.id, "--run", run.id)["source_run"] == run.id
+    assert "decisions" not in json.loads(host_job.read_text())
+
+
+def test_a_blank_principle_is_refused_before_it_reaches_the_job(host_job, capsys):
+    with pytest.raises(SystemExit):
+        cli.main(["decision", "record", "--work-item", "w1", "--question", "Q", "--answer", "A",
+                  "--principle", " ", "--actor", "claude"])
+    assert "principle" in capsys.readouterr().err
+    assert "decisions" not in json.loads(host_job.read_text())
 
 
 def test_without_a_run_the_guidance_version_is_unknown(tree, capsys):
