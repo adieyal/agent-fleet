@@ -174,7 +174,9 @@ class FleetState(LiveWorkspace):
             retry_deliveries = self.by_host[host_name]["ok"] and previous != self.by_host[host_name]
             reconciled = False
             if ingest:
-                host = self.by_host[host_name]
+                entry = self.by_host[host_name]
+                host = {**entry, **{kind: {identity: item for identity, item in entry[kind].items()
+                                          if not item.get("stale")} for kind in ("jobs", "sessions")}}
                 observe_runs(self.execution, self.run_library, host, self.indexed)
                 record_decisions(self.decisions, self.execution, self.attention, host,
                                  lambda job: resolve(self.registry, host_name, job)["project_id"], self.taken_decisions)
@@ -232,9 +234,9 @@ class FleetState(LiveWorkspace):
                     "projects": [{"id": project_id, **entry} for project_id, entry in registry_config(registry).items()],
                     "projects_error": projects_error, "hosts": [
                 {**{key: value for key, value in self.by_host[host.name].items() if key not in ("jobs", "sessions")},
-                 "jobs": [annotate(self.workspace, resolve(registry, host.name, job)) for job in
+                 "jobs": [annotate(self.workspace, resolve(registry, host.name, stale_work(self.by_host[host.name], job))) for job in
                           sorted(self.by_host[host.name]["jobs"].values(), key=lambda job: job["created_at"])],
-                 "sessions": [annotate(self.workspace, resolve(registry, host.name, session)) for session in
+                 "sessions": [annotate(self.workspace, resolve(registry, host.name, stale_work(self.by_host[host.name], session))) for session in
                               sorted(self.by_host[host.name]["sessions"].values(),
                                      key=lambda session: session.get("started_at") or 0)]}
                 for host in self.hosts]})
@@ -268,13 +270,19 @@ class FleetState(LiveWorkspace):
         return fetch_asset(host, job_id, document_id, asset_path)
 
 
+def stale_work(host: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
+    stale = not host["ok"] or item.get("stale", False)
+    return {**item, "stale": stale, "stale_reason":
+            (host.get("error") or "awaiting the host’s complete snapshot") if stale else None}
+
+
 def follow_host(state: FleetState, host: Host) -> None:
     """Keep one `fleetd stream` running for the host, reconnecting when it dies or goes quiet."""
     while True:
         error = run_stream(state, host)
 
         def mark_down(entry: dict[str, Any]) -> None:
-            entry.update(ok=False, error=error, jobs={}, sessions={})
+            entry.update(ok=False, error=error)
 
         state.update(host.name, mark_down)
         time.sleep(RECONNECT_DELAY)
@@ -322,7 +330,11 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
         state.bump()
         return
     if kind == "hello":
-        state.update(host.name, lambda entry: entry.update(ok=True, error=None, jobs={}, sessions={}), ingest=False)
+        def reconnect(entry: dict[str, Any]) -> None:
+            entry.update(ok=True, error=None)
+            for kind in ("jobs", "sessions"):
+                entry[kind] = {identity: {**item, "stale": True} for identity, item in entry[kind].items()}
+        state.update(host.name, reconnect, ingest=False)
     elif kind == "job":
         job = message["job"]
         state.update(host.name, lambda entry: entry["jobs"].__setitem__(job["id"], job),
@@ -339,7 +351,11 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
         state.update(host.name, lambda entry: entry["sessions"].pop(message["id"], None),
                      owners={f"session:{host.name}:{message['id']}"})
     elif kind == "heartbeat":
-        state.update(host.name, lambda entry: None, heartbeat=True)
+        def complete(entry: dict[str, Any]) -> None:
+            # The first heartbeat completes the reconnect snapshot: unseen old work is now absent.
+            for kind in ("jobs", "sessions"):
+                entry[kind] = {identity: item for identity, item in entry[kind].items() if not item.get("stale")}
+        state.update(host.name, complete, heartbeat=True)
     elif kind == "pipeline" and isinstance(message.get("pipeline"), str):
         state.report_pipeline(host.name, message["pipeline"], message.get("run"), message.get("baseline"))
     elif kind == "error":

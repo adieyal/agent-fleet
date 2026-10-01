@@ -92,3 +92,12 @@ def test_api_doc_refuses_recorded_paths_outside_roots(
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_batch12_collection_instructions_use_configured_host_name(monkeypatch):
+    monkeypatch.setattr('fleet.web.documents.transport.call', lambda *_args, **_kwargs: {
+        'id': 'outbox-scene.blend', 'name': 'scene.blend', 'kind': 'outbox', 'media': 'file',
+        'host': 'physical-host', 'content': 'cannot preview\n\n```sh\nfleet pull physical-host:job1\n```'})
+    reply = fetch_document(Host('render-worker', None), 'job1', 'outbox-scene.blend')
+    assert 'fleet pull render-worker:job1' in reply['html']
+    assert 'physical-host' not in reply['html']

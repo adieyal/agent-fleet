@@ -1014,22 +1014,22 @@ def session_state(base_url: str, seconds_later: int, drop_decisions: bool = Fals
 def test_sessions_idle_for_half_an_hour_leave_unless_a_decision_waits(changed_deck: Deck, base_url: str) -> None:
     page = changed_deck.page
     live = page.locator("#stats .chip.sess")
-    expect(live).to_have_text("2 live · 2 waiting")
+    expect(live).to_have_text("2 live · 2 idle")
 
     later = 40 * 60                                                     # both now idle for over half an hour
     page.evaluate(f"advanceClock({later})")
     page.evaluate("fleetDeck.advanceTime(0)")
     page.wait_for_function(f"!fleetDeck.agents().some(agent => agent.key === {json.dumps(REVIEWING)})")
     assert ASKING in {agent["key"] for agent in page.evaluate("fleetDeck.agents()")}
-    expect(live).to_have_text("2 live · 2 waiting")
+    expect(live).to_have_text("2 live · 2 idle")
 
     page.evaluate("doc => fleetDeck.apply(doc)", session_state(base_url, later, drop_decisions=True))
     assert not {ASKING, REVIEWING} & {agent["key"] for agent in page.evaluate("fleetDeck.agents()")}
-    expect(live).to_have_text("2 live · 2 waiting")
+    expect(live).to_have_text("2 live · 2 idle")
 
     page.evaluate("doc => fleetDeck.apply(doc)", session_state(base_url, later, drop_decisions=True, working=REVIEWING))
     assert REVIEWING in {agent["key"] for agent in page.evaluate("fleetDeck.agents()")}
-    expect(live).to_have_text("2 live · 1 waiting")
+    expect(live).to_have_text("2 live · 1 idle")
     assert changed_deck.errors == []
 
 
@@ -1201,9 +1201,9 @@ def test_demo_session_idle_for_an_hour_comes_back_to_work(browser: Browser, base
     sessions = page.evaluate("fleetDeck.agents().filter(agent => agent.kind === 'session')")
     assert {agent["status"] for agent in sessions} == {"working", "idle"}
     # the header also counts the dormant session and the one working in the background room
-    expect(page.locator("#stats .chip.sess")).to_have_text(f"{len(sessions) + 2} live · 2 waiting")
+    expect(page.locator("#stats .chip.sess")).to_have_text(f"{len(sessions) + 2} live · 2 idle")
     advance_until(page, f"fleetDeck.agents().filter(agent => agent.kind === 'session').length === {len(sessions) + 1}")
-    expect(page.locator("#stats .chip.sess")).to_have_text(f"{len(sessions) + 2} live · 1 waiting")
+    expect(page.locator("#stats .chip.sess")).to_have_text(f"{len(sessions) + 2} live · 1 idle")
     context.close()
     assert errors == []
 
@@ -1285,6 +1285,7 @@ def test_six_androids_at_one_station_gather_into_a_group_figure(changed_deck: De
     badge = page.locator("#tags .crowd")
     expect(badge).to_have_count(1)
     expect(badge).to_have_text("6")
+    expect(badge).to_have_attribute("title", "6 agents here; click to spread them. Click elsewhere to regroup.")
     expect(page.locator("#tags .tag:visible", has_text="f20a6d")).to_have_count(0)
     assert not any(agent["gathered"] for agent in page.evaluate("fleetDeck.agents()")
                    if agent["room"] == "agent-fleet" and agent["station"] != "workbench")
@@ -1859,10 +1860,10 @@ def test_the_running_view_lists_live_jobs_by_project_and_work(changed_deck: Deck
     expect(unknown).to_have_attribute("title", "workspace unknown: not a git repository")
     expect(panel.locator('[data-key="worker:c90e11"] .run-ws')).to_have_attribute(
         "title", "workspace unknown: not reported by this worker")
-    # the unlinked ones apart, saying what they need and how to give it; finished and failed jobs are not listed
+    # Unlinked jobs are described neutrally; the command remains available for the dispatching agent.
     unlinked = panel.locator("[data-unlinked]")
     expect(unlinked.locator("h4")).to_have_text("Not linked to work")
-    expect(unlinked.locator(".run-need")).to_contain_text("need a work item")
+    expect(unlinked.locator(".run-need")).to_have_text("Jobs without a linked work item. The dispatching agent can link them with fleet run link.")
     expect(unlinked.locator(".run-row")).to_have_count(3)
     for key, status in {"home:e1b5c8": "blocked", "worker:f20a6d": "running", "worker:0a9e3b": "queued"}.items():
         expect(unlinked.locator(f'.run-row[data-key="{key}"]')).to_have_attribute("data-status", status)
@@ -2141,4 +2142,95 @@ def test_batch7_guidance_draft_exits(changed_deck: Deck, deck_state, monkeypatch
     finally:
         page.remove_listener('dialog', handle_dialog)
         page.evaluate('fleetDeck.enterFloor(null)')
+    assert changed_deck.errors == []
+
+
+@pytest.mark.parametrize('view', ['building', 'world', 'workarea', 'library'])
+def test_batch12_camera_keys_ignore_other_views(changed_deck: Deck, view: str) -> None:
+    page = changed_deck.page
+    page.locator('#viewToggle [data-view="deck"]').click()
+    page.evaluate("fleetDeck.lookAtRoom('restoke', 60)")
+    if view in ['building', 'world']:
+        page.locator(f'#viewToggle [data-view="{view}"]').click()
+    elif view == 'workarea':
+        page.evaluate("async () => (await import('/js/workarea.js')).openWorkarea('restoke')")
+    else:
+        page.locator('#libraryOpen').click()
+
+    def camera():
+        return page.evaluate("async () => { const {cam} = await import('/js/scene.js'); return [cam.z, cam.c.toArray(), cam.userMoved]; }")
+
+    before = camera()
+    for key in ['+', '-', 'f', '=', '_', 'F']:
+        page.keyboard.press(key)
+        assert camera() == before, (view, key, before, camera())
+    if view in ['workarea', 'library']:
+        page.keyboard.press('Escape')
+    else:
+        page.locator('#viewToggle [data-view="deck"]').click()
+    before = camera()
+    page.keyboard.press('+')
+    assert camera()[0] > before[0]  # The deck itself still handles zoom.
+    page.evaluate('fleetDeck.lookAtRoom(null)')
+    assert changed_deck.errors == []
+
+
+@pytest.mark.parametrize('viewport', ['desktop', 'narrow'])
+def test_batch12_idle_stale_and_control_titles(changed_deck: Deck, base_url: str,
+                                             request: pytest.FixtureRequest, viewport: str) -> None:
+    page = changed_deck.page
+    page.set_viewport_size(VIEWPORTS[viewport])
+    page.locator('#viewToggle [data-view="deck"]').click()
+    doc = session_state(base_url, 0)
+    page.evaluate('doc => fleetDeck.apply(doc)', doc)
+    page.evaluate('key => fleetDeck.select(key)', ASKING)
+    expect(page.locator('#panelHead .sess')).to_contain_text('live · idle')
+    expect(page.locator('#stats .sess')).to_contain_text('idle')
+    page.locator('#panel #close').click()
+    expect(page.locator('#radioToggle')).to_have_attribute('title', re.compile('Turn on.*SomaFM.*somafm.com'))
+    # No live network audio in the test; verify both action states.
+    page.evaluate("""() => { window.Audio = class {
+        constructor() { this.dataset = {}; }
+        play() { return Promise.resolve(); }
+        pause() {}
+    }; }""")
+    page.locator('#radioToggle').click()
+    expect(page.locator('#radioToggle')).to_have_attribute('aria-pressed', 'true')
+    expect(page.locator('#radioToggle')).to_have_attribute('title', re.compile('Turn off'))
+    page.locator('#radioToggle').click()
+    page.evaluate("async () => (await import('/js/workarea.js')).openWorkarea('restoke')")
+    disabled = page.locator('[data-bench="home:a1c3e9"] [data-step="0"]')
+    expect(disabled).to_be_disabled()
+    expect(disabled).to_have_attribute('title', re.compile('No brief or report recorded'))
+    shoot(request, page, f'batch12-{viewport}-workarea')
+    page.keyboard.press('Escape')
+    worker = next(host for host in doc['hosts'] if host['name'] == 'worker')
+    worker.update(ok=False, error='connection lost')
+    page.evaluate('doc => fleetDeck.apply(doc)', doc)
+    page.evaluate("async () => (await import('/js/workarea.js')).openWorkarea('agent-fleet')")
+    expect(page.locator('[data-bench="worker:f20a6d"] [data-stale]')).to_contain_text('stale')
+    shoot(request, page, f'batch12-{viewport}-stale-workarea')
+    page.keyboard.press('Escape')
+    page.evaluate("fleetDeck.select('worker:f20a6d')")
+    expect(page.locator('#panelHead [data-stale]')).to_contain_text('stale')
+    shoot(request, page, f'batch12-{viewport}-stale-panel')
+    page.locator('#panel #close').click()
+    file_job = next(job for job in worker['jobs'] if job['id'] == 'f20a6d')
+    file_job['documents'] = [{"id": f"outbox-{name}", "name": name, "path": f"/job/outbox/{name}",
+                              "kind": "outbox", "media": "file", "size": size, "mtime": doc['time'], "step": None}
+                             for name, size in [('data.json', 2), ('empty.csv', 0), ('scene.blend', 10)]]
+    page.evaluate('doc => fleetDeck.apply(doc)', doc)
+    page.evaluate("fleetDeck.select('worker:f20a6d')")
+    page.locator('#panelTabs [data-tab="documents"]').click()
+    expect(page.locator('#panelBody .docs .dn')).to_have_text(['scene.blend', 'empty.csv', 'data.json'])
+    expect(page.locator('#panelBody .docs .go')).to_have_text(['Collect →'] * 3)
+    shoot(request, page, f'batch12-{viewport}-outbox')
+    page.locator('#panel #close').click()
+    page.locator('#workingOpen').click()
+    expect(page.locator('#runPanel .run-need')).to_contain_text('Jobs without a linked work item')
+    expect(page.locator('#runPanel .run-need')).not_to_contain_text('need a work item')
+    expect(page.locator('#runPanel [data-key="worker:f20a6d"] [data-stale]')).to_contain_text('stale')
+    shoot(request, page, f'batch12-{viewport}-running')
+    page.keyboard.press('Escape')
+    page.evaluate('doc => fleetDeck.apply(doc)', session_state(base_url, 0))
     assert changed_deck.errors == []

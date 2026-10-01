@@ -693,9 +693,18 @@ def command_notify(arguments: argparse.Namespace) -> None:
     """Print one line whenever any step or job changes status — made for a Monitor/background watcher."""
     hosts = selected_hosts(arguments)
     known: dict[str, str] = {}
+    reachability: dict[str, bool] = {}
     first_pass = True
     while True:
         for report in transport.gather(hosts, ["ls", "--since-hours", "48"]):
+            error = getattr(report, "error", None)
+            reachable = error is None
+            previous = reachability.get(report.host.name)
+            if not reachable and previous is not False:
+                print(f"HOST DOWN {report.host.name}: {error}", flush=True)
+            elif reachable and previous is False:
+                print(f"HOST UP {report.host.name}", flush=True)
+            reachability[report.host.name] = reachable
             for job in report.jobs:
                 reference = f"{report.host.name}:{job['id']}"
                 for step in job["steps"]:

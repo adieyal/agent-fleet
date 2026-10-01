@@ -164,3 +164,26 @@ def test_run_step_does_not_copy_a_recorded_symlink(
     with pytest.raises(SystemExit):
         fleetd.command_read(argparse.Namespace(job="job1", document="file-0"))
     assert "outside approved document roots" in capsys.readouterr().out
+
+
+def test_batch12_outbox_lists_every_file_including_empty_and_nested(job, capsys):
+    record, directory = job
+    outbox = directory / 'outbox'
+    (outbox / 'nested').mkdir(parents=True)
+    files = {'report.md': b'# Report', 'notes.txt': b'notes', 'data.json': b'{}',
+             'nested/archive.zip': b'PK\x03\x04', 'empty.csv': b''}
+    for name, content in files.items():
+        (outbox / name).write_bytes(content)
+    documents = fleetd.job_documents(record)
+    assert {doc['name'] for doc in documents} == set(files)
+    assert next(doc for doc in documents if doc['name'] == 'empty.csv')['size'] == 0
+    fleetd.command_read(argparse.Namespace(job='job1', document='outbox-nested/archive.zip'))
+    reply = json.loads(capsys.readouterr().out)
+    assert 'fleet pull' in reply['content'] and 'cannot preview' in reply['content']
+    # Listing arbitrary extensions must not grant access through an outbox symlink.
+    secret = directory.parent.parent.parent / 'secret.bin'
+    secret.write_bytes(b'private')
+    (outbox / 'secret.bin').symlink_to(secret)
+    with pytest.raises(SystemExit):
+        fleetd.command_read(argparse.Namespace(job='job1', document='outbox-secret.bin'))
+    assert 'outside approved document roots' in capsys.readouterr().out

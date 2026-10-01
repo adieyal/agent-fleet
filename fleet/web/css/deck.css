@@ -1337,3 +1337,10 @@ html[data-quality=high] #workarea{background:rgba(3,6,12,.6)}
 [data-guidance-feedback]{margin:8px 0;color:#6ee7b7;font-size:12px;line-height:1.5}
 #benchRoute [data-promote]{flex:none;max-width:140px}
 #benchRoute :is([data-guidance-save],[data-guidance-cancel]):disabled{opacity:.55;cursor:wait}
+
+/* audit 1 batch 12: last-known host work is visible as stale */
+.stale-label,#runPanel [data-stale]{color:var(--warn);font:600 10px var(--mono);margin-right:4px}
+#runPanel [data-stale]{display:inline-block;margin-left:6px}
+#panelHead [data-stale]{color:var(--warn);border-style:dashed}
+.tag[data-stale] .stack{border-style:dashed;border-color:var(--warn)}
+.tag.crowd:focus-visible{outline:2px solid var(--run);outline-offset:3px;border-radius:8px}

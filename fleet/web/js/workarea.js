@@ -33,7 +33,7 @@ export function closeWorkarea() {
 export const workareaOpen = () => room !== null;
 export function applyWorkarea(state) {
   doc = state;
-  jobs = new Map((state.hosts || []).flatMap(h => (h.jobs || []).map(j => [`${h.name}:${j.id}`, { host: h.name, job: j }])));
+  jobs = new Map((state.hosts || []).flatMap(h => (h.jobs || []).map(j => [`${h.name}:${j.id}`, { host: h.name, job: { ...j, stale: !!j.stale || h.ok === false, stale_reason: j.stale_reason || h.error } }])));
   if (room === null && QS.has('workarea')) room = QS.get('workarea');
   if (room !== null) { el.hidden = false; render(); }
 }
@@ -47,9 +47,9 @@ function render() {
   const bench = b => {
     const job = jobs.get(b.key)?.job;
     return `<section class="bench" data-bench="${esc(b.key)}" data-status="${esc(b.status)}"${b.recent ? ' data-recent' : ''} style="--hc:${hostLook(b.host).color}">
-      <div class="bench-head">${job ? glyphHtml(actionOf(job)) : ''}<button class="bench-title" data-job="${esc(b.key)}"${ents.has(b.key) ? ` title="Open this job’s panel: ${esc(b.title)}"` : ` disabled title="${esc(b.title)} (finished: not on the deck)"`}>${esc(b.title)}</button><small>${esc(b.host)} · ${idChip(b.id)}</small></div>
+      <div class="bench-head">${job?.stale ? `<small data-stale title="${esc(job.stale_reason || 'host offline')}; current status unknown">stale · last known</small>` : ''}${job ? glyphHtml(actionOf(job)) : ''}<button class="bench-title" data-job="${esc(b.key)}"${ents.has(b.key) ? ` title="Open this job’s panel: ${esc(b.title)}"` : ` disabled title="${esc(b.title)} (finished: not on the deck)"`}>${esc(b.title)}</button><small>${esc(b.host)} · ${idChip(b.id)}</small></div>
       <ol class="plan-wall" aria-label="Plan">${b.tiles.map(t => `<li class="tile" data-tile="${t.index}" data-status="${esc(t.status)}" data-mark="${t.mark}"><button
-        data-step="${t.index}" title="Step ${t.index + 1}: ${esc(t.title)} (${esc(t.status)}). Read its ${stepDoc(job, t.index)?.kind === 'report' ? 'report' : 'brief'}"${
+        data-step="${t.index}" title="Step ${t.index + 1}: ${esc(t.title)} (${esc(t.status)}). ${stepDoc(job, t.index) ? `Read its ${stepDoc(job, t.index).kind === 'report' ? 'report' : 'brief'}` : 'No brief or report recorded for this step'}"${
         stepDoc(job, t.index) ? '' : ' disabled'}><span class="mk" aria-hidden="true">${MARK[t.mark]}</span><span class="tt">${esc(t.title)}</span></button></li>`).join('')}</ol>
       <div class="criteria" role="img" aria-label="${b.criteria.met} of ${b.criteria.total} steps done">${
         b.criteria.lights.map(on => `<i${on ? ' data-on' : ''}></i>`).join('')}<b>${b.criteria.met}/${b.criteria.total}</b></div>

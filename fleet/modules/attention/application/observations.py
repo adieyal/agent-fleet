@@ -4,6 +4,7 @@ import re
 from typing import TYPE_CHECKING, TypedDict
 
 from ..domain import StreamContext
+from .input_observations import hook_covers_question
 
 if TYPE_CHECKING:
     from ..facade import AttentionFacade
@@ -101,6 +102,9 @@ def ingest_attention(attention: "AttentionFacade", host: HostObservation, *,
     for session in host["sessions"]:
         activity = session.get("activity") or {}
         if activity.get("kind") != "tool" or activity.get("name") not in WAITING_TOOLS:
+            continue
+        if activity['name'] == 'AskUserQuestion' and hook_covers_question(
+                attention.list(), host['name'], session['id'], activity.get('ts')):
             continue
         summary = f"{session['agent']} {WAITING_TOOLS[activity['name']]}"
         if activity.get("summary"):

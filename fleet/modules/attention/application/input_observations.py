@@ -99,6 +99,14 @@ def batch_context(refusals: tuple[Refusal, ...]) -> str:
                      for refusal in refusals)
 
 
+def hook_covers_question(items: list[AttentionItem], host: str, session: str, since: float | None) -> bool:
+    """Prefer the terminal hook's question; a cleared hook also covers its older transcript activity."""
+    return any(item.source == f"runtime-input:{host}" and item.owner == f"session:{host}:{session}"
+               and item.stream_context is not None and item.stream_context.source == "Claude question"
+               and (item.state != "resolved" or (since is not None and since <= item.last_seen.timestamp()))
+               for item in items)
+
+
 def ingest_input(repository: AttentionRepository, host: str, observation: InputObservation,
                  project_id: str | None) -> None:
     if observation.schema_version != 1:
@@ -127,6 +135,16 @@ def ingest_input(repository: AttentionRepository, host: str, observation: InputO
         previous = transaction.find(source, reference)
         if previous is not None and (previous.state == "resolved" or previous.last_seen > seen):
             return
+        if observation.reason == "question":
+            for duplicate in transaction.list():
+                context = duplicate.stream_context
+                if (duplicate.source == f"stream:{host}" and duplicate.owner == owner
+                        and duplicate.state != "resolved" and context is not None
+                        and context.source == "session tool AskUserQuestion"
+                        and (observation.kind == "input_requested" or context.since is None
+                             or context.since <= observation.observed_at)):
+                    transaction.save(duplicate.transition("resolved", seen,
+                        details=f"superseded by session question {reference}"), duplicate.state, "runtime-hook")
         headline, detail = observation.question()
         questions = observation.questions()
         if previous is not None and observation.kind == "input_requested":

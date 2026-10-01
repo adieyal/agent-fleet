@@ -226,7 +226,7 @@ ASSET_READ_LIMIT = 5 * 1024 * 1024
 
 
 def is_markdown(path: str) -> bool:
-    """A Markdown document; CLAUDE.local.md and other *.local.md files are private notes, never documents."""
+    """A Markdown document; CLAUDE.local.md and other *.local.md files are private notes, not auto-recorded or previewed."""
     return path.lower().endswith(MARKDOWN_SUFFIXES) and not path.lower().endswith(".local.md")
 
 
@@ -930,8 +930,7 @@ def blocked_message(job_id: str, step: JsonObject) -> Optional[str]:
 
 
 def job_documents(job: JsonObject) -> List[JsonObject]:
-    """Markdown the job was given (step briefs, context files) and produced (step reports,
-    files the agent wrote, outbox files).
+    """Documents the job was given and produced, including every file in its outbox.
 
     Only these can be read back with `fleetd read`, so the deck can never be used
     to fetch arbitrary files from the host.
@@ -940,10 +939,10 @@ def job_documents(job: JsonObject) -> List[JsonObject]:
     documents: List[JsonObject] = []
 
     def describe(document_id: str, path: Path, kind: str, name: str, step: Optional[int],
-                 display_path: Optional[str] = None) -> None:
+                 display_path: Optional[str] = None, include_empty: bool = False) -> None:
         with contextlib.suppress(OSError):
             stat = path.stat()
-            if stat.st_size and path.is_file():
+            if (stat.st_size or include_empty) and path.is_file():
                 document = {"id": document_id, "kind": kind, "name": name, "step": step,
                             "path": display_path or str(path), "size": stat.st_size,
                             "mtime": round(stat.st_mtime, 3)}
@@ -972,11 +971,14 @@ def job_documents(job: JsonObject) -> List[JsonObject]:
     outbox = directory / "outbox"
     if outbox.exists():
         for path in sorted(outbox.rglob("*")):
-            if is_markdown(path.name) or path.suffix.lower() in ASSET_TYPES:
-                describe(f"outbox-{path.relative_to(outbox)}", path, "outbox", str(path.relative_to(outbox)), None)
+            if path.is_file():
+                describe(f"outbox-{path.relative_to(outbox)}", path, "outbox", str(path.relative_to(outbox)), None,
+                         include_empty=True)
     for document in documents:
         if Path(document["path"]).suffix.lower() in ASSET_TYPES:
             document["media"] = "image"
+        elif document["kind"] == "outbox" and not is_markdown(document["path"]):
+            document["media"] = "file"
     return documents
 
 
@@ -1017,6 +1019,14 @@ def command_read(arguments: argparse.Namespace) -> None:
         fail(f"document path outside approved document roots: {document['path']}")
     if document.get("media") == "image":  # shown as a page holding the image, which loads through read-asset
         document.update({"truncated": False, "content": f"![{document['name']}](<{path.name}>)\n",
+                         "job": job["id"], "project": job["project"], "agent": job["agent"],
+                         "host": os.uname().nodename, "job_description": job["description"]})
+        emit(document)
+        return
+    if document.get("media") == "file":
+        document.update({"truncated": False,
+                         "content": "The reader cannot preview this file type. It is listed for collection.\n\n"
+                                    f"Fetch this job’s outbox with:\n\n```sh\nfleet pull HOST:{job['id']}\n```\n\nReplace HOST with the configured fleet host name.\n",
                          "job": job["id"], "project": job["project"], "agent": job["agent"],
                          "host": os.uname().nodename, "job_description": job["description"]})
         emit(document)
