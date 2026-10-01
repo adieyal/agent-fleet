@@ -39,6 +39,7 @@
     <button data-view="deck" aria-pressed="true">deck</button><button data-view="world" aria-pressed="false">world</button><button data-view="building" aria-pressed="false">building</button>
   </div>
   <button id="libraryOpen" title="Browse project documents">Library</button>
+  <button id="keyboardHelpOpen" title="Keyboard help (?)" aria-label="Keyboard help" aria-haspopup="dialog" aria-expanded="false">?</button>
   <div class="stats" id="stats"></div>
   <div class="live" id="live"><i></i><span>connecting…</span></div>
 </header>
@@ -125,6 +126,16 @@
       <aside class="sk-side" id="skSide" aria-label="End nodes"></aside>
     </div>
   </div>
+</div>
+
+<div id="keyboardHelp" hidden>
+  <div class="kh-scrim" data-help-close></div>
+  <section role="dialog" aria-modal="true" aria-labelledby="keyboardHelpTitle" tabindex="-1">
+    <div class="kh-head"><h2 id="keyboardHelpTitle">Keyboard help</h2><button data-help-close title="Close keyboard help (Esc)" aria-label="Close keyboard help">✕</button></div>
+    <h3 data-help-context></h3><div data-help-keys></div>
+    <p><kbd>Esc</kbd> closes this help. Press it again in the current view:</p><p data-help-escape></p>
+    <p class="kh-note">The ? and camera shortcuts stay inactive while typing in a text field. Help leaves your current view and drafts in place.</p>
+  </section>
 </div>
 
 <script type="importmap">{"imports":{"three":"/vendor/three/three.module.js","three/addons/":"/vendor/three/addons/"}}</script>

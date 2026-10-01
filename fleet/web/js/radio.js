@@ -46,13 +46,13 @@ function play() {
     on = false;
     render();
     control.querySelector('#radioToggle').title = error.name === 'NotAllowedError'
-      ? 'Room radio off — click to start it (the browser needs a click before it plays sound)'
-      : `Room radio off — ${station[1]} could not be played (${error.message})`;
+      ? 'Turn on SomaFM radio (somafm.com); the browser needs a click before it plays sound'
+      : `Try SomaFM radio again (somafm.com); ${station[1]} could not be played (${error.message})`;
   });
 }
 
 function render() {
-  const label = !on ? 'Room radio off' : station ? `Playing SomaFM ${station[1]}` : 'Room radio on — enter a floor to hear its station';
+  const label = !on ? `Turn on room radio: stream external audio from SomaFM (somafm.com)${station ? ` · ${station[1]}` : ' when you enter a floor'}` : `Turn off room radio${station ? ` · SomaFM ${station[1]}` : '; enter a floor to hear its SomaFM station (somafm.com)'}`;
   control.innerHTML = `<button id="radioToggle" aria-pressed="${on}" title="${esc(label)}" aria-label="${esc(label)}">${icon(on)}</button>${
     on ? `<span class="radio-station">${station ? esc(station[1]) : 'no room'}</span><input type="range" id="radioVolume" min="0" max="1" step="0.05" value="${volume}" aria-label="Radio volume">` : ''}`;
 }

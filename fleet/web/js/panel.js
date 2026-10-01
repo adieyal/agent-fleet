@@ -140,6 +140,7 @@ function stepWork(j, s) {
     ? `<button ${target} title="Open ${esc(node.kind)}: ${esc(path)}">${esc(trunc(node.title, 60))}</button>`
     : `<span title="${esc(path)}">${esc(trunc(node.title, 60))}</span>`}</span>`;
 }
+const staleChip = job => job.stale ? `<span class="chip" data-stale title="${esc(job.stale_reason || 'host offline')}; current status unknown">stale · last known</span>` : '';
 export function renderPanel() {
   // mid-scroll, updates wait until the scroll settles rather than rewriting content under it
   const wait = panelScrollUntil - performance.now();
@@ -158,7 +159,7 @@ export function renderPanel() {
       <div class="sub">
         <span class="chip"><i style="background:${e.look.color}"></i><b>${esc(e.host)}</b></span>
         <span class="chip"><i style="background:${AGENT_COLOR[j.agent] || '#ccc'}"></i>${esc(j.agent)}</span>
-        ${projectChip(j)}
+        ${projectChip(j)}${staleChip(j)}
         <span class="chip st-${esc(j.status)}" title="${esc(jobTimeTitle(j))}">${esc(j.status === 'running' && j.activity?.kind === 'retry' ? j.activity.summary : j.status)}${jobTime(j) ? ` · ${jobTime(j)}` : ''}</span>
       </div></div>
     ${j.status !== 'running' ? DISMISS_BUTTON : ''}
@@ -325,10 +326,10 @@ function renderSessionPanel(e) {
   const headHtml = `<canvas style="width:46px;height:60px"></canvas>
     <div style="min-width:0;flex:1"><h2>${s.title ? esc(s.title) : '<span class="untitled">no title yet</span>'}</h2>${workCrumbs(s.work)}
       <div class="sub">
-        <span class="chip sess st-${esc(s.status)}"><i></i>live · ${esc(s.status === 'idle' ? 'waiting for you' : s.status)}</span>
+        <span class="chip sess st-${esc(s.status)}"><i></i>live · ${esc(s.status)}</span>
         <span class="chip"><i style="background:${e.look.color}"></i><b>${esc(e.host)}</b></span>
         <span class="chip"><i style="background:${AGENT_COLOR[s.agent] || '#ccc'}"></i>${esc(s.agent)}</span>
-        ${projectChip(s)}
+        ${projectChip(s)}${staleChip(s)}
       </div></div>
     ${s.status === 'idle' ? DISMISS_BUTTON : ''}
     <button id="close" aria-label="Close">✕</button>`;
@@ -365,8 +366,8 @@ function docsPanelHtml(e) {
   }
   return `<h3>Documents · ${docs.length}</h3><ul class="docs" style="--hc:${e.look.color}">${docs.map(d => {
     const kind = kindOf(d), live = updating.includes(d);
-    return `<li${live ? ' class="updating"' : ''}><button data-doc="${esc(d.id)}" title="Read ${esc(d.name)}"><span class="dk ${kind}" aria-hidden="true">${DOC_KIND[kind].glyph}</span>
-      <span class="dn">${esc(d.name)}</span><span class="dm">${live ? '<span class="upd">updating</span> · ' : ''}${DOC_KIND[kind].label.toLowerCase()} · ${esc(docMeta(d))}</span><span class="go">Read →</span></button></li>`;
+    return `<li${live ? ' class="updating"' : ''}><button data-doc="${esc(d.id)}" title="${d.media === 'file' ? 'View collection instructions for' : 'Read'} ${esc(d.name)}"><span class="dk ${kind}" aria-hidden="true">${DOC_KIND[kind].glyph}</span>
+      <span class="dn">${esc(d.name)}</span><span class="dm">${live ? '<span class="upd">updating</span> · ' : ''}${DOC_KIND[kind].label.toLowerCase()} · ${esc(docMeta(d))}</span><span class="go">${d.media === 'file' ? 'Collect' : 'Read'} →</span></button></li>`;
   }).join('')}</ul>`;
 }
 panel.addEventListener('click', ev => {
@@ -453,7 +454,7 @@ export function renderStats() {
   // every session counts, including idle ones that have left the deck
   for (const h of hosts) for (const s of h.sessions || []) if (s.project && live[s.status] !== undefined) live[s.status]++;
   document.getElementById('stats').innerHTML = `
-    ${live.working + live.idle ? `<span class="chip sess" title="interactive Claude Code / Codex sessions"><i></i><b>${live.working + live.idle}</b> live${live.idle ? `<span class="opt"> · ${live.idle} waiting</span>` : ''}</span>` : ''}
+    ${live.working + live.idle ? `<span class="chip sess" title="interactive Claude Code / Codex sessions"><i></i><b>${live.working + live.idle}</b> live${live.idle ? `<span class="opt"> · ${live.idle} idle</span>` : ''}</span>` : ''}
     <button class="chip restore" id="workingOpen" aria-haspopup="dialog" aria-expanded="false" title="Running, blocked, failed, lost and queued jobs by project and work"><i style="background:var(--run)"></i><b>${count.running}</b> working</button>
     <span class="chip opt"><i style="background:var(--warn)"></i><b>${count.queued}</b> queued</span>
     <span class="chip opt"><i style="background:var(--ok)"></i><b>${count.done}</b> done</span>

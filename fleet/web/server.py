@@ -230,7 +230,9 @@ class FleetState(LiveWorkspace):
             retry_deliveries = self.by_host[host_name]["ok"] and public(previous) != public(self.by_host[host_name])
             reconciled = False
             if ingest:
-                host = self.by_host[host_name]
+                entry = self.by_host[host_name]
+                host = {**entry, **{kind: {identity: item for identity, item in entry[kind].items()
+                                          if not item.get("stale")} for kind in ("jobs", "sessions")}}
                 observe_runs(self.execution, self.run_library, host, self.indexed,
                              lambda job: resolve(self.registry, host_name, job)["project_id"])
                 observe_sessions(self.execution, host, lambda session: resolve(self.registry, host_name, session)["project_id"])
@@ -291,9 +293,9 @@ class FleetState(LiveWorkspace):
                     "projects": [{"id": project_id, **entry} for project_id, entry in registry_config(registry).items()],
                     "projects_error": projects_error, "hosts": [
                 {**{key: value for key, value in self.by_host[host.name].items() if key not in ("jobs", "sessions") and not key.startswith("_")},
-                 "jobs": [annotate(self.workspace, resolve(registry, host.name, job)) for job in
+                 "jobs": [annotate(self.workspace, resolve(registry, host.name, stale_work(self.by_host[host.name], job))) for job in
                           sorted(self.by_host[host.name]["jobs"].values(), key=lambda job: job.get("created_at") or 0)],
-                 "sessions": [annotate(self.workspace, resolve(registry, host.name, session)) for session in
+                 "sessions": [annotate(self.workspace, resolve(registry, host.name, stale_work(self.by_host[host.name], session))) for session in
                               sorted(self.by_host[host.name]["sessions"].values(),
                                      key=lambda session: session.get("started_at") or 0)]}
                 for host in self.hosts]})
@@ -325,6 +327,12 @@ class FleetState(LiveWorkspace):
     def read_asset(self, host_name: str, job_id: str, document_id: str, asset_path: str) -> tuple[str, bytes]:
         host = next(host for host in self.hosts if host.name == host_name)
         return fetch_asset(host, job_id, document_id, asset_path)
+
+
+def stale_work(host: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
+    stale = not host["ok"] or item.get("stale", False)
+    return {**item, "stale": stale, "stale_reason":
+            (host.get("error") or "awaiting the host’s complete snapshot") if stale else None}
 
 
 def follow_host(state: FleetState, host: Host) -> None:

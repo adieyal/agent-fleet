@@ -826,7 +826,7 @@ def command_notify(arguments: argparse.Namespace) -> None:
     first_pass = True
     while True:
         for report in transport.gather(hosts, ["ls", "--since-hours", "48"]):
-            if report.error:
+            if getattr(report, "error", None):
                 if report.host.name not in down:
                     down[report.host.name] = datetime.now().astimezone().isoformat()
                     print(f"HOST DOWN {report.host.name} since {down[report.host.name]}: {report.error}", flush=True)

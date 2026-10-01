@@ -38,18 +38,22 @@ export function guidancePanel(kind, view, { editing = null, history = false } = 
   if (!view) return `<section data-guidance="${kind}" aria-label="${label}"><h3>${label}</h3><p data-empty>Loading…</p></section>`;
   if (view.error) return `<section data-guidance="${kind}" aria-label="${label}"><h3>${label}</h3><p role="alert">${esc(view.error)}</p></section>`;
   const g = view.guidance;
+  const scope = kind === 'charter'
+    ? 'Governs agents working on this epic, inheriting the project constitution. A task brief can override it.'
+    : 'Governs agents across this project. Epic charters inherit it; charters and task briefs can override it.';
   const tools = editing ? '' : `<span data-guidance-tools><button data-guidance-edit="${kind}" title="${g ? 'Edit' : 'Write'} the ${kind}" aria-label="${g ? 'Edit' : 'Write'} the ${kind}">${ICONS.edit}</button>${
     view.history.length ? `<button data-guidance-history="${kind}" aria-expanded="${history}" title="Versions" aria-label="Versions">${ICONS.history}</button>` : ''}</span>`;
   const head = `<div data-guidance-head><h3>${label}</h3>${g ? `<small data-guidance-version>${versionLine(g.version)}</small>` : ''}${tools}</div>`;
   const versions = history && !editing ? `<ol data-guidance-versions>${view.history.map(v =>
     `<li><span>${versionLine(v)}</span><button data-guidance-open="${kind}" data-version="${v.number}" title="Read version ${v.number}" aria-label="Read version ${v.number}">${ICONS.open}</button></li>`).join('')}</ol>` : '';
   const body = editing
-    ? `<div data-guidance-editor><textarea data-guidance-text aria-label="${label} Markdown" spellcheck="true">${esc(editing.text)}</textarea>
+    ? `<div data-guidance-editor><textarea data-guidance-text aria-label="${label} Markdown" spellcheck="true" ${editing.saving ? 'disabled' : ''}>${esc(editing.text)}</textarea>
         <div data-guidance-actions><small>${editing.base ? `Editing version ${editing.base}` : `A new ${kind}`}</small>
-        <button data-guidance-save title="Save a new version" aria-label="Save a new version" ${editing.saving ? 'disabled' : ''}>${ICONS.save}</button><button data-guidance-cancel title="Discard the edit" aria-label="Discard the edit">${ICONS.cancel}</button></div>
+        <button data-guidance-save title="Save a new ${kind} version; previous versions stay in history" ${editing.saving ? 'disabled' : ''}>${editing.saving ? 'Saving' : 'Save'} version ${editing.base + 1}${editing.saving ? '…' : ''}</button><button data-guidance-cancel title="Discard unsaved text; it cannot be recovered" ${editing.saving ? 'disabled' : ''}>Discard</button></div>
+        <p data-guidance-consequence>Saving records a new version as web-user. Previous versions stay in history; to change the guidance later, save another version.</p>
         ${editing.error ? `<p role="alert">${esc(editing.error)}</p>` : ''}</div>`
     : g ? `<div data-guidance-body>${view.html}</div>` : `<p data-empty>No ${kind} recorded.</p>`;
-  return `<section data-guidance="${kind}" aria-label="${label}" ${editing ? 'data-editing' : ''}>${head}${g && kind === 'charter' ? inherits(g) : ''}${versions}${body}</section>`;
+  return `<section data-guidance="${kind}" aria-label="${label}" ${editing ? 'data-editing' : ''}>${head}<p data-guidance-scope>${scope}</p>${g && kind === 'charter' ? inherits(g) : ''}${versions}${body}</section>`;
 }
 
 // An epic's decisions, newest first. Promote shows when there is a charter that does not yet hold the decision.
@@ -58,12 +62,12 @@ export function decisionsPanel(list) {
   const rows = list.decisions.map(d => {
     const items = d.work_items.map(w => w.title === null ? esc(w.id.slice(0, 8)) : esc(w.title)).join(', ');
     const promote = d.promoted === true ? '<small data-in-force>In force</small>'
-      : d.promoted === false ? `<button data-promote="${esc(d.id)}" title="Add to the charter's decisions in force" aria-label="Add to the charter's decisions in force">${ICONS.promote}</button>` : '';
+      : d.promoted === false ? `<button data-promote="${esc(d.id)}" title="Add this decision to the charter’s decisions in force in a new version; edit the charter to change it later">Promote to charter</button>` : '';
     return `<li data-decision="${esc(d.id)}"><div data-decision-head><b>${esc(d.question)}</b>${promote}</div>
       <p>${esc(d.answer)}</p>
       <small data-principle>${d.principle === null ? 'Principle unknown' : `Principle: ${esc(d.principle)}`}</small>
       <small>${esc(d.actor)} · ${when(d.time)} · ${items} · ${idChip(d.id)}</small></li>`;
   }).join('');
-  return `<section data-decisions aria-label="Decisions"><h3>Decisions</h3>${rows ? `<ol>${rows}</ol>` : '<p data-empty>No decisions recorded.</p>'}${
+  return `<section data-decisions aria-label="Decisions"><h3>Decisions</h3>${list.decisions.some(d => d.promoted === false) ? '<p data-promote-consequence>Promoting adds the decision to the charter’s decisions in force and saves a new charter version. To change it later, edit the charter.</p>' : ''}${rows ? `<ol>${rows}</ol>` : '<p data-empty>No decisions recorded.</p>'}${
     list.error ? `<p role="alert">${esc(list.error)}</p>` : ''}</section>`;
 }

@@ -437,11 +437,11 @@ function renderUi() {
   const visitor = v => `<li class="visitor" data-label="${esc(v.label ?? '')}" data-hosts="${esc(v.hosts.join(' '))}" title="${esc(`${v.label ?? 'no label'} on ${v.hosts.join(', ')} · ${v.count}`)}">
       <span>${esc(v.label === null ? 'no label' : L.labels[v.label] || v.label)}</span>${v.active ? '<em class="busy" aria-label="active"></em>' : ''}
       <small class="vhosts">${v.hosts.map(h => `<i data-host="${esc(h)}" style="--c:${hostLook(h).color}">${esc(h)}</i>`).join('')}</small>
-      ${v.label === null ? '' : `<button data-move-in>Move in</button>`}
+      ${v.label === null ? '' : `<button data-move-in title="Choose an existing project to link to, or register a new project">Move in</button>`}
       <small class="err"></small></li>`;
   // the shutter handle: a pull-down bar at the floor's top corner, apart from the focus switch on the plate
   const handles = floors.filter(f => f.projectId).map(f => `<button class="shutter-handle" data-shutter="${esc(f.projectId)}" data-floor="${f.floor}"
-      aria-label="Shutter ${esc(f.name)}" title="Pull down the shutter: pack ${esc(f.name)} away in the storehouse"></button>`).join('');
+      aria-label="Shutter ${esc(f.name)}" title="Pack ${esc(f.name)} into the storehouse and free floor ${f.floor}. Undo or restore later."><span>Shutter</span></button>`).join('');
   const sign = `<button class="annex-sign" data-storehouse aria-label="Storehouse: ${crates.length} crate${crates.length === 1 ? '' : 's'}">Storehouse<b>${crates.length}</b></button>`;
   // the host colour key on the lobby's back wall: a dot per host (named in the lobby's list)
   const dots = `<div class="hostdots" aria-hidden="true">${L.hosts.map(h => `<i style="background:${h.ok ? h.color : 'var(--dim)'}"></i>`).join('')}</div>`;
@@ -492,20 +492,35 @@ ui.addEventListener('click', async ev => {
   if (restore) {
     const project = restore.closest('.crate').dataset.project;
     if (lobby.full) { vacancy = { kind: 'restore', project }; renderUi(); return; }
-    await act(restore, () => post('/api/restore', { project }));
+    const name = crates.find(c => c.id === project).name;
+    await act(restore, () => post('/api/restore', { project }), reply => showToast(`${name} is restored to floor ${reply.floor}. Shutter it to pack it away again.`));
     return;
   }
   const clear = t.closest('[data-clear]');
   if (clear) {
     const v = vacancy, shutterId = clear.dataset.clear;
+    const displaced = floors.find(f => f.projectId === shutterId);
+    const incomingName = v.kind === 'restore' ? crates.find(c => c.id === v.project)?.name : lobby.labels[v.label] || v.label;
     await act(clear, () => v.kind === 'restore' ? post('/api/restore', { project: v.project, shutter: shutterId })
-      : post('/api/move-in', { hosts: v.hosts, label: v.label, shutter: shutterId }), () => { vacancy = null; storehouseOpen = false; renderUi(); });
+      : post('/api/move-in', { hosts: v.hosts, label: v.label, shutter: shutterId }), reply => {
+        vacancy = null; storehouseOpen = false; renderUi();
+        showToast(`${incomingName} is ${v.kind === 'restore' ? 'restored' : 'registered'} on floor ${reply.floor}. ${displaced.name} is in the storehouse. Undo restores ${displaced.name} and packs ${incomingName} away; its registration stays.`, async () => {
+          try {
+            const restored = await post('/api/restore', { project: shutterId, shutter: reply.project_id });
+            showToast(`${displaced.name} is restored to floor ${restored.floor}. ${incomingName} remains registered in the storehouse.`);
+          } catch (err) { showToast(`Couldn’t undo: ${err.message}`); }
+        });
+      });
     return;
   }
   const link = t.closest('[data-link]');
   if (link) {
     const m = moving;
-    await act(link, () => post('/api/link', { project: link.dataset.link, hosts: [...m.chosen], label: m.label }), () => { moving = null; renderUi(); });
+    const name = m.candidates.find(c => c.project_id === link.dataset.link).name;
+    await act(link, () => post('/api/link', { project: link.dataset.link, hosts: [...m.chosen], label: m.label }), () => {
+      moving = null; renderUi();
+      showToast(`${m.label} on ${[...m.chosen].join(', ')} is linked to ${name}. No new floor was taken.`);
+    });
     return;
   }
   const fresh = t.closest('[data-new-project]');
@@ -533,8 +548,8 @@ ui.addEventListener('change', ev => {   // the hosts a move-in covers, kept acro
 async function act(button, change, done = () => {}) {
   button.disabled = true;
   try {
-    await change();
-    done();
+    const reply = await change();
+    done(reply);
   } catch (err) {
     button.disabled = false;
     const note = button.closest('li')?.querySelector('.err') || button.closest('[role=dialog]')?.querySelector(':scope > .err');
@@ -577,13 +592,15 @@ function openStorehouse() {
   renderUi();
 }
 function closeDialogs() { storehouseOpen = false; vacancy = null; moving = null; merging = null; }
+function freeFloor() { return floors.find(f => !f.projectId)?.floor; }
+function restoreFloor(c) { return floors.some(f => f.floor === c.floor && !f.projectId) ? c.floor : freeFloor(); }
 function storehouseHtml() {
   const needs = new Set(doc.attention_display.front_desk.map(id => doc.attention.find(item => item.id === id).project_id));
   const crateHtml = c => `<li class="crate" data-project="${esc(c.id)}" title="${esc(c.name)}">
       <b>${esc(plateName(c.name))}</b>${needs.has(c.id) ? '<i class="lift-lantern" data-state="open" aria-label="needs you"></i>' : ''}
       ${c.floor ? `<span class="was" title="Left floor ${c.floor}">${c.floor}</span>` : ''}
       ${c.runs ? `<span class="runs${c.active ? ' busy' : ''}" title="Runs still finishing: ${c.active} working">${c.runs} run${c.runs === 1 ? '' : 's'}</span>` : ''}
-      <span class="acts"><button data-open-crate>Open</button><button data-restore>Restore</button></span><small class="err"></small></li>`;
+      <span class="acts"><button data-open-crate title="View ${esc(c.name)} on the deck, read-only">Open read-only</button><button data-restore title="${lobby.full ? 'Choose a project to pack away before restoring this crate' : `Restore to floor ${restoreFloor(c)}; shutter to pack away again`}">${lobby.full ? 'Restore…' : `Restore to ${restoreFloor(c)}`}</button></span><small class="err"></small></li>`;
   return `<div class="storehouse" role="dialog" aria-label="Storehouse">
       <div class="sh-head"><h3>Storehouse</h3><button data-close-dialog aria-label="Close">✕</button></div>
       ${crates.length ? `<ul class="crates">${crates.map(crateHtml).join('')}</ul>` : '<p class="none">Empty</p>'}
@@ -593,8 +610,8 @@ function storehouseHtml() {
 function vacancyHtml() {
   const occupied = [...floors].reverse().filter(f => f.projectId);
   return `<div class="vacancy" role="dialog" aria-label="No vacancies">
-      <h3>The building’s full.</h3><p>Which floor should we clear?</p>
-      <ul>${occupied.map(f => `<li><button data-clear="${esc(f.projectId)}" title="Shutter ${esc(f.name)}"><span class="fn">${f.floor}</span>${esc(plateName(f.name))}</button></li>`).join('')}</ul>
+      <h3>The building’s full.</h3><p>Choose a project to pack into the storehouse. The incoming project takes its floor. Undo swaps them back; a new registration stays in the storehouse.</p>
+      <ul>${occupied.map(f => `<li><button data-clear="${esc(f.projectId)}" title="Pack ${esc(f.name)} into the storehouse and use floor ${f.floor}; Undo swaps the projects back"><span class="fn">${f.floor}</span>${esc(plateName(f.name))}</button></li>`).join('')}</ul>
       <button data-cancel>Cancel</button><small class="err"></small>
     </div>`;
 }
@@ -616,14 +633,17 @@ async function moveIn(button, label, hosts) {
   });
   if (!options?.candidates) return;
   button.disabled = false;
-  if (!options.candidates.length && hosts.length === 1 && !options.errors.length) { await newProject(button, label, hosts); return; }
   closeDialogs();
   moving = { label, hosts, chosen: new Set(hosts), candidates: options.candidates, errors: options.errors };
   renderUi();
 }
 async function newProject(button, label, hosts) {
   if (lobby.full) { closeDialogs(); vacancy = { kind: 'move-in', label, hosts }; renderUi(); return; }
-  await act(button, () => post('/api/move-in', { hosts, label }), () => { moving = null; renderUi(); });
+  const name = lobby.labels[label] || label;
+  await act(button, () => post('/api/move-in', { hosts, label }), reply => {
+    moving = null; renderUi();
+    showToast(`${name} is registered on floor ${reply.floor}. Shuttering frees the floor; the project stays registered.`);
+  });
 }
 function whereIs(c) {
   return c.floor ? `floor ${c.floor}` : c.shuttered ? 'in the storehouse' : 'no floor';
@@ -634,10 +654,11 @@ function moveInHtml(m) {
       <h3>Move ${esc(lobby.labels[m.label] || m.label)} in</h3>
       ${m.hosts.length > 1 ? `<p>From these hosts:</p><ul class="mhosts">${m.hosts.map(h => `<li><label><input type="checkbox" data-host-pick="${esc(h)}"${
         m.chosen.has(h) ? ' checked' : ''}><i style="background:${hostLook(h).color}"></i>${esc(h)}</label></li>`).join('')}</ul>` : ''}
-      ${m.candidates.length ? `<p>It may belong to a project you have:</p><ul class="links">${m.candidates.map(c => `<li><button data-link="${esc(c.project_id)}"${none}
+      ${m.candidates.length ? `<p>Linking adds the selected hosts and label to that project without taking a new floor. The deck has no unlink action.</p><ul class="links">${m.candidates.map(c => `<li><button data-link="${esc(c.project_id)}"${none}
         title="${esc(c.reasons.map(r => WHY[r]).join(', '))}">Link to ${esc(c.name)} <span class="fn">(${whereIs(c)})</span><small class="why">${
         esc(c.reasons.map(r => WHY[r]).join(' · '))}</small></button></li>`).join('')}</ul>` : ''}
       ${m.errors.map(e => `<p class="note" title="${esc(e)}">Couldn’t check repositories on ${esc(e.split(':')[0])}.</p>`).join('')}
+      <p>New project registers ${esc(lobby.labels[m.label] || m.label)} on ${lobby.full ? 'a floor you choose to clear' : `floor ${freeFloor()}`}. Shuttering frees its floor; the registration stays.</p>
       <div class="acts"><button data-new-project${none}>New project</button><button data-cancel>Cancel</button></div><small class="err"></small>
     </div>`;
 }

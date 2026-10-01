@@ -74,3 +74,27 @@ def test_an_unregistered_directory_shows_the_cwd_and_an_older_fleetd_still_inges
     apply_message(deck.state, HOSTS[0], older)
     second = next(each for each in deck.state.attention.list() if each.id != item.id)
     assert second.headline == "Claude asks to use AskUserQuestion" and second.questions == ()
+
+
+@pytest.mark.parametrize('order', ['stream-first', 'hook-first'])
+def test_batch12_stream_and_hook_question_share_one_open_item(deck, order):
+    session = {"id": "s1", "project": "restoke", "agent": "claude", "status": "working", "started_at": 100.0,
+               "activity": {"kind": "tool", "name": "AskUserQuestion", "summary": "How should I run it?", "ts": 199.0}}
+    messages = [{"type": "session", "session": session}, asked()]
+    for message in messages if order == 'stream-first' else reversed(messages):
+        apply_message(deck.state, HOSTS[0], message)
+    [item] = deck.state.attention.list(state='open')
+    assert item.source == 'runtime-input:home' and item.questions
+    assert sorted(item['state'] for item in deck.state.document()['attention']) == (
+        ['open', 'resolved'] if order == 'stream-first' else ['open'])
+    if order == 'stream-first':
+        [folded] = deck.state.attention.list(state='resolved')
+        assert 'superseded by session question' in folded.resolution_details
+    apply_message(deck.state, HOSTS[0], asked(kind='input_cleared'))
+    apply_message(deck.state, HOSTS[0], {"type": "session", "session": session})
+    assert deck.state.attention.list(state='open') == []
+    # A later question on the same tool still falls back to stream attention.
+    session['activity'] = {**session['activity'], 'ts': 300.0, 'summary': 'A different question?'}
+    apply_message(deck.state, HOSTS[0], {"type": "session", "session": session})
+    [later] = deck.state.attention.list(state='open')
+    assert later.source == 'stream:home'

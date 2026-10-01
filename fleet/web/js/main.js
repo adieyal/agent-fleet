@@ -1,5 +1,7 @@
 // Deck entry point: the frame loop and boot.
 
+import './keyboard-help.js';
+
 import { BK, DEBUG, DEMO, POLL_MS, QS, RD, REDUCED, RW, WARP, canvas, vh, vw } from './env.js';
 import { esc } from './util.js';
 import { advanceClock, animationNow, isStepping } from './clock.js';

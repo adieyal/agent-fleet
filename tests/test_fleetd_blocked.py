@@ -250,3 +250,27 @@ def test_fleet_notify_says_blocked(monkeypatch, capsys):
 
 def test_a_blocked_job_is_a_failed_run_with_reason_blocked():
     assert JobObservation("job", "blocked", "claude", None, None, None).run_status() == "failed"
+
+
+def test_batch12_notify_reports_host_transitions_once(monkeypatch, capsys):
+    from datetime import datetime
+    reports = [[SimpleNamespace(host=SimpleNamespace(name='h'), jobs=[], error=error)]
+               for error in ('connection refused', 'connection refused', None, None, 'timed out')]
+    monkeypatch.setattr(cli, 'selected_hosts', lambda arguments: [])
+    monkeypatch.setattr(cli.transport, 'gather', lambda *_args: reports.pop(0))
+
+    def sleep(_seconds):
+        if not reports:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli.time, 'sleep', sleep)
+    with pytest.raises(KeyboardInterrupt):
+        cli.command_notify(argparse.Namespace(interval=0))
+    lines = capsys.readouterr().out.splitlines()
+    assert len(lines) == 3
+    assert lines[1] == 'HOST UP h'
+    for line, error in zip((lines[0], lines[2]), ('connection refused', 'timed out')):
+        prefix, detail = line.rsplit(': ', 1)
+        assert detail == error
+        assert prefix.startswith('HOST DOWN h since ')
+        assert datetime.fromisoformat(prefix.removeprefix('HOST DOWN h since ')).tzinfo is not None

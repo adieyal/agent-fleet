@@ -1321,3 +1321,42 @@ html[data-quality=high] #workarea{background:rgba(3,6,12,.6)}
 .steps li.running{box-shadow:inset 3px 0 0 var(--run)}
 .steps li .now{font:600 10.5px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--run);
   border:1px solid rgba(56,189,248,.5);border-radius:4px;padding:0 4px;vertical-align:1px}
+
+/* audit 1 batch 5: visible shutter labels, kept beside the pull handle */
+.shutter-handle span{position:absolute;right:27px;top:1px;padding:2px 4px;border-radius:3px;background:#101622;color:#c7d0de;font:600 10px var(--display);white-space:nowrap}
+.shutter-handle:hover span,.shutter-handle:focus-visible span{color:#fff}
+.crate .acts{flex-direction:column;align-items:flex-start}
+.crate .acts button{border-radius:6px;white-space:nowrap}
+@media(max-width:759px){.shutter-handle span{right:auto;left:27px}}
+
+/* audit 1 batch 7: guidance actions name the write, including at phone width */
+#benchRoute :is([data-guidance-actions] button,[data-promote]){width:auto;height:auto;min-height:28px;padding:4px 8px;white-space:normal}
+[data-guidance-actions]{flex-wrap:wrap;gap:6px}
+[data-guidance-actions] small{flex-basis:100%}
+[data-guidance-scope],[data-guidance-consequence],[data-promote-consequence]{margin:6px 0 10px;color:#94a3b8;font-size:12px;line-height:1.5}
+[data-guidance-feedback]{margin:8px 0;color:#6ee7b7;font-size:12px;line-height:1.5}
+#benchRoute [data-promote]{flex:none;max-width:140px}
+#benchRoute :is([data-guidance-save],[data-guidance-cancel]):disabled{opacity:.55;cursor:wait}
+
+/* audit 1 batch 12: last-known host work is visible as stale */
+.stale-label,#runPanel [data-stale]{color:var(--warn);font:600 10px var(--mono);margin-right:4px}
+#runPanel [data-stale]{display:inline-block;margin-left:6px}
+#panelHead [data-stale]{color:var(--warn);border-style:dashed}
+.tag[data-stale] .stack{border-style:dashed;border-color:var(--warn)}
+.tag.crowd:focus-visible{outline:2px solid var(--run);outline-offset:3px;border-radius:8px}
+
+/* P8: keyboard help overlay */
+#keyboardHelp{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:16px;color:#dbe7f4}
+#keyboardHelp[hidden]{display:none}
+.kh-scrim{position:absolute;inset:0;background:#030912b8}
+#keyboardHelp section{position:relative;width:min(520px,100%);max-height:calc(100dvh - 32px);overflow:auto;background:#101b2b;border:1px solid #38536d;border-radius:14px;padding:22px;box-sizing:border-box;box-shadow:0 18px 70px #0009}
+.kh-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.kh-head h2{margin:0;font-size:20px}.kh-head button{font-size:18px;padding:6px 10px}
+#keyboardHelp h3{color:#60d6ff;font-size:15px;margin:22px 0 12px}
+[data-help-keys]>div{display:flex;gap:18px;align-items:baseline;padding:8px 0;border-bottom:1px solid #26364b}
+#keyboardHelp kbd{font:12px ui-monospace,monospace;border:1px solid #456079;border-radius:5px;padding:3px 6px;white-space:nowrap}
+[data-help-keys] kbd{min-width:105px;box-sizing:border-box}
+#keyboardHelp p{font-size:14px;line-height:1.5}.kh-note{color:#9aabc0}
+
+.kh-head button,#keyboardHelpOpen{border:1px solid #38536d;border-radius:6px;background:#17293d;color:#dbe7f4;cursor:pointer}
+#keyboardHelpOpen{padding:4px 9px} .kh-head button:hover,#keyboardHelpOpen:hover{background:#254360}

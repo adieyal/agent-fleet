@@ -31,7 +31,7 @@ const workChain = j => j.work?.step?.chain?.length ? j.work.step.chain : j.work?
 function listed() {
   const rows = [];
   for (const h of doc?.hosts || []) for (const j of h.jobs || []) {
-    if (LISTED.includes(j.status)) rows.push({ key: `${h.name}:${j.id}`, host: h.name, job: j, chain: workChain(j) });
+    if (LISTED.includes(j.status)) rows.push({ key: `${h.name}:${j.id}`, host: h.name, job: { ...j, stale: !!j.stale || h.ok === false, stale_reason: j.stale_reason || h.error }, chain: workChain(j) });
   }
   return rows;
 }
@@ -93,7 +93,7 @@ function rowHtml(r, unlinked) {
   return `<li class="run-row" data-key="${esc(r.key)}" data-status="${esc(j.status)}" ${here
     ? 'tabindex="0" role="button"' : 'aria-disabled="true"'} title="${esc(here ? j.description : `${j.description}\nDismissed from the deck`)}">
     <span class="run-g" title="${esc(j.status)}" aria-label="${esc(j.status)}">${GLYPH[j.status]}</span>
-    <div class="run-b"><b>${esc(trunc(j.description, 90))}</b>
+    <div class="run-b"><b>${esc(trunc(j.description, 90))}</b>${j.stale ? `<span data-stale title="${esc(j.stale_reason || 'host offline')}; showing last-known status, current status unknown">stale · last known</span>` : ''}
       <div class="run-m"><span class="run-host"><i style="background:${hostLook(r.host).color}"></i>${esc(r.host)}:${idChip(j.id)}</span>
         ${stepHtml(j)}${workspaceHtml(j)}${unlinked ? `<span class="run-proj">${esc(doc.project_labels?.[j.project] || j.project)}</span>
         <button class="run-link" data-copy-id="${esc(link)}" title="${esc(`Copy: ${link}`)}">fleet run link</button>` : workHtml(r)}</div></div>
@@ -114,7 +114,7 @@ function bodyHtml() {
         <ul>${g.rows.map(r => rowHtml(r, false)).join('')}</ul></div>`).join('')}
     </section>`).join('')}${unlinked.length ? `
     <section class="run-proj-g unlinked" data-unlinked aria-label="${UNLINKED}"><h4>${UNLINKED}</h4>
-      <p class="run-need">These need a work item: copy the link command and fill in the item's ID.</p>
+      <p class="run-need">Jobs without a linked work item. The dispatching agent can link them with fleet run link.</p>
       <ul>${unlinked.map(r => rowHtml(r, true)).join('')}</ul>
     </section>` : ''}`;
 }

@@ -80,9 +80,38 @@ def test_silence_deadline_marks_linked_run_unknown(monkeypatch):
     try:
         with urlopen(f"http://127.0.0.1:{http.server_port}/api/state", timeout=5) as response:
             document = json.load(response)
+        assert document["hosts"][0]["jobs"][0]["id"] == "job"
+        assert document["hosts"][0]["jobs"][0]["stale"] is True
+        assert document["hosts"][0]["jobs"][0]["stale_reason"] == "no heartbeat for 20s"
         assert document["hosts"][0]["ok"] is False
         assert document["hosts"][0]["error"] == "no heartbeat for 20s"
     finally:
         http.shutdown()
         http.server_close()
         thread.join()
+
+
+def test_batch12_reconnect_keeps_stale_work_until_complete_snapshot():
+    host = Host('worker', None)
+    state = server.FleetState([host], store=composition.open_store())
+    server.apply_message(state, host, {'type': 'hello'})
+    job = {'id': 'one', 'project': 'p', 'description': 'Work', 'agent': 'codex', 'status': 'running',
+           'created_at': 1, 'updated_at': 2, 'steps': []}
+    for id in ['one', 'two']:
+        server.apply_message(state, host, {'type': 'job', 'job': {**job, 'id': id}})
+    session = {'id': 's', 'project': 'p', 'agent': 'claude', 'status': 'idle', 'started_at': 1, 'activity': None}
+    server.apply_message(state, host, {'type': 'session', 'session': session})
+    server.apply_message(state, host, {'type': 'error', 'error': 'offline'})
+    entry = state.document()['hosts'][0]
+    assert len(entry['jobs']) == 2 and all(j['stale'] for j in entry['jobs'])
+    assert entry['sessions'][0]['stale']
+    server.apply_message(state, host, {'type': 'hello'})
+    entry = state.document()['hosts'][0]
+    assert len(entry['jobs']) == 2 and all(j['stale'] for j in entry['jobs'])
+    server.apply_message(state, host, {'type': 'job', 'job': job})
+    entry = state.document()['hosts'][0]
+    assert {j['id']: j['stale'] for j in entry['jobs']} == {'one': False, 'two': True}
+    server.apply_message(state, host, {'type': 'heartbeat'})
+    entry = state.document()['hosts'][0]
+    assert [j['id'] for j in entry['jobs']] == ['one'] and entry['jobs'][0]['stale'] is False
+    assert entry['sessions'] == []
