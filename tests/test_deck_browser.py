@@ -368,7 +368,7 @@ def test_epic_card_and_page_name_each_workstream(changed_deck: Deck, supplier_mi
     route = page.locator('#benchRoute')
     page.evaluate("fleetDeck.enterFloor('v2-overhaul')")
     card = page.locator('[data-epic-card]')
-    expect(card.locator('[data-milestones]')).to_have_text('6 of 8 milestones')
+    expect(card.locator('[data-milestones] small')).to_have_text('6 of 8 milestones complete')
     expect(card.locator('[data-workstream]')).to_have_text([
         'Supplier migration 6 of 7 milestones · next Slice 6: supplier imports',
         'Order migration No milestones recorded'])
