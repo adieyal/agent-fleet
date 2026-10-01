@@ -284,6 +284,7 @@ def command_dispatch(arguments: argparse.Namespace) -> None:
                          f"link it: fleet project link ID {host.name}:{arguments.project}, or register one: "
                          f"fleet project add NAME --link {host.name}:{arguments.project}") from error
     steps = read_steps(arguments)
+    resolve_step_work_ids(steps)
     if not steps:
         raise FleetError("give at least one --step or a --steps-file")
     fleetd_arguments = ["create", "--project", arguments.project, "--description", arguments.description,
@@ -364,6 +365,7 @@ def command_orchestrate(arguments: argparse.Namespace) -> None:
     host = transport.host_by_name(arguments.host)
     if not host.is_local:
         raise FleetError('orchestrator must run on the controller machine')
+    arguments.work_item = work_cli_id(arguments.work_item)
     store = open_store()
     try:
         activation = open_authority(store).activate(arguments.work_item, actor='orchestrator',
@@ -455,6 +457,7 @@ def command_library_link(arguments: argparse.Namespace) -> None:
 def command_add(arguments: argparse.Namespace) -> None:
     host, job_id = resolve(arguments.job)
     steps = read_steps(arguments)
+    resolve_step_work_ids(steps)
     named = [step["work_item"] for step in steps if step.get("work_item") is not None]
     if named:
         execution = open_execution()
@@ -850,8 +853,12 @@ def command_project_management(arguments: argparse.Namespace) -> None:
 def guidance_subject(reference: str) -> tuple[str, str | None]:
     """(project, epic) for an epic ID, or (project, None) for a project ID or name."""
     store = open_store()
+    work = open_work(store)
+    identities = [item.id for item in work.list()]
+    if any(identity.startswith(reference) for identity in identities):
+        reference = resolve_cli_id(reference, identities, "work item")
     try:
-        item = open_work(store).get(reference)
+        item = work.get(reference)
     except LookupError:
         return open_workspace(store).resolve_project(reference), None
     return item.project, item.id
@@ -1110,12 +1117,12 @@ def command_status(arguments: argparse.Namespace) -> None:
     for item in projection["work_items"]:
         print_status_item(item)
     for entry in projection["attention"]:
-        print(f"  Attention ({entry['kind']}): {entry['headline']}")
+        print(f"  Attention {entry['id'][:8]} ({entry['kind']}): {entry['headline']}")
 
 
 def print_status_item(item: dict[str, Any], depth: int = 0) -> None:
     indent = "  " * depth
-    print(f"{indent}{item['kind']}: {item['title']}")
+    print(f"{indent}{item['kind']} {item['id'][:8]}: {item['title']}")
     print(f"{indent}  Goal: {item['goal']}")
     progress = item["progress"]
     mark = ("unknown" if progress["basis"] == "unknown" else
@@ -1149,9 +1156,9 @@ def print_status_item(item: dict[str, Any], depth: int = 0) -> None:
     if item["resume_condition"] is not None:
         print(f"{indent}  Resume condition: {item['resume_condition']}")
     for criterion in item["criteria"]:
-        print(f"{indent}  Criterion ({criterion['verification']}, {criterion['state']}): {criterion['text']}")
+        print(f"{indent}  Criterion {criterion['id'][:8]} ({criterion['verification']}, {criterion['state']}): {criterion['text']}")
     for entry in item["attention"]:
-        print(f"{indent}  Attention ({entry['kind']}): {entry['headline']}")
+        print(f"{indent}  Attention {entry['id'][:8]} ({entry['kind']}): {entry['headline']}")
     for decision in item["decisions"]:
         print(f"{indent}  Decision {decision['id']}: {decision['question']}")
         print(f"{indent}    {decision['answer']} — {decision['actor']} at {decision['time']}")
@@ -1165,6 +1172,33 @@ def print_status_item(item: dict[str, Any], depth: int = 0) -> None:
         print_status_item(child, depth + 1)
 
 
+def resolve_cli_id(reference: str, identities: list[str], kind: str) -> str:
+    """Expand a unique prefix without changing canonical IDs in module APIs or JSON."""
+    if reference in identities:
+        return reference
+    matches = sorted(identity for identity in identities if reference and identity.startswith(reference))
+    if len(matches) == 1:
+        return matches[0]
+    if matches:
+        raise FleetError(f"ambiguous {kind} '{reference}': {', '.join(matches)}; give a longer ID")
+    remedy = "fleet status PROJECT lists work items and criteria" if kind != "attention item" else "fleet attention list lists IDs"
+    raise FleetError(f"no {kind} '{reference}'; {remedy}")
+
+
+def work_cli_id(reference: str) -> str:
+    return resolve_cli_id(reference, [item.id for item in open_work().list()], "work item")
+
+
+def attention_cli_id(reference: str) -> str:
+    return resolve_cli_id(reference, [item.id for item in open_attention().list()], "attention item")
+
+
+def resolve_step_work_ids(steps: list[dict[str, Any]]) -> None:
+    for step in steps:
+        if step.get("work_item") is not None:
+            step["work_item"] = work_cli_id(step["work_item"])
+
+
 def command_work(arguments: argparse.Namespace) -> None:
     work = open_work()
     fields = vars(arguments).copy()
@@ -1172,6 +1206,15 @@ def command_work(arguments: argparse.Namespace) -> None:
     for name in ("handler", "command"):
         fields.pop(name, None)
     identity = fields.pop("id", None)
+    if identity is not None:
+        if command == "meet":
+            identity = resolve_cli_id(identity, [criterion.id for criteria in work.criteria_by_item().values()
+                                               for criterion in criteria], "criterion")
+        else:
+            identity = work_cli_id(identity)
+    for name in ("parent", "to_item"):
+        if fields.get(name) is not None:
+            fields[name] = work_cli_id(fields[name])
     try:
         if command == "criterion_add":
             reference = fields.pop("evidence_reference")
@@ -1293,6 +1336,7 @@ def command_decision_record(arguments: argparse.Namespace) -> None:
         print(f"Decision {identity} handed to the controller via job {job}'s stream; "
               f"it is recorded there when the controller next hears from this host.")
         return
+    arguments.work_item = work_cli_id(arguments.work_item)
     try:
         decision = open_decisions().record_guided(arguments.work_item, actor=arguments.actor,
             question=arguments.question, answer=arguments.answer, principle=arguments.principle,
@@ -1332,6 +1376,7 @@ def command_decision_list(arguments: argparse.Namespace) -> None:
 
 
 def command_answer(arguments: argparse.Namespace) -> None:
+    arguments.id = attention_cli_id(arguments.id)
     try:
         context = open_attention().get(arguments.id).stream_context
         if context is not None and context.blocked_step:
@@ -1357,6 +1402,10 @@ def command_attention(arguments: argparse.Namespace) -> None:
     try:
         attention = open_attention()
         command = arguments.attention_command
+        if command not in ("add", "list"):
+            arguments.id = attention_cli_id(arguments.id)
+        if command == "add" and arguments.work_item is not None:
+            arguments.work_item = work_cli_id(arguments.work_item)
         if command == "add":
             item = attention.raise_item(
                 project=arguments.project, kind=arguments.kind, owner=arguments.owner,
@@ -1860,6 +1909,13 @@ def main(argv: list[str] | None = None) -> None:
                 raise FleetError(f"FLEET_CONFIG points to a missing file: {path}. Unset FLEET_CONFIG to use the "
                                  f"default config, or create the file with {{\"hosts\": {{}}}} in it")
         open_store()
+        # Worker decisions may belong to a controller's store, so resolve those only
+        # after command_decision_record has determined where the write belongs.
+        if (getattr(arguments, "work_item", None) is not None
+                and arguments.handler not in (command_decision_record, command_orchestrate)):
+            arguments.work_item = work_cli_id(arguments.work_item)
+        if getattr(arguments, "epic", None) is not None:
+            arguments.epic = work_cli_id(arguments.epic)
         arguments.handler(arguments)
     except FleetError as error:
         error_console.print(f"fleet: {error}", style="red", markup=False)
