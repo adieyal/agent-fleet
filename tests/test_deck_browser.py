@@ -703,7 +703,7 @@ def test_room_guidance_edit_history_decisions_and_promote(changed_deck: Deck, de
     page.get_by_role('button', name='Write the constitution').click()
     expect(route).to_have_attribute('data-editing', '')
     page.locator('[data-guidance-text]').fill('# Constitution\n\n## Decide yourself\n\n- Test-only fixes.\n')
-    page.get_by_role('button', name='Save a new version').click()
+    page.get_by_role('button', name='Save version 1', exact=True).click()
     expect(route.locator('[data-guidance-version]')).to_contain_text('version 1 · web-user')
     expect(route.locator('[data-guidance-body] h2')).to_have_text('Decide yourself')
     shoot(request, page, 'guidance-constitution')
@@ -719,10 +719,19 @@ def test_room_guidance_edit_history_decisions_and_promote(changed_deck: Deck, de
     page.get_by_role('button', name='Write the charter').click()
     page.locator('[data-guidance-text]').fill('# Charter\n\n## Decisions in force\n\n1. One.\n')
     shoot(request, page, 'guidance-editor')
-    page.get_by_role('button', name='Save a new version').click()
+    page.get_by_role('button', name='Save version 1', exact=True).click()
     charter = route.locator('[data-guidance="charter"]')
     expect(charter.locator('[data-inherits]')).to_have_text('Inherits constitution version 1')
-    decisions.first.get_by_role('button', name="Add to the charter's decisions in force").click()
+    expect(decisions.first.locator('[data-promote]')).to_have_text('Promote to charter')
+    expect(route.locator('[data-promote-consequence]')).to_contain_text('new charter version')
+    shoot(request, page, 'batch7-promote-before')
+    if request.config.getoption('--shots'):
+        page.set_viewport_size(VIEWPORTS['narrow'])
+        decisions.first.locator('[data-promote]').scroll_into_view_if_needed()
+        shoot(request, page, 'batch7-promote-narrow-before')
+        page.set_viewport_size(VIEWPORTS['desktop'])
+    decisions.first.get_by_role('button', name='Promote to charter').click()
+    expect(route.locator('[data-guidance-feedback]')).to_contain_text('Promoted decision to charter version 2')
     expect(charter.locator('[data-guidance-version]')).to_contain_text('version 2 · web-user')
     expect(charter.locator('[data-guidance-body] li')).to_have_count(2)
     expect(charter.locator('[data-guidance-body] li').nth(1)).to_contain_text(f'decision {decision.id[:8]} by codex')
@@ -736,7 +745,7 @@ def test_room_guidance_edit_history_decisions_and_promote(changed_deck: Deck, de
     charter.get_by_role('button', name='Edit the charter').click()
     page.locator('[data-guidance-text]').fill('Edited elsewhere first.')
     open_records(store).write_guidance('restoke-v2', '# Charter\n\nNewer.\n', epic=epic.id, actor='claude')
-    page.get_by_role('button', name='Save a new version').click()
+    page.get_by_role('button', name='Save version 3', exact=True).click()
     expect(charter.locator('[role="alert"]')).to_contain_text('it is now version 3')
     alert, panel = charter.locator('[role="alert"]').bounding_box(), route.bounding_box()
     assert alert['y'] + alert['height'] <= panel['y'] + panel['height'], (alert, panel)   # not lost under the long editor
@@ -744,7 +753,10 @@ def test_room_guidance_edit_history_decisions_and_promote(changed_deck: Deck, de
     shoot(request, page, 'guidance-conflict')
     # the stale save is refused with a 409 on purpose; the browser logs it, which is expected here, not a page error
     changed_deck.errors[:] = [e for e in changed_deck.errors if '409 (Conflict)' not in e]
-    page.get_by_role('button', name='Discard the edit').click()
+    with page.expect_event('dialog') as prompt:
+        page.once('dialog', lambda dialog: dialog.accept())
+        page.get_by_role('button', name='Discard', exact=True).click()
+    assert prompt.value.type == 'confirm'
     page.get_by_role('button', name='Versions').click()
     expect(charter.locator('[data-guidance-version]')).to_contain_text('version 3 · claude')
     expect(charter.locator('[data-guidance-versions] li')).to_have_count(3)
@@ -2020,4 +2032,113 @@ def test_a_failed_job_can_still_be_dismissed_from_its_panel(changed_deck: Deck) 
     expect(chip).to_have_count(0)
     page.locator('#attnPanel [data-owner="home:e1b5c8"]').click()
     expect(page.locator("#panel")).to_have_class(re.compile("open"))
+    assert changed_deck.errors == []
+
+
+@pytest.mark.parametrize('kind', ['constitution', 'charter'])
+@pytest.mark.parametrize('viewport', ['desktop', 'narrow'])
+def test_batch7_guidance_draft_exits(changed_deck: Deck, deck_state, monkeypatch, tmp_path,
+                                    request: pytest.FixtureRequest, kind: str, viewport: str) -> None:
+    """Rejecting any discard preserves the draft and route; accepting never writes guidance."""
+    store = open_store()
+    monkeypatch.setattr(deck_state, 'store', store)
+    monkeypatch.setattr(deck_state, 'attention', open_attention(store))
+    epic = open_work(store).add(project='restoke-v2', title='Guidance test', goal='Keep guidance safe.', kind='epic', actor='user')
+    repo = tmp_path / 'management'
+    repo.mkdir()
+    subprocess.run(['git', '-C', str(repo), 'init'], check=True, capture_output=True, timeout=10)
+    records = open_records(store)
+    records.register('restoke-v2', repo, actor='user')
+    page = changed_deck.page
+    page.set_viewport_size(VIEWPORTS[viewport])
+    route = page.locator('#benchRoute')
+    text = page.locator('[data-guidance-text]')
+    dialogs = []
+    accepting = False
+
+    def handle_dialog(dialog) -> None:
+        dialogs.append((dialog.type, dialog.message))
+        dialog.accept() if accepting else dialog.dismiss()
+
+    def open_editor() -> None:
+        page.evaluate("fleetDeck.enterFloor('restoke-v2')")
+        expect(route).to_have_attribute('data-level', 'floor')
+        if kind == 'constitution':
+            page.locator('[data-open-constitution]').click()
+        else:
+            route.get_by_role('button', name='Guidance test', exact=True).click()
+        page.get_by_role('button', name=f'Write the {kind}').click()
+        expect(text).to_have_value('')
+
+    def exit_editor(exit: str) -> None:
+        if exit == 'escape':
+            page.keyboard.press('Escape')
+        else:
+            page.locator({'discard': '[data-guidance-cancel]', 'floor': '[data-back-floor]',
+                          'room': '[data-back-room]'}[exit]).click()
+
+    page.on('dialog', handle_dialog)
+    try:
+        for exit in ['discard', 'escape', 'floor'] + (['room'] if kind == 'charter' else []):
+            open_editor()
+            draft = f'# Unsaved {kind}\n\nKeep this {exit} draft.'
+            text.fill(draft)
+            before = route.get_attribute('data-level')
+            exit_editor(exit)
+            assert len(dialogs) == 1, (exit, dialogs)
+            assert dialogs[-1][0] == 'confirm'
+            assert 'cannot be recovered' in dialogs[-1][1]
+            expect(text).to_have_value(draft)
+            expect(route).to_have_attribute('data-level', before)
+            dialogs.clear()
+            accepting = True
+            exit_editor(exit)
+            assert len(dialogs) == 1
+            expect(text).to_have_count(0)
+            expect(route.locator('[data-guidance-feedback]')).to_contain_text('Discarded')
+            assert records.guidance('restoke-v2', epic=epic.id if kind == 'charter' else None) is None
+            dialogs.clear()
+            accepting = False
+        open_editor()
+        # Untouched empty drafts close without demanding attention.
+        page.locator('[data-guidance-cancel]').click()
+        assert dialogs == []
+        open_editor()
+        text.fill('# Safe guidance\n\nAgents follow these rules.')
+        expect(page.locator('[data-guidance-save]')).to_have_text('Save version 1')
+        expect(page.locator('[data-guidance-cancel]')).to_have_text('Discard')
+        expect(route.locator('[data-guidance-scope]')).to_contain_text('epic' if kind == 'charter' else 'project')
+        shoot(request, page, f'batch7-{kind}-{viewport}-editor')
+        page.locator('[data-guidance-save]').scroll_into_view_if_needed()
+        for control in ['[data-guidance-save]', '[data-guidance-cancel]']:
+            box = page.locator(control).bounding_box()
+            assert box['x'] >= 0 and box['x'] + box['width'] <= VIEWPORTS[viewport]['width'], box
+        shoot(request, page, f'batch7-{kind}-{viewport}-actions')
+        pending = []
+        page.route('**/api/guidance', lambda request: pending.append(request))
+        page.locator('[data-guidance-save]').click()
+        expect(page.locator('[data-guidance-save]')).to_be_disabled()
+        expect(page.locator('[data-guidance-cancel]')).to_be_disabled()
+        page.keyboard.press('Escape')
+        page.locator('[data-back-floor]').click()
+        expect(text).to_have_value('# Safe guidance\n\nAgents follow these rules.')
+        assert dialogs == []
+        assert len(pending) == 1
+        pending[0].continue_()
+        page.unroute('**/api/guidance')
+        expect(route.locator('[data-guidance-feedback]')).to_contain_text('Saved')
+        expect(route.locator('[data-guidance-version]')).to_contain_text('version 1')
+        shoot(request, page, f'batch7-{kind}-{viewport}-saved')
+        page.get_by_role('button', name=f'Edit the {kind}').click()
+        expect(page.locator('[data-guidance-save]')).to_have_text('Save version 2')
+        # An intentional deletion is also an edit worth protecting.
+        text.fill('')
+        page.keyboard.press('Escape')
+        assert len(dialogs) == 1
+        expect(text).to_have_value('')
+        accepting = True
+        page.locator('[data-guidance-cancel]').click()
+    finally:
+        page.remove_listener('dialog', handle_dialog)
+        page.evaluate('fleetDeck.enterFloor(null)')
     assert changed_deck.errors == []

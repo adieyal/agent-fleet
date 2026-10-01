@@ -1328,3 +1328,12 @@ html[data-quality=high] #workarea{background:rgba(3,6,12,.6)}
 .crate .acts{flex-direction:column;align-items:flex-start}
 .crate .acts button{border-radius:6px;white-space:nowrap}
 @media(max-width:759px){.shutter-handle span{right:auto;left:27px}}
+
+/* audit 1 batch 7: guidance actions name the write, including at phone width */
+#benchRoute :is([data-guidance-actions] button,[data-promote]){width:auto;height:auto;min-height:28px;padding:4px 8px;white-space:normal}
+[data-guidance-actions]{flex-wrap:wrap;gap:6px}
+[data-guidance-actions] small{flex-basis:100%}
+[data-guidance-scope],[data-guidance-consequence],[data-promote-consequence]{margin:6px 0 10px;color:#94a3b8;font-size:12px;line-height:1.5}
+[data-guidance-feedback]{margin:8px 0;color:#6ee7b7;font-size:12px;line-height:1.5}
+#benchRoute [data-promote]{flex:none;max-width:140px}
+#benchRoute :is([data-guidance-save],[data-guidance-cancel]):disabled{opacity:.55;cursor:wait}
