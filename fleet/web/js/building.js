@@ -426,7 +426,8 @@ function renderUi() {
   }).join('');
   const lamps = [...lanterns].map(([place, l]) => {
     const where = place === 'lobby' ? 'the front desk' : place === 'store' ? 'the storehouse' : floors.find(f => f.floor === place)?.name;
-    const label = `${where}: ${l.count > 1 ? `${l.count} things need you` : 'something needs you'}${l.level === 'acknowledged' ? ' (acknowledged)' : ''}`;
+    const action = place === 'lobby' ? 'Show the whole deck' : place === 'store' ? 'Open the storehouse' : `Enter ${where}’s floor`;
+    const label = `${action} · ${where}: ${l.count > 1 ? `${l.count} things need you` : 'something needs you'}${l.level === 'acknowledged' ? ' (acknowledged)' : ''}`;
     const lantern = `<button class="floor-lantern${l.level === 'acknowledged' ? ' ack' : ''}" data-place="${place}" data-state="${l.level}"
       data-count="${l.count}" data-kind="${l.kind}" aria-label="${esc(label)}" title="${esc(label)}"><span class="lg">${esc(l.glyph)}</span><b>${l.count > 1 ? l.count : ''}</b></button>`;
     // a floor's hangs from a bracket on the spine beside its name plate, the lobby's over the front desk and the
@@ -557,7 +558,7 @@ async function shutter(projectId) {
     catch (err) { showToast(`Couldn’t undo: ${err.message}`); }
   });
 }
-function showToast(text, undo = null) {
+export function showToast(text, undo = null) {
   clearTimeout(toastTimer);
   toast.innerHTML = `<span>${esc(text)}</span>${undo ? '<button data-undo>Undo</button>' : ''}<i style="animation-duration:${UNDO_S}s"></i>`;
   toast.hidden = false;

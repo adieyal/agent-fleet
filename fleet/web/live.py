@@ -14,6 +14,7 @@ import time
 from datetime import timedelta
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Container, TypeVar
+from uuid import uuid4
 
 from fleet.modules.attention import AttentionFacade
 from fleet.projections.attention import attention_display, attention_items
@@ -231,7 +232,8 @@ class LiveWorkspace:
                   if any(link.label == key for link in project.links)}
         return owners.pop() if len(owners) == 1 else None
 
-    def act_on_attention(self, action: str, item_id: str, seconds: float | None = None) -> None:
+    def act_on_attention(self, action: str, item_id: str, seconds: float | None = None, undo: str | None = None) -> dict:
+        result = {}
         if action == "acknowledge":
             self.attention.acknowledge(item_id, actor="web-user")
         elif action == "snooze":
@@ -241,10 +243,27 @@ class LiveWorkspace:
         elif action == "reopen":
             self.attention.reopen(item_id, actor="web-user")
         elif action == "resolve":
-            self.attention.resolve(item_id, details="resolved from the deck", actor="web-user")
+            with self.changed:
+                now = time.monotonic()
+                receipts = {key: value for key, value in getattr(self, "attention_undos", {}).items()
+                            if value[0] > now}
+                previous, resolved = self.attention.resolve_undoable(item_id, actor="web-user")
+                token = str(uuid4())
+                receipts[token] = (now + 6, previous, resolved)
+                self.attention_undos = receipts
+                result = {"undo": token, "undo_seconds": 6}
+        elif action == "undo-resolve":
+            with self.changed:
+                receipts = getattr(self, "attention_undos", {})
+                receipt = receipts.get(undo) if isinstance(undo, str) else None
+                if receipt is None or receipt[0] <= time.monotonic() or receipt[1].id != item_id:
+                    raise FleetError("Resolve Undo expired or is unavailable")
+                self.attention.undo_resolution(receipt[1], receipt[2], actor="web-user")
+                del receipts[undo]
         else:
             raise FleetError(f"unknown attention action '{action}'")
         self.bump()
+        return result
 
     def with_attention(self, document: dict[str, Any]) -> dict[str, Any]:
         """Add stored focus choices and the Attention projection."""

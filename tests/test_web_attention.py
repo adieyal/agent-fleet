@@ -380,3 +380,51 @@ def test_a_permission_request_says_what_the_agent_wants_to_run(deck):
     assert item.headline == "Claude asks to use Bash"
     assert item.context_reference == "Check worktree state\n\ngit status --short"
     assert deck.items()["home:s1"]["summary"] == "Claude asks to use Bash"   # the list shows the new headline
+
+
+def test_audit1_batch4_resolve_undo_restores_acknowledged(deck):
+    deck.report('home', jobs=[job('undo-job', 'failed')])
+    item = deck.items()['home:undo-job']
+    assert deck.act('acknowledge', {'id': item['id']}) == 200
+    before = deck.state.attention.get(item['id'])
+    request = Request(deck.url + '/api/attention/resolve',
+                      data=json.dumps({'id': item['id']}).encode(),
+                      headers={'Content-Type': 'application/json'}, method='POST')
+    with urlopen(request) as response:
+        receipt = json.load(response)
+    assert deck.state.attention.get(item['id']).state == 'resolved'
+    assert deck.act('undo-resolve', {'id': item['id'], 'undo': receipt['undo']}) == 200
+    restored = deck.state.attention.get(item['id'])
+    assert (restored.state, restored.acknowledged_at) == (before.state, before.acknowledged_at)
+    assert restored.resolved_at is None
+    assert deck.act('undo-resolve', {'id': item['id'], 'undo': receipt['undo']}) == 400
+
+
+@pytest.mark.parametrize('change', ['expired', 'newer-resolution', 'wrong-item'])
+def test_audit1_batch4_undo_rejects_changed_or_expired(deck, change):
+    deck.report('home', jobs=[job('undo-job', 'failed'), job('other-job', 'failed')])
+    item = deck.items()['home:undo-job']
+    result = deck.state.act_on_attention('resolve', item['id'])
+    if change == 'expired':
+        _, previous, resolved = deck.state.attention_undos[result['undo']]
+        deck.state.attention_undos[result['undo']] = (0, previous, resolved)
+    elif change == 'newer-resolution':
+        deck.state.attention.resolve(item['id'], details='answered by another actor', actor='agent')
+    target = deck.items()['home:other-job']['id'] if change == 'wrong-item' else item['id']
+    assert deck.act('undo-resolve', {'id': target, 'undo': result['undo']}) in (400, 409)
+    assert deck.state.attention.get(item['id']).state == 'resolved'
+
+
+def test_audit1_batch4_undo_keeps_new_host_observations(deck):
+    from dataclasses import replace
+    deck.report('home', jobs=[job('undo-job', 'failed')])
+    item = deck.items()['home:undo-job']
+    result = deck.state.act_on_attention('resolve', item['id'])
+    repository = deck.state.attention.repository
+    with repository.transaction() as transaction:
+        resolved = transaction.get(item['id'])
+        updated = replace(resolved, headline='New host detail', last_seen=resolved.last_seen + timedelta(seconds=1))
+        transaction.save(updated, resolved.state, 'host-stream')
+    assert deck.act('undo-resolve', {'id': item['id'], 'undo': result['undo']}) == 200
+    restored = deck.state.attention.get(item['id'])
+    assert (restored.state, restored.headline, restored.last_seen) == ('open', updated.headline, updated.last_seen)

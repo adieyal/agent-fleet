@@ -73,7 +73,7 @@ STATIC_TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; char
                 ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".json": "application/json",
                 ".md": "text/markdown; charset=utf-8", ".txt": "text/plain; charset=utf-8"}
 ASSET_POLICY = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox"
-ATTENTION_ACTIONS = ("acknowledge", "snooze", "reopen", "resolve")
+ATTENTION_ACTIONS = ("acknowledge", "snooze", "reopen", "resolve", "undo-resolve")
 REFUSAL_ACTIONS = ("allow", "dismiss")   # a job step's permission refusals
 JOB_ACTIONS = ("answer",)   # a blocked job step's question
 GUIDANCE_CHANGES = ("/api/guidance", "/api/guidance/promote")
@@ -747,7 +747,7 @@ def make_handler(state: FleetState | FixtureState,
                 self.error(400, "the item's id is required")
                 return
             try:
-                state.act_on_attention(action, body["id"], body.get("seconds"))
+                result = state.act_on_attention(action, body["id"], body.get("seconds"), body.get("undo"))
             except LookupError as error:
                 self.error(404, str(error.args[0]))
                 return
@@ -757,7 +757,7 @@ def make_handler(state: FleetState | FixtureState,
             except (FleetError, ValueError) as error:
                 self.error(400, str(error))
                 return
-            self.respond(200, "application/json", json.dumps({"id": body["id"], "action": action}).encode())
+            self.respond(200, "application/json", json.dumps({"id": body["id"], "action": action, **result}).encode())
 
         def static_file(self, path: str) -> None:
             """Vendored libraries and 3D assets; anything resolving outside those folders is refused."""

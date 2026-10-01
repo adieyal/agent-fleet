@@ -15,9 +15,11 @@ import { workOf } from './model.js';
 import { select } from './panel.js';
 import { shortId } from './activity.js';
 import { openAttentionReader } from './reader.js';
+import { showToast } from './building.js';
 
 const GLYPH = { blocker: '✋', decision: '?', alert: '✱' };
 const KIND = { blocker: 'Blocked', decision: 'Needs a decision', alert: 'Alert' };
+const itemKind = item => item.kind === 'blocker' && !item.blocked && /^job status (failed|stalled|lost)$/.test(item.source) ? 'Failed' : KIND[item.kind];
 const SNOOZE_S = 3600;
 
 // ------------------------------------------------------------------ items per room, from the state document
@@ -98,7 +100,7 @@ function renderLanterns(rooms) {
     el.classList.toggle('ack', a.level === 'acknowledged');
     el.firstChild.textContent = GLYPH[a.kind];
     el.lastChild.textContent = n > 1 ? String(n) : '';
-    const label = `${r.label}: ${n > 1 ? `${n} things need you` : KIND[a.kind].toLowerCase()}${a.level === 'acknowledged' ? ' (acknowledged)' : ''}`;
+    const label = `${r.label}: ${n > 1 ? `${n} things need you` : itemKind(a.shown[0]).toLowerCase()}${a.level === 'acknowledged' ? ' (acknowledged)' : ''}`;
     el.setAttribute('aria-label', label);
     el.title = label;
   }
@@ -115,11 +117,16 @@ function openPanel(name) {
   renderPanel();
   if (listRoom === null) return;   // nothing listed there any more
   panel.hidden = false;
+  positionPanel();
+  panel.querySelector('[data-close]')?.focus({ preventScroll: true });
+}
+function positionPanel() {
+  if (panel.hidden || !opener) return;
   const at = opener.getBoundingClientRect(), w = panel.offsetWidth, h = panel.offsetHeight;
   const x = Math.min(Math.max(8, at.right + 10), vw - w - 8), y = Math.min(Math.max(60, at.top - 20), vh - h - 8);
   panel.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px)`;
-  panel.querySelector('[data-close]')?.focus({ preventScroll: true });
 }
+window.addEventListener('resize', positionPanel);
 const ownerName = owner => `${owner.host}:${shortId(owner.id)}`;
 // A person closing it gets focus back on the lantern that opened it; an emptied list just goes.
 function closePanel(returnFocus = false) {
@@ -136,23 +143,24 @@ function renderPanel() {
     <ul>${listed.map(i => {
       const owner = i.owner, present = !!workOf(owner.key);
       const state = i.state === 'snoozed' ? `snoozed until ${esc(clock(i.snoozed_until).slice(0, 5))}` : i.state;
-      const actions = (i.state === 'open' ? `<button data-act="acknowledge">Acknowledge</button><button data-act="snooze">Snooze 1h</button>`
+      const actions = (i.state === 'open' ? `<button data-act="acknowledge" title="Mark as seen: dims the lantern when all items are acknowledged; keeps the item open and does not answer or restart work">Acknowledge</button><button data-act="snooze">Snooze 1h</button>`
         : i.state === 'acknowledged' ? `<button data-act="snooze">Snooze 1h</button><button data-act="reopen">Reopen</button>`
         : `<button data-act="reopen">Reopen</button>`)
-        + '<button data-act="resolve" title="Done with it: the lantern goes out for this item">Resolve</button>';
+        + '<button data-act="resolve" title="Close this attention item and remove it from the lantern; does not answer, restart work or grant permissions. Undo is available for 6 seconds">Resolve</button>';
       return `<li class="attn-item" data-id="${esc(i.id)}" data-state="${esc(i.state)}" data-kind="${esc(i.kind)}">
         <span class="ak">${GLYPH[i.kind]}</span>
         <div class="ab"><b>${esc(i.summary)}</b>
-          <small>${KIND[i.kind]} · ${state} · <time title="${esc(new Date(i.last_seen * 1000).toLocaleString())}">${stamp(i.last_seen)}</time>${i.stale ? ' · host unreachable' : ''}</small>
+          <small>${itemKind(i)} · ${state} · <time title="${esc(new Date(i.last_seen * 1000).toLocaleString())}">${stamp(i.last_seen)}</time>${i.stale ? ' · host unreachable' : ''}</small>
           ${present ? `<button class="owner" data-owner="${esc(owner.key)}" title="${esc(owner.key)}">${owner.type === 'job' ? 'Open job' : 'Open session'} ${esc(ownerName(owner))}</button>`
                     : `<button class="owner" data-context="${esc(i.id)}">Open context</button>`}
           ${i.refusals ? `<button class="owner" data-context="${esc(i.id)}">Review refused commands</button>`
             : i.questions ? `<button class="owner" data-context="${esc(i.id)}">Read the question</button>`
             : i.blocked ? `<button class="owner" data-context="${esc(i.id)}">Answer</button>`
             : i.kind === 'decision' ? `<button class="owner" data-context="${esc(i.id)}">Answer question</button>` : ''}
-          <div class="aa">${actions}</div><em class="err"></em></div>
+          <p class="attn-consequence">Resolve closes this item and removes it from the lantern; it does not answer, restart work or grant permissions. Undo is available for 6 seconds.</p><div class="aa">${actions}</div><em class="err"></em></div>
       </li>`;
     }).join('')}</ul>`;
+  positionPanel();
 }
 panel.addEventListener('click', async ev => {
   if (ev.target.closest('[data-close]')) { closePanel(true); return; }
@@ -167,7 +175,19 @@ panel.addEventListener('click', async ev => {
   for (const x of row.querySelectorAll('[data-act]')) x.disabled = true;
   try {
     const res = await fetch('/api/attention/' + b.dataset.act, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
+    const result = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(result.error || `HTTP ${res.status}`);
+    if (b.dataset.act === 'resolve') {
+      showToast('Attention resolved; work is unchanged. Undo within 6 seconds.', async () => {
+        try {
+          const response = await fetch('/api/attention/undo-resolve', { method: 'POST',
+            headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: body.id, undo: result.undo }) });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+          showToast('Attention restored; work is unchanged.');
+        } catch (err) { showToast(`Couldn’t undo Resolve: ${err.message}`); }
+      });
+    }
   } catch (err) {
     for (const x of row.querySelectorAll('[data-act]')) x.disabled = false;
     row.querySelector('.err').textContent = `Couldn’t ${b.dataset.act}: ${err.message}`;

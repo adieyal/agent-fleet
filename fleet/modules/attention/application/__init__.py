@@ -6,7 +6,7 @@ from typing import Callable
 from uuid import uuid4
 
 from .ports import AttentionRepository
-from ..domain import AttentionItem, StreamContext, required
+from ..domain import AttentionItem, ItemResolved, StreamContext, required
 
 
 class Commands:
@@ -65,3 +65,28 @@ class Commands:
             item = previous.transition(state, now, until=until, details=details)
             repository.save(item, previous.state, actor)
         return item.effective(now)
+
+    def resolve_undoable(self, item_id: str, actor: str) -> tuple[AttentionItem, AttentionItem]:
+        """Capture the prior attention state in the same transaction as a manual resolution."""
+        required(actor, "actor")
+        now = self.clock()
+        with self.repository.transaction() as repository:
+            previous = repository.get(item_id).effective(now)
+            if previous.state == "resolved":
+                raise ItemResolved("attention item is resolved")
+            resolved = previous.transition("resolved", now, details="resolved from the deck")
+            repository.save(resolved, previous.state, actor)
+        return previous, resolved
+
+    def undo_resolution(self, previous: AttentionItem, resolved: AttentionItem, actor: str) -> None:
+        """Restore only attention fields; never overwrite a newer resolution or host observation."""
+        required(actor, "actor")
+        with self.repository.transaction() as repository:
+            current = repository.get(previous.id)
+            if (current.state != "resolved" or current.resolved_at != resolved.resolved_at
+                    or current.resolution_details != resolved.resolution_details):
+                raise ItemResolved("attention changed after resolution; cannot undo")
+            restored = replace(current, state=previous.state, snooze_until=previous.snooze_until,
+                               acknowledged_at=previous.acknowledged_at, resolved_at=previous.resolved_at,
+                               resolution_details=previous.resolution_details)
+            repository.save(restored, current.state, actor)

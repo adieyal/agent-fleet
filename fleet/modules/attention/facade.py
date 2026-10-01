@@ -75,3 +75,9 @@ class AttentionFacade:
         items = [item.effective(now) for item in self.repository.list()]
         return [item for item in items if (project is None or item.project == project)
                 and (state is None or item.state == state)]
+
+    def resolve_undoable(self, item_id: str, *, actor: str) -> tuple[AttentionItem, AttentionItem]:
+        return self.commands.resolve_undoable(item_id, actor)
+
+    def undo_resolution(self, previous: AttentionItem, resolved: AttentionItem, *, actor: str) -> None:
+        self.commands.undo_resolution(previous, resolved, actor)

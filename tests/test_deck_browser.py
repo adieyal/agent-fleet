@@ -2076,3 +2076,26 @@ def test_audit1_batch3_blocker_names_where_to_act(changed_deck: Deck, request) -
     shoot(request, page, 'batch3-blocker')
     page.set_viewport_size(VIEWPORTS['narrow'])
     shoot(request, page, 'batch3-blocker-390')
+
+
+def test_audit1_batch4_attention_resolve_undo(changed_deck: Deck, base_url: str, request) -> None:
+    page = changed_deck.page
+    page.locator('.lantern[data-room="restoke"]').dispatch_event('click')
+    row = page.locator('#attnPanel .attn-item[data-kind="blocker"]')
+    expect(row.locator('small')).to_contain_text('Failed')
+    expect(page.locator('.lantern[data-room="invoice-parser"]')).to_have_attribute('title', re.compile('failed'))
+    expect(row.locator('[data-act="acknowledge"]')).to_have_attribute('title', re.compile('dims'))
+    expect(row.locator('.attn-consequence')).to_contain_text('does not answer')
+    shoot(request, page, 'batch4-attention')
+    page.set_viewport_size(VIEWPORTS['narrow'])
+    page.wait_for_function("(() => { const b = document.getElementById('attnPanel').getBoundingClientRect(); return b.left >= 0 && b.right <= innerWidth; })()")
+    shoot(request, page, 'batch4-attention-390')
+    row.locator('[data-act="resolve"]').click()
+    expect(row).to_have_count(0)
+    expect(page.locator('#toast')).to_contain_text('work is unchanged')
+    shoot(request, page, 'batch4-resolved-390')
+    page.locator('#toast [data-undo]').click()
+    expect(row).to_have_attribute('data-state', 'open')
+    expect(page.locator('#toast')).to_contain_text('restored')
+    shoot(request, page, 'batch4-restored-390')
+    assert changed_deck.errors == []
