@@ -127,6 +127,12 @@ The state of a run whose host cannot be reached. It is reconciled by run ID when
 The host-local execution record `fleetd` keeps today. A run references its job by host and remote job ID.
 _Avoid_: Job for the run or for the durable work
 
+**Job workspace**:
+The git checkout a job's working directory is in, as its worker last read it: the checkout's top level, whether it is a linked worktree and the main repository it belongs to, the branch (or a detached head), the head commit and the count of uncommitted paths, with when it was read. The worker reads it when the job is created, as each step starts and ends, and every 30 seconds while a step runs. A directory outside git, missing, or unreadable has no workspace and says why; nothing is filled in that git did not report.
+
+**Step work item**:
+The work item one step of a job serves, when it is not the job's own. A run stays linked to its action's work item; its steps may each name another in the same project, and while such a step runs that item (and its ancestors) shows active, and its step's documents join that item's library. A step's work is part of the dispatch payload, so it is covered by the idempotency key and kept on retry, and recorded on the run as observed (`step_work`), not as further actions or claims: a step finishing completes no more than a run finishing does. An answer to a blocked step, or a permission continuation, serves the step it continues unless it names its own.
+
 **Run trace**:
 The detailed activity emitted by one agent run. It stays on the worker under a retention policy and is not the durable project record. The library may link to it; a pruned trace stays visible as unavailable.
 

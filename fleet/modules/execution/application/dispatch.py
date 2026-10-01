@@ -11,6 +11,13 @@ def fingerprint(work_item: str | None, project: str, host: str, runtime: str, pa
     return hashlib.sha256(json.dumps([work_item, project, host, runtime, payload], sort_keys=True).encode()).hexdigest()
 
 
+def require_step_work(work, work_item: str, project: str | None) -> None:
+    """A step may serve its own work item, but only one that exists in the job's project."""
+    item = work.get(work_item)
+    if project is not None and item.project != project:
+        raise ValueError(f"step work item {work_item} is in another project")
+
+
 def claim(transaction: ExecutionRepository, action: Action, host: str, runtime: str, actor: str,
           key: str, digest: str, remote_job_id: str | None = None) -> DispatchResult:
     transaction.workspace.require_claims_allowed(action.project, host)
@@ -40,6 +47,9 @@ def dispatch(repository: ExecutionRepository, work_item: str | None, *, host: st
             project = transaction.work.get(work_item).project
         if project is None:
             raise ValueError("project or work item is required")
+        for step in payload.get("steps") or []:
+            if isinstance(step, dict) and step.get("work_item") is not None:
+                require_step_work(transaction.work, step["work_item"], project)
         # Fingerprints of unguided dispatches stay as they were.
         fingerprinted = payload if guidance is None else dict(payload, guidance=guidance)
         digest = fingerprint(work_item, project, host, runtime, fingerprinted)

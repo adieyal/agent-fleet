@@ -38,6 +38,7 @@ class JobObservation:
     usage: Usage | None = None
     current_action: str | None = None
     action_observed_at: datetime | None = None
+    step_work: list[dict] | None = None  # as Run.step_work; None when no step names its own work item
 
     def run_status(self) -> str:
         return {"running": "running", "done": "succeeded", "failed": "failed", "blocked": "failed",
@@ -83,6 +84,10 @@ class Run:
     usage: Usage | None = None
     current_action: str | None = None
     action_observed_at: datetime | None = None
+    # The job's steps that name their own work item, as last observed: {"index", "work_item", "status" (the
+    # step's own: pending, running, done, failed, blocked, cancelled), "start", "end" (ISO times or None)}.
+    # They attribute the run's activity to that work while the run stays linked to its action's item.
+    step_work: list[dict] | None = None
 
     def __post_init__(self) -> None:
         if not self.host.strip() or not self.remote_job_id.strip():

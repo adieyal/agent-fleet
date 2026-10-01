@@ -24,6 +24,7 @@ class AnswerRequest:
     step: int  # the blocked step the reply answers
     key: str
     reply: str
+    work_item: str | None = None  # the work the reply step serves; the worker keeps the blocked step's otherwise
 
 
 @dataclass(frozen=True)

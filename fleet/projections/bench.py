@@ -15,17 +15,23 @@ def headline(goal: str) -> str:
     return re.split(r"(?<=[.!?])\s", line, maxsplit=1)[0]
 
 
+def activity(node: dict) -> list[dict]:
+    """The node's linked runs and the run steps that served it; each has a run status, start and end."""
+    return node["runs"] + node["steps"]
+
+
 def status(item: dict) -> str:
     """One of complete, dropped, blocked, on hold, active, ran or next; recorded condition outranks runs.
 
-    `ran` is work that is ready for review, or whose latest run finished, but which nobody has accepted as complete:
-    a run never completes work."""
+    A run step that served the item counts as a run of it, so a job working through several items lights each in
+    turn. `ran` is work that is ready for review, or whose latest run finished, but which nobody has accepted as
+    complete: a run never completes work."""
     condition = item["condition"]
     if condition in ("complete", "dropped", "blocked", "on hold"):
         return condition
     if condition == "waiting":
         return "on hold"
-    runs = [run for node in descendants(item) for run in node["runs"]]
+    runs = [run for node in descendants(item) for run in activity(node)]
     if any(run["status"] == "running" for run in runs):
         return "active"
     if condition == "ready for review":
@@ -36,14 +42,14 @@ def status(item: dict) -> str:
 
 def running_since(item: dict) -> str | None:
     """When the item's earliest running run started (ISO time), or None when nothing runs or its start is unknown."""
-    starts = [run["start"] for node in descendants(item) for run in node["runs"]
+    starts = [run["start"] for node in descendants(item) for run in activity(node)
               if run["status"] == "running" and run.get("start")]
     return min(starts, default=None)
 
 
 def last_run(item: dict) -> dict[str, str] | None:
     """The start and end (ISO times) of the item's latest finished run, or None when none has both recorded."""
-    finished = [run for node in descendants(item) for run in node["runs"]
+    finished = [run for node in descendants(item) for run in activity(node)
                 if run["status"] != "running" and run.get("start") and run.get("end")]
     latest = max(finished, key=lambda run: run["start"], default=None)
     return None if latest is None else {"start": latest["start"], "end": latest["end"]}
@@ -117,6 +123,24 @@ def workstream(stream: dict, milestones: list[dict]) -> dict[str, Any]:
             "plan": [line_item(item) for item in milestones]}
 
 
+def agents(scope: list[dict]) -> list[dict[str, Any]]:
+    """Each running run in scope once: at the item its running step serves, else at the item it is linked to.
+
+    `step` is that step's index, or None for a run seen through its link alone."""
+    placed: dict[str, dict[str, Any]] = {}
+    for node in scope:
+        for run in node["runs"]:
+            if run["status"] == "running":
+                placed[run["id"]] = {"run": run["id"], "host": run["host"], "work_item": node["id"],
+                                     "title": node["title"], "step": None}
+    for node in scope:
+        for entry in node["steps"]:
+            if entry["status"] == "running":
+                placed[entry["run"]] = {"run": entry["run"], "host": entry["host"], "work_item": node["id"],
+                                        "title": node["title"], "step": entry["step"]}
+    return list(placed.values())
+
+
 def epic_room(epic: dict, parent: dict | None, depth: int) -> dict[str, Any]:
     scope = descendants(epic)
     direct, streams = milestone_groups(epic)
@@ -131,8 +155,7 @@ def epic_room(epic: dict, parent: dict | None, depth: int) -> dict[str, Any]:
         "workstreams": [workstream(stream, own) for stream, own in streams],
         "tasks": [line_item(child) for child in epic["children"] if child["kind"] == "task"],
         "milestones": milestone_count(milestones),
-        "agents": [{"run": run["id"], "host": run["host"], "work_item": item["id"], "title": item["title"]}
-                   for item in scope for run in item["runs"] if run["status"] == "running"],
+        "agents": agents(scope),
         "upcoming": [upcoming(item) for item in milestones if outstanding(item)][:UPCOMING],
         "children": [{"id": child["id"], "title": child["title"]}
                      for child in epic["children"] if child["kind"] == "epic"],
@@ -170,16 +193,27 @@ def bench_state(project: dict, identity: str) -> dict[str, Any]:
         if task["kind"] != "task":
             continue
         lane = "done" if task["condition"] == "complete" else "dropped" if task["condition"] == "dropped" else (
-            "doing" if any(run["status"] == "running" for run in task["runs"]) else "next")
+            "doing" if any(run["status"] == "running" for run in activity(task)) else "next")
         tasks.append({**task, "lane": lane})
     tasks.sort(key=lambda task: ("done", "doing", "next", "dropped").index(task["lane"]))
+    linked = [run for item in scope for run in item["runs"]]
+    # A run linked elsewhere appears once through the steps it ran here: the running one, else the last listed.
+    known = {run["id"] for run in linked}
+    stepped: dict[str, dict] = {}
+    for entry in (entry for item in scope for entry in item["steps"] if entry["run"] not in known):
+        if stepped.get(entry["run"], {}).get("status") != "running":
+            stepped[entry["run"]] = entry
     return {"id": identity, "project": project["project"], "title": node["title"],
             "tasks": tasks, "criteria": node["criteria"], "progress": node["progress"],
             "summary": node["summary"],
             "agents": [{"run": run["id"], "host": run["host"], "status": run["status"],
                         "action_glyph": run["action_glyph"],
                         "action_observed_at": run["action_observed_at"],
-                        "action_freshness": run["action_freshness"]}
-                       for item in scope for run in item["runs"]],
+                        "action_freshness": run["action_freshness"], "step": None}
+                       for run in linked] + [
+                      {"run": entry["run"], "host": entry["host"], "status": entry["status"],
+                       "action_glyph": entry["action_glyph"], "action_observed_at": entry["action_observed_at"],
+                       "action_freshness": entry["action_freshness"], "step": entry["step"]}
+                      for entry in stepped.values()],
             "attention": [entry for item in scope for entry in item["attention"]],
             "reports": [entry for item in scope for entry in item["library"] if entry["kind"] == "report"]}

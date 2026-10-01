@@ -232,7 +232,9 @@ def command_watch(arguments: argparse.Namespace) -> None:
 
 
 def read_steps(arguments: argparse.Namespace) -> list[dict[str, Any]]:
-    steps: list[dict[str, Any]] = [{"prompt": step} for step in arguments.step or []]
+    named = arguments.step_work_items or {}
+    steps: list[dict[str, Any]] = [{"prompt": step, "work_item": named[index]} if index in named else {"prompt": step}
+                                   for index, step in enumerate(arguments.step or [])]
     if arguments.steps_file:
         content = Path(arguments.steps_file).read_text()
         if arguments.steps_file.endswith(".json"):
@@ -428,6 +430,14 @@ def command_library_link(arguments: argparse.Namespace) -> None:
 def command_add(arguments: argparse.Namespace) -> None:
     host, job_id = resolve(arguments.job)
     steps = read_steps(arguments)
+    named = [step["work_item"] for step in steps if step.get("work_item") is not None]
+    if named:
+        execution = open_execution()
+        try:
+            for work_item in named:
+                execution.require_step_work(host.name, job_id, work_item)
+        except (ValueError, LookupError) as error:
+            raise FleetError(str(error)) from error
     if arguments.context:
         push_context(host, job_id, arguments.context)
     fleetd_arguments = ["add", job_id, "--steps-file", "/dev/stdin"] + (["--retry"] if arguments.retry else [])
@@ -1212,9 +1222,25 @@ def add_listing_options(parser: argparse.ArgumentParser) -> None:
                         help="leave out live interactive Claude/Codex sessions")
 
 
+class StepWorkItem(argparse.Action):
+    """--step-work-item ID: the --step just before it serves that work item rather than the job's."""
+
+    def __call__(self, parser, namespace, value, option_string=None) -> None:
+        steps = namespace.step or []
+        named = dict(namespace.step_work_items or {})
+        if not steps or len(steps) - 1 in named:
+            parser.error(f"{option_string} must follow the --step it names, once per step")
+        named[len(steps) - 1] = value
+        namespace.step_work_items = named
+
+
 def add_step_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--step", "-s", action="append", help="a task prompt; repeat for a task list")
-    parser.add_argument("--steps-file", "-f", help="markdown list (one step per item) or JSON list")
+    parser.add_argument("--step-work-item", dest="step_work_items", action=StepWorkItem, metavar="ID",
+                        help="the work item the preceding --step serves, when not the job's own")
+    parser.add_argument("--steps-file", "-f",
+                        help='markdown list (one step per item) or JSON list of prompts or '
+                             '{"prompt", "title"?, "work_item"?} objects')
     parser.add_argument("--context", "-c", action="append", help="file/dir to copy into the job's context dir")
 
 
@@ -1265,7 +1291,7 @@ def build_parser() -> argparse.ArgumentParser:
     dispatch.add_argument("--json", action="store_true")
     dispatch.set_defaults(handler=command_dispatch_work, permission=None, model=None, allow=None,
                           add_dir=None, env=None, keep_going=False, hold=False, wait=False,
-                          context=None, steps_file=None)
+                          context=None, steps_file=None, step_work_items=None)
 
     orchestrate = commands.add_parser('orchestrate', help='start a controller-local orchestrator')
     orchestrate.add_argument('work_item')
