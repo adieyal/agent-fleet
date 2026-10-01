@@ -417,6 +417,14 @@ agent session. The local dashboard receives host updates over SSH and sends them
 the browser with server-sent events. The optional [Fleet skill](skill/SKILL.md) lets
 a local Claude dispatch and monitor jobs.
 
+Provider runtime failures, including model capacity, rate limits and HTTP 429/5xx,
+resume the same session after 60, 180 and 600 seconds, with at most three retries.
+The job stays running while its activity shows the reason, retry count and scheduled
+time; cancellation interrupts the wait. Set `runtime_retry_delays` in the worker's
+`FLEET_HOME/config.json` to a list of up to three delays in seconds, for example
+`[30, 120]` for two retries or `[]` to disable retries. Tool failures and permanent
+runtime errors such as HTTP 401 are not retried.
+
 Claude jobs default to `acceptEdits`; Codex jobs default to `workspace-write`. Use
 `fleet send --permission` when a job needs a different mode.
 
