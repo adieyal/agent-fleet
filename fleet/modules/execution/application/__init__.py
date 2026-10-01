@@ -17,6 +17,14 @@ def link(repository: ExecutionRepository, work: WorkFacade, host: str, job: str,
         existing = transaction.find(host, job)
         if existing is not None:
             action = next(action for action in transaction.actions() if action.id == existing.action)
+            if action.source == "observed" and action.work_item is None:
+                project = work.get(work_item).project
+                if action.project is not None and action.project != project:
+                    registry = transaction.workspace.registry()
+                    raise ValueError(f"job project {registry.get(action.project).name} ({action.project}) differs from "
+                                     f"work project {registry.get(project).name} ({project})")
+                transaction.update_action(replace(action, work_item=work_item, project=project), actor)
+                return existing
             if action.work_item != work_item:
                 raise ValueError("job is already linked to another work item")
             return existing
@@ -24,6 +32,44 @@ def link(repository: ExecutionRepository, work: WorkFacade, host: str, job: str,
         run = Run(str(uuid4()), action.id, host, job, runtime, "unknown outcome", None, None, None, None)
         transaction.save(action, run, actor)
         return run
+
+
+def record_observed(repository: ExecutionRepository, host: str, job: dict,
+                    project: str | None) -> Run:
+    """Record an externally observed job once, without reserving a claim."""
+    with repository.transaction() as transaction:
+        existing = transaction.find(host, job["id"])
+        if existing is not None:
+            fields = {field: job[key] for field, key in (
+                ("label", "project"), ("title", "description"), ("cwd", "cwd"),
+                ("workspace", "workspace"), ("workspace_reason", "workspace_reason")) if key in job}
+            updated = replace(existing, **fields)
+            if updated != existing:
+                transaction.update(updated, "fleetd")
+            return updated
+        action = Action(str(uuid4()), None, "observed", actor="fleetd", project=project)
+        run = Run(job.get("run_id") or str(uuid4()), action.id, host, job["id"], job.get("agent"),
+                  "unknown outcome", None, None, None, None, label=job.get("project"),
+                  title=job.get("description"), cwd=job.get("cwd"), workspace=job.get("workspace"),
+                  workspace_reason=job.get("workspace_reason"))
+        transaction.save(action, run, "fleetd")
+        return run
+
+
+def assign_label(repository: ExecutionRepository, host: str, label: str, project: str, actor: str) -> int:
+    """Assign previously unregistered observed jobs to their label's newly linked project."""
+    if not actor.strip():
+        raise ValueError("actor is required")
+    with repository.transaction() as transaction:
+        transaction.workspace.registry().get(project)
+        actions = {action.id: action for action in transaction.actions()}
+        count = 0
+        for run in transaction.runs():
+            action = actions[run.action]
+            if run.host == host and run.label == label and action.source == "observed" and action.project is None:
+                transaction.update_action(replace(action, project=project), actor)
+                count += 1
+        return count
 
 
 def observe(repository: ExecutionRepository, host: str, observation: JobObservation) -> Run | None:

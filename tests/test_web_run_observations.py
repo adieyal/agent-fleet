@@ -16,12 +16,14 @@ def test_unscoped_dispatch_observations_keep_deck_available():
                              actor="user", reason="manual", idempotency_key="request").run
     host = Host("worker", None)
     state = server.FleetState([host], store=store)
+    state.keeper.fetch = lambda *args: {"content": "Report"}
     message = {"type": "job", "job": {
         "id": run.remote_job_id, "project": "p", "description": "Task", "status": "done", "agent": "codex",
         "created_at": 1, "updated_at": 2, "steps": [],
-        "documents": [{"kind": "report", "name": "Report", "path": "/repo/report.md"}]}}
+        "documents": [{"id": "report", "kind": "report", "name": "Report", "path": "/repo/report.md"}]}}
     server.apply_message(state, host, {"type": "hello"})
     server.apply_message(state, host, message)
+    assert state.keeper.settle(5)
     sequence = store.latest_sequence()
     server.apply_message(state, host, message)
     assert not [row for row in store.history_after(sequence) if row["subject"].startswith("execution:")]

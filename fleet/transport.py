@@ -161,6 +161,11 @@ def gather(hosts: list[Host], arguments: list[str]) -> list[HostReport]:
         return list(pool.map(one, hosts))
 
 
+def catch_up_jobs(host: Host) -> list[dict]:
+    """All jobs still held by a worker, including finishes missed by the stream."""
+    return call(host, ["ls", "--all", "--events", "0"], timeout=30)["jobs"]
+
+
 def gather_sessions(hosts: list[Host]) -> dict[str, list[dict[str, Any]]]:
     """Live interactive CLI sessions per host name, from `fleetd sessions`.
 

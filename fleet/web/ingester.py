@@ -28,7 +28,7 @@ def step_work(job: dict) -> list[dict] | None:
 
 
 def observe_runs(execution: ExecutionFacade, library: LibraryFacade, host: dict,
-                 indexed: dict | None = None) -> None:
+                 indexed: dict | None = None, project_of: Callable[[dict], str | None] | None = None) -> None:
     """Record the host's jobs as runs, and index each linked run's documents in the library.
 
     `indexed`, kept by the caller across calls, remembers each entry as last indexed so an unchanged one is not
@@ -39,8 +39,8 @@ def observe_runs(execution: ExecutionFacade, library: LibraryFacade, host: dict,
         return
     actions = {action.id: action for action in execution.actions()}
     for job in host["jobs"].values():
-        if execution.find_run(host["name"], job["id"]) is None:
-            continue
+        run = execution.record_observed(host["name"], job, project_of(job) if project_of else None)
+        actions[run.action] = execution.get_action(run.action)
         starts = [step["started_at"] for step in job["steps"] if step["started_at"] is not None]
         ends = [step["finished_at"] for step in job["steps"] if step["finished_at"] is not None]
         end = max(ends) if ends and job["status"] in ("done", "failed", "blocked", "cancelled") else None

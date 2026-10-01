@@ -22,6 +22,8 @@ from fleet.transport import Host
 from fleet.web.job_store import ProjectDocuments
 from fleet.web.server import FleetState, follow_host, make_handler
 
+real_fetch_raw = FleetState.fetch_raw
+
 
 @pytest.fixture
 def worker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -29,6 +31,7 @@ def worker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     home = tmp_path / "worker"
     monkeypatch.setenv("FLEET_FLEETD_PATH", fleetd.__file__)
     monkeypatch.setenv("FLEET_REMOTE_HOME", str(home))
+    monkeypatch.setattr(FleetState, "fetch_raw", real_fetch_raw)
     return home
 
 

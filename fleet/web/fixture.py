@@ -27,7 +27,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Callable
 
-from fleet.composition import open_attention, open_store, open_workspace, open_work
+from fleet.composition import open_attention, open_execution, open_store, open_workspace, open_work
 from fleet.modules.workspace import Registry
 from fleet.projections.workspace import annotate, resolve, registry_config
 from fleet.transport import FleetError
@@ -46,6 +46,7 @@ class FixtureState(LiveWorkspace):
         self.attention_directory = TemporaryDirectory(prefix="fleet-fixture-")
         store = open_store(Path(self.attention_directory.name) / "fleet.db")
         self.store = store
+        self.execution = open_execution(store)
         self.workspace = open_workspace(store, initial=fixture, actor="fixture-user")
         work = open_work(store)
         identities = {}

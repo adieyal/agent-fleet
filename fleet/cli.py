@@ -759,7 +759,11 @@ def command_project_rename(arguments: argparse.Namespace) -> None:
 def command_project_link(arguments: argparse.Namespace) -> None:
     host, label = parse_link(arguments.link)
     link = open_workspace().edit_registry(lambda registry: registry.link(arguments.id, host, label))
-    console.print(f"linked {escape(link.host)}:{escape(link.label)} → {arguments.id}")
+    count = open_execution().assign_label(host, label, arguments.id, actor="user")
+    from fleet.web.job_store import ProjectDocuments
+    documents = ProjectDocuments().assign_label(host, label, arguments.id)
+    console.print(f"linked {escape(link.host)}:{escape(link.label)} → {arguments.id}; "
+                  f"{count} earlier runs assigned; {documents} retained jobs moved")
 
 
 def command_project_unlink(arguments: argparse.Namespace) -> None:

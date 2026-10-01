@@ -1,7 +1,7 @@
 from typing import Callable, TYPE_CHECKING
 from datetime import datetime, timezone
 
-from .application import link, observe, unavailable
+from .application import assign_label, link, observe, record_observed, unavailable
 from .application.delivery import queue, retry as retry_delivery
 
 from .application.answers import answer
@@ -93,6 +93,12 @@ class ExecutionFacade:
 
     def actions(self) -> list[Action]:
         return self.repository.actions()
+
+    def record_observed(self, host: str, job: dict, project: str | None = None) -> Run:
+        return record_observed(self.repository, host, job, project)
+
+    def assign_label(self, host: str, label: str, project: str, *, actor: str) -> int:
+        return assign_label(self.repository, host, label, project, actor)
 
     def get_action(self, identity: str) -> Action:
         return self.repository.get_action(identity)

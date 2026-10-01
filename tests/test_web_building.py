@@ -46,7 +46,8 @@ def start_deck():
     def fill_home(entry):
         entry["ok"], entry["error"] = True, None
         for index, label in enumerate(LABELS):
-            entry["jobs"][f"j{index}"] = {"id": f"j{index}", "project": label, "created_at": index, "status": "running"}
+            entry["jobs"][f"j{index}"] = {"id": f"j{index}", "project": label, "created_at": index,
+                                         "status": "running", "steps": []}
 
     def fill_gpu(entry):
         entry["ok"], entry["error"] = True, None

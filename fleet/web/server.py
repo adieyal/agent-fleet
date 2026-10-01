@@ -13,6 +13,7 @@ import os
 import selectors
 import subprocess
 import threading
+import sys
 import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -146,10 +147,11 @@ class FleetState(LiveWorkspace):
         return transport.call(host, ["read", job_id, document_id], timeout=30)
 
     def keep_documents(self, host_name: str, job: dict[str, Any]) -> None:
-        """Copy the job's new and changed documents into its project's store; a job with no project has none."""
+        """Keep job documents in its project or under its unregistered host label."""
         project_id = resolve(self.registry, host_name, job)["project_id"]
-        if project_id is not None and job.get("documents"):
-            self.keeper.observe(host_name, project_id, job)
+        if job.get("documents"):
+            scope = project_id if project_id is not None else self.documents.label_scope(host_name, job.get("project") or "")
+            self.keeper.observe(host_name, scope, job)
 
     def job_hosts(self) -> dict[str, tuple[bool, set[str]]]:
         with self.changed:
@@ -174,7 +176,8 @@ class FleetState(LiveWorkspace):
             reconciled = False
             if ingest:
                 host = self.by_host[host_name]
-                observe_runs(self.execution, self.run_library, host, self.indexed)
+                observe_runs(self.execution, self.run_library, host, self.indexed,
+                             lambda job: resolve(self.registry, host_name, job)["project_id"])
                 record_decisions(self.decisions, self.execution, self.attention, host,
                                  lambda job: resolve(self.registry, host_name, job)["project_id"], self.taken_decisions)
                 reconciled = self.attention.observe({**host,
@@ -317,6 +320,14 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
         return
     if kind == "hello":
         state.update(host.name, lambda entry: entry.update(ok=True, error=None, jobs={}, sessions={}), ingest=False)
+        try:
+            jobs = transport.catch_up_jobs(host)
+            state.update(host.name, lambda entry: entry["jobs"].update({job["id"]: job for job in jobs}),
+                         owners={f"job:{host.name}:{job['id']}" for job in jobs})
+            for job in jobs:
+                state.keep_documents(host.name, job)
+        except (FleetError, ValueError, KeyError, OSError) as error:
+            print(f"fleet: catch-up on {host.name} failed: {error}", file=sys.stderr)
     elif kind == "job":
         job = message["job"]
         state.update(host.name, lambda entry: entry["jobs"].__setitem__(job["id"], job),

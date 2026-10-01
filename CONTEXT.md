@@ -111,7 +111,11 @@ An event that calls for a role to act on a scope: a user command, a met conditio
 One response by a role to one or more triggers. It resolves the mandate version and context, selects or creates an action, claims it, dispatches a run, records the outcome and evidence, and leaves a next step or a named condition. Once triggers are queued, several triggers for the same role and scope become one activation with several reasons, not several runs.
 
 **Action**:
+
 One concrete intended execution for a work item, with a stable ID. Repeating a dispatch request with the same idempotency key returns the same action rather than creating another. An action may be attempted by several runs over time, one at a time. Claiming the action, not the work item, is what lets several runs serve one epic in parallel.
+
+**Observed action**:
+An action for a job first seen on a worker, even when it serves no work item. It holds no claim. Its run keeps the worker's run ID when supplied, plus host, job ID, label and workspace. Linking later attaches that existing action and run to work; a conflicting registered project is refused. Linking a host label to a project assigns its earlier unregistered runs and moves retained documents from `_labels/<host>/<label>/`. On each stream hello, `fleetd ls --all --events 0` catches up jobs still on that worker. Jobs already removed cannot be reconstructed.
 
 **Claim**:
 An action's exclusive reservation for one run, made in a single controller transaction. An action has at most one active claim; a second claimant receives a conflict or the existing run. The claim is held from dispatch until its run reaches a known end (succeeded, failed or stopped). An unknown outcome keeps the claim, and no timer releases it.

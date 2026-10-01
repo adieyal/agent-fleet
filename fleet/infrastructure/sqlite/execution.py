@@ -128,6 +128,16 @@ class ExecutionRepository(Repository):
         self.unit.record_observation("INSERT INTO execution_run_observation (run, record) VALUES (?, ?)",
                                      (run.id, dumps(observation)))
 
+    def update_action(self, action: Action, actor: str) -> None:
+        if self.unit is None:
+            raise RuntimeError("execution writes require a transaction")
+        previous = self.get_action(action.id)
+        if previous == action:
+            return
+        payload = dumps(asdict(action))
+        self.unit.connection.execute("UPDATE execution_action SET record = ? WHERE id = ?", (payload, action.id))
+        self.unit.record_change(f"execution:action:{action.id}", dumps(asdict(previous)), payload, actor)
+
     def claims(self) -> list[Claim]:
         return [Claim(row["action"], row["run"], bool(row["active"]))
                 for row in self.rows("SELECT action, run, active FROM execution_claim ORDER BY rowid")]
