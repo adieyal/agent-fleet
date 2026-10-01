@@ -58,25 +58,47 @@ def test_unchanged_heartbeat_does_not_write_or_notify(recorded):
     assert open_attention(store).get(first.id) == first
 
 
-@pytest.mark.parametrize('clearing', ['retry', 'removed', 'absent-on-reconnect'])
+@pytest.mark.parametrize('clearing', ['retry', 'deleted'])
 def test_reachable_clear_records_resolution(recorded, clearing):
     state, worker, job, store, now = recorded
     report(state, worker, job)
     if clearing == 'retry':
         job['status'] = 'running'
         apply_message(state, worker, {'type': 'job', 'job': job})
-    elif clearing == 'removed':
+    else:
+        apply_message(state, worker, {'type': 'removed', 'id': job['id'], 'reason': 'deleted'})
+    item, = open_attention(store).list()
+    assert item.state == 'resolved'
+    assert item.resolution_details == ('job retried or finished' if clearing == 'retry'
+                                       else 'job deleted from its host')
+
+
+@pytest.mark.parametrize('absence', ['aged', 'removed-by-old-fleetd', 'absent-on-reconnect'])
+def test_a_job_that_leaves_the_stream_without_being_deleted_keeps_its_item_open(recorded, absence):
+    state, worker, job, store, now = recorded
+    report(state, worker, job)
+    first, = open_attention(store).list()
+    if absence == 'aged':
+        apply_message(state, worker, {'type': 'removed', 'id': job['id'], 'reason': 'aged'})
+    elif absence == 'removed-by-old-fleetd':
         apply_message(state, worker, {'type': 'removed', 'id': job['id']})
     else:
         apply_message(state, worker, {'type': 'hello'})
-        sequence = store.latest_sequence()
-        version = state.version
-        apply_message(state, worker, {'type': 'heartbeat'})
-        assert store.latest_sequence() == sequence + 1
-        assert state.version == version + 1
+    apply_message(state, worker, {'type': 'heartbeat'})
+    assert job['id'] not in state.by_host[worker.name]['jobs']
+    assert open_attention(store).get(first.id).state == 'open'
+
+
+def test_a_lost_job_raises_a_blocker(recorded):
+    state, worker, job, store, now = recorded
+    job['status'] = 'lost'
+    for step in job['steps']:
+        if step['status'] == 'failed':
+            step['status'] = 'running'
+    report(state, worker, job)
     item, = open_attention(store).list()
-    assert item.state == 'resolved'
-    assert item.resolution_details
+    assert (item.kind, item.state) == ('blocker', 'open')
+    assert 'lost' in item.headline
 
 
 def test_offline_restart_and_reconnect_preserve_open_items(recorded):

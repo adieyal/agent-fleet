@@ -415,16 +415,17 @@ export function renderLegend() {
   }
 }
 export function renderStats() {
-  const count = { running: 0, queued: 0, done: 0 }, live = { working: 0, idle: 0 };
-  // jobs in a background room count too, though they have no android
-  for (const h of hosts) for (const j of h.jobs || []) if (count[j.status] !== undefined) count[j.status]++;
+  const count = { running: 0, queued: 0, done: 0, failed: 0, lost: 0 }, live = { working: 0, idle: 0 };
+  // from the whole document: jobs in a background room, dismissed ones and finished ones that left the deck count too
+  for (const h of lastDoc?.hosts || []) for (const j of h.jobs || []) if (count[j.status] !== undefined) count[j.status]++;
   // every session counts, including idle ones that have left the deck
   for (const h of hosts) for (const s of h.sessions || []) if (s.project && live[s.status] !== undefined) live[s.status]++;
   document.getElementById('stats').innerHTML = `
     ${live.working + live.idle ? `<span class="chip sess" title="interactive Claude Code / Codex sessions"><i></i><b>${live.working + live.idle}</b> live${live.idle ? `<span class="opt"> · ${live.idle} waiting</span>` : ''}</span>` : ''}
-    <button class="chip restore" id="workingOpen" aria-haspopup="dialog" aria-expanded="false" title="Running, blocked and queued jobs by project and work"><i style="background:var(--run)"></i><b>${count.running}</b> working</button>
+    <button class="chip restore" id="workingOpen" aria-haspopup="dialog" aria-expanded="false" title="Running, blocked, failed, lost and queued jobs by project and work"><i style="background:var(--run)"></i><b>${count.running}</b> working</button>
     <span class="chip opt"><i style="background:var(--warn)"></i><b>${count.queued}</b> queued</span>
     <span class="chip opt"><i style="background:var(--ok)"></i><b>${count.done}</b> done</span>
+    <span class="chip" id="failedJobs" title="failed jobs, and lost ones whose agent died; the working list shows them"><i style="background:var(--bad)"></i><b>${count.failed + count.lost}</b> failed</span>
     <span class="chip" id="needYou" title="open attention items: acknowledged and snoozed ones aren't counted"><i style="background:var(--bad)"></i><b>${openCount}</b> need you</span>
     ${retiredCount ? `<button class="chip restore" id="toggleFinished" title="Show finished jobs that have left the deck"><b>${retiredCount}</b> finished · show</button>`
       : showFinished ? '<button class="chip restore" id="toggleFinished" title="Let finished jobs leave the deck again">hide finished</button>' : ''}
