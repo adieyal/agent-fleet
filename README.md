@@ -202,6 +202,19 @@ fleet decision record --work-item WORK_ID --question "Rerun the flaky test?" --a
 fleet decision list --project PROJECT_ID
 ```
 
+Every change the controller stores is kept as history: who changed what, when,
+and from which run. Read a subject's history, newest first, by id, unique id
+prefix or subject such as `attention:ID`; a work item's includes its criteria. The
+deck reads the same entries from `GET /api/history?subject=ID&since=7d`. History
+is never deleted automatically: `prune` says how many entries before the date it
+would delete and deletes them only with `--yes`, leaving an entry that records
+the pruning.
+
+```bash
+fleet history --subject WORK_ID --since 7d
+fleet history prune --before 2026-01-01 --yes
+```
+
 In the deck, the floor opens the constitution and each epic's page shows its
 charter and the decisions on its work. Edit either in place (each save is a new
 version by `web-user`, refused if someone saved first), open older versions in

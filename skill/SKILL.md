@@ -83,5 +83,10 @@ hold the job's run) it prints `Decision <id> handed to the controller via job
 unrecordable one, e.g. an unknown work item, becomes an alert). Check with
 `fleet decision list --project P`.
 
+To see who changed a work item, attention item or project and from which run,
+run `fleet history --subject <id or prefix> [--since 7d]`. Changes made inside a
+job name the job's run. Never prune history (`fleet history prune`) unless the
+user asks.
+
 The user watches the same jobs with `fleet watch` and `fleet web` (the
 kitchen dashboard), so keep descriptions and step titles meaningful.

@@ -201,6 +201,10 @@ A durable account of completed work, such as a slice, preserving its outcome, de
 **Executive summary**:
 A concise account of a project's or work item's purpose, completed outcomes, current work and remaining work. It identifies its authoring role and update time without requiring claim-by-claim citations.
 
+**History** (audit trail):
+The controller's permanent record of every change to its structured state: which subject changed, from what to what, by which actor, when, and from which fleet job (and so which **source run**). Nothing deletes it except an explicit prune, which itself leaves an entry. A subject's history includes the records that belong to it, such as a work item's criteria.
+_Avoid_: Log (logs are traces of runs)
+
 **Observation**:
 A timestamped reading about a subject, with a source and a freshness period. Once that period passes, the subject's current state is stale or unknown, even if the last reading was healthy; older observations remain history.
 
