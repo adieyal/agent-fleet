@@ -1622,15 +1622,28 @@ def test_refused_commands_are_one_item_answered_with_actions(changed_deck: Deck,
     expect(body).to_contain_text("Check worktree state")
     expect(body).to_contain_text("Read(//etc/restoke.conf)")
     expect(body.get_by_label("Your answer")).to_have_count(0)
-    for name in ("Allow these for this job", "Allow all Bash for this job", "Dismiss"):
+    for name in ("Allow these for this job", "Allow all Bash for this job", "Resolve without allowing"):
         expect(body.get_by_role("button", name=name, exact=True)).to_be_enabled()
-    shoot(request, page, "attention-reader-refusals")
+    shoot(request, page, "batch3-refusals")
+    page.set_viewport_size(VIEWPORTS["narrow"])
+    shoot(request, page, "batch3-refusals-390")
+    dialogs = []
+    def cancel_grant(dialog):
+        dialogs.append(dialog.message)
+        dialog.dismiss()
+    page.once("dialog", cancel_grant)
+    body.get_by_role("button", name="Allow all Bash for this job", exact=True).click()
+    assert len(dialogs) == 1
+    assert "any Bash command" in dialogs[0]
+    assert sent == []
+    assert server.state.attention.get(item["id"]).state == "open"
+    page.once("dialog", lambda dialog: dialog.accept())
     body.get_by_role("button", name="Allow all Bash for this job", exact=True).click()
     expect(body.locator(".refusal-done")).to_have_text(
         "allowed for job j1: Bash; step 2 continues as step 3; still not allowed: /etc/restoke.conf")
     assert sent == [["Bash"]]
     assert server.state.attention.get(item["id"]).state == "resolved"
-    expect(body.get_by_role("button", name="Dismiss", exact=True)).to_be_disabled()
+    expect(body.get_by_role("button", name="Resolve without allowing", exact=True)).to_be_disabled()
     page.keyboard.press("Escape")
     expect(page.locator("#reader")).to_be_hidden()
     expect(page.locator("#attnPanel")).to_be_visible()   # the reader took that Escape, not the list
@@ -2021,3 +2034,45 @@ def test_a_failed_job_can_still_be_dismissed_from_its_panel(changed_deck: Deck) 
     page.locator('#attnPanel [data-owner="home:e1b5c8"]').click()
     expect(page.locator("#panel")).to_have_class(re.compile("open"))
     assert changed_deck.errors == []
+
+
+def test_audit1_batch3_choices_preserve_draft(changed_deck: Deck, request) -> None:
+    page = changed_deck.page
+    page.route('**/api/decision?*', lambda route: route.fulfill(json={
+        'question': 'Which route?', 'context': 'Route review', 'options': ['Direct', 'Scenic'],
+        'proposal': None}))
+    page.evaluate("""async () => (await import('/js/reader.js')).openAttentionReader({
+        id: 'batch3', kind: 'decision', summary: 'Which route?', source: 'manual',
+        source_reference: 'route-review', context_reference: 'Route review', state: 'open', last_seen: 200})""")
+    answer = page.get_by_label('Your answer', exact=True)
+    expect(answer).to_be_visible()
+    page.get_by_role('radio', name='Direct', exact=True).check()
+    expect(answer).to_have_value('Direct')
+    page.get_by_role('radio', name='Scenic', exact=True).check()
+    expect(answer).to_have_value('Scenic')
+    answer.fill('Take the coast with a stop')
+    page.get_by_role('radio', name='Direct', exact=True).check()
+    expect(answer).to_have_value('Take the coast with a stop')
+    page.get_by_role('radio', name='Scenic', exact=True).check()
+    expect(answer).to_have_value('Take the coast with a stop')
+    expect(page.locator('#rdKind')).to_have_text('QUESTION')
+    expect(page.locator('#rdBody')).to_contain_text('cannot be undone')
+    shoot(request, page, 'batch3-question')
+    page.set_viewport_size(VIEWPORTS['narrow'])
+    shoot(request, page, 'batch3-question-390')
+    page.get_by_role('button', name='Close reader', exact=True).click()
+    page.unroute('**/api/decision?*')
+
+
+def test_audit1_batch3_blocker_names_where_to_act(changed_deck: Deck, request) -> None:
+    page = changed_deck.page
+    page.evaluate("""async () => (await import('/js/reader.js')).openAttentionReader({
+        id: 'batch3-blocker', kind: 'blocker', summary: 'Step failed', source: 'host-stream',
+        context_reference: 'home:j1', state: 'open', last_seen: 200})""")
+    expect(page.locator('#rdBody')).to_contain_text('No answer form is available')
+    expect(page.locator('#rdBody')).to_contain_text('Open job or Open session')
+    expect(page.locator('#rdBody')).to_contain_text('does not restart the job')
+    expect(page.locator('#rdKind')).to_have_text('BLOCKER')
+    shoot(request, page, 'batch3-blocker')
+    page.set_viewport_size(VIEWPORTS['narrow'])
+    shoot(request, page, 'batch3-blocker-390')

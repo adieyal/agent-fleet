@@ -85,7 +85,7 @@ export function openAttentionReader(item) {
   rd.req++;
   rd.key = `attention:${item.id}`;
   rd.source = 'attention';
-  rd.doc = { id: item.id, name: item.summary, kind: 'file', seen: item.last_seen };
+  rd.doc = { id: item.id, name: item.summary, kind: 'file', attentionKind: item.kind, recipient: `${item.source}: ${item.source_reference || item.context_reference}`, seen: item.last_seen };
   const lines = [item.summary, `Source: ${item.source}`, `Context: ${item.context_reference}`,
     `State: ${item.state}`, `Last seen: ${new Date(item.last_seen * 1000).toISOString()}`];
   rd.data = { name: item.summary, markdown: lines.join('\n\n'), html: lines.map(line => `<p>${esc(line)}</p>`).join(''), toc: [] };
@@ -95,6 +95,7 @@ export function openAttentionReader(item) {
   renderReaderBody();
   rdSheet.focus();
   if (item.kind === 'decision' || item.blocked) loadDecision(item.id, rd.req);
+  else if (item.kind === 'blocker') renderBlockerHelp(rdBody.querySelector('.prose'));
 }
 async function loadDecision(id, req) {
   try {
@@ -106,17 +107,26 @@ async function loadDecision(id, req) {
     if (detail.refusals) { renderRefusals(prose, id, detail); return; }
     if (detail.session_question) { renderSessionQuestion(prose, detail.session_question); return; }
     if (detail.blocked) { renderBlocked(prose, id, detail.blocked); return; }
+    if (rd.doc.attentionKind === 'blocker') { renderBlockerHelp(prose); return; }
     prose.innerHTML = `<h2>${esc(detail.question)}</h2><p class="decision-context">${esc(detail.context)}</p>
       ${detail.proposal === null ? '' : `<h3>Proposed change</h3><pre>${esc(detail.proposal.change)}</pre><p>${esc(detail.proposal.reason)}</p>`}
       <form class="decision-answer">
         ${detail.options.length ? `<fieldset><legend>Choices</legend>${detail.options.map(option =>
           `<label><input type="radio" name="choice" value="${esc(option)}"> ${esc(option)}</label>`).join('')}</fieldset>` : ''}
         <label>Your answer<textarea name="answer" rows="4" required></textarea></label>
+        <p class="refusal-note">Answer for ${esc(rd.doc.recipient)}. Submitting records your answer as a decision and resolves this request. This cannot be undone in Fleet; it does not send text to a terminal or start a job.</p>
         <button type="submit">Submit answer</button><p role="alert"></p><p role="status"></p>
       </form>`;
     const form = prose.querySelector('form');
+    let choiceAnswer = null;
+    form.elements.answer.addEventListener('input', () => { choiceAnswer = null; });
     form.addEventListener('change', ev => {
-      if (ev.target.name === 'choice') form.elements.answer.value = ev.target.value;
+      if (ev.target.name !== 'choice') return;
+      const answer = form.elements.answer;
+      if (!answer.value || answer.value === choiceAnswer) {
+        answer.value = ev.target.value;
+        choiceAnswer = ev.target.value;
+      }
     });
     form.addEventListener('submit', async ev => {
       ev.preventDefault();
@@ -129,7 +139,7 @@ async function loadDecision(id, req) {
           body: JSON.stringify({ id, answer: form.elements.answer.value }) });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error);
-        form.querySelector('[role="status"]').textContent = 'Answer recorded';
+        form.querySelector('[role="status"]').textContent = 'Answer recorded; request resolved';
         for (const input of form.querySelectorAll('input, textarea')) input.disabled = true;
       } catch (error) {
         form.querySelector('[role="alert"]').textContent = error.message;
@@ -139,6 +149,10 @@ async function loadDecision(id, req) {
   } catch (error) {
     if (req === rd.req) rdBody.querySelector('.prose').insertAdjacentHTML('beforeend', `<p role="alert">${esc(error.message)}</p>`);
   }
+}
+// Audit 1 batch 3: incomplete blockers still name the place to act.
+function renderBlockerHelp(prose) {
+  prose.insertAdjacentHTML('beforeend', '<p class="refusal-note" role="note">No answer form is available for this blocker. Close this reader and use Open job or Open session in the attention list. Read the job’s step report and logs, then retry or add a continuation with fleet on its host; answer session questions in that session’s terminal. Resolving the attention item does not restart the job.</p>');
 }
 // A question an interactive session asked in its terminal. Fleet cannot type there, so it only shows where to answer.
 function renderSessionQuestion(prose, s) {
@@ -195,17 +209,19 @@ function renderRefusals(prose, id, detail) {
     ${open ? `<div class="refusal-actions">
         <button data-scope="refused"${r.rules && r.rules.length ? '' : ' disabled'}>Allow these for this job</button>
         <button data-scope="bash"${allDenied ? ' disabled' : ''}>Allow all Bash for this job</button>
-        <button data-dismiss>Dismiss</button></div>
-      <p class="refusal-note">${allDenied ? `A deny rule in the host’s Claude settings refuses ${denied.length === 1 ? 'this' : 'these'}; remove it there to let jobs run ${denied.length === 1 ? 'it' : 'them'}, or dismiss.`
+        <button data-dismiss title="Resolve this attention item without granting permissions or starting a step; this cannot be undone in Fleet">Resolve without allowing</button></div>
+      <p class="refusal-note">${allDenied ? `A deny rule in the host’s Claude settings refuses ${denied.length === 1 ? 'this' : 'these'}; remove it there to let jobs run ${denied.length === 1 ? 'it' : 'them'}, or resolve without allowing.`
         : r.rules === null ? 'This worker’s fleetd names no rules, so only all of Bash can be allowed from here.'
         : `Allowing adds the rules to job ${esc(r.job)}; a new step continues step ${r.step + 1} with them.${denied.length ? ' Requests a deny rule refuses stay refused.' : ''}`}</p>`
       : `<p role="status">${esc(r.resolution)}</p>`}
+    ${open ? `<p class="refusal-note">Allow all Bash grants job ${esc(r.job)} on ${esc(r.host)} permission to run any Bash command in future steps, subject to host deny rules, and starts a continuation. Fleet cannot undo the grant or commands already run. Resolve without allowing closes this item permanently without changing permissions or restarting the job.</p>` : ''}
     <p role="alert"></p><p role="status" class="refusal-done"></p>
     <ol class="refusals">${r.requests.map(q => `<li><code><b>${esc(q.tool)}</b> ${esc(q.detail)}</code>
       <small>${q.description ? `${esc(q.description)} · ` : ''}${covers(q)}</small></li>`).join('')}</ol>`;
   prose.addEventListener('click', async ev => {
     const b = ev.target.closest('[data-scope],[data-dismiss]');
     if (!b || b.disabled) return;
+    if (b.dataset.scope === 'bash' && !window.confirm(`Allow job ${r.job} on ${r.host} to run any Bash command in future steps and start a continuation? Host deny rules still apply. Fleet cannot undo the grant or commands already run.`)) return;
     const buttons = prose.querySelectorAll('.refusal-actions button');
     for (const x of buttons) x.disabled = true;
     prose.querySelector('[role="alert"]').textContent = '';
@@ -289,7 +305,7 @@ async function fetchJson(url) {
 function renderReaderHead() {
   const doc = rd.doc, d = rd.data || {}, kind = kindOf(doc);
   const kindEl = document.getElementById('rdKind');
-  kindEl.className = 'rd-kind ' + kind; kindEl.textContent = DOC_KIND[kind].label;
+  kindEl.className = 'rd-kind ' + kind; kindEl.textContent = rd.source === 'attention' ? (doc.attentionKind === 'decision' ? 'QUESTION' : doc.attentionKind === 'blocker' ? 'BLOCKER' : 'ATTENTION') : DOC_KIND[kind].label;
   document.getElementById('rdTitle').textContent = rd.source === 'library' ? (d.title || doc.title || d.name || doc.name) : (d.name || doc.name);
   const step = d.step ?? doc.step;
   document.getElementById('rdMeta').innerHTML = [
