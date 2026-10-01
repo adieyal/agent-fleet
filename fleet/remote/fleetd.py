@@ -785,8 +785,21 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
     return outcome
 
 
+def next_step(job: JsonObject) -> Optional[JsonObject]:
+    """The step the runner starts next: none while a step waits for its answer, else a step answering a blocked
+    one before the rest, else the first pending step. Steps keep their indices, which name their files."""
+    steps = job["steps"]
+    if any(step["status"] == "blocked" and step.get("answered_by") is None for step in steps):
+        return None
+    answering = {step["answered_by"] for step in steps if step.get("answered_by") is not None}
+    answering |= {index for added in job.get("keyed_additions", []) if added.get("answers") is not None
+                  for index in added["steps"]}
+    pending = [step for step in steps if step["status"] == "pending"]
+    return next((step for step in pending if step["index"] in answering), pending[0] if pending else None)
+
+
 def run_job(job_id: str) -> None:
-    """Runner loop: executes pending steps in order until none remain."""
+    """Runner loop: executes pending steps, answers first, until none remain or a step waits for an answer."""
     with locked_job(job_id) as job:
         if runner_alive(job) and job.get("runner_pid") != os.getpid():
             return
@@ -797,7 +810,7 @@ def run_job(job_id: str) -> None:
             with locked_job(job_id) as job:
                 if job.get("cancelled"):
                     break
-                step = next((candidate for candidate in job["steps"] if candidate["status"] == "pending"), None)
+                step = next_step(job)
                 if step is None:
                     break
                 step["status"] = "running"
@@ -817,7 +830,9 @@ def run_job(job_id: str) -> None:
                     live_step["reason"] = outcome["reason"]
                 (JOBS_DIRECTORY / job_id / f"result-{step['index']}.md").write_text(outcome.get("text") or outcome["summary"])
                 job["agent_pid"] = None
-                stop = live_step["status"] != "done" and job.get("stop_on_failure", True)
+                # A blocked step holds the job whatever stop_on_failure says: the rest waits for the answer.
+                stop = live_step["status"] == "blocked" or (live_step["status"] != "done"
+                                                            and job.get("stop_on_failure", True))
             append_event(job_id, {"kind": "step", "step": step["index"], "status": live_step["status"],
                                   "summary": outcome["summary"]})
             if stop:
@@ -2070,6 +2085,10 @@ def command_deliver(arguments: argparse.Namespace) -> None:
                     fail("job is cancelled")
                 step = make_step(len(job["steps"]), answer, "Answer")
                 step["delivery_key"] = arguments.key
+                # The job holds on a step waiting for its answer; a delivered reply is that answer.
+                for waiting in job["steps"]:
+                    if waiting["status"] == "blocked" and waiting.get("answered_by") is None:
+                        waiting["answered_by"] = step["index"]
                 job["steps"].append(step)
                 write_briefs(arguments.job, [step])
             pending = step["status"] == "pending"

@@ -54,12 +54,73 @@ def test_a_blocked_step_records_blocked_and_its_reason_and_stops_the_job(jobs, m
     assert {"kind": "job", "status": "blocked"}.items() <= events[-1].items()
 
 
-def test_without_stop_on_failure_a_blocked_step_lets_the_rest_run(jobs, monkeypatch):
+def test_without_stop_on_failure_a_blocked_step_still_holds_the_job(jobs, monkeypatch):
     jobs(["first", "second"], stop_on_failure=False)
     job = run_with_replies(monkeypatch, [claude_result("FLEET_STATUS: blocked"), claude_result("FLEET_STATUS: done")])
-    assert [step["status"] for step in job["steps"]] == ["blocked", "done"]
+    assert [step["status"] for step in job["steps"]] == ["blocked", "pending"]
     assert "reason" not in job["steps"][0]
     assert fleetd.derive_status(job) == "blocked"
+
+
+def run_recording_order(monkeypatch):
+    """Run the job with a fake agent that finishes every step; returns the step indices in the order they ran."""
+    order = []
+
+    def agent(command, **kwargs):
+        order.append(next(step["index"] for step in fleetd.read_job("job")["steps"] if step["status"] == "running"))
+        return SimpleNamespace(pid=123, stdout=StringIO(claude_result("FLEET_STATUS: done")), wait=lambda: 0)
+    monkeypatch.setattr(fleetd.subprocess, "Popen", agent)
+    fleetd.run_job("job")
+    return order
+
+
+def test_a_new_runner_starts_nothing_while_a_step_waits_for_its_answer(jobs, monkeypatch, tmp_path):
+    job = jobs(["first", "second"])
+    job["steps"][0]["status"] = "blocked"
+    (fleetd.JOBS_DIRECTORY / "job" / "job.json").write_text(json.dumps(job))
+    steps_file = tmp_path / "steps.json"
+    steps_file.write_text(json.dumps([{"prompt": "third"}]))
+    fleetd.command_add(argparse.Namespace(job="job", steps_file=str(steps_file), retry=False, hold=True,
+                                          key=None, answers=None, schema_version=None))   # an unkeyed add appends
+    assert run_recording_order(monkeypatch) == []
+    job = fleetd.read_job("job")
+    assert [step["status"] for step in job["steps"]] == ["blocked", "pending", "pending"]
+    assert fleetd.derive_status(job) == "blocked"
+
+
+def test_the_answer_runs_before_the_steps_queued_behind_the_blocked_one(jobs, monkeypatch, tmp_path):
+    jobs(["first", "second", "third"])
+    run_with_replies(monkeypatch, [claude_result("Which one?\n\nFLEET_STATUS: blocked — needs a decision")])
+    answer(tmp_path)
+    assert run_recording_order(monkeypatch) == [3, 1, 2]
+    job = fleetd.read_job("job")
+    assert [step["index"] for step in job["steps"]] == [0, 1, 2, 3]   # nothing renumbered
+    assert [step["status"] for step in job["steps"]] == ["blocked", "done", "done", "done"]
+    assert fleetd.derive_status(job) == "done"
+
+
+def test_a_blocked_job_can_be_cancelled(jobs, monkeypatch, tmp_path, capsys):
+    jobs(["first", "second"])
+    run_with_replies(monkeypatch, [claude_result("FLEET_STATUS: blocked — needs a decision")])
+    fleetd.command_cancel(argparse.Namespace(job="job", all_steps=True))
+    job = fleetd.read_job("job")
+    assert [step["status"] for step in job["steps"]] == ["blocked", "cancelled"]
+    assert fleetd.derive_status(job) == "cancelled"
+    answer(tmp_path)   # an answer reopens the job and runs only itself
+    assert run_recording_order(monkeypatch) == [2]
+    assert fleetd.derive_status(fleetd.read_job("job")) == "done"
+
+
+def test_a_delivered_reply_answers_the_waiting_step(jobs, monkeypatch, capsys):
+    job = jobs(["first", "second"], session_id="s", cancelled=False)
+    job["steps"][0]["status"] = "blocked"
+    (fleetd.JOBS_DIRECTORY / "job" / "job.json").write_text(json.dumps(job))
+    monkeypatch.setattr(fleetd.sys, "stdin", StringIO("Use the second."))
+    monkeypatch.setattr(fleetd, "launch_runner", lambda job_id: None)
+    fleetd.command_deliver(argparse.Namespace(job="job", key="decision", schema_version=1))
+    job = fleetd.read_job("job")
+    assert job["steps"][0]["answered_by"] == 2
+    assert run_recording_order(monkeypatch) == [2, 1]
 
 
 @pytest.mark.parametrize("reply, status", [
