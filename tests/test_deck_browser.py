@@ -2040,9 +2040,12 @@ def test_previous_and_next_step_through_open_attention_items(changed_deck: Deck,
     model = next(row for row in document["attention"] if row["project"] == "restoke")
     document["attention"] = [row for row in document["attention"] if row["state"] != "resolved"] + [
         {**model, "id": f"step{index}", "summary": f"Question {index}", "state": "open",
-         "last_seen": 1890000000 + index, "kind": "alert"} for index in range(3)]
+         "last_seen": 1890000000 + index, "kind": "decision"} for index in range(3)]
     document["attention_display"] = attention_display(document["attention"], document["building"], document["projects"])
     page.evaluate("doc => fleetDeck.apply(doc)", document)
+    # each decision's detail, as the server would answer it
+    page.route("**/api/decision?**", lambda route: route.fulfill(json={
+        "question": "Which way?", "context": "", "proposal": None, "options": [], "state": "open"}))
     total = len(document["attention"])
     page.locator('.lantern[data-room="restoke"]').dispatch_event("click")
     page.locator('#attnPanel .attn-item[data-id="step2"] [data-context]').first.click()   # the newest
