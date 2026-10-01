@@ -41,7 +41,7 @@ def observe(store, run, statuses, job_status="running"):
 def plan_status(store, project):
     projection = project_status(project, open_work(store), open_attention(store), open_execution(store),
                                 open_library(store), open_decisions(store))
-    room, = bench_rooms(projection)["rooms"]
+    room, = bench_rooms(projection, {})["rooms"]
     return room, [line["status"] for line in room["plan"]]
 
 

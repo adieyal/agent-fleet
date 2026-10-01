@@ -60,11 +60,83 @@ def successors(item: dict) -> list[dict]:
             for relation in item["relations"] if relation["type"] == "superseded-by"]
 
 
-def line_item(item: dict) -> dict[str, Any]:
+def line_item(item: dict, jobs: "Jobs") -> dict[str, Any]:
     return {"id": item["id"], "title": item["title"], "headline": headline(item["goal"]),
             "condition": item["condition"], "status": status(item), "next_step": item["next_step"],
             "plan": item["plan"], "running_since": running_since(item),
-            "last_run": last_run(item), "superseded_by": successors(item), "documents": documents(item)}
+            "last_run": last_run(item), "superseded_by": successors(item), "documents": documents(item),
+            "jobs": jobs.serving(item)}
+
+
+def workspace_reason(summary: dict | None) -> str | None:
+    """Why a job has no workspace, or None when it has one."""
+    if summary is None:
+        return "the host is not reporting this job"
+    if summary.get("workspace") is not None:
+        return None
+    return summary["workspace_reason"] if "workspace_reason" in summary else "not reported by this worker"
+
+
+Live = dict[tuple[str, str], dict]   # fleetd job summaries as the deck last saw them, by (host, job id)
+
+
+class Jobs:
+    """The jobs that served a plan line, joined to what their hosts report: workspace and the step they are on."""
+
+    def __init__(self, project: dict, live: Live) -> None:
+        nodes = [node for root in project["work_items"] for node in descendants(root)]
+        self.titles = {node["id"]: node["title"] for node in nodes}
+        self.runs = {run["id"]: run for node in nodes for run in node["runs"]}
+        self.linked = {run["id"]: node["id"] for node in nodes for run in node["runs"]}
+        self.steps = {entry["run"]: {"index": entry["step"], "count": None,
+                                     "work_item": {"id": node["id"], "title": node["title"]}}
+                      for node in nodes for entry in node["steps"] if entry["status"] == "running"}
+        self.live = live
+
+    def serving(self, item: dict) -> list[dict[str, Any]]:
+        """Every job running for the item or its descendants, then its latest other job; each job once.
+
+        A job counts through its link or through steps that served the item; its status here is this item's view
+        of it: running while it serves the item, else its latest activity's status."""
+        seen: dict[str, list[dict]] = {}
+        for node in descendants(item):
+            for run in node["runs"]:
+                seen.setdefault(run["id"], []).append(run)
+            for entry in node["steps"]:
+                if entry["status"] != "pending":   # a step yet to start has served nothing
+                    seen.setdefault(entry["run"], []).append(entry)
+        views = []
+        for identity, entries in seen.items():
+            latest = max(entries, key=lambda entry: entry.get("start") or "")
+            here = "running" if any(entry["status"] == "running" for entry in entries) else latest["status"]
+            views.append((self.runs[identity], here))
+        running = sorted((pair for pair in views if pair[1] == "running"), key=lambda pair: pair[0].get("start") or "")
+        others = [pair for pair in views if pair[1] != "running"]
+        latest = max(others, key=lambda pair: pair[0].get("start") or "", default=None)
+        return [self.job(run, here, False) for run, here in running] + (
+            [] if latest is None else [self.job(*latest, True)])
+
+    def job(self, run: dict, here: str, past: bool) -> dict[str, Any]:
+        summary = self.live.get((run["host"], run["remote_job_id"]))
+        return {"run": run["id"], "host": run["host"], "job": run["remote_job_id"], "runtime": run["runtime"],
+                "status": here, "job_status": run["status"], "past": past, "start": run["start"], "end": run["end"],
+                "step": self.step(run, summary),
+                "workspace": None if summary is None else summary.get("workspace"),
+                "workspace_reason": workspace_reason(summary)}
+
+    def step(self, run: dict, summary: dict | None) -> dict[str, Any] | None:
+        """The step the job is on (running, else the last one started) with the step count and the work it serves;
+        without the host's report only a running step that names its own item is known, and the count is not."""
+        if summary is None:
+            return self.steps.get(run["id"])
+        steps = summary["steps"]
+        on = next((step for step in steps if step["status"] == "running"), None) or next(
+            (step for step in reversed(steps) if step["status"] != "pending"), None)
+        if on is None:
+            return None
+        served = on.get("work_item") or self.linked[run["id"]]
+        return {"index": on["index"], "count": len(steps),
+                "work_item": {"id": served, "title": self.titles.get(served)}}
 
 
 READABLE = ("report", "brief", "outbox", "context")
@@ -116,11 +188,11 @@ def upcoming(item: dict) -> dict[str, Any]:
     return {"id": item["id"], "title": item["title"], "next_step": item["next_step"]}
 
 
-def workstream(stream: dict, milestones: list[dict]) -> dict[str, Any]:
+def workstream(stream: dict, milestones: list[dict], jobs: Jobs) -> dict[str, Any]:
     pending = [item for item in milestones if outstanding(item)]
     return {"id": stream["id"], "title": stream["title"], "milestones": milestone_count(milestones),
             "next": upcoming(pending[0]) if pending else None,
-            "plan": [line_item(item) for item in milestones]}
+            "plan": [line_item(item, jobs) for item in milestones]}
 
 
 def agents(scope: list[dict]) -> list[dict[str, Any]]:
@@ -141,7 +213,7 @@ def agents(scope: list[dict]) -> list[dict[str, Any]]:
     return list(placed.values())
 
 
-def epic_room(epic: dict, parent: dict | None, depth: int) -> dict[str, Any]:
+def epic_room(epic: dict, parent: dict | None, depth: int, jobs: Jobs) -> dict[str, Any]:
     scope = descendants(epic)
     direct, streams = milestone_groups(epic)
     milestones = direct + [item for _, own in streams for item in own]
@@ -151,9 +223,9 @@ def epic_room(epic: dict, parent: dict | None, depth: int) -> dict[str, Any]:
         "parent": None if parent is None else {"id": parent["id"], "title": parent["title"]},
         "goal": epic["goal"], "headline": headline(epic["goal"]),
         "criteria": epic["criteria"], "progress": epic["progress"],
-        "plan": [line_item(item) for item in direct],
-        "workstreams": [workstream(stream, own) for stream, own in streams],
-        "tasks": [line_item(child) for child in epic["children"] if child["kind"] == "task"],
+        "plan": [line_item(item, jobs) for item in direct],
+        "workstreams": [workstream(stream, own, jobs) for stream, own in streams],
+        "tasks": [line_item(child, jobs) for child in epic["children"] if child["kind"] == "task"],
         "milestones": milestone_count(milestones),
         "agents": agents(scope),
         "upcoming": [upcoming(item) for item in milestones if outstanding(item)][:UPCOMING],
@@ -167,12 +239,13 @@ def epic_room(epic: dict, parent: dict | None, depth: int) -> dict[str, Any]:
     }
 
 
-def bench_rooms(project: dict) -> dict:
-    rooms = []
+def bench_rooms(project: dict, live: Live) -> dict:
+    """The project's epic rooms; `live` holds the job summaries hosts report, joined onto each plan line's jobs."""
+    rooms, jobs = [], Jobs(project, live)
 
     def visit(node: dict, parent: dict | None, depth: int) -> None:
         if node["kind"] == "epic":
-            rooms.append(epic_room(node, parent, depth))
+            rooms.append(epic_room(node, parent, depth, jobs))
             parent, depth = node, depth + 1
         for child in node["children"]:
             visit(child, parent, depth)
