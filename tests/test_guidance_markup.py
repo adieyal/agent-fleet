@@ -28,6 +28,7 @@ DECISIONS = dict(charter=True, decisions=[
 
 
 def render(tmp_path: Path, script: str) -> dict:
+    (tmp_path / "package.json").write_text('{"type":"module"}\n')
     (tmp_path / "guidance.js").write_text((JS / "guidance.js").read_text())
     escape = re.search(r"^export function esc\(.*$", (JS / "util.js").read_text(), re.MULTILINE)[0]
     (tmp_path / "util.js").write_text(escape + "\n")

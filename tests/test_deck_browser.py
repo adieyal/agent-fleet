@@ -1448,7 +1448,7 @@ def test_the_switch_sends_the_crew_away_and_brings_it_back(deck: Deck, base_url:
     expect(lantern).to_have_attribute("data-count", "2")
     lantern.dispatch_event("click")
     page.locator(f'#attnPanel [data-owner="{ASKING}"]').click()
-    expect(page.locator("#panelHead .chip.sess")).to_contain_text("waiting for you")
+    expect(page.locator("#panelHead .chip.sess")).to_have_text("live · idle")
     page.locator("#panel #close").click()
     page.keyboard.press("Escape")
     assert {name: (room["x"], room["y"], room["screen"]) for name, room in rooms_by_name(page).items()} == before
@@ -2233,4 +2233,124 @@ def test_batch12_idle_stale_and_control_titles(changed_deck: Deck, base_url: str
     shoot(request, page, f'batch12-{viewport}-running')
     page.keyboard.press('Escape')
     page.evaluate('doc => fleetDeck.apply(doc)', session_state(base_url, 0))
+    assert changed_deck.errors == []
+
+
+def test_p8_keyboard_help_preserves_context_and_focus(deck: Deck, request: pytest.FixtureRequest) -> None:
+    from pathlib import Path
+    page = deck.page
+    page.locator('#viewToggle [data-view="deck"]').click()
+    page.keyboard.press('?')
+    help = page.locator('#keyboardHelp')
+    expect(help).to_be_visible()
+    expect(help).to_contain_text('Zoom in')
+    expect(help.locator('[data-help-escape]')).to_have_text('No open panel to close.')
+    before = page.evaluate("async () => { const {cam}=await import('/js/scene.js'); return {z:cam.z,c:cam.c}; }")
+    page.keyboard.press('+')
+    assert page.evaluate("async () => { const {cam}=await import('/js/scene.js'); return {z:cam.z,c:cam.c}; }") == before
+    page.keyboard.press('Tab')
+    assert page.evaluate("document.activeElement.closest('#keyboardHelp') !== null")
+    if request.config.getoption('--shots'):
+        page.screenshot(path=str(Path(request.config.getoption('--shots')) / f'p8-{page.viewport_size["width"]}-deck.png'))
+    page.keyboard.press('Escape')
+    expect(help).to_be_hidden()
+    page.locator('#viewToggle [data-view="building"]').click()
+    page.locator('#keyboardHelpOpen').click()
+    expect(help).to_contain_text('Building')
+    expect(help).not_to_contain_text('Zoom in')
+    page.keyboard.press('Escape')
+    assert page.evaluate('document.activeElement.id') == 'keyboardHelpOpen'
+    assert page.evaluate('document.body.dataset.view') == 'building'
+    page.locator('#viewToggle [data-view="world"]').click()
+    page.keyboard.press('?')
+    expect(help.locator('[data-help-context]')).to_have_text('World')
+    expect(help.locator('[data-help-escape]')).to_have_text('Frame the whole project floor.')
+    page.keyboard.press('Escape')
+    assert page.evaluate('document.body.dataset.view') == 'world'
+    page.locator('#viewToggle [data-view="deck"]').click()
+    page.locator('#libraryOpen').click()
+    page.keyboard.press('?')
+    expect(help.locator('[data-help-escape]')).to_have_text('Close the project library.')
+    page.keyboard.press('Escape')
+    expect(page.locator('#libraryPane')).to_be_visible()
+    page.keyboard.press('Escape')
+    expect(page.locator('#libraryPane')).to_be_hidden()
+    page.locator('.lantern[data-room="restoke"]').dispatch_event('click')
+    page.keyboard.press('?')
+    expect(help.locator('[data-help-escape]')).to_have_text('Close the attention list.')
+    page.keyboard.press('Escape')
+    expect(page.locator('#attnPanel')).to_be_visible()
+    page.locator('#attnPanel [data-owner="home:e1b5c8"]').click()
+    page.locator('#attnPanel [data-close]').click()
+    page.locator('#panelTabs [data-workarea]').click()
+    page.keyboard.press('?')
+    expect(help.locator('[data-help-escape]')).to_have_text('Close the workarea; keep the job panel open.')
+    page.keyboard.press('Escape')
+    expect(page.locator('#workarea')).to_be_visible()
+    page.keyboard.press('Escape')
+    expect(page.locator('#panel')).to_have_class('open')
+    page.locator('#panelBody [data-tab="summary"] [data-doc="report-0"]').click()
+    page.keyboard.press('?')
+    expect(help).to_contain_text('Previous / next document')
+    expect(help.locator('[data-help-escape]')).to_have_text('Close the document reader.')
+    if request.config.getoption('--shots'):
+        page.screenshot(path=str(Path(request.config.getoption('--shots')) / f'p8-{page.viewport_size["width"]}-reader.png'))
+    page.keyboard.press('Escape')
+    expect(page.locator('#reader')).to_be_visible()
+    page.keyboard.press('Escape')
+    page.locator('#panel #close').click()
+    # A question mark typed into an editor/search field stays text.
+    page.evaluate("() => { const input=document.createElement('input'); input.id='p8-input'; document.body.append(input); input.focus(); }")
+    page.keyboard.type('?')
+    expect(page.locator('#p8-input')).to_have_value('?')
+    expect(help).to_be_hidden()
+    page.locator('#p8-input').evaluate('(el) => el.remove()')
+    assert deck.errors == []
+
+
+def test_p8_help_keeps_unsaved_guidance(changed_deck: Deck, deck_state, monkeypatch, tmp_path,
+                                        request: pytest.FixtureRequest) -> None:
+    store = open_store()
+    monkeypatch.setattr(deck_state, 'store', store)
+    monkeypatch.setattr(deck_state, 'attention', open_attention(store))
+    repo = tmp_path / 'management'
+    repo.mkdir()
+    subprocess.run(['git', '-C', str(repo), 'init'], check=True, capture_output=True, timeout=10)
+    open_records(store).register('restoke-v2', repo, actor='user')
+    page = changed_deck.page
+    page.locator('#viewToggle [data-view="building"]').click()
+    page.evaluate('fleetDeck.advanceTime(0)')
+    page.locator('.plate[data-floor="1"] .enter').click()
+    page.keyboard.press('?')
+    expect(page.locator('[data-help-context]')).to_have_text('Floor')
+    expect(page.locator('[data-help-escape]')).to_have_text('Return to the building.')
+    page.keyboard.press('Escape')
+    assert page.evaluate('document.body.dataset.view') == 'floor'
+    page.locator('[data-open-constitution]').click()
+    page.get_by_role('button', name='Write the constitution').click()
+    text = page.locator('[data-guidance-text]')
+    text.fill('Unsaved P8 draft?')
+    page.locator('#libraryOpen').click()
+    expect(page.locator('#libraryPane')).to_be_visible()
+    page.keyboard.press('?')
+    expect(page.locator('[data-help-context]')).to_have_text('Guidance editor')
+    expect(page.locator('[data-help-escape]')).to_contain_text('Ask before discarding an unsaved edit')
+    shoot(request, page, 'p8-guidance')
+    # If Escape leaks to the editor, Playwright dismisses its confirmation and the hook records it.
+    dialogs = []
+    def dismiss(dialog):
+        dialogs.append(dialog.message)
+        dialog.dismiss()
+    page.on('dialog', dismiss)
+    page.keyboard.press('Escape')
+    expect(text).to_have_value('Unsaved P8 draft?')
+    expect(page.locator('#benchRoute')).to_have_attribute('data-editing', '')
+    assert dialogs == []
+    page.remove_listener('dialog', dismiss)
+    page.locator('.lib-head [data-lib-close]').click()
+    text.fill('')
+    page.get_by_role('button', name='Discard', exact=True).click()
+    page.keyboard.press('Escape')
+    page.keyboard.press('Escape')
+    page.locator('#viewToggle [data-view="deck"]').click()
     assert changed_deck.errors == []
