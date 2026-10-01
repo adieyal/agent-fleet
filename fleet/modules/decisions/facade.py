@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Callable
 from fleet.modules.execution import ExecutionFacade
 
-from .application import answer_question, propose, record_decision, record_guided
+from .application import answer_question, propose, record_decision, record_guided, record_streamed
 from .application.ports import DecisionRepository
 from .domain import Decision, Proposal
 
@@ -28,6 +28,11 @@ class DecisionsFacade:
                       context: str = "", source_run: str | None = None) -> Decision:
         return record_guided(self.repository, self.clock, work_item, actor=actor, question=question,
                              answer=answer, principle=principle, context=context, source_run=source_run)
+
+    def record_streamed(self, identity: str, time: datetime, work_item: str, *, actor: str, question: str,
+                        answer: str, principle: str, context: str, source_run: str | None) -> Decision:
+        return record_streamed(self.repository, identity, time, work_item, actor=actor, question=question,
+                               answer=answer, principle=principle, context=context, source_run=source_run)
 
     def answer(self, identity: str, answer: str, *, actor: str,
                next_step: str | None = None) -> Decision:

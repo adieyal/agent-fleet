@@ -1,8 +1,12 @@
 """Translate fleetd observations into module commands."""
 
+import sys
 from datetime import datetime, timezone
+from typing import Callable
 from urllib.parse import quote
 
+from fleet.modules.attention import AttentionFacade
+from fleet.modules.decisions import DecisionsFacade
 from fleet.modules.execution import ExecutionFacade, JobObservation, Usage
 from fleet.modules.library import LibraryFacade
 
@@ -68,3 +72,37 @@ def observe_runs(execution: ExecutionFacade, library: LibraryFacade, host: dict,
                               title=title, location=location, availability=availability)
             if indexed is not None:
                 indexed[run.id, kind, location] = (work_item, title, availability)
+
+
+def record_decisions(decisions: DecisionsFacade, execution: ExecutionFacade, attention: AttentionFacade,
+                     host: dict, project_of: Callable[[dict], str | None], taken: set | None = None) -> None:
+    """Record the decisions agents held on the host's jobs (fleetd `decision`), once per id, linked to the job's run.
+
+    A decision whose job has no run is recorded without one. One that cannot be recorded (an unknown work item, a
+    run in another project) becomes an alert in its job's project rather than being dropped. `taken`, kept by the
+    caller across calls, remembers the ids already handled so a host's frequent reports do not touch the store.
+    """
+    if not host["ok"]:
+        return
+    for job in host["jobs"].values():
+        for held in job.get("decisions", []):
+            if taken is not None and held["id"] in taken:
+                continue
+            run = execution.find_run(host["name"], job["id"])
+            try:
+                decisions.record_streamed(held["id"], timestamp(held["time"]), held["work_item"],
+                    actor=held["actor"], question=held["question"], answer=held["answer"],
+                    principle=held["principle"], context=held["context"],
+                    source_run=None if run is None else run.id)
+            except (ValueError, LookupError) as error:
+                project = execution.get_action(run.action).project if run is not None else project_of(job)
+                if project is None:
+                    print(f"fleet: decision {held['id']} on {host['name']} job {job['id']} not recorded, and the "
+                          f"job has no project to raise it in: {error}", file=sys.stderr)
+                else:
+                    attention.raise_item(project=project, kind="alert", owner="user", source="decision-stream",
+                        source_reference=held["id"], headline=f"Agent's decision not recorded: {error}",
+                        context_reference=f"job:{host['name']}:{job['id']}", actor="host-stream",
+                        run=None if run is None else run.id)
+            if taken is not None:
+                taken.add(held["id"])

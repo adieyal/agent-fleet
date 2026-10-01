@@ -38,7 +38,7 @@ from fleet.web.guidance import epic_decisions, guidance_view
 from fleet.web.job_store import DocumentKeeper, ProjectDocuments
 from fleet.web.library import ProjectLibrary
 from fleet.web.live import AlreadyHoused, LiveWorkspace
-from fleet.web.ingester import observe_runs
+from fleet.web.ingester import observe_runs, record_decisions
 
 WEB_ROOT = Path(__file__).parent.resolve()
 INDEX_PATH = WEB_ROOT / "index.html"
@@ -117,6 +117,7 @@ class FleetState(LiveWorkspace):
         self.project_labels = project_labels or {}
         self.store = store if store is not None else open_store()
         self.indexed: dict = {}   # library entries as last indexed (see observe_runs)
+        self.taken_decisions: set = set()   # streamed decision ids already handled (see record_decisions)
         self.workspace = workspace if workspace is not None else open_workspace(self.store, actor="web-user")
         self.load_registry = load_registry or self.workspace.registry
         self.registry = self.load_registry()
@@ -125,6 +126,7 @@ class FleetState(LiveWorkspace):
         self.attention = open_attention(self.store)
         self.execution = open_execution(self.store)
         self.run_library = open_library(self.store)
+        self.decisions = open_decisions(self.store)
         self.woken_until = 0.0
         self.changed = threading.Condition()
         self.version = 0
@@ -173,6 +175,8 @@ class FleetState(LiveWorkspace):
             if ingest:
                 host = self.by_host[host_name]
                 observe_runs(self.execution, self.run_library, host, self.indexed)
+                record_decisions(self.decisions, self.execution, self.attention, host,
+                                 lambda job: resolve(self.registry, host_name, job)["project_id"], self.taken_decisions)
                 reconciled = self.attention.observe({**host,
                     "jobs": [resolve(self.registry, host_name, job) for job in host["jobs"].values()],
                     "sessions": [resolve(self.registry, host_name, session) for session in host["sessions"].values()]},

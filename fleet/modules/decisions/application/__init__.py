@@ -35,6 +35,22 @@ def run_guidance(execution, source_run: str | None) -> dict | None:
 def record_guided(repository, clock, work_item: str, *, actor: str, question: str, answer: str,
                   principle: str, context: str, source_run: str | None) -> Decision:
     """A decision an agent made itself under guidance, without an activation."""
+    return insert_guided(repository, str(uuid4()), clock(), work_item, actor=actor, question=question,
+                         answer=answer, principle=principle, context=context, source_run=source_run)
+
+
+def record_streamed(repository, identity: str, time: datetime, work_item: str, *, actor: str, question: str,
+                    answer: str, principle: str, context: str, source_run: str | None) -> Decision:
+    """A guided decision made on another host, under the id and time it was made with: recorded once per id."""
+    try:
+        return repository.get(identity)
+    except LookupError:
+        return insert_guided(repository, identity, time, work_item, actor=actor, question=question,
+                             answer=answer, principle=principle, context=context, source_run=source_run)
+
+
+def insert_guided(repository, identity: str, time: datetime, work_item: str, *, actor: str, question: str,
+                  answer: str, principle: str, context: str, source_run: str | None) -> Decision:
     if not question.strip() or not principle.strip():
         raise ValueError("question and principle are required")
     with repository.transaction() as transaction:
@@ -43,7 +59,7 @@ def record_guided(repository, clock, work_item: str, *, actor: str, question: st
             run = transaction.execution.get_run(source_run)
             if transaction.execution.get_action(run.action).project != project:
                 raise ValueError(f"run {source_run} is not in {project}, the project of {work_item}")
-        decision = Decision(str(uuid4()), None, question, answer, actor, context, (work_item,), clock(),
+        decision = Decision(identity, None, question, answer, actor, context, (work_item,), time,
                             source_run=source_run, principle=principle,
                             guidance=run_guidance(transaction.execution, source_run))
         transaction.insert(decision)
