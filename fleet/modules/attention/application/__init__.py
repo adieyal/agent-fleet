@@ -82,6 +82,17 @@ class Commands:
             repository.save_owner(item, previous.owner, actor)
         return item.effective(now)
 
+    def reopen_for_escalation(self, item_id: str, actor: str) -> AttentionItem:
+        required(actor, "actor")
+        with self.repository.transaction() as repository:
+            previous = repository.get(item_id)
+            if previous.owner != "agent" or previous.state != "resolved":
+                raise ValueError("escalation reopening requires a resolved agent-owned item")
+            item = replace(previous, state="open", snooze_until=None, resolution_details=None,
+                           acknowledged_at=None, resolved_at=None)
+            repository.save(item, previous.state, actor)
+        return item
+
     def change(self, item_id: str, state: str, actor: str, *, until: datetime | None = None,
                details: str | None = None) -> AttentionItem:
         required(actor, "actor")

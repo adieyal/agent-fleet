@@ -22,8 +22,13 @@ class Authoring:
 
     def publish(self, intent: dict, body: str) -> dict:
         root = self.workspace.management_repository(intent['project'])
-        with self.writer.lock(root):
-            return self.commit(root, intent, body)
+        try:
+            with self.writer.lock(root):
+                return self.commit(root, intent, body)
+        except OSError as error:
+            result = dict(intent, state='pending', revision=None, error=str(error))
+            self.repository.save(result)
+            return result
 
     def commit(self, root: str, intent: dict, body: str) -> dict:
         try:
@@ -43,7 +48,8 @@ class Authoring:
         digest = hashlib.sha256(body.encode()).hexdigest()
         with self.writer.lock(root):
             for pending in self.repository.list():
-                if pending['project'] == project and pending['state'] == 'pending':
+                if (pending['project'] == project and pending['state'] == 'pending'
+                        and not pending['path'].startswith('decisions/')):
                     self.recover(pending, root)
             previous = self.repository.by_key(project, key)
             if previous is not None:
@@ -65,10 +71,26 @@ class Authoring:
         revision = self.writer.find(root, intent)
         return self.finish(intent, revision, None if revision is not None else error)
 
-    def reconcile(self) -> None:
+    def reconcile(self, bodies: dict[str, str] | None = None) -> None:
         for intent in self.repository.list():
             if intent['state'] == 'pending':
+                # Decision bodies belong to Decisions. Only its controller-supplied body may
+                # resume publication; an unrelated recovery must not discard the intent.
+                if intent['path'].startswith('decisions/') and (bodies is None or intent['id'] not in bodies):
+                    continue
                 root = self.workspace.management_repository(intent['project'])
                 with self.writer.lock(root):
                     current = self.repository.by_key(intent['project'], intent['key'])
-                    self.recover(current, root)
+                    if current['state'] != 'pending':
+                        continue
+                    if bodies is not None and intent['id'] in bodies:
+                        body = bodies[intent['id']]
+                        if hashlib.sha256(body.encode()).hexdigest() != current['digest']:
+                            raise ValueError('reconciliation body differs from prepared intent')
+                        revision = self.writer.find(root, current)
+                        if revision is not None:
+                            self.finish(current, revision, None)
+                        else:
+                            self.commit(root, current, body)
+                    else:
+                        self.recover(current, root)

@@ -408,3 +408,135 @@ def test_undispatched_activation_cannot_send_or_mutate(triage):
     with pytest.raises(AuthorityRejected, match='source run'):
         ControllerCommands(services.store, new.id).execute('retry', dict(item=attention.id, reason='transient'))
     assert calls == [] and services.store.latest_sequence() == before
+
+
+@pytest.mark.parametrize('stored_run', [False, True])
+def test_readonly_writer_lock_keeps_decision_pending_and_controller_publishes(triage, monkeypatch, stored_run):
+    import errno
+    from contextlib import contextmanager
+    from fleet.infrastructure.git import RepositoryWriter
+    from fleet.projections.history import subject_history
+    from fleet.triage_scheduler import TriageScheduler
+    from fleet.web.server import FleetState
+
+    services, activation, commands, calls, body, _ = triage
+    job = 'legacy'
+    if stored_run:
+        target = services.execution.dispatch(None, project=activation.project, host='carbon', runtime='codex',
+            payload={'cwd': body['cwd']}, actor='user', reason='test', idempotency_key='target').run
+        services.execution.observe('carbon', JobObservation(target.remote_job_id, 'failed', 'codex', None, None, None))
+        job = target.remote_job_id
+    attention = item(triage, job=job)
+    original = RepositoryWriter.lock
+
+    @contextmanager
+    def readonly(*args):
+        raise OSError(errno.EROFS, 'Read-only file system', '.git/fleet-writer.lock')
+        yield
+
+    monkeypatch.setattr(RepositoryWriter, 'lock', readonly)
+    result = commands.execute('retry', dict(item=attention.id, reason='transient'))
+    assert result['message'] == 'recorded; publication pending'
+    assert result['publication'] == 'pending'
+    decision = services.decisions.get(result['decision']['id'])
+    assert decision.attention_item == attention.id
+    intent = next(entry for entry in services.records.intents() if entry['key'] == decision.id)
+    assert intent['state'] == 'pending' and 'Read-only file system' in intent['error']
+    assert services.attention.get(attention.id).state == 'resolved'
+    if stored_run:
+        assert services.execution.get_run(result['run']).status == 'unknown outcome'
+    else:
+        assert len(calls) == 1
+    assert intent in TriageScheduler(services, None, None).status(activation.project)['pending_publications']
+    history = subject_history(services.store, 'decision:' + decision.id)
+    assert any(change['field'] == 'state' and change['after'] == 'pending'
+               for entry in history['entries'] for change in entry['changes'])
+    server = FleetState.__new__(FleetState)
+    server.store = services.store
+    monkeypatch.setattr(TriageScheduler, 'schedule', lambda self: None)
+    server.schedule_triage()  # Still sandboxed: pending intent survives repeated reconciliation.
+    assert next(entry for entry in services.records.intents() if entry['key'] == decision.id)['state'] == 'pending'
+    monkeypatch.setattr(RepositoryWriter, 'lock', original)
+    services.records.write(activation.project, 'notes/example.md', 'unrelated record', key='unrelated', actor='user')
+    services.records.reconcile()
+    assert next(entry for entry in services.records.intents() if entry['key'] == decision.id)['state'] == 'pending'
+    server.schedule_triage()
+    server.schedule_triage()
+    assert json.loads(services.records.read(activation.project, intent['path']))['id'] == decision.id
+    assert next(entry for entry in services.records.intents() if entry['key'] == decision.id)['state'] == 'confirmed'
+    assert len(services.decisions.list()) == 1
+
+
+def test_escalate_reopens_own_partial_retry_and_records_decision(triage):
+    services, activation, commands, _, body, _ = triage
+    target = services.execution.dispatch(None, project=activation.project, host='carbon', runtime='codex',
+        payload={'cwd': body['cwd']}, actor='user', reason='test', idempotency_key='target').run
+    services.execution.observe('carbon', JobObservation(target.remote_job_id, 'failed', 'codex', None, None, None))
+    attention = item(triage, job=target.remote_job_id)
+    retry = commands.execute('retry', dict(item=attention.id, reason='transient'))
+    assert services.attention.get(attention.id).state == 'resolved'
+    before = services.store.latest_sequence()
+    result = commands.execute('escalate', dict(item=attention.id, reason='retry delivery unconfirmed; user must reconcile',
+                                             principle='Nothing is hidden'))
+    assert_decision(triage, result, attention, 'escalate')
+    current = services.attention.get(attention.id)
+    assert current.state == 'open' and current.owner == 'user'
+    assert current.owner_reason == 'retry delivery unconfirmed; user must reconcile'
+    assert current.resolution_details is None
+    assert services.execution.get_run(retry['run']).status == 'unknown outcome'
+    assert any(row['subject'] == 'attention:' + attention.id and row['to'] == 'open'
+               for row in services.store.history_after(before))
+
+
+@pytest.mark.parametrize('revocation', ['take', 'other-activation'])
+def test_partial_retry_escalation_respects_revoked_authority(triage, revocation):
+    services, activation, commands, _, body, _ = triage
+    attention = item(triage)
+    if revocation == 'take':
+        def take_during_send(request):
+            services.attention.take(attention.id, actor='user')
+            return 'retry submitted but unconfirmed'
+        services.execution.step = take_during_send
+    commands.execute('retry', dict(item=attention.id, reason='transient'))
+    if revocation == 'other-activation':
+        other = services.authority.activate(project=activation.project, actor='triage:other', role='triage',
+                                             mandate_path=TRIAGE_PATH)
+        services.execution.dispatch(None, project=activation.project, host='carbon', runtime='codex',
+            payload={'cwd': body['cwd']}, actor=other.actor, activation=other.id,
+            reason='Triage', idempotency_key=other.id)
+        commands = ControllerCommands(services.store, other.id)
+    before = services.store.latest_sequence()
+    with pytest.raises(AuthorityRejected):
+        commands.execute('escalate', dict(item=attention.id, reason='unconfirmed action', principle='mandate'))
+    assert services.store.latest_sequence() == before
+
+
+@pytest.mark.parametrize('command', ['grant', 'add_step'])
+def test_escalate_reopens_other_own_action_requests(triage, command):
+    services, _, commands, *_ = triage
+    attention = refusal(triage) if command == 'grant' else item(triage)
+    payload = dict(scope='refused') if command == 'grant' else dict(prompt='fix', title='fix')
+    commands.execute(command, dict(item=attention.id, **payload))
+    assert services.attention.get(attention.id).state == 'resolved'
+    result = commands.execute('escalate', dict(item=attention.id, reason='remote outcome unconfirmed',
+                                             principle='Visible escalation'))
+    assert_decision(triage, result, attention, 'escalate')
+    assert services.attention.get(attention.id).state == 'open'
+    assert services.attention.get(attention.id).owner == 'user'
+
+
+def test_reopened_escalation_insert_failure_preserves_prior_resolution(triage, monkeypatch):
+    services, _, commands, *_ = triage
+    attention = item(triage)
+    commands.execute('retry', dict(item=attention.id, reason='transient'))
+    previous = services.attention.get(attention.id)
+    before = services.store.latest_sequence()
+
+    def fail(*args):
+        raise RuntimeError('decision insert failed')
+
+    monkeypatch.setattr(type(services.decisions.repository), 'insert', fail)
+    with pytest.raises(RuntimeError, match='insert failed'):
+        commands.execute('escalate', dict(item=attention.id, reason='unconfirmed', principle='mandate'))
+    assert services.attention.get(attention.id) == previous
+    assert services.store.latest_sequence() == before

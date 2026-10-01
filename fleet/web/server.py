@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from dataclasses import asdict
 import pickle
 import os
@@ -189,6 +190,13 @@ class FleetState(LiveWorkspace):
 
     def schedule_triage(self) -> None:
         services = facades(self.store)
+        bodies = {intent['id']: json.dumps(asdict(services.decisions.get(intent['key'])), default=str)
+                  for intent in services.records.intents()
+                  if intent['state'] == 'pending' and intent['path'] == f"decisions/{intent['key']}.json"}
+        try:
+            services.records.reconcile(bodies)
+        except OSError:
+            logging.getLogger(__name__).exception('Records publication remains pending')
         TriageScheduler(services, lambda run, **options: deliver_triage(services, run, **options),
                         transport.host_by_name).schedule()
 

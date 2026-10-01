@@ -84,6 +84,10 @@ class AttentionFacade:
     def reopen(self, item_id: str, *, actor: str) -> AttentionItem:
         return self.commands.change(item_id, "open", actor)
 
+    def reopen_for_escalation(self, item_id: str, *, actor: str) -> AttentionItem:
+        """Reopen a resolved agent item after Decisions authorized escalation of its partial action."""
+        return self.commands.reopen_for_escalation(item_id, actor)
+
     def reconcile(self, source: str, references: set[str], *, actor: str,
                   subjects: set[str] | None = None, present_jobs: set[str] | None = None,
                   deleted_jobs: set[str] = frozenset()) -> bool:

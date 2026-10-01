@@ -16,10 +16,11 @@ from tests.integration.test_triage_commands import triage, item
 
 def scheduler(triage):
     services, *_, source = triage
+    services.workspace.edit_registry(lambda registry: registry.link(triage[1].project, 'carbon', 'agent-fleet'))
     finish(services, source)
     calls = []
     return TriageScheduler(services, lambda run, **kw: calls.append((run.id, kw)),
-                           lambda name: SimpleNamespace(is_local=True)), calls
+                           lambda name: SimpleNamespace(is_local=True, name=name)), calls
 
 
 def finish(services, run, status='done'):
@@ -264,3 +265,14 @@ def test_acknowledged_agent_item_is_still_queued(triage):
     engine, calls = scheduler(triage)
     engine.schedule()
     assert len(calls) == 1 and engine.status(a.project)['queue'] == [a.id]
+
+
+def test_scheduler_uses_linked_host_label(triage):
+    services, *_ = triage
+    item(triage)
+    engine, calls = scheduler(triage)
+    engine.schedule()
+    action = services.execution.get_action(services.execution.get_run(calls[0][0]).action)
+    arguments = action.payload['arguments']
+    assert arguments[arguments.index('--project') + 1] == 'agent-fleet'
+    assert action.project == triage[1].project

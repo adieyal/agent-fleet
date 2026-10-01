@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Callable, TYPE_CHECKING
 from uuid import uuid4
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import json
 
 from fleet.modules.authority import AuthorityRejected
@@ -15,6 +15,25 @@ from ..domain import Decision, Proposal, selected_answer
 if TYPE_CHECKING:
     from fleet.modules.authority import AuthorityFacade
     from fleet.modules.records import RecordsFacade
+
+
+def escalation_snapshot(repository: DecisionRepository, item: AttentionItem, activation: str) -> AttentionItem:
+    """Permit reopening only the resolution produced by this activation's recorded action."""
+    if item.owner != 'agent' or item.state != 'resolved':
+        return item
+    identity = (item.resolution_details or '').rpartition('; decision:')[2]
+    if not identity:
+        return item
+    try:
+        previous = repository.get(identity)
+    except LookupError:
+        return item
+    if previous.attention_item != item.id or previous.activation != activation:
+        return item
+    evidence = json.loads(previous.context)
+    if evidence.get('command') not in ('retry', 'add_step', 'grant'):
+        return item
+    return replace(item, state='open')
 
 
 def record_attention(repository: DecisionRepository, clock: Callable[[], datetime], records: 'RecordsFacade',
@@ -33,7 +52,8 @@ def record_attention(repository: DecisionRepository, clock: Callable[[], datetim
         raise ValueError('unknown triage attention effect')
     with repository.transaction() as transaction:
         item = transaction.attention.get(item_id)
-        authorized_item = item if completed_item is None else completed_item
+        authorized_item = (escalation_snapshot(transaction, item, activation) if command == 'escalate'
+                           else item if completed_item is None else completed_item)
         if (authorized_item.id, authorized_item.project) != (item.id, item.project):
             raise ValueError('completed effect does not belong to this attention item')
         authorization = authority.require_triage(command, authorized_item, actor=actor, activation=activation)
@@ -80,6 +100,8 @@ def record_attention(repository: DecisionRepository, clock: Callable[[], datetim
                             clock(), activation, authorization.mandate_version, source_run, principle,
                             run_guidance(transaction.execution, source_run))
         transaction.insert(decision)
+        if command == 'escalate' and item.state == 'resolved' and authorized_item.state == 'open':
+            item = transaction.attention.reopen_for_escalation(item.id, actor=actor)
         if item.owner == 'agent' and item.state != 'resolved' and item.refusals == authorized_item.refusals:
             if effect == 'resolve':
                 transaction.attention.resolve(item.id, details=f'{answer}; decision:{decision.id}', actor=actor)

@@ -87,6 +87,16 @@ class TriageCommands:
             raise AuthorityRejected("a triage run's problems must be escalated to the user")
 
     def execute(self, command: str, payload: dict) -> dict:
+        result = self._execute(command, payload)
+        if 'decision' in result:
+            identity = result['decision']['id']
+            intent = next(intent for intent in self.services.records.intents() if intent['key'] == identity)
+            result['publication'] = intent['state']
+            result['message'] = ('recorded; publication pending' if intent['state'] == 'pending'
+                                 else 'recorded; publication ' + intent['state'])
+        return result
+
+    def _execute(self, command: str, payload: dict) -> dict:
         if not isinstance(payload, dict):
             raise ValueError('control payload must be a JSON object')
         if command == 'state':
@@ -108,7 +118,9 @@ class TriageCommands:
             if not isinstance(value, str) or (name != 'context' and not value.strip()):
                 raise ValueError(f'{name} must be nonempty text')
         item = self.services.attention.get(payload['item'])
-        self.services.authority.require_triage(AUTHORITY.get(command, command), item,
+        authorized_item = (self.services.decisions.escalation_snapshot(item, self.activation.id)
+                           if command == 'escalate' else item)
+        self.services.authority.require_triage(AUTHORITY.get(command, command), authorized_item,
                                                actor=self.activation.actor, activation=self.activation.id)
         self._source_run()  # Reject undelivered/malformed activations before any external effect.
         if command not in ('escalate', 'record_decision'):

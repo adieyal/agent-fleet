@@ -36,7 +36,9 @@ class TriageScheduler:
                     queue=[i.id for i in self.queue(self.services, project)],
                     live_run=None if run is None else dict(id=run, status=self.services.execution.get_run(run).status),
                     budget_left=None if mandate is None else max(0, mandate.limits['runs_per_day'] - used),
-                    delivery_error=state.get('error'))
+                    delivery_error=state.get('error'),
+                    pending_publications=[intent for intent in self.services.records.intents()
+                                          if intent['project'] == project and intent['state'] == 'pending'])
 
     def schedule(self) -> None:
         projects = {i.project for i in self.services.attention.list(owner='agent') if i.state != 'resolved'}
@@ -153,7 +155,8 @@ class TriageScheduler:
                 raise ValueError('triage must run on the controller machine')
             activation = services.authority.activate(project=project, actor='triage',
                 role='triage', mandate_path=TRIAGE_PATH)
-            arguments = ['create', '--project', project, '--description', f'Triage: handling {len(items)} items',
+            label = services.workspace.host_label(project, mandate.host)
+            arguments = ['create', '--project', label, '--description', f'Triage: handling {len(items)} items',
                          '--agent', mandate.runtime, '--cwd', mandate.cwd, '--permission', mandate.permission,
                          '--steps-file', '/dev/stdin', '--hold',
                          '--add-dir', str(services.store.path.parent),

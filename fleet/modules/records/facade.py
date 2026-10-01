@@ -57,8 +57,8 @@ class RecordsFacade:
     def publish(self, intent: dict, body: str) -> dict:
         return self.authoring.publish(intent, body)
 
-    def reconcile(self) -> None:
-        self.authoring.reconcile()
+    def reconcile(self, bodies: dict[str, str] | None = None) -> None:
+        self.authoring.reconcile(bodies)
 
     def intents(self) -> list[dict]:
         return self.repository.list()

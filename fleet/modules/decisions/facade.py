@@ -10,7 +10,7 @@ from typing import Callable
 from fleet.modules.execution import ExecutionFacade
 from fleet.modules.attention import AttentionItem
 
-from .application import answer_question, propose, record_attention, record_decision, record_guided, record_streamed
+from .application import escalation_snapshot, answer_question, propose, record_attention, record_decision, record_guided, record_streamed
 from .application.ports import DecisionRepository
 from .domain import Decision, Proposal
 
@@ -32,6 +32,9 @@ class DecisionsFacade:
                       context: str = "", source_run: str | None = None) -> Decision:
         return record_guided(self.repository, self.clock, work_item, actor=actor, question=question,
                              answer=answer, principle=principle, context=context, source_run=source_run)
+
+    def escalation_snapshot(self, item: AttentionItem, activation: str) -> AttentionItem:
+        return escalation_snapshot(self.repository, item, activation)
 
     def record_attention(self, item_id: str, *, actor: str, activation: str, source_run: str, command: str,
                          answer: str, principle: str, context: str, question: str | None = None,

@@ -134,12 +134,13 @@ def subject_history(store: Store, reference: str, since: datetime | None = None)
                                 "after": parse(row["to"])}]
             entries.append(entry(row, kind, identity, change_list))
     else:
-        parts = WORK_PARTS if kind == "work item" else ()
+        parts = WORK_PARTS if kind == "work item" else ("records:",) if kind == "decision" else ()
         for row in store.history(subjects=(subject,), prefixes=parts, since=since):
             before, after = parse(row["from"]), parse(row["to"])
             if row["subject"] != subject:
                 record = after if isinstance(after, dict) else before if isinstance(before, dict) else {}
-                if identity not in (record.get("work_item"), record.get("from_item"), record.get("to_item")):
+                if identity not in (record.get("work_item"), record.get("from_item"), record.get("to_item"),
+                                    record.get("key") if kind == "decision" else None):
                     continue
             entries.append(entry(row, kind_of(row["subject"]), row["subject"].rpartition(":")[2],
                                  changes(before, after)))
