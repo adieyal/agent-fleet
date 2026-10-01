@@ -39,6 +39,8 @@ def observe_runs(execution: ExecutionFacade, library: LibraryFacade, host: dict,
         return
     actions = {action.id: action for action in execution.actions()}
     for job in host["jobs"].values():
+        if job.get("stale"):
+            continue
         run = execution.record_observed(host["name"], job, project_of(job) if project_of else None)
         actions[run.action] = execution.get_action(run.action)
         starts = [step["started_at"] for step in job["steps"] if step["started_at"] is not None]
@@ -77,6 +79,14 @@ def observe_runs(execution: ExecutionFacade, library: LibraryFacade, host: dict,
                               title=title, location=location, availability=availability)
             if indexed is not None:
                 indexed[run.id, kind, location] = (work_item, title, availability)
+
+
+def observe_sessions(execution: ExecutionFacade, host: dict, project_of: Callable[[dict], str | None]) -> None:
+    if not host["ok"]:
+        return
+    for session in host["sessions"].values():
+        if not session.get("stale"):
+            execution.observe_session(host["name"], session, project_of(session))
 
 
 def record_decisions(decisions: DecisionsFacade, execution: ExecutionFacade, attention: AttentionFacade,

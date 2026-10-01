@@ -48,6 +48,8 @@ def empty_store(tmp_path_factory: pytest.TempPathFactory) -> Path:
 def isolated_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, empty_store: Path) -> None:
     # Reconnecting test decks must never read jobs from the user's configured workers.
     monkeypatch.setattr("fleet.transport.catch_up_jobs", lambda host: [])
+    monkeypatch.setattr("fleet.transport.catch_up_sessions", lambda host, since: [])
+    monkeypatch.setattr("fleet.remote.fleetd.SESSION_RECORDS_DIRECTORY", tmp_path / "fleet-home" / "sessions")
 
     def no_worker_documents(*args):
         raise FleetError("test worker document transport is not configured")

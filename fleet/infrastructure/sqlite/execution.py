@@ -146,6 +146,26 @@ class ExecutionRepository(Repository):
         return [{"index": row["idx"], **json.loads(row["record"])}
                 for row in self.rows("SELECT idx, record FROM execution_step WHERE run = ? ORDER BY idx", (run,))]
 
+    def hosts(self) -> list[dict]:
+        return [json.loads(row["record"]) for row in self.rows("SELECT record FROM execution_host ORDER BY name")]
+
+    def save_host(self, record: dict) -> None:
+        if self.unit is None:
+            raise RuntimeError("execution writes require a transaction")
+        rows = self.rows("SELECT record FROM execution_host WHERE name = ?", (record["name"],))
+        previous = json.loads(rows[0]["record"]) if rows else None
+        if previous == record:
+            return
+        statement = "INSERT INTO execution_host (name, record) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET record = excluded.record"
+        parameters = (record["name"], dumps(record))
+        if previous is None or previous["reachable"] != record["reachable"]:
+            self.unit.connection.execute(statement, parameters)
+            facts = lambda value: {key: item for key, item in value.items() if key != "last_observed"}
+            self.unit.record_change(f"execution:host:{record['name']}", dumps(facts(previous)) if previous else "",
+                                    dumps(facts(record)), "fleetd")
+        else:
+            self.unit.record_observation(statement, parameters)
+
     def save_step(self, run: str, index: int, record: dict, actor: str) -> None:
         if self.unit is None:
             raise RuntimeError("execution writes require a transaction")

@@ -51,7 +51,7 @@ def start_deck():
 
     def fill_gpu(entry):
         entry["ok"], entry["error"] = True, None
-        entry["sessions"]["s0"] = {"id": "s0", "project": "agent-fleet", "started_at": 0, "cwd": "/src/agent-fleet"}
+        entry["sessions"]["s0"] = {"id": "s0", "project": "agent-fleet", "started_at": 0, "cwd": "/src/agent-fleet", "status": "idle"}
 
     state.update("home", fill_home)
     state.update("gpu", fill_gpu)

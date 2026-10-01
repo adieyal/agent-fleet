@@ -234,7 +234,7 @@ def test_fleet_notify_says_blocked(monkeypatch, capsys):
                "steps": [{"index": 0, "title": "Gather", "status": "running"}]}
     blocked = {**running, "status": "blocked",
                "steps": [{"index": 0, "title": "Gather", "status": "blocked", "result": "no access"}]}
-    reports = [[SimpleNamespace(host=SimpleNamespace(name="h"), jobs=[job])] for job in (running, blocked)]
+    reports = [[SimpleNamespace(host=SimpleNamespace(name="h"), jobs=[job], error=None)] for job in (running, blocked)]
     monkeypatch.setattr(cli, "selected_hosts", lambda arguments: [])
     monkeypatch.setattr(cli.transport, "gather", lambda hosts, arguments: reports.pop(0))
 

@@ -6,6 +6,57 @@ import time
 from fleet.remote import fleetd
 
 
+def test_session_base_survives_restart_and_working_workspace_refreshes(tmp_path, monkeypatch):
+    clock = [100]
+    head = ["a" * 40]
+    calls = []
+    monkeypatch.setattr(fleetd, "now", lambda: clock[0])
+    monkeypatch.setattr(fleetd, "checked_git", lambda *args: head[0])
+    def collect(cwd):
+        calls.append(cwd)
+        return {"head": head[0]}, None
+    monkeypatch.setattr(fleetd, "collect_workspace", collect)
+    transcript = fleetd.Transcript(tmp_path / "session.jsonl", "claude")
+    transcript.cwd = str(tmp_path)
+    first, reason = fleetd.session_workspace(transcript, "working")
+    assert reason is None and first["base"] == "a" * 40
+    head[0] = "b" * 40
+    clock[0] = 129
+    assert fleetd.session_workspace(transcript, "working")[0] == first
+    clock[0] = 130
+    refreshed, _ = fleetd.session_workspace(transcript, "working")
+    assert refreshed["head"] == "b" * 40 and refreshed["base"] == first["base"]
+    restarted = fleetd.Transcript(transcript.path, "claude")
+    restarted.cwd = transcript.cwd
+    assert fleetd.session_workspace(restarted, "idle")[0]["base"] == first["base"]
+    assert len(calls) == 3
+
+
+def test_session_catchup_is_bounded_to_thirty_days(tmp_path, monkeypatch):
+    monkeypatch.setattr(fleetd, "CLAUDE_PROJECTS_DIRECTORY", tmp_path / "projects")
+    monkeypatch.setattr(fleetd, "CODEX_SESSIONS_DIRECTORY", tmp_path / "codex")
+    monkeypatch.setattr(fleetd, "JOBS_DIRECTORY", tmp_path / "jobs")
+    directory = tmp_path / "projects" / "-work"
+    directory.mkdir(parents=True)
+    for identity, days in (("recent", 29), ("old", 31)):
+        transcript = directory / f"{identity}.jsonl"
+        transcript.write_text(json.dumps({"type": "user", "cwd": "/work", "timestamp": stamp(days * 86400),
+                                         "message": {"role": "user", "content": "Plan"}}) + "\n")
+        at = time.time() - days * 86400
+        os.utime(transcript, (at, at))
+    sessions = fleetd.SessionTracker(since=time.time() - 60 * 86400).scan()
+    assert set(sessions) == {"recent"} and sessions["recent"]["status"] == "stopped"
+
+
+def test_session_without_commits_records_why_base_is_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr(fleetd, "collect_workspace", lambda cwd: ({"head": None}, None))
+    transcript = fleetd.Transcript(tmp_path / "unborn.jsonl", "claude")
+    transcript.cwd = str(tmp_path)
+    workspace, reason = fleetd.session_workspace(transcript, "working")
+    assert reason is None and workspace["base"] is None
+    assert workspace["base_reason"] == "repository has no commits"
+
+
 def stamp(seconds_ago: float) -> str:
     moment = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=seconds_ago)
     return moment.isoformat().replace("+00:00", "Z")
@@ -25,8 +76,9 @@ def test_a_session_is_as_old_as_its_last_record_not_its_file(tmp_path, monkeypat
     ]
     transcript.write_text("".join(json.dumps(record) + "\n" for record in records))
     os.utime(transcript)  # touched just now without a new record, as happens to open sessions
-    [session] = fleetd.SessionTracker().scan().values()
-    assert session["status"] == "idle"
+    assert fleetd.SessionTracker().scan() == {}
+    [session] = fleetd.SessionTracker(since=time.time() - 4 * 3600).scan().values()
+    assert session["status"] == "stopped"
     assert time.time() - session["updated_at"] > 3 * 3600 - 120
 
 

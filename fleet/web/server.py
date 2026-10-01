@@ -15,6 +15,7 @@ import subprocess
 import threading
 import sys
 import time
+from datetime import datetime, timezone, timedelta
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -39,7 +40,7 @@ from fleet.web.guidance import epic_decisions, guidance_view
 from fleet.web.job_store import DocumentKeeper, ProjectDocuments
 from fleet.web.library import ProjectLibrary
 from fleet.web.live import AlreadyHoused, LiveWorkspace
-from fleet.web.ingester import observe_runs, record_decisions
+from fleet.web.ingester import observe_runs, observe_sessions, record_decisions
 
 WEB_ROOT = Path(__file__).parent.resolve()
 INDEX_PATH = WEB_ROOT / "index.html"
@@ -140,6 +141,26 @@ class FleetState(LiveWorkspace):
         self.pipeline_seq = 0
         self.documents = documents if documents is not None else ProjectDocuments()
         self.keeper = DocumentKeeper(self.documents, self.fetch_raw)
+        for observed in self.execution.hosts():
+            if observed["name"] in self.by_host and not observed["reachable"]:
+                entry = self.by_host[observed["name"]]
+                entry.update(error=observed["error"], down_since=datetime.fromisoformat(observed["since"]).timestamp())
+                for run in self.execution.runs():
+                    if run.host != observed["name"] or run.status not in ("running", "unknown outcome"):
+                        continue
+                    value = {"id": run.remote_job_id, "project": run.label, "agent": run.runtime, "cwd": run.cwd,
+                             "updated_at": run.last_observed.timestamp() if run.last_observed else None,
+                             "workspace": run.workspace, "workspace_reason": run.workspace_reason,
+                             "stale": True, "stale_since": entry["down_since"]}
+                    if run.kind == "session":
+                        value.update(title=run.title, status="unknown outcome", started_at=run.start.timestamp() if run.start else None)
+                        entry["sessions"][run.remote_job_id] = value
+                    else:
+                        value.update(description=run.title, status="unknown outcome", created_at=run.start.timestamp() if run.start else None,
+                                     steps=[{**step, "started_at": datetime.fromisoformat(step["start"]).timestamp() if step["start"] else None,
+                                             "finished_at": datetime.fromisoformat(step["end"]).timestamp() if step["end"] else None}
+                                            for step in self.execution.steps(run.id)])
+                        entry["jobs"][run.remote_job_id] = value
 
     def fetch_raw(self, host_name: str, job_id: str, document_id: str) -> dict[str, Any]:
         """A job document's Markdown as its host serves it, before rendering."""
@@ -171,13 +192,25 @@ class FleetState(LiveWorkspace):
             previous = snapshot(self.by_host[host_name])
             sequence = self.store.latest_sequence()
             mutate(self.by_host[host_name])
+            entry = self.by_host[host_name]
+            if not entry["ok"]:
+                entry.setdefault("down_since", self.execution.clock().timestamp())
+                for kind in ("jobs", "sessions"):
+                    for item in entry[kind].values():
+                        item.update(stale=True, stale_since=entry["down_since"])
+            if not entry.get("_syncing"):
+                if entry["ok"]:
+                    entry.pop("down_since", None)
+                self.execution.record_host(host_name, reachable=entry["ok"], error=entry["error"])
             self.by_host[host_name] = snapshot(self.by_host[host_name])
-            retry_deliveries = self.by_host[host_name]["ok"] and previous != self.by_host[host_name]
+            public = lambda value: {key: item for key, item in value.items() if not key.startswith("_")}
+            retry_deliveries = self.by_host[host_name]["ok"] and public(previous) != public(self.by_host[host_name])
             reconciled = False
             if ingest:
                 host = self.by_host[host_name]
                 observe_runs(self.execution, self.run_library, host, self.indexed,
                              lambda job: resolve(self.registry, host_name, job)["project_id"])
+                observe_sessions(self.execution, host, lambda session: resolve(self.registry, host_name, session)["project_id"])
                 record_decisions(self.decisions, self.execution, self.attention, host,
                                  lambda job: resolve(self.registry, host_name, job)["project_id"], self.taken_decisions)
                 reconciled = self.attention.observe({**host,
@@ -228,9 +261,9 @@ class FleetState(LiveWorkspace):
             document = self.with_attention({"time": time.time(), "build": BUILD, "project_labels": self.project_labels,
                     "projects": [{"id": project_id, **entry} for project_id, entry in registry_config(registry).items()],
                     "projects_error": projects_error, "hosts": [
-                {**{key: value for key, value in self.by_host[host.name].items() if key not in ("jobs", "sessions")},
+                {**{key: value for key, value in self.by_host[host.name].items() if key not in ("jobs", "sessions") and not key.startswith("_")},
                  "jobs": [annotate(self.workspace, resolve(registry, host.name, job)) for job in
-                          sorted(self.by_host[host.name]["jobs"].values(), key=lambda job: job["created_at"])],
+                          sorted(self.by_host[host.name]["jobs"].values(), key=lambda job: job.get("created_at") or 0)],
                  "sessions": [annotate(self.workspace, resolve(registry, host.name, session)) for session in
                               sorted(self.by_host[host.name]["sessions"].values(),
                                      key=lambda session: session.get("started_at") or 0)]}
@@ -271,7 +304,7 @@ def follow_host(state: FleetState, host: Host) -> None:
         error = run_stream(state, host)
 
         def mark_down(entry: dict[str, Any]) -> None:
-            entry.update(ok=False, error=error, jobs={}, sessions={})
+            entry.update(ok=False, error=error, _syncing=False)
 
         state.update(host.name, mark_down)
         time.sleep(RECONNECT_DELAY)
@@ -319,18 +352,45 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
         state.bump()
         return
     if kind == "hello":
-        state.update(host.name, lambda entry: entry.update(ok=True, error=None, jobs={}, sessions={}), ingest=False)
+        def hello(entry):
+            for group in ("jobs", "sessions"):
+                for item in entry[group].values():
+                    item.update(stale=True, stale_since=entry.get("down_since", time.time()))
+            entry.update(ok=True, error=None, _syncing=True, _seen_jobs=set(), _seen_sessions=set())
+        state.update(host.name, hello, ingest=False)
         try:
             jobs = transport.catch_up_jobs(host)
-            state.update(host.name, lambda entry: entry["jobs"].update({job["id"]: job for job in jobs}),
+            def catch_jobs(entry):
+                entry["jobs"].update({job["id"]: job for job in jobs})
+                entry["_seen_jobs"].update(job["id"] for job in jobs)
+            state.update(host.name, catch_jobs,
                          owners={f"job:{host.name}:{job['id']}" for job in jobs})
             for job in jobs:
                 state.keep_documents(host.name, job)
         except (FleetError, ValueError, KeyError, OSError) as error:
             print(f"fleet: catch-up on {host.name} failed: {error}", file=sys.stderr)
+        known = next((entry for entry in state.execution.hosts() if entry["name"] == host.name), None)
+        lower = datetime.now(timezone.utc) - timedelta(days=30)
+        if known and known["last_observed"]:
+            lower = max(lower, datetime.fromisoformat(known["last_observed"]))
+        try:
+            sessions = transport.catch_up_sessions(host, lower.isoformat())
+            for session in sessions:
+                state.execution.observe_session(host.name, session, resolve(state.registry, host.name, session)["project_id"])
+            def catch_sessions(entry):
+                current = {session["id"]: session for session in sessions if session["status"] != "stopped"}
+                entry["sessions"].update(current)
+                entry["_seen_sessions"].update(current)
+            state.update(host.name, catch_sessions, owners={f"session:{host.name}:{session['id']}" for session in sessions})
+        except (FleetError, ValueError, KeyError, OSError) as error:
+            print(f"fleet: session catch-up on {host.name} failed: {error}", file=sys.stderr)
     elif kind == "job":
         job = message["job"]
-        state.update(host.name, lambda entry: entry["jobs"].__setitem__(job["id"], job),
+        def report_job(entry):
+            entry["jobs"][job["id"]] = job
+            if entry.get("_syncing"):
+                entry["_seen_jobs"].add(job["id"])
+        state.update(host.name, report_job,
                      owners={f"job:{host.name}:{job['id']}"})
         state.keep_documents(host.name, job)
     elif kind == "removed":
@@ -338,17 +398,29 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
                      owners={f"job:{host.name}:{message['id']}"})
     elif kind == "session":
         session = message["session"]
-        state.update(host.name, lambda entry: entry["sessions"].__setitem__(session["id"], session),
+        def report_session(entry):
+            entry["sessions"][session["id"]] = session
+            if entry.get("_syncing"):
+                entry["_seen_sessions"].add(session["id"])
+        state.update(host.name, report_session,
                      owners={f"session:{host.name}:{session['id']}"})
     elif kind == "session_removed":
+        state.execution.stop_session(host.name, message["id"])
         state.update(host.name, lambda entry: entry["sessions"].pop(message["id"], None),
                      owners={f"session:{host.name}:{message['id']}"})
     elif kind == "heartbeat":
-        state.update(host.name, lambda entry: None, heartbeat=True)
+        def heartbeat(entry):
+            if entry.get("_syncing"):
+                for identity in set(entry["sessions"]) - entry["_seen_sessions"]:
+                    state.execution.stop_session(host.name, identity)
+                for group in ("jobs", "sessions"):
+                    entry[group] = {key: item for key, item in entry[group].items() if key in entry[f"_seen_{group}"]}
+                entry["_syncing"] = False
+        state.update(host.name, heartbeat, heartbeat=True)
     elif kind == "pipeline" and isinstance(message.get("pipeline"), str):
         state.report_pipeline(host.name, message["pipeline"], message.get("run"), message.get("baseline"))
     elif kind == "error":
-        state.update(host.name, lambda entry: entry.update(ok=False, error=message.get("error")))
+        state.update(host.name, lambda entry: entry.update(ok=False, error=message.get("error"), _syncing=False))
 
 
 def refusal_detail(item) -> dict[str, Any]:

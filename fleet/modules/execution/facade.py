@@ -1,7 +1,7 @@
 from typing import Callable, TYPE_CHECKING
 from datetime import datetime, timezone
 
-from .application import assign_label, link, observe, record_observed, unavailable
+from .application import assign_label, link, observe, observe_session, record_observed, stop_session, unavailable
 from .application.delivery import queue, retry as retry_delivery
 
 from .application.answers import answer
@@ -40,6 +40,23 @@ class ExecutionFacade:
             self.unreachable_hosts.discard(host)
         else:
             self.unreachable_hosts.add(host)
+
+    def hosts(self) -> list[dict]:
+        return self.repository.hosts()
+
+    def record_host(self, host: str, *, reachable: bool, error: str | None) -> None:
+        at = self.clock().isoformat()
+        with self.repository.transaction() as transaction:
+            previous = next((entry for entry in transaction.hosts() if entry["name"] == host), None)
+            same = previous is not None and previous["reachable"] == reachable
+            transaction.save_host({"name": host, "reachable": reachable, "since": previous["since"] if same else at,
+                "error": error, "last_observed": at if reachable else previous["last_observed"] if previous else None})
+
+    def observe_session(self, host: str, session: dict, project: str | None = None) -> Run:
+        return observe_session(self.repository, host, session, project)
+
+    def stop_session(self, host: str, identity: str) -> Run | None:
+        return stop_session(self.repository, host, identity)
 
     def run_activity(self, run: Run) -> dict:
         observed = run.action_observed_at

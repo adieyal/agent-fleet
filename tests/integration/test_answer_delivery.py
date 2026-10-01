@@ -115,7 +115,8 @@ def test_busy_delivery_stays_pending_without_failures_or_history_then_applies(mo
     version = state.version
     state.update("carbon", lambda entry: entry.update(ok=True, revision=3), ingest=False)
     assert state.version == version
-    assert store.latest_sequence() == sequence
+    change, = store.history_after(sequence)
+    assert change["subject"] == "execution:host:carbon"
     assert execution.deliveries() == [delivery]
     assert not [item for item in open_attention(store).list() if item.kind == "alert"]
     assert calls == [delivery.key] * 5
@@ -149,6 +150,10 @@ def test_unchanged_offline_delivery_heartbeat_does_not_write(monkeypatch):
     open_decisions(store).answer(item.id, "Proceed", actor="adi")
     state = FleetState([transport.Host("carbon", None)], store=store)
     apply_message(state, state.hosts[0], {"type": "hello"})
+    sequence = store.latest_sequence()
+    apply_message(state, state.hosts[0], {"type": "heartbeat"})
+    change, = store.history_after(sequence)
+    assert change["subject"] == "execution:host:carbon"
     sequence, version = store.latest_sequence(), state.version
     apply_message(state, state.hosts[0], {"type": "heartbeat"})
     assert (store.latest_sequence(), state.version) == (sequence, version)

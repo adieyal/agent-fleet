@@ -166,6 +166,10 @@ def catch_up_jobs(host: Host) -> list[dict]:
     return call(host, ["ls", "--all", "--events", "0"], timeout=30)["jobs"]
 
 
+def catch_up_sessions(host: Host, since: str) -> list[dict]:
+    return call(host, ["sessions", "--since", since], timeout=30)["sessions"]
+
+
 def gather_sessions(hosts: list[Host]) -> dict[str, list[dict[str, Any]]]:
     """Live interactive CLI sessions per host name, from `fleetd sessions`.
 

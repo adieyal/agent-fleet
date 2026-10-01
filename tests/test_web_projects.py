@@ -32,8 +32,8 @@ def deck(config_path):
             entry["ok"], entry["error"] = True, None
             entry["jobs"][f"j{index}"] = {"id": f"j{index}", "project": "agent-fleet", "created_at": index,
                                          "status": "done", "steps": []}
-            entry["sessions"][f"s{index}"] = {"id": f"s{index}", "project": "agent-fleet", "started_at": index}
-            entry["sessions"]["loose"] = {"id": "loose", "project": None, "started_at": 9}
+            entry["sessions"][f"s{index}"] = {"id": f"s{index}", "project": "agent-fleet", "started_at": index, "status": "idle"}
+            entry["sessions"]["loose"] = {"id": "loose", "project": None, "started_at": 9, "status": "idle"}
         state.update(host.name, fill)
     server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(state))
     thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)

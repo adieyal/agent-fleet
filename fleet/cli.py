@@ -660,9 +660,18 @@ def command_notify(arguments: argparse.Namespace) -> None:
     """Print one line whenever any step or job changes status — made for a Monitor/background watcher."""
     hosts = selected_hosts(arguments)
     known: dict[str, str] = {}
+    down: dict[str, str] = {}
     first_pass = True
     while True:
         for report in transport.gather(hosts, ["ls", "--since-hours", "48"]):
+            if report.error:
+                if report.host.name not in down:
+                    down[report.host.name] = datetime.now().astimezone().isoformat()
+                    print(f"HOST DOWN {report.host.name} since {down[report.host.name]}: {report.error}", flush=True)
+                continue
+            if report.host.name in down:
+                down.pop(report.host.name)
+                print(f"HOST UP {report.host.name}", flush=True)
             for job in report.jobs:
                 reference = f"{report.host.name}:{job['id']}"
                 for step in job["steps"]:

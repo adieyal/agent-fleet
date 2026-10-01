@@ -1179,6 +1179,40 @@ SESSION_EVENTS = 15
 SESSION_TITLE_LENGTH = 80
 SESSION_HEAD_BYTES = 256 * 1024  # read once per transcript for its start time and first prompt
 SESSION_TAIL_BYTES = 1024 * 1024  # most read on first sight, or when a transcript grew by more
+SESSION_RECORDS_DIRECTORY = FLEET_HOME / "sessions"
+
+
+def session_workspace(transcript: "Transcript", status: str) -> Tuple[Optional[JsonObject], Optional[str]]:
+    """First observed base survives stream restarts; the workspace refreshes while work continues."""
+    record = transcript.workspace_record
+    if record is None or (status == "working" and now() - record["observed_at"] >= WORKSPACE_REFRESH_SECONDS):
+        try:
+            if not re.fullmatch(r"[A-Za-z0-9._-]+", transcript.id) or transcript.id in (".", ".."):
+                raise ValueError("invalid session identity")
+            SESSION_RECORDS_DIRECTORY.mkdir(parents=True, exist_ok=True)
+            path = SESSION_RECORDS_DIRECTORY / f"{transcript.id}.json"
+            with open(path.with_suffix(".lock"), "a") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                previous = json.loads(path.read_text()) if path.exists() else None
+                workspace, reason = collect_workspace(transcript.cwd)
+                if previous is None:
+                    base = checked_git(transcript.cwd, "rev-parse", "--verify", "HEAD") if workspace and workspace["head"] else None
+                    base_at = now()
+                    base_reason = (reason or "repository has no commits") if base is None else None
+                else:
+                    base, base_at, base_reason = previous["base"], previous["base_at"], previous["base_reason"]
+                record = {"base": base, "base_at": base_at, "base_reason": base_reason, "workspace": workspace,
+                          "workspace_reason": reason, "observed_at": now()}
+                temporary = path.with_suffix(".tmp")
+                temporary.write_text(json.dumps(record))
+                temporary.replace(path)
+                transcript.workspace_record = record
+        except Exception as error:
+            return None, f"session workspace collection failed: {error}"
+    workspace = record["workspace"]
+    if workspace is not None:
+        workspace = {**workspace, "base": record["base"], "base_at": record["base_at"], "base_reason": record["base_reason"]}
+    return workspace, record["workspace_reason"]
 FLEET_PREAMBLE = "You are running as fleet job "
 COMMAND_NAME = re.compile(r"<command-name>(.*?)</command-name>", re.DOTALL)
 COMMAND_ARGUMENTS = re.compile(r"<command-args>(.*?)</command-args>", re.DOTALL)
@@ -1341,6 +1375,7 @@ class Transcript:
         self.events: Deque[JsonObject] = collections.deque(maxlen=SESSION_EVENTS)
         self.activity: Optional[JsonObject] = None
         self.todos: List[JsonObject] = []
+        self.workspace_record: Optional[JsonObject] = None
 
     def refresh(self, size: int) -> None:
         if size < self.offset:  # rewritten from scratch
@@ -1443,12 +1478,14 @@ class Transcript:
     def summary(self, status: str, updated_at: float) -> JsonObject:
         title = next((self.titles[key] for key in ("custom", "ai", "summary", "prompt") if self.titles.get(key)), None)
         resume = self.runtime.resume_command()
+        workspace, workspace_reason = session_workspace(self, status)
         return {
             "id": self.id, "host": os.uname().nodename, "agent": self.agent, "cwd": self.cwd,
             "project": repository_name(self.cwd) if self.cwd else None,
             "title": shorten(title, SESSION_TITLE_LENGTH) if title else None,
             "status": status, "started_at": self.started_at, "updated_at": updated_at, "model": self.model,
             "todos": self.todos, "activity": self.activity, "events": list(self.events),
+            "workspace": workspace, "workspace_reason": workspace_reason,
             "resume": f"cd {shlex.quote(self.cwd or '.')} && {resume} {self.id}",
         }
 
@@ -1468,12 +1505,13 @@ class SessionTracker:
     read stopped. Fleet jobs' own sessions are left out — the deck shows those as jobs.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, since: Optional[float] = None) -> None:
         self.transcripts: Dict[Path, Transcript] = {}
         self.job_sessions: Dict[Path, Tuple[int, Optional[str]]] = {}
+        self.since = since
 
     def candidates(self) -> Iterator[Tuple[Path, str, os.stat_result]]:
-        horizon = time.time() - SESSION_ACTIVE_SECONDS
+        horizon = max(self.since, time.time() - 30 * 86400) if self.since is not None else time.time() - SESSION_ACTIVE_SECONDS
         # Only top-level transcripts: sub-agents write theirs in a subdirectory of the session.
         for project in scan_directory(CLAUDE_PROJECTS_DIRECTORY):
             for entry in scan_directory(Path(project.path)) if project.is_dir() else []:
@@ -1483,7 +1521,8 @@ class SessionTracker:
                         if stat.st_mtime >= horizon:
                             yield Path(entry.path), "claude", stat
         today = datetime.date.today()
-        for day in (today, today - datetime.timedelta(days=1)):
+        days = min(31, int((time.time() - horizon) / 86400) + 2)
+        for day in (today - datetime.timedelta(days=index) for index in range(days)):
             for entry in scan_directory(CODEX_SESSIONS_DIRECTORY / day.strftime("%Y/%m/%d")):
                 if entry.name.startswith("rollout-") and entry.name.endswith(".jsonl"):
                     with contextlib.suppress(OSError):
@@ -1527,7 +1566,12 @@ class SessionTracker:
             if transcript.hidden or transcript.cwd is None or transcript.id in job_sessions:
                 continue
             active = min(stat.st_mtime, transcript.last_record_at or stat.st_mtime)
-            status = "working" if clock - active < SESSION_WORKING_SECONDS else "idle"
+            if clock - active >= SESSION_ACTIVE_SECONDS:
+                if self.since is None:
+                    continue
+                status = "stopped"
+            else:
+                status = "working" if clock - active < SESSION_WORKING_SECONDS else "idle"
             sessions[transcript.id] = transcript.summary(status, round(active, 3))
         moved = session_projects()
         for identity in sessions.keys() & moved.keys():
@@ -2452,7 +2496,7 @@ def command_stream(arguments: argparse.Namespace) -> None:
                     if sessions.get(session_id) != session:
                         emit({"type": "session", "session": session})
                 for session_id in set(sessions) - set(current):
-                    emit({"type": "session_removed", "id": session_id})
+                    emit({"type": "session_removed", "id": session_id, "updated_at": sessions[session_id]["updated_at"]})
                 sessions = current
             if now() - last_pipeline_scan >= PIPELINE_SCAN_INTERVAL:
                 last_pipeline_scan = now()
@@ -2469,7 +2513,10 @@ def command_stream(arguments: argparse.Namespace) -> None:
 
 
 def command_sessions(arguments: argparse.Namespace) -> None:
-    sessions = SessionTracker().scan().values()
+    since = parse_timestamp(arguments.since) if getattr(arguments, "since", None) is not None else None
+    if getattr(arguments, "since", None) is not None and since is None:
+        fail("sessions --since requires an ISO timestamp")
+    sessions = SessionTracker(since).scan().values()
     emit({"host": os.uname().nodename, "time": now(),
           "sessions": sorted(sessions, key=lambda session: session["started_at"] or 0)})
 
@@ -2667,6 +2714,7 @@ def main() -> None:
     stream.set_defaults(handler=command_stream)
 
     sessions = commands.add_parser("sessions", help="live interactive Claude Code / Codex CLI sessions")
+    sessions.add_argument("--since", help="catch up transcripts modified since an ISO timestamp, capped at 30 days")
     sessions.set_defaults(handler=command_sessions)
 
     show = commands.add_parser("show")
