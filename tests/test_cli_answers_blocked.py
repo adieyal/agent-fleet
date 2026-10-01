@@ -80,7 +80,7 @@ def test_fleet_add_answers_the_waiting_step(worker, capsys):
 
 def test_a_retried_answer_is_added_once(worker, capsys):
     for _ in range(2):   # the second is a retry after a lost reply
-        cli.answer_waiting_step(SimpleNamespace(name="h"), "job", 0, [{"prompt": "Use the second."}])
+        cli.answer_waiting_step(SimpleNamespace(name="h"), "job", 0, [{"prompt": "Use the second."}], "user")
         assert "answered; step 1 continues as step 4" in capsys.readouterr().out
     assert len(steps()) == 4
 

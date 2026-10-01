@@ -134,6 +134,8 @@ def isolated_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, empty_store:
     monkeypatch.setenv("FLEET_MANAGEMENT", str(tmp_path / "management"))
     # fleetd reads Claude's deny rules; the user's own settings must not decide a test
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-config"))
+    # Run inside a fleet job, the CLI records the job as the actor; a test decides that itself
+    monkeypatch.delenv("FLEET_JOB_ID", raising=False)
 
 
 @pytest.fixture

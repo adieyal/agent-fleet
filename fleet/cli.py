@@ -31,7 +31,8 @@ from fleet.composition import open_attention, open_decisions, open_execution, op
 from fleet.projections.decisions import decision_log
 from fleet.projections.history import parse_moment, parse_since, subject_history
 from fleet.projections.project import project_status
-from fleet.modules.work import RELATION_TYPES, EvidenceSpecification
+from fleet.modules import attention as attention_module
+from fleet.modules.work import CONDITIONS, KINDS, RELATION_TYPES, EvidenceSpecification
 from fleet.modules.execution import Run
 from fleet.transport import FleetError, Host, HostReport
 from fleet.orchestration import ControllerCommands, guide, orchestrator_prompt, promote_decision
@@ -277,8 +278,14 @@ def command_dispatch(arguments: argparse.Namespace) -> None:
     host = transport.host_by_name(arguments.host)
     workspace = open_workspace()
     linked_project = workspace.registry().project_for(host.name, arguments.project)
-    project_id = linked_project.id if linked_project is not None else workspace.resolve_project(arguments.project)
+    try:
+        project_id = linked_project.id if linked_project is not None else workspace.resolve_project(arguments.project)
+    except FleetError as error:
+        raise FleetError(f"{error}. To use '{arguments.project}' as {host.name}'s label for a registered project, "
+                         f"link it: fleet project link ID {host.name}:{arguments.project}, or register one: "
+                         f"fleet project add NAME --link {host.name}:{arguments.project}") from error
     steps = read_steps(arguments)
+    resolve_step_work_ids(steps)
     if not steps:
         raise FleetError("give at least one --step or a --steps-file")
     fleetd_arguments = ["create", "--project", arguments.project, "--description", arguments.description,
@@ -309,22 +316,32 @@ def command_dispatch(arguments: argparse.Namespace) -> None:
              "context": arguments.context, "hold": arguments.hold})
         intent = execution.dispatch(arguments.work_item, host=host.name, runtime=arguments.agent,
             payload=payload, project=project_id, guidance=guidance,
-            actor="user", reason=arguments.description, idempotency_key=key, remote_job_id=arguments.id)
+            actor=arguments.actor, reason=arguments.description, idempotency_key=key,
+            remote_job_id=arguments.id)
     except (ValueError, LookupError) as error:
         raise FleetError(str(error)) from error
     if not intent.created:
         if intent.run.status == "unknown outcome":
             deliver_dispatch(intent.run, reconcile=True)
         current = execution.get_run(intent.run.id)
-        print(json.dumps({"job": f"{intent.run.host}:{intent.run.remote_job_id}", "status": current.status,
-                          "run": intent.run.id, "action": intent.run.action, "steps": len(steps)}))
+        reference = f"{intent.run.host}:{intent.run.remote_job_id}"
+        if arguments.json:
+            print(json.dumps({"job": reference, "status": current.status,
+                              "run": intent.run.id, "action": intent.run.action, "steps": len(steps)}))
+        else:
+            console.print(f"{reference} already sent with this --id: run {intent.run.id[:8]} is {current.status}; "
+                          f"nothing new started", markup=False)
         return
     job = deliver_dispatch(intent.run)
     reference = f"{host.name}:{job['id']}"
     if arguments.json:
-        print(json.dumps({"job": reference, "status": job["status"], "steps": len(job["steps"])}))
+        print(json.dumps({"job": reference, "status": job["status"], "steps": len(job["steps"]),
+                          "run": intent.run.id, "permission": job.get("permission"), "guidance": guidance}))
     else:
         console.print(f"[bold]{reference}[/] {job['status']} · {len(job['steps'])} step(s) · {job['description']}")
+        sent = "no guidance" if guidance is None else "guidance " + describe_guidance(guidance)
+        console.print(f"  run {intent.run.id[:8]} · {arguments.agent} · permission "
+                      f"{job.get('permission') or 'not reported by the host'} · {sent}", markup=False)
     if arguments.wait:
         wait_for([reference], step=None, timeout=None, as_json=arguments.json)
 
@@ -349,6 +366,7 @@ def command_orchestrate(arguments: argparse.Namespace) -> None:
     host = transport.host_by_name(arguments.host)
     if not host.is_local:
         raise FleetError('orchestrator must run on the controller machine')
+    arguments.work_item = work_cli_id(arguments.work_item)
     store = open_store()
     try:
         activation = open_authority(store).activate(arguments.work_item, actor='orchestrator',
@@ -391,7 +409,7 @@ def command_run_retry(arguments: argparse.Namespace) -> None:
 
     execution = open_execution()
     try:
-        intent = execution.retry(arguments.run, actor="user", idempotency_key=str(uuid4()))
+        intent = execution.retry(arguments.run, actor=arguments.actor, idempotency_key=str(uuid4()))
     except (ValueError, LookupError) as error:
         raise FleetError(str(error)) from error
     if intent.created:
@@ -412,7 +430,7 @@ def command_dispatch_work(arguments: argparse.Namespace) -> None:
 
 def command_resolve_unknown(arguments: argparse.Namespace) -> None:
     try:
-        run = open_execution().resolve_unknown(arguments.run, actor="user")
+        run = open_execution().resolve_unknown(arguments.run, actor=arguments.actor)
     except (ValueError, LookupError) as error:
         raise FleetError(str(error)) from error
     print(json.dumps(asdict(run), default=str))
@@ -440,6 +458,7 @@ def command_library_link(arguments: argparse.Namespace) -> None:
 def command_add(arguments: argparse.Namespace) -> None:
     host, job_id = resolve(arguments.job)
     steps = read_steps(arguments)
+    resolve_step_work_ids(steps)
     named = [step["work_item"] for step in steps if step.get("work_item") is not None]
     if named:
         execution = open_execution()
@@ -452,7 +471,7 @@ def command_add(arguments: argparse.Namespace) -> None:
         push_context(host, job_id, arguments.context)
     waiting = None if arguments.retry or arguments.no_answer else waiting_step(host, job_id)
     if waiting is not None:
-        answer_waiting_step(host, job_id, waiting, steps)
+        answer_waiting_step(host, job_id, waiting, steps, arguments.actor)
         return
     fleetd_arguments = ["add", job_id, "--steps-file", "/dev/stdin"] + (["--retry"] if arguments.retry else [])
     job = transport.call(host, fleetd_arguments, stdin_text=json.dumps(steps))
@@ -466,7 +485,7 @@ def waiting_step(host: Host, job_id: str) -> int | None:
                  if step["status"] == "blocked" and step.get("answered_by") is None), None)
 
 
-def answer_waiting_step(host: Host, job_id: str, step: int, steps: list[dict[str, Any]]) -> None:
+def answer_waiting_step(host: Host, job_id: str, step: int, steps: list[dict[str, Any]], actor: str) -> None:
     """Add the steps as the answer to the waiting step, as the deck does: they run next, and the open attention
     item for the step is resolved. Keyed like the deck's answer, so a retried add queues nothing more."""
     attention = open_attention()
@@ -484,8 +503,21 @@ def answer_waiting_step(host: Host, job_id: str, step: int, steps: list[dict[str
     continuation = result["steps"][0]
     details = f"answered; step {step + 1} continues as step {continuation + 1}"
     if item is not None:
-        attention.resolve(item.id, details=details, actor="user")
+        attention.resolve(item.id, details=details, actor=actor)
     console.print(f"[bold]{host.name}:{job_id}[/] {details} (--no-answer appends instead)")
+
+
+def command_start(arguments: argparse.Namespace) -> None:
+    host, job_id = resolve(arguments.job)
+    execution = open_execution()
+    run = next((run for run in execution.runs() if (run.host, run.remote_job_id) == (host.name, job_id)), None)
+    call = lambda fleetd_arguments, stdin: transport.call(host, fleetd_arguments, stdin_text=stdin)
+    try:
+        job = call(["start", job_id], None) if run is None else execution.start(run, call)
+    except (ValueError, LookupError) as error:
+        raise FleetError(str(error)) from error
+    console.print(f"started {host.name}:{job_id}: its agent works through the job's pending steps "
+                  f"({job['status']})", markup=False)
 
 
 def command_push(arguments: argparse.Namespace) -> None:
@@ -684,20 +716,41 @@ def command_notify(arguments: argparse.Namespace) -> None:
 def command_host_add(arguments: argparse.Namespace) -> None:
     open_workspace()
     config = transport.load_config()
-    config.setdefault("hosts", {})[arguments.name] = {"ssh": None if arguments.local else (arguments.ssh or arguments.name),
-                                                      "python": arguments.python}
+    entry = {"ssh": None if arguments.local else (arguments.ssh or arguments.name), "python": arguments.python}
+    previous = config.setdefault("hosts", {}).get(arguments.name)
+    config["hosts"][arguments.name] = entry
     transport.save_config(config)
-    console.print(f"added {arguments.name}; now run: fleet install {arguments.name}")
+    if previous is None:
+        console.print(f"added {arguments.name} ({describe_host(entry)}); now run: fleet install {arguments.name}",
+                      markup=False)
+    else:
+        console.print(f"replaced {arguments.name} (was {describe_host(previous)}, now {describe_host(entry)}); "
+                      f"now run: fleet install {arguments.name}", markup=False)
+
+
+def describe_host(entry: dict) -> str:
+    return "local" if entry.get("ssh") is None else f"ssh {entry['ssh']}"
 
 
 def command_host_remove(arguments: argparse.Namespace) -> None:
-    open_workspace()
+    workspace = open_workspace()
     config = transport.load_config()
-    config.get("hosts", {}).pop(arguments.name, None)
+    entry = config.get("hosts", {}).pop(arguments.name, None)
+    if entry is None:
+        raise FleetError(f"no host '{arguments.name}'; fleet hosts lists them")
     transport.save_config(config)
+    links = sorted(f"{link.host}:{link.label}" for project in workspace.registry().projects.values()
+                   for link in project.links if link.host == arguments.name)
+    console.print(f"removed host {arguments.name} ({describe_host(entry)}) from the config; "
+                  f"its jobs stay on the host", markup=False)
+    if links:
+        console.print(f"projects still link it: {', '.join(links)} (fleet project unlink HOST:LABEL)", markup=False)
 
 
 def command_hosts(arguments: argparse.Namespace) -> None:
+    if not transport.configured_hosts():
+        print("No hosts configured; add one with: fleet host add NAME --ssh TARGET (or --local)")
+        return
     for report in transport.gather(transport.configured_hosts(), ["ls"]):
         target = report.host.ssh_target or "(local)"
         state = f"[red]{report.error}[/]" if report.error else f"[green]ok[/] · {len(report.jobs)} active job(s)"
@@ -719,12 +772,19 @@ def command_library_add(arguments: argparse.Namespace) -> None:
 def command_library_remove(arguments: argparse.Namespace) -> None:
     open_workspace()
     config = transport.load_config()
-    config.get("libraries", {}).pop(arguments.project, None)
+    entry = config.get("libraries", {}).pop(arguments.project, None)
+    if entry is None:
+        raise FleetError(f"no library '{arguments.project}'; fleet libraries lists them")
     transport.save_config(config)
+    path = entry if isinstance(entry, str) else entry["path"]
+    console.print(f"removed library {arguments.project} ({path}) from the config; its files stay", markup=False)
 
 
 def command_libraries(arguments: argparse.Namespace) -> None:
-    for project, entry in sorted(transport.load_config().get("libraries", {}).items()):
+    libraries = transport.load_config().get("libraries", {})
+    if not libraries:
+        print("No libraries configured; add one with: fleet library add PROJECT PATH")
+    for project, entry in sorted(libraries.items()):
         if isinstance(entry, str):
             console.print(f"[bold]{project}[/] {entry}")
         else:
@@ -782,17 +842,24 @@ def command_project_merge(arguments: argparse.Namespace) -> None:
 
 
 def command_project_management(arguments: argparse.Namespace) -> None:
+    path = Path(arguments.path).resolve()
     try:
-        open_records().register(arguments.id, Path(arguments.path), actor='user')
+        moved = open_records().register(arguments.id, path, actor=arguments.actor)
     except (ValueError, OSError) as error:
         raise FleetError(str(error)) from error
+    console.print(f"registered {path} as the management repository of {arguments.id}; {moved} summaries moved "
+                  f"out of the store into it. This is permanent.", markup=False)
 
 
 def guidance_subject(reference: str) -> tuple[str, str | None]:
     """(project, epic) for an epic ID, or (project, None) for a project ID or name."""
     store = open_store()
+    work = open_work(store)
+    identities = [item.id for item in work.list()]
+    if any(identity.startswith(reference) for identity in identities):
+        reference = resolve_cli_id(reference, identities, "work item")
     try:
-        item = open_work(store).get(reference)
+        item = work.get(reference)
     except LookupError:
         return open_workspace(store).resolve_project(reference), None
     return item.project, item.id
@@ -829,6 +896,8 @@ def command_guidance_show(arguments: argparse.Namespace) -> None:
 
 def command_guidance_edit(arguments: argparse.Namespace) -> None:
     project, epic = guidance_subject(arguments.subject)
+    if arguments.file is None and sys.stdin.isatty():
+        error_console.print("Reading Markdown from stdin; end with Ctrl-D (or pass --file).", markup=False)
     try:
         body = sys.stdin.read() if arguments.file is None else Path(arguments.file).read_text()
         guidance = open_records().write_guidance(project, body, epic=epic, actor=arguments.actor,
@@ -863,10 +932,23 @@ def command_guidance_history(arguments: argparse.Namespace) -> None:
 
 def command_project_repo_add(arguments: argparse.Namespace) -> None:
     open_workspace().edit_registry(lambda registry: registry.add_repository(arguments.id, arguments.url))
+    console.print(f"added repository {arguments.url} to {arguments.id}", markup=False)
 
 
 def command_project_repo_remove(arguments: argparse.Namespace) -> None:
     open_workspace().edit_registry(lambda registry: registry.remove_repository(arguments.id, arguments.url))
+    console.print(f"removed repository {arguments.url} from {arguments.id}", markup=False)
+
+
+def command_project_restore(arguments: argparse.Namespace) -> None:
+    workspace = open_workspace()
+    try:
+        placement = workspace.restore(arguments.id, arguments.shutter)
+    except LookupError as error:
+        raise FleetError(str(error)) from error
+    name = workspace.registry().get(placement.project_id).name
+    cleared = f"; {arguments.shutter} moved to the storehouse" if arguments.shutter else ""
+    console.print(f"restored {placement.project_id} {name} to floor {placement.floor}{cleared}", markup=False)
 
 
 def observed_labels(registry: projects.Registry, hosts: list[Host]) -> tuple[list[tuple[str, str, str]], list[str]]:
@@ -1036,12 +1118,12 @@ def command_status(arguments: argparse.Namespace) -> None:
     for item in projection["work_items"]:
         print_status_item(item)
     for entry in projection["attention"]:
-        print(f"  Attention ({entry['kind']}): {entry['headline']}")
+        print(f"  Attention {entry['id'][:8]} ({entry['kind']}): {entry['headline']}")
 
 
 def print_status_item(item: dict[str, Any], depth: int = 0) -> None:
     indent = "  " * depth
-    print(f"{indent}{item['kind']}: {item['title']}")
+    print(f"{indent}{item['kind']} {item['id'][:8]}: {item['title']}")
     print(f"{indent}  Goal: {item['goal']}")
     progress = item["progress"]
     mark = ("unknown" if progress["basis"] == "unknown" else
@@ -1075,9 +1157,9 @@ def print_status_item(item: dict[str, Any], depth: int = 0) -> None:
     if item["resume_condition"] is not None:
         print(f"{indent}  Resume condition: {item['resume_condition']}")
     for criterion in item["criteria"]:
-        print(f"{indent}  Criterion ({criterion['verification']}, {criterion['state']}): {criterion['text']}")
+        print(f"{indent}  Criterion {criterion['id'][:8]} ({criterion['verification']}, {criterion['state']}): {criterion['text']}")
     for entry in item["attention"]:
-        print(f"{indent}  Attention ({entry['kind']}): {entry['headline']}")
+        print(f"{indent}  Attention {entry['id'][:8]} ({entry['kind']}): {entry['headline']}")
     for decision in item["decisions"]:
         print(f"{indent}  Decision {decision['id']}: {decision['question']}")
         print(f"{indent}    {decision['answer']} — {decision['actor']} at {decision['time']}")
@@ -1091,6 +1173,33 @@ def print_status_item(item: dict[str, Any], depth: int = 0) -> None:
         print_status_item(child, depth + 1)
 
 
+def resolve_cli_id(reference: str, identities: list[str], kind: str) -> str:
+    """Expand a unique prefix without changing canonical IDs in module APIs or JSON."""
+    if reference in identities:
+        return reference
+    matches = sorted(identity for identity in identities if reference and identity.startswith(reference))
+    if len(matches) == 1:
+        return matches[0]
+    if matches:
+        raise FleetError(f"ambiguous {kind} '{reference}': {', '.join(matches)}; give a longer ID")
+    remedy = "fleet status PROJECT lists work items and criteria" if kind != "attention item" else "fleet attention list lists IDs"
+    raise FleetError(f"no {kind} '{reference}'; {remedy}")
+
+
+def work_cli_id(reference: str) -> str:
+    return resolve_cli_id(reference, [item.id for item in open_work().list()], "work item")
+
+
+def attention_cli_id(reference: str) -> str:
+    return resolve_cli_id(reference, [item.id for item in open_attention().list()], "attention item")
+
+
+def resolve_step_work_ids(steps: list[dict[str, Any]]) -> None:
+    for step in steps:
+        if step.get("work_item") is not None:
+            step["work_item"] = work_cli_id(step["work_item"])
+
+
 def command_work(arguments: argparse.Namespace) -> None:
     work = open_work()
     fields = vars(arguments).copy()
@@ -1098,6 +1207,15 @@ def command_work(arguments: argparse.Namespace) -> None:
     for name in ("handler", "command"):
         fields.pop(name, None)
     identity = fields.pop("id", None)
+    if identity is not None:
+        if command == "meet":
+            identity = resolve_cli_id(identity, [criterion.id for criteria in work.criteria_by_item().values()
+                                               for criterion in criteria], "criterion")
+        else:
+            identity = work_cli_id(identity)
+    for name in ("parent", "to_item"):
+        if fields.get(name) is not None:
+            fields[name] = work_cli_id(fields[name])
     try:
         if command == "criterion_add":
             reference = fields.pop("evidence_reference")
@@ -1113,29 +1231,45 @@ def command_work(arguments: argparse.Namespace) -> None:
             item = work.relate(identity, fields.pop("to_item"), **fields)
         elif command == "add":
             fields['project'] = open_workspace().resolve_project(fields['project'])
+            known = work.kinds(fields['project'])
             item = work.add(**fields)
         else:
+            known = work.kinds(work.get(identity).project) if "kind" in fields else None
             item = getattr(work, command)(identity, **fields)
         console.print_json(json.dumps(asdict(item), default=str))
     except (ValueError, LookupError, OSError) as error:
         raise FleetError(str(error)) from error
+    if command in ("add", "set") and known is not None and item.kind not in known:
+        error_console.print(f"new kind '{item.kind}' added to project {item.project}'s kinds "
+                            f"(known: {', '.join(known)})", markup=False)
+
+
+KIND_HELP = (f"{', '.join(KINDS)}, or a new label, which becomes one of the project's kinds; default task")
 
 
 def add_work_parsers(commands) -> None:
     work = commands.add_parser("work", help="persistent work items").add_subparsers(required=True)
+    work_help = {"add": "record a new work item in a project", "set": "change a work item's fields",
+                 "move": "put a work item under another parent, or at the root",
+                 "relate": "record that a work item depends on or relates to another",
+                 "ready": "move waiting work to 'ready for review'"}
     for name in ("add", "set", "move", "relate", "ready"):
-        action = work.add_parser(name)
+        action = work.add_parser(name, help=work_help[name])
         action.set_defaults(handler=command_work, work_operation=name)
         action.add_argument("--actor", required=True)
         action.add_argument("title" if name == "add" else "id")
         if name == "add":
             action.add_argument("--project", required=True)
             action.add_argument("--goal", required=True)
-            action.add_argument("--kind", default="task")
+            action.add_argument("--kind", default="task", help=KIND_HELP)
             for field in ("parent", "focus", "next-step", "plan"):
                 action.add_argument(f"--{field}")
         elif name == "set":
-            for field in ("title", "goal", "kind", "condition", "resume-condition", "next-step", "focus", "plan"):
+            action.add_argument("--kind", default=argparse.SUPPRESS, help=KIND_HELP)
+            # Checked by the domain, whose error quotes the values: argparse would list "ready for review" bare
+            action.add_argument("--condition", default=argparse.SUPPRESS,
+                                help="one of: " + ", ".join(f"'{condition}'" for condition in CONDITIONS))
+            for field in ("title", "goal", "resume-condition", "next-step", "focus", "plan"):
                 action.add_argument(f"--{field}", default=argparse.SUPPRESS)
         elif name == "move":
             parent = action.add_mutually_exclusive_group(required=True)
@@ -1145,7 +1279,7 @@ def add_work_parsers(commands) -> None:
             action.add_argument("to_item")
             action.add_argument("--type", default="depends-on", choices=RELATION_TYPES)
     criterion = commands.add_parser("criterion", help="work completion criteria").add_subparsers(required=True)
-    add = criterion.add_parser("add")
+    add = criterion.add_parser("add", help="add a completion criterion to a work item")
     add.set_defaults(handler=command_work, work_operation="criterion_add")
     add.add_argument("id", help="work item ID")
     add.add_argument("text")
@@ -1153,13 +1287,13 @@ def add_work_parsers(commands) -> None:
     add.add_argument("--evidence-reference", help="absolute path to recorded local evidence")
     add.add_argument("--required-result", help="required result field in JSON evidence")
     add.add_argument("--actor", required=True)
-    meet = criterion.add_parser("meet")
+    meet = criterion.add_parser("meet", help="mark a criterion met; there is no un-meet")
     meet.set_defaults(handler=command_work, work_operation="meet")
     meet.add_argument("id", help="criterion ID")
     meet.add_argument("--evidence", action="append", default=[])
     meet.add_argument("--actor", required=True)
     summary = commands.add_parser("summary", help="work summaries").add_subparsers(required=True)
-    action = summary.add_parser("set")
+    action = summary.add_parser("set", help="record a new version of a work item's summary (all fields)")
     action.set_defaults(handler=command_work, work_operation="set_summary")
     action.add_argument("id", help="work item ID")
     for field in ("purpose", "done", "doing", "next", "authoring-role", "actor"):
@@ -1203,6 +1337,7 @@ def command_decision_record(arguments: argparse.Namespace) -> None:
         print(f"Decision {identity} handed to the controller via job {job}'s stream; "
               f"it is recorded there when the controller next hears from this host.")
         return
+    arguments.work_item = work_cli_id(arguments.work_item)
     try:
         decision = open_decisions().record_guided(arguments.work_item, actor=arguments.actor,
             question=arguments.question, answer=arguments.answer, principle=arguments.principle,
@@ -1312,20 +1447,24 @@ def command_history_prune(arguments: argparse.Namespace) -> None:
 
 
 def command_answer(arguments: argparse.Namespace) -> None:
+    arguments.id = attention_cli_id(arguments.id)
     try:
         context = open_attention().get(arguments.id).stream_context
         if context is not None and context.blocked_step:
             # A blocked job step is answered by a step added to its job, as the deck does, not a recorded decision.
             if arguments.next_step is not None:
                 raise ValueError("a blocked job step's answer has no --next-step; use fleet work set")
-            details = open_execution().answer_blocked(arguments.id, arguments.answer, actor="user")
+            details = open_execution().answer_blocked(arguments.id, arguments.answer, actor=arguments.actor)
             console.print_json(json.dumps({"id": arguments.id, "resolution": details}))
             return
-        decision = open_decisions().answer(arguments.id, arguments.answer, actor="user",
+        decision = open_decisions().answer(arguments.id, arguments.answer, actor=arguments.actor,
                                            next_step=arguments.next_step)
         console.print_json(json.dumps(asdict(decision), default=lambda value: value.isoformat()))
     except (ValueError, LookupError) as error:
         raise FleetError(str(error)) from error
+
+
+UNTIL_EXAMPLE = "2026-10-02T09:00:00+00:00"
 
 
 def command_attention(arguments: argparse.Namespace) -> None:
@@ -1334,6 +1473,10 @@ def command_attention(arguments: argparse.Namespace) -> None:
     try:
         attention = open_attention()
         command = arguments.attention_command
+        if command not in ("add", "list"):
+            arguments.id = attention_cli_id(arguments.id)
+        if command == "add" and arguments.work_item is not None:
+            arguments.work_item = work_cli_id(arguments.work_item)
         if command == "add":
             item = attention.raise_item(
                 project=arguments.project, kind=arguments.kind, owner=arguments.owner,
@@ -1347,12 +1490,59 @@ def command_attention(arguments: argparse.Namespace) -> None:
         elif command == "ack":
             item = attention.acknowledge(arguments.id, actor=arguments.actor)
         elif command == "snooze":
-            item = attention.snooze(arguments.id, until=datetime.fromisoformat(arguments.until), actor=arguments.actor)
+            try:
+                until = datetime.fromisoformat(arguments.until)
+            except ValueError:
+                raise ValueError(f"--until takes a timezone-aware ISO timestamp, e.g. {UNTIL_EXAMPLE}") from None
+            item = attention.snooze(arguments.id, until=until, actor=arguments.actor)
         else:
             item = attention.resolve(arguments.id, details=arguments.details, actor=arguments.actor)
         console.print_json(json.dumps(asdict(item), default=str))
     except (ValueError, LookupError) as error:
         raise FleetError(str(error)) from error
+
+
+DEFAULT_PERMISSION_HELP = "permission acceptEdits (claude) or workspace-write (codex) unless --permission says otherwise"
+
+
+def default_actor() -> str:
+    """Who a CLI write is recorded as: the fleet job it runs inside, else the user at the terminal."""
+    job = os.environ.get("FLEET_JOB_ID")
+    return f"job:{job}" if job else "user"
+
+
+def add_actor_option(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--actor", default=default_actor(),
+                        help="who the store records as doing this (default: job:$FLEET_JOB_ID inside a fleet job, "
+                             "else user)")
+
+
+COMMAND_GROUPS = {
+    "Jobs": ("send", "dispatch", "start", "add", "push", "pull", "ls", "watch", "show", "tail", "attach", "wait", "result",
+             "cancel", "mv", "rm", "notify", "run"),
+    "Work": ("status", "work", "criterion", "summary", "attention", "answer", "decision", "guidance", "library"),
+    "Projects": ("project", "building", "libraries", "web"),
+    "Hosts": ("hosts", "host", "install", "hooks", "unlock"),
+    "Agent-internal": ("orchestrate", "control"),
+}
+QUICK_START = """\
+quick start:
+  fleet host add carbon --local && fleet install carbon
+  fleet project add Demo --link carbon:demo
+  fleet send -H carbon -p demo -C ~/src/demo -d "Fix tests" -s "Fix the failing tests"
+"""
+
+
+def group_commands(parser: argparse.ArgumentParser, commands: argparse._SubParsersAction) -> None:
+    """Replace argparse's flat command list with COMMAND_GROUPS, each command with its help line."""
+    helps = {choice.dest: choice.help for choice in commands._choices_actions}
+    width = max(len(name) for name in helps)
+    sections = [f"{group}:\n" + "\n".join(f"  {name:<{width}}  {helps[name]}" for name in names)
+                for group, names in COMMAND_GROUPS.items()]
+    commands._choices_actions = []
+    commands.metavar = "COMMAND"
+    commands.help = "one of the commands below; fleet COMMAND --help for its options"
+    parser.epilog = "\n\n".join(sections) + "\n\n" + QUICK_START
 
 
 def add_listing_options(parser: argparse.ArgumentParser) -> None:
@@ -1389,7 +1579,8 @@ def add_step_options(parser: argparse.ArgumentParser) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="fleet", description=__doc__)
+    parser = argparse.ArgumentParser(prog="fleet", description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
 
     listing = commands.add_parser("ls", help="list jobs across hosts, grouped by project")
@@ -1402,15 +1593,22 @@ def build_parser() -> argparse.ArgumentParser:
     watch.add_argument("--interval", "-n", type=float, default=3)
     watch.set_defaults(handler=command_watch)
 
-    send = commands.add_parser("send", help="start a job (a task list) on a host")
+    send = commands.add_parser(
+        "send", help="start a job (a task list): starts an agent on the host",
+        description=f"Starts a Claude or Codex agent on HOST in CWD that works through the steps, with "
+                    f"{DEFAULT_PERMISSION_HELP}. Copies the -c paths into the job's context dir and, for a "
+                    f"--work-item, the project's constitution and the epic's charter. Records the job as a run "
+                    f"in the store. Stop it with fleet cancel.")
     send.add_argument("--host", "-H", required=True)
-    send.add_argument("--project", "-p", required=True)
+    send.add_argument("--project", "-p", required=True, help="the host's label for a registered project")
     send.add_argument("--work-item", help="link the created job to stored work")
     send.add_argument("--description", "-d", required=True, help="one line: what this job is working on")
-    send.add_argument("--agent", "-a", choices=("claude", "codex"), default="claude")
+    send.add_argument("--agent", "--runtime", "-a", dest="agent", choices=("claude", "codex"), default="claude")
     send.add_argument("--cwd", "-C", required=True, help="working directory on the host")
     send.add_argument("--permission", help="claude: acceptEdits|bypassPermissions|plan|default; "
-                                           "codex: read-only|workspace-write|danger-full-access")
+                                           "codex: read-only|workspace-write|danger-full-access; "
+                                           "default acceptEdits / workspace-write")
+    add_actor_option(send)
     send.add_argument("--model", "-m")
     send.add_argument("--allow", action="append",
                       help="claude permission rule to pre-approve, e.g. 'Bash(ss:*)' (repeatable)")
@@ -1418,26 +1616,32 @@ def build_parser() -> argparse.ArgumentParser:
     send.add_argument("--env", action="append", help="NAME=value set in the agent's environment (repeatable)")
     send.add_argument("--id")
     send.add_argument("--keep-going", action="store_true", help="continue to next step after a failure")
-    send.add_argument("--hold", action="store_true", help="create but don't start")
+    send.add_argument("--hold", action="store_true", help="create but don't start; start it with fleet start JOB")
     send.add_argument("--wait", "-w", action="store_true", help="block until the job finishes")
     send.add_argument("--json", action="store_true")
     add_step_options(send)
     send.set_defaults(handler=command_send)
 
-    dispatch = commands.add_parser("dispatch", help="claim and dispatch work to a host")
+    dispatch = commands.add_parser(
+        "dispatch", help="send one instruction for a work item: claims it and starts an agent on the host",
+        description=f"Claims the work item and starts a Claude or Codex agent on HOST in CWD with one step, the "
+                    f"instruction, with {DEFAULT_PERMISSION_HELP}. Copies the project's constitution and the "
+                    f"epic's charter into the job's context dir. The job's project is the work item's.")
     dispatch.add_argument("work_item")
     dispatch.add_argument("instruction")
-    dispatch.add_argument("--host", required=True)
-    dispatch.add_argument("--runtime", dest="agent", choices=("claude", "codex"), required=True)
-    dispatch.add_argument("--cwd", required=True)
-    dispatch.add_argument("--permission", help="runtime permission, as for fleet send")
+    dispatch.add_argument("--host", "-H", required=True)
+    dispatch.add_argument("--runtime", "--agent", "-a", dest="agent", choices=("claude", "codex"), required=True)
+    dispatch.add_argument("--cwd", "-C", required=True)
+    dispatch.add_argument("--permission", help="runtime permission, as for fleet send; "
+                                               "default acceptEdits / workspace-write")
     dispatch.add_argument("--id")
     dispatch.add_argument("--json", action="store_true")
+    add_actor_option(dispatch)
     dispatch.set_defaults(handler=command_dispatch_work, permission=None, model=None, allow=None,
                           add_dir=None, env=None, keep_going=False, hold=False, wait=False,
                           context=None, steps_file=None, step_work_items=None)
 
-    orchestrate = commands.add_parser('orchestrate', help='start a controller-local orchestrator')
+    orchestrate = commands.add_parser('orchestrate', help='start an orchestrator agent on the controller, with write access to the store')
     orchestrate.add_argument('work_item')
     orchestrate.add_argument('--mandate', required=True, help='recorded mandate path')
     orchestrate.add_argument('--host', required=True, help='configured local controller host')
@@ -1445,7 +1649,7 @@ def build_parser() -> argparse.ArgumentParser:
     orchestrate.add_argument('--cwd', required=True)
     orchestrate.add_argument('--permission', help='runtime permission, as for fleet send')
     orchestrate.set_defaults(handler=command_orchestrate)
-    control = commands.add_parser('control', help='activation-bound controller command')
+    control = commands.add_parser('control', help='agent-internal: an activated orchestrator changes the store')
     control.add_argument('activation')
     control.add_argument('operation', choices=('state', 'progress', 'meet', 'attention', 'dispatch', 'decide', 'summary', 'propose'))
     control.add_argument('payload', help='JSON object of command fields')
@@ -1460,18 +1664,33 @@ def build_parser() -> argparse.ArgumentParser:
     run_link.set_defaults(handler=command_run_link)
     resolve_unknown = run.add_parser("resolve-unknown", help="explicitly close an unknown run to permit retry")
     resolve_unknown.add_argument("run")
+    add_actor_option(resolve_unknown)
     resolve_unknown.set_defaults(handler=command_resolve_unknown)
-    retry = run.add_parser("retry", help="retry an action after its run has a known end")
+    retry = run.add_parser(
+        "retry", help="retry an action after its run has a known end: starts a new agent on the same host",
+        description=f"Starts a new agent on the run's host, as a new job with the action's original steps, context "
+                    f"and guidance, and its permission ({DEFAULT_PERMISSION_HELP} when the action named none). "
+                    f"The new job is a new run of the same action.")
     retry.add_argument("run")
+    add_actor_option(retry)
     retry.set_defaults(handler=command_run_retry)
 
-    add = commands.add_parser("add", help="append steps to a job (restarts it if idle)")
+    add = commands.add_parser("add", help="append steps to a job; if a step is blocked, they answer it",
+                              description="Appends steps to a job and starts it again if it is idle. When a step "
+                                          "is blocked waiting for an answer, the steps answer it instead: they "
+                                          "run next and the step's attention item is resolved (--no-answer "
+                                          "appends instead).")
     add.add_argument("job")
     add.add_argument("--retry", action="store_true", help="also re-queue failed/blocked/cancelled steps")
     add.add_argument("--no-answer", action="store_true",
                      help="append even when a blocked step waits for an answer (by default the steps answer it)")
+    add_actor_option(add)
     add_step_options(add)
     add.set_defaults(handler=command_add)
+
+    start = commands.add_parser("start", help="start a job sent with --hold: starts its agent on the host")
+    start.add_argument("job")
+    start.set_defaults(handler=command_start)
 
     push = commands.add_parser("push", help="copy files into a job's context dir")
     push.add_argument("job")
@@ -1536,13 +1755,13 @@ def build_parser() -> argparse.ArgumentParser:
     hosts.set_defaults(handler=command_hosts)
 
     host = commands.add_parser("host", help="manage hosts").add_subparsers(dest="host_command", required=True)
-    host_add = host.add_parser("add")
+    host_add = host.add_parser("add", help="add a host to config.json (replaces one of the same name)")
     host_add.add_argument("name")
     host_add.add_argument("--ssh", help="ssh target (default: the name)")
     host_add.add_argument("--local", action="store_true", help="this machine, no ssh")
     host_add.add_argument("--python", default="python3")
     host_add.set_defaults(handler=command_host_add)
-    host_remove = host.add_parser("rm")
+    host_remove = host.add_parser("rm", help="remove a host from config.json; its jobs stay on the host")
     host_remove.add_argument("name")
     host_remove.set_defaults(handler=command_host_remove)
 
@@ -1557,13 +1776,13 @@ def build_parser() -> argparse.ArgumentParser:
     library_link.add_argument("--title", help="optional display label; omitted titles remain unknown")
     library_link.add_argument("--actor", default="user")
     library_link.set_defaults(handler=command_library_link)
-    library_add = library.add_parser("add")
+    library_add = library.add_parser("add", help="add a local folder to config.json as a library root")
     library_add.add_argument("project")
     library_add.add_argument("path")
     library_add.add_argument("--recursive", action="store_true",
                              help="read Markdown in every folder, not only the top level and docs/")
     library_add.set_defaults(handler=command_library_add)
-    library_remove = library.add_parser("rm")
+    library_remove = library.add_parser("rm", help="remove a library root from config.json; files stay")
     library_remove.add_argument("project")
     library_remove.set_defaults(handler=command_library_remove)
 
@@ -1595,18 +1814,28 @@ def build_parser() -> argparse.ArgumentParser:
     project_merge.set_defaults(handler=command_project_merge)
     project_repo = project.add_parser("repo", help="repository remotes used to suggest links").add_subparsers(
         dest="project_repo_command", required=True)
-    project_repo_add = project_repo.add_parser("add")
+    project_repo_add = project_repo.add_parser("add", help="record a repository remote for a project")
     project_repo_add.add_argument("id")
     project_repo_add.add_argument("url")
     project_repo_add.set_defaults(handler=command_project_repo_add)
-    project_repo_remove = project_repo.add_parser("rm")
+    project_repo_remove = project_repo.add_parser("rm", help="forget a repository remote for a project")
     project_repo_remove.add_argument("id")
     project_repo_remove.add_argument("url")
     project_repo_remove.set_defaults(handler=command_project_repo_remove)
 
-    management = project.add_parser('management', help='register the management Git repository and migrate summaries')
+    management = project.add_parser(
+        'management', help="register a project's management Git repository; permanent",
+        description="Registers PATH, the root of an existing Git working tree, as the project's management "
+                    "repository and moves its summaries out of the store into it. This is permanent: it cannot be "
+                    "changed or undone. Optional: a project's first record creates one under fleet's home.")
     management.add_argument('id')
-    management.add_argument('path')
+    management.add_argument('path', help='root of an existing Git working tree')
+    add_actor_option(management)
+    project_restore = project.add_parser("restore", help="bring a shuttered project back from the storehouse to a floor")
+    project_restore.add_argument("id")
+    project_restore.add_argument("--shutter", metavar="OTHER-ID",
+                                 help="when no floor is free, move this project to the storehouse to make room")
+    project_restore.set_defaults(handler=command_project_restore)
     management.set_defaults(handler=command_project_management)
 
     guidance = commands.add_parser(
@@ -1675,31 +1904,41 @@ def build_parser() -> argparse.ArgumentParser:
     history_prune.add_argument("--actor", default="user")
     history_prune.set_defaults(handler=command_history_prune)
 
-    answer = commands.add_parser("answer", help="record an answer; options use 1-based numbers")
-    answer.add_argument("id")
-    answer.add_argument("answer")
-    answer.add_argument("--next-step")
+    answer = commands.add_parser(
+        "answer", help="answer an attention item: replies to a blocked job step, else records a decision",
+        description="For a blocked job step, adds the answer as the job's next step on its host and resolves the "
+                    "item. For any other item, records the answer as a decision and resolves the item. Neither "
+                    "can be undone.")
+    answer.add_argument("id", help="attention item ID (fleet attention list)")
+    answer.add_argument("answer", help="the reply; for an item with options, an option's 1-based number or text")
+    answer.add_argument("--next-step", help="also set the work item's next step (decisions only)")
+    add_actor_option(answer)
     answer.set_defaults(handler=command_answer)
 
     attention = commands.add_parser("attention", help="stored questions, blockers and alerts").add_subparsers(
         dest="attention_command", required=True)
-    attention_add = attention.add_parser("add")
+    attention_add = attention.add_parser("add", help="raise an attention item")
     attention_add.add_argument("headline")
-    for field in ("project", "kind", "owner", "source", "source-reference", "context-reference", "actor"):
+    attention_add.add_argument("--kind", required=True, choices=attention_module.KINDS)
+    attention_add.add_argument("--owner", required=True, help="who must act, e.g. user")
+    for field in ("project", "source", "source-reference", "context-reference", "actor"):
         attention_add.add_argument(f"--{field}", required=True)
     attention_add.add_argument("--work-item")
     attention_add.add_argument("--run")
     attention_add.set_defaults(handler=command_attention)
-    attention_list = attention.add_parser("list")
+    attention_list = attention.add_parser("list", help="attention items as JSON, with their IDs")
     attention_list.add_argument("--project")
     attention_list.add_argument("--state", choices=("open", "acknowledged", "snoozed", "resolved"))
     attention_list.set_defaults(handler=command_attention)
+    attention_help = {"ack": "acknowledge an item; it stays open",
+                      "snooze": "hide an item until a time; it stays open",
+                      "resolve": "close an item for good; does not answer it or unblock its job"}
     for name in ("ack", "snooze", "resolve"):
-        action = attention.add_parser(name)
+        action = attention.add_parser(name, help=attention_help[name])
         action.add_argument("id")
         action.add_argument("--actor", required=True)
         if name == "snooze":
-            action.add_argument("--until", required=True, help="timezone-aware ISO timestamp")
+            action.add_argument("--until", required=True, help=f"timezone-aware ISO timestamp, e.g. {UNTIL_EXAMPLE}")
         elif name == "resolve":
             action.add_argument("--details", required=True)
         action.set_defaults(handler=command_attention)
@@ -1726,13 +1965,14 @@ def build_parser() -> argparse.ArgumentParser:
     unlock.add_argument("--key", help="key path on the host (default: ssh-add's defaults)")
     unlock.set_defaults(handler=command_unlock)
 
-    web = commands.add_parser("web", help="serve the kitchen dashboard")
+    web = commands.add_parser("web", help="serve the deck, the web dashboard")
     web.add_argument("--host", action="append")
     web.add_argument("--port", type=int, default=8787)
     web.add_argument("--bind", default="127.0.0.1")
     web.add_argument("--open", action="store_true", help="open a browser tab")
     web.add_argument("--fixture", help=argparse.SUPPRESS)  # serve a recorded fleet from JSON, for tests
     web.set_defaults(handler=command_web)
+    group_commands(parser, commands)
     return parser
 
 
@@ -1747,9 +1987,21 @@ def main(argv: list[str] | None = None) -> None:
                 continue
             if name == "FLEET_STORE" and arguments.command == "web":
                 error_console.print(f"Creating new store at {path} (FLEET_STORE)", markup=False)
+            elif name == "FLEET_STORE":
+                raise FleetError(f"FLEET_STORE points to a missing file: {path}. Create the store there by running "
+                                 f"fleet web once (it creates a missing store), or unset FLEET_STORE to use the "
+                                 f"default store")
             else:
-                raise FleetError(f"{name} points to a missing file: {path}")
+                raise FleetError(f"FLEET_CONFIG points to a missing file: {path}. Unset FLEET_CONFIG to use the "
+                                 f"default config, or create the file with {{\"hosts\": {{}}}} in it")
         open_store()
+        # Worker decisions may belong to a controller's store, so resolve those only
+        # after command_decision_record has determined where the write belongs.
+        if (getattr(arguments, "work_item", None) is not None
+                and arguments.handler not in (command_decision_record, command_orchestrate)):
+            arguments.work_item = work_cli_id(arguments.work_item)
+        if getattr(arguments, "epic", None) is not None:
+            arguments.epic = work_cli_id(arguments.epic)
         arguments.handler(arguments)
     except FleetError as error:
         error_console.print(f"fleet: {error}", style="red", markup=False)

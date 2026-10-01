@@ -11,7 +11,7 @@ from .domain import Action, Claim, Delivery, DispatchResult, JobObservation, Run
 from .domain.activity import HOST_FRESHNESS_SECONDS, classify_activity
 from fleet.modules.attention import AttentionItem
 from .application.dispatch import dispatch, require_step_work, retry, resolve_unknown
-from .application.worker import deliver
+from .application.worker import deliver, start
 from fleet.modules.work import WorkFacade
 from fleet.modules.authority import AuthorityRejected
 
@@ -120,6 +120,9 @@ class ExecutionFacade:
 
     def deliver(self, run: Run, call: Callable, push: Callable, *, reconcile: bool = False) -> dict:
         return deliver(self.repository, run, call, push, reconcile=reconcile)
+
+    def start(self, run: Run, call: Callable) -> dict:
+        return start(self.repository, run, call)
 
     def retry(self, run: str, *, actor: str, idempotency_key: str) -> DispatchResult:
         return retry(self.repository, run, actor=actor, idempotency_key=idempotency_key)
