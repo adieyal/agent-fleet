@@ -315,7 +315,8 @@ def test_merging_keeps_the_older_project_and_frees_the_others_floor(deck):
 
     assert post(deck, "/api/merge", {"keep": newer, "other": older})[0] == 400   # the newer one isn't kept
     status, body = post(deck, "/api/merge", {"keep": older, "other": newer})
-    assert status == 200 and body == {"project_id": older, "merged": newer, "freed": 3, "floor": 1}
+    assert status == 200 and body == {"project_id": older, "merged": newer, "freed": 3, "floor": 1,
+        "counts": {"work_items": 0, "attention": 0, "runs": 0, "decisions": 0}}
 
     document = fetch_state(deck)
     assert document["building"]["floors"] == {older: 1, restoke: 2}

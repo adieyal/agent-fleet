@@ -27,6 +27,8 @@ from fleet.composition import (Store, facades, open_attention, open_execution, o
                                open_workspace, open_work, open_decisions)
 from fleet.modules.records import GuidanceConflict
 from fleet.orchestration import promote_decision
+from fleet.triage_scheduler import TriageScheduler
+from fleet.composition import deliver_triage
 from fleet.modules.attention import InputObservation, ItemResolved, refusal_rules
 from fleet.modules.workspace import (NoVacancy, FOCUSES, AlreadyShuttered, NotShuttered,
                                      WorkspaceFacade, Registry)
@@ -34,6 +36,7 @@ from fleet.projections.workspace import annotate, resolve, registry_config
 from fleet.projections.project import project_status
 from fleet.projections.run_history import history_runs, run_detail
 from fleet.projections.bench import bench_rooms, bench_state
+from fleet.projections.history import parse_since, subject_history
 from fleet.transport import FleetError, Host
 from fleet.web.documents import AssetNotImage, AssetTooLarge, DocumentAccessDenied, fetch_asset, fetch_document
 from fleet.web.fixture import FixtureLibrary, FixtureState
@@ -184,16 +187,22 @@ class FleetState(LiveWorkspace):
         with self.changed:
             return {name: (bool(entry["ok"]), set(entry["jobs"])) for name, entry in self.by_host.items()}
 
+    def schedule_triage(self) -> None:
+        services = facades(self.store)
+        TriageScheduler(services, lambda run, **options: deliver_triage(services, run, **options),
+                        transport.host_by_name).schedule()
+
     def follow_history(self, stop: threading.Event) -> None:
         while not stop.is_set():
+            self.schedule_triage()
             changes = self.store.history_after(self.history_cursor)
             if changes:
                 self.history_cursor = int(changes[-1]["sequence"])
                 self.bump()
             stop.wait(0.25)
 
-    def update(self, host_name: str, mutate: Any, *, owners: set[str] | None = None,
-               ingest: bool = True, heartbeat: bool = False) -> None:
+    def update(self, host_name: str, mutate: Any, *, subjects: set[str] | None = None,
+               ingest: bool = True, heartbeat: bool = False, deleted_jobs: set[str] = frozenset()) -> None:
         with self.changed:
             previous = snapshot(self.by_host[host_name])
             sequence = self.store.latest_sequence()
@@ -222,7 +231,7 @@ class FleetState(LiveWorkspace):
                 reconciled = self.attention.observe({**host,
                     "jobs": [resolve(self.registry, host_name, job) for job in host["jobs"].values()],
                     "sessions": [resolve(self.registry, host_name, session) for session in host["sessions"].values()]},
-                    owners=owners, raise_items=not heartbeat)
+                    subjects=subjects, raise_items=not heartbeat, deleted_jobs=deleted_jobs)
                 # A heartbeat follows a full pass over the host's jobs, so absent jobs are gone.
                 reconciled = self.attention.close_refusals(
                     {**host, "jobs": list(host["jobs"].values()), "sessions": []}, complete=heartbeat) or reconciled
@@ -232,6 +241,7 @@ class FleetState(LiveWorkspace):
             self.changed.notify_all()
         if retry_deliveries:
             self.execution.retry_deliveries(host_name)
+        self.schedule_triage()
 
     def refresh_registry(self) -> str | None:
         try:
@@ -258,6 +268,11 @@ class FleetState(LiveWorkspace):
 
     def repository_remotes(self, host: str, directories: list[str]) -> dict[str, list[str]]:
         return transport.repository_remotes(next(known for known in self.hosts if known.name == host), directories)
+
+    def live_jobs(self) -> dict[tuple[str, str], dict[str, Any]]:
+        """Each host's job summaries as last streamed, by (host, job id)."""
+        with self.changed:
+            return {(host, job["id"]): job for host, entry in self.by_host.items() for job in entry["jobs"].values()}
 
     def document(self) -> dict[str, Any]:
         projects_error = self.refresh_registry()
@@ -370,7 +385,7 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
                 entry["jobs"].update({job["id"]: job for job in jobs})
                 entry["_seen_jobs"].update(job["id"] for job in jobs)
             state.update(host.name, catch_jobs,
-                         owners={f"job:{host.name}:{job['id']}" for job in jobs})
+                         subjects={f"job:{host.name}:{job['id']}" for job in jobs})
             for job in jobs:
                 state.keep_documents(host.name, job)
         except (FleetError, ValueError, KeyError, OSError) as error:
@@ -387,7 +402,7 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
                 current = {session["id"]: session for session in sessions if session["status"] != "stopped"}
                 entry["sessions"].update(current)
                 entry["_seen_sessions"].update(current)
-            state.update(host.name, catch_sessions, owners={f"session:{host.name}:{session['id']}" for session in sessions})
+            state.update(host.name, catch_sessions, subjects={f"session:{host.name}:{session['id']}" for session in sessions})
         except (FleetError, ValueError, KeyError, OSError) as error:
             print(f"fleet: session catch-up on {host.name} failed: {error}", file=sys.stderr)
     elif kind == "job":
@@ -397,13 +412,14 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
             if entry.get("_syncing"):
                 entry["_seen_jobs"].add(job["id"])
         state.update(host.name, report_job,
-                     owners={f"job:{host.name}:{job['id']}"})
+                     subjects={f"job:{host.name}:{job['id']}"})
         state.keep_documents(host.name, job)
     elif kind == "removed":
         if message.get("reason") == "removed by fleet rm":
             state.execution.removed(host.name, message["id"], at=message.get("removed_at"))
         state.update(host.name, lambda entry: entry["jobs"].pop(message["id"], None),
-                     owners={f"job:{host.name}:{message['id']}"})
+                     subjects={f"job:{host.name}:{message['id']}"},
+                     deleted_jobs={f"job:{host.name}:{message['id']}"} if message.get("reason") in ("deleted", "removed by fleet rm") else frozenset())
     elif kind == "session":
         session = message["session"]
         def report_session(entry):
@@ -411,11 +427,11 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
             if entry.get("_syncing"):
                 entry["_seen_sessions"].add(session["id"])
         state.update(host.name, report_session,
-                     owners={f"session:{host.name}:{session['id']}"})
+                     subjects={f"session:{host.name}:{session['id']}"})
     elif kind == "session_removed":
         state.execution.stop_session(host.name, message["id"])
         state.update(host.name, lambda entry: entry["sessions"].pop(message["id"], None),
-                     owners={f"session:{host.name}:{message['id']}"})
+                     subjects={f"session:{host.name}:{message['id']}"})
     elif kind == "heartbeat":
         def heartbeat(entry):
             if entry.get("_syncing"):
@@ -536,7 +552,8 @@ def make_handler(state: FleetState | FixtureState,
                 projection = project_status(query["project"][0], open_work(state.store), state.attention,
                     open_execution(state.store), open_library(state.store), open_decisions(state.store))
                 try:
-                    result = bench_state(projection, query["slice"][0]) if "slice" in query else bench_rooms(projection)
+                    result = (bench_state(projection, query["slice"][0]) if "slice" in query
+                              else bench_rooms(projection, state.live_jobs()))
                 except ValueError as error:
                     self.error(404, str(error))
                     return
@@ -545,6 +562,8 @@ def make_handler(state: FleetState | FixtureState,
                 self.guidance()
             elif path == "/api/decisions":
                 self.decisions()
+            elif path == "/api/history":
+                self.history()
             elif path in ("/", "/index.html"):
                 self.respond(200, "text/html; charset=utf-8", index_page)
             elif path in PROTOTYPES:
@@ -651,6 +670,25 @@ def make_handler(state: FleetState | FixtureState,
                 self.error(400, "epic is required")
                 return
             self.guidance_result(lambda services: epic_decisions(services, epic))
+
+        def history(self) -> None:
+            """GET /api/history?subject=&since= — the subject's audit trail, newest first, as `fleet history --json`
+            prints it; subject takes an id, a unique id prefix or a subject such as attention:<id>."""
+            query = {key: values[0] for key, values in parse_qs(urlsplit(self.path).query).items()}
+            if not query.get("subject", "").strip():
+                self.error(400, "subject is required")
+                return
+            try:
+                since = parse_since(query["since"]) if query.get("since") else None
+            except ValueError as error:
+                self.error(400, str(error))
+                return
+            try:
+                result = subject_history(state.store, query["subject"], since)
+            except LookupError as error:
+                self.error(404, str(error))
+                return
+            self.respond(200, "application/json", json.dumps(result).encode())
 
         def change_guidance(self, path: str, body: dict[str, Any]) -> None:
             """POST /api/guidance {"project", "epic" (null for the constitution), "markdown", "base": the version the

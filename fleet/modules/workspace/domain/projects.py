@@ -91,7 +91,7 @@ class Registry:
         if candidates:
             raise FleetError(f"ambiguous project '{reference}': {', '.join(candidates)}; "
                              "use an ID or fleet project merge <keep> <other>")
-        raise FleetError(f"unknown project '{reference}'; use fleet project list to find a project ID")
+        raise FleetError(f"unknown project '{reference}'; use fleet project ls to find a project ID")
 
     def create(self, name: str, repositories: Iterable[str] = ()) -> Project:
         if not name.strip():

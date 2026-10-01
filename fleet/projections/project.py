@@ -81,7 +81,8 @@ def chain_of(items: dict[str, WorkItem], identity: str | None) -> list[dict[str,
 
 def run_work(work: WorkFacade, execution: ExecutionFacade) -> dict[tuple[str, str], dict[str, Any]]:
     """Each run's (host, remote job) mapped to its linked work item's project and root-first ancestor chain, and
-    `step`: the step running now that serves its own work item, with that item's chain, or None."""
+    `step`: the step running now that serves its own work item, with that item's chain, or None, and `steps`: every
+    step that serves its own known work item, with that item's chain."""
     items = {item.id: item for item in work.list()}
     actions = {action.id: action.work_item for action in execution.actions()}
     links = {}
@@ -89,10 +90,12 @@ def run_work(work: WorkFacade, execution: ExecutionFacade) -> dict[tuple[str, st
         chain = chain_of(items, actions.get(run.action))
         step = current_step(run)
         step_chain = chain_of(items, step["work_item"]) if step is not None else []
-        if chain or step_chain:
+        steps = [{"index": served["index"], "chain": served_chain} for served in run.step_work or []
+                 if (served_chain := chain_of(items, served["work_item"]))]
+        if chain or steps:
             links[run.host, run.remote_job_id] = {
-                "project": items[(chain or step_chain)[-1]["id"]].project, "chain": chain,
-                "step": {"index": step["index"], "chain": step_chain} if step_chain else None}
+                "project": items[(chain or steps[0]["chain"])[-1]["id"]].project, "chain": chain,
+                "step": {"index": step["index"], "chain": step_chain} if step_chain else None, "steps": steps}
     return links
 
 

@@ -48,6 +48,10 @@ TMUX_SOCKET = ("fleet" if FLEET_HOME == (Path.home() / ".fleet").resolve() else
 TMUX_COMMAND = ["tmux", "-L", TMUX_SOCKET, "-f", "/dev/null"]
 SUMMARY_LENGTH = 160
 TERMINAL_STATUSES = ("done", "failed", "blocked", "cancelled", "lost")
+# Only these leave ls and the stream after --since-hours; failed and blocked jobs wait for someone.
+AGED_STATUSES = ("done", "cancelled", "lost")
+# `rm` deletes these without --force; others still hold work or a question.
+REMOVABLE_STATUSES = ("done", "failed", "cancelled", "lost")
 STREAM_PROTOCOL_VERSION = 3
 DISPATCH_SCHEMA_VERSION = 4
 USAGE_SCHEMA_VERSION = 1
@@ -399,6 +403,10 @@ def job_preamble(job: JsonObject) -> str:
         "When you make images (screenshots, renders, charts), save them in the outbox and show the important ones "
         "in your step summary and reports with Markdown image syntax, e.g. `![Mock beside the concept](outbox/mock.png)` "
         "in the step summary, or a path relative to the report file. The deck displays them inline.\n"
+        "When raising user attention with fleet attention add --owner user, include --reason saying why "
+        "the user must act. Delegate existing items only within a confirmed project triage mandate; "
+        "fleet attention delegate keeps them open and visible, and fleet attention take revokes agent ownership. "
+        "Triage must not complete work or judge criteria.\n"
         f"{WRITING_GUIDE}"
         "Finish each step with a short plain summary of what you did and anything left open, then a final line "
         "`FLEET_STATUS: done`, `FLEET_STATUS: blocked — <reason>` (you could not do the work, e.g. tools or "
@@ -2281,6 +2289,8 @@ def command_grant(arguments: argparse.Namespace) -> None:
             job.setdefault("permission_grants", []).append(grant)
             fresh = True
         else:
+            if (grant['step'], grant['rules']) != (arguments.step, rules):
+                fail('grant key has changed payload')
             fresh = False
     if fresh:
         append_event(arguments.job, {"kind": "job", "status": "queued",
@@ -2376,6 +2386,16 @@ def add_keyed(arguments: argparse.Namespace) -> None:
             write_briefs(arguments.job, job["steps"])
             fresh = True
         else:
+            if added['answers'] != arguments.answers or len(added['steps']) != len(new_steps):
+                fail('add key has changed payload')
+            inherited = (job['steps'][arguments.answers].get('work_item')
+                         if arguments.answers is not None else None)
+            for index, requested in zip(added['steps'], new_steps):
+                expected = make_step(index, requested['prompt'], requested.get('title'),
+                                     requested.get('work_item', inherited))
+                if any(job['steps'][index].get(name) != expected.get(name)
+                       for name in ('prompt', 'title', 'work_item')):
+                    fail('add key has changed payload')
             fresh = False
     if fresh:
         summary = f"{len(added['steps'])} step(s) added" + (
@@ -2396,7 +2416,7 @@ def command_list(arguments: argparse.Namespace) -> None:
     jobs = all_jobs()
     if not arguments.all:
         horizon = now() - arguments.since_hours * 3600
-        jobs = [job for job in jobs if derive_status(job) not in TERMINAL_STATUSES or job.get("updated_at", 0) >= horizon]
+        jobs = [job for job in jobs if derive_status(job) not in AGED_STATUSES or job.get("updated_at", 0) >= horizon]
     emit({"host": os.uname().nodename, "time": now(),
           "jobs": [job_summary(job, arguments.events) for job in jobs]})
 
@@ -2476,7 +2496,7 @@ def command_stream(arguments: argparse.Namespace) -> None:
                 except (ValueError, OSError):
                     continue
                 status = derive_status(job)
-                if status in TERMINAL_STATUSES and job.get("updated_at", 0) < now() - horizon_seconds:
+                if status in AGED_STATUSES and job.get("updated_at", 0) < now() - horizon_seconds:
                     ignored[job_id] = job_signature(path.parent, documents=False)
                     continue
                 seen.add(job_id)
@@ -2489,7 +2509,7 @@ def command_stream(arguments: argparse.Namespace) -> None:
                 signatures.pop(job_id)
                 runner_states.pop(job_id, None)
                 removal = REMOVALS_DIRECTORY / f"{hashlib.sha256(job_id.encode()).hexdigest()}.json"
-                details = json.loads(removal.read_text()) if removal.is_file() else {}
+                details = json.loads(removal.read_text()) if removal.is_file() else {"reason": "aged" if (JOBS_DIRECTORY / job_id).exists() else "deleted"}
                 emit({"type": "removed", "id": job_id, **details})
             for message in removal_messages(removals):
                 emit(message)
@@ -2661,16 +2681,24 @@ def removal_messages(seen: Dict[Path, int]) -> Iterator[JsonObject]:
 
 def command_remove(arguments: argparse.Namespace) -> None:
     job = read_job(arguments.job)
-    if derive_status(job) in ("running",):
+    status = derive_status(job)
+    if status == "running":
         fail("job is running; cancel it first")
-    shutil.rmtree(JOBS_DIRECTORY / arguments.job)
+    if status not in REMOVABLE_STATUSES and not arguments.force:
+        fail(f"job is {status}, not finished; removing it deletes its outbox and results for good "
+             f"(rerun with --force to remove it anyway)")
+    directory = JOBS_DIRECTORY / arguments.job
+    outbox = directory / "outbox"
+    outbox_files = sum(1 for path in outbox.rglob("*") if path.is_file()) if outbox.is_dir() else 0
+    results = len(list(directory.glob("result-*.md")))
+    shutil.rmtree(directory)
     details = {"id": arguments.job, "reason": "removed by fleet rm", "removed_at": now()}
     REMOVALS_DIRECTORY.mkdir(parents=True, exist_ok=True)
     path = REMOVALS_DIRECTORY / f"{hashlib.sha256(arguments.job.encode()).hexdigest()}.json"
     temporary = path.with_suffix(".tmp")
     temporary.write_text(json.dumps(details))
     temporary.replace(path)
-    emit({"removed": arguments.job, **details})
+    emit({"removed": arguments.job, "status": status, "outbox_files": outbox_files, "results": results, **details})
 
 
 def command_configure(arguments: argparse.Namespace) -> None:
@@ -2815,6 +2843,7 @@ def main() -> None:
 
     remove = commands.add_parser("rm")
     remove.add_argument("job")
+    remove.add_argument("--force", action="store_true")
     remove.set_defaults(handler=command_remove)
 
     configure = commands.add_parser("configure")

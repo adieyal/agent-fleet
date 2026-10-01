@@ -239,7 +239,8 @@ Runtimes and usage:
 
 Interface:
 - `fleet dispatch <work-item> --host <h> --runtime <r> "<instruction>"`.
-- `fleet send` becomes a thin wrapper over it.
+- `fleet send` becomes a thin wrapper over it. (As built it is the reverse: `dispatch` is `send` with one step and
+  the work item's project. Both take `--runtime` and `--agent`.)
 - A dispatch button on the bench is optional; dropping a task onto the bench can wait.
 - Manual retry is allowed only after a known end, or after an explicit `fleet run resolve-unknown`.
 

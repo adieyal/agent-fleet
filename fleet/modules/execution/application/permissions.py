@@ -1,6 +1,8 @@
 """Answer a job step's permission refusals by allowing rules for the job, then continuing the step."""
 
-from fleet.modules.attention import ItemResolved, refusal_rules
+from typing import Callable
+
+from fleet.modules.attention import AttentionItem, ItemResolved, refusal_rules
 
 from .dtos import GrantRequest
 from .ports import ExecutionRepository, GrantSender
@@ -28,7 +30,9 @@ def grant_rules(item, scope: str) -> tuple[list[str], list[str]]:
     return rules, denied + [refusal.detail for refusal in item.refusals if not refusal.rules and not refusal.denied_by]
 
 
-def grant(repository: ExecutionRepository, send: GrantSender, item_id: str, scope: str, actor: str) -> str:
+def grant(repository: ExecutionRepository, send: GrantSender, item_id: str, scope: str, actor: str, *,
+          authorize: Callable[[AttentionItem], None] | None = None,
+          complete: Callable[[AttentionItem, str], None] | None = None) -> str:
     if scope not in SCOPES:
         raise ValueError("scope must be refused or bash")
     with repository.transaction() as transaction:
@@ -38,6 +42,8 @@ def grant(repository: ExecutionRepository, send: GrantSender, item_id: str, scop
         raise ValueError("only a job step's permission refusals can be allowed")
     if item.state == "resolved":
         raise ItemResolved("attention item is resolved")
+    if authorize is not None:
+        authorize(item)
     rules, uncovered = grant_rules(item, scope)
     # The worker applies a key once, so a retry after a lost reply queues nothing more.
     result = send(GrantRequest(context.host, context.owner_id, context.step, f"{item.id}:{scope}", tuple(rules)))
@@ -45,6 +51,9 @@ def grant(repository: ExecutionRepository, send: GrantSender, item_id: str, scop
                f"step {context.step + 1} continues as step {result.continuation + 1}")
     if uncovered:
         details += f"; still not allowed: {'; '.join(uncovered)}"
+    if complete is not None:
+        complete(item, details)
+        return details
     with repository.transaction() as transaction:
         # Recorded even if the step ended meanwhile: the grant is what happened.
         transaction.attention.resolve(item.id, details=details, actor=actor)

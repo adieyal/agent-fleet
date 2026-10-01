@@ -32,14 +32,22 @@ def route_migration():
     doc = project(items, attention=attention)
     overhaul, = doc["work_items"]
     routes = overhaul["children"][0]
-    running = {"id": "r1", "host": "home", "status": "running"}
-    routes["children"][3]["children"][0]["runs"] = [running, {**running, "id": "r0", "status": "failed"}]
-    routes["children"][6]["runs"] = [{**running, "id": "r2", "host": "worker"}]
+    routes["children"][3]["children"][0]["runs"] = [run("r1", "running"), run("r0", "failed")]
+    routes["children"][6]["runs"] = [run("r2", "running", host="worker")]
     return doc
 
 
+def run(identity: str, status: str, *, host: str = "home", start: str | None = None, end: str | None = None,
+        **fields) -> dict:
+    """A run as project_status lists it under the item it is linked to; its fleetd job is `job-<id>`."""
+    return {"id": identity, "action": f"action-{identity}", "host": host, "remote_job_id": f"job-{identity}",
+            "runtime": "claude", "status": status, "reason": None, "start": start, "end": end,
+            "last_observed": None, "usage": None, "current_action": None, "action_observed_at": None,
+            "step_work": None, "action_glyph": None, "action_freshness": "unknown", "guidance": None, **fields}
+
+
 def test_epic_rooms_summarise_nested_route_migration():
-    parent, child = bench_rooms(route_migration())["rooms"]
+    parent, child = bench_rooms(route_migration(), {})["rooms"]
     assert (parent["title"], parent["depth"], parent["parent"]) == ("V2 frontend overhaul", 0, None)
     assert parent["children"] == [{"id": "routes", "title": "Route migration"}]
     assert parent["milestones"] == {"complete": 0, "total": 1}
@@ -65,7 +73,7 @@ def test_epic_rooms_summarise_nested_route_migration():
 
 
 def test_epic_page_lists_milestones_then_direct_tasks_with_status():
-    parent, child = bench_rooms(route_migration())["rooms"]
+    parent, child = bench_rooms(route_migration(), {})["rooms"]
     assert [(m["title"], m["status"]) for m in child["plan"]] == [
         ("1. Inventory routes", "complete"), ("2. Shared layout", "complete"), ("3. Auth pages", "complete"),
         ("4. Supplier pages", "active"), ("5. Order pages", "next"), ("6. Remove legacy router", "blocked")]
@@ -93,7 +101,7 @@ def test_status_prefers_recorded_condition_over_runs(condition, running, expecte
 def test_a_step_carries_its_plan_before_it_starts():
     epic = item("epic", kind="epic", goal="Ship")
     room, = bench_rooms(project([epic, item("s0", parent="epic", plan="1. Transcribe\n2. Time it"),
-                                 item("a1", parent="epic")]))["rooms"]
+                                 item("a1", parent="epic")]), {})["rooms"]
     assert [(t["id"], t["status"], t["plan"]) for t in room["tasks"]] == [
         ("s0", "next", "1. Transcribe\n2. Time it"), ("a1", "next", None)]
 
@@ -115,11 +123,11 @@ def test_a_running_step_says_when_its_earliest_running_run_started():
     epic = item("epic", kind="epic", goal="Ship")
     doc = project([epic, item("s0", parent="epic"), item("a1", parent="epic")])
     s0, a1 = doc["work_items"][0]["children"]
-    s0["runs"] = [{"id": "r2", "host": "home", "status": "running", "start": "2026-09-29T15:40:00+00:00"},
-                  {"id": "r1", "host": "home", "status": "running", "start": "2026-09-29T15:36:53+00:00"},
-                  {"status": "failed", "start": "2026-09-29T14:00:00+00:00"}]
-    a1["runs"] = [{"status": "succeeded", "start": "2026-09-29T15:00:00+00:00"}]
-    room, = bench_rooms(doc)["rooms"]
+    s0["runs"] = [run("r2", "running", start="2026-09-29T15:40:00+00:00"),
+                  run("r1", "running", start="2026-09-29T15:36:53+00:00"),
+                  run("r0", "failed", start="2026-09-29T14:00:00+00:00")]
+    a1["runs"] = [run("r3", "succeeded", start="2026-09-29T15:00:00+00:00")]
+    room, = bench_rooms(doc, {})["rooms"]
     assert [t["running_since"] for t in room["tasks"]] == ["2026-09-29T15:36:53+00:00", None]
 
 
@@ -127,18 +135,16 @@ def test_a_finished_step_carries_its_latest_finished_runs_start_and_end():
     epic = item("epic", kind="epic", goal="Ship")
     doc = project([epic, item("h0", parent="epic"), item("a8", parent="epic")])
     h0, _ = doc["work_items"][0]["children"]
-    h0["runs"] = [{"id": "r0", "host": "home", "status": "failed", "start": "2026-09-29T14:00:00+00:00",
-                   "end": "2026-09-29T14:05:00+00:00"},
-                  {"id": "r1", "host": "home", "status": "succeeded", "start": "2026-09-29T15:36:53+00:00",
-                   "end": "2026-09-29T15:45:45+00:00"},
-                  {"id": "r2", "host": "home", "status": "unknown outcome", "start": None, "end": None}]
-    room, = bench_rooms(doc)["rooms"]
+    h0["runs"] = [run("r0", "failed", start="2026-09-29T14:00:00+00:00", end="2026-09-29T14:05:00+00:00"),
+                  run("r1", "succeeded", start="2026-09-29T15:36:53+00:00", end="2026-09-29T15:45:45+00:00"),
+                  run("r2", "unknown outcome")]
+    room, = bench_rooms(doc, {})["rooms"]
     assert [t["last_run"] for t in room["tasks"]] == [
         {"start": "2026-09-29T15:36:53+00:00", "end": "2026-09-29T15:45:45+00:00"}, None]
 
 
 def test_epic_without_milestones_or_work_records_nothing():
-    room, = bench_rooms(project([item("epic", kind="epic", goal="Explore")]))["rooms"]
+    room, = bench_rooms(project([item("epic", kind="epic", goal="Explore")]), {})["rooms"]
     assert room["milestones"] == {"complete": 0, "total": 0}
     assert room["agents"] == room["upcoming"] == room["attention"] == room["children"] == room["workstreams"] == []
 
@@ -163,7 +169,7 @@ def supplier_migration():
 
 
 def test_workstreams_are_named_with_their_own_milestones_and_next():
-    room, = bench_rooms(supplier_migration())["rooms"]
+    room, = bench_rooms(supplier_migration(), {})["rooms"]
     suppliers, empty = room["workstreams"]
     assert (suppliers["title"], suppliers["milestones"]) == ("Supplier migration", {"complete": 6, "total": 7})
     assert suppliers["next"] == {"id": "s6", "title": "Slice 6: supplier imports", "next_step": "Map CSV columns"}
@@ -178,7 +184,7 @@ def test_workstreams_are_named_with_their_own_milestones_and_next():
 def test_a_finished_workstream_has_no_next_milestone():
     items = [item("epic", kind="epic"), item("ws", kind="workstream", parent="epic"),
              item("m", kind="milestone", parent="ws", condition="complete")]
-    room, = bench_rooms(project(items))["rooms"]
+    room, = bench_rooms(project(items), {})["rooms"]
     assert room["workstreams"][0]["milestones"] == {"complete": 1, "total": 1}
     assert room["workstreams"][0]["next"] is None
 
@@ -189,8 +195,8 @@ def test_a_dropped_milestone_shows_as_dropped_and_leaves_the_count_and_next():
              item("m2", kind="milestone", parent="ws", condition="dropped", next_step="Replaced by m3"),
              item("m3", kind="milestone", parent="ws")]
     doc = project(items)
-    doc["work_items"][0]["children"][0]["children"][1]["runs"] = [{"status": "succeeded", "start": "2026-09-30T08:00"}]
-    room, = bench_rooms(doc)["rooms"]
+    doc["work_items"][0]["children"][0]["children"][1]["runs"] = [run("r", "succeeded", start="2026-09-30T08:00")]
+    room, = bench_rooms(doc, {})["rooms"]
     stream, = room["workstreams"]
     assert [m["status"] for m in stream["plan"]] == ["complete", "dropped", "next"]
     assert stream["milestones"] == room["milestones"] == {"complete": 1, "total": 2}
@@ -202,7 +208,7 @@ def test_a_superseded_epic_names_its_successor():
     items = [item("old", kind="epic", title="Old epic", condition="dropped"), item("new", kind="epic", title="New epic"),
              item("m", kind="milestone", parent="old", condition="dropped")]
     old, new = bench_rooms(project(items, relations=[Relation("r", "old", "new", "superseded-by"),
-                                                     Relation("r2", "m", "new", "superseded-by")]))["rooms"]
+                                                     Relation("r2", "m", "new", "superseded-by")]), {})["rooms"]
     assert (old["condition"], old["superseded_by"]) == ("dropped", [{"id": "new", "title": "New epic"}])
     assert old["plan"][0]["superseded_by"] == [{"id": "new", "title": "New epic"}]
     assert new["superseded_by"] == []
@@ -215,7 +221,7 @@ def test_a_step_lists_its_readable_documents_latest_report_first():
     entries = [entry("b0", "brief", "brief-0.md"), entry("r0", "report", "result-0.md"),
                entry("r1", "report", "result-1.md"), entry("trace", "trace", "events.jsonl"),
                entry("out", "outbox", "outbox/H0-report.md"), entry("file", "file", "outbox/H0-report.md")]
-    room, = bench_rooms(project([item("epic", kind="epic"), item("t", parent="epic")], entries=entries))["rooms"]
+    room, = bench_rooms(project([item("epic", kind="epic"), item("t", parent="epic")], entries=entries), {})["rooms"]
     task, = room["tasks"]
     assert [(d["kind"], d["title"]) for d in task["documents"]] == [
         ("report", "r1"), ("report", "r0"), ("brief", "b0"), ("outbox", "out")]
@@ -227,11 +233,11 @@ def test_an_epic_without_milestones_breaks_its_tasks_down_by_status():
              item("gone", parent="epic", condition="dropped"), item("todo", parent="epic"),
              item("child", kind="epic", parent="epic"), item("theirs", parent="child")]
     doc = project(items)
-    room = next(r for r in bench_rooms(doc)["rooms"] if r["id"] == "epic")
+    room = next(r for r in bench_rooms(doc, {})["rooms"] if r["id"] == "epic")
     assert room["breakdown"] == {"basis": "tasks", "total": 2, "counts": {"complete": 1, "next": 1}}
 
 
 def test_an_epic_with_milestones_breaks_them_down_by_status():
-    room = bench_rooms(route_migration())["rooms"][1]
+    room = bench_rooms(route_migration(), {})["rooms"][1]
     assert room["breakdown"] == {"basis": "milestones", "total": 6,
                                  "counts": {"complete": 3, "active": 1, "next": 1, "blocked": 1}}

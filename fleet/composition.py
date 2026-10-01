@@ -27,11 +27,13 @@ from fleet.infrastructure.sqlite.decisions import DecisionRepository
 from fleet.infrastructure.input_delivery import send_input
 from fleet.infrastructure.answers import send_answer
 from fleet.infrastructure.permission_grants import send_grant
+from fleet.infrastructure.job_steps import send_step
 from fleet.infrastructure.sqlite.records import RecordsRepository
 from fleet.infrastructure.git import RepositoryWriter
 from fleet.modules.records import RecordsFacade
 from fleet.modules.authority import AuthorityFacade
 from fleet.infrastructure.sqlite.authority import AuthorityRepository
+from fleet.infrastructure.sqlite.triage import TriageRepository
 
 
 def store_path() -> Path:
@@ -44,7 +46,7 @@ def management_home() -> Path:
 
 
 def open_store(path: Path | None = None, *, clock: Callable[[], datetime] | None = None) -> Store:
-    return Store(path if path is not None else store_path(), clock)
+    return Store(path if path is not None else store_path(), clock, os.environ.get("FLEET_JOB_ID") or None)
 
 
 class Facades:
@@ -56,7 +58,38 @@ class Facades:
 
     @cached_property
     def attention(self):
-        return AttentionFacade(AttentionRepository(self.store, self.unit), self.store.clock)
+        return AttentionFacade(AttentionRepository(self.store, self.unit), self.store.clock,
+                               mandate=lambda project: self.records.triage_mandate(project),
+                               routing_history=self.routing_history)
+
+    @cached_property
+    def triage_repository(self):
+        return TriageRepository(self.store, self.unit)
+
+    def routing_history(self, context):
+        from fleet.modules.attention import RoutingHistory
+        import json
+        run = self.execution.find_run(context.host, context.owner_id)
+        action = None if run is None else self.execution.get_action(run.action)
+        is_triage = bool(action and action.activation and
+                         self.authority.get(action.activation).role == 'triage')
+        retries = []
+        for decision in self.decisions.list():
+            if decision.activation is None:
+                continue
+            try:
+                evidence = json.loads(decision.context)
+            except (ValueError, TypeError):
+                continue  # Earlier decisions have plain prose, not triage command evidence.
+            if not isinstance(evidence, dict) or evidence.get('command') != 'retry':
+                continue
+            same_subject = (evidence.get('retry_action') == action.id
+                            if action is not None and evidence.get('retry_action') is not None
+                            else evidence.get('subject') == f'job:{context.host}:{context.owner_id}')
+            if (same_subject and evidence.get('project') == context.project_id
+                    and evidence.get('step') == context.step):
+                retries.append(decision.id)
+        return RoutingHistory(is_triage, tuple(retries))
 
     @cached_property
     def workspace_repository(self):
@@ -82,20 +115,20 @@ class Facades:
         repository = ExecutionRepository(self.store, self.unit,
             attention=lambda unit: self.bound(unit).attention,
             collaborators=lambda unit: (self.bound(unit).work, self.bound(unit).workspace))
-        return ExecutionFacade(repository, self.work, send=send_input, grant=send_grant, answer=send_answer,
-            prepare_dispatch=lambda: open_workspace(self.store), authority=lambda: self.authority, clock=self.store.clock)
+        return ExecutionFacade(repository, self.work, send=send_input, grant=send_grant, answer=send_answer, step=send_step,
+            prepare_dispatch=None if self.unit is not None else lambda: open_workspace(self.store), authority=lambda: self.authority, clock=self.store.clock)
 
     @cached_property
     def decisions(self):
         repository = DecisionRepository(self.store, lambda unit: self.bound(unit).attention,
             lambda unit: self.bound(unit).work, lambda unit: self.bound(unit).execution,
-            records=lambda unit: self.bound(unit).records)
+            records=lambda unit: self.bound(unit).records, unit=self.unit)
         return DecisionsFacade(repository, self.store.clock, self.execution,
                                records=self.records, authority=lambda: self.authority)
 
     @cached_property
     def authority(self):
-        return AuthorityFacade(AuthorityRepository(self.store), self.records, self.work,
+        return AuthorityFacade(AuthorityRepository(self.store, self.unit), self.records, self.work,
                                self.decisions, self.attention, self.execution)
 
     @cached_property
@@ -158,3 +191,10 @@ def open_decisions(store: Store | None = None) -> DecisionsFacade:
 
 def open_authority(store: Store | None = None) -> AuthorityFacade:
     return facades(store).authority
+
+
+def deliver_triage(services, run, *, reconcile=False):
+    host = transport.host_by_name(run.host)
+    return services.execution.deliver(run,
+        lambda arguments, stdin: transport.call(host, arguments, stdin_text=stdin),
+        lambda job, paths, guidance: None, reconcile=reconcile)

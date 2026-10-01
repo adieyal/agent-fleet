@@ -101,7 +101,7 @@ def test_successful_write_requires_history(tmp_path: Path) -> None:
     assert len(store.history_after(0)) == 1
 
 
-def test_history_and_retention(tmp_path: Path) -> None:
+def test_history_is_kept_until_pruned_explicitly(tmp_path: Path) -> None:
     now = datetime(2026, 9, 27, tzinfo=timezone.utc)
     store = open_store(tmp_path / "controller.db", clock=lambda: now)
     with store.unit_of_work() as work:
@@ -112,14 +112,18 @@ def test_history_and_retention(tmp_path: Path) -> None:
             for row in rows] == [(1, "work:1", "ready", "active", "first"),
                                 (2, "work:2", "ready", "active", "second")]
     assert all(row["time"] == now.isoformat() for row in rows)
-    store.clock = lambda: now + timedelta(days=7)
+    store.clock = lambda: now + timedelta(days=400)
     with store.unit_of_work() as work:
         work.record_change("work:3", "ready", "active", "third")
     assert [row["sequence"] for row in store.history_after(0)] == [1, 2, 3]
-    store.clock = lambda: now + timedelta(days=7, microseconds=1)
-    with store.unit_of_work() as work:
-        work.record_change("work:4", "ready", "active", "fourth")
-    assert [row["sequence"] for row in store.history_after(0)] == [3, 4]
+    cutoff = now + timedelta(days=1)
+    assert store.history_span_before(cutoff) == (2, now.isoformat(), now.isoformat())
+    assert store.prune_history(cutoff, "user") == 2
+    rows = store.history_after(0)
+    assert [(row["sequence"], row["subject"], row["to"], row["actor"]) for row in rows] == [
+        (3, "work:3", "active", "third"),
+        (4, "history", f"pruned 2 entries before {cutoff.isoformat()}", "user")]
+    assert store.history_span_before(cutoff) == (0, None, None)
 
 
 def test_two_processes_lose_no_write(tmp_path: Path) -> None:

@@ -69,7 +69,8 @@ class WorkItem:
         for name in ("project", "kind", "title", "goal"):
             required(getattr(self, name), name)
         if self.condition not in CONDITIONS:
-            raise ValueError("unknown work condition")
+            raise ValueError(f"unknown work condition '{self.condition}'; use one of "
+                             + ", ".join(f"'{condition}'" for condition in CONDITIONS))
         if self.condition == "waiting":
             required(self.resume_condition, "resume condition")
         if self.focus is not None:

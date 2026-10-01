@@ -5,6 +5,7 @@ from datetime import datetime
 
 STATES = ("open", "acknowledged", "snoozed", "resolved")
 KINDS = ("decision", "blocker", "alert")
+OWNERS = ("agent", "user")
 
 
 class ItemResolved(ValueError):
@@ -90,7 +91,7 @@ class AttentionItem:
     work_item: str | None
     run: str | None
     kind: str
-    owner: str
+    owner: str  # who must act next: agent or user
     source: str
     source_reference: str
     headline: str
@@ -105,6 +106,10 @@ class AttentionItem:
     options: tuple[str, ...] = ()
     refusals: tuple[Refusal, ...] = ()
     questions: tuple[Question, ...] = ()  # answered in the session's terminal, never in Fleet
+    subject: str | None = None  # what the item is about: job:<host>:<id>, session:<host>:<id> or run:<id>
+    owner_reason: str | None = None  # why the item went to its owner, as given with the last hand-over
+    owner_actor: str | None = None   # who made the last hand-over; None while the item has its first owner
+    owner_at: datetime | None = None
 
     def __post_init__(self) -> None:
         for option in self.options:
@@ -115,8 +120,31 @@ class AttentionItem:
             raise ValueError("headline must contain 12 words or fewer")
         if self.kind not in KINDS:
             raise ValueError("kind must be decision, blocker or alert")
+        if self.owner not in OWNERS:
+            raise ValueError(f"owner must be agent or user, not {self.owner!r}")
         if self.state not in STATES:
             raise ValueError(f"unknown attention state: {self.state}")
+
+    @property
+    def at_terminal(self) -> bool:
+        """A session's item: only the person at that session's terminal can answer it."""
+        return self.stream_context is not None and self.stream_context.owner_type == "session"
+
+    def hand_over(self, owner: str, now: datetime, actor: str, *, reason: str | None) -> "AttentionItem":
+        """The item with a new owner. An agent cannot act on a session's question, and a resolved item has no one
+        left to act."""
+        required(actor, "actor")
+        if owner not in OWNERS:
+            raise ValueError(f"owner must be agent or user, not {owner!r}")
+        if self.state == "resolved":
+            raise ItemResolved("attention item is resolved")
+        if owner == self.owner:
+            raise ValueError(f"attention item is already {'with the agent' if owner == 'agent' else 'yours'}")
+        if owner == "agent" and self.at_terminal:
+            raise ValueError("a session's question is answered only at its terminal, so an agent cannot take it")
+        if reason is not None:
+            required(reason, "reason")
+        return replace(self, owner=owner, owner_reason=reason, owner_actor=actor, owner_at=now)
 
     def effective(self, now: datetime) -> "AttentionItem":
         if self.state == "snoozed" and self.snooze_until is not None and self.snooze_until <= now:

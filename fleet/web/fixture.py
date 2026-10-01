@@ -106,6 +106,9 @@ class FixtureState(LiveWorkspace):
     def host_names(self) -> list[str]:
         return [host["name"] for host in self.fixture["hosts"]]
 
+    def live_jobs(self) -> dict[tuple[str, str], dict[str, Any]]:
+        return {(host["name"], job["id"]): job for host in self.fixture["hosts"] for job in host["jobs"]}
+
     def move_on_host(self, host_name: str, identity: str, label: str) -> None:
         host = next(host for host in self.fixture["hosts"] if host["name"] == host_name)
         agents = [agent for agent in host["jobs"] + host["sessions"] if agent["id"].startswith(identity)]

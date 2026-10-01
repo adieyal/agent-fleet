@@ -99,6 +99,11 @@ MIGRATIONS = (
         "ALTER TABLE attention_item ADD COLUMN questions TEXT NOT NULL DEFAULT '[]'",
     ),
     (
+        # The fleet job whose process made the change; history reads it as the source run.
+        "ALTER TABLE state_history ADD COLUMN job TEXT",
+        "CREATE INDEX state_history_subject ON state_history(subject)",
+    ),
+    (
         # P2 store foundations. A run's latest reading (last observed, activity glyph, live usage) leaves the run
         # record for a table without history; a run's final usage stays in its record. Steps and hosts follow.
         """CREATE TABLE execution_run_observation (
@@ -108,10 +113,10 @@ MIGRATIONS = (
             PRIMARY KEY (run, idx))""",
         "CREATE TABLE execution_host (name TEXT PRIMARY KEY, record TEXT NOT NULL)",
         """INSERT INTO execution_run_observation (run, record)
-            SELECT id, json_object('last_observed', record -> '$.last_observed',
-                                   'current_action', record -> '$.current_action',
-                                   'action_observed_at', record -> '$.action_observed_at',
-                                   'usage', record -> '$.usage')
+            SELECT id, json_object('last_observed', json_extract(record, '$.last_observed'),
+                                   'current_action', json_extract(record, '$.current_action'),
+                                   'action_observed_at', json_extract(record, '$.action_observed_at'),
+                                   'usage', json_extract(record, '$.usage'))
             FROM execution_run""",
         """INSERT INTO state_history (subject, "from", "to", actor, time)
             SELECT 'execution:run:' || id, 'observation fields in the run record',
@@ -119,8 +124,20 @@ MIGRATIONS = (
                    strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now')
             FROM execution_run""",
         """UPDATE execution_run SET record = CASE
-            WHEN record ->> '$.status' IN ('succeeded', 'failed', 'stopped')
+            WHEN json_extract(record, '$.status') IN ('succeeded', 'failed', 'stopped')
                 THEN json_remove(record, '$.last_observed', '$.current_action', '$.action_observed_at')
             ELSE json_remove(record, '$.last_observed', '$.current_action', '$.action_observed_at', '$.usage') END""",
+    ),
+    (
+        # owner said both who must act ('user') and, for host-observed items, what the item is about
+        # (job:<host>:<id>, session:…, run:…). The latter moves to subject; every existing item stays the user's.
+        "ALTER TABLE attention_item ADD COLUMN subject TEXT",
+        "ALTER TABLE attention_item ADD COLUMN owner_reason TEXT",
+        "ALTER TABLE attention_item ADD COLUMN owner_actor TEXT",
+        "ALTER TABLE attention_item ADD COLUMN owner_at TEXT",
+        "UPDATE attention_item SET subject = owner WHERE owner != 'user'",
+        "UPDATE attention_item SET owner = 'user'",
+        # P1 agent ownership and scheduler state, after P3 history and P2 observations.
+        'CREATE TABLE triage_scheduler (project TEXT PRIMARY KEY, record TEXT NOT NULL)',
     ),
 )

@@ -4,6 +4,7 @@ from fleet import composition
 from fleet.modules.records import GUIDANCE_FILES, guidance_brief
 from fleet.projections.decisions import decision_log, promotion, promotion_marker
 from fleet.projections.project import project_status
+from fleet.triage import TriageCommands, triage_prompt
 from dataclasses import asdict
 from pathlib import Path
 import json
@@ -66,6 +67,8 @@ class ControllerCommands:
 
     def execute(self, command: str, payload: dict):
         services, activation = self.services, self.activation
+        if activation.role == 'triage':
+            return TriageCommands(services, activation).execute(command, payload)
         context = dict(actor=activation.actor, activation=activation.id)
         if command == 'state':
             return project_status(activation.project, services.work, services.attention,

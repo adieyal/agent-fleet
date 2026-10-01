@@ -183,7 +183,7 @@ A recorded choice with its actor, mandate version, context and affected work. De
 A change awaiting acceptance: an edit beyond its author's authority, a disputed completion, or an offline edit that conflicts with accepted state. Proposals are never applied by order of arrival.
 
 **Attention item**:
-A decision request, genuine blocker or actionable alert that calls for the user. It has an owner, a source, and a state: open, acknowledged, snoozed or resolved. Reading one does not resolve it. Ordinary agent activity, new reports and met waiting conditions do not become attention items merely by happening.
+A decision request, genuine blocker or actionable alert. It has an **owner**, who must act on it: the user or an agent. It also has a **subject**, the job, session or run it is about (none for an item raised by hand or by an orchestrator), a source, and a state: open, acknowledged, snoozed or resolved. The user **delegates** an item to an agent, and can take it back; an agent **escalates** an item to the user with a reason. An item handed over stays open and visible, and keeps who handed it over and why; seen again from its source, it keeps its owner. A session's question cannot go to an agent, since only its terminal can answer it. Reading one does not resolve it. Ordinary agent activity, new reports and met waiting conditions do not become attention items merely by happening.
 
 **Permission refusal**:
 A permission request a job's agent was refused because nobody was at the prompt; the agent carries on without it. A job step's refusals form one attention item, answered by allowing permission rules for the job, which continues the refused step, or by dismissing it. When the job moves on to a later step, or is gone, with the item untouched, it resolves as refused. An interactive session's permission request is a question to the person at its prompt and stays its own item.
@@ -214,6 +214,10 @@ A durable account of completed work, such as a slice, preserving its outcome, de
 **Executive summary**:
 A concise account of a project's or work item's purpose, completed outcomes, current work and remaining work. It identifies its authoring role and update time without requiring claim-by-claim citations.
 
+**History** (audit trail):
+The controller's permanent record of every change to its structured state: which subject changed, from what to what, by which actor, when, and from which fleet job (and so which **source run**). Nothing deletes it except an explicit prune, which itself leaves an entry. A subject's history includes the records that belong to it, such as a work item's criteria.
+_Avoid_: Log (logs are traces of runs)
+
 **Observation**:
 A timestamped reading about a subject, with a source and a freshness period. Once that period passes, the subject's current state is stale or unknown, even if the last reading was healthy; older observations remain history.
 
@@ -233,3 +237,61 @@ A packaged specialised display for a space: a manifest, an optional collector th
 | Observation | current, stale, unknown |
 
 State changes to work items, attention items and runs are timestamped independently of raw traces. P2 retains run, action and step records and controller trace copies indefinitely, with no automatic pruning; P3 owns explicit audit-history pruning. A run's latest reading (when it was last observed, its current activity, its usage so far) is an observation, not a state change: it is kept current without history, and a finished run's usage is recorded with its end.
+
+### Project triage
+
+A confirmed `mandates/triage.json` grants a project's triage role its attention
+commands. The activation pins that record's revision, names actor
+`triage:<activation-id>`, and has no work item. It may retry, add a step, grant
+exact refused rules, resolve attention, escalate, or record a decision only as
+its mandate allows. It cannot judge criteria or complete work. The item stays
+visible with `owner=agent`; `subject` names the job or session it concerns.
+Existing items remain user-owned until explicitly delegated.
+
+`fleet web` schedules one bounded run per project after observations and on its
+history loop. Reservation, activation, execution intent and daily budget are
+committed together. The runtime gets writable directories for the controller store
+and this project's management repository so its scoped commands can record effects
+under `workspace-write`; its worker job directory is already writable. Unknown outcomes retain their reservation; reconciliation
+uses the same run ID. Budgets reset on the controller's UTC calendar day. Every
+system escalation records a Decision and an ownership history entry. A project
+without a confirmed mandate has no automatic triage; `fleet triage status P`
+reports a null mandate version and budget, with its queue still visible.
+
+An unclaimed item times out after `unclaimed_minutes` from its ownership time.
+Items predating ownership timestamps get a grace period from the scheduler's
+first observation. Refusal timestamps survive replay. Failed delivery shows its
+error in triage status; an unconfirmed run eventually escalates its items while
+retaining the unknown run. An ended run's untouched items get one more run;
+a second untouched ending escalates with the run ID. Retry limits count Decisions
+across an Action's runs for the same step and name them on repeated failure.
+A triage run's own failure, stall or refusal always goes to the user.
+
+```mermaid
+flowchart LR
+  Observe[New attention] --> Route{Confirmed mandate?}
+  Route -->|no| User[User ownership]
+  Route -->|yes, within scope| Queue[Visible agent queue]
+  Queue --> Reserve[Serialized reservation and budget]
+  Reserve --> Run[One project triage run]
+  Run --> Controls[Scoped control commands and Decisions]
+  Run -->|unknown outcome| Reconcile[Reconcile same run ID]
+  Reconcile --> Run
+  Queue -->|timeout or exhausted budget| User
+  Run -->|second untouched ending| User
+```
+
+## Test suite
+
+Run the non-browser suite on any host:
+
+```sh
+uv run pytest -q -m "not browser"
+```
+
+Browser tests are marked automatically from their Playwright fixture dependencies.
+Run them on home with `uv run pytest -q -m browser`. On hosts without the
+Playwright browsers they skip with the reason "Playwright browsers not installed
+here; browser tests run on home". Browser tests also skip on other hosts even
+if executables are installed. Tests use temporary Fleet paths; pytest rejects
+access to the real `~/.config/fleet` store and config before opening them.

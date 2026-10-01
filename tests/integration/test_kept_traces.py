@@ -47,7 +47,7 @@ def test_terminal_trace_is_complete_idempotent_and_survives_rm(monkeypatch, tmp_
     assert state.keeper.settle(5)
     assert store.latest_sequence() == sequence and calls == [["read-trace", "job"]]
     monkeypatch.setattr(cli, "resolve", lambda reference: (host, "job"))
-    cli.command_remove(argparse.Namespace(job="carbon:job"))
+    cli.command_remove(argparse.Namespace(job="carbon:job", force=False))
     kept = composition.open_execution(composition.open_store(store.path)).trace(run.id)
     assert kept["events"]["content"] == content
     assert kept["source"]["availability"] == "removed by fleet rm"

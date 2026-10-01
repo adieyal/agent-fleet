@@ -40,7 +40,7 @@ export function stationOf(act, stage = 0) {
 
 // ------------------------------------------------------------------ presence
 export const FINISHED = new Set(['done', 'cancelled']);
-export const BLOCKED = new Set(['failed', 'blocked', 'stalled']);
+export const BLOCKED = new Set(['failed', 'lost', 'blocked', 'stalled']);   // lost: its agent died, as good as failed
 export const LEAVE_WITHIN_S = 30;        // a finished android is off the floor within this, however slow the frames
 export const IDLE_LEAVE_S = 30 * 60;
 
@@ -50,7 +50,7 @@ export function retired(job, prev, { showFinished = false, reduced = false } = {
   if (showFinished || !FINISHED.has(job.status)) return false;
   return reduced || !prev || !(prev.leaving || !FINISHED.has(prev.lastStatus));
 }
-// Work shown by its lantern, not an android: failed, blocked and stalled jobs, and any in a quiet (background) room.
+// Work shown by its lantern, not an android: failed, lost, blocked and stalled jobs, and any in a quiet (background) room.
 export const offFloor = (job, quiet = false) => BLOCKED.has(job.status) || quiet;
 // A job that finished while watched says goodbye before it leaves: a thumbs-up when done, a wave when cancelled.
 // null when there is nothing to say.

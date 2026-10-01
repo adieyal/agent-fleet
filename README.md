@@ -113,7 +113,8 @@ keeps its ID, links and focus; runs already going finish and show on its crate; 
 attention moves to the front desk and the storehouse door. Open a crate to look around
 the project read-only, or restore it to its old floor if that is free (the lowest free
 floor otherwise). When every floor is taken, moving in or restoring asks which floor to
-clear, or you can cancel.
+clear, or you can cancel. A shuttered project starts no new work; from the CLI,
+`fleet project restore PROJECT_ID [--shutter OTHER_ID]` brings it back.
 
 ## Getting started with the workspace
 
@@ -202,6 +203,19 @@ fleet decision record --work-item WORK_ID --question "Rerun the flaky test?" --a
 fleet decision list --project PROJECT_ID
 ```
 
+Every change the controller stores is kept as history: who changed what, when,
+and from which run. Read a subject's history, newest first, by id, unique id
+prefix or subject such as `attention:ID`; a work item's includes its criteria. The
+deck reads the same entries from `GET /api/history?subject=ID&since=7d`. History
+is never deleted automatically: `prune` says how many entries before the date it
+would delete and deletes them only with `--yes`, leaving an entry that records
+the pruning.
+
+```bash
+fleet history --subject WORK_ID --since 7d
+fleet history prune --before 2026-01-01 --yes
+```
+
 In the deck, the floor opens the constitution and each epic's page shows its
 charter and the decisions on its work. Edit either in place (each save is a new
 version by `web-user`, refused if someone saved first), open older versions in
@@ -213,6 +227,11 @@ Use the front desk and lanterns, or these commands, to manage attention:
 ```bash
 fleet attention add "Review the guide" --project PROJECT_ID --work-item WORK_ID --kind decision --owner user --source manual --source-reference guide-review --context-reference README.md --actor user
 fleet attention list --project PROJECT_ID
+fleet attention delegate ATTENTION_ID --actor user --note "retry once"   # stays open, listed as the agent's
+fleet attention list --owner agent                  # items an agent must act on; --owner user: yours
+fleet attention escalate ATTENTION_ID --actor triage --reason "needs a push to GitHub"   # agent to user
+fleet attention delegate ATTENTION_ID --actor user
+fleet attention take ATTENTION_ID --actor user      # back to you; the agent may no longer act on it
 fleet attention ack ATTENTION_ID --actor user
 fleet attention snooze ATTENTION_ID --until 2099-01-01T09:00:00+00:00 --actor user
 fleet attention resolve ATTENTION_ID --details "Review handled separately" --actor user
@@ -220,8 +239,12 @@ fleet attention add "May we publish?" --project PROJECT_ID --work-item WORK_ID -
 fleet answer ATTENTION_ID "Yes, publish the guide" --next-step "Publish"
 ```
 
-Use the second attention ID for the answer. Answering in the CLI or reader records
-a decision and resolves the item; live-session answers have separately tracked
+An item's `owner` is who must act on it (`agent` or `user`), and its `subject` is the
+job, session or run it is about. Each hand-over keeps who made it and why
+(`owner_actor`, `owner_reason`) and leaves a history row. Use the second attention ID for the answer. Answering in the CLI or reader records
+a decision and resolves the item. For a blocked job step, `fleet answer` instead
+adds the reply as the job's next step on its host and resolves the item, as
+`fleet add host:id -s "reply"` does. Live-session answers have separately tracked
 delivery, so an offline host does not lose the answer.
 
 Link existing jobs without fetching them, and add external references to the library
@@ -433,3 +456,19 @@ uv build
 The project code is licensed under [Apache-2.0](LICENSE). Bundled assets have
 their own terms in [asset credits](fleet/web/assets/CREDITS.md) and the
 [three.js license](fleet/web/vendor/three/LICENSE).
+
+
+## Test suite
+
+Run the non-browser suite on any host:
+
+```sh
+uv run pytest -q -m "not browser"
+```
+
+Browser tests are marked automatically from their Playwright fixture dependencies.
+Run them on home with `uv run pytest -q -m browser`. On hosts without the
+Playwright browsers they skip with the reason "Playwright browsers not installed
+here; browser tests run on home". Browser tests also skip on other hosts even
+if executables are installed. Tests use temporary Fleet paths; pytest rejects
+access to the real `~/.config/fleet` store and config before opening them.

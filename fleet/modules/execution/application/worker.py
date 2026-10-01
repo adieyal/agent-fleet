@@ -10,13 +10,28 @@ from .ports import ExecutionRepository
 from ..domain import JobObservation, Run, Usage
 
 
-def deliver(repository: ExecutionRepository, run: Run, call: Callable, push: Callable, *, reconcile: bool) -> dict:
-    action = repository.get_action(run.action)
-    payload = action.payload
+def dispatch_identity(repository: ExecutionRepository, run: Run) -> list[str]:
+    """The arguments that let the worker check a request is for this run and its unchanged payload."""
+    payload = repository.get_action(run.action).payload
     if payload is None:
         raise ValueError("linked run has no dispatch payload")
     digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
-    identity = ["--run-id", run.id, "--fingerprint", digest, "--schema-version", "4"]
+    return ["--run-id", run.id, "--fingerprint", digest, "--schema-version", "4"]
+
+
+def start(repository: ExecutionRepository, run: Run, call: Callable) -> dict:
+    """Start a job created with --hold."""
+    job = call(["start", run.remote_job_id, *dispatch_identity(repository, run)], None)
+    observe(repository, run.host, JobObservation(job["id"], job["status"], run.runtime,
+                                                 run.start, run.end, run.last_observed, Usage.from_worker(job)))
+    return job
+
+
+def deliver(repository: ExecutionRepository, run: Run, call: Callable, push: Callable, *, reconcile: bool) -> dict:
+    action = repository.get_action(run.action)
+    payload = action.payload
+    identity = dispatch_identity(repository, run)
+    digest = identity[3]
 
     def check(job: dict) -> dict:
         if (job["id"] != run.remote_job_id or job["run_id"] != run.id

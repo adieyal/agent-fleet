@@ -162,7 +162,7 @@ def test_unchanged_offline_delivery_heartbeat_does_not_write(monkeypatch):
 def test_runtime_hook_question_finds_linked_run_and_rolls_back_delivery_intent(monkeypatch):
     store, run, item = question(monkeypatch)
     attention = open_attention(store)
-    hook = attention.raise_item(project="p", kind="decision", owner="job:carbon:job1",
+    hook = attention.raise_item(project="p", kind="decision", owner="user", subject="job:carbon:job1",
         source="runtime-input:carbon", source_reference="hook", headline="Permission needed",
         context_reference="request:2", actor="fleetd",
         stream_context=StreamContext("carbon", "job", "job1", "p", "p", "hook", "Permission", 1))
