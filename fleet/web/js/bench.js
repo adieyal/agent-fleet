@@ -163,8 +163,20 @@ function successorLine(list) {
     : s.title === null ? `<span title="${esc(s.id)}">${esc(s.id.slice(0, 8))} (another project)</span>` : esc(s.title)).join(', ')}</small>`;
 }
 
+// How an epic's work stands: one segment per status, sized by its count, over milestones or else tasks.
+const SEGMENTS = [['complete', 'complete'], ['ran', 'ran, awaiting acceptance'], ['active', 'running'],
+  ['blocked', 'blocked'], ['on hold', 'on hold'], ['next', 'not started']];
+function progressBar({ basis, total, counts }) {
+  if (!total) return '<p data-milestones>No milestones or tasks recorded</p>';
+  const done = counts.complete || 0, running = counts.active || 0;
+  const segments = SEGMENTS.filter(([key]) => counts[key]).map(([key, label]) =>
+    `<i data-segment="${key}" style="flex:${counts[key]}" title="${counts[key]} ${label}"></i>`).join('');
+  return `<div data-milestones data-basis="${esc(basis)}"><div data-progress-bar role="img" aria-label="${done} of ${total} ${basis} complete">${segments}</div>
+    <small>${done} of ${total} ${basis} complete${running ? ` · ${running} running` : ''}${counts.blocked ? ` · ${counts.blocked} blocked` : ''}</small></div>`;
+}
+
 function epicCard(r) {
-  const { complete, total } = r.milestones;
+  const { total } = r.milestones;
   const now = r.agents.length
     ? `${r.agents.length} running: ${r.agents.map(a => `${esc(a.title)} (${esc(a.host)})`).join(', ')}`
     : 'Nothing running';
@@ -176,7 +188,7 @@ function epicCard(r) {
     <div data-epic-head><button data-epic="${esc(r.id)}">${esc(r.title)}</button>${r.condition === 'dropped' ? '<small data-dropped>Dropped</small>' : ''}${r.parent ? `<small data-parent-epic>in ${esc(r.parent.title)}</small>` : ''}</div>
     ${successorLine(r.superseded_by)}
     <p data-goal title="${esc(r.goal)}">${esc(r.headline)}</p>
-    <p data-milestones>${total ? `<progress max="${total}" value="${complete}"></progress> ${complete} of ${total} milestones` : 'No milestones recorded'}</p>
+    ${progressBar(r.breakdown)}
     ${r.workstreams.length ? `<ul data-workstreams aria-label="Workstreams">${r.workstreams.map(w =>
       `<li data-workstream="${esc(w.id)}"><b>${esc(w.title)}</b> ${streamProgress(w)}</li>`).join('')}</ul>` : ''}
     <p data-now><b data-label>Now:</b> ${now}</p>

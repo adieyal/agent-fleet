@@ -141,11 +141,39 @@ def agents(scope: list[dict]) -> list[dict[str, Any]]:
     return list(placed.values())
 
 
+def own_tasks(epic: dict) -> list[dict]:
+    """The epic's tasks at any depth, leaving out those of its child epics, which have their own rooms."""
+    tasks = []
+
+    def visit(node: dict) -> None:
+        for child in node["children"]:
+            if child["kind"] == "epic":
+                continue
+            if child["kind"] == "task":
+                tasks.append(child)
+            visit(child)
+
+    visit(epic)
+    return tasks
+
+
+def breakdown(milestones: list[dict], tasks: list[dict]) -> dict[str, Any]:
+    """How the epic's work stands, counted by status: over its milestones when it has any, else over its tasks.
+    Dropped items leave the count, as they leave milestone progress."""
+    basis, items = ("milestones", milestones) if milestones else ("tasks", tasks)
+    counts: dict[str, int] = {}
+    for item in items:
+        if item["condition"] != "dropped":
+            counts[status(item)] = counts.get(status(item), 0) + 1
+    return {"basis": basis, "total": sum(counts.values()), "counts": counts}
+
+
 def epic_room(epic: dict, parent: dict | None, depth: int) -> dict[str, Any]:
     scope = descendants(epic)
     direct, streams = milestone_groups(epic)
     milestones = direct + [item for _, own in streams for item in own]
     return {
+        "breakdown": breakdown(milestones, own_tasks(epic)),
         "id": epic["id"], "title": epic["title"], "depth": depth,
         "condition": epic["condition"], "superseded_by": successors(epic),
         "parent": None if parent is None else {"id": parent["id"], "title": parent["title"]},

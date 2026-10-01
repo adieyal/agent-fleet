@@ -260,7 +260,8 @@ def route_migration(deck_state, monkeypatch) -> dict[str, Any]:
     return {'routes': routes, 'milestones': milestones, 'redirect': redirect, 'store': store}
 
 
-def test_epic_cards_summarise_nested_route_migration(changed_deck: Deck, route_migration) -> None:
+def test_epic_cards_summarise_nested_route_migration(changed_deck: Deck, route_migration,
+                                                     request: pytest.FixtureRequest) -> None:
     routes = route_migration['routes']
     page = changed_deck.page
     page.evaluate("fleetDeck.enterFloor('restoke-v2')")
@@ -277,13 +278,16 @@ def test_epic_cards_summarise_nested_route_migration(changed_deck: Deck, route_m
     assert child.evaluate('e => e.getBoundingClientRect().left') > parent.evaluate('e => e.getBoundingClientRect().left')
     expect(child.locator('[data-goal]')).to_have_text('Move every page to the new router.')
     expect(child.locator('[data-goal]')).to_have_attribute('title', routes.goal)
-    expect(child.locator('[data-milestones]')).to_have_text('3 of 6 milestones')
-    expect(child.locator('progress')).to_have_attribute('value', '3')
+    expect(child.locator('[data-milestones] small')).to_have_text('3 of 6 milestones complete · 1 running · 1 blocked')
+    segments = child.locator('[data-progress-bar] i')
+    assert segments.evaluate_all('els => els.map(e => [e.dataset.segment, e.style.flexGrow])') == [
+        ['complete', '3'], ['active', '1'], ['blocked', '1'], ['next', '1']]
     expect(child.locator('[data-upcoming]')).to_have_text([
         '4. Milestone 4 — Port the supplier list', '5. Milestone 5 — Next step not recorded',
         '6. Milestone 6 — Delete router.js'])
     expect(child.locator('[data-now]')).to_have_text('Now: 1 running: Port supplier list (home)')
     expect(child.locator('[data-attention-count]')).to_have_text('2 open decisions or blockers')
+    shoot(request, page, 'epic-cards')
     card, title = child.bounding_box(), child.locator('[data-epic]').bounding_box()
     assert card['y'] <= title['y'] and title['y'] + title['height'] <= card['y'] + card['height']
 

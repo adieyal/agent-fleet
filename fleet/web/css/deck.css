@@ -1081,6 +1081,15 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 [data-plan-item][data-status="dropped"] > div { opacity:.6; }
 [data-plan-item][data-status="dropped"] :is(b, button[data-slice]) { text-decoration:line-through; }
 [data-superseded-by] { display:block; color:#94a3b8; }
+[data-epic-card] [data-milestones] small { display:block; margin-top:4px; color:#94a3b8; }
+[data-progress-bar] { display:flex; gap:2px; height:8px; border-radius:4px; overflow:hidden; background:#1e293b; }
+[data-progress-bar] i { min-width:4px; }
+[data-segment="complete"] { background:#34d399; }
+[data-segment="ran"] { background:repeating-linear-gradient(135deg, #34d399 0 3px, #166534 3px 6px); }
+[data-segment="active"] { background:#38bdf8; }
+[data-segment="blocked"] { background:#f87171; }
+[data-segment="on hold"] { background:#fbbf24; }
+[data-segment="next"] { background:#475569; }
 [data-superseded-by] button { margin:0; padding:0 4px; font:inherit; }
 [data-dropped] { margin-left:8px; padding:1px 6px; border:1px solid #475569; border-radius:4px; color:#94a3b8; font-weight:normal; }
 [data-epic-card][data-condition="dropped"] { opacity:.65; }

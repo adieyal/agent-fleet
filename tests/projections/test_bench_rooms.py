@@ -220,3 +220,18 @@ def test_a_step_lists_its_readable_documents_latest_report_first():
     assert [(d["kind"], d["title"]) for d in task["documents"]] == [
         ("report", "r1"), ("report", "r0"), ("brief", "b0"), ("outbox", "out")]
     assert task["documents"][0]["canonical_location"] == f"{jobs}/result-1.md"
+
+
+def test_an_epic_without_milestones_breaks_its_tasks_down_by_status():
+    items = [item("epic", kind="epic"), item("done", parent="epic", condition="complete"),
+             item("gone", parent="epic", condition="dropped"), item("todo", parent="epic"),
+             item("child", kind="epic", parent="epic"), item("theirs", parent="child")]
+    doc = project(items)
+    room = next(r for r in bench_rooms(doc)["rooms"] if r["id"] == "epic")
+    assert room["breakdown"] == {"basis": "tasks", "total": 2, "counts": {"complete": 1, "next": 1}}
+
+
+def test_an_epic_with_milestones_breaks_them_down_by_status():
+    room = bench_rooms(route_migration())["rooms"][1]
+    assert room["breakdown"] == {"basis": "milestones", "total": 6,
+                                 "counts": {"complete": 3, "active": 1, "next": 1, "blocked": 1}}
