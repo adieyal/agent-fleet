@@ -8,6 +8,7 @@ import re
 import shlex
 import subprocess
 import sys
+import tempfile
 import time
 from collections import defaultdict
 from dataclasses import asdict
@@ -25,12 +26,13 @@ from rich.tree import Tree
 from fleet import transport
 from fleet.modules import workspace as projects
 from fleet.composition import open_attention, open_decisions, open_execution, open_library, open_records, open_store, open_work, open_workspace
+from fleet.projections.decisions import decision_log
 from fleet.projections.project import project_status
 from fleet.modules.work import RELATION_TYPES, EvidenceSpecification
 from fleet.modules.execution import Run
 from fleet.transport import FleetError, Host, HostReport
-from fleet.orchestration import ControllerCommands, orchestrator_prompt
-from fleet.composition import open_authority
+from fleet.orchestration import ControllerCommands, guide, orchestrator_prompt, promote_decision
+from fleet.composition import facades, open_authority
 from fleet.web.server import serve, serve_fixture
 
 console = Console()
@@ -288,9 +290,11 @@ def command_dispatch(arguments: argparse.Namespace) -> None:
     execution = open_execution()
     key = str(uuid4()) if arguments.id is None else arguments.id
     try:
+        payload, guidance = guide(open_records(), arguments.work_item,
+            {"cwd": arguments.cwd, "arguments": fleetd_arguments, "steps": steps,
+             "context": arguments.context, "hold": arguments.hold})
         intent = execution.dispatch(arguments.work_item, host=host.name, runtime=arguments.agent,
-            payload={"cwd": arguments.cwd, "arguments": fleetd_arguments, "steps": steps,
-                     "context": arguments.context, "hold": arguments.hold}, project=project_id,
+            payload=payload, project=project_id, guidance=guidance,
             actor="user", reason=arguments.description, idempotency_key=key, remote_job_id=arguments.id)
     except (ValueError, LookupError) as error:
         raise FleetError(str(error)) from error
@@ -315,7 +319,16 @@ def deliver_dispatch(run: Run, *, reconcile: bool = False) -> dict:
     host = transport.host_by_name(run.host)
     return open_execution().deliver(run,
         lambda arguments, stdin: transport.call(host, arguments, stdin_text=stdin),
-        lambda job, context: push_context(host, job, context), reconcile=reconcile)
+        lambda job, context, guidance: push_guided_context(host, job, context, guidance), reconcile=reconcile)
+
+
+def push_guided_context(host: Host, job_id: str, paths: list[str], guidance: dict | None) -> None:
+    """Context paths plus the pinned constitution and charter, written as CONSTITUTION.md and CHARTER.md."""
+    if guidance is None:
+        push_context(host, job_id, paths)
+        return
+    with tempfile.TemporaryDirectory(prefix="fleet-guidance-") as directory:
+        push_context(host, job_id, paths + open_records().write_guidance_files(guidance, directory))
 
 
 def command_orchestrate(arguments: argparse.Namespace) -> None:
@@ -329,8 +342,9 @@ def command_orchestrate(arguments: argparse.Namespace) -> None:
         records = open_records(store)
         _, mandate = records.mandate_version(activation.project, activation.mandate_path,
                                              revision=activation.mandate_version)
-        prompt = orchestrator_prompt(activation, mandate)
-        worker = ['create', '--project', activation.project, '--description', 'Orchestrate work item',
+        payload, guidance = guide(records, activation.work_item, dict(
+            steps=[dict(prompt=orchestrator_prompt(activation, mandate), title='Orchestrate')], context=None))
+        worker =['create', '--project', activation.project, '--description', 'Orchestrate work item',
                   '--agent', arguments.agent, '--cwd', arguments.cwd, '--steps-file', '/dev/stdin', '--hold']
         if arguments.permission is not None:
             worker += ['--permission', arguments.permission]
@@ -338,9 +352,9 @@ def command_orchestrate(arguments: argparse.Namespace) -> None:
             if name in os.environ:
                 worker += ['--env', name + '=' + os.environ[name]]
         intent = open_execution(store).dispatch(activation.work_item, actor=activation.actor,
-            activation=activation.id, host=host.name, runtime=arguments.agent,
-            payload=dict(cwd=arguments.cwd, arguments=worker, steps=[dict(prompt=prompt, title='Orchestrate')],
-                         context=None, hold=False), reason='Orchestrate work item', idempotency_key=activation.id)
+            activation=activation.id, host=host.name, runtime=arguments.agent, guidance=guidance,
+            payload=dict(payload, cwd=arguments.cwd, arguments=worker, hold=False),
+            reason='Orchestrate work item', idempotency_key=activation.id)
         deliver_dispatch(intent.run)
     except (ValueError, LookupError) as error:
         raise FleetError(str(error)) from error
@@ -699,6 +713,79 @@ def command_project_management(arguments: argparse.Namespace) -> None:
         raise FleetError(str(error)) from error
 
 
+def guidance_subject(reference: str) -> tuple[str, str | None]:
+    """(project, epic) for an epic ID, or (project, None) for a project ID or name."""
+    store = open_store()
+    try:
+        item = open_work(store).get(reference)
+    except LookupError:
+        return open_workspace(store).resolve_project(reference), None
+    return item.project, item.id
+
+
+def describe_version(version) -> str:
+    run = "" if version.source_run is None else f", run {version.source_run}"
+    return f"version {version.number} by {version.actor} at {version.time}{run} ({version.revision[:12]})"
+
+
+def command_guidance_show(arguments: argparse.Namespace) -> None:
+    project, epic = guidance_subject(arguments.subject)
+    try:
+        guidance = open_records().guidance(project, epic, number=arguments.version)
+    except (ValueError, LookupError) as error:
+        raise FleetError(str(error)) from error
+    name = f"charter of epic {epic}" if epic else f"constitution of {project}"
+    if guidance is None:
+        raise FleetError(f"no {name} recorded; write one with: fleet guidance edit {arguments.subject} --file F --actor A")
+    if arguments.json:
+        print(json.dumps(asdict(guidance)))
+        return
+    print(f"{name[0].upper()}{name[1:]}, {describe_version(guidance.version)}")
+    if epic is not None:
+        if guidance.constitution is None:
+            print(f"Inherits no constitution: none recorded for {project}")
+        else:
+            inherited = ("none (written before it)" if guidance.inherits is None
+                         else f"constitution version {guidance.inherits.number}")
+            print(f"Inherits {inherited}; current constitution version {guidance.constitution.number}")
+    print()
+    print(guidance.body, end="" if guidance.body.endswith("\n") else "\n")
+
+
+def command_guidance_edit(arguments: argparse.Namespace) -> None:
+    project, epic = guidance_subject(arguments.subject)
+    try:
+        body = sys.stdin.read() if arguments.file is None else Path(arguments.file).read_text()
+        guidance = open_records().write_guidance(project, body, epic=epic, actor=arguments.actor,
+                                                 source_run=arguments.run)
+    except (ValueError, LookupError, OSError) as error:
+        raise FleetError(str(error)) from error
+    print(f"recorded {guidance.path} {describe_version(guidance.version)}")
+
+
+def command_guidance_promote(arguments: argparse.Namespace) -> None:
+    try:
+        guidance = promote_decision(facades(open_store()), arguments.epic, arguments.decision, actor=arguments.actor)
+    except (ValueError, LookupError) as error:
+        raise FleetError(str(error)) from error
+    print(f"recorded {guidance.path} {describe_version(guidance.version)}")
+
+
+def command_guidance_history(arguments: argparse.Namespace) -> None:
+    project, epic = guidance_subject(arguments.subject)
+    try:
+        versions = open_records().guidance_history(project, epic)
+    except (ValueError, LookupError) as error:
+        raise FleetError(str(error)) from error
+    if arguments.json:
+        print(json.dumps([asdict(version) for version in versions]))
+        return
+    if not versions:
+        print("No versions recorded.")
+    for version in versions:
+        print(describe_version(version))
+
+
 def command_project_repo_add(arguments: argparse.Namespace) -> None:
     open_workspace().edit_registry(lambda registry: registry.add_repository(arguments.id, arguments.url))
 
@@ -904,6 +991,8 @@ def print_status_item(item: dict[str, Any], depth: int = 0) -> None:
         for field in ("runtime", "reason", "start", "end", "last_observed", "usage"):
             value = "unknown" if run[field] is None else run[field]
             print(f"{indent}      {field.replace('_', ' ').capitalize()}: {value}")
+        attached = "none attached" if run["guidance"] is None else describe_guidance(run["guidance"])
+        print(f"{indent}      Guidance: {attached}")
     print(f"{indent}  Library:")
     for entry in item["library"]:
         title = "unknown" if entry["title"] is None else entry["title"]
@@ -917,6 +1006,7 @@ def print_status_item(item: dict[str, Any], depth: int = 0) -> None:
     for decision in item["decisions"]:
         print(f"{indent}  Decision {decision['id']}: {decision['question']}")
         print(f"{indent}    {decision['answer']} — {decision['actor']} at {decision['time']}")
+        print(f"{indent}    Principle: {'unknown' if decision['principle'] is None else decision['principle']}")
     summary = item["summary"]
     if summary is not None:
         print(f"{indent}  Summary ({summary['authoring_role']}, {summary['updated']}):")
@@ -999,6 +1089,66 @@ def add_work_parsers(commands) -> None:
     action.add_argument("id", help="work item ID")
     for field in ("purpose", "done", "doing", "next", "authoring-role", "actor"):
         action.add_argument(f"--{field}", required=True)
+
+
+def describe_guidance(guidance: dict) -> str:
+    return ", ".join(f"{name} version {guidance[name]['version']}" for name in ("constitution", "charter")
+                     if guidance[name] is not None)
+
+
+def decision_run(reference: str | None) -> str | None:
+    """The run named, else the run of the fleet job this agent runs in (FLEET_JOB_ID), else None."""
+    if reference is not None:
+        return reference
+    job = os.environ.get("FLEET_JOB_ID")
+    if job is None:
+        return None
+    runs = [run for run in open_execution().runs() if run.remote_job_id == job]
+    if len(runs) > 1:
+        raise FleetError(f"job {job} matches runs on several hosts; give --run")
+    if not runs:
+        error_console.print(f"fleet: job {job} is not a recorded run; the decision has no source run", markup=False)
+        return None
+    return runs[0].id
+
+
+def command_decision_record(arguments: argparse.Namespace) -> None:
+    try:
+        decision = open_decisions().record_guided(arguments.work_item, actor=arguments.actor,
+            question=arguments.question, answer=arguments.answer, principle=arguments.principle,
+            context=arguments.context, source_run=decision_run(arguments.run))
+    except (ValueError, LookupError) as error:
+        raise FleetError(str(error)) from error
+    print(json.dumps(asdict(decision), default=lambda value: value.isoformat()))
+
+
+def command_decision_list(arguments: argparse.Namespace) -> None:
+    store = open_store()
+    work = open_work(store)
+    try:
+        if arguments.epic is not None:
+            epic = work.get(arguments.epic)
+            if epic.kind != "epic":
+                raise ValueError(f"{epic.id} is a {epic.kind}, not an epic")
+            project, scope = epic.project, epic.id
+        else:
+            project, scope = open_workspace(store).resolve_project(arguments.project), None
+    except (ValueError, LookupError) as error:
+        raise FleetError(str(error)) from error
+    log = decision_log(work, open_decisions(store), project=project, epic=scope)
+    if arguments.json:
+        print(json.dumps(log, default=str))
+        return
+    if not log:
+        print("No decisions recorded.")
+    for entry in log:
+        items = ", ".join(item["id"] if item["title"] is None else f"{item['title']} ({item['id']})"
+                          for item in entry["work_items"])
+        print(f"{entry['time']} {entry['actor']} on {items}")
+        print(f"  Question: {entry['question']}")
+        print(f"  Answer: {entry['answer']}")
+        print(f"  Principle: {'unknown' if entry['principle'] is None else entry['principle']}")
+        print(f"  Guidance: {'unknown' if entry['guidance'] is None else describe_guidance(entry['guidance'])}")
 
 
 def command_answer(arguments: argparse.Namespace) -> None:
@@ -1273,12 +1423,56 @@ def build_parser() -> argparse.ArgumentParser:
     management.add_argument('path')
     management.set_defaults(handler=command_project_management)
 
+    guidance = commands.add_parser(
+        "guidance", help="a project's constitution and its epics' charters, versioned in the management repository"
+    ).add_subparsers(dest="guidance_command", required=True)
+    subject_help = "a project ID or name (its constitution) or an epic ID (its charter)"
+    guidance_show = guidance.add_parser("show", help="print the current or a numbered version")
+    guidance_show.add_argument("subject", help=subject_help)
+    guidance_show.add_argument("--version", type=int, help="an older version number from history")
+    guidance_show.add_argument("--json", action="store_true")
+    guidance_show.set_defaults(handler=command_guidance_show)
+    guidance_edit = guidance.add_parser("edit", help="record a new version from a file or stdin")
+    guidance_edit.add_argument("subject", help=subject_help)
+    guidance_edit.add_argument("--file", help="Markdown file; stdin when omitted")
+    guidance_edit.add_argument("--actor", required=True)
+    guidance_edit.add_argument("--run", help="the run that wrote this version")
+    guidance_edit.set_defaults(handler=command_guidance_edit)
+    guidance_promote = guidance.add_parser("promote", help="add a decision to its epic charter's decisions in force")
+    guidance_promote.add_argument("decision", help="decision ID")
+    guidance_promote.add_argument("--epic", required=True)
+    guidance_promote.add_argument("--actor", required=True)
+    guidance_promote.set_defaults(handler=command_guidance_promote)
+    guidance_history = guidance.add_parser("history", help="versions, newest first")
+    guidance_history.add_argument("subject", help=subject_help)
+    guidance_history.add_argument("--json", action="store_true")
+    guidance_history.set_defaults(handler=command_guidance_history)
+
     add_work_parsers(commands)
 
     status = commands.add_parser("status", help="persisted project work and open attention")
     status.add_argument("project")
     status.add_argument("--json", action="store_true", help="emit the project projection")
     status.set_defaults(handler=command_status)
+
+    decision = commands.add_parser("decision", help="decisions agents made under guidance").add_subparsers(
+        dest="decision_command", required=True)
+    decision_record = decision.add_parser("record", help="record a decision and the principle it relied on")
+    decision_record.add_argument("--work-item", required=True)
+    decision_record.add_argument("--question", required=True)
+    decision_record.add_argument("--answer", required=True)
+    decision_record.add_argument("--principle", required=True,
+                                 help='the rule relied on, e.g. "Constitution: decide yourself — test-only fixes"')
+    decision_record.add_argument("--actor", required=True)
+    decision_record.add_argument("--context", default="", help="where the question arose")
+    decision_record.add_argument("--run", help="the run deciding; FLEET_JOB_ID's run when omitted")
+    decision_record.set_defaults(handler=command_decision_record)
+    decision_list = decision.add_parser("list", help="decisions on a project's or an epic's work, newest first")
+    decision_scope = decision_list.add_mutually_exclusive_group(required=True)
+    decision_scope.add_argument("--project")
+    decision_scope.add_argument("--epic")
+    decision_list.add_argument("--json", action="store_true")
+    decision_list.set_defaults(handler=command_decision_list)
 
     answer = commands.add_parser("answer", help="record an answer; options use 1-based numbers")
     answer.add_argument("id")

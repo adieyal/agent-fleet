@@ -144,6 +144,13 @@ The role that keeps the library in order. It may make reversible documentation i
 **Mandate**:
 A versioned statement, attached to a scope of work and given to a role, of the goal, constraints, decision authority and escalation conditions, including which of the scope's completion criteria the role may judge. Authority scales with risk and cost so routine choices do not interrupt the user. Every activation and decision records the mandate version it relied on.
 
+**Constitution**:
+A project's prose principles for every agent working in it: goals, anti-goals, hard limits, evidence rules, what an agent decides itself and what it escalates. It is `constitution.md` in the management repository, and each edit is a new version with its author. Unlike a mandate, which is machine-checked command authority for one orchestrator activation, a constitution is guidance an agent reads and applies.
+_Avoid_: policy, rules file
+
+**Charter**:
+An epic's prose guidance: its goal, what done means, anti-goals, canonical line, dated decisions in force and open questions. It is `charters/<epic-id>.md` in the management repository and inherits the constitution version in force when it was written. A task brief overrides the charter, and the charter overrides the constitution. A job dispatched on a work item receives the constitution and its nearest epic's charter as `CONSTITUTION.md` and `CHARTER.md`; the dispatch action pins their versions, so a retry gets the same text and a decision can name what it relied on. Both are read and edited in the deck: the constitution from the floor, the charter on its epic's page beside the decisions made on that epic's work. **Promoting** a decision adds it, dated, to the charter's decisions in force as a new charter version.
+
 **Acceptance**:
 The transition that marks a work item complete against its completion criteria. It records the actor, mandate version, evidence and outcome, and is separate from any run finishing. Every criterion must be met in the way it declares: an orchestrator cannot accept a checked criterion without the check, or one reserved for the user. An orchestrator may accept only within its mandate; otherwise the decision becomes an attention item.
 
@@ -151,7 +158,7 @@ The transition that marks a work item complete against its completion criteria. 
 Records showing that a completion criterion is met, such as test results, reports or run outputs. A run finishing is not in itself evidence that criteria are met.
 
 **Decision**:
-A recorded choice with its actor, mandate version, context and affected work. Decisions within a mandate are recorded without interrupting the user; others begin as decision requests.
+A recorded choice with its actor, mandate version, context and affected work. Decisions within a mandate are recorded without interrupting the user; others begin as decision requests. A decision an agent makes itself under guidance names its **principle**, the rule it relied on (such as "Constitution: decide yourself — test-only fixes"), and carries the guidance versions its run received. A decision whose principle was never given shows it as unknown.
 
 **Proposal**:
 A change awaiting acceptance: an edit beyond its author's authority, a disputed completion, or an offline edit that conflicts with accepted state. Proposals are never applied by order of arrival.

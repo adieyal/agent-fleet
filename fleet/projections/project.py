@@ -59,7 +59,9 @@ def project_status(project: str, work: WorkFacade, attention: AttentionFacade,
     items = work.list(project=project)
     raised_items = attention.list(project=project)
     open_items = attention.list(project=project, state="open")
-    actions = {action.id: action.work_item for action in execution.actions()}
+    recorded_actions = execution.actions()
+    actions = {action.id: action.work_item for action in recorded_actions}
+    guidance = {action.id: action.guidance for action in recorded_actions}
     runs = execution.runs()
     entries = library.list()
     answers = decisions.list()
@@ -83,7 +85,8 @@ def project_status(project: str, work: WorkFacade, attention: AttentionFacade,
             "summary": asdict(summary) if summary is not None else None,
             "attention": [asdict(entry) for entry in open_items if entry.work_item == item.id],
             "decisions": [asdict(answer) for answer in answers if item.id in answer.affected_work_items],
-            "runs": [{**asdict(run), **execution.run_activity(run)} for run in item_runs],
+            "runs": [{**asdict(run), **execution.run_activity(run), "guidance": guidance[run.action]}
+                     for run in item_runs],
             "library": [asdict(entry) for entry in entries
                         if entry.project == project and entry.work_item == item.id],
             "no_follow_up_yet": no_follow_up_yet(item, item_runs),

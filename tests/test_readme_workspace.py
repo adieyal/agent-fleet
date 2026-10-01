@@ -15,8 +15,10 @@ def test_workspace_guide(tmp_path, monkeypatch, capsys):
     text = README.read_text()
     assert '## Getting started with the workspace' in text
     section = text.split('## Getting started with the workspace\n', 1)[1].split('\n## ', 1)[0]
+    constitution = tmp_path / 'constitution.md'
+    constitution.write_text('# Constitution\n\nDecide yourself: test-only fixes.\n')
     values = {'MANAGEMENT_PATH': str(tmp_path / 'management'), 'WORKING_DIRECTORY': str(tmp_path),
-              'JOB_ID': 'existing-job'}
+              'JOB_ID': 'existing-job', 'CONSTITUTION_PATH': str(constitution)}
     calls = []
 
     def call(host, arguments, **fields):
@@ -29,7 +31,10 @@ def test_workspace_guide(tmp_path, monkeypatch, capsys):
                     status='running' if arguments[0] == 'start' else 'queued',
                     steps=[{}], description='Review')
 
+    pushed = []
+    monkeypatch.delenv('FLEET_JOB_ID', raising=False)  # the guide is followed outside a fleet job
     monkeypatch.setattr(cli.transport, 'call', call)
+    monkeypatch.setattr(cli, 'push_context', lambda host, job, paths: pushed.append(sorted(Path(p).name for p in paths)))
     for language, block in re.findall(r'```(bash|python)\n(.*?)```', section, re.S):
         for name, value in values.items():
             block = block.replace(name, value)
@@ -62,6 +67,7 @@ def test_workspace_guide(tmp_path, monkeypatch, capsys):
             elif args[1:3] == ['run', 'link']:
                 values['RUN_ID'] = json.loads(output)['id']
     assert len(calls) == 6  # dispatch, send and orchestrate each create then start
+    assert pushed == [['CONSTITUTION.md']] * 3  # the guide's constitution reaches each job
     for create in calls[::2]:
         assert create[create.index('--permission') + 1] == 'workspace-write'
     assert composition.open_work().summary(values['WORK_ID']).purpose == 'Ship the guide'

@@ -30,7 +30,7 @@ def claim(transaction: ExecutionRepository, action: Action, host: str, runtime: 
 
 def dispatch(repository: ExecutionRepository, work_item: str | None, *, host: str, runtime: str, payload: dict,
              actor: str, reason: str, idempotency_key: str, project: str | None = None,
-             remote_job_id: str | None = None, authorization=None) -> DispatchResult:
+             remote_job_id: str | None = None, authorization=None, guidance: dict | None = None) -> DispatchResult:
     if not all(value.strip() for value in (host, runtime, actor, reason, idempotency_key)):
         raise ValueError("host, runtime, actor, reason and idempotency key are required")
     if not payload["cwd"].strip():
@@ -40,7 +40,9 @@ def dispatch(repository: ExecutionRepository, work_item: str | None, *, host: st
             project = transaction.work.get(work_item).project
         if project is None:
             raise ValueError("project or work item is required")
-        digest = fingerprint(work_item, project, host, runtime, payload)
+        # Fingerprints of unguided dispatches stay as they were.
+        fingerprinted = payload if guidance is None else dict(payload, guidance=guidance)
+        digest = fingerprint(work_item, project, host, runtime, fingerprinted)
         existing = transaction.request(idempotency_key, digest)
         if existing is not None:
             return DispatchResult(existing, False)
@@ -48,7 +50,7 @@ def dispatch(repository: ExecutionRepository, work_item: str | None, *, host: st
         action = Action(str(uuid4()), work_item, "dispatch", reason, actor, idempotency_key,
                         digest, project, payload,
                         None if authorization is None else authorization.id,
-                        None if authorization is None else authorization.mandate_version)
+                        None if authorization is None else authorization.mandate_version, guidance)
         transaction.save_action(action, actor)
         return claim(transaction, action, host, runtime, actor, idempotency_key, digest, remote_job_id)
 

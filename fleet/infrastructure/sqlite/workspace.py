@@ -19,7 +19,8 @@ class WorkspaceRepository(Repository):
     def management_repository(self, project: str) -> str:
         rows = self.rows('SELECT path FROM workspace_management WHERE project = ?', (project,))
         if not rows:
-            raise ValueError(f'management repository not registered for {project}')
+            raise ValueError(f'management repository not registered for {project}; '
+                             f'register a Git repository with: fleet project management {project} <path>')
         return rows[0]['path']
 
     def register_management_repository(self, project: str, path: str, actor: str) -> None:

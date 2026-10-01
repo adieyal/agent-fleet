@@ -173,6 +173,37 @@ fleet summary set WORK_ID --purpose "Ship the guide" --done "Draft written" --do
 fleet status PROJECT_ID
 ```
 
+A project's constitution and each epic's charter are Markdown in the management
+repository; every edit is a new version committed with its actor. Give an epic ID
+instead of a project to work on its charter, which shows the constitution version
+it inherits. Without `--file`, `edit` reads stdin; `show --version N` prints an
+older version from `history`. A job sent, dispatched or orchestrated on a work item
+gets the constitution and its nearest epic's charter as `CONSTITUTION.md` and
+`CHARTER.md` in its context directory, and a short paragraph on applying them;
+`fleet status` shows the versions each run received.
+
+```bash
+fleet guidance edit PROJECT_ID --file CONSTITUTION_PATH --actor user
+fleet guidance show PROJECT_ID
+fleet guidance history PROJECT_ID
+```
+
+An agent records what it decided itself, naming the principle it relied on. Inside
+a fleet job the decision is linked to the job's run and the guidance versions it
+received; elsewhere give `--run` or leave the versions unknown. List decisions for
+a project or an epic (`--epic EPIC_ID`), newest first.
+
+```bash
+fleet decision record --work-item WORK_ID --question "Rerun the flaky test?" --answer "Once" --principle "Constitution: decide yourself — test-only fixes" --actor claude
+fleet decision list --project PROJECT_ID
+```
+
+In the deck, the floor opens the constitution and each epic's page shows its
+charter and the decisions on its work. Edit either in place (each save is a new
+version by `web-user`, refused if someone saved first), open older versions in
+the reader, and promote a decision into the charter's decisions in force, or
+from the shell with `fleet guidance promote DECISION_ID --epic EPIC_ID --actor user`.
+
 Use the front desk and lanterns, or these commands, to manage attention:
 
 ```bash

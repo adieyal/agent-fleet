@@ -36,8 +36,14 @@ class Decision:
     activation: str | None = None
     mandate_version: str | None = None
     source_run: str | None = None
+    # The rule relied on, e.g. "Constitution: decide yourself — test-only fixes"; None where it was never given.
+    principle: str | None = None
+    # The constitution and charter versions the source run received; None when unknown.
+    guidance: dict | None = None
 
     def __post_init__(self) -> None:
+        if self.principle is not None and not self.principle.strip():
+            raise ValueError("principle must not be blank")
         for name in ("answer", "actor"):
             if not getattr(self, name).strip():
                 raise ValueError(f"{name} is required")

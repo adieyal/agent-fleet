@@ -1,9 +1,38 @@
 """Local orchestrator command delivery through controller facades."""
 
 from fleet import composition
+from fleet.modules.records import GUIDANCE_FILES, guidance_brief
+from fleet.projections.decisions import decision_log, promotion, promotion_marker
 from fleet.projections.project import project_status
 from dataclasses import asdict
+from pathlib import Path
 import json
+
+
+def guide(records, work_item: str | None, payload: dict) -> tuple[dict, dict | None]:
+    """A dispatch payload whose first step opens with the guidance paragraph, and the constitution and charter
+    versions for the action to pin; unchanged with None when the work has no recorded guidance."""
+    guidance = None if work_item is None else records.dispatch_guidance(work_item)
+    if guidance is None:
+        return payload, None
+    if not payload.get('steps'):
+        raise ValueError('dispatch payload needs steps')
+    taken = sorted({Path(path).name for path in payload.get('context') or []} & set(GUIDANCE_FILES.values()))
+    if taken:
+        raise ValueError(f"context already has {', '.join(taken)}, which guidance attaches")
+    first, *rest = payload['steps']
+    steps = [dict(first, prompt=f"{guidance_brief(guidance, work_item)}\n\n{first['prompt']}"), *rest]
+    return dict(payload, steps=steps), guidance
+
+
+def promote_decision(services, epic: str, decision: str, *, actor: str):
+    """Add a decision on the epic's work, dated, to the epic charter's decisions in force as a new version."""
+    project = services.work.get(epic).project
+    entry = next((entry for entry in decision_log(services.work, services.decisions, project=project, epic=epic)
+                  if entry["id"] == decision), None)
+    if entry is None:
+        raise LookupError(f"no decision {decision} on the work of epic {epic}")
+    return services.records.promote(project, epic, promotion(entry), marker=promotion_marker(entry), actor=actor)
 
 
 def orchestrator_prompt(activation, mandate) -> str:
@@ -17,7 +46,7 @@ state: {{}}
 progress: next_step, condition, resume_condition (only changed fields)
 meet: criterion, evidence (array of recorded references)
 attention: headline, context_reference
-decide: question, answer, context
+decide: question, answer, context, principle (optional: the rule relied on)
 summary: purpose, done, doing, next
 propose: question, change, reason
 dispatch: host, runtime, reason, idempotency_key, payload
@@ -50,7 +79,9 @@ class ControllerCommands:
         if command == 'propose':
             return services.authority.propose(**context, **payload)
         if command == 'dispatch':
-            return services.execution.dispatch(activation.work_item, **context, **payload)
+            guided, guidance = guide(services.records, activation.work_item, payload['payload'])
+            return services.execution.dispatch(activation.work_item, **context, **dict(payload, payload=guided),
+                                               guidance=guidance)
         if command in ('summary', 'decide'):
             run = services.execution.activation_run(activation.id, activation.id)
             if command == 'summary':

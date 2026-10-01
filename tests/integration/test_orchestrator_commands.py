@@ -45,6 +45,7 @@ def test_scripted_routine_decision_summary_and_projection(orchestration):
     assert decision.activation == commands.activation.id
     assert decision.mandate_version == commands.activation.mandate_version
     assert decision.source_run == run.id
+    assert decision.principle is None and decision.guidance is None
     assert commands.execute('state', {})['work_items'][0]['next_step'] == 'Review'
     assert composition.open_work(store).criterion(judged.id).activation == commands.activation.id
     intents = composition.open_records(store).intents()
@@ -58,6 +59,10 @@ def test_scripted_routine_decision_summary_and_projection(orchestration):
                              check=True, capture_output=True, text=True, timeout=10).stdout
         assert run.id in log
     assert decision.id in (root / f'decisions/{decision.id}.json').read_text()
+    principled = commands.execute('decide', dict(question='Retry?', answer='Once', context='Flaky',
+                                                 principle='Mandate: decision authority'))
+    recorded = json.loads((root / f'decisions/{principled.id}.json').read_text())
+    assert recorded['principle'] == 'Mandate: decision authority' and recorded['guidance'] is None
 
 
 def test_rejected_attempt_is_quiet_until_explicit_proposal(orchestration):

@@ -54,8 +54,8 @@ def deliver(repository: ExecutionRepository, run: Run, call: Callable, push: Cal
             except FleetError:
                 raise error
     if job["status"] == "queued" and job["start_requested"] is False:
-        if payload["context"]:
-            push(job["id"], payload["context"])
+        if payload["context"] or action.guidance is not None:
+            push(job["id"], payload["context"] or [], action.guidance)
         if not payload["hold"]:
             try:
                 job = check(call(["start", job["id"], *identity], None))

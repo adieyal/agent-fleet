@@ -21,8 +21,10 @@ from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from fleet import transport
-from fleet.composition import (Store, open_attention, open_execution, open_library, open_store,
+from fleet.composition import (Store, facades, open_attention, open_execution, open_library, open_store,
                                open_workspace, open_work, open_decisions)
+from fleet.modules.records import GuidanceConflict
+from fleet.orchestration import promote_decision
 from fleet.modules.attention import InputObservation, ItemResolved, refusal_rules
 from fleet.modules.workspace import (NoVacancy, FOCUSES, AlreadyShuttered, NotShuttered,
                                      WorkspaceFacade, Registry)
@@ -32,6 +34,7 @@ from fleet.projections.bench import bench_rooms, bench_state
 from fleet.transport import FleetError, Host
 from fleet.web.documents import AssetNotImage, AssetTooLarge, DocumentAccessDenied, fetch_asset, fetch_document
 from fleet.web.fixture import FixtureLibrary, FixtureState
+from fleet.web.guidance import epic_decisions, guidance_view
 from fleet.web.job_store import DocumentKeeper, ProjectDocuments
 from fleet.web.library import ProjectLibrary
 from fleet.web.live import AlreadyHoused, LiveWorkspace
@@ -72,6 +75,7 @@ ASSET_POLICY = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sa
 ATTENTION_ACTIONS = ("acknowledge", "snooze", "reopen", "resolve")
 REFUSAL_ACTIONS = ("allow", "dismiss")   # a job step's permission refusals
 JOB_ACTIONS = ("answer",)   # a blocked job step's question
+GUIDANCE_CHANGES = ("/api/guidance", "/api/guidance/promote")
 FLOOR_CHANGES = ("/api/move-in", "/api/link", "/api/merge", "/api/shutter", "/api/restore")
 EVENTS_PER_JOB = "15"
 STREAM_SILENCE_LIMIT = 20  # seconds without a heartbeat before the stream is considered dead
@@ -440,6 +444,10 @@ def make_handler(state: FleetState | FixtureState,
                     self.error(404, str(error))
                     return
                 self.respond(200, "application/json", json.dumps(result).encode())
+            elif path == "/api/guidance":
+                self.guidance()
+            elif path == "/api/decisions":
+                self.decisions()
             elif path in ("/", "/index.html"):
                 self.respond(200, "text/html; charset=utf-8", index_page)
             elif path in PROTOTYPES:
@@ -456,7 +464,7 @@ def make_handler(state: FleetState | FixtureState,
         def do_POST(self) -> None:  # noqa: N802 — http.server naming
             path = self.path.split("?", 1)[0]
             action = path.removeprefix("/api/attention/") if path.startswith("/api/attention/") else None
-            if (path not in FLOOR_CHANGES + ("/api/focus", "/api/decision/answer", "/api/agent/move")
+            if (path not in FLOOR_CHANGES + GUIDANCE_CHANGES + ("/api/focus", "/api/decision/answer", "/api/agent/move")
                     and action not in ATTENTION_ACTIONS + REFUSAL_ACTIONS + JOB_ACTIONS):
                 self.respond(404, "text/plain", b"not found")
             elif not self.same_origin():
@@ -483,6 +491,8 @@ def make_handler(state: FleetState | FixtureState,
                     self.merge(body)
                 elif path == "/api/agent/move":
                     self.move_agent(body)
+                elif path in GUIDANCE_CHANGES:
+                    self.change_guidance(path, body)
                 elif path in ("/api/shutter", "/api/restore"):
                     self.storehouse(path.removeprefix("/api/"), body)
                 else:
@@ -495,6 +505,62 @@ def make_handler(state: FleetState | FixtureState,
 
         def error(self, status: int, message: str) -> None:
             self.respond(status, "application/json", json.dumps({"error": message}).encode())
+
+        def guidance(self) -> None:
+            """GET /api/guidance?project=&epic=&version= — the constitution, or the epic's charter, rendered with its
+            history; an older version with version=N."""
+            query = {key: values[0] for key, values in parse_qs(urlsplit(self.path).query).items()}
+            if not query.get("project") or not query.get("version", "1").isdecimal():
+                self.error(400, "project is required, and version is a number")
+                return
+            number = int(query["version"]) if "version" in query else None
+            self.guidance_result(lambda services: guidance_view(services, query["project"], query.get("epic"), number))
+
+        def decisions(self) -> None:
+            """GET /api/decisions?epic= — decisions on the epic's work, newest first, and whether each is in force."""
+            epic = (parse_qs(urlsplit(self.path).query).get("epic") or [""])[0]
+            if not epic:
+                self.error(400, "epic is required")
+                return
+            self.guidance_result(lambda services: epic_decisions(services, epic))
+
+        def change_guidance(self, path: str, body: dict[str, Any]) -> None:
+            """POST /api/guidance {"project", "epic" (null for the constitution), "markdown", "base": the version the
+            editor opened, 0 for none} — a new version by web-user; refused with 409 if another version came first.
+            POST /api/guidance/promote {"epic", "decision"} — the decision added to the charter's decisions in force."""
+            if path == "/api/guidance/promote":
+                if not isinstance(body.get("epic"), str) or not isinstance(body.get("decision"), str):
+                    self.error(400, "epic and decision are required")
+                    return
+
+                def promote(services):
+                    promote_decision(services, body["epic"], body["decision"], actor="web-user")
+                    return guidance_view(services, services.work.get(body["epic"]).project, body["epic"])
+                self.guidance_result(promote)
+                return
+            epic = body.get("epic")
+            if (not isinstance(body.get("project"), str) or not isinstance(body.get("markdown"), str)
+                    or not isinstance(epic, (str, type(None))) or type(body.get("base")) is not int):
+                self.error(400, "project, markdown and base (a version number) are required")
+                return
+
+            def write(services):
+                services.records.write_guidance(body["project"], body["markdown"], epic=epic, actor="web-user",
+                                                base=body["base"])
+                return guidance_view(services, body["project"], epic)
+            self.guidance_result(write)
+
+        def guidance_result(self, produce: Callable[[Any], dict[str, Any]]) -> None:
+            try:
+                result = produce(facades(state.store))
+            except GuidanceConflict as error:
+                self.error(409, str(error))
+            except LookupError as error:
+                self.error(404, str(error))
+            except ValueError as error:
+                self.error(400, str(error))
+            else:
+                self.respond(200, "application/json", json.dumps(result, default=str).encode())
 
         def focus(self, body: dict[str, Any]) -> None:
             """POST /api/focus {"focus": "priority" | "background", "projects": [id, …], "labels": [label, …]}
