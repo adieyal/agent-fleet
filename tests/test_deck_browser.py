@@ -2423,7 +2423,10 @@ def test_batch7_guidance_draft_exits(changed_deck: Deck, deck_state, monkeypatch
         expect(text).to_have_value('# Safe guidance\n\nAgents follow these rules.')
         assert dialogs == []
         assert len(pending) == 1
-        pending[0].continue_()
+        with page.expect_response(lambda response: response.request.method == 'POST'
+                                  and response.url.endswith('/api/guidance')) as saved:
+            pending[0].continue_()
+        assert saved.value.status == 200
         page.unroute('**/api/guidance')
         expect(route.locator('[data-guidance-feedback]')).to_contain_text('Saved')
         expect(route.locator('[data-guidance-version]')).to_contain_text('version 1')

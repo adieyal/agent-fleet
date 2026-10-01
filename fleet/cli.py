@@ -777,6 +777,22 @@ def command_remove(arguments: argparse.Namespace) -> None:
                   f"{removed['outbox_files']} outbox file(s) and {removed['results']} step result(s)")
 
 
+def history_local_time(value: str | None) -> str:
+    if value is None:
+        return 'unknown'
+    return datetime.fromisoformat(value.replace('Z', '+00:00')).astimezone().strftime('%Y-%m-%d %H:%M')
+
+
+def history_duration(seconds: float | None) -> str:
+    if seconds is None:
+        return 'unknown'
+    minutes = int(max(0, seconds) // 60)
+    if minutes == 0:
+        return '<1m' if seconds > 0 else '0m'
+    hours, minutes = divmod(minutes, 60)
+    return f'{hours}h{minutes:02d}m' if hours else f'{minutes}m'
+
+
 def command_history_runs(arguments: argparse.Namespace) -> None:
     store = open_store()
     try:
@@ -791,15 +807,20 @@ def command_history_runs(arguments: argparse.Namespace) -> None:
     if result["empty_reason"]:
         print(result["empty_reason"])
     else:
-        print("STARTED  DURATION  STATUS  KIND  HOST  WORK  BRANCH / CHANGE  RUN")
+        rows = [["STARTED (LOCAL)", "DURATION", "STATUS", "KIND", "HOST", "WORK", "BRANCH / CHANGE", "RUN"]]
         for run in result["runs"]:
-            work = f"{run['work_title']} ({run['work_item'][:8]})" if run["work_item"] else f"unlinked · {run['label'] or 'unregistered label'}"
+            work = f"{run['work_title']} ({run['work_item'][:8]})" if run["work_item"] else f"unlinked · {run['label'] or 'label unknown'}"
             branch = (run["workspace"] or {}).get("branch")
-            duration = f"{run['duration_seconds'] / 60:.0f}m" if run['duration_seconds'] is not None else "duration not recorded"
-            changes = f"{run['commit_count']} commits · {run['push_count']} pushes" if run['commit_count'] is not None else "git changes not recorded"
-            offline = f" · offline since {run['offline_since']}" if run['offline_since'] else ""
-            print(f"{run['start'] or 'start not recorded'}  {duration}  {run['status']}  {run['kind']}  {run['host']}  "
-                  f"{work}  {branch or run['workspace_reason'] or 'branch not recorded'} · {changes}{offline}  {run['id'][:8]}")
+            changes = f"{run['commit_count']} commits · {run['push_count']} pushes" if run['commit_count'] is not None else "git unknown"
+            offline = f" · offline since {history_local_time(run['offline_since'])}" if run['offline_since'] else ""
+            rows.append([history_local_time(run['start']), history_duration(run['duration_seconds']),
+                         run['status'], run['kind'], run['host'], work,
+                         f"{branch or 'branch unknown'} · {changes}{offline}", run['id'][:8]])
+            if not branch and run['workspace_reason']:
+                rows[-1][6] += f" ({run['workspace_reason']})"
+        widths = [max(len(row[column]) for row in rows) for column in range(len(rows[0]))]
+        for row in rows:
+            print("  ".join(cell.ljust(width) for cell, width in zip(row, widths)).rstrip())
     print(f"{len(result['runs'])} of {result['total']} runs; --limit to see more")
 
 

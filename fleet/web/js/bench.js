@@ -277,7 +277,7 @@ function epicPage(r) {
   </article>`;
 }
 
-function itemHistoryButton(i, compact = false) { return `<button data-work-history="${esc(i.id)}" data-title="${esc(i.title)}" data-status="${esc(i.status || i.condition || '')}" aria-label="History for ${esc(i.title)}" title="Read this item’s stored changes and runs; opening changes no stored state">${compact ? '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l3 2"/></svg>' : 'History'}</button>`; }
+function itemHistoryButton(i, compact = false) { return `<button data-work-history="${esc(i.id)}" data-title="${esc(i.title)}" data-status="${esc(i.status || i.condition || '')}" aria-label="Item history" title="History for ${esc(i.title)}: read stored changes and runs; opening changes no stored state">${compact ? '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l3 2"/></svg>' : 'History'}</button>`; }
 
 const guidanceState = key => ({ editing: editing?.key === key ? editing : null, history: historyOpen.has(key) });
 const guidanceKey = kind => kind === 'charter' ? room.id : 'constitution';
@@ -359,7 +359,7 @@ function render(flipped = new Set()) {
     content = `<div class="epic-cards">${constitutionCard()}<article data-project-decisions-card><button data-open-decisions title="Read every decision in this project, including work outside epic rooms; opening changes no stored state">Project decisions</button></article>${rooms.map(epicCard).join('')}</div>`;
     if (!rooms.length) content += '<p>No epic rooms recorded.</p>';
   }
-  if (room || bench) content = `<nav aria-label="Work item views">${itemHistoryButton(bench || room)}</nav>` + content;
+  if (room || bench) content = `<nav aria-label="Work item views">${itemHistoryButton(bench || room, true)}</nav>` + content;
   el.innerHTML = crumbs + ((!room && !bench) ? `<nav aria-label="Floor views"><button data-floor-overview aria-current="${page ? 'false' : 'page'}">Overview</button><button data-open-history aria-current="${page === 'history' ? 'page' : 'false'}">History</button></nav>` : '') + (guidanceFeedback ? `<p data-guidance-feedback role="status">${esc(guidanceFeedback)}</p>` : '') + content;
   if (page === 'history') mountRunHistory(el.querySelector('[data-history-mount]'), project);
 }
