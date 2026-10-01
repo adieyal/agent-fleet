@@ -71,3 +71,11 @@ export function decisionsPanel(list) {
   return `<section data-decisions aria-label="Decisions"><h3>Decisions</h3>${list.decisions.some(d => d.promoted === false) ? '<p data-promote-consequence>Promoting adds the decision to the charter’s decisions in force and saves a new charter version. To change it later, edit the charter.</p>' : ''}${rows ? `<ol>${rows}</ol>` : '<p data-empty>No decisions recorded.</p>'}${
     list.error ? `<p role="alert">${esc(list.error)}</p>` : ''}</section>`;
 }
+
+export function triagePolicyPanel(view) {
+  const current = view?.triage_policy;
+  const body = !view ? '<p>Loading…</p>' : view.error ? `<p role="alert">${esc(view.error)}</p>`
+    : !current ? '<p data-empty>No triage policy recorded. Delegation is unavailable.</p>'
+    : `<small>${versionLine(current.version)} · ${esc(current.version.revision.slice(0, 12))}</small><dl>${Object.entries(current.policy).map(([key, value]) => `<dt>${esc(key.replaceAll('_', ' '))}</dt><dd><pre>${esc(typeof value === 'string' ? value : JSON.stringify(value, null, 2))}</pre></dd>`).join('')}</dl>`;
+  return `<section data-triage-policy aria-label="Triage policy"><h3>Triage policy</h3><p>Future triage activations use the current policy; active runs retain their pinned version. Triage cannot complete work or judge criteria.</p>${body}<p>Record a policy with <code>fleet triage policy set PROJECT --file F --actor A</code>.</p></section>`;
+}

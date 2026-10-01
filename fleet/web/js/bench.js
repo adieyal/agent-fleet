@@ -7,7 +7,7 @@ import { actionOf, glyphHtml, svg } from './glyphs.js';
 import { ents, workOf } from './model.js';
 import { openReader, openStoredReader } from './reader.js';
 import { fallbackCopy, idChip, select } from './panel.js';
-import { decisionsPanel, guidancePanel, guidanceSummary } from './guidance.js';
+import { decisionsPanel, guidancePanel, guidanceSummary, triagePolicyPanel } from './guidance.js';
 
 const el = document.body.appendChild(document.createElement('section'));
 el.id = 'benchRoute';
@@ -271,6 +271,7 @@ function epicPage(r) {
     ${r.tasks.length ? `<h3>Tasks</h3><ol data-plan-list>${r.tasks.map(t => planLine(t, false)).join('')}</ol>` : ''}
     ${r.children.length ? `<h3>Epics</h3><p data-child-epics>${r.children.map(c => `<button data-epic="${esc(c.id)}">${esc(c.title)}</button>`).join('')}</p>` : ''}
     <section data-room-attention aria-label="Room attention"><h3>Room attention</h3>${r.attention.length ? `<ul>${r.attention.map(a => `<li data-attention="${esc(a.id)}"><b>${esc(a.headline)}</b><small>${esc(a.kind)} · ${idChip(a.id)}</small></li>`).join('')}</ul>` : '<p>No open attention items.</p>'}</section>
+    <section data-room-policy><button data-open-constitution>Constitution</button><small>${guidanceSummary(views.get('constitution'))}</small>${triagePolicyPanel(views.get(r.id))}</section>
     ${guidancePanel('charter', views.get(r.id), guidanceState(r.id))}
     ${decisionsPanel(decisionLists.get(r.id))}
   </article>`;
@@ -353,7 +354,7 @@ function render(flipped = new Set()) {
   } else if (page === 'decisions') {
     content = `<article data-project-decisions>${decisionsPanel(decisionLists.get('project'))}</article>`;
   } else if (page === 'constitution') {
-    content = `<article data-constitution-page>${guidancePanel('constitution', views.get('constitution'), guidanceState('constitution'))}</article>`;
+    content = `<article data-constitution-page>${guidancePanel('constitution', views.get('constitution'), guidanceState('constitution'))}${triagePolicyPanel(views.get('constitution'))}</article>`;
   } else {
     content = `<div class="epic-cards">${constitutionCard()}<article data-project-decisions-card><button data-open-decisions title="Read every decision in this project, including work outside epic rooms; opening changes no stored state">Project decisions</button></article>${rooms.map(epicCard).join('')}</div>`;
     if (!rooms.length) content += '<p>No epic rooms recorded.</p>';
@@ -417,7 +418,7 @@ function discardGuidance() {
 
 // Guidance clicks; true when the click was one of them.
 function guidanceClick(target) {
-  if (target.closest('[data-open-constitution]')) { if (!discardGuidance()) return true; page = 'constitution'; render(); loadGuidance('constitution'); return true; }
+  if (target.closest('[data-open-constitution]')) { if (!discardGuidance()) return true; room = bench = null; page = 'constitution'; render(); loadGuidance('constitution'); return true; }
   const edit = target.closest('[data-guidance-edit]');
   if (edit) {
     const key = guidanceKey(edit.dataset.guidanceEdit), view = views.get(key);

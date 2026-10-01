@@ -379,6 +379,46 @@ def push_guided_context(host: Host, job_id: str, paths: list[str], guidance: dic
         push_context(host, job_id, paths + open_records().write_guidance_files(guidance, directory))
 
 
+def command_triage_policy(arguments: argparse.Namespace) -> None:
+    from fleet.modules.records import TRIAGE_PATH, TriageMandate
+    try:
+        services = facades()
+        project = services.workspace.resolve_project(arguments.project)
+        records = services.records
+        before = records.triage_policy(project)
+        if arguments.policy_command == 'set':
+            body = Path(arguments.file).read_text()
+            policy = asdict(TriageMandate.parse(body))
+            if policy['criteria_it_may_judge']:
+                raise ValueError('triage may not judge work criteria')
+            previous = None if before is None else before['policy']
+            if previous == policy:
+                print(f"Triage policy for {project}: unchanged, version {before['version']['number']}")
+                return
+            result = records.write_mandate(project, TRIAGE_PATH, json.dumps(policy, indent=2) + '\n',
+                                           key=str(uuid4()), actor=arguments.actor)
+            if result['state'] != 'confirmed':
+                raise ValueError(result['error'])
+            current = records.triage_policy(project)
+            print(f"Recorded triage policy for {project}, version {current['version']['number']} "
+                  f"by {current['version']['actor']} ({current['version']['revision'][:12]})")
+            for field, value in policy.items():
+                if previous is None or previous[field] != value:
+                    old = 'not recorded' if previous is None else json.dumps(previous[field])
+                    print(f"  {field}: {old} -> {json.dumps(value)}")
+            print('Future triage activations use this policy; active runs keep their pinned version. '
+                  'Existing attention ownership is unchanged. Triage cannot complete work or judge criteria.')
+        elif before is None:
+            print(f"No triage policy recorded for {project}; set one with: "
+                  f"fleet triage policy set {project} --file F --actor A")
+        else:
+            print(f"Triage policy for {project}, version {before['version']['number']} "
+                  f"by {before['version']['actor']} ({before['version']['revision'][:12]})")
+            print(json.dumps(before['policy'], indent=2))
+    except (ValueError, LookupError, OSError) as error:
+        raise FleetError(str(error)) from error
+
+
 def command_triage_status(arguments: argparse.Namespace) -> None:
     from fleet.triage_scheduler import TriageScheduler
     services = facades()
@@ -1835,6 +1875,16 @@ def build_parser() -> argparse.ArgumentParser:
     triage_status = triage_commands.add_parser('status', help='mandate, queue, live run and daily budget')
     add_project_argument(triage_status, 'project')
     triage_status.set_defaults(handler=command_triage_status)
+    policy = triage_commands.add_parser('policy', help='read or version the project triage mandate')
+    policy_commands = policy.add_subparsers(dest='policy_command', required=True)
+    policy_show = policy_commands.add_parser('show', help='show current policy and version')
+    add_project_argument(policy_show, 'project')
+    policy_show.set_defaults(handler=command_triage_policy)
+    policy_set = policy_commands.add_parser('set', help='validate and record a new policy; active runs retain their version')
+    add_project_argument(policy_set, 'project')
+    policy_set.add_argument('--file', required=True, help='triage mandate JSON file')
+    policy_set.add_argument('--actor', required=True, help='author recorded on this version')
+    policy_set.set_defaults(handler=command_triage_policy)
 
     orchestrate = commands.add_parser('orchestrate', help='start an orchestrator agent on the controller, with write access to the store')
     orchestrate.add_argument('work_item')

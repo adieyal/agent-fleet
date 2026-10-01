@@ -2961,3 +2961,27 @@ def test_p3_work_entrypoint_reads_real_audit(changed_deck: Deck, route_migration
     page.keyboard.press('Escape')
     page.evaluate('fleetDeck.enterFloor(null)')
     assert not changed_deck.errors
+
+@pytest.mark.parametrize('viewport', ['desktop', 'narrow'])
+def test_triage_policy_room(changed_deck: Deck, route_migration, request, viewport):
+    from fleet import composition
+    from fleet.modules.records import TRIAGE_PATH
+    page = changed_deck.page
+    page.set_viewport_size({'width': 390 if viewport == 'narrow' else 1440, 'height': 844 if viewport == 'narrow' else 900})
+    body = dict(goal='Triage within policy', constraints=['No deployment'], escalation_conditions=['Outside mandate'],
+                criteria_it_may_judge=[], decision_authority=['retry', 'escalate'], host='home', runtime='codex',
+                cwd='/workspace', permission='acceptEdits', routing={'failed': 'agent'},
+                permissions={'allow': ['Read'], 'escalate': ['Bash(git push:*)']},
+                limits={'retries_per_step': 2, 'runs_per_day': 12, 'unclaimed_minutes': 30})
+    composition.open_records().write_mandate('restoke-v2', TRIAGE_PATH, json.dumps(body), key='policy-browser', actor='policy-author')
+    page.evaluate("fleetDeck.enterFloor('restoke-v2')")
+    page.locator('[data-epic-card] button[data-epic]').first.click()
+    policy = page.locator('[data-room-policy] [data-triage-policy]')
+    expect(policy).to_contain_text('version 1')
+    expect(policy).to_contain_text('policy-author')
+    expect(policy).to_contain_text('Bash(git push:*)')
+    expect(policy).to_contain_text('cannot complete work or judge criteria')
+    policy.scroll_into_view_if_needed()
+    shoot(request, page, f'triage-policy-{viewport}')
+    page.locator('[data-room-policy] [data-open-constitution]').click()
+    expect(page.locator('[data-constitution-page] [data-triage-policy]')).to_contain_text('version 1')

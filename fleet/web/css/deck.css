@@ -1450,3 +1450,4 @@ body[data-readonly] #attnPanel[data-scope=all] .aa{display:flex}
 #itemHistoryPanel header button{flex:none;width:32px;height:32px;padding:4px}
 [data-audit-history] button{background:#1e2c40;color:#e2e8f0;border:1px solid #475569;border-radius:5px;padding:6px 10px;cursor:pointer}
 #itemHistoryPanel header{box-shadow:0 -20px 0 var(--panel-solid)}
+[data-triage-policy] pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:0}[data-triage-policy] dd{margin:0 0 12px}[data-triage-policy] dt{font-weight:600}[data-room-policy]{padding:16px;border:1px solid var(--line);border-radius:12px}

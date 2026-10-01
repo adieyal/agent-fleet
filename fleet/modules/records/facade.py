@@ -79,6 +79,14 @@ class RecordsFacade:
         (TriageMandate if path == TRIAGE_PATH else Mandate).parse(body)
         return self.write(project, path, body, **fields)
 
+    def triage_policy(self, project: str) -> dict | None:
+        body = self.read(project, TRIAGE_PATH)
+        if body is None:
+            return None
+        revision, mandate = self.mandate_version(project, TRIAGE_PATH)
+        version = self.versions(self.workspace.management_repository(project), TRIAGE_PATH, revision)[0]
+        return dict(policy=asdict(mandate), version=asdict(version))
+
     def triage_mandate(self, project: str) -> TriageMandate | None:
         body = self.read(project, TRIAGE_PATH)
         return None if body is None else TriageMandate.parse(body)

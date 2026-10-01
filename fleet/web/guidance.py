@@ -11,7 +11,7 @@ def guidance_view(services, project: str, epic: str | None = None, number: int |
     """The current (or numbered) version rendered as a reader document, with its history; "guidance" is None when
     nothing is recorded; saving the first version creates the project's management repository."""
     title = "Constitution" if epic is None else f"Charter: {services.work.get(epic).title}"
-    view = {"project": project, "epic": epic, "name": title}
+    view = {"project": project, "epic": epic, "name": title, "triage_policy": services.records.triage_policy(project)}
     current = services.records.guidance(project, epic, number=number)
     history = [asdict(version) for version in services.records.guidance_history(project, epic)]
     if current is None:
