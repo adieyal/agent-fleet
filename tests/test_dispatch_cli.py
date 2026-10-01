@@ -8,6 +8,7 @@ from fleet import cli, composition
 
 @pytest.mark.parametrize("legacy", [False, True])
 def test_cli_dispatch_commits_before_transport_and_send_wraps_it(monkeypatch, capsys, legacy, project_id):
+    composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, "fake", "worker-p"))
     item = composition.open_work().add(project=project_id, title="Task", goal="Ship", actor="user")
     calls = []
 
@@ -49,16 +50,13 @@ def test_dispatch_requires_explicit_cwd():
         cli.main(["dispatch", "work", "Ship", "--host", "fake", "--runtime", "codex"])
 
 
-@pytest.mark.parametrize("linked", [False, True])
-def test_send_preserves_host_label_and_records_workspace_id(monkeypatch, linked):
+@pytest.mark.parametrize("reference_kind", ["id", "prefix", "name"])
+def test_send_derives_host_label_and_records_workspace_id(monkeypatch, reference_kind):
     workspace = composition.open_workspace()
-    if linked:
-        identity = workspace.move_in(["fake"], "restoke", name="Restoke V2").project_id
-        workspace.move_in(["other"], "restoke", name="Restoke V2")
-        label = "restoke"
-    else:
-        identity = workspace.edit_registry(lambda registry: registry.create("Restoke V2")).id
-        label = "Restoke V2"
+    identity = workspace.move_in(["fake"], "restoke", name="Restoke V2").project_id
+    label = "restoke"
+    reference = {"id": identity, "prefix": identity[:6], "name": "Restoke V2"}[reference_kind]
+
     calls = []
 
     def call(host, arguments, **kwargs):
@@ -70,7 +68,7 @@ def test_send_preserves_host_label_and_records_workspace_id(monkeypatch, linked)
 
     monkeypatch.setattr(cli.transport, "host_by_name", lambda name: SimpleNamespace(name=name))
     monkeypatch.setattr(cli.transport, "call", call)
-    cli.main(["send", "--project", label, "--description", "Task", "--step", "Ship",
+    cli.main(["send", "--project", reference, "--description", "Task", "--step", "Ship",
               "--host", "fake", "--cwd", "/repo", "--hold", "--json"])
     create, = calls
     assert create[0] == "create"
@@ -81,6 +79,7 @@ def test_send_preserves_host_label_and_records_workspace_id(monkeypatch, linked)
 
 @pytest.mark.parametrize("refused", ["create", "start"])
 def test_dispatch_preserves_refusal_when_reconcile_fails(monkeypatch, capsys, refused, project_id):
+    composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, "fake", "worker-p"))
     calls = []
 
     def call(host, arguments, **kwargs):
@@ -108,7 +107,9 @@ def test_dispatch_preserves_refusal_when_reconcile_fails(monkeypatch, capsys, re
 
 
 def test_send_without_work_keeps_unknown_intent_after_lost_create_reply(monkeypatch):
-    composition.open_workspace().edit_registry(lambda registry: registry.create('legacy'))
+    workspace = composition.open_workspace()
+    project = workspace.edit_registry(lambda registry: registry.create('legacy'))
+    workspace.edit_registry(lambda registry: registry.link(project.id, 'fake', 'worker-legacy'))
     calls = []
 
     def call(host, arguments, **kwargs):
@@ -132,6 +133,7 @@ def test_send_without_work_keeps_unknown_intent_after_lost_create_reply(monkeypa
 
 @pytest.mark.parametrize("dropped", ["create", "start"])
 def test_dropped_dispatch_reply_reconciles_by_run_id(monkeypatch, dropped, project_id):
+    composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, "fake", "worker-p"))
     calls = []
     def call(host, arguments, **kwargs):
         run, = composition.open_execution().runs()

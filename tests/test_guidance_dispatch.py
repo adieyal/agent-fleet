@@ -42,6 +42,8 @@ def worker(monkeypatch):
 
 @pytest.fixture
 def tree(project_id):
+    for host in ("fake", "controller"):
+        composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, host, "worker-p"))
     work = composition.open_work()
     epic = work.add(project=project_id, title="Transcriber", goal="Read", kind="epic", actor="user")
     milestone = work.add(project=project_id, title="M1", goal="Read", kind="milestone", parent=epic.id, actor="user")

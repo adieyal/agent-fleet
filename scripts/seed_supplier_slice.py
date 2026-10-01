@@ -69,7 +69,7 @@ def seed(work: WorkFacade, prd: Path | None = None, *, project: str) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--prd", type=Path, help="Slice 6 Ralph prd.json to seed and check")
-    parser.add_argument("--project", default="Restoke V2", help="Workspace project ID or unique name")
+    parser.add_argument("--project", default="Restoke V2", help="registered project (ID, prefix or name)")
     args = parser.parse_args()
     try:
         project = open_workspace().resolve_project(args.project)

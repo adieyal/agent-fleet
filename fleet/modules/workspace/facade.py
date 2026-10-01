@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import shlex
 from typing import Callable, TypeVar
+
+from fleet.errors import FleetError
 
 from .application import Repository
 from .application.workspace import WorkspaceApplication
@@ -32,6 +35,20 @@ class WorkspaceFacade:
 
     def resolve_project(self, reference: str) -> str:
         return self.registry().resolve(reference)
+
+    def host_label(self, reference: str, host: str) -> str:
+        """Resolve a registered project to its single explicit label on a host."""
+        project = self.registry().get(self.resolve_project(reference))
+        labels = sorted(link.label for link in project.links if link.host == host)
+        if not labels:
+            target = shlex.quote(f"{host}:{project.name}")
+            raise FleetError(f"project (ID, prefix or name) {project.id} has no link on host {host}; run: "
+                             f"fleet project link {project.id} {target}")
+        if len(labels) != 1:
+            raise FleetError(f"project (ID, prefix or name) {project.id} has multiple labels on host {host}: "
+                             f"{', '.join(labels)}; use fleet project unlink HOST:LABEL "
+                             "to leave one label before dispatch")
+        return labels[0]
 
     def capacity(self) -> int:
         return self.application.capacity()

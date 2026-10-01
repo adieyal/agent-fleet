@@ -71,6 +71,17 @@ jobs. Add `"project_labels": {"restoke-analytics": "Bang bang!"}` to
 `~/.config/fleet/config.json` (or the file selected by `FLEET_CONFIG`), then
 restart `fleet web`.
 
+Every CLI project selector accepts a registered project (ID, prefix or name).
+Exact IDs resolve first, then exact unique names, then unique ID prefixes.
+`fleet project ls` lists registered projects; an unknown name or raw host label
+is refused with registration instructions. Register a project and host link with
+`fleet project add "Agent Fleet" --link home:agent-fleet`, then send with
+`fleet send -H home -p "Agent Fleet" ...`. Fleet derives `agent-fleet` for the
+worker. Missing links are refused with a runnable `fleet project link` command;
+multiple labels on one host must be reduced to one before dispatch. `ls` and
+`watch` match all of the project's registered host labels. Project creation
+accepts a new name; explicit `HOST:LABEL` link commands establish host labels.
+
 Projects have stable IDs in the persistent store. Host labels are linked explicitly;
 matching repository URLs only suggest links in `fleet project ls`. The deck's
 `/api/state` reports a null `project_id` when a job or session's label is unlinked.
@@ -264,12 +275,13 @@ fleet run resolve-unknown RUN_ID
 ```
 
 These commands start real agents on your configured host. Choose its runtime,
-working directory and permission deliberately. `send --project` is the host label
-(`demo` here), while `--work-item` links the run to persistent work.
+working directory and permission deliberately. `send --project` accepts a registered project ID, unique prefix or unique name
+(`Workspace demo` here). Fleet derives the host label `demo` from its registered link;
+`--work-item` links the run to persistent work.
 
 ```bash
 fleet dispatch WORK_ID "Review the guide" --host workspace-demo --runtime codex --cwd WORKING_DIRECTORY --permission workspace-write
-fleet send --host workspace-demo --project demo --work-item WORK_ID --description "Review guide" --agent codex --cwd WORKING_DIRECTORY --permission workspace-write --step "Review the guide"
+fleet send --host workspace-demo --project "Workspace demo" --work-item WORK_ID --description "Review guide" --agent codex --cwd WORKING_DIRECTORY --permission workspace-write --step "Review the guide"
 ```
 
 For orchestration, first record a complete mandate. From this checkout's
