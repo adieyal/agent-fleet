@@ -1520,7 +1520,8 @@ def add_actor_option(parser: argparse.ArgumentParser) -> None:
 COMMAND_GROUPS = {
     "Jobs": ("send", "dispatch", "start", "add", "push", "pull", "ls", "watch", "show", "tail", "attach", "wait", "result",
              "cancel", "mv", "rm", "notify", "run"),
-    "Work": ("status", "work", "criterion", "summary", "attention", "answer", "decision", "guidance", "library"),
+    "Work": ("status", "work", "criterion", "summary", "attention", "answer", "decision", "guidance", "library",
+             "history"),
     "Projects": ("project", "building", "libraries", "web"),
     "Hosts": ("hosts", "host", "install", "hooks", "unlock"),
     "Agent-internal": ("orchestrate", "control"),
