@@ -164,7 +164,7 @@ The transition that marks a work item complete against its completion criteria. 
 Records showing that a completion criterion is met, such as test results, reports or run outputs. A run finishing is not in itself evidence that criteria are met.
 
 **Decision**:
-A recorded choice with its actor, mandate version, context and affected work. Decisions within a mandate are recorded without interrupting the user; others begin as decision requests. A decision an agent makes itself under guidance names its **principle**, the rule it relied on (such as "Constitution: decide yourself — test-only fixes"), and carries the guidance versions its run received. A decision whose principle was never given shows it as unknown.
+A recorded choice with its actor, mandate version, context and affected work. Decisions within a mandate are recorded without interrupting the user; others begin as decision requests. A decision an agent makes itself under guidance names its **principle**, the rule it relied on (such as "Constitution: decide yourself — test-only fixes"), and carries the guidance versions its run received. A decision whose principle was never given shows it as unknown. A decision belongs in the store that holds its job's run: an agent whose job runs on a worker host (one whose store does not hold the run) hands it to fleetd, which keeps it on the job, and the controller records it from the job's stream, once per decision id. One the controller cannot record, such as for an unknown work item, becomes an alert rather than being dropped.
 
 **Proposal**:
 A change awaiting acceptance: an edit beyond its author's authority, a disputed completion, or an offline edit that conflicts with accepted state. Proposals are never applied by order of arrival.
