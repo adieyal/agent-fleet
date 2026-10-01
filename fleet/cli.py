@@ -777,9 +777,12 @@ def command_project_merge(arguments: argparse.Namespace) -> None:
     workspace = open_workspace()
     registry = workspace.registry()
     other = registry.get(arguments.other)
-    workspace.merge(arguments.keep, arguments.other)
+    result = workspace.merge(arguments.keep, arguments.other)
     keep = workspace.registry().get(arguments.keep)
     console.print(f"merged {arguments.other} {escape(other.name)} into [bold]{keep.id}[/] {escape(keep.name)}")
+    console.print("  moved " + ", ".join(f"{count} {kind.replace('_', ' ')}" for kind, count in result.counts.items()))
+    floor_feedback = f"floor {result.freed} is freed" if result.freed is not None else "it held no floor"
+    console.print(f"  deleted project {arguments.other} for good; {floor_feedback}")
     for link in sorted(keep.links):
         console.print(f"  {escape(link.host)}:{escape(link.label)}")
 
@@ -1528,9 +1531,10 @@ def build_parser() -> argparse.ArgumentParser:
     project_unlink = project.add_parser("unlink", help="detach a host's label from its project")
     project_unlink.add_argument("link", metavar="HOST:LABEL")
     project_unlink.set_defaults(handler=command_project_unlink)
-    project_merge = project.add_parser("merge", help="fold a project registered by mistake into the older one")
+    project_merge = project.add_parser("merge", help="irreversibly delete OTHER and move its records, links and repositories into KEEP",
+                                      description="Permanently delete OTHER, free its floor and move its work, attention, runs, decisions, links and repositories into KEEP. This cannot be undone.")
     project_merge.add_argument("keep", metavar="KEEP-ID", help="the older project: keeps its ID and name")
-    project_merge.add_argument("other", metavar="OTHER-ID", help="gives up its links, repositories and floor")
+    project_merge.add_argument("other", metavar="OTHER-ID", help="permanently deleted after its records, links and repositories move to KEEP")
     project_merge.set_defaults(handler=command_project_merge)
     project_repo = project.add_parser("repo", help="repository remotes used to suggest links").add_subparsers(
         dest="project_repo_command", required=True)

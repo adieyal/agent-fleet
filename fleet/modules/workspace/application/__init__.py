@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Protocol, ContextManager
+from typing import Protocol, ContextManager, Callable
 
 from ..domain.projects import Registry
 from ..domain.choices import Choices
@@ -11,7 +11,9 @@ from ..domain.records import WorkspaceSnapshot
 
 
 class WorkspaceState:
-    def __init__(self, record: WorkspaceSnapshot) -> None:
+    def __init__(self, record: WorkspaceSnapshot,
+                 rehome_records: Callable[[str, str], dict[str, int]] | None = None) -> None:
+        self.rehome_records = rehome_records or (lambda keep, other: dict(work_items=0, attention=0, runs=0, decisions=0))
         self.registry = Registry(record.projects)
         self.choices = Choices(record)
         self.capacity = capacity_of(record.capacity)
