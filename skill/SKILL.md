@@ -61,12 +61,19 @@ hosts, run `fleet notify` under the Monitor tool.
 | Fetch files the agent left for you | `fleet pull host:id [dest]` |
 | Send more context mid-job | `fleet push host:id file…` then mention it in the next step |
 | Queue follow-up work (restarts an idle job) | `fleet add host:id -s "…"` (`--retry` re-queues failed steps) |
+| Answer a blocked step | `fleet add host:id -s "reply"` (or `fleet answer <attention-id> "reply"`) |
 | Stop | `fleet cancel host:id [--all-steps]` |
 
 Read results with `fleet result` before reporting to the user or dispatching
 dependent work; don't trust a `done` status alone. Status meanings: `running`,
 `queued` (steps pending), `stalled` (runner died mid-step), `failed`, `done`,
-`cancelled`.
+`cancelled`, `blocked`.
+
+A step that ends `FLEET_STATUS: blocked` holds its job: later steps wait until
+it is answered. `fleet add host:id -s "reply"` on such a job answers that step
+(it says so); the reply runs next, then the steps queued behind it. Use
+`--no-answer` to just append. `fleet answer <attention-id> "reply"` on the
+step's attention item does the same and resolves the item.
 
 The user watches the same jobs with `fleet watch` and `fleet web` (the
 kitchen dashboard), so keep descriptions and step titles meaningful.
