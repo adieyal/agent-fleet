@@ -31,8 +31,8 @@ from fleet.projections.project import project_status
 from fleet.modules.work import RELATION_TYPES, EvidenceSpecification
 from fleet.modules.execution import Run
 from fleet.transport import FleetError, Host, HostReport
-from fleet.orchestration import ControllerCommands, guide, orchestrator_prompt
-from fleet.composition import open_authority
+from fleet.orchestration import ControllerCommands, guide, orchestrator_prompt, promote_decision
+from fleet.composition import facades, open_authority
 from fleet.web.server import serve, serve_fixture
 
 console = Console()
@@ -763,6 +763,14 @@ def command_guidance_edit(arguments: argparse.Namespace) -> None:
     print(f"recorded {guidance.path} {describe_version(guidance.version)}")
 
 
+def command_guidance_promote(arguments: argparse.Namespace) -> None:
+    try:
+        guidance = promote_decision(facades(open_store()), arguments.epic, arguments.decision, actor=arguments.actor)
+    except (ValueError, LookupError) as error:
+        raise FleetError(str(error)) from error
+    print(f"recorded {guidance.path} {describe_version(guidance.version)}")
+
+
 def command_guidance_history(arguments: argparse.Namespace) -> None:
     project, epic = guidance_subject(arguments.subject)
     try:
@@ -1430,6 +1438,11 @@ def build_parser() -> argparse.ArgumentParser:
     guidance_edit.add_argument("--actor", required=True)
     guidance_edit.add_argument("--run", help="the run that wrote this version")
     guidance_edit.set_defaults(handler=command_guidance_edit)
+    guidance_promote = guidance.add_parser("promote", help="add a decision to its epic charter's decisions in force")
+    guidance_promote.add_argument("decision", help="decision ID")
+    guidance_promote.add_argument("--epic", required=True)
+    guidance_promote.add_argument("--actor", required=True)
+    guidance_promote.set_defaults(handler=command_guidance_promote)
     guidance_history = guidance.add_parser("history", help="versions, newest first")
     guidance_history.add_argument("subject", help=subject_help)
     guidance_history.add_argument("--json", action="store_true")

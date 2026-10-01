@@ -130,3 +130,18 @@ def test_missing_guidance_and_non_epics_are_reported(registered, project_id, tmp
     assert "has no version 3" in capsys.readouterr().err
     cli.main(["guidance", "history", project_id])
     assert capsys.readouterr().out == "No versions recorded.\n"
+
+
+def test_promote_adds_a_decision_to_the_charter(registered, epic, tmp_path, capsys, monkeypatch):
+    monkeypatch.delenv("FLEET_JOB_ID", raising=False)
+    project, repo = registered
+    decision = composition.open_decisions().record_guided(epic.id, actor="codex", question="Fees as freight?",
+                                                          answer="No", principle="Charter: decision 3")
+    with pytest.raises(SystemExit):
+        cli.main(["guidance", "promote", decision.id, "--epic", epic.id, "--actor", "user"])
+    assert "no charter recorded" in capsys.readouterr().err
+    edit(epic.id, CHARTER, tmp_path, "--actor", "user")
+    cli.main(["guidance", "promote", decision.id, "--epic", epic.id, "--actor", "user"])
+    assert "version 2 by user" in capsys.readouterr().out
+    assert f"8. {decision.time.date()}: Fees as freight? — No (principle: Charter: decision 3; decision " \
+           f"{decision.id[:8]} by codex)\n" in (repo / f"charters/{epic.id}.md").read_text()

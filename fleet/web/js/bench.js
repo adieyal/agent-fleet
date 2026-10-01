@@ -3,14 +3,19 @@ import { duration, esc, store } from './util.js';
 import { hostLook } from './looks.js';
 import { glyphHtml, svg } from './glyphs.js';
 import { ents } from './model.js';
-import { openReader } from './reader.js';
+import { openReader, openStoredReader } from './reader.js';
 import { fallbackCopy } from './panel.js';
+import { decisionsPanel, guidancePanel, guidanceSummary } from './guidance.js';
 
 const el = document.body.appendChild(document.createElement('section'));
 el.id = 'benchRoute';
 el.hidden = true;
 let project = null, rooms = [], room = null, bench = null, revision = 0;
 let briefing = false;
+// Guidance, keyed 'constitution' or by epic id: /api/guidance views and an epic's /api/decisions. `page` is
+// 'constitution' while the floor's constitution is open; `editing` the open editor, which pauses redraws.
+let page = null, editing = null;
+const views = new Map(), decisionLists = new Map(), historyOpen = new Set();
 // Collapsed to its header so the floor shows; remembered per browser.
 let collapsed = store('localStorage', 'fleet.bench.collapsed') === '1';
 const kinds = { checked: '<rect x="5" y="5" width="14" height="14"/>',
@@ -45,10 +50,11 @@ function refreshRooms() {
   const wait = roomsReadAt + ROOMS_REFRESH_MS - Date.now();
   if (wait > 0) { roomsTimer ??= setTimeout(() => { roomsTimer = null; refreshBench(); }, wait); return; }
   roomsReadAt = Date.now();
+  if (room) loadDecisions(room.id);
   // Its own check, not `revision`: a background read must never cancel a page the user just asked for.
   const asked = { project, revision };
   read().then(doc => {
-    if (asked.project !== project || asked.revision !== revision || bench
+    if (asked.project !== project || asked.revision !== revision || bench || editing
         || JSON.stringify(doc.rooms) === JSON.stringify(rooms)) return;
     rooms = doc.rooms;
     if (room) room = rooms.find(r => r.id === room.id) ?? null;
@@ -77,10 +83,52 @@ async function read(slice) {
   return doc;
 }
 
+async function json(url, body) {
+  const response = await fetch(url, body === undefined ? undefined
+    : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const doc = await response.json();
+  if (!response.ok) throw new Error(doc.error);
+  return doc;
+}
+
+const guidanceUrl = (key, version) => '/api/guidance?' + new URLSearchParams({ project,
+  ...(key === 'constitution' ? {} : { epic: key }), ...(version ? { version } : {}) });
+
+// Read into the cache, then redraw unless the page moved on or someone is typing.
+async function loadGuidance(key) {
+  const asked = project;
+  try {
+    const view = await json(guidanceUrl(key));
+    if (asked !== project) return;
+    views.set(key, view);
+  } catch (error) {
+    if (asked !== project) return;
+    views.set(key, { error: error.message });
+  }
+  if (!editing) render();
+}
+
+async function loadDecisions(epic) {
+  const asked = project;
+  let list;
+  try { list = await json('/api/decisions?' + new URLSearchParams({ epic })); }
+  catch (error) { list = { decisions: decisionLists.get(epic)?.decisions ?? [], error: error.message }; }
+  if (asked !== project || JSON.stringify(list) === JSON.stringify(decisionLists.get(epic))) return;
+  decisionLists.set(epic, list);
+  if (!editing && room?.id === epic && !bench) render();
+}
+
+function openRoom(r) {
+  room = r;
+  render();
+  if (r) { loadGuidance(r.id); loadDecisions(r.id); }
+}
+
 // `epic` and `milestone` open straight at that epic's page or that milestone's bench.
 export async function enterFloor(identity, { epic = null, milestone = null } = {}) {
   const request = ++revision;
-  project = identity; room = bench = null;
+  project = identity; room = bench = page = editing = null;
+  views.clear(); decisionLists.clear(); historyOpen.clear();
   el.hidden = identity === null;
   if (identity === null) return;
   el.innerHTML = '<p>Loading work…</p>';
@@ -88,13 +136,13 @@ export async function enterFloor(identity, { epic = null, milestone = null } = {
     const doc = await read();
     if (request !== revision) return;
     rooms = doc.rooms;
-    room = rooms.find(r => r.id === epic) ?? null;
     if (milestone) {
       const slice = await read(milestone);
       if (request !== revision) return;
       bench = slice; briefing = false;
     }
-    render();
+    openRoom(rooms.find(r => r.id === epic) ?? null);
+    loadGuidance('constitution');
   } catch (error) {
     if (request !== revision) return;
     rooms = [];   // so the next refresh draws the rooms over this error (the server may just be restarting)
@@ -186,7 +234,17 @@ function epicPage(r) {
       w.plan.length ? `<ol data-plan-list>${w.plan.map(m => planLine(m, true)).join('')}</ol>` : ''}</section>`).join('')}
     ${r.tasks.length ? `<h3>Tasks</h3><ol data-plan-list>${r.tasks.map(t => planLine(t, false)).join('')}</ol>` : ''}
     ${r.children.length ? `<h3>Epics</h3><p data-child-epics>${r.children.map(c => `<button data-epic="${esc(c.id)}">${esc(c.title)}</button>`).join('')}</p>` : ''}
+    ${guidancePanel('charter', views.get(r.id), guidanceState(r.id))}
+    ${decisionsPanel(decisionLists.get(r.id))}
   </article>`;
+}
+
+const guidanceState = key => ({ editing: editing?.key === key ? editing : null, history: historyOpen.has(key) });
+const guidanceKey = kind => kind === 'charter' ? room.id : 'constitution';
+
+function constitutionCard() {
+  return `<article data-constitution-card><div data-epic-head><button data-open-constitution>Constitution</button></div>
+    <p><small>${guidanceSummary(views.get('constitution'))}</small></p></article>`;
 }
 
 // A location shortened for reading: the host and the file name (fleet://home/…/result-0.md → home · result-0.md).
@@ -226,10 +284,11 @@ function docsList(list) {
 }
 
 function render(flipped = new Set()) {
-  el.dataset.level = bench ? 'bench' : room ? 'room' : 'floor';
+  el.dataset.level = bench ? 'bench' : room ? 'room' : page ?? 'floor';
   el.toggleAttribute('data-collapsed', collapsed);
+  el.toggleAttribute('data-editing', editing !== null);
   const crumbs = `<div data-bench-head><nav id="benchBreadcrumb" aria-label="Breadcrumb"><button data-back-floor>Floor</button>${
-    room ? ` / <button data-back-room>${esc(room.title)}</button>` : ''}${bench ? ` / <span>${esc(bench.title)}</span>` : ''}</nav>
+    room ? ` / <button data-back-room>${esc(room.title)}</button>` : page && !bench ? ' / <span>Constitution</span>' : ''}${bench ? ` / <span>${esc(bench.title)}</span>` : ''}</nav>
     <button data-collapse aria-expanded="${!collapsed}" title="${collapsed ? 'Show' : 'Hide'} the plan" aria-label="${collapsed ? 'Show' : 'Hide'} the plan"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${collapsed ? 'M6 3.5 10.5 8 6 12.5' : 'M3.5 6 8 10.5 12.5 6'}"/></svg></button></div>`;
   let content;
   if (bench) {
@@ -250,11 +309,84 @@ function render(flipped = new Set()) {
       <section><button data-briefing aria-expanded="${briefing}">Briefing</button><div data-summary ${briefing ? '' : 'hidden'}>${bench.summary === null ? 'Summary unknown' : ['purpose', 'done', 'doing', 'next'].map(key => `<p><b>${key}</b> ${esc(bench.summary[key])}</p>`).join('')}</div></section></div>`;
   } else if (room) {
     content = epicPage(room);
+  } else if (page === 'constitution') {
+    content = `<article data-constitution-page>${guidancePanel('constitution', views.get('constitution'), guidanceState('constitution'))}</article>`;
   } else {
-    content = `<div class="epic-cards">${rooms.map(epicCard).join('')}</div>`;
-    if (!rooms.length) content = '<p>No epic rooms recorded.</p>';
+    content = `<div class="epic-cards">${constitutionCard()}${rooms.map(epicCard).join('')}</div>`;
+    if (!rooms.length) content += '<p>No epic rooms recorded.</p>';
   }
   el.innerHTML = crumbs + content;
+}
+
+async function saveGuidance() {
+  const at = editing;
+  at.saving = true; at.error = null;
+  render();
+  try {
+    const view = await json('/api/guidance', { project, epic: at.kind === 'charter' ? at.key : null,
+                                               markdown: at.text, base: at.base });
+    if (editing !== at) return;
+    views.set(at.key, view);
+    editing = null;
+    if (at.kind === 'constitution' && room) loadGuidance(room.id);   // what the charter inherits moved on
+    if (at.kind === 'charter') loadDecisions(at.key);   // a charter now exists to promote into
+  } catch (error) {
+    if (editing !== at) return;
+    at.saving = false; at.error = error.message;
+    loadGuidance(at.key);   // a newer version may have come first; it shows once the edit is discarded
+  }
+  render();
+  el.querySelector('[data-guidance-text]')?.focus();
+}
+
+async function promote(decision) {
+  const epic = room.id;
+  try {
+    views.set(epic, await json('/api/guidance/promote', { epic, decision }));
+  } catch (error) {
+    decisionLists.set(epic, { ...decisionLists.get(epic), error: error.message });
+  }
+  render();
+  loadDecisions(epic);
+}
+
+// Typing goes into the editor's state, so a redraw (a failed save) keeps the text.
+el.addEventListener('input', ev => {
+  if (editing && ev.target.matches('[data-guidance-text]')) editing.text = ev.target.value;
+});
+
+// Guidance clicks; true when the click was one of them.
+function guidanceClick(target) {
+  if (target.closest('[data-open-constitution]')) { page = 'constitution'; render(); loadGuidance('constitution'); return true; }
+  const edit = target.closest('[data-guidance-edit]');
+  if (edit) {
+    const key = guidanceKey(edit.dataset.guidanceEdit), view = views.get(key);
+    editing = { key, kind: edit.dataset.guidanceEdit, text: view.guidance ? view.markdown : '',
+                base: view.guidance ? view.guidance.version.number : 0, saving: false, error: null };
+    render();
+    el.querySelector('[data-guidance-text]')?.focus();
+    return true;
+  }
+  if (target.closest('[data-guidance-save]')) { saveGuidance(); return true; }
+  if (target.closest('[data-guidance-cancel]')) { editing = null; render(); return true; }
+  const history = target.closest('[data-guidance-history]');
+  if (history) {
+    const key = guidanceKey(history.dataset.guidanceHistory);
+    if (!historyOpen.delete(key)) historyOpen.add(key);
+    render();
+    return true;
+  }
+  const version = target.closest('[data-guidance-open]');
+  if (version) {
+    const kind = version.dataset.guidanceOpen, number = version.dataset.version;
+    const label = kind === 'charter' ? `Charter: ${room.title}` : 'Constitution';
+    openStoredReader(guidanceUrl(guidanceKey(kind), number), { id: `${kind} version ${number}`,
+      name: `${label} · version ${number}`, kind: 'file' }, null);
+    return true;
+  }
+  const decision = target.closest('[data-promote]');
+  if (decision) { promote(decision.dataset.promote); return true; }
+  return false;
 }
 
 el.addEventListener('click', async ev => {
@@ -285,16 +417,17 @@ el.addEventListener('click', async ev => {
     render();
     return;
   }
-  if (ev.target.closest('[data-back-floor]')) { ++revision; room = bench = null; render(); return; }
-  if (ev.target.closest('[data-back-room]')) { ++revision; bench = null; render(); return; }
+  if (guidanceClick(ev.target)) return;
+  if (ev.target.closest('[data-back-floor]')) { ++revision; room = bench = page = editing = null; render(); return; }
+  if (ev.target.closest('[data-back-room]')) { ++revision; bench = editing = null; render(); return; }
   const epic = ev.target.closest('[data-epic]'), slice = ev.target.closest('[data-slice]');
-  if (epic) { room = rooms.find(r => r.id === epic.dataset.epic); render(); }
+  if (epic) { editing = null; openRoom(rooms.find(r => r.id === epic.dataset.epic)); }
   if (slice) {
     const request = ++revision;
     try {
       const doc = await read(slice.dataset.slice);
       if (request !== revision) return;
-      bench = doc; briefing = false; render();
+      bench = doc; briefing = false; editing = null; render();
     } catch (error) {
       if (request === revision) el.innerHTML += `<p role="alert">${esc(error.message)}</p>`;
     }
@@ -306,9 +439,11 @@ window.addEventListener('keydown', ev => {
   if (ev.key !== 'Escape' || el.hidden) return;
   if (!document.getElementById('reader').hidden) return;
   // A milestone with no epic above it opens with no room; stepping back from it lands on the floor list.
-  if (!room && !bench) { enterFloor(null); return; }
+  if (!room && !bench && !page) { enterFloor(null); return; }
   ev.stopImmediatePropagation();
   ++revision;
-  if (bench) bench = null; else room = null;
+  // An open editor closes first; its text is gone, as with its cancel button.
+  if (editing) editing = null;
+  else if (bench) bench = null; else if (room) room = null; else page = null;
   render();
 }, { capture: true });

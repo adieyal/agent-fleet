@@ -6,7 +6,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from .application import Authoring
-from .domain import CONSTITUTION, GUIDANCE_FILES, Guidance, Mandate, Version, charter_path
+from .domain import CONSTITUTION, GUIDANCE_FILES, Guidance, GuidanceConflict, Mandate, Version, charter_path, in_force
 
 
 class RecordsFacade:
@@ -66,6 +66,14 @@ class RecordsFacade:
             raise LookupError('mandate is not recorded')
         return Mandate.parse(body)
 
+    def registered(self, project: str) -> bool:
+        """Whether the project has a management repository to hold its records."""
+        try:
+            self.workspace.management_repository(project)
+        except ValueError:
+            return False
+        return True
+
     def guidance(self, project: str, epic: str | None = None, *, number: int | None = None) -> Guidance | None:
         """The project's constitution, or the epic's charter with the constitution versions it inherits;
         the current version unless number names an older one."""
@@ -91,17 +99,33 @@ class RecordsFacade:
                        constitution=self.versions(root, CONSTITUTION, constitution['revision'])[0])
 
     def write_guidance(self, project: str, body: str, *, epic: str | None = None, actor: str,
-                       source_run: str | None = None) -> Guidance:
+                       source_run: str | None = None, base: int | None = None) -> Guidance:
+        """A new version; base, when given, is the version number the editor started from (0 for none), and a
+        newer current version refuses the write."""
         if not body.strip():
             raise ValueError('guidance is empty')
         path = self.guidance_path(project, epic)
         current = self.guidance(project, epic)
+        number = 0 if current is None else current.version.number
+        if base is not None and base != number:
+            raise GuidanceConflict(f'{path} changed since version {base}: it is now version {number}')
         if current is not None and current.body == body:
             raise ValueError(f'unchanged from version {current.version.number}')
         result = self.write(project, path, body, key=str(uuid4()), actor=actor, source_run=source_run)
         if result['state'] != 'confirmed':
             raise ValueError(result['error'])
         return self.guidance(project, epic)
+
+    def promote(self, project: str, epic: str, text: str, *, marker: str, actor: str) -> Guidance:
+        """Add text to the charter's decisions in force as a new version; marker identifies what was promoted,
+        so promoting it twice is refused."""
+        current = self.guidance(project, epic)
+        if current is None:
+            raise LookupError(f'no charter recorded for epic {epic}; write one before promoting decisions')
+        if marker in current.body:
+            raise ValueError(f'{marker} is already in the charter')
+        return self.write_guidance(project, in_force(current.body, text), epic=epic, actor=actor,
+                                   base=current.version.number)
 
     def guidance_history(self, project: str, epic: str | None = None) -> list[Version]:
         """Versions of the constitution or charter, newest first."""

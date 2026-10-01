@@ -2,6 +2,7 @@
 
 from fleet import composition
 from fleet.modules.records import GUIDANCE_FILES, guidance_brief
+from fleet.projections.decisions import decision_log, promotion, promotion_marker
 from fleet.projections.project import project_status
 from dataclasses import asdict
 from pathlib import Path
@@ -22,6 +23,16 @@ def guide(records, work_item: str | None, payload: dict) -> tuple[dict, dict | N
     first, *rest = payload['steps']
     steps = [dict(first, prompt=f"{guidance_brief(guidance, work_item)}\n\n{first['prompt']}"), *rest]
     return dict(payload, steps=steps), guidance
+
+
+def promote_decision(services, epic: str, decision: str, *, actor: str):
+    """Add a decision on the epic's work, dated, to the epic charter's decisions in force as a new version."""
+    project = services.work.get(epic).project
+    entry = next((entry for entry in decision_log(services.work, services.decisions, project=project, epic=epic)
+                  if entry["id"] == decision), None)
+    if entry is None:
+        raise LookupError(f"no decision {decision} on the work of epic {epic}")
+    return services.records.promote(project, epic, promotion(entry), marker=promotion_marker(entry), actor=actor)
 
 
 def orchestrator_prompt(activation, mandate) -> str:

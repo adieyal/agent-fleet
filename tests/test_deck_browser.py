@@ -15,7 +15,8 @@ from PIL import Image, ImageStat
 from playwright.sync_api import Browser, Page, expect
 
 from browser_clock import advance_until
-from fleet.composition import open_attention, open_execution, open_library, open_records, open_store, open_work
+from fleet.composition import (open_attention, open_decisions, open_execution, open_library, open_records,
+                               open_store, open_work)
 from fleet.modules.execution import JobObservation
 from fleet.modules.work import EvidenceSpecification
 
@@ -477,6 +478,77 @@ def test_a_tasks_title_opens_its_latest_report_and_its_documents_list_by_icon(
     expect(docs.locator('svg')).to_have_count(4)
     expect(docs.first).to_have_attribute('title', 'Read this report: Step 2: prove it')
     shoot(request, page, 'task-documents')
+    assert changed_deck.errors == []
+
+
+def test_room_guidance_edit_history_decisions_and_promote(changed_deck: Deck, deck_state, monkeypatch, tmp_path,
+                                                         request: pytest.FixtureRequest) -> None:
+    """The floor's constitution and an epic's charter are written and edited in place, their versions open in the
+    reader, and a decision on the epic's work is promoted into the charter's decisions in force."""
+    store = open_store()
+    monkeypatch.setattr(deck_state, 'store', store)
+    monkeypatch.setattr(deck_state, 'attention', open_attention(store))
+    work = open_work(store)
+    epic = work.add(project='restoke-v2', title='Transcriber', goal='Read by position.', kind='epic', actor='user')
+    task = work.add(project='restoke-v2', title='Liquid Mix', goal='Map it.', parent=epic.id, actor='user')
+    repo = tmp_path / 'management'
+    repo.mkdir()
+    subprocess.run(['git', '-C', str(repo), 'init'], check=True, capture_output=True, timeout=10)
+    open_records(store).register('restoke-v2', repo, actor='user')
+    decision = open_decisions(store).record_guided(task.id, actor='codex', question='Store fees as freight?',
+                                                   answer='No, as charge lines', principle='Charter: anti-goal 1')
+    page = changed_deck.page
+    route = page.locator('#benchRoute')
+    page.evaluate("fleetDeck.enterFloor('restoke-v2')")
+    card = page.locator('[data-constitution-card]')
+    expect(card).to_contain_text('Not recorded')
+    card.get_by_role('button', name='Constitution').click()
+    expect(route).to_have_attribute('data-level', 'constitution')
+    expect(route.locator('[data-guidance="constitution"]')).to_contain_text('No constitution recorded.')
+    page.get_by_role('button', name='Write the constitution').click()
+    expect(route).to_have_attribute('data-editing', '')
+    page.locator('[data-guidance-text]').fill('# Constitution\n\n## Decide yourself\n\n- Test-only fixes.\n')
+    page.get_by_role('button', name='Save a new version').click()
+    expect(route.locator('[data-guidance-version]')).to_contain_text('version 1 · web-user')
+    expect(route.locator('[data-guidance-body] h2')).to_have_text('Decide yourself')
+    page.keyboard.press('Escape')
+    expect(card).to_contain_text('version 1 · web-user')
+
+    page.get_by_role('button', name='Transcriber', exact=True).click()
+    expect(route).to_have_attribute('data-level', 'room')
+    decisions = route.locator('[data-decision]')
+    expect(decisions).to_have_count(1)
+    expect(decisions.first).to_contain_text('Principle: Charter: anti-goal 1')
+    expect(decisions.first.locator('[data-promote]')).to_have_count(0)   # nothing to promote into yet
+    page.get_by_role('button', name='Write the charter').click()
+    page.locator('[data-guidance-text]').fill('# Charter\n\n## Decisions in force\n\n1. One.\n')
+    page.get_by_role('button', name='Save a new version').click()
+    charter = route.locator('[data-guidance="charter"]')
+    expect(charter.locator('[data-inherits]')).to_have_text('Inherits constitution version 1')
+    decisions.first.get_by_role('button', name="Add to the charter's decisions in force").click()
+    expect(charter.locator('[data-guidance-version]')).to_contain_text('version 2 · web-user')
+    expect(charter.locator('[data-guidance-body] li')).to_have_count(2)
+    expect(charter.locator('[data-guidance-body] li').nth(1)).to_contain_text(f'decision {decision.id[:8]} by codex')
+    expect(decisions.first.locator('[data-in-force]')).to_have_text('In force')
+    if request.config.getoption('--shots'):
+        page.screenshot(path=f"{request.config.getoption('--shots')}/room-guidance.png")
+
+    charter.get_by_role('button', name='Edit the charter').click()
+    page.locator('[data-guidance-text]').fill('Edited elsewhere first.')
+    open_records(store).write_guidance('restoke-v2', '# Charter\n\nNewer.\n', epic=epic.id, actor='claude')
+    page.get_by_role('button', name='Save a new version').click()
+    expect(charter.locator('[role="alert"]')).to_contain_text('it is now version 3')
+    expect(page.locator('[data-guidance-text]')).to_have_value('Edited elsewhere first.')
+    page.get_by_role('button', name='Discard the edit').click()
+    page.get_by_role('button', name='Versions').click()
+    expect(charter.locator('[data-guidance-version]')).to_contain_text('version 3 · claude')
+    expect(charter.locator('[data-guidance-versions] li')).to_have_count(3)
+    charter.get_by_role('button', name='Read version 1').click()
+    expect(page.locator('#reader')).to_be_visible()
+    expect(page.locator('#rdTitle')).to_have_text('Charter: Transcriber · version 1')
+    expect(page.locator('#rdBody .prose li')).to_have_text(['One.'])
+    page.keyboard.press('Escape')
+    page.evaluate('fleetDeck.enterFloor(null)')
     assert changed_deck.errors == []
 
 

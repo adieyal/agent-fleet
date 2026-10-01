@@ -28,3 +28,16 @@ def decision_log(work: WorkFacade, decisions: DecisionsFacade, *, project: str,
     return [{**asdict(decision), "time": decision.time.isoformat(),
              "work_items": [{"id": identity, "title": titles.get(identity)} for identity in decision.affected_work_items]}
             for decision in sorted(chosen, key=lambda decision: decision.time, reverse=True)]
+
+
+def promotion_marker(decision: dict[str, Any]) -> str:
+    """How a charter names a decision promoted into it."""
+    return f"decision {decision['id'][:8]}"
+
+
+def promotion(decision: dict[str, Any]) -> str:
+    """A decision as one dated item of a charter's decisions in force."""
+    flat = lambda text: " ".join(text.split())
+    principle = "principle unknown" if decision["principle"] is None else f"principle: {flat(decision['principle'])}"
+    return (f"{decision['time'][:10]}: {flat(decision['question'])} — {flat(decision['answer'])} "
+            f"({principle}; {promotion_marker(decision)} by {decision['actor']})")

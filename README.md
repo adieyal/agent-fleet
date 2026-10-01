@@ -198,6 +198,12 @@ fleet decision record --work-item WORK_ID --question "Rerun the flaky test?" --a
 fleet decision list --project PROJECT_ID
 ```
 
+In the deck, the floor opens the constitution and each epic's page shows its
+charter and the decisions on its work. Edit either in place (each save is a new
+version by `web-user`, refused if someone saved first), open older versions in
+the reader, and promote a decision into the charter's decisions in force, or
+from the shell with `fleet guidance promote DECISION_ID --epic EPIC_ID --actor user`.
+
 Use the front desk and lanterns, or these commands, to manage attention:
 
 ```bash
