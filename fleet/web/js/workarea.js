@@ -14,7 +14,7 @@ import { hostLook } from './looks.js';
 import { actionOf, glyphHtml } from './glyphs.js';
 import { ents } from './model.js';
 import { openAttentionReader, openReader } from './reader.js';
-import { select } from './panel.js';
+import { idChip, select } from './panel.js';
 import { workareaOf } from './workarea-model.js';
 
 const el = document.getElementById('workarea');
@@ -47,7 +47,7 @@ function render() {
   const bench = b => {
     const job = jobs.get(b.key)?.job;
     return `<section class="bench" data-bench="${esc(b.key)}" data-status="${esc(b.status)}"${b.recent ? ' data-recent' : ''} style="--hc:${hostLook(b.host).color}">
-      <div class="bench-head">${job ? glyphHtml(actionOf(job)) : ''}<button class="bench-title" data-job="${esc(b.key)}"${ents.has(b.key) ? ` title="Open this job’s panel: ${esc(b.title)}"` : ` disabled title="${esc(b.title)} (finished: not on the deck)"`}>${esc(b.title)}</button><small>${esc(b.host)} · ${esc(b.id)}</small></div>
+      <div class="bench-head">${job ? glyphHtml(actionOf(job)) : ''}<button class="bench-title" data-job="${esc(b.key)}"${ents.has(b.key) ? ` title="Open this job’s panel: ${esc(b.title)}"` : ` disabled title="${esc(b.title)} (finished: not on the deck)"`}>${esc(b.title)}</button><small>${esc(b.host)} · ${idChip(b.id)}</small></div>
       <ol class="plan-wall" aria-label="Plan">${b.tiles.map(t => `<li class="tile" data-tile="${t.index}" data-status="${esc(t.status)}" data-mark="${t.mark}"><button
         data-step="${t.index}" title="Step ${t.index + 1}: ${esc(t.title)} (${esc(t.status)}). Read its ${stepDoc(job, t.index)?.kind === 'report' ? 'report' : 'brief'}"${
         stepDoc(job, t.index) ? '' : ' disabled'}><span class="mk" aria-hidden="true">${MARK[t.mark]}</span><span class="tt">${esc(t.title)}</span></button></li>`).join('')}</ol>

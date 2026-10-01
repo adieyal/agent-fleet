@@ -378,6 +378,16 @@ export function fallbackCopy(text, done) {
   try { document.execCommand('copy'); done(); } catch (err) { /* nothing else to try */ }
   ta.remove();
 }
+// An id shown by its first 8 characters; clicking copies the whole id.
+export const idChip = id => `<button class="id-chip" data-copy-id="${esc(id)}" title="Copy ${esc(id)}" aria-label="Copy id ${esc(id)}">${esc(shortId(id))}</button>`;
+document.addEventListener('click', ev => {
+  const chip = ev.target.closest('[data-copy-id]');
+  if (!chip) return;
+  ev.stopPropagation();
+  const done = () => { chip.dataset.copied = ''; setTimeout(() => delete chip.dataset.copied, 1400); };
+  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(chip.dataset.copyId).then(done, () => fallbackCopy(chip.dataset.copyId, done));
+  else fallbackCopy(chip.dataset.copyId, done);
+}, true);
 function eventIcon(ev) {
   if (ev.kind === 'tool') return TOOL_ICON[ev.tool] || '•';
   // not a diamond for jobs: that form belongs to the attention lantern alone

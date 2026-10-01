@@ -681,7 +681,7 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 .rd-actions [hidden]{display:none}
 .rd-step{display:inline-flex;align-items:center;gap:4px;margin-right:6px}
 .rd-actions .rd-step button{width:34px;padding:0;justify-content:center;font-size:19px;line-height:1}
-.rd-step #rdPos{min-width:4.5em;text-align:center;font:12px/1 var(--mono, ui-monospace, monospace);color:var(--rd-muted)}
+.rd-step #rdPos{min-width:4.5em;text-align:center;font:12px/1 var(--mono);color:var(--rd-muted)}
 .decision-context{white-space:pre-wrap;overflow-wrap:anywhere}
 .session-answer{padding:10px 14px;border:1px solid var(--rd-accent);border-radius:6px}
 .session-where{color:var(--rd-muted);font-size:.9em;overflow-wrap:anywhere}
@@ -1159,3 +1159,7 @@ html[data-quality=high] .lobby{background:rgba(5,9,17,.78)}
 html[data-quality=high] #docTip{background:rgba(7,12,22,.96)}
 html[data-quality=high] #workarea{background:rgba(3,6,12,.6)}
 @media (max-width:760px){#qualityToggle span{display:none}}
+/* An id shortened to its first 8 characters; click copies the whole id. */
+.id-chip{all:unset;cursor:copy;font:inherit;font-family:var(--mono);border-bottom:1px dotted currentColor;opacity:.9}
+.id-chip:hover,.id-chip:focus-visible{opacity:1;color:var(--text)}
+.id-chip[data-copied]::after{content:" copied";color:var(--ok)}

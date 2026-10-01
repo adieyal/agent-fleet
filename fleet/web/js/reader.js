@@ -5,7 +5,7 @@ import { age, clamp, esc, stamp, store } from './util.js';
 import { hostLook } from './looks.js';
 import { DOC_KIND, isUpdating, jobDocSequence, kindOf } from './docs3d.js';
 import { hideDocTip } from './camera.js';
-import { fallbackCopy } from './panel.js';
+import { fallbackCopy, idChip } from './panel.js';
 import { libraryDocs } from './library.js';
 import { demoDoc } from './demo.js';
 import { drawnDiagrams, enrichProse, linkImages, rethemeDiagrams } from './rich.js';
@@ -261,10 +261,10 @@ function renderReaderHead() {
   document.getElementById('rdTitle').textContent = rd.source === 'library' ? (d.title || doc.title || d.name || doc.name) : (d.name || doc.name);
   const step = d.step ?? doc.step;
   document.getElementById('rdMeta').innerHTML = [
-    rd.source === 'attention' ? `<span>Attention item · ${esc(doc.id)}</span><span title="${esc(new Date(doc.seen * 1000).toLocaleString())}">${stamp(doc.seen)} · ${age(doc.seen)} ago</span>`
+    rd.source === 'attention' ? `<span>Attention item · ${idChip(doc.id)}</span><span title="${esc(new Date(doc.seen * 1000).toLocaleString())}">${stamp(doc.seen)} · ${age(doc.seen)} ago</span>`
       : rd.source === 'library' ? `<span>${esc(doc.project)} · ${esc(doc.id)}</span>`
       : rd.source === 'stored' && !rd.host ? `<span>working · ${esc(doc.id)}</span>`
-      : `<span title="${esc(d.job_description || rd.job.description)}"><i class="hd" style="background:${hostLook(rd.host).color}"></i>${esc(rd.host)} · ${esc(rd.job.id)} · ${esc(d.agent || rd.job.agent)}</span>`,
+      : `<span title="${esc(d.job_description || rd.job.description)}"><i class="hd" style="background:${hostLook(rd.host).color}"></i>${esc(rd.host)} · ${idChip(rd.job.id)} ·${esc(d.agent || rd.job.agent)}</span>`,
     step != null ? `<span>step ${step + 1}</span>` : '',
     d.minutes && d.media !== 'image' ? `<span>${d.minutes} min read</span>` : '',
     (d.mtime || doc.mtime) ? `<span>updated ${age(d.mtime || doc.mtime)} ago</span>` : '',
