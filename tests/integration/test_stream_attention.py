@@ -132,6 +132,7 @@ def test_an_item_handed_to_the_agent_stays_the_agents_when_its_job_is_seen_again
     report(state, worker, job)
     attention = open_attention(store)
     [item] = attention.list()
+    attention.mandate = lambda project: object()  # Isolate repeated-observation ownership behavior.
     attention.delegate(item.id, actor='user', note='retry it')
     now[0] += timedelta(seconds=1)
     apply_message(state, worker, {'type': 'job', 'job': job})
@@ -144,6 +145,7 @@ def test_agent_owned_aged_out_job_stays_open_until_explicit_deletion(recorded):
     report(state, worker, job)
     attention = open_attention(store)
     [item] = attention.list()
+    attention.mandate = lambda project: object()  # Isolate repeated-observation ownership behavior.
     attention.delegate(item.id, actor='user', note='inspect failure')
     apply_message(state, worker, {'type': 'removed', 'id': job['id'], 'reason': 'aged_out'})
     apply_message(state, worker, {'type': 'heartbeat'})

@@ -32,10 +32,18 @@ class TriageScheduler:
         version = None if mandate is None else self.services.records.mandate_version(project, TRIAGE_PATH)[0]
         used = state.get('used', 0) if state.get('day') == self.services.store.clock().date().isoformat() else 0
         run = state.get('run')
+        now = self.services.store.clock()
+        reset = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        queued = self.queue(self.services, project)
+        starts = [datetime.fromisoformat(state['waiting'][i.id])
+                  if i.id in state.get('waiting', {}) else i.owner_at for i in queued]
+        oldest = None if not starts or any(start is None for start in starts) else min(starts)
         return dict(project=project, mandate_version=version,
-                    queue=[i.id for i in self.queue(self.services, project)],
+                    queue=[i.id for i in queued],
                     live_run=None if run is None else dict(id=run, status=self.services.execution.get_run(run).status),
                     budget_left=None if mandate is None else max(0, mandate.limits['runs_per_day'] - used),
+                    budget_resets_at=None if mandate is None else reset.isoformat(),
+                    oldest_wait_seconds=None if oldest is None else max(0, (now - oldest).total_seconds()),
                     delivery_error=state.get('error'),
                     pending_publications=[intent for intent in self.services.records.intents()
                                           if intent['project'] == project and intent['state'] == 'pending'])
@@ -81,7 +89,12 @@ class TriageScheduler:
                 return None
             version = services.records.mandate_version(project, TRIAGE_PATH)[0]
             def escalate(item, reason: str) -> None:
-                services.decisions.escalate_triage_guard(item.id, reason=reason, mandate_version=version,
+                recovery = (f' Inspect fleet triage policy show {project} and fleet triage status {project}. '
+                            'Decide whether to handle this item yourself or restore service and delegate it again.')
+                if 'outcome unknown' in reason:
+                    recovery += (f' Inspect fleet run show {state.get("run")}; '
+                                 'do not launch a duplicate while the outcome is unknown.')
+                services.decisions.escalate_triage_guard(item.id, reason=reason + recovery, mandate_version=version,
                                                         source_run=state.get('run'))
             items = self.queue(services, project)
             if state.get('day') != now.date().isoformat():
@@ -145,7 +158,7 @@ class TriageScheduler:
                     items.remove(item)
             if state['used'] >= mandate.limits['runs_per_day']:
                 for item in items:
-                    escalate(item, f'triage daily budget exhausted ({state["used"]}/{mandate.limits["runs_per_day"]} runs)')
+                    escalate(item, f'triage daily budget exhausted ({state["used"]}/{mandate.limits["runs_per_day"]} runs); resets at {(now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()}')
                 items = []
             if not items:
                 repository.save(project, state)

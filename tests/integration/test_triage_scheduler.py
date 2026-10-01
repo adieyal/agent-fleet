@@ -88,6 +88,10 @@ def test_server_down_timeout_precedes_launch(triage):
 
 def test_unreachable_unknown_retains_reservation_and_escalates(triage):
     services, *_ = triage
+    # The 31-minute wait stays within one budget day, even near midnight.
+    now = services.store.clock().replace(hour=12, minute=0, second=0, microsecond=0)
+    services.store.clock = lambda: now
+    services.attention.commands.clock = services.store.clock
     a = item(triage)
     engine, calls = scheduler(triage)
     def unavailable(run, **kw):
@@ -166,7 +170,7 @@ def test_cli_status_resolves_registered_project_name(triage, capsys):
     services, activation, *_ = triage
     a = item(triage)
     project = next(p for p in services.workspace.registry().projects.values() if p.id == activation.project)
-    cli.command_triage_status(SimpleNamespace(project=project.name))
+    cli.command_triage_status(SimpleNamespace(project=project.name, json=True))
     result = json.loads(capsys.readouterr().out)
     assert result['project'] == activation.project and result['queue'] == [a.id]
     assert result['live_run'] is None and result['budget_left'] == 12

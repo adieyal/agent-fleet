@@ -233,12 +233,35 @@ version by `web-user`, refused if someone saved first), open older versions in
 the reader, and promote a decision into the charter's decisions in force, or
 from the shell with `fleet guidance promote DECISION_ID --epic EPIC_ID --actor user`.
 
-Use the front desk and lanterns, or these commands, to manage attention:
+Use the front desk and lanterns, or these commands, to manage attention. Before
+Delegate, confirm a triage policy for this project. Review the fields and limits
+in [the policy setup guide](docs/triage-policy.md); this example authorizes only
+recording findings and escalation. Replace the controller host and checkout for
+your project before recording it:
+
+```python
+import json
+from fleet.composition import open_records
+from fleet.modules.records import TRIAGE_PATH
+
+policy = dict(goal="Inspect delegated attention and record findings or escalate",
+              constraints=["Do not complete work or judge criteria"],
+              decision_authority=["record_decision", "escalate"],
+              escalation_conditions=["A remedy needs authority outside this policy"],
+              criteria_it_may_judge=[], host="home", runtime="codex",
+              cwd="WORKING_DIRECTORY", permission="workspace-write", routing={},
+              permissions={"allow": [], "escalate": ["Bash"]},
+              limits={"retries_per_step": 1, "runs_per_day": 3, "unclaimed_minutes": 30})
+result = open_records().write_mandate(
+    "PROJECT_ID", TRIAGE_PATH, json.dumps(policy), key="guide-triage-v1", actor="user"
+)
+assert result["state"] == "confirmed", result
+```
 
 ```bash
 fleet attention add "Review the guide" --project PROJECT_ID --work-item WORK_ID --kind decision --owner user --source manual --source-reference guide-review --context-reference README.md --actor user
 fleet attention list --project PROJECT_ID
-fleet attention delegate ATTENTION_ID --actor user --note "retry once"   # stays open, listed as the agent's
+fleet attention delegate ATTENTION_ID --actor user --note "inspect under the confirmed policy"   # stays open, listed as the agent's
 fleet attention list --owner agent                  # items an agent must act on; --owner user: yours
 fleet attention escalate ATTENTION_ID --actor triage --reason "needs a push to GitHub"   # agent to user
 fleet attention delegate ATTENTION_ID --actor user

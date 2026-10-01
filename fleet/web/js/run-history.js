@@ -1,5 +1,5 @@
 // Store-backed runs: this component can also be mounted with a work_item filter.
-import { age, duration, esc, offlineLabel } from './util.js';
+import { age, duration, esc, offlineLabel, storedStatus } from './util.js';
 import { fallbackCopy, idChip, openArchivedRun } from './panel.js';
 
 const started = r => r.start ? `<time title="${esc(new Date(r.start).toLocaleString())}">${age(Date.parse(r.start) / 1000)} ago</time>` : 'Start not recorded';
@@ -8,16 +8,16 @@ function row(r) {
   const link = `fleet run link ${r.host} ${r.remote_job_id} WORK_ITEM`;
   const branch = r.workspace?.detached ? `detached @${r.workspace.head}` : r.workspace?.branch;
   return `<li data-history-run="${esc(r.id)}"><div><button data-open-run="${esc(r.id)}">${r.kind === 'session' ? '◉' : '▣'} ${esc(r.title || 'Title not recorded')}</button>${idChip(r.id)}</div>
-    <p>${started(r)} · ${r.duration_seconds == null ? 'Duration not recorded' : duration(r.duration_seconds)} · <b>${esc(r.status)}</b>${r.reason ? ` · ${esc(r.reason)}` : ''}${r.offline_since ? ` · ${esc(offlineLabel(r))}` : ''}</p>
+    <p>${started(r)} · ${r.duration_seconds == null ? 'Duration not recorded' : duration(r.duration_seconds)} · <b>${esc(storedStatus(r))}</b>${r.reason && !['queued', 'stalled'].includes(r.reason) ? ` · ${esc(r.reason)}` : ''}${r.offline_since ? ` · ${esc(offlineLabel(r))}` : ''}</p>
     <p>${esc(r.host)} · ${esc(r.runtime || 'Runtime not recorded')} · ${esc(r.model || 'Model not recorded')} · ${r.work_item ? `<span title="${esc(r.work_item)}">${esc(r.work_title || r.work_item)}</span>` : `<span data-unlinked title="No work item is linked. Linking attributes this run to an item; it does not complete the item.">Unlinked</span> <button data-copy="${esc(link)}" title="Copy a command to attribute this run to a work item. Replace WORK_ITEM before running; linking does not complete work.">Link command</button>`}</p>
     <p title="${esc(r.workspace_reason || '')}">${esc(branch || 'Branch not recorded')} · ${count(r.commit_count, 'commits')} · ${count(r.push_count, 'pushes')} · ${count(r.document_count, 'documents')}</p></li>`;
 }
 export function mountRunHistory(root, project, initial = {}, { title = 'History' } = {}) {
   let filters = { ...initial }, limit = 100, request = 0;
   root.innerHTML = `<section data-run-history><h2>${esc(title)}</h2><form data-history-filters>
-    <label>Work item<input name="work_item" placeholder="Work item ID"${initial.work_item ? ' readonly' : ''} value="${esc(initial.work_item || '')}"></label>
+    <label>Work item<input name="work_item" placeholder="Work item ID or unique prefix"${initial.work_item ? ' readonly' : ''} value="${esc(initial.work_item || '')}"></label>
     <label>Host<input name="host" placeholder="All hosts"></label>
-    <label>Status<select name="status"><option value="">All statuses</option>${['running','succeeded','failed','stopped','unknown outcome'].map(s => `<option>${s}</option>`).join('')}</select></label>
+    <label>Status<select name="status"><option value="">All statuses</option>${['running','succeeded','failed','stopped','unknown outcome'].map(s => `<option value="${s}">${s === 'unknown outcome' ? 'unknown outcome (includes queued and stalled)' : s}</option>`).join('')}</select></label>
     <label>Kind<select name="kind"><option value="">Jobs and sessions</option><option value="job">Jobs</option><option value="session">Sessions</option></select></label>
     <label>Since<input name="since" placeholder="e.g. 7d or 2026-10-01"></label><label>Until<input name="until" placeholder="Date or time"></label>
     <label><input type="checkbox" name="unlinked"> Unlinked only</label><button type="submit">Apply filters</button><button type="reset">Reset</button></form>

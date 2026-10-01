@@ -53,7 +53,7 @@ def test_stalled_runner_is_not_confirmed_lost_and_reconciliation_does_not_call_w
     linked = execution.link("host", "job", "work", actor="user")
     stalled = execution.observe("host", JobObservation("job", "stalled", "codex", None, None, None))
     assert stalled.id == linked.id
-    assert stalled.status == "unknown outcome" and stalled.reason is None
+    assert stalled.status == "unknown outcome" and stalled.reason == "stalled"
     assert reads == ["work"]
     assert execution.observe("other", JobObservation("job", "failed", "codex", None, None, None)) is None
     assert execution.runs() == [stalled]

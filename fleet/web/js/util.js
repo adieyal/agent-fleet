@@ -57,3 +57,9 @@ export function offlineLabel(item, compact = false) {
   const date = new Date(typeof since === 'number' ? since * 1000 : since);
   return compact ? `offline since ${age(date.getTime() / 1000)} ago` : `offline since ${date.toLocaleString()}`;
 }
+
+// Kept worker observations explain the stored classification; offline state is rendered separately.
+export function storedStatus(run) {
+  return run.status_label || (run.status === 'unknown outcome'
+    ? ({ queued: 'queued (not started)', stalled: 'stalled (outcome unknown)' }[run.reason] || run.status) : run.status);
+}

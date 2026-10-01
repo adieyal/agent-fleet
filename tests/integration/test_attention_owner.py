@@ -8,7 +8,9 @@ from fleet.modules.attention import ItemResolved, StreamContext
 
 @pytest.fixture
 def attention(tmp_path):
-    return open_attention(open_store(tmp_path / "store.db"), workspace_path=tmp_path / "missing.json")
+    attention = open_attention(open_store(tmp_path / "store.db"), workspace_path=tmp_path / "missing.json")
+    attention.mandate = lambda project: object()  # Confirmed availability; these tests cover lifecycle only.
+    return attention
 
 
 def raise_item(attention, reference="r1", **fields):

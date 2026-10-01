@@ -239,9 +239,6 @@ class LiveWorkspace:
     def act_on_attention(self, action: str, item_id: str, seconds: float | None = None, undo: str | None = None) -> dict:
         result = {}
         if action == "delegate":
-            item = self.attention.get(item_id)
-            if not item.project or open_records(self.store).triage_mandate(item.project) is None:
-                raise FleetError("This project has no confirmed triage mandate; delegation is unavailable")
             self.attention.delegate(item_id, actor="web-user")
         elif action == "take":
             self.attention.take(item_id, actor="web-user")
@@ -288,7 +285,12 @@ class LiveWorkspace:
                 run = services.execution.get_run(status["live_run"]["id"])
                 status["live_run"].update(host=run.host, remote_job_id=run.remote_job_id)
         for item in items:
-            item["delegable"] = bool(triage.get(item["project_id"], {}).get("mandate_version")) and not item["questions"]
+            try:
+                self.attention.require_delegable(item['id'])
+            except (ValueError, LookupError):
+                item['delegable'] = False
+            else:
+                item['delegable'] = True
         return {**document, "focus": asdict(self.workspace.focus_snapshot()),
                 "attention": items, "triage": triage}
 

@@ -106,6 +106,9 @@ def changed_deck(request: pytest.FixtureRequest, loaded_decks: Callable[[str, st
                  base_url: str) -> Iterator[Deck]:
     deck = loaded_decks("desktop", getattr(request, "param", "reduce"))
     original = finish_jobs(base_url, {})
+    # A prior test may leave a nested floor route or another view on the shared page.
+    deck.page.evaluate('fleetDeck.enterFloor(null)')
+    deck.page.locator('#viewToggle [data-view="deck"]').click()
     try:
         yield deck
     finally:
@@ -117,9 +120,11 @@ def changed_deck(request: pytest.FixtureRequest, loaded_decks: Callable[[str, st
         deck.page.evaluate("""doc => {
             resetClock();
             fleetDeck.apply(doc);
+            fleetDeck.enterFloor(null);
             fleetDeck.lookAtRoom(null);
             fleetDeck.advanceTime(0);
         }""", original)
+        deck.page.locator('#viewToggle [data-view="deck"]').click()
 
 
 def test_every_project_gets_a_room(deck: Deck, fixture_data: dict[str, Any]) -> None:
@@ -2640,6 +2645,7 @@ def test_p8_help_keeps_unsaved_guidance(changed_deck: Deck, deck_state, monkeypa
     page.locator('#viewToggle [data-view="building"]').click()
     page.evaluate('fleetDeck.advanceTime(0)')
     page.locator('.plate[data-floor="1"] .enter').click()
+    expect(page.locator('#benchRoute')).to_have_attribute('data-level', 'floor')
     page.keyboard.press('?')
     expect(page.locator('[data-help-context]')).to_have_text('Floor')
     expect(page.locator('[data-help-escape]')).to_have_text('Return to the building.')
@@ -2729,14 +2735,14 @@ def test_p1_owner_fold_and_consequences(changed_deck: Deck, base_url: str, reque
     expect(fold).not_to_have_attribute('open', '')
     fold.locator('summary').click()
     expect(fold.locator('.attn-owned')).to_have_text('Agent')
-    expect(fold.locator('[data-act="take"]')).to_have_attribute('title', 'Move this to you; the agent stops acting on it')
+    expect(fold.locator('[data-act="take"]')).to_have_attribute('title', 'Take this item back; revokes agent authority for this item. The triage process may continue for other items')
     expect(page.locator('#toast')).to_be_hidden(timeout=7000)
     shoot(request, page, 'p1-desktop')
     page.set_viewport_size(VIEWPORTS['narrow'])
     shoot(request, page, 'p1-390')
     page.keyboard.press('Escape')
     page.locator('#workingOpen').click()
-    expect(page.locator('#runPanel .run-triage')).to_have_text('handling 1 item')
+    expect(page.locator('#runPanel .run-triage')).to_contain_text('handling 1 item')
     shoot(request, page, 'p1-running-390')
     page.keyboard.press('Escape')
     assert not changed_deck.errors
@@ -3151,3 +3157,168 @@ def test_audit2_batch2_missing_workarea(changed_deck: Deck, request, viewport) -
     expect(workarea).to_have_attribute('title', 'No project label reported; no room workarea is available')
     shoot(request, page, f'audit2-batch2-workarea-{viewport}')
     page.locator('#panel #close').click()
+
+@pytest.mark.parametrize('viewport', ['desktop', 'narrow'])
+def test_a2_batch3_triage_diagnostics(changed_deck: Deck, base_url: str, request, viewport):
+    from fleet.projections.attention import attention_display
+    page = changed_deck.page
+    page.set_viewport_size(VIEWPORTS[viewport])
+    with urlopen(base_url + '/api/state', timeout=5) as response:
+        document = json.load(response)
+    host, job = next((host, job) for host in document['hosts'] for job in host['jobs'] if job['status'] == 'running')
+    model = document['attention'][0]
+    document['attention'] = [{**model, 'id': 'a2-agent', 'project_id': 'p', 'owned_by': 'agent', 'state': 'open'}]
+    document['triage'] = {'p': {'queue': ['a2-agent'], 'mandate_version': 'v1', 'budget_left': 0,
+        'budget_resets_at': '2026-10-03T00:00:00+00:00', 'oldest_wait_seconds': 1860,
+        'delivery_error': 'connection refused', 'pending_publications': [{'id': 'publication'}],
+        'live_run': {'id': 'triage-run', 'status': 'unknown outcome', 'host': host['name'], 'remote_job_id': job['id']}}}
+    document['attention_display'] = attention_display(document['attention'], document['building'], document['projects'])
+    page.evaluate('doc => fleetDeck.apply(doc)', document)
+    page.locator('#withAgent').click()
+    panel = page.locator('#attnPanel')
+    expect(panel).to_contain_text('1 queued')
+    expect(panel).to_contain_text('oldest wait 31 min')
+    expect(panel).to_contain_text('0 runs left')
+    expect(panel).to_contain_text('connection refused')
+    expect(panel).to_contain_text('1 pending publications')
+    expect(panel).to_contain_text('unknown outcome')
+    panel.locator('[data-attention-group="agent"] summary').click()
+    expect(panel.locator('[data-act="take"]')).to_have_attribute('title', 'Take this item back; revokes agent authority for this item. The triage process may continue for other items')
+    shoot(request, page, f'a2-batch3-health-{viewport}')
+    page.keyboard.press('Escape')
+    page.locator('#workingOpen').click()
+    expect(page.locator('#runPanel .run-triage')).to_contain_text('connection refused')
+    expect(page.locator('#runPanel .run-triage')).to_contain_text('0 runs left')
+    shoot(request, page, f'a2-batch3-running-{viewport}')
+    page.keyboard.press('Escape')
+    document['triage']['p'].update(mandate_version=None, budget_left=None, budget_resets_at=None, live_run=None)
+    page.evaluate('doc => fleetDeck.apply(doc)', document)
+    page.locator('#withAgent').click()
+    expect(panel).to_contain_text('No confirmed triage policy; agent-owned items cannot be serviced')
+    shoot(request, page, f'a2-batch3-no-policy-{viewport}')
+    assert not changed_deck.errors
+
+
+@pytest.mark.parametrize('viewport', ['desktop', 'narrow'])
+def test_a2_batch4_world_hit_consequences(changed_deck: Deck, base_url: str, request, viewport):
+    page = changed_deck.page
+    page.set_viewport_size(VIEWPORTS[viewport])
+    try:
+        page.locator('#viewToggle [data-view="world"]').click()
+        page.wait_for_function('window.fleetWorld && fleetWorld.ready', timeout=60000)
+        page.locator('#floorWorldProject').select_option('restoke')
+        page.evaluate("fleetWorld.frame('near')")
+        page.wait_for_function('!fleetWorld.engine.camera.moving')
+        key = page.evaluate('fleetWorld.state().members[0].key')
+        x, y = page.evaluate('key => fleetWorld.robotAt(key)', key)
+        page.mouse.move(x, y)
+        tip = page.locator('#floorWorldUi .shelf-tip')
+        expect(tip).to_contain_text('Open job')
+        expect(page.locator('#floorWorldCanvas')).to_have_class(re.compile(r'\bhot\b'))
+        shoot(request, page, f'a2-batch4-world-robot-{viewport}')
+        page.mouse.click(x, y)
+        expect(page.locator('#panel')).to_have_class(re.compile(r'\bopen\b'))
+        page.keyboard.press('Escape')
+        # The plan wall is outside the close bench frame; reveal the whole floor before picking it.
+        page.evaluate("fleetWorld.frame('far')")
+        page.wait_for_function('!fleetWorld.engine.camera.moving')
+        # Use actual picked pixels to cover benches, plan walls and step tiles, rather than synthetic hit objects.
+        points = page.evaluate('''() => {
+          const world = fleetWorld.engine, points = {};
+          for (let y = 45; y < innerHeight - 60; y += 2) for (let x = 5; x < innerWidth - 5; x += 2) {
+            const hit = world.pick(x, y), type = hit?.place?.split(':')[0];
+            if (['bench', 'plan', 'step'].includes(type) && !points[type]) points[type] = [x, y];
+          }
+          return points;
+        }''')
+        assert 'bench' in points and 'plan' in points and 'step' in points
+        for kind, (x, y) in points.items():
+            page.mouse.move(x, y)
+            expect(tip).to_contain_text('Zoom to this bench')
+            expect(tip).to_contain_text('Esc zooms out')
+            expect(page.locator('#floorWorldCanvas')).to_have_class(re.compile(r'\bhot\b'))
+        shoot(request, page, f'a2-batch4-world-bench-{viewport}')
+        page.mouse.click(*points['bench'])
+        page.wait_for_function('fleetWorld.engine.camera.zoomLevel() > 0.5')
+        page.keyboard.press('Escape')
+        page.wait_for_function('fleetWorld.engine.camera.zoomLevel() < 0.01')
+        page.locator('#floorWorldHelp summary').click()
+        expect(page.locator('#floorWorldHelp p')).to_be_visible()
+        help_box = page.locator('#floorWorldHelp p').bounding_box()
+        assert help_box['x'] >= 0 and help_box['x'] + help_box['width'] <= page.viewport_size['width']
+        expect(page.locator('#floorWorldHelp')).to_contain_text('Tap a robot or lantern to open its job')
+        expect(page.locator('#floorWorldHelp')).to_contain_text('Pinch to zoom out')
+        shoot(request, page, f'a2-batch4-world-controls-{viewport}')
+        page.locator('#floorWorldHelp summary').click()
+        assert not changed_deck.errors
+    finally:
+        page.locator('#viewToggle [data-view="deck"]').click()
+
+
+# Actual HTTP History data, with fixture deck geometry/UI: prefixes and status labels are not mocked.
+from tests.test_run_history import history, api
+
+
+@pytest.mark.parametrize('viewport', ['desktop', 'narrow'])
+def test_a2_batch4_history_status_and_http_prefixes(changed_deck: Deck, history, api, request, viewport):
+    from urllib.parse import urlsplit
+    from urllib.error import HTTPError
+    from dataclasses import replace
+    from fleet.modules.execution import JobObservation
+    page = changed_deck.page
+    page.set_viewport_size(VIEWPORTS[viewport])
+    execution, work, root, run, now = history[3], history[2], history[4], history[6], history[-1]
+    with work.repository.transaction() as repository:
+        for suffix in ['one', 'two']:
+            repository.save('item', replace(root, id='audit-prefix-' + suffix), 'test')
+    queued = execution.record_observed('carbon', {'id': 'a2-queued', 'description': 'Waiting for worker'}, root.project)
+    execution.link('carbon', 'a2-queued', root.id, actor='test')
+    execution.observe('carbon', JobObservation('a2-queued', 'queued', 'codex', None, None, now))
+    execution.observe(run.host, JobObservation(run.remote_job_id, 'stalled', 'codex', run.start, None, now))
+    execution.record_host('carbon', reachable=False, error='connection refused')
+    def proxy(route):
+        parsed = urlsplit(route.request.url)
+        try:
+            with urlopen(api + parsed.path + ('?' + parsed.query if parsed.query else ''), timeout=5) as response:
+                route.fulfill(status=response.status, content_type='application/json', body=response.read())
+        except HTTPError as error:
+            route.fulfill(status=error.code, content_type='application/json', body=error.read())
+    page.route('**/api/history/runs?*', proxy)
+    page.route('**/api/runs/*', proxy)
+    page.route('**/api/bench?*', lambda route: route.fulfill(json={'rooms': []}))
+    try:
+        page.evaluate('project => fleetDeck.enterFloor(project)', root.project)
+        page.locator('[data-open-history]').click()
+        history_view = page.locator('[data-run-history]')
+        expect(history_view).to_contain_text('queued (not started)')
+        expect(history_view).to_contain_text('stalled (outcome unknown)')
+        expect(history_view).to_contain_text('offline since')
+        field = page.locator('[data-history-filters] [name=work_item]')
+        apply = page.locator('[data-history-filters] button[type=submit]')
+        field.fill(root.id)
+        apply.click()
+        expect(history_view).to_contain_text('2 of 2 stored runs')
+        full = page.locator('[data-history-run]').evaluate_all('rows => rows.map(row => row.dataset.historyRun)')
+        field.fill(root.id[:8])
+        apply.click()
+        expect(history_view).to_contain_text('2 of 2 stored runs')
+        assert page.locator('[data-history-run]').evaluate_all('rows => rows.map(row => row.dataset.historyRun)') == full
+        shoot(request, page, f'a2-batch4-history-{viewport}')
+        history_view.locator(f'[data-open-run="{queued.id}"]').click()
+        expect(page.locator('#panelBody')).to_contain_text('queued (not started)')
+        expect(page.locator('#panelBody')).to_contain_text('last known worker state')
+        shoot(request, page, f'a2-batch4-queued-archive-{viewport}')
+        page.keyboard.press('Escape')
+        assert not changed_deck.errors
+        field.fill('audit-prefix-')
+        apply.click()
+        expect(history_view.locator('[role=alert]')).to_contain_text('ambiguous work item')
+        expect(history_view).to_contain_text('audit-prefix-one')
+        expect(history_view).to_contain_text('audit-prefix-two')
+        shoot(request, page, f'a2-batch4-prefix-ambiguity-{viewport}')
+        assert changed_deck.errors == ['Failed to load resource: the server responded with a status of 400 (Bad Request)']
+    finally:
+        page.unroute('**/api/history/runs?*', proxy)
+        page.unroute('**/api/runs/*', proxy)
+        page.unroute('**/api/bench?*')
+        page.locator('#viewToggle [data-view="deck"]').click()

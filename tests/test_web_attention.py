@@ -468,13 +468,12 @@ def test_restreamed_resolved_failure_remains_visible(deck, resolution):
 
 
 def test_p1_delegation_requires_mandate_and_take_keeps_open(deck, monkeypatch):
-    from types import SimpleNamespace
     deck.report('home', jobs=[job('owned-job', 'failed')])
     item = deck.items()['home:owned-job']
     assert deck.act('delegate', {'id': item['id']}) == 400
     assert deck.state.attention.get(item['id']).owner == 'user'
     # Isolate the confirmed-mandate gate; module tests exercise mandate parsing.
-    monkeypatch.setattr('fleet.web.live.open_records', lambda store: SimpleNamespace(triage_mandate=lambda p: object()))
+    monkeypatch.setattr(deck.state.attention, 'mandate', lambda project: object())
     stored = deck.state.attention.get(item['id'])
     from dataclasses import replace
     with deck.state.attention.repository.transaction() as transaction:
@@ -485,3 +484,13 @@ def test_p1_delegation_requires_mandate_and_take_keeps_open(deck, monkeypatch):
     assert deck.act('take', {'id': item['id']}) == 200
     assert deck.state.attention.get(item['id']).owner == 'user'
     assert deck.state.attention.get(item['id']).state == 'open'
+
+
+def test_a2_delegation_without_policy_is_rejected_by_http(deck):
+    deck.report('home', jobs=[job('a2', 'failed', steps=(('failed', 100),))])
+    row = deck.items()['home:a2']
+    before = deck.state.store.latest_sequence()
+    assert not row['delegable']
+    assert deck.act('delegate', {'id': row['id']}) == 400
+    assert deck.state.attention.get(row['id']).owner == 'user'
+    assert deck.state.store.latest_sequence() == before

@@ -4,6 +4,7 @@ from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 import re
 
+from fleet.identifiers import resolve_prefix
 from fleet.modules.execution import ExecutionFacade, Run
 from fleet.modules.library import LibraryFacade
 from fleet.modules.work import WorkFacade
@@ -28,6 +29,8 @@ def cutoff(value: str | None, now: datetime, *, relative: bool = False) -> datet
 def record(run: Run, execution: ExecutionFacade, work: WorkFacade) -> dict:
     action = execution.get_action(run.action)
     value = asdict(run)
+    value['status_label'] = ({'queued': 'queued (not started)', 'stalled': 'stalled (outcome unknown)'}.get(run.reason, run.status)
+                             if run.status == 'unknown outcome' else run.status)
     for key in ("start", "end", "last_observed", "action_observed_at"):
         value[key] = value[key].isoformat() if value[key] is not None else None
     value["project"] = work.get(action.work_item).project if action.work_item else action.project
@@ -64,7 +67,7 @@ def history_runs(execution: ExecutionFacade, work: WorkFacade, workspace: Worksp
     project_id = workspace.resolve_project(project) if project is not None else None
     selected = None
     if work_item:
-        work.get(work_item)
+        work_item = resolve_prefix(work_item, [item.id for item in work.list()], 'work item')
         selected = {work_item}
         if descendants:
             items = work.list()
