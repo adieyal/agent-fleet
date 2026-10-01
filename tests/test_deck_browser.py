@@ -19,6 +19,7 @@ from fleet.composition import (open_attention, open_decisions, open_execution, o
                                open_store, open_work)
 from fleet.modules.execution import JobObservation
 from fleet.modules.work import EvidenceSpecification
+from fleet.web.ingester import observe_runs
 
 VIEWPORTS = {"desktop": {"width": 1440, "height": 900}, "narrow": {"width": 390, "height": 844}}
 # The deck ages jobs against the browser clock; pin it to the moment the fixture was recorded.
@@ -425,6 +426,107 @@ def test_panel_breadcrumb_names_the_linked_work_and_opens_it(changed_deck: Deck,
     expect(page.locator('#panel .work-crumbs')).to_have_count(0)
     page.evaluate("fleetDeck.select('home:b7d042')")
     expect(page.locator('#panel .work-crumbs')).to_have_count(0)
+    page.locator('#panel #close').click()
+    assert changed_deck.errors == []
+
+
+WORKTREE = {"toplevel": "/home/adi/Development/restoke-suppliers", "linked_worktree": True,
+            "repository": "/home/adi/Development/restoke", "branch": "feat/suppliers", "detached": False,
+            "head": "abc1234", "dirty": 3, "collected_at": 1790399980.0}
+
+
+def deck_job(base_url: str, job_id: str, **fields: Any) -> dict[str, Any]:
+    """The server's state document with one of home's jobs changed, as its next stream update would bring it."""
+    doc = finish_jobs(base_url, {})
+    job, = [job for host in doc["hosts"] if host["name"] == "home" for job in host["jobs"] if job["id"] == job_id]
+    job.update(fields)
+    return doc
+
+
+def test_the_panel_names_the_jobs_workspace_and_copies_its_path(changed_deck: Deck, base_url: str,
+                                                                request: pytest.FixtureRequest) -> None:
+    page = changed_deck.page
+    page.evaluate('doc => fleetDeck.apply(doc)', deck_job(base_url, 'a1c3e9', workspace=WORKTREE, workspace_reason=None))
+    page.evaluate("fleetDeck.select('home:a1c3e9')")
+    chip = page.locator('#panelHead [data-workspace]')
+    expect(chip).to_have_text('restoke · restoke-suppliers · feat/suppliers @ abc1234 +3 uncommitted')
+    expect(chip).to_have_attribute('title', re.compile('^/home/adi/Development/restoke-suppliers\nworktree of /home/adi/Development/restoke$'))
+    copy = chip.get_by_role('button', name='Copy path /home/adi/Development/restoke-suppliers')
+    copy.click()
+    expect(copy).to_have_attribute('data-copied', '')
+    shoot(request, page, 'v2-workspace-chip')
+
+    page.locator('#panelTabs [data-tab="activity"]').click()
+    expect(page.locator('#panelBody [data-tab="activity"] dl.meta dt')).to_have_text(
+        ['ref', 'project', 'model', 'perms', 'updated'])
+    page.locator('#panelTabs [data-tab="summary"]').click()
+
+    main_checkout = {**WORKTREE, "toplevel": "/home/adi/Development/restoke", "linked_worktree": False,
+                     "branch": None, "detached": True, "dirty": 0}
+    page.evaluate('doc => fleetDeck.apply(doc)', deck_job(base_url, 'a1c3e9', workspace=main_checkout))
+    expect(chip).to_have_text('restoke · detached @ abc1234')
+    expect(chip).to_have_attribute('title', '/home/adi/Development/restoke')
+
+    page.set_viewport_size(VIEWPORTS["narrow"])
+    page.evaluate('doc => fleetDeck.apply(doc)', deck_job(base_url, 'a1c3e9', workspace=WORKTREE))
+    box, head = chip.bounding_box(), page.locator('#panelHead').bounding_box()
+    assert box['x'] + box['width'] <= head['x'] + head['width']
+    shoot(request, page, 'v2-workspace-chip-narrow')
+    page.locator('#panel #close').click()
+    assert changed_deck.errors == []
+
+
+def test_a_job_with_no_workspace_says_why(changed_deck: Deck, base_url: str, request: pytest.FixtureRequest) -> None:
+    page = changed_deck.page
+    page.evaluate("fleetDeck.select('home:a1c3e9')")   # the recorded fleet predates workspaces: no key at all
+    chip = page.locator('#panelHead [data-workspace]')
+    expect(chip).to_have_attribute('data-workspace', 'unknown')
+    expect(chip).to_have_text('workspace unknown · not reported by this worker')
+    expect(chip).to_have_attribute('title', '/home/adi/Development/restoke')
+    expect(chip.get_by_role('button', name='Copy path /home/adi/Development/restoke')).to_be_visible()
+
+    page.evaluate('doc => fleetDeck.apply(doc)',
+                  deck_job(base_url, 'a1c3e9', workspace=None, workspace_reason='not a git repository'))
+    expect(chip).to_have_text('workspace unknown · not a git repository')
+    shoot(request, page, 'v2-workspace-unknown')
+    page.locator('#panel #close').click()
+    assert changed_deck.errors == []
+
+
+def test_each_step_names_the_work_it_serves_and_opens_it(changed_deck: Deck, route_migration, base_url: str,
+                                                         request: pytest.FixtureRequest) -> None:
+    routes, milestones, store = route_migration['routes'], route_migration['milestones'], route_migration['store']
+    open_execution(store).link('home', 'a1c3e9', routes.id, actor='user')
+    job, = [job for host in finish_jobs(base_url, {})["hosts"] for job in host["jobs"] if job["id"] == 'a1c3e9']
+    job["steps"][0]["work_item"], job["steps"][1]["work_item"] = milestones[2].id, milestones[3].id
+    observe_runs(open_execution(store), open_library(store), {"name": "home", "ok": True, "jobs": {"a1c3e9": job}})
+    # two more steps fleetd would carry: one for the job's own item, one for an item this deck's plan lacks
+    steps = job["steps"] + [{"index": 2, "title": "Tidy up", "status": "pending", "work_item": routes.id},
+                            {"index": 3, "title": "Elsewhere", "status": "pending", "work_item": "0198aaaa-gone"}]
+    page = changed_deck.page
+    page.evaluate('doc => fleetDeck.apply(doc)', deck_job(base_url, 'a1c3e9', steps=steps))
+    page.evaluate("fleetDeck.select('home:a1c3e9')")
+    expect(page.locator('#panel .work-crumbs')).to_have_text('V2 frontend overhaul > Route migration')
+    page.locator('#panelTabs [data-tab="activity"]').click()
+    rows = page.locator('#panelBody [data-tab="activity"] ol.steps > li')
+    expect(rows).to_have_count(4)
+    expect(rows.nth(0).locator('[data-step-work]')).to_have_text('for 3. Milestone 3')
+    expect(rows.nth(1).locator('[data-step-work]')).to_have_text('for 4. Milestone 4')
+    expect(rows.nth(2).locator('[data-step-work]')).to_have_count(0)
+    expect(rows.nth(3).locator('[data-step-work]')).to_have_text("for item 0198aaaa not in this deck's plan")
+    expect(page.locator('ol.steps > li[aria-current="step"]')).to_have_count(1)
+    expect(rows.nth(1)).to_have_attribute('aria-current', 'step')
+    expect(rows.nth(1).locator('.now')).to_have_text('now')
+    shoot(request, page, 'v2-step-work')
+
+    rows.nth(1).get_by_role('button', name='4. Milestone 4').click()
+    route = page.locator('#benchRoute')
+    expect(route).to_have_attribute('data-level', 'bench')
+    expect(route.get_by_role('heading', level=2)).to_have_text('4. Milestone 4')
+    page.keyboard.press('Escape')
+    expect(route).to_have_attribute('data-level', 'room')
+    page.evaluate('fleetDeck.enterFloor(null)')
+    page.locator('#panelTabs [data-tab="summary"]').click()
     page.locator('#panel #close').click()
     assert changed_deck.errors == []
 

@@ -215,7 +215,7 @@ def test_run_work_maps_each_job_to_its_items_ancestry():
     links = run_work(work, execution)
     assert links["home", "job"] == {"project": "p", "chain": [
         {"id": "epic", "kind": "epic", "title": "Overhaul"}, {"id": "m", "kind": "milestone", "title": "3. GET URLs"},
-        {"id": "t", "kind": "task", "title": "Port"}], "step": None}
+        {"id": "t", "kind": "task", "title": "Port"}], "step": None, "steps": []}
     assert [node["id"] for node in links["home", "relinked"]["chain"]] == ["epic", "m"]
     assert ("worker", "job") not in links
 
