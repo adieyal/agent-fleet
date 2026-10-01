@@ -57,12 +57,19 @@ LIST_ITEM = re.compile(r"^\s*(?:[-*]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+)(.+)$")
 
 
 def resolve(reference: str) -> tuple[Host, str]:
-    """Accept `host:id` or a bare id (searched on every host)."""
+    """Accept `host:id` or a bare id (searched on every host); either id may be a unique prefix, expanded to the
+    job's full id, which commands that address the job's directory (push, add -c, pull) need."""
     if ":" in reference:
         host_name, job_id = reference.split(":", 1)
         host = transport.host_by_name(host_name)
         transport.ensure_master(host)
-        return host, job_id
+        ids = [job["id"] for job in transport.call(host, ["ls", "--all"]).get("jobs", [])]
+        if job_id in ids:
+            return host, job_id
+        matches = [identity for identity in ids if identity.startswith(job_id)]
+        if len(matches) != 1:
+            raise FleetError(f"'{job_id}' matches {len(matches)} jobs on {host_name}")
+        return host, matches[0]
     matches = [(report.host, job["id"]) for report in transport.gather(transport.configured_hosts(), ["ls", "--all"])
                for job in report.jobs if job["id"].startswith(reference)]
     if len(matches) != 1:
