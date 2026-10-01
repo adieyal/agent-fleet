@@ -41,6 +41,8 @@ def test_state_work_links_follow_store_changes(base_url, deck_state, monkeypatch
         with urlopen(base_url + '/api/state', timeout=5) as response:
             doc = json.load(response)
         job, = [job for host in doc['hosts'] if host['name'] == 'home' for job in host['jobs'] if job['id'] == 'a1c3e9']
+        run = open_execution(store).find_run('home', 'a1c3e9')
+        assert job['audit_run_id'] == (run.id if run else None)
         return job['work'] and [node['title'] for node in job['work']['chain']]
 
     assert linked() is None

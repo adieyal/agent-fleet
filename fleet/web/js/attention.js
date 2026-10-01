@@ -1,3 +1,4 @@
+import { openItemHistory } from './item-history.js';
 // Attention: the one loud signal, and the only diamond on the deck. The server derives attention items from what the
 // hosts report (fleet/attention.py); a room with any open item gets a marked lantern hanging outside its front corner:
 // a diamond with a glyph for the kind (✋ a blocker, ? a decision) and a count when it stands for more than one item.
@@ -196,7 +197,7 @@ function renderItem(i, global) {
       ${present ? `<button class="owner" data-owner="${esc(owner.key)}" title="${global ? 'Open on the whole deck; your saved view is unchanged' : esc(owner.key)}">${owner.type === 'job' ? 'Open job' : 'Open session'} ${esc(ownerName(owner))}</button>` : `<button class="owner" data-context="${esc(i.id)}" title="Read context; opening changes no stored state">Open context</button>`}
       ${context ? `<button class="owner" data-context="${esc(i.id)}" title="${esc(readerConsequence(i))}">${context}</button>` : ''}
       ${global ? `<p class="attn-consequence">${esc(readerConsequence(i))}</p>` : ''}
-      <p class="attn-consequence">Resolve closes this item and removes it from the lantern; it does not answer, restart work or grant permissions. Undo is available for 6 seconds.</p><div class="aa">${actions}</div><em class="err" role="alert"></em>
+      <p class="attn-consequence">Resolve closes this item and removes it from the lantern; it does not answer, restart work or grant permissions. Undo is available for 6 seconds.</p><div class="aa">${actions}<button data-item-attention-history="${esc(i.id)}" title="Read who changed this item; opening changes no stored state">History</button></div><em class="err" role="alert"></em>
     </div></li>`;
 }
 function renderGroup(rows, key, name, fold = false) {
@@ -222,6 +223,8 @@ function renderPanel() {
   positionPanel();
 }
 panel.addEventListener('click', async ev => {
+  const history = ev.target.closest('[data-item-attention-history]');
+  if (history) { const i = items.find(i => i.id === history.dataset.itemAttentionHistory); openItemHistory({ id: i.id, title: i.summary, kind: 'attention', status: i.state, project: i.project_id || i.project }); return; }
   if (ev.target.closest('[data-close]')) { closePanel(true); return; }
   const context = ev.target.closest('[data-context]');
   if (context) { openAttentionReader(items.find(item => item.id === context.dataset.context)); return; }

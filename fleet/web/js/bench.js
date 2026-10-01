@@ -1,3 +1,4 @@
+import { openItemHistory } from './item-history.js';
 import { mountRunHistory } from './run-history.js';
 // Floor → epic room → milestone bench. All business state comes from /api/bench.
 import { duration, esc, store } from './util.js';
@@ -190,7 +191,7 @@ function epicCard(r) {
     <div data-epic-head><button data-epic="${esc(r.id)}">${esc(r.title)}</button>${r.condition === 'dropped' ? '<small data-dropped>Dropped</small>' : ''}${r.parent ? `<small data-parent-epic>in ${esc(r.parent.title)}</small>` : ''}</div>
     ${successorLine(r.superseded_by)}
     <p data-goal title="${esc(r.goal)}">${esc(r.headline)}</p>
-    ${progressBar(r.breakdown)}
+    ${itemHistoryButton(r)}${progressBar(r.breakdown)}
     ${r.workstreams.length ? `<ul data-workstreams aria-label="Workstreams">${r.workstreams.map(w =>
       `<li data-workstream="${esc(w.id)}"><b>${esc(w.title)}</b> ${streamProgress(w)}</li>`).join('')}</ul>` : ''}
     <p data-now><b data-label>Now:</b> ${now}</p>
@@ -251,7 +252,7 @@ function planLine(item, opens) {
     : `<b>${esc(item.title)}</b>`;
   return `<li data-plan-item="${esc(item.id)}" data-status="${esc(item.status)}">
     <span data-glyph role="img" aria-label="${esc(STATUS_LABELS[item.status] ?? item.status)}" title="${esc(STATUS_LABELS[item.status] ?? item.status)} · ${esc(item.condition)}">${statuses[item.status]}</span>
-    <div>${title}<p>${esc(item.headline)}</p>${successorLine(item.superseded_by)}${item.running_since ? runningLine(item.running_since) : item.last_run ? ranLine(item.last_run) : ''}${jobChips(item.jobs)}<small data-next-step>${item.next_step === null ? 'Next step not recorded' : `Next: ${esc(item.next_step)}`}</small>${
+    <div>${title}${itemHistoryButton(item)}<p>${esc(item.headline)}</p>${successorLine(item.superseded_by)}${item.running_since ? runningLine(item.running_since) : item.last_run ? ranLine(item.last_run) : ''}${jobChips(item.jobs)}<small data-next-step>${item.next_step === null ? 'Next step not recorded' : `Next: ${esc(item.next_step)}`}</small>${
       item.plan === null ? '' : `<details data-step-plan><summary>Plan</summary><div>${esc(item.plan)}</div></details>`}${docsList(item.documents)}</div></li>`;
 }
 
@@ -274,6 +275,8 @@ function epicPage(r) {
     ${decisionsPanel(decisionLists.get(r.id))}
   </article>`;
 }
+
+function itemHistoryButton(i, compact = false) { return `<button data-work-history="${esc(i.id)}" data-title="${esc(i.title)}" data-status="${esc(i.status || i.condition || '')}" aria-label="History for ${esc(i.title)}" title="Read this item’s stored changes and runs; opening changes no stored state">${compact ? '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l3 2"/></svg>' : 'History'}</button>`; }
 
 const guidanceState = key => ({ editing: editing?.key === key ? editing : null, history: historyOpen.has(key) });
 const guidanceKey = kind => kind === 'charter' ? room.id : 'constitution';
@@ -329,7 +332,7 @@ function render(flipped = new Set()) {
   let content;
   if (bench) {
     content = `<h2>${esc(bench.title)}</h2><div class="slice-bench"><section data-plan aria-label="Plan wall">${bench.tasks.length ? '' : '<p data-empty>No tasks</p>'}<ol>${bench.tasks.map(task =>
-      `<li data-task="${esc(task.id)}" data-flipped="${flipped.has(task.id)}" data-lane="${task.lane}" data-condition="${esc(task.condition)}" title="${esc(task.condition)}"><i></i>${esc(task.title)}</li>`).join('')}</ol></section>
+      `<li data-task="${esc(task.id)}" data-flipped="${flipped.has(task.id)}" data-lane="${task.lane}" data-condition="${esc(task.condition)}" title="${esc(task.condition)}"><i></i>${esc(task.title)}${itemHistoryButton(task, true)}</li>`).join('')}</ol></section>
       <section aria-label="Criteria">${bench.criteria.length ? '' : '<p data-empty>No criteria</p>'}${bench.criteria.map(c => `<span data-verification="${c.verification}" data-state="${c.state}" aria-label="${c.verification} ${c.state}" title="${esc(c.text)}">${svg(kinds[c.verification])}</span>`).join('')}
       <p>${bench.progress.total === null ? 'Progress unknown' : `${bench.progress.complete} / ${bench.progress.total}`}</p></section>
       <section data-agents aria-label="Agents">${bench.agents.length > 5
@@ -355,6 +358,7 @@ function render(flipped = new Set()) {
     content = `<div class="epic-cards">${constitutionCard()}<article data-project-decisions-card><button data-open-decisions title="Read every decision in this project, including work outside epic rooms; opening changes no stored state">Project decisions</button></article>${rooms.map(epicCard).join('')}</div>`;
     if (!rooms.length) content += '<p>No epic rooms recorded.</p>';
   }
+  if (room || bench) content = `<nav aria-label="Work item views">${itemHistoryButton(bench || room)}</nav>` + content;
   el.innerHTML = crumbs + ((!room && !bench) ? `<nav aria-label="Floor views"><button data-floor-overview aria-current="${page ? 'false' : 'page'}">Overview</button><button data-open-history aria-current="${page === 'history' ? 'page' : 'false'}">History</button></nav>` : '') + (guidanceFeedback ? `<p data-guidance-feedback role="status">${esc(guidanceFeedback)}</p>` : '') + content;
   if (page === 'history') mountRunHistory(el.querySelector('[data-history-mount]'), project);
 }
@@ -447,6 +451,8 @@ function guidanceClick(target) {
 }
 
 el.addEventListener('click', async ev => {
+  const history = ev.target.closest('[data-work-history]');
+  if (history) { openItemHistory({ id: history.dataset.workHistory, title: history.dataset.title, kind: 'work item', status: history.dataset.status, project }); return; }
   if (ev.target.closest('[data-briefing]')) {
     briefing = !briefing;
     el.querySelector('[data-summary]').hidden = !briefing;

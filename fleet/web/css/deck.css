@@ -1425,3 +1425,28 @@ body[data-readonly] #attnPanel[data-scope=all] .aa{display:flex}
 .tag .stale-label{max-width:220px;white-space:normal}
 @media(max-width:600px){#benchRoute[data-level=history]{left:12px;right:12px;width:auto;max-height:70vh}[data-history-filters] label{flex:1 1 130px}[data-history-filters] input,[data-history-filters] select{width:100%;max-width:none;box-sizing:border-box}}
 #benchRoute [data-history-run] [data-copy]{width:auto;height:auto;min-height:28px;padding:3px 7px;white-space:nowrap;border-color:#3b4a60}
+/* P3 per-item history is read-only and uses the same sheet at desktop and phone widths. */
+#itemHistoryPanel{box-sizing:border-box;width:min(800px,calc(100vw - 24px));max-height:85vh;margin:auto;padding:18px;background:var(--panel-solid);color:var(--text);border:1px solid #475569;border-radius:12px;overflow:auto;font:13px/1.5 var(--sans)}
+#itemHistoryPanel::backdrop{background:#02061799}
+#itemHistoryPanel header{display:flex;justify-content:space-between;gap:12px}
+#itemHistoryPanel h2{margin:0;font-size:18px}
+#itemHistoryPanel header p{overflow-wrap:anywhere;color:#94a3b8}
+#itemHistoryPanel button{background:#1e2c40;color:#e2e8f0;border:1px solid #475569;border-radius:5px;padding:6px 10px;margin:3px;cursor:pointer}
+#itemHistoryPanel [role=tablist]{display:flex;gap:8px;border-bottom:1px solid #334155;padding-bottom:8px}
+#itemHistoryPanel [aria-selected=true]{border-color:#38bdf8}
+.audit-entries{list-style:none;padding:0}
+.audit-entries>li{padding:12px 0;border-bottom:1px solid #334155;overflow-wrap:anywhere}
+.audit-entries>li>div{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:baseline}
+.audit-entries time,.audit-entries small{color:#94a3b8;font-size:11px}
+.audit-entries dt{font-weight:600;margin-top:8px}
+.audit-entries dd{display:flex;gap:8px;margin:4px 0;align-items:baseline}
+.audit-entries dd>div{flex:1;min-width:0;white-space:pre-wrap}
+.audit-entries pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:0;font-size:11px}
+[data-item-runs]{margin-top:8px}
+#itemHistoryPanel [data-open-run]{text-align:left}
+#itemHistoryPanel [data-history-filters]{margin-bottom:12px}
+@media(max-width:600px){#itemHistoryPanel{padding:12px;max-height:90vh}.audit-entries dd{flex-wrap:wrap}.audit-entries dd>div{flex-basis:40%}}
+#itemHistoryPanel header{position:sticky;top:0;left:auto;right:auto;width:auto;height:auto;padding:0 0 8px;background:var(--panel-solid);box-shadow:none;z-index:1}
+#itemHistoryPanel header button{flex:none;width:32px;height:32px;padding:4px}
+[data-audit-history] button{background:#1e2c40;color:#e2e8f0;border:1px solid #475569;border-radius:5px;padding:6px 10px;cursor:pointer}
+#itemHistoryPanel header{box-shadow:0 -20px 0 var(--panel-solid)}

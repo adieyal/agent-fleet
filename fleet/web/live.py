@@ -39,7 +39,7 @@ class LiveWorkspace:
     capacity: int
     pipeline_config: dict[str, dict[str, str]]           # name → {"host", "project": room label}, as configured
     pipeline_runs: dict[tuple[str, str], dict[str, Any]]  # (host, name) → {"run", "baseline", "seq"} as last reported
-    work_links: tuple[tuple[Any, int], dict[tuple[str, str], dict[str, Any]]] | None = None  # (store, revision), links
+    work_links: tuple[tuple[Any, int], dict[tuple[str, str], dict[str, Any]], dict[tuple[str, str], str]] | None = None  # revision, links, run ids
     pipeline_seq: int
     documents: ProjectDocuments   # each project's document store (see fleet.web.job_store)
 
@@ -299,9 +299,12 @@ class LiveWorkspace:
         revision = (self.store, self.store.latest_sequence())
         cached = self.work_links
         if cached is None or cached[0] != revision:
-            cached = self.work_links = (revision, run_work(open_work(self.store), open_execution(self.store)))
+            execution = open_execution(self.store)
+            cached = self.work_links = (revision, run_work(open_work(self.store), execution),
+                                       {(run.host, run.remote_job_id): run.id for run in execution.runs()})
         links = cached[1]
-        return {**document, "hosts": [{**host, **{kind: [{**item, "work": links.get((host["name"], item["id"]))}
+        return {**document, "hosts": [{**host, **{kind: [{**item, "work": links.get((host["name"], item["id"])),
+                                                        "audit_run_id": cached[2].get((host["name"], item["id"]))}
                                                          for item in host[kind]] for kind in ("jobs", "sessions")}}
                                       for host in document["hosts"]]}
 

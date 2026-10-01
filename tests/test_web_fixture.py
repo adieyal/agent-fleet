@@ -25,7 +25,7 @@ def status_of(base_url: str, path: str, **query: str) -> int:
     return raised.value.code
 
 
-def test_state_is_the_recorded_fleet(base_url: str, fixture_data: dict[str, Any]) -> None:
+def test_state_is_the_recorded_fleet(base_url: str, fixture_data: dict[str, Any], deck_state) -> None:
     state = get(base_url, "/api/state")
     assert {key: state[key] for key in ("time", "project_labels")} == {
         key: fixture_data[key] for key in ("time", "project_labels")}
@@ -35,7 +35,13 @@ def test_state_is_the_recorded_fleet(base_url: str, fixture_data: dict[str, Any]
             for event in events:
                 if event is not None:
                     assert event.pop("activity_class") == ExecutionFacade.classify_activity(event)
-    added = ("project_id", "focus", "work")
+    added = ("project_id", "focus", "work", "audit_run_id")
+    from fleet.composition import open_execution
+    execution = open_execution(deck_state.store)
+    for host in state["hosts"]:
+        for item in host["jobs"] + host["sessions"]:
+            run = execution.find_run(host["name"], item["id"])
+            assert item["audit_run_id"] == (run.id if run else None)
     assert all(item["work"] is None for host in state["hosts"] for item in host["jobs"] + host["sessions"])
     unresolved = [{**host, "jobs": [{key: value for key, value in job.items() if key not in added}
                                     for job in host["jobs"]],

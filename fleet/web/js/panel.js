@@ -1,3 +1,4 @@
+import { mountAuditHistory } from './item-history.js';
 import { archivedPanes, readArchivedDocument } from './archived-run.js';
 // Side panel, crew manifest, stats, deck log and hints.
 
@@ -165,11 +166,11 @@ function renderArchived() {
   const html = `<div><h2>${esc(archived.run?.title || 'Stored run')}</h2><span class="chip">Stored · controller record</span></div><button id="close" aria-label="Close">✕</button>`;
   if (head.lastHtml !== html) { head.lastHtml = html; head.innerHTML = html; head.querySelector('#close').onclick = closePanel; }
   if (!archived.run) { tabs.innerHTML = ''; tabs.lastHtml = null; body.innerHTML = archived.error ? `<p role="alert">${esc(archived.error)}</p><button data-archive-retry="${esc(archived.id)}">Retry</button>` : '<p>Loading stored run…</p>'; return; }
-  const panes = archived.panes, show = panes[shownTab] ? shownTab : 'summary';
+  const panes = { ...archived.panes, history: '<div data-run-audit></div>' }, show = panes[shownTab] ? shownTab : 'summary';
   const tabHtml = `<div role="tablist">${Object.keys(panes).map(name => `<button role="tab" data-tab="${name}" aria-selected="${name === show}">${TABS[name]}</button>`).join('')}</div>`;
   if (tabs.lastHtml !== tabHtml) { tabs.lastHtml = tabHtml; tabs.innerHTML = tabHtml; }
   const content = `<div data-archived-content>${panes[show]}</div>`;
-  if (body.archiveHtml !== content) { body.archiveHtml = content; body.innerHTML = content; }
+  if (body.archiveHtml !== content) { body.archiveHtml = content; body.innerHTML = content; if (show === 'history') mountAuditHistory(body.querySelector('[data-run-audit]'), `execution:run:${archived.run.id}`); }
 }
 const staleChip = job => job.stale ? `<span class="chip" data-stale title="${esc(job.stale_reason || 'host offline')}; current status unknown">stale · ${esc(offlineLabel(job))} · last known</span>` : '';
 export function renderPanel() {
@@ -223,6 +224,7 @@ export function renderPanel() {
   patchPanel(headHtml, workarea, {
     summary: summarySections(selectedKey, j, false, rows, attentionFor(selectedKey), expanded),
     activity,
+    history: liveHistoryPane(j),
     ...(docs ? { documents: [docs] } : {}),
   }, e, j.status === 'done' ? 'off' : j.status === 'stalled' ? 'slump' : 'normal');
 }
@@ -295,7 +297,7 @@ document.addEventListener('keydown', ev => { if (ev.key === 'Escape') closeMoveM
 
 // ------------------------------------------------------------------ tabs: Summary (default), Activity, Documents
 // The chosen tab is remembered per browser; jumping from a summary line to its moment in Activity is not a choice.
-const TAB_KEY = 'fleet.panel.tab', TABS = { summary: 'Summary', activity: 'Activity', documents: 'Documents' };
+const TAB_KEY = 'fleet.panel.tab', TABS = { summary: 'Summary', activity: 'Activity', documents: 'Documents', history: 'History' };
 let chosenTab = TABS[store('localStorage', TAB_KEY)] ? store('localStorage', TAB_KEY) : 'summary';
 let shownTab = chosenTab;
 let jumped = null;          // { key, from, to }: the Activity rows a summary line stands for, kept marked across updates
@@ -326,6 +328,7 @@ function jumpToActivity(from, to) {
 }
 // State updates arrive for every job, many times a second: rewrite the head, the tab bar and each section of each tab
 // only when its markup changed, so the rest of the panel keeps its nodes and the scroll position stays put.
+const liveHistoryPane = job => [job.audit_run_id ? `<div data-live-run-audit data-run-id="${esc(job.audit_run_id)}"></div>` : '<p>No stored run ID is available for this job or session.</p>'];
 function patchPanel(headHtml, extraHtml, panes, e, pose) {
   const head = document.getElementById('panelHead');
   if (head.lastHtml !== headHtml) {
@@ -359,6 +362,8 @@ function patchPanel(headHtml, extraHtml, panes, e, pose) {
       if (part.lastHtml !== html) { part.lastHtml = html; part.innerHTML = html; }
     });
   });
+  const audit = show === 'history' && body.querySelector('[data-live-run-audit]');
+  if (audit && audit.dataset.auditSubject !== `execution:run:${audit.dataset.runId}`) mountAuditHistory(audit, `execution:run:${audit.dataset.runId}`);
 }
 // An interactive session: what it is, where it runs, its todos and recent activity. No steps or fleet commands —
 // the one useful command is resuming it in a terminal.
@@ -392,6 +397,7 @@ function renderSessionPanel(e) {
   patchPanel(headHtml, '', {
     summary: summarySections(selectedKey, s, true, rows, attentionFor(selectedKey), expanded),
     activity,
+    history: liveHistoryPane(s),
   }, e, 'normal');
 }
 // What the job produced, newest first, then what it was given. A document the running agent changed in the last

@@ -2840,3 +2840,124 @@ def test_p2_history_archive_and_offline(changed_deck: Deck, base_url: str, reque
         page.unroute('**/api/library/job?*')
         page.unroute('**/api/bench?*')
         page.evaluate('fleetDeck.enterFloor(null)')
+
+
+@pytest.mark.parametrize('viewport', ['desktop', 'narrow'])
+def test_p3_item_history_and_work_runs(changed_deck: Deck, base_url: str, request, viewport) -> None:
+    from urllib.parse import parse_qs, urlsplit
+    page = changed_deck.page
+    page.set_viewport_size(VIEWPORTS[viewport])
+    subjects = []
+    audit_mode = 'populated'
+    def audit(route):
+        subject = parse_qs(urlsplit(route.request.url).query)['subject'][0]
+        subjects.append(subject)
+        if audit_mode == 'error':
+            route.fulfill(status=503, json={'error': 'Audit store unavailable'})
+            return
+        if audit_mode == 'empty':
+            route.fulfill(json={'entries': []})
+            return
+        kind = 'attention' if subject.startswith('attention:') else 'run' if subject.startswith('execution:') else 'work item'
+        change = {'field': 'owned_by', 'before': 'user', 'after': 'agent'} if kind == 'attention' else {'field': 'status', 'before': 'running', 'after': 'succeeded'} if kind == 'run' else {'field': 'next_step', 'before': 'Inspect', 'after': 'Ship'}
+        route.fulfill(json={'entries': [
+            {'sequence': 1, 'time': '2026-09-25T10:00:00Z', 'actor': 'user', 'kind': kind,
+             'changes': [{'field': 'title', 'before': None, 'after': '<Initial title>'}], 'source_run': None, 'job': None},
+            {'sequence': 2, 'time': '2026-09-26T10:00:00Z', 'actor': 'triage-agent', 'kind': kind,
+             'changes': [change], 'source_run': 'p3-run', 'job': 'home:p3-job'}]})
+    run = {'id': 'p3-run', 'title': 'Audit change', 'host': 'home', 'remote_job_id': 'p3-job',
+           'kind': 'job', 'status': 'succeeded', 'start': None, 'workspace': None, 'work_item': None}
+    run_queries = []
+    def runs(route):
+        run_queries.append(parse_qs(urlsplit(route.request.url).query))
+        route.fulfill(json={'runs': [run], 'total': 1, 'limit': 100})
+    page.route('**/api/history?*', audit)
+    page.route('**/api/history/runs?*', runs)
+    page.route('**/api/runs/p3-run', lambda route: route.fulfill(json={
+        'run': run, 'steps': [], 'kept_documents': [], 'documents': [], 'trace': {}}))
+    page.route('**/api/bench?*', lambda route: route.fulfill(json={'rooms': []}))
+    try:
+        with urlopen(base_url + '/api/state', timeout=5) as response:
+            doc = json.load(response)
+        page.evaluate('doc => fleetDeck.apply(doc)', doc)
+        page.locator('#needYou').click()
+        first = page.locator('#attnPanel [data-item-attention-history]').first
+        attention_id = first.get_attribute('data-item-attention-history')
+        first.click()
+        sheet = page.locator('#itemHistoryPanel')
+        expect(sheet.locator('[data-audit-sequence]').first).to_have_attribute('data-audit-sequence', '2')
+        expect(sheet).to_contain_text('triage-agent')
+        expect(sheet.locator('[data-before]').first).to_have_text('user')
+        expect(sheet.locator('[data-after]').first).to_have_text('agent')
+        expect(sheet).to_contain_text('<Initial title>')
+        assert subjects[-1] == f'attention:{attention_id}'
+        shoot(request, page, f'p3-attention-{viewport}')
+        audit_mode = 'empty'
+        sheet.locator('[data-audit-refresh]').click()
+        expect(sheet.locator('[data-audit-empty]')).to_have_text('No stored changes for this item.')
+        shoot(request, page, f'p3-empty-{viewport}')
+        audit_mode = 'error'
+        sheet.locator('[data-audit-refresh]').click()
+        expect(sheet.locator('[data-audit-results] [role=alert]')).to_have_text('Audit store unavailable')
+        audit_mode = 'populated'
+        sheet.locator('[data-audit-retry]').click()
+        expect(sheet.locator('[data-audit-sequence]')).to_have_count(2)
+
+        sheet.locator('[data-item-tab=details]').click()
+        expect(sheet.locator('[data-item-details]')).to_be_visible()
+        sheet.locator('[data-item-tab=history]').click()
+        page.keyboard.press('Escape')
+        expect(sheet).not_to_have_attribute('open', '')
+        page.keyboard.press('Escape')
+        # Open the shared work-item sheet with the same object shape the plan rows supply.
+        page.evaluate("async () => { const m = await import('/js/item-history.js'); m.openItemHistory({id:'p3-work', title:'Audit work', kind:'work item', project:'p3'}); }")
+        expect(sheet.locator('[data-history-run]')).to_have_count(1)
+        assert run_queries[-1]['work_item'] == ['p3-work']
+        expect(sheet.locator('[name=work_item]')).to_have_attribute('readonly', '')
+        assert subjects[-1] == 'work:item:p3-work'
+        shoot(request, page, f'p3-work-{viewport}')
+        sheet.locator('[data-item-runs] [data-copy]').click()
+        expect(sheet.locator('[data-item-runs] [data-copy]')).to_have_text('Copied')
+        sheet.locator('[data-item-runs] [data-history-run]').scroll_into_view_if_needed()
+        shoot(request, page, f'p3-work-runs-{viewport}')
+        sheet.locator('[data-open-run]').click()
+        expect(sheet).not_to_have_attribute('open', '')
+        page.locator('#panelTabs [data-tab=history]').click()
+        expect(page.locator('#panel [data-audit-sequence]').first).to_have_attribute('data-audit-sequence', '2')
+        assert subjects[-1] == 'execution:run:p3-run'
+        shoot(request, page, f'p3-run-{viewport}')
+        page.locator('#panel #close').click()
+        host = next(h for h in doc['hosts'] if h['jobs'])
+        job = host['jobs'][0]
+        job['audit_run_id'] = 'p3-run'
+        page.evaluate('doc => fleetDeck.apply(doc)', doc)
+        page.evaluate('key => fleetDeck.select(key)', host['name'] + ':' + job['id'])
+        page.locator('#panelTabs [data-tab=history]').click()
+        expect(page.locator('#panel [data-audit-sequence]')).to_have_count(2)
+        assert subjects[-1] == 'execution:run:p3-run'
+        page.locator('#panelTabs [data-tab=summary]').click()
+        page.locator('#panel #close').click()
+        changed_deck.errors[:] = [error for error in changed_deck.errors if '503 (Service Unavailable)' not in error]
+        assert not changed_deck.errors
+    finally:
+        page.unroute('**/api/history?*')
+        page.unroute('**/api/history/runs?*')
+        page.unroute('**/api/runs/p3-run')
+        page.unroute('**/api/bench?*')
+        page.locator('#itemHistoryPanel').evaluate('el => el.close()')
+
+
+def test_p3_work_entrypoint_reads_real_audit(changed_deck: Deck, route_migration, request) -> None:
+    page = changed_deck.page
+    root = route_migration['routes']
+    page.evaluate("fleetDeck.enterFloor('restoke-v2')")
+    page.locator(f'[data-epic-card="{root.id}"] [data-work-history]').click()
+    sheet = page.locator('#itemHistoryPanel')
+    expect(sheet.locator('[data-item-audit]')).to_have_attribute('data-audit-subject', f'work:item:{root.id}')
+    expect(sheet.locator('[data-audit-sequence]')).not_to_have_count(0)
+    expect(sheet.locator('[data-item-audit]')).to_contain_text('user')
+    expect(sheet.locator('[data-item-runs]')).to_contain_text('stored runs')
+    shoot(request, page, 'p3-real-work-desktop')
+    page.keyboard.press('Escape')
+    page.evaluate('fleetDeck.enterFloor(null)')
+    assert not changed_deck.errors
