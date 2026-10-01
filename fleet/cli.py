@@ -308,7 +308,8 @@ def command_dispatch(arguments: argparse.Namespace) -> None:
              "context": arguments.context, "hold": arguments.hold})
         intent = execution.dispatch(arguments.work_item, host=host.name, runtime=arguments.agent,
             payload=payload, project=project_id, guidance=guidance,
-            actor="user", reason=arguments.description, idempotency_key=key, remote_job_id=arguments.id)
+            actor=arguments.actor, reason=arguments.description, idempotency_key=key,
+            remote_job_id=arguments.id)
     except (ValueError, LookupError) as error:
         raise FleetError(str(error)) from error
     if not intent.created:
@@ -321,9 +322,13 @@ def command_dispatch(arguments: argparse.Namespace) -> None:
     job = deliver_dispatch(intent.run)
     reference = f"{host.name}:{job['id']}"
     if arguments.json:
-        print(json.dumps({"job": reference, "status": job["status"], "steps": len(job["steps"])}))
+        print(json.dumps({"job": reference, "status": job["status"], "steps": len(job["steps"]),
+                          "run": intent.run.id, "permission": job.get("permission"), "guidance": guidance}))
     else:
         console.print(f"[bold]{reference}[/] {job['status']} · {len(job['steps'])} step(s) · {job['description']}")
+        sent = "no guidance" if guidance is None else "guidance " + describe_guidance(guidance)
+        console.print(f"  run {intent.run.id[:8]} · {arguments.agent} · permission "
+                      f"{job.get('permission') or 'not reported by the host'} · {sent}", markup=False)
     if arguments.wait:
         wait_for([reference], step=None, timeout=None, as_json=arguments.json)
 
@@ -390,7 +395,7 @@ def command_run_retry(arguments: argparse.Namespace) -> None:
 
     execution = open_execution()
     try:
-        intent = execution.retry(arguments.run, actor="user", idempotency_key=str(uuid4()))
+        intent = execution.retry(arguments.run, actor=arguments.actor, idempotency_key=str(uuid4()))
     except (ValueError, LookupError) as error:
         raise FleetError(str(error)) from error
     if intent.created:
@@ -411,7 +416,7 @@ def command_dispatch_work(arguments: argparse.Namespace) -> None:
 
 def command_resolve_unknown(arguments: argparse.Namespace) -> None:
     try:
-        run = open_execution().resolve_unknown(arguments.run, actor="user")
+        run = open_execution().resolve_unknown(arguments.run, actor=arguments.actor)
     except (ValueError, LookupError) as error:
         raise FleetError(str(error)) from error
     print(json.dumps(asdict(run), default=str))
@@ -451,7 +456,7 @@ def command_add(arguments: argparse.Namespace) -> None:
         push_context(host, job_id, arguments.context)
     waiting = None if arguments.retry or arguments.no_answer else waiting_step(host, job_id)
     if waiting is not None:
-        answer_waiting_step(host, job_id, waiting, steps)
+        answer_waiting_step(host, job_id, waiting, steps, arguments.actor)
         return
     fleetd_arguments = ["add", job_id, "--steps-file", "/dev/stdin"] + (["--retry"] if arguments.retry else [])
     job = transport.call(host, fleetd_arguments, stdin_text=json.dumps(steps))
@@ -465,7 +470,7 @@ def waiting_step(host: Host, job_id: str) -> int | None:
                  if step["status"] == "blocked" and step.get("answered_by") is None), None)
 
 
-def answer_waiting_step(host: Host, job_id: str, step: int, steps: list[dict[str, Any]]) -> None:
+def answer_waiting_step(host: Host, job_id: str, step: int, steps: list[dict[str, Any]], actor: str) -> None:
     """Add the steps as the answer to the waiting step, as the deck does: they run next, and the open attention
     item for the step is resolved. Keyed like the deck's answer, so a retried add queues nothing more."""
     attention = open_attention()
@@ -483,7 +488,7 @@ def answer_waiting_step(host: Host, job_id: str, step: int, steps: list[dict[str
     continuation = result["steps"][0]
     details = f"answered; step {step + 1} continues as step {continuation + 1}"
     if item is not None:
-        attention.resolve(item.id, details=details, actor="user")
+        attention.resolve(item.id, details=details, actor=actor)
     console.print(f"[bold]{host.name}:{job_id}[/] {details} (--no-answer appends instead)")
 
 
@@ -1122,8 +1127,12 @@ def command_work(arguments: argparse.Namespace) -> None:
 
 def add_work_parsers(commands) -> None:
     work = commands.add_parser("work", help="persistent work items").add_subparsers(required=True)
+    work_help = {"add": "record a new work item in a project", "set": "change a work item's fields",
+                 "move": "put a work item under another parent, or at the root",
+                 "relate": "record that a work item depends on or relates to another",
+                 "ready": "move waiting work to 'ready for review'"}
     for name in ("add", "set", "move", "relate", "ready"):
-        action = work.add_parser(name)
+        action = work.add_parser(name, help=work_help[name])
         action.set_defaults(handler=command_work, work_operation=name)
         action.add_argument("--actor", required=True)
         action.add_argument("title" if name == "add" else "id")
@@ -1144,7 +1153,7 @@ def add_work_parsers(commands) -> None:
             action.add_argument("to_item")
             action.add_argument("--type", default="depends-on", choices=RELATION_TYPES)
     criterion = commands.add_parser("criterion", help="work completion criteria").add_subparsers(required=True)
-    add = criterion.add_parser("add")
+    add = criterion.add_parser("add", help="add a completion criterion to a work item")
     add.set_defaults(handler=command_work, work_operation="criterion_add")
     add.add_argument("id", help="work item ID")
     add.add_argument("text")
@@ -1152,13 +1161,13 @@ def add_work_parsers(commands) -> None:
     add.add_argument("--evidence-reference", help="absolute path to recorded local evidence")
     add.add_argument("--required-result", help="required result field in JSON evidence")
     add.add_argument("--actor", required=True)
-    meet = criterion.add_parser("meet")
+    meet = criterion.add_parser("meet", help="mark a criterion met; there is no un-meet")
     meet.set_defaults(handler=command_work, work_operation="meet")
     meet.add_argument("id", help="criterion ID")
     meet.add_argument("--evidence", action="append", default=[])
     meet.add_argument("--actor", required=True)
     summary = commands.add_parser("summary", help="work summaries").add_subparsers(required=True)
-    action = summary.add_parser("set")
+    action = summary.add_parser("set", help="record a new version of a work item's summary (all fields)")
     action.set_defaults(handler=command_work, work_operation="set_summary")
     action.add_argument("id", help="work item ID")
     for field in ("purpose", "done", "doing", "next", "authoring-role", "actor"):
@@ -1247,10 +1256,10 @@ def command_answer(arguments: argparse.Namespace) -> None:
             # A blocked job step is answered by a step added to its job, as the deck does, not a recorded decision.
             if arguments.next_step is not None:
                 raise ValueError("a blocked job step's answer has no --next-step; use fleet work set")
-            details = open_execution().answer_blocked(arguments.id, arguments.answer, actor="user")
+            details = open_execution().answer_blocked(arguments.id, arguments.answer, actor=arguments.actor)
             console.print_json(json.dumps({"id": arguments.id, "resolution": details}))
             return
-        decision = open_decisions().answer(arguments.id, arguments.answer, actor="user",
+        decision = open_decisions().answer(arguments.id, arguments.answer, actor=arguments.actor,
                                            next_step=arguments.next_step)
         console.print_json(json.dumps(asdict(decision), default=lambda value: value.isoformat()))
     except (ValueError, LookupError) as error:
@@ -1282,6 +1291,49 @@ def command_attention(arguments: argparse.Namespace) -> None:
         console.print_json(json.dumps(asdict(item), default=str))
     except (ValueError, LookupError) as error:
         raise FleetError(str(error)) from error
+
+
+DEFAULT_PERMISSION_HELP = "permission acceptEdits (claude) or workspace-write (codex) unless --permission says otherwise"
+
+
+def default_actor() -> str:
+    """Who a CLI write is recorded as: the fleet job it runs inside, else the user at the terminal."""
+    job = os.environ.get("FLEET_JOB_ID")
+    return f"job:{job}" if job else "user"
+
+
+def add_actor_option(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--actor", default=default_actor(),
+                        help="who the store records as doing this (default: job:$FLEET_JOB_ID inside a fleet job, "
+                             "else user)")
+
+
+COMMAND_GROUPS = {
+    "Jobs": ("send", "dispatch", "add", "push", "pull", "ls", "watch", "show", "tail", "attach", "wait", "result",
+             "cancel", "mv", "rm", "notify", "run"),
+    "Work": ("status", "work", "criterion", "summary", "attention", "answer", "decision", "guidance", "library"),
+    "Projects": ("project", "building", "libraries", "web"),
+    "Hosts": ("hosts", "host", "install", "hooks", "unlock"),
+    "Agent-internal": ("orchestrate", "control"),
+}
+QUICK_START = """\
+quick start:
+  fleet host add carbon --local && fleet install carbon
+  fleet project add Demo --link carbon:demo
+  fleet send -H carbon -p demo -C ~/src/demo -d "Fix tests" -s "Fix the failing tests"
+"""
+
+
+def group_commands(parser: argparse.ArgumentParser, commands: argparse._SubParsersAction) -> None:
+    """Replace argparse's flat command list with COMMAND_GROUPS, each command with its help line."""
+    helps = {choice.dest: choice.help for choice in commands._choices_actions}
+    width = max(len(name) for name in helps)
+    sections = [f"{group}:\n" + "\n".join(f"  {name:<{width}}  {helps[name]}" for name in names)
+                for group, names in COMMAND_GROUPS.items()]
+    commands._choices_actions = []
+    commands.metavar = "COMMAND"
+    commands.help = "one of the commands below; fleet COMMAND --help for its options"
+    parser.epilog = "\n\n".join(sections) + "\n\n" + QUICK_START
 
 
 def add_listing_options(parser: argparse.ArgumentParser) -> None:
@@ -1318,7 +1370,8 @@ def add_step_options(parser: argparse.ArgumentParser) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="fleet", description=__doc__)
+    parser = argparse.ArgumentParser(prog="fleet", description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
 
     listing = commands.add_parser("ls", help="list jobs across hosts, grouped by project")
@@ -1331,15 +1384,22 @@ def build_parser() -> argparse.ArgumentParser:
     watch.add_argument("--interval", "-n", type=float, default=3)
     watch.set_defaults(handler=command_watch)
 
-    send = commands.add_parser("send", help="start a job (a task list) on a host")
+    send = commands.add_parser(
+        "send", help="start a job (a task list): starts an agent on the host",
+        description=f"Starts a Claude or Codex agent on HOST in CWD that works through the steps, with "
+                    f"{DEFAULT_PERMISSION_HELP}. Copies the -c paths into the job's context dir and, for a "
+                    f"--work-item, the project's constitution and the epic's charter. Records the job as a run "
+                    f"in the store. Stop it with fleet cancel.")
     send.add_argument("--host", "-H", required=True)
-    send.add_argument("--project", "-p", required=True)
+    send.add_argument("--project", "-p", required=True, help="the host's label for a registered project")
     send.add_argument("--work-item", help="link the created job to stored work")
     send.add_argument("--description", "-d", required=True, help="one line: what this job is working on")
-    send.add_argument("--agent", "-a", choices=("claude", "codex"), default="claude")
+    send.add_argument("--agent", "--runtime", "-a", dest="agent", choices=("claude", "codex"), default="claude")
     send.add_argument("--cwd", "-C", required=True, help="working directory on the host")
     send.add_argument("--permission", help="claude: acceptEdits|bypassPermissions|plan|default; "
-                                           "codex: read-only|workspace-write|danger-full-access")
+                                           "codex: read-only|workspace-write|danger-full-access; "
+                                           "default acceptEdits / workspace-write")
+    add_actor_option(send)
     send.add_argument("--model", "-m")
     send.add_argument("--allow", action="append",
                       help="claude permission rule to pre-approve, e.g. 'Bash(ss:*)' (repeatable)")
@@ -1353,20 +1413,26 @@ def build_parser() -> argparse.ArgumentParser:
     add_step_options(send)
     send.set_defaults(handler=command_send)
 
-    dispatch = commands.add_parser("dispatch", help="claim and dispatch work to a host")
+    dispatch = commands.add_parser(
+        "dispatch", help="send one instruction for a work item: claims it and starts an agent on the host",
+        description=f"Claims the work item and starts a Claude or Codex agent on HOST in CWD with one step, the "
+                    f"instruction, with {DEFAULT_PERMISSION_HELP}. Copies the project's constitution and the "
+                    f"epic's charter into the job's context dir. The job's project is the work item's.")
     dispatch.add_argument("work_item")
     dispatch.add_argument("instruction")
-    dispatch.add_argument("--host", required=True)
-    dispatch.add_argument("--runtime", dest="agent", choices=("claude", "codex"), required=True)
-    dispatch.add_argument("--cwd", required=True)
-    dispatch.add_argument("--permission", help="runtime permission, as for fleet send")
+    dispatch.add_argument("--host", "-H", required=True)
+    dispatch.add_argument("--runtime", "--agent", "-a", dest="agent", choices=("claude", "codex"), required=True)
+    dispatch.add_argument("--cwd", "-C", required=True)
+    dispatch.add_argument("--permission", help="runtime permission, as for fleet send; "
+                                               "default acceptEdits / workspace-write")
     dispatch.add_argument("--id")
     dispatch.add_argument("--json", action="store_true")
+    add_actor_option(dispatch)
     dispatch.set_defaults(handler=command_dispatch_work, permission=None, model=None, allow=None,
                           add_dir=None, env=None, keep_going=False, hold=False, wait=False,
                           context=None, steps_file=None, step_work_items=None)
 
-    orchestrate = commands.add_parser('orchestrate', help='start a controller-local orchestrator')
+    orchestrate = commands.add_parser('orchestrate', help='start an orchestrator agent on the controller, with write access to the store')
     orchestrate.add_argument('work_item')
     orchestrate.add_argument('--mandate', required=True, help='recorded mandate path')
     orchestrate.add_argument('--host', required=True, help='configured local controller host')
@@ -1374,7 +1440,7 @@ def build_parser() -> argparse.ArgumentParser:
     orchestrate.add_argument('--cwd', required=True)
     orchestrate.add_argument('--permission', help='runtime permission, as for fleet send')
     orchestrate.set_defaults(handler=command_orchestrate)
-    control = commands.add_parser('control', help='activation-bound controller command')
+    control = commands.add_parser('control', help='agent-internal: an activated orchestrator changes the store')
     control.add_argument('activation')
     control.add_argument('operation', choices=('state', 'progress', 'meet', 'attention', 'dispatch', 'decide', 'summary', 'propose'))
     control.add_argument('payload', help='JSON object of command fields')
@@ -1389,16 +1455,27 @@ def build_parser() -> argparse.ArgumentParser:
     run_link.set_defaults(handler=command_run_link)
     resolve_unknown = run.add_parser("resolve-unknown", help="explicitly close an unknown run to permit retry")
     resolve_unknown.add_argument("run")
+    add_actor_option(resolve_unknown)
     resolve_unknown.set_defaults(handler=command_resolve_unknown)
-    retry = run.add_parser("retry", help="retry an action after its run has a known end")
+    retry = run.add_parser(
+        "retry", help="retry an action after its run has a known end: starts a new agent on the same host",
+        description=f"Starts a new agent on the run's host, as a new job with the action's original steps, context "
+                    f"and guidance, and its permission ({DEFAULT_PERMISSION_HELP} when the action named none). "
+                    f"The new job is a new run of the same action.")
     retry.add_argument("run")
+    add_actor_option(retry)
     retry.set_defaults(handler=command_run_retry)
 
-    add = commands.add_parser("add", help="append steps to a job (restarts it if idle)")
+    add = commands.add_parser("add", help="append steps to a job; if a step is blocked, they answer it",
+                              description="Appends steps to a job and starts it again if it is idle. When a step "
+                                          "is blocked waiting for an answer, the steps answer it instead: they "
+                                          "run next and the step's attention item is resolved (--no-answer "
+                                          "appends instead).")
     add.add_argument("job")
     add.add_argument("--retry", action="store_true", help="also re-queue failed/blocked/cancelled steps")
     add.add_argument("--no-answer", action="store_true",
                      help="append even when a blocked step waits for an answer (by default the steps answer it)")
+    add_actor_option(add)
     add_step_options(add)
     add.set_defaults(handler=command_add)
 
@@ -1465,13 +1542,13 @@ def build_parser() -> argparse.ArgumentParser:
     hosts.set_defaults(handler=command_hosts)
 
     host = commands.add_parser("host", help="manage hosts").add_subparsers(dest="host_command", required=True)
-    host_add = host.add_parser("add")
+    host_add = host.add_parser("add", help="add a host to config.json (replaces one of the same name)")
     host_add.add_argument("name")
     host_add.add_argument("--ssh", help="ssh target (default: the name)")
     host_add.add_argument("--local", action="store_true", help="this machine, no ssh")
     host_add.add_argument("--python", default="python3")
     host_add.set_defaults(handler=command_host_add)
-    host_remove = host.add_parser("rm")
+    host_remove = host.add_parser("rm", help="remove a host from config.json; its jobs stay on the host")
     host_remove.add_argument("name")
     host_remove.set_defaults(handler=command_host_remove)
 
@@ -1486,13 +1563,13 @@ def build_parser() -> argparse.ArgumentParser:
     library_link.add_argument("--title", help="optional display label; omitted titles remain unknown")
     library_link.add_argument("--actor", default="user")
     library_link.set_defaults(handler=command_library_link)
-    library_add = library.add_parser("add")
+    library_add = library.add_parser("add", help="add a local folder to config.json as a library root")
     library_add.add_argument("project")
     library_add.add_argument("path")
     library_add.add_argument("--recursive", action="store_true",
                              help="read Markdown in every folder, not only the top level and docs/")
     library_add.set_defaults(handler=command_library_add)
-    library_remove = library.add_parser("rm")
+    library_remove = library.add_parser("rm", help="remove a library root from config.json; files stay")
     library_remove.add_argument("project")
     library_remove.set_defaults(handler=command_library_remove)
 
@@ -1524,11 +1601,11 @@ def build_parser() -> argparse.ArgumentParser:
     project_merge.set_defaults(handler=command_project_merge)
     project_repo = project.add_parser("repo", help="repository remotes used to suggest links").add_subparsers(
         dest="project_repo_command", required=True)
-    project_repo_add = project_repo.add_parser("add")
+    project_repo_add = project_repo.add_parser("add", help="record a repository remote for a project")
     project_repo_add.add_argument("id")
     project_repo_add.add_argument("url")
     project_repo_add.set_defaults(handler=command_project_repo_add)
-    project_repo_remove = project_repo.add_parser("rm")
+    project_repo_remove = project_repo.add_parser("rm", help="forget a repository remote for a project")
     project_repo_remove.add_argument("id")
     project_repo_remove.add_argument("url")
     project_repo_remove.set_defaults(handler=command_project_repo_remove)
@@ -1589,27 +1666,35 @@ def build_parser() -> argparse.ArgumentParser:
     decision_list.add_argument("--json", action="store_true")
     decision_list.set_defaults(handler=command_decision_list)
 
-    answer = commands.add_parser("answer", help="record an answer; options use 1-based numbers")
-    answer.add_argument("id")
-    answer.add_argument("answer")
-    answer.add_argument("--next-step")
+    answer = commands.add_parser(
+        "answer", help="answer an attention item: replies to a blocked job step, else records a decision",
+        description="For a blocked job step, adds the answer as the job's next step on its host and resolves the "
+                    "item. For any other item, records the answer as a decision and resolves the item. Neither "
+                    "can be undone.")
+    answer.add_argument("id", help="attention item ID (fleet attention list)")
+    answer.add_argument("answer", help="the reply; for an item with options, an option's 1-based number or text")
+    answer.add_argument("--next-step", help="also set the work item's next step (decisions only)")
+    add_actor_option(answer)
     answer.set_defaults(handler=command_answer)
 
     attention = commands.add_parser("attention", help="stored questions, blockers and alerts").add_subparsers(
         dest="attention_command", required=True)
-    attention_add = attention.add_parser("add")
+    attention_add = attention.add_parser("add", help="raise an attention item")
     attention_add.add_argument("headline")
     for field in ("project", "kind", "owner", "source", "source-reference", "context-reference", "actor"):
         attention_add.add_argument(f"--{field}", required=True)
     attention_add.add_argument("--work-item")
     attention_add.add_argument("--run")
     attention_add.set_defaults(handler=command_attention)
-    attention_list = attention.add_parser("list")
+    attention_list = attention.add_parser("list", help="attention items as JSON, with their IDs")
     attention_list.add_argument("--project")
     attention_list.add_argument("--state", choices=("open", "acknowledged", "snoozed", "resolved"))
     attention_list.set_defaults(handler=command_attention)
+    attention_help = {"ack": "acknowledge an item; it stays open",
+                      "snooze": "hide an item until a time; it stays open",
+                      "resolve": "close an item for good; does not answer it or unblock its job"}
     for name in ("ack", "snooze", "resolve"):
-        action = attention.add_parser(name)
+        action = attention.add_parser(name, help=attention_help[name])
         action.add_argument("id")
         action.add_argument("--actor", required=True)
         if name == "snooze":
@@ -1640,13 +1725,14 @@ def build_parser() -> argparse.ArgumentParser:
     unlock.add_argument("--key", help="key path on the host (default: ssh-add's defaults)")
     unlock.set_defaults(handler=command_unlock)
 
-    web = commands.add_parser("web", help="serve the kitchen dashboard")
+    web = commands.add_parser("web", help="serve the deck, the web dashboard")
     web.add_argument("--host", action="append")
     web.add_argument("--port", type=int, default=8787)
     web.add_argument("--bind", default="127.0.0.1")
     web.add_argument("--open", action="store_true", help="open a browser tab")
     web.add_argument("--fixture", help=argparse.SUPPRESS)  # serve a recorded fleet from JSON, for tests
     web.set_defaults(handler=command_web)
+    group_commands(parser, commands)
     return parser
 
 

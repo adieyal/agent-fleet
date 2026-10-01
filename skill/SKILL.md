@@ -35,6 +35,9 @@ fleet send -H home -p <project> -d "<one line: what this job is doing>" -C <cwd 
 - Permissions: claude defaults to `acceptEdits` (Bash only if the host's
   settings allow it); codex defaults to `workspace-write`. Only use
   `bypassPermissions` / `danger-full-access` when the user asked for it.
+- The store records who sent, answered or retried: `--actor NAME`, by default
+  `job:$FLEET_JOB_ID` inside a fleet job and `user` otherwise. `send` prints the
+  run, permission and guidance versions it started the agent with.
 - `-p` groups jobs by project in `fleet ls` and the web view — use the repo or
   initiative name, consistently.
 
