@@ -411,7 +411,7 @@ export function fallbackCopy(text, done) {
   ta.remove();
 }
 // An id shown by its first 8 characters; clicking copies the whole id.
-export const idChip = id => `<button class="id-chip" data-copy-id="${esc(id)}" title="Copy ${esc(id)}" aria-label="Copy id ${esc(id)}">${esc(shortId(id))}</button>`;
+export const idChip = id => `<button type="button" class="id-chip" data-copy-id="${esc(id)}" title="Copy ${esc(id)}" aria-label="Copy id ${esc(id)}">${esc(shortId(id))}</button>`;
 document.addEventListener('click', ev => {
   const chip = ev.target.closest('[data-copy-id]');
   if (!chip) return;
