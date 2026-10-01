@@ -31,7 +31,7 @@ For each work item, the useful read view combines its goal, completion criteria,
 ### Workspace
 
 **Project**:
-An ongoing workspace with an identity independent of its name, repository or host. It may span several hosts and repositories, or have no product repository at all. A known project ID links a host automatically; matching repository information may suggest a link; matching names alone never merge projects.
+An ongoing workspace with an identity independent of its name, repository or host. It may span several hosts and repositories, or have no product repository at all. CLI selectors accept a registered project (ID, prefix or name). Exact IDs resolve first, then exact unique names, then unique ID prefixes. Names and prefixes that identify several projects are refused. A job's host label is derived from the explicit project link to its target host; a missing link or several labels on that host are refused before dispatch. Host labels remain explicit values in `HOST:LABEL` link commands and worker observations; matching repository information may suggest a link; matching names alone never merge projects.
 
 **Live project**:
 A project occupying a floor. Only live projects accept new action claims.

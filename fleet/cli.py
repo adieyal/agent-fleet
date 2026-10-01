@@ -201,22 +201,20 @@ def selected_hosts(arguments: argparse.Namespace) -> list[Host]:
     return hosts
 
 
-def filter_reports(reports: list[HostReport], project: str | None) -> list[HostReport]:
-    if project:
-        for report in reports:
-            report.jobs = [job for job in report.jobs if job["project"] == project]
-    return reports
-
-
 def gather_listing(hosts: list[Host], arguments: argparse.Namespace) -> tuple[list[HostReport], dict[str, list[dict[str, Any]]]]:
     """Jobs and live interactive sessions from every host, fetched side by side."""
     with ThreadPoolExecutor(max_workers=2) as pool:
         jobs = pool.submit(transport.gather, hosts, list_arguments(arguments))
         sessions = pool.submit(transport.gather_sessions, hosts) if arguments.sessions else None
-        reports = filter_reports(jobs.result(), arguments.project)
+        reports = jobs.result()
         by_host = sessions.result() if sessions else {}
     if arguments.project:
-        by_host = {name: [session for session in host_sessions if session.get("project") == arguments.project]
+        workspace = open_workspace()
+        identity = workspace.resolve_project(arguments.project)
+        links = {(link.host, link.label) for link in workspace.registry().get(identity).links}
+        for report in reports:
+            report.jobs = [job for job in report.jobs if (report.host.name, job.get("project")) in links]
+        by_host = {name: [session for session in host_sessions if (name, session.get("project")) in links]
                    for name, host_sessions in by_host.items()}
     return reports, by_host
 
@@ -279,18 +277,15 @@ def command_dispatch(arguments: argparse.Namespace) -> None:
             raise FleetError(str(error)) from error
     host = transport.host_by_name(arguments.host)
     workspace = open_workspace()
-    linked_project = workspace.registry().project_for(host.name, arguments.project)
-    try:
-        project_id = linked_project.id if linked_project is not None else workspace.resolve_project(arguments.project)
-    except FleetError as error:
-        raise FleetError(f"{error}. To use '{arguments.project}' as {host.name}'s label for a registered project, "
-                         f"link it: fleet project link ID {host.name}:{arguments.project}, or register one: "
-                         f"fleet project add NAME --link {host.name}:{arguments.project}") from error
+    project_id = workspace.resolve_project(arguments.project)
+    label = workspace.host_label(project_id, host.name)
+    if arguments.work_item is not None and open_work().get(arguments.work_item).project != project_id:
+        raise FleetError("work item belongs to another project; use its registered project")
     steps = read_steps(arguments)
     resolve_step_work_ids(steps)
     if not steps:
         raise FleetError("give at least one --step or a --steps-file")
-    fleetd_arguments = ["create", "--project", arguments.project, "--description", arguments.description,
+    fleetd_arguments = ["create", "--project", label, "--description", arguments.description,
                         "--agent", arguments.agent, "--cwd", arguments.cwd,
                         "--steps-file", "/dev/stdin", "--hold"]
     if arguments.permission is not None:
@@ -386,7 +381,7 @@ def command_orchestrate(arguments: argparse.Namespace) -> None:
                                              revision=activation.mandate_version)
         payload, guidance = guide(records, activation.work_item, dict(
             steps=[dict(prompt=orchestrator_prompt(activation, mandate), title='Orchestrate')], context=None))
-        worker =['create', '--project', activation.project, '--description', 'Orchestrate work item',
+        worker =['create', '--project', open_workspace(store).host_label(activation.project, host.name), '--description', 'Orchestrate work item',
                   '--agent', arguments.agent, '--cwd', arguments.cwd, '--steps-file', '/dev/stdin', '--hold']
         if arguments.permission is not None:
             worker += ['--permission', arguments.permission]
@@ -689,10 +684,13 @@ def resolve_job_or_session(reference: str) -> tuple[Host, str]:
 
 def command_move(arguments: argparse.Namespace) -> None:
     """Move jobs, or interactive sessions started outside fleet, to a project (its label on that host)."""
-    for reference in arguments.jobs:
-        host, job_id = resolve_job_or_session(reference)
-        transport.call(host, ["mv", job_id, arguments.project])
-        console.print(f"{host.name}:{job_id} → {arguments.project}")
+    workspace = open_workspace()
+    identity = workspace.resolve_project(arguments.project)
+    targets = [resolve_job_or_session(reference) for reference in arguments.jobs]
+    moves = [(host, job_id, workspace.host_label(identity, host.name)) for host, job_id in targets]
+    for host, job_id, label in moves:
+        transport.call(host, ["mv", job_id, label])
+        console.print(f"{host.name}:{job_id} → {identity} ({label})")
 
 
 def command_remove(arguments: argparse.Namespace) -> None:
@@ -873,22 +871,35 @@ def command_hosts(arguments: argparse.Namespace) -> None:
         console.print(f"[bold]{report.host.name}[/] {target} · {state}")
 
 
+def local_library_key(project: str, libraries: dict[str, Any]) -> str:
+    """Keep a legacy registered-name key only when it unambiguously owns this library."""
+    if project in libraries:
+        return project
+    workspace = open_workspace()
+    name = workspace.registry().get(project).name
+    if name in libraries and workspace.resolve_project(name) == project:
+        return name
+    return project
+
+
 def command_library_add(arguments: argparse.Namespace) -> None:
+    arguments.project = open_workspace().resolve_project(arguments.project)
     root = Path(arguments.path).expanduser().resolve()
     if not root.is_dir():
         raise FleetError(f"not a directory: {root}")
-    open_workspace()
     config = transport.load_config()
-    config.setdefault("libraries", {})[arguments.project] = (
+    libraries = config.setdefault("libraries", {})
+    libraries[local_library_key(arguments.project, libraries)] = (
         {"path": str(root), "recursive": True} if arguments.recursive else str(root))
     transport.save_config(config)
     console.print(f"added library {arguments.project}: {root}{' (every folder)' if arguments.recursive else ''}")
 
 
 def command_library_remove(arguments: argparse.Namespace) -> None:
-    open_workspace()
+    arguments.project = open_workspace().resolve_project(arguments.project)
     config = transport.load_config()
-    entry = config.get("libraries", {}).pop(arguments.project, None)
+    libraries = config.get("libraries", {})
+    entry = libraries.pop(local_library_key(arguments.project, libraries), None)
     if entry is None:
         raise FleetError(f"no library '{arguments.project}'; fleet libraries lists them")
     transport.save_config(config)
@@ -928,12 +939,14 @@ def command_project_add(arguments: argparse.Namespace) -> None:
 
 
 def command_project_rename(arguments: argparse.Namespace) -> None:
+    arguments.id = open_workspace().resolve_project(arguments.id)
     workspace = open_workspace()
     workspace.edit_registry(lambda registry: registry.rename(arguments.id, arguments.name))
     console.print(f"{arguments.id} → {escape(workspace.registry().get(arguments.id).name)}")
 
 
 def command_project_link(arguments: argparse.Namespace) -> None:
+    arguments.id = open_workspace().resolve_project(arguments.id)
     host, label = parse_link(arguments.link)
     link = open_workspace().edit_registry(lambda registry: registry.link(arguments.id, host, label))
     count = open_execution().assign_label(host, label, arguments.id, actor="user")
@@ -952,6 +965,8 @@ def command_project_unlink(arguments: argparse.Namespace) -> None:
 def command_project_merge(arguments: argparse.Namespace) -> None:
     """Merge project identity and free the other's floor in one transaction."""
     workspace = open_workspace()
+    arguments.keep = workspace.resolve_project(arguments.keep)
+    arguments.other = workspace.resolve_project(arguments.other)
     registry = workspace.registry()
     other = registry.get(arguments.other)
     result = workspace.merge(arguments.keep, arguments.other)
@@ -965,6 +980,7 @@ def command_project_merge(arguments: argparse.Namespace) -> None:
 
 
 def command_project_management(arguments: argparse.Namespace) -> None:
+    arguments.id = open_workspace().resolve_project(arguments.id)
     path = Path(arguments.path).resolve()
     try:
         moved = open_records().register(arguments.id, path, actor=arguments.actor)
@@ -1054,17 +1070,22 @@ def command_guidance_history(arguments: argparse.Namespace) -> None:
 
 
 def command_project_repo_add(arguments: argparse.Namespace) -> None:
+    arguments.id = open_workspace().resolve_project(arguments.id)
     open_workspace().edit_registry(lambda registry: registry.add_repository(arguments.id, arguments.url))
     console.print(f"added repository {arguments.url} to {arguments.id}", markup=False)
 
 
 def command_project_repo_remove(arguments: argparse.Namespace) -> None:
+    arguments.id = open_workspace().resolve_project(arguments.id)
     open_workspace().edit_registry(lambda registry: registry.remove_repository(arguments.id, arguments.url))
     console.print(f"removed repository {arguments.url} from {arguments.id}", markup=False)
 
 
 def command_project_restore(arguments: argparse.Namespace) -> None:
+    arguments.id = open_workspace().resolve_project(arguments.id)
     workspace = open_workspace()
+    if arguments.shutter is not None:
+        arguments.shutter = workspace.resolve_project(arguments.shutter)
     try:
         placement = workspace.restore(arguments.id, arguments.shutter)
     except LookupError as error:
@@ -1382,7 +1403,7 @@ def add_work_parsers(commands) -> None:
         action.add_argument("--actor", required=True)
         action.add_argument("title" if name == "add" else "id")
         if name == "add":
-            action.add_argument("--project", required=True)
+            add_project_argument(action, "--project", required=True)
             action.add_argument("--goal", required=True)
             action.add_argument("--kind", default="task", help=KIND_HELP)
             for field in ("parent", "focus", "next-step", "plan"):
@@ -1676,9 +1697,17 @@ def group_commands(parser: argparse.ArgumentParser, commands: argparse._SubParse
     parser.epilog = "\n\n".join(sections) + "\n\n" + QUICK_START
 
 
+PROJECT_HELP = "project (ID, prefix or name)"
+
+
+def add_project_argument(parser: argparse.ArgumentParser, *flags: str, **options: Any) -> None:
+    detail = options.pop("help", None)
+    parser.add_argument(*flags, help=PROJECT_HELP + (f"; {detail}" if detail else ""), **options)
+
+
 def add_listing_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--host", action="append", help="only these hosts (repeatable)")
-    parser.add_argument("--project", "-p", help="only this project")
+    add_project_argument(parser, "--project", "-p", help="only this project")
     parser.add_argument("--by", dest="group_by", choices=("project", "host"), default="project")
     parser.add_argument("--all", "-a", action="store_true", help="include old finished jobs")
     parser.add_argument("--since", type=float, default=24, help="hours of finished jobs to show (default 24)")
@@ -1736,7 +1765,7 @@ def build_parser() -> argparse.ArgumentParser:
                     f"--work-item, the project's constitution and the epic's charter. Records the job as a run "
                     f"in the store. Stop it with fleet cancel.")
     send.add_argument("--host", "-H", required=True)
-    send.add_argument("--project", "-p", required=True, help="the host's label for a registered project")
+    add_project_argument(send, "--project", "-p", required=True, help="worker label comes from its host link")
     send.add_argument("--work-item", help="link the created job to stored work")
     send.add_argument("--description", "-d", required=True, help="one line: what this job is working on")
     send.add_argument("--agent", "--runtime", "-a", dest="agent", choices=("claude", "codex"), default="claude")
@@ -1780,7 +1809,7 @@ def build_parser() -> argparse.ArgumentParser:
     triage = commands.add_parser('triage', help='inspect project triage policy and queue')
     triage_commands = triage.add_subparsers(dest='triage_command', required=True)
     triage_status = triage_commands.add_parser('status', help='mandate, queue, live run and daily budget')
-    triage_status.add_argument('project')
+    add_project_argument(triage_status, 'project')
     triage_status.set_defaults(handler=command_triage_status)
 
     orchestrate = commands.add_parser('orchestrate', help='start an orchestrator agent on the controller, with write access to the store')
@@ -1886,7 +1915,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     move = commands.add_parser("mv", help="move jobs to another project")
     move.add_argument("jobs", nargs="+")
-    move.add_argument("project")
+    add_project_argument(move, "project")
     move.set_defaults(handler=command_move)
 
     remove = commands.add_parser(
@@ -1924,19 +1953,19 @@ def build_parser() -> argparse.ArgumentParser:
         dest="library_command", required=True)
     library_link = library.add_parser("link", help="index an external URL; grants no access")
     library_link.add_argument("url")
-    library_link.add_argument("--project", help="required when no work item is supplied")
+    add_project_argument(library_link, "--project", help="required when no work item is supplied")
     library_link.add_argument("--work-item")
     library_link.add_argument("--title", help="optional display label; omitted titles remain unknown")
     library_link.add_argument("--actor", default="user")
     library_link.set_defaults(handler=command_library_link)
     library_add = library.add_parser("add", help="add a local folder to config.json as a library root")
-    library_add.add_argument("project")
+    add_project_argument(library_add, "project")
     library_add.add_argument("path")
     library_add.add_argument("--recursive", action="store_true",
                              help="read Markdown in every folder, not only the top level and docs/")
     library_add.set_defaults(handler=command_library_add)
     library_remove = library.add_parser("rm", help="remove a library root from config.json; files stay")
-    library_remove.add_argument("project")
+    add_project_argument(library_remove, "project")
     library_remove.set_defaults(handler=command_library_remove)
 
     project = commands.add_parser("project", help="registered projects: stable IDs linked to host:label").add_subparsers(
@@ -1951,11 +1980,11 @@ def build_parser() -> argparse.ArgumentParser:
                               help="do not ask hosts for labels to suggest")
     project_list.set_defaults(handler=command_project_list)
     project_rename = project.add_parser("rename", help="change a project's name (its ID stays)")
-    project_rename.add_argument("id")
+    add_project_argument(project_rename, "id")
     project_rename.add_argument("name")
     project_rename.set_defaults(handler=command_project_rename)
     project_link = project.add_parser("link", help="attach a host's label to a project")
-    project_link.add_argument("id")
+    add_project_argument(project_link, "id")
     project_link.add_argument("link", metavar="HOST:LABEL")
     project_link.set_defaults(handler=command_project_link)
     project_unlink = project.add_parser("unlink", help="detach a host's label from its project")
@@ -1963,17 +1992,17 @@ def build_parser() -> argparse.ArgumentParser:
     project_unlink.set_defaults(handler=command_project_unlink)
     project_merge = project.add_parser("merge", help="irreversibly delete OTHER and move its records, links and repositories into KEEP",
                                       description="Permanently delete OTHER, free its floor and move its work, attention, runs, decisions, links and repositories into KEEP. This cannot be undone.")
-    project_merge.add_argument("keep", metavar="KEEP-ID", help="the older project: keeps its ID and name")
-    project_merge.add_argument("other", metavar="OTHER-ID", help="permanently deleted after its records, links and repositories move to KEEP")
+    add_project_argument(project_merge, "keep", metavar="KEEP-ID", help="the older project: keeps its ID and name")
+    add_project_argument(project_merge, "other", metavar="OTHER-ID", help="permanently deleted after its records, links and repositories move to KEEP")
     project_merge.set_defaults(handler=command_project_merge)
     project_repo = project.add_parser("repo", help="repository remotes used to suggest links").add_subparsers(
         dest="project_repo_command", required=True)
     project_repo_add = project_repo.add_parser("add", help="record a repository remote for a project")
-    project_repo_add.add_argument("id")
+    add_project_argument(project_repo_add, "id")
     project_repo_add.add_argument("url")
     project_repo_add.set_defaults(handler=command_project_repo_add)
     project_repo_remove = project_repo.add_parser("rm", help="forget a repository remote for a project")
-    project_repo_remove.add_argument("id")
+    add_project_argument(project_repo_remove, "id")
     project_repo_remove.add_argument("url")
     project_repo_remove.set_defaults(handler=command_project_repo_remove)
 
@@ -1982,12 +2011,12 @@ def build_parser() -> argparse.ArgumentParser:
         description="Registers PATH, the root of an existing Git working tree, as the project's management "
                     "repository and moves its summaries out of the store into it. This is permanent: it cannot be "
                     "changed or undone. Optional: a project's first record creates one under fleet's home.")
-    management.add_argument('id')
+    add_project_argument(management, 'id')
     management.add_argument('path', help='root of an existing Git working tree')
     add_actor_option(management)
     project_restore = project.add_parser("restore", help="bring a shuttered project back from the storehouse to a floor")
-    project_restore.add_argument("id")
-    project_restore.add_argument("--shutter", metavar="OTHER-ID",
+    add_project_argument(project_restore, "id")
+    add_project_argument(project_restore, "--shutter", metavar="OTHER-ID",
                                  help="when no floor is free, move this project to the storehouse to make room")
     project_restore.set_defaults(handler=command_project_restore)
     management.set_defaults(handler=command_project_management)
@@ -1995,7 +2024,7 @@ def build_parser() -> argparse.ArgumentParser:
     guidance = commands.add_parser(
         "guidance", help="a project's constitution and its epics' charters, versioned in the management repository"
     ).add_subparsers(dest="guidance_command", required=True)
-    subject_help = "a project ID or name (its constitution) or an epic ID (its charter)"
+    subject_help = PROJECT_HELP + " (its constitution) or an epic ID (its charter)"
     guidance_show = guidance.add_parser("show", help="print the current or a numbered version")
     guidance_show.add_argument("subject", help=subject_help)
     guidance_show.add_argument("--version", type=int, help="an older version number from history")
@@ -2020,7 +2049,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_work_parsers(commands)
 
     status = commands.add_parser("status", help="persisted project work and open attention")
-    status.add_argument("project")
+    add_project_argument(status, "project")
     status.add_argument("--json", action="store_true", help="emit the project projection")
     status.set_defaults(handler=command_status)
 
@@ -2038,7 +2067,7 @@ def build_parser() -> argparse.ArgumentParser:
     decision_record.set_defaults(handler=command_decision_record)
     decision_list = decision.add_parser("list", help="decisions on a project's or an epic's work, newest first")
     decision_scope = decision_list.add_mutually_exclusive_group(required=True)
-    decision_scope.add_argument("--project")
+    add_project_argument(decision_scope, "--project")
     decision_scope.add_argument("--epic")
     decision_list.add_argument("--json", action="store_true")
     decision_list.set_defaults(handler=command_decision_list)
@@ -2052,7 +2081,7 @@ def build_parser() -> argparse.ArgumentParser:
     history_commands = history.add_subparsers(dest="history_command")
     runs = history_commands.add_parser("runs", help="stored runs, newest first")
     for name in ("project", "work-item", "host", "status", "kind", "since", "until"):
-        runs.add_argument(f"--{name}")
+        runs.add_argument(f"--{name}", help=PROJECT_HELP if name == "project" else None)
     runs.add_argument("--limit", type=int, default=50)
     for name in ("descendants", "unlinked", "json"):
         runs.add_argument(f"--{name}", action="store_true")
@@ -2083,7 +2112,8 @@ def build_parser() -> argparse.ArgumentParser:
     attention_add.add_argument("headline")
     attention_add.add_argument("--kind", required=True, choices=attention_module.KINDS)
     for field in ("project", "source", "source-reference", "context-reference", "actor"):
-        attention_add.add_argument(f"--{field}", required=True)
+        attention_add.add_argument(f"--{field}", required=True,
+                                   help=PROJECT_HELP if field == "project" else None)
     attention_add.add_argument("--owner", required=True, choices=("agent", "user"),
                                help="who must act: user puts it in 'need you'; agent leaves it to the project's agent")
     attention_add.add_argument("--reason", help="why the owner must act, shown with the item "
@@ -2092,7 +2122,7 @@ def build_parser() -> argparse.ArgumentParser:
     attention_add.add_argument("--run")
     attention_add.set_defaults(handler=command_attention)
     attention_list = attention.add_parser("list", help="attention items as JSON, with their IDs")
-    attention_list.add_argument("--project")
+    add_project_argument(attention_list, "--project")
     attention_list.add_argument("--state", choices=("open", "acknowledged", "snoozed", "resolved"))
     attention_list.add_argument("--owner", choices=("agent", "user"), help="only items this owner must act on")
     attention_list.set_defaults(handler=command_attention)

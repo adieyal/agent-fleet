@@ -7,6 +7,7 @@ from fleet import cli, composition
 
 
 def test_run_and_library_link_fetch_nothing(monkeypatch, capsys, project_id):
+    composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, "fake", "worker-p"))
     def forbidden(*args, **kwargs):
         pytest.fail("linking must not fetch anything")
 
@@ -29,6 +30,7 @@ def test_run_and_library_link_fetch_nothing(monkeypatch, capsys, project_id):
 
 @pytest.mark.parametrize("start_fails", [False, True])
 def test_send_links_created_job(monkeypatch, capsys, start_fails, project_id):
+    composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, "fake", "worker-p"))
     item = composition.open_work().add(project=project_id, title="Task", goal="Ship", actor="user")
     calls = []
 

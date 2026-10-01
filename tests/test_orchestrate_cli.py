@@ -11,11 +11,14 @@ def test_orchestrate_starts_locally_with_activation_command_set(tmp_path, monkey
     root = tmp_path / 'records'
     root.mkdir()
     subprocess.run(['git', '-C', str(root), 'init'], check=True, capture_output=True, timeout=10)
-    item = composition.open_work().add(project='p', title='Ship', goal='Ship', actor='user')
+    workspace = composition.open_workspace()
+    project = workspace.edit_registry(lambda registry: registry.create('p')).id
+    workspace.edit_registry(lambda registry: registry.link(project, 'controller', 'worker-p'))
+    item = composition.open_work().add(project=project, title='Ship', goal='Ship', actor='user')
     criterion = composition.open_work().add_criterion(item.id, text='Review', verification='judged', actor='user')
     records = composition.open_records()
-    records.register('p', root, actor='user')
-    records.write_mandate('p', 'mandate.json', json.dumps(dict(goal='Ship', constraints=[],
+    records.register(project, root, actor='user')
+    records.write_mandate(project, 'mandate.json', json.dumps(dict(goal='Ship', constraints=[],
         escalation_conditions=[], criteria_it_may_judge=[criterion.id], decision_authority=['dispatch', 'update_progress'])),
         key='mandate', actor='user')
     calls = []

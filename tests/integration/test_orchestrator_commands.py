@@ -220,6 +220,20 @@ def test_real_scripted_orchestrator_process(orchestration, tmp_path, monkeypatch
     from fleet.transport import Host
 
     _, store, item, _, _, _, _, root = orchestration
+    workspace = composition.open_workspace(store)
+    project = workspace.edit_registry(lambda registry: registry.create('p')).id
+    workspace.edit_registry(lambda registry: registry.link(project, 'controller', 'worker-p'))
+    work = composition.open_work(store)
+    item = work.add(project=project, title='Ship', goal='Ship', actor='user')
+    judged = work.add_criterion(item.id, text='Review', verification='judged', actor='user')
+    records = composition.open_records(store)
+    mandate = json.loads(records.read('p', 'mandate.json'))
+    mandate['criteria_it_may_judge'] = [judged.id]
+    root = tmp_path / 'registered-records'
+    root.mkdir()
+    subprocess.run(['git', '-C', str(root), 'init'], check=True, capture_output=True, timeout=10)
+    records.register(project, root, actor='user')
+    records.write_mandate(project, 'mandate.json', json.dumps(mandate), key='p6', actor='user')
     agent = tmp_path / 'scripted-agent'
     agent.write_text(f'''#!{sys.executable}
 import contextlib, io, json, re, sys

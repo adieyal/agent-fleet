@@ -74,6 +74,7 @@ def test_every_command_is_in_one_group_and_every_subcommand_has_help(capsys):
 
 
 def test_send_prints_the_run_permission_and_guidance(monkeypatch, capsys, project_id):
+    composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, "fake", "worker-p"))
     calls = []
     fake_worker(monkeypatch, calls)
     cli.main(["send", "--project", "p", "--description", "Task", "--step", "Ship", "--host", "fake",
@@ -86,6 +87,7 @@ def test_send_prints_the_run_permission_and_guidance(monkeypatch, capsys, projec
 
 
 def test_runtime_and_agent_are_aliases_on_send_and_dispatch(monkeypatch, project_id):
+    composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, "fake", "worker-p"))
     calls = []
     fake_worker(monkeypatch, calls)
     item = composition.open_work().add(project=project_id, title="Task", goal="Ship", actor="user")
@@ -97,6 +99,7 @@ def test_runtime_and_agent_are_aliases_on_send_and_dispatch(monkeypatch, project
 
 
 def test_send_records_the_given_actor(monkeypatch, project_id):
+    composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, "fake", "worker-p"))
     fake_worker(monkeypatch, [])
     cli.main(["send", "--project", "p", "--description", "Task", "--step", "Ship", "--host", "fake",
               "--cwd", "/repo", "--hold", "--json", "--actor", "orchestrator"])
@@ -105,6 +108,7 @@ def test_send_records_the_given_actor(monkeypatch, project_id):
 
 
 def test_send_inside_a_fleet_job_records_the_job_as_actor(monkeypatch, project_id):
+    composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, "fake", "worker-p"))
     fake_worker(monkeypatch, [])
     monkeypatch.setenv("FLEET_JOB_ID", "27563ec6-a70f")
     cli.main(["send", "--project", "p", "--description", "Task", "--step", "Ship", "--host", "fake",
@@ -114,6 +118,7 @@ def test_send_inside_a_fleet_job_records_the_job_as_actor(monkeypatch, project_i
 
 
 def test_run_retry_and_resolve_unknown_pass_the_actor(monkeypatch, project_id):
+    composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, "fake", "worker-p"))
     seen = {}
 
     class Execution:
@@ -133,6 +138,7 @@ def test_run_retry_and_resolve_unknown_pass_the_actor(monkeypatch, project_id):
 
 
 def test_answer_records_the_given_actor(capsys, project_id):
+    composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, "fake", "worker-p"))
     work = composition.open_work()
     item = work.add(project=project_id, title="Delivery", goal="Ship", actor="author")
     question = composition.open_attention().raise_item(project=project_id, work_item=item.id, kind="decision",
