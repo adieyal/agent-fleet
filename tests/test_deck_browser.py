@@ -291,7 +291,7 @@ def test_epic_cards_summarise_nested_route_migration(changed_deck: Deck, route_m
         '6. Milestone 6 — Delete router.js'])
     expect(child.locator('[data-now] [data-now-item]')).to_have_text(['Port supplier list'])
     expect(child.locator('[data-now] [data-job-chip]')).to_have_attribute('data-job-chip', 'home:route-job')
-    expect(child.locator('[data-attention-count]')).to_have_text('2 open decisions or blockers')
+    expect(child.locator('[data-attention-count]')).to_have_text('2 open attention items')
     shoot(request, page, 'epic-cards')
     card, title = child.bounding_box(), child.locator('[data-epic]').bounding_box()
     assert card['y'] <= title['y'] and title['y'] + title['height'] <= card['y'] + card['height']
@@ -1743,6 +1743,7 @@ def test_a_blocked_job_is_answered_from_the_deck(changed_deck: Deck, base_url: s
         body.get_by_label("Your answer", exact=True).fill("Yes, exempt it and continue.")
         body.get_by_role("button", name="Send answer", exact=True).click()
         expect(body.locator('[role="status"]')).to_have_text("answered; step 2 continues as step 3")
+        expect(body.locator(".decision-receipt")).to_have_text("Answer recorded as a Decision.")
         assert sent == [[{"prompt": "Yes, exempt it and continue.", "title": "Answer to step 2"}]]
         assert server.state.attention.get(item["id"]).state == "resolved"
         expect(body.get_by_role("button", name="Send answer", exact=True)).to_be_disabled()
@@ -2270,3 +2271,39 @@ def test_audit1_batch6_hidden_restore_says_and_confirms_its_effect(changed_deck:
     chip.click()
     expect(chip).to_have_count(0)
     expect(page.locator('#toast')).to_contain_text('dismissals forgotten')
+
+
+def test_batch11_project_decisions_and_room_alerts(changed_deck: Deck, route_migration, request) -> None:
+    from fleet.composition import open_decisions, open_attention
+    store = route_migration['store']
+    task = route_migration['redirect']
+    decision = open_decisions(store).record_guided(task.id, actor='reviewer', question='Keep redirects?',
+        answer='Keep them for old bookmarks.', principle='Compatibility')
+    alert = open_attention(store).raise_item(project='restoke-v2', work_item=task.id, kind='alert', owner='user',
+        source='manual', source_reference='batch11', headline='Redirect audit complete', context_reference='audit.md', actor='agent')
+    question = open_attention(store).raise_item(project='restoke-v2', kind='decision', owner='user',
+        source='manual', source_reference='batch11-unlinked', headline='Ship the banner?',
+        context_reference='banner.md', actor='agent')
+    unlinked = open_decisions(store).answer(question.id, 'Wait for review.', actor='user')
+    page = changed_deck.page
+    page.evaluate("fleetDeck.enterFloor('restoke-v2')")
+    page.get_by_role('button', name='Project decisions', exact=True).click()
+    expect(page.locator(f'[data-decision="{unlinked.id}"]')).to_contain_text('No linked work item')
+    expect(page.locator('#benchRoute [data-decisions]')).to_contain_text('Keep redirects?')
+    expect(page.locator(f'[data-decision="{decision.id}"]')).to_contain_text('reviewer')
+    shoot(request, page, 'batch11-project-decisions')
+    page.set_viewport_size(VIEWPORTS['narrow'])
+    shoot(request, page, 'batch11-project-decisions-390')
+    page.locator('[data-back-floor]').click()
+    page.get_by_role('button', name='Route migration', exact=True).click()
+    expect(page.locator(f'#benchRoute [data-room-attention] [data-attention="{alert.id}"]')).to_contain_text('Redirect audit complete')
+    expect(page.locator('#benchRoute [data-guidance="charter"]')).to_contain_text('No charter recorded.')
+    expect(page.locator(f'#benchRoute [data-decision="{decision.id}"]')).to_be_visible()
+    expect(page.locator(f'#benchRoute [data-decision="{unlinked.id}"]')).to_have_count(0)
+    page.locator('[data-room-attention]').evaluate("el => el.scrollIntoView({block: 'center'})")
+    shoot(request, page, 'batch11-room-alert-390')
+    page.set_viewport_size(VIEWPORTS['desktop'])
+    page.locator('[data-room-attention]').evaluate("el => el.scrollIntoView({block: 'center'})")
+    shoot(request, page, 'batch11-room-alert')
+    page.evaluate('fleetDeck.enterFloor(null)')
+    assert changed_deck.errors == []

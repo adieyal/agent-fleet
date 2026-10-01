@@ -179,3 +179,54 @@ def test_answering_reaches_the_job_through_fleetd(deck, tmp_path, monkeypatch):
         assert len(worker.read_job("j1")["steps"]) == 2
     finally:
         worker.subprocess.run([*worker.TMUX_COMMAND, "kill-server"], capture_output=True)
+
+
+def test_batch11_blocked_answer_records_one_decision_after_confirmation(deck):
+    from fleet.composition import open_decisions
+    deck.report('home', jobs=[blocked()])
+    item = only_item(deck)
+    execution = open_execution(deck.state.store)
+    execution.answer = lambda request: 2
+    execution.answer_blocked(item.id, 'Yes, exempt it.', actor='reviewer')
+    [record] = open_decisions(deck.state.store).list()
+    assert (record.attention_item, record.question, record.answer, record.actor) == (
+        item.id, item.headline, 'Yes, exempt it.', 'reviewer')
+    assert record.context == item.context_reference and record.principle is None
+    from fleet.projections.decisions import decision_log
+    decisions = open_decisions(deck.state.store)
+    assert [d['id'] for d in decision_log(open_work(deck.state.store), decisions, project=item.project)] == [record.id]
+    assert decision_log(open_work(deck.state.store), decisions, project='other') == []
+    with pytest.raises(ItemResolved):
+        execution.answer_blocked(item.id, 'Again', actor='reviewer')
+    assert len(open_decisions(deck.state.store).list()) == 1
+
+
+def test_batch11_blocked_answer_retains_run_work_and_project_for_unlinked_questions(deck):
+    from fleet.composition import open_decisions
+    from fleet.projections.decisions import decision_log
+    deck.report('home', jobs=[blocked()])
+    item = only_item(deck)
+    work = open_work(deck.state.store)
+    task = work.add(project='p', title='Blocked work', goal='Finish', actor='user')
+    execution = open_execution(deck.state.store)
+    run = execution.link('home', 'b1', task.id, actor='user')
+    execution.answer = lambda request: 2
+    execution.answer_blocked(item.id, 'Proceed', actor='user')
+    decisions = open_decisions(deck.state.store)
+    [record] = decisions.list()
+    assert record.source_run == run.id and record.affected_work_items == (task.id,)
+    assert [d['id'] for d in decision_log(work, decisions, project='p')] == [record.id]
+
+
+def test_batch11_unconfirmed_answer_records_no_decision(deck):
+    from fleet.composition import open_decisions
+    deck.report('home', jobs=[blocked()])
+    item = only_item(deck)
+    execution = open_execution(deck.state.store)
+    def refuse(request):
+        raise RuntimeError('worker did not confirm')
+    execution.answer = refuse
+    with pytest.raises(RuntimeError, match='did not confirm'):
+        execution.answer_blocked(item.id, 'Proceed', actor='user')
+    assert open_decisions(deck.state.store).list() == []
+    assert deck.state.attention.get(item.id).state == 'open'

@@ -51,6 +51,7 @@ function refreshRooms() {
   if (wait > 0) { roomsTimer ??= setTimeout(() => { roomsTimer = null; refreshBench(); }, wait); return; }
   roomsReadAt = Date.now();
   if (room) loadDecisions(room.id);
+  else if (page === 'decisions') loadDecisions('project');
   // Its own check, not `revision`: a background read must never cancel a page the user just asked for.
   const asked = { project, revision };
   read().then(doc => {
@@ -111,11 +112,11 @@ async function loadGuidance(key) {
 async function loadDecisions(epic) {
   const asked = project;
   let list;
-  try { list = await json('/api/decisions?' + new URLSearchParams({ epic })); }
+  try { list = await json('/api/decisions?' + new URLSearchParams(epic === 'project' ? { project } : { epic })); }
   catch (error) { list = { decisions: decisionLists.get(epic)?.decisions ?? [], error: error.message }; }
   if (asked !== project || JSON.stringify(list) === JSON.stringify(decisionLists.get(epic))) return;
   decisionLists.set(epic, list);
-  if (!editing && room?.id === epic && !bench) render();
+  if (!editing && !bench && (room?.id === epic || epic === 'project' && page === 'decisions')) render();
 }
 
 function openRoom(r) {
@@ -194,7 +195,7 @@ function epicCard(r) {
     <p data-now><b data-label>Now:</b> ${now}</p>
     <div data-next><b data-label>Next:</b> ${next}</div>
     ${r.children.length ? `<p data-child-epics>Epics: ${r.children.map(c => esc(c.title)).join(', ')}</p>` : ''}
-    <p data-attention-count="${count}">${count ? `${lantern} ${count} open ${count === 1 ? 'decision or blocker' : 'decisions or blockers'}` : 'No open decisions or blockers'}</p>
+    <p data-attention-count="${count}">${count ? `${lantern} ${count} open ${count === 1 ? 'attention item' : 'attention items'}` : 'No open attention items'}</p>
   </article>`;
 }
 
@@ -267,6 +268,7 @@ function epicPage(r) {
       w.plan.length ? `<ol data-plan-list>${w.plan.map(m => planLine(m, true)).join('')}</ol>` : ''}</section>`).join('')}
     ${r.tasks.length ? `<h3>Tasks</h3><ol data-plan-list>${r.tasks.map(t => planLine(t, false)).join('')}</ol>` : ''}
     ${r.children.length ? `<h3>Epics</h3><p data-child-epics>${r.children.map(c => `<button data-epic="${esc(c.id)}">${esc(c.title)}</button>`).join('')}</p>` : ''}
+    <section data-room-attention aria-label="Room attention"><h3>Room attention</h3>${r.attention.length ? `<ul>${r.attention.map(a => `<li data-attention="${esc(a.id)}"><b>${esc(a.headline)}</b><small>${esc(a.kind)} · ${idChip(a.id)}</small></li>`).join('')}</ul>` : '<p>No open attention items.</p>'}</section>
     ${guidancePanel('charter', views.get(r.id), guidanceState(r.id))}
     ${decisionsPanel(decisionLists.get(r.id))}
   </article>`;
@@ -321,7 +323,7 @@ function render(flipped = new Set()) {
   el.toggleAttribute('data-collapsed', collapsed);
   el.toggleAttribute('data-editing', editing !== null);
   const crumbs = `<div data-bench-head><nav id="benchBreadcrumb" aria-label="Breadcrumb"><button data-back-floor>Floor</button>${
-    room ? ` / <button data-back-room>${esc(room.title)}</button>` : page && !bench ? ' / <span>Constitution</span>' : ''}${bench ? ` / <span>${esc(bench.title)}</span>` : ''}</nav>
+    room ? ` / <button data-back-room>${esc(room.title)}</button>` : page && !bench ? ` / <span>${page === 'decisions' ? 'Project decisions' : 'Constitution'}</span>` : ''}${bench ? ` / <span>${esc(bench.title)}</span>` : ''}</nav>
     <button data-collapse aria-expanded="${!collapsed}" title="${collapsed ? 'Show' : 'Hide'} the plan" aria-label="${collapsed ? 'Show' : 'Hide'} the plan"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${collapsed ? 'M6 3.5 10.5 8 6 12.5' : 'M3.5 6 8 10.5 12.5 6'}"/></svg></button></div>`;
   let content;
   if (bench) {
@@ -342,10 +344,12 @@ function render(flipped = new Set()) {
       <section><button data-briefing aria-expanded="${briefing}">Briefing</button><div data-summary ${briefing ? '' : 'hidden'}>${bench.summary === null ? 'Summary unknown' : ['purpose', 'done', 'doing', 'next'].map(key => `<p><b>${key}</b> ${esc(bench.summary[key])}</p>`).join('')}</div></section></div>`;
   } else if (room) {
     content = epicPage(room);
+  } else if (page === 'decisions') {
+    content = `<article data-project-decisions>${decisionsPanel(decisionLists.get('project'))}</article>`;
   } else if (page === 'constitution') {
     content = `<article data-constitution-page>${guidancePanel('constitution', views.get('constitution'), guidanceState('constitution'))}</article>`;
   } else {
-    content = `<div class="epic-cards">${constitutionCard()}${rooms.map(epicCard).join('')}</div>`;
+    content = `<div class="epic-cards">${constitutionCard()}<article data-project-decisions-card><button data-open-decisions title="Read every decision in this project, including work outside epic rooms; opening changes no stored state">Project decisions</button></article>${rooms.map(epicCard).join('')}</div>`;
     if (!rooms.length) content += '<p>No epic rooms recorded.</p>';
   }
   el.innerHTML = crumbs + content;
@@ -453,6 +457,7 @@ el.addEventListener('click', async ev => {
     render();
     return;
   }
+  if (ev.target.closest('[data-open-decisions]')) { page = 'decisions'; render(); loadDecisions('project'); return; }
   if (guidanceClick(ev.target)) return;
   if (ev.target.closest('[data-back-floor]')) { ++revision; room = bench = page = editing = null; render(); return; }
   if (ev.target.closest('[data-back-room]')) { ++revision; bench = editing = null; render(); return; }

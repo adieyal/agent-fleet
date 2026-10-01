@@ -106,5 +106,6 @@ def test_fleet_answer_on_a_blocked_step_takes_the_decks_path(worker, project_id,
                                                    "resolution": "answered; step 1 continues as step 4"}
     assert steps()[0][3] == 3 and steps()[-1] == ("Answer to step 1", "Use the second.", "pending", None)
     assert open_attention().get(item.id).state == "resolved"
-    assert open_decisions().list() == []   # not recorded as a plain decision
+    [record] = open_decisions().list()
+    assert (record.attention_item, record.answer, record.actor) == (item.id, 'Use the second.', 'user')
     assert fleetd.derive_status(fleetd.read_job("job")) == "queued"

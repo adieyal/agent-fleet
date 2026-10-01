@@ -134,3 +134,17 @@ def test_writes_need_json_from_this_origin(room):
     assert error.value.code == 403
     assert refused(room, "/api/guidance", dict(project=room["project"], markdown="x"))[0] == 400
     assert refused(room, "/api/decisions", None)[0] == 400
+
+
+def test_batch11_project_decisions_include_root_work_and_exclude_other_projects(room):
+    decisions = composition.open_decisions()
+    work = composition.open_work()
+    root = work.add(project=room['project'], title='Root task', goal='Deliver', actor='user')
+    other = work.add(project='another-project', title='Other', goal='Deliver', actor='user')
+    own = decisions.record_guided(root.id, actor='agent', question='Use root?', answer='Yes', principle='Scope')
+    decisions.record_guided(other.id, actor='agent', question='Other?', answer='Yes', principle='Scope')
+    listed = get(room, '/api/decisions', project=room['project'])
+    assert [d['id'] for d in listed['decisions']] == [own.id]
+    assert listed['decisions'][0]['work_items'] == [{'id': root.id, 'title': 'Root task'}]
+    assert get(room, '/api/decisions', epic=room['epic'])['decisions'] == []
+    assert refused(room, '/api/decisions', None, project=room['project'], epic=room['epic'])[0] == 400

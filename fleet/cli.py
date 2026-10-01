@@ -1451,7 +1451,7 @@ def command_answer(arguments: argparse.Namespace) -> None:
     try:
         context = open_attention().get(arguments.id).stream_context
         if context is not None and context.blocked_step:
-            # A blocked job step is answered by a step added to its job, as the deck does, not a recorded decision.
+            # A blocked answer is recorded and delivered as a continuation, as the deck does.
             if arguments.next_step is not None:
                 raise ValueError("a blocked job step's answer has no --next-step; use fleet work set")
             details = open_execution().answer_blocked(arguments.id, arguments.answer, actor=arguments.actor)
@@ -1906,9 +1906,10 @@ def build_parser() -> argparse.ArgumentParser:
     history_prune.set_defaults(handler=command_history_prune)
 
     answer = commands.add_parser(
-        "answer", help="answer an attention item: replies to a blocked job step, else records a decision",
+        "answer", help="record an answer as a decision; continue a blocked job step when applicable",
         description="For a blocked job step, adds the answer as the job's next step on its host and resolves the "
-                    "item. For any other item, records the answer as a decision and resolves the item. Neither "
+                    "item, recording the answer as a decision. For any other item, records the answer as a decision "
+                    "and resolves the item. Neither "
                     "can be undone.")
     answer.add_argument("id", help="attention item ID (fleet attention list)")
     answer.add_argument("answer", help="the reply; for an item with options, an option's 1-based number or text")

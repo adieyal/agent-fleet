@@ -56,7 +56,7 @@ export function guidancePanel(kind, view, { editing = null, history = false } = 
 export function decisionsPanel(list) {
   if (!list) return '<section data-decisions aria-label="Decisions"><h3>Decisions</h3><p data-empty>Loading…</p></section>';
   const rows = list.decisions.map(d => {
-    const items = d.work_items.map(w => w.title === null ? esc(w.id.slice(0, 8)) : esc(w.title)).join(', ');
+    const items = d.work_items.map(w => w.title === null ? esc(w.id.slice(0, 8)) : esc(w.title)).join(', ') || 'No linked work item';
     const promote = d.promoted === true ? '<small data-in-force>In force</small>'
       : d.promoted === false ? `<button data-promote="${esc(d.id)}" title="Add to the charter's decisions in force" aria-label="Add to the charter's decisions in force">${ICONS.promote}</button>` : '';
     return `<li data-decision="${esc(d.id)}"><div data-decision-head><b>${esc(d.question)}</b>${promote}</div>

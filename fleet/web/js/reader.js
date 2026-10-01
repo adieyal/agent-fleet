@@ -175,7 +175,7 @@ function renderBlocked(prose, id, b) {
       : `<blockquote class="blocked-message">${esc(b.message)}</blockquote>`}
     ${open ? `<form class="decision-answer">
         <label>Your answer<textarea name="answer" rows="5" required></textarea></label>
-        <p class="refusal-note">Sending adds your answer to job ${esc(b.job)} as a new step, which continues where step ${b.step + 1} stopped.</p>
+        <p class="refusal-note">Sending records your answer as a Decision, resolves this request, and adds your answer to job ${esc(b.job)} as a new step, which continues where step ${b.step + 1} stopped. Sending cannot be undone in Fleet.</p>
         <button type="submit">Send answer</button><p role="alert"></p><p role="status"></p>
       </form>` : `<p role="status">${esc(b.resolution)}</p>`}`;
   const form = prose.querySelector('form');
@@ -191,6 +191,7 @@ function renderBlocked(prose, id, b) {
       const result = await res.json();
       if (!res.ok) throw new Error(result.error);
       form.querySelector('[role="status"]').textContent = result.resolution;
+      form.insertAdjacentHTML('beforeend', '<p class="decision-receipt">Answer recorded as a Decision.</p>');
       form.elements.answer.disabled = true;
     } catch (error) {
       form.querySelector('[role="alert"]').textContent = error.message;

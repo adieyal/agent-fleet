@@ -267,7 +267,7 @@ def epic_room(epic: dict, parent: dict | None, depth: int, jobs: Jobs) -> dict[s
         "attention": [{"id": entry["id"], "kind": entry["kind"], "headline": entry["headline"],
                        "work_item": item["id"]}
                       for item in scope for entry in item["attention"]
-                      if entry["kind"] in ("decision", "blocker")],
+                      if entry["kind"] in ("decision", "blocker", "alert")],
         "benches": [{"id": item["id"], "title": item["title"]} for item in scope if item["kind"] == "milestone"],
     }
 

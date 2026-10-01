@@ -52,7 +52,7 @@ def test_epic_rooms_summarise_nested_route_migration():
     assert parent["children"] == [{"id": "routes", "title": "Route migration"}]
     assert parent["milestones"] == {"complete": 0, "total": 1}
     assert [agent["run"] for agent in parent["agents"]] == ["r1", "r2"]
-    assert len(parent["attention"]) == 2
+    assert len(parent["attention"]) == 3
 
     assert child["parent"] == {"id": "overhaul", "title": "V2 frontend overhaul"}
     assert child["depth"] == 1
@@ -68,7 +68,8 @@ def test_epic_rooms_summarise_nested_route_migration():
         {"id": "m6", "title": "6. Remove legacy router", "next_step": "Delete router.js"}]
     assert child["children"] == []
     assert [(a["id"], a["kind"], a["work_item"]) for a in child["attention"]] == [
-        ("d", "decision", "m5"), ("b", "blocker", "loose")]
+        ("alert", "alert", "m4"), ("d", "decision", "m5"), ("b", "blocker", "loose")]
+    assert child["attention"][0]["headline"] == "Disk low"
     assert [bench["title"] for bench in child["benches"]] == MILESTONES
 
 

@@ -10,7 +10,7 @@ from fleet.modules.work import WorkFacade
 def decision_log(work: WorkFacade, decisions: DecisionsFacade, *, project: str,
                  epic: str | None = None) -> list[dict[str, Any]]:
     """Decisions affecting the project's items, or the epic and its descendants; a decision affecting no
-    work item has no project and is not listed."""
+    work item is included at project level when its originating attention item identifies the project."""
     items = work.list(project=project)
     if epic is None:
         scope = {item.id for item in items}
@@ -24,7 +24,14 @@ def decision_log(work: WorkFacade, decisions: DecisionsFacade, *, project: str,
             scope.add(identity)
             frontier += children.get(identity, [])
     titles = {item.id: item.title for item in items}
-    chosen = [decision for decision in decisions.list() if scope & set(decision.affected_work_items)]
+    chosen = []
+    for decision in decisions.list():
+        included = bool(scope & set(decision.affected_work_items))
+        if not included and epic is None and decision.attention_item:
+            with decisions.repository.transaction() as transaction:
+                included = transaction.attention.get(decision.attention_item).project == project
+        if included:
+            chosen.append(decision)
     return [{**asdict(decision), "time": decision.time.isoformat(),
              "work_items": [{"id": identity, "title": titles.get(identity)} for identity in decision.affected_work_items]}
             for decision in sorted(chosen, key=lambda decision: decision.time, reverse=True)]

@@ -64,12 +64,12 @@ class ExecutionFacade:
         return grant(self.repository, self.grant, item_id, scope, actor)
 
     def answer_blocked(self, item_id: str, reply: str, *, actor: str, work_item: str | None = None) -> str:
-        """Answer a blocked job step: add a step carrying the reply to the job on its host; returns what was done.
+        """Answer a blocked job step: continue it on its host, then record the reply and resolve attention atomically.
 
         The reply step serves `work_item` when given, else the work the blocked step served."""
         if self.answer is None:
             raise RuntimeError("answer transport is not configured")
-        return answer(self.repository, self.answer, item_id, reply, actor, work_item, self.require_step_work)
+        return answer(self.repository, self.answer, item_id, reply, actor, self.clock, work_item, self.require_step_work)
 
     def require_step_work(self, host: str, job: str, work_item: str) -> None:
         """A step added to a job may serve a work item in the job's project; any existing one if it has none."""

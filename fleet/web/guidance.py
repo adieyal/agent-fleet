@@ -29,3 +29,7 @@ def epic_decisions(services, epic: str) -> dict[str, Any]:
     return {"charter": charter is not None,
             "decisions": [{**entry, "promoted": None if charter is None else promotion_marker(entry) in charter.body}
                           for entry in decision_log(services.work, services.decisions, project=project, epic=epic)]}
+
+
+def project_decisions(services, project: str) -> dict[str, Any]:
+    return {"project": project, "decisions": decision_log(services.work, services.decisions, project=project)}

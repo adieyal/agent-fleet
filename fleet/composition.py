@@ -81,6 +81,7 @@ class Facades:
     def execution(self):
         repository = ExecutionRepository(self.store, self.unit,
             attention=lambda unit: self.bound(unit).attention,
+            decisions=lambda unit: self.bound(unit).decisions.repository,
             collaborators=lambda unit: (self.bound(unit).work, self.bound(unit).workspace))
         return ExecutionFacade(repository, self.work, send=send_input, grant=send_grant, answer=send_answer,
             prepare_dispatch=lambda: open_workspace(self.store), authority=lambda: self.authority, clock=self.store.clock)
@@ -89,7 +90,7 @@ class Facades:
     def decisions(self):
         repository = DecisionRepository(self.store, lambda unit: self.bound(unit).attention,
             lambda unit: self.bound(unit).work, lambda unit: self.bound(unit).execution,
-            records=lambda unit: self.bound(unit).records)
+            records=lambda unit: self.bound(unit).records, unit=self.unit)
         return DecisionsFacade(repository, self.store.clock, self.execution,
                                records=self.records, authority=lambda: self.authority)
 

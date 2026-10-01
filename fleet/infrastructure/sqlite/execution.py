@@ -47,9 +47,10 @@ def dumps(values: dict) -> str:
 class ExecutionRepository(Repository):
     def __init__(self, store: Store, unit: UnitOfWork | None = None,
                  collaborators: Callable | None = None,
-                 attention: Callable[[UnitOfWork], AttentionFacade] | None = None) -> None:
+                 attention: Callable[[UnitOfWork], AttentionFacade] | None = None, decisions: Callable | None = None) -> None:
         super().__init__(store, unit)
         self.attention_factory = attention
+        self.decisions_factory = decisions
         self.collaborators = collaborators
         if unit is not None:
             self.bind(unit)
@@ -59,6 +60,11 @@ class ExecutionRepository(Repository):
             self.attention = self.attention_factory(unit)
         if self.collaborators is not None:
             self.work, self.workspace = self.collaborators(unit)
+
+    def record_answer_decision(self, decision) -> None:
+        if self.unit is None or self.decisions_factory is None:
+            raise RuntimeError("answer decision storage requires a transaction")
+        self.decisions_factory(self.unit).insert(decision)
 
     def deliveries(self) -> list[Delivery]:
         return [Delivery(**json.loads(row["record"])) for row in self.rows("SELECT record FROM execution_delivery ORDER BY rowid")]

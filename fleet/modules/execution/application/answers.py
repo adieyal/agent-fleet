@@ -1,6 +1,8 @@
 """Answer a job step that ended asking its supervisor, by adding a step with the reply to the job."""
 
 from typing import Callable
+from datetime import datetime
+from uuid import uuid4
 
 from fleet.modules.attention import ItemResolved
 
@@ -9,7 +11,12 @@ from .ports import AnswerSender, ExecutionRepository
 
 
 def answer(repository: ExecutionRepository, send: AnswerSender, item_id: str, reply: str, actor: str,
-           work_item: str | None = None, require_step_work: Callable[[str, str, str], None] | None = None) -> str:
+           clock: Callable[[], datetime], work_item: str | None = None,
+           require_step_work: Callable[[str, str, str], None] | None = None) -> str:
+    from fleet.modules.decisions import Decision
+
+    if not actor.strip():
+        raise ValueError("actor is required")
     if not reply.strip():
         raise ValueError("an answer is required")
     with repository.transaction() as transaction:
@@ -28,5 +35,16 @@ def answer(repository: ExecutionRepository, send: AnswerSender, item_id: str, re
                                       work_item))
     details = f"answered; step {context.step + 1} continues as step {continuation + 1}"
     with repository.transaction() as transaction:
+        current = transaction.attention.get(item.id)
+        if current.state == 'resolved':
+            raise ItemResolved("attention item is resolved")
+        run = transaction.find(context.host, context.owner_id)
+        affected = work_item or item.work_item
+        if affected is None and run is not None:
+            affected = next((step['work_item'] for step in run.step_work or [] if step['index'] == context.step), None)
+            affected = affected or transaction.get_action(run.action).work_item
+        record = Decision(str(uuid4()), item.id, item.headline, reply, actor, item.context_reference,
+                          () if affected is None else (affected,), clock(), source_run=run.id if run else None)
+        transaction.record_answer_decision(record)
         transaction.attention.resolve(item.id, details=details, actor=actor)
     return details

@@ -35,7 +35,7 @@ from fleet.projections.history import parse_since, subject_history
 from fleet.transport import FleetError, Host
 from fleet.web.documents import AssetNotImage, AssetTooLarge, DocumentAccessDenied, fetch_asset, fetch_document
 from fleet.web.fixture import FixtureLibrary, FixtureState
-from fleet.web.guidance import epic_decisions, guidance_view
+from fleet.web.guidance import epic_decisions, project_decisions, guidance_view
 from fleet.web.job_store import DocumentKeeper, ProjectDocuments
 from fleet.web.library import ProjectLibrary
 from fleet.web.live import AlreadyHoused, LiveWorkspace
@@ -530,12 +530,14 @@ def make_handler(state: FleetState | FixtureState,
             self.guidance_result(lambda services: guidance_view(services, query["project"], query.get("epic"), number))
 
         def decisions(self) -> None:
-            """GET /api/decisions?epic= — decisions on the epic's work, newest first, and whether each is in force."""
-            epic = (parse_qs(urlsplit(self.path).query).get("epic") or [""])[0]
-            if not epic:
-                self.error(400, "epic is required")
+            """GET /api/decisions?project= or ?epic= — newest first; epic lists include charter promotion state."""
+            query = parse_qs(urlsplit(self.path).query)
+            epic = (query.get('epic') or [''])[0]
+            project = (query.get('project') or [''])[0]
+            if bool(epic) == bool(project):
+                self.error(400, "exactly one of project or epic is required")
                 return
-            self.guidance_result(lambda services: epic_decisions(services, epic))
+            self.guidance_result(lambda services: epic_decisions(services, epic) if epic else project_decisions(services, project))
 
         def history(self) -> None:
             """GET /api/history?subject=&since= — the subject's audit trail, newest first, as `fleet history --json`
