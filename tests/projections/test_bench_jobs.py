@@ -43,11 +43,30 @@ def observe(store, jobs):
                                                               "jobs": {entry["id"]: entry for entry in jobs}})
 
 
-def room(store, project, live):
+def epic_room(store, project, live):
     projection = project_status(project, open_work(store), open_attention(store), open_execution(store),
                                 open_library(store), open_decisions(store))
     only, = bench_rooms(projection, live)["rooms"]
-    return {line["title"]: line["jobs"] for line in only["plan"]}
+    return only
+
+
+def room(store, project, live):
+    return {line["title"]: line["jobs"] for line in epic_room(store, project, live)["plan"]}
+
+
+def test_the_rooms_now_lists_each_running_job_at_the_item_it_is_on(plan):
+    store, project, epic, milestones = plan
+    ids = [milestone.id for milestone in milestones]
+    stepped = dispatch(store, project, epic, [{"prompt": "Do 0", "work_item": ids[0]},
+                                              {"prompt": "Do 1", "work_item": ids[1]}], "a")
+    linked = dispatch(store, project, milestones[2], [{"prompt": "Do it"}], "b")
+    finished = dispatch(store, project, milestones[2], [{"prompt": "Did it"}], "c")
+    summaries = [job(stepped, ["done", "running"], ids[:2], at=2_000.0), job(linked, ["running"], [None]),
+                 job(finished, ["done"], [None], status="done", at=500.0)]
+    observe(store, summaries)
+    now = epic_room(store, project, {("worker", entry["id"]): entry for entry in summaries})["now"]
+    assert [(entry["run"], entry["title"], entry["step"]["index"], entry["status"]) for entry in now] == [
+        (stepped.id, "M2", 1, "running"), (linked.id, "M3", 0, "running")]
 
 
 def test_a_job_working_through_milestones_shows_on_each_line_it_served(plan):

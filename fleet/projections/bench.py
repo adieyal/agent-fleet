@@ -217,6 +217,8 @@ def epic_room(epic: dict, parent: dict | None, depth: int, jobs: Jobs) -> dict[s
     scope = descendants(epic)
     direct, streams = milestone_groups(epic)
     milestones = direct + [item for _, own in streams for item in own]
+    present = agents(scope)
+    chips = {job["run"]: job for job in jobs.serving(epic) if not job["past"]}
     return {
         "id": epic["id"], "title": epic["title"], "depth": depth,
         "condition": epic["condition"], "superseded_by": successors(epic),
@@ -227,7 +229,10 @@ def epic_room(epic: dict, parent: dict | None, depth: int, jobs: Jobs) -> dict[s
         "workstreams": [workstream(stream, own, jobs) for stream, own in streams],
         "tasks": [line_item(child, jobs) for child in epic["children"] if child["kind"] == "task"],
         "milestones": milestone_count(milestones),
-        "agents": agents(scope),
+        "agents": present,
+        # Each running job in the room as a plan line's job, at the item it is on.
+        "now": [{**chips[agent["run"]], "work_item": agent["work_item"], "title": agent["title"]}
+                for agent in present],
         "upcoming": [upcoming(item) for item in milestones if outstanding(item)][:UPCOMING],
         "children": [{"id": child["id"], "title": child["title"]}
                      for child in epic["children"] if child["kind"] == "epic"],
