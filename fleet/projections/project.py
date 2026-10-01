@@ -66,6 +66,8 @@ def project_status(project: str, work: WorkFacade, attention: AttentionFacade,
     # Each kind of record is read once for the whole project; per-item reads made this quadratic in its items.
     criteria = work.criteria_by_item()
     summaries = work.summaries(items)
+    relations = work.relations_by_item()
+    titles = {item.id: item.title for item in items}
     nodes = {}
     for item in items:
         summary = summaries.get(item.id)
@@ -75,6 +77,9 @@ def project_status(project: str, work: WorkFacade, attention: AttentionFacade,
             **asdict(item),
             "progress": asdict(work.progress_within(item, items, own_criteria)),
             "criteria": [asdict(criterion) for criterion in own_criteria],
+            # The other end may be in another project; its title is then not read here.
+            "relations": [{"type": relation.type, "id": relation.to_item, "title": titles.get(relation.to_item)}
+                          for relation in relations.get(item.id, [])],
             "summary": asdict(summary) if summary is not None else None,
             "attention": [asdict(entry) for entry in open_items if entry.work_item == item.id],
             "decisions": [asdict(answer) for answer in answers if item.id in answer.affected_work_items],

@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from fleet.modules.attention import AttentionFacade, AttentionItem
-from fleet.modules.work import Criterion, EvidenceSpecification, Summary, WorkFacade, WorkItem
+from fleet.modules.work import Criterion, EvidenceSpecification, Relation, Summary, WorkFacade, WorkItem
 from fleet.modules.execution import Action, ExecutionFacade, Run
 from fleet.modules.library import LibraryEntry
 from fleet.projections.project import project_status
@@ -15,8 +15,8 @@ NOW = datetime(2026, 9, 27, tzinfo=timezone.utc)
 
 
 class ReadWork:
-    def __init__(self, items, criteria=(), summaries=()):
-        self.records = {"item": items, "criterion": criteria, "summary": summaries}
+    def __init__(self, items, criteria=(), summaries=(), relations=()):
+        self.records = {"item": items, "criterion": criteria, "summary": summaries, "relation": relations}
 
     def list(self, kind):
         return self.records[kind]
@@ -38,9 +38,9 @@ def item(identity, **changes):
                             None, None, None, NOW, NOW), **changes)
 
 
-def project(items, criteria=(), summaries=(), attention=(), runs=(), entries=(), host_observations=()):
+def project(items, criteria=(), summaries=(), attention=(), runs=(), entries=(), host_observations=(), relations=()):
     # These ports expose reads only; any attempted write fails.
-    work = WorkFacade(ReadWork(items, criteria, summaries), None, lambda: NOW)
+    work = WorkFacade(ReadWork(items, criteria, summaries, relations), None, lambda: NOW)
     alerts = AttentionFacade(ReadAttention(attention), lambda: NOW)
     activity = ExecutionFacade(None, None, clock=lambda: NOW)
     for host, observed in host_observations:
@@ -224,3 +224,12 @@ def test_dropped_milestones_leave_progress():
              item("gone", parent="epic", kind="milestone", condition="dropped")]
     epic, = project(items)["work_items"]
     assert epic["progress"] == {"basis": "milestones", "complete": 1, "total": 1}
+
+
+def test_an_item_carries_the_relations_it_starts_with_the_other_items_title():
+    items = [item("old", kind="epic", title="Old epic", condition="dropped"), item("new", kind="epic", title="New epic")]
+    relations = [Relation("r1", "old", "new", "superseded-by"), Relation("r2", "old", "elsewhere", "depends-on")]
+    old, new = project(items, relations=relations)["work_items"]
+    assert old["relations"] == [{"type": "superseded-by", "id": "new", "title": "New epic"},
+                                {"type": "depends-on", "id": "elsewhere", "title": None}]
+    assert new["relations"] == []

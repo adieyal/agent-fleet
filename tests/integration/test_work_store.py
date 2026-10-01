@@ -52,3 +52,17 @@ def test_relations_summaries_and_all_writes_have_history(tmp_path):
     assert all(row["actor"] == "author" for row in rows)
     assert all(row["to"] for row in rows)
     assert [row['subject'].split(':')[0] for row in rows] == ['workspace', 'work', 'work', 'work', 'records', 'records']
+
+
+def test_an_item_can_be_superseded_by_another_and_unknown_relation_types_are_refused(tmp_path):
+    store = open_store()
+    repo = tmp_path / 'management'
+    subprocess.run(['git', 'init', str(repo)], check=True, capture_output=True, timeout=10)
+    open_records(store).register('p', repo, actor='author')
+    work = open_work(store)
+    old = work.add(project="p", title="Old", goal="Old goal", actor="author")
+    new = work.add(project="p", title="New", goal="New goal", actor="author")
+    relation = work.relate(old.id, new.id, type="superseded-by", actor="author")
+    assert open_work(open_store()).relations_by_item() == {old.id: [relation]}
+    with pytest.raises(ValueError, match="unknown relation type"):
+        work.relate(old.id, new.id, type="replaces", actor="author")

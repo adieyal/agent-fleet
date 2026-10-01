@@ -3,6 +3,7 @@ from dataclasses import replace
 import pytest
 
 from fleet.modules.attention import AttentionItem
+from fleet.modules.work import Relation
 from fleet.projections.bench import bench_rooms, headline, status
 
 from projections.test_project import NOW, item, project
@@ -194,3 +195,13 @@ def test_a_dropped_milestone_shows_as_dropped_and_leaves_the_count_and_next():
     assert stream["milestones"] == room["milestones"] == {"complete": 1, "total": 2}
     assert stream["next"]["id"] == "m3"
     assert [m["id"] for m in room["upcoming"]] == ["m3"]
+
+
+def test_a_superseded_epic_names_its_successor():
+    items = [item("old", kind="epic", title="Old epic", condition="dropped"), item("new", kind="epic", title="New epic"),
+             item("m", kind="milestone", parent="old", condition="dropped")]
+    old, new = bench_rooms(project(items, relations=[Relation("r", "old", "new", "superseded-by"),
+                                                     Relation("r2", "m", "new", "superseded-by")]))["rooms"]
+    assert (old["condition"], old["superseded_by"]) == ("dropped", [{"id": "new", "title": "New epic"}])
+    assert old["plan"][0]["superseded_by"] == [{"id": "new", "title": "New epic"}]
+    assert new["superseded_by"] == []

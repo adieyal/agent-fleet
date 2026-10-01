@@ -1070,6 +1070,11 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 [data-status="dropped"] [data-glyph] { color:#64748b; }
 [data-plan-item][data-status="dropped"] > div { opacity:.6; }
 [data-plan-item][data-status="dropped"] :is(b, button[data-slice]) { text-decoration:line-through; }
+[data-superseded-by] { display:block; color:#94a3b8; }
+[data-superseded-by] button { margin:0; padding:0 4px; font:inherit; }
+[data-dropped] { margin-left:8px; padding:1px 6px; border:1px solid #475569; border-radius:4px; color:#94a3b8; font-weight:normal; }
+[data-epic-card][data-condition="dropped"] { opacity:.65; }
+[data-epic-card][data-condition="dropped"] [data-epic-head] > button { text-decoration:line-through; }
 [data-epic-card] [data-attention-count] svg { width:18px; height:18px; fill:none; stroke:#fbbf24; stroke-width:2; vertical-align:middle; }
 #benchRoute [data-lane] { padding:6px; border-left:4px solid #94a3b8; }
 #benchRoute [data-lane="done"] { border-color:#34d399; text-decoration:line-through; }

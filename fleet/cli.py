@@ -26,7 +26,7 @@ from fleet import transport
 from fleet.modules import workspace as projects
 from fleet.composition import open_attention, open_decisions, open_execution, open_library, open_records, open_store, open_work, open_workspace
 from fleet.projections.project import project_status
-from fleet.modules.work import EvidenceSpecification
+from fleet.modules.work import RELATION_TYPES, EvidenceSpecification
 from fleet.modules.execution import Run
 from fleet.transport import FleetError, Host, HostReport
 from fleet.orchestration import ControllerCommands, orchestrator_prompt
@@ -889,6 +889,9 @@ def print_status_item(item: dict[str, Any], depth: int = 0) -> None:
         print(f"{indent}  Interruptions: {item['interruptions']}")
     next_step = "not recorded" if item["next_step"] is None else item["next_step"]
     print(f"{indent}  Next step: {next_step}")
+    for relation in item["relations"]:
+        other = relation["id"] if relation["title"] is None else f"{relation['title']} ({relation['id']})"
+        print(f"{indent}  {relation['type'].replace('-', ' ').capitalize()}: {other}")
     if item["plan"] is not None:
         print(f"{indent}  Plan: {item['plan'].splitlines()[0]}" + (" …" if "\n" in item["plan"].strip() else ""))
     if item["no_follow_up_yet"] is True:
@@ -975,7 +978,7 @@ def add_work_parsers(commands) -> None:
             parent.add_argument("--root", dest="parent", action="store_const", const=None)
         elif name == "relate":
             action.add_argument("to_item")
-            action.add_argument("--type", default="depends-on")
+            action.add_argument("--type", default="depends-on", choices=RELATION_TYPES)
     criterion = commands.add_parser("criterion", help="work completion criteria").add_subparsers(required=True)
     add = criterion.add_parser("add")
     add.set_defaults(handler=command_work, work_operation="criterion_add")

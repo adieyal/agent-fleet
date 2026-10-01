@@ -107,6 +107,14 @@ function streamProgress({ milestones: { complete, total }, next }) {
   return `<small data-stream-progress>${complete} of ${total} milestones · ${next ? `next ${esc(next.title)}` : 'all complete'}</small>`;
 }
 
+// The work that replaced this item: an epic opens its room; one from another project shows by id.
+function successorLine(list) {
+  if (!list.length) return '';
+  return `<small data-superseded-by>Superseded by ${list.map(s => rooms.some(r => r.id === s.id)
+    ? `<button data-epic="${esc(s.id)}">${esc(s.title)}</button>`
+    : s.title === null ? `<span title="${esc(s.id)}">${esc(s.id.slice(0, 8))} (another project)</span>` : esc(s.title)).join(', ')}</small>`;
+}
+
 function epicCard(r) {
   const { complete, total } = r.milestones;
   const now = r.agents.length
@@ -116,8 +124,9 @@ function epicCard(r) {
     ? `<ul>${r.upcoming.map(m => `<li data-upcoming="${esc(m.id)}">${esc(m.title)} — ${m.next_step === null ? '<i>Next step not recorded</i>' : esc(m.next_step)}</li>`).join('')}</ul>`
     : total ? 'All milestones complete' : 'No milestones recorded';
   const count = r.attention.length;
-  return `<article data-epic-card="${esc(r.id)}" data-depth="${r.depth}" style="--depth:${r.depth}">
-    <div data-epic-head><button data-epic="${esc(r.id)}">${esc(r.title)}</button>${r.parent ? `<small data-parent-epic>in ${esc(r.parent.title)}</small>` : ''}</div>
+  return `<article data-epic-card="${esc(r.id)}" data-condition="${esc(r.condition)}" data-depth="${r.depth}" style="--depth:${r.depth}">
+    <div data-epic-head><button data-epic="${esc(r.id)}">${esc(r.title)}</button>${r.condition === 'dropped' ? '<small data-dropped>Dropped</small>' : ''}${r.parent ? `<small data-parent-epic>in ${esc(r.parent.title)}</small>` : ''}</div>
+    ${successorLine(r.superseded_by)}
     <p data-goal title="${esc(r.goal)}">${esc(r.headline)}</p>
     <p data-milestones>${total ? `<progress max="${total}" value="${complete}"></progress> ${complete} of ${total} milestones` : 'No milestones recorded'}</p>
     ${r.workstreams.length ? `<ul data-workstreams aria-label="Workstreams">${r.workstreams.map(w =>
@@ -156,12 +165,13 @@ function planLine(item, opens) {
   const title = opens ? `<button data-slice="${esc(item.id)}">${esc(item.title)}</button>` : `<b>${esc(item.title)}</b>`;
   return `<li data-plan-item="${esc(item.id)}" data-status="${esc(item.status)}">
     <span data-glyph role="img" aria-label="${esc(STATUS_LABELS[item.status] ?? item.status)}" title="${esc(STATUS_LABELS[item.status] ?? item.status)} · ${esc(item.condition)}">${statuses[item.status]}</span>
-    <div>${title}<p>${esc(item.headline)}</p>${item.running_since ? runningLine(item.running_since) : item.last_run ? ranLine(item.last_run) : ''}<small data-next-step>${item.next_step === null ? 'Next step not recorded' : `Next: ${esc(item.next_step)}`}</small>${
+    <div>${title}<p>${esc(item.headline)}</p>${successorLine(item.superseded_by)}${item.running_since ? runningLine(item.running_since) : item.last_run ? ranLine(item.last_run) : ''}<small data-next-step>${item.next_step === null ? 'Next step not recorded' : `Next: ${esc(item.next_step)}`}</small>${
       item.plan === null ? '' : `<details data-step-plan><summary>Plan</summary><div>${esc(item.plan)}</div></details>`}</div></li>`;
 }
 
 function epicPage(r) {
-  return `<article data-epic-page="${esc(r.id)}"><h2>${esc(r.title)}</h2>
+  return `<article data-epic-page="${esc(r.id)}" data-condition="${esc(r.condition)}"><h2>${esc(r.title)}${r.condition === 'dropped' ? ' <small data-dropped>Dropped</small>' : ''}</h2>
+    ${successorLine(r.superseded_by)}
     <p data-goal>${esc(r.goal)}</p>
     ${r.criteria.length ? `<section data-epic-criteria aria-label="Criteria"><h3>Criteria</h3><ul>${r.criteria.map(c =>
       `<li data-criterion-state="${esc(c.state)}">${esc(c.text)} <small>${esc(c.verification)} · ${esc(c.state)}</small></li>`).join('')}</ul></section>` : ''}

@@ -49,11 +49,16 @@ def last_run(item: dict) -> dict[str, str] | None:
     return None if latest is None else {"start": latest["start"], "end": latest["end"]}
 
 
+def successors(item: dict) -> list[dict]:
+    return [{"id": relation["id"], "title": relation["title"]}
+            for relation in item["relations"] if relation["type"] == "superseded-by"]
+
+
 def line_item(item: dict) -> dict[str, Any]:
     return {"id": item["id"], "title": item["title"], "headline": headline(item["goal"]),
             "condition": item["condition"], "status": status(item), "next_step": item["next_step"],
             "plan": item["plan"], "running_since": running_since(item),
-            "last_run": last_run(item)}
+            "last_run": last_run(item), "superseded_by": successors(item)}
 
 
 def milestone_groups(epic: dict) -> tuple[list[dict], list[tuple[dict, list[dict]]]]:
@@ -104,6 +109,7 @@ def epic_room(epic: dict, parent: dict | None, depth: int) -> dict[str, Any]:
     milestones = direct + [item for _, own in streams for item in own]
     return {
         "id": epic["id"], "title": epic["title"], "depth": depth,
+        "condition": epic["condition"], "superseded_by": successors(epic),
         "parent": None if parent is None else {"id": parent["id"], "title": parent["title"]},
         "goal": epic["goal"], "headline": headline(epic["goal"]),
         "criteria": epic["criteria"], "progress": epic["progress"],

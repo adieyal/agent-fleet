@@ -6,7 +6,7 @@ from typing import Callable
 from uuid import uuid4
 
 from .ports import EvidenceReader, WorkRepository
-from ..domain import Criterion, Relation, WorkItem, required
+from ..domain import RELATION_TYPES, Criterion, Relation, WorkItem, required
 
 
 class Commands:
@@ -98,8 +98,8 @@ class Commands:
 
     def relate(self, from_item: str, to_item: str, *, type: str, actor: str) -> Relation:
         required(actor, "actor")
-        if type != "depends-on":
-            raise ValueError("unknown relation type")
+        if type not in RELATION_TYPES:
+            raise ValueError(f"unknown relation type: use one of {', '.join(RELATION_TYPES)}")
         if from_item == to_item:
             raise ValueError("cannot relate a work item to itself")
         with self.repository.transaction() as repository:

@@ -5,6 +5,8 @@ from datetime import datetime
 
 KINDS = ("epic", "workstream", "milestone", "task")
 CONDITIONS = ("none", "waiting", "ready for review", "blocked", "on hold", "complete", "dropped")
+# from_item depends on to_item; from_item was superseded by to_item (its successor).
+RELATION_TYPES = ("depends-on", "superseded-by")
 
 
 @dataclass(frozen=True)

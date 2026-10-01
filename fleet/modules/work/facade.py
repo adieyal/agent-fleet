@@ -128,6 +128,13 @@ class WorkFacade:
     def relations(self, identity: str) -> list[Relation]:
         return [item for item in self.repository.list("relation") if identity in (item.from_item, item.to_item)]
 
+    def relations_by_item(self) -> dict[str, list[Relation]]:
+        """Every relation grouped by the item it starts from, read once: for views over many items."""
+        grouped: dict[str, list[Relation]] = {}
+        for relation in self.repository.list("relation"):
+            grouped.setdefault(relation.from_item, []).append(relation)
+        return grouped
+
     def set_summary(self, identity: str, *, purpose: str, done: str, doing: str, next: str,
                     authoring_role: str, actor: str, activation: str | None = None,
                     source_run: str | None = None) -> Summary:
