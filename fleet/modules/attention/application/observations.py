@@ -1,5 +1,6 @@
 """Raise and reconcile attention from reachable host observations."""
 
+from decimal import Decimal, InvalidOperation
 import re
 from typing import TYPE_CHECKING, TypedDict
 
@@ -63,34 +64,60 @@ def asking(message: str) -> str:
     return next((sentence for sentence in sentences if sentence.endswith("?")), " ".join(sentences))
 
 
+def occurrence_key(reference: str) -> str:
+    """Match numeric timestamps across JSON integer/float representations, including stored keys."""
+    prefix, separator, timestamp = reference.rpartition("@")
+    if not separator:
+        return reference
+    try:
+        value = Decimal(timestamp)
+    except InvalidOperation:
+        return reference
+    if not value.is_finite():
+        return reference
+    return f"{prefix}@{format(value.normalize(), 'f')}"
+
+
 def ingest_attention(attention: "AttentionFacade", host: HostObservation, *,
-                     owners: set[str] | None = None, raise_items: bool = True) -> bool:
+                     subjects: set[str] | None = None, raise_items: bool = True,
+                     deleted_jobs: set[str] = frozenset()) -> bool:
     if not host["ok"]:
         return False
     source = f"stream:{host['name']}"
     references = set()
+    existing = {occurrence_key(item.source_reference): item for item in attention.list() if item.source == source}
 
     def record(work: WorkObservation, owner_type: str, occurrence: str, kind: str,
                reason: str, summary: str, since: float | None, *, step: int | None = None,
                message: str | None = None) -> None:
-        owner_reference = f"{owner_type}:{host['name']}:{work['id']}"
-        reference = f"{owner_reference}:{occurrence}"
+        subject = f"{owner_type}:{host['name']}:{work['id']}"
+        reference = occurrence_key(f"{subject}:{occurrence}")
+        previous = existing.get(reference)
+        # Keep the original persisted identity so history and resolutions stay attached.
+        if previous is not None:
+            reference = previous.source_reference
         references.add(reference)
-        if not raise_items or (owners is not None and owner_reference not in owners):
+        if not raise_items or (subjects is not None and subject not in subjects):
             return
         context = StreamContext(host["name"], owner_type, work["id"], work["project"],
                                 work.get("project_id"), reason, summary, since, step=step, message=message)
-        attention.raise_item(project=work["project_id"] if work.get("project_id") is not None else work["project"],
-                             kind=kind, owner=owner_reference, source=source, source_reference=reference,
-                             headline=" ".join(summary.split()[:12]), context_reference=owner_reference,
+        project = work["project_id"] if work.get("project_id") is not None else work["project"]
+        # Do not reload policy or change ownership for an occurrence already in the store.
+        owner, owner_reason = ((previous.owner, previous.owner_reason) if previous else
+                               attention.route(project, kind, context))
+        attention.raise_item(project=project,
+                             kind=kind, owner=owner, owner_reason=owner_reason,
+                             subject=subject, source=source, source_reference=reference,
+                             headline=" ".join(summary.split()[:12]), context_reference=subject,
                              stream_context=context, actor="host-stream")
 
     for job in host["jobs"]:
-        if job.get("status") not in ("failed", "blocked", "stalled"):
+        if job.get("status") not in ("failed", "blocked", "stalled", "lost"):
             continue
-        wanted = "running" if job["status"] == "stalled" else job["status"]
+        # A lost job's agent died mid-step: the step still reads running, or failed when the runner noticed.
+        wanted = {"stalled": ("running",), "lost": ("running", "failed")}.get(job["status"], (job["status"],))
         step = next((step for step in job.get("steps", [])
-                     if step.get("status") == wanted and step.get("answered_by") is None), None)
+                     if step.get("status") in wanted and step.get("answered_by") is None), None)
         since = step.get("started_at") if step else job.get("updated_at")
         occurrence = f"{step['index']}@{since}" if step else f"@{since}"
         summary = f"step {step['index'] + 1} {job['status']}: {step['title']}" if step else f"job {job['status']}"
@@ -98,7 +125,7 @@ def ingest_attention(attention: "AttentionFacade", host: HostObservation, *,
         if message:
             summary = f"step {step['index'] + 1} asks: {asking(message)}"
         record(job, "job", f"{job['status']}:{occurrence}", "blocker", f"job status {job['status']}", summary, since,
-               step=step["index"] if step and job["status"] == "blocked" else None, message=message)
+               step=step["index"] if step else None, message=message)
     for session in host["sessions"]:
         activity = session.get("activity") or {}
         if activity.get("kind") != "tool" or activity.get("name") not in WAITING_TOOLS:
@@ -111,4 +138,6 @@ def ingest_attention(attention: "AttentionFacade", host: HostObservation, *,
             summary += f": {activity['summary']}"
         record(session, "session", f"{activity['name']}@{activity.get('ts')}", "decision",
                f"session tool {activity['name']}", summary, activity.get("ts"))
-    return attention.reconcile(source, references, owners=owners, actor="host-stream")
+    present_jobs = {f"job:{host['name']}:{job['id']}" for job in host["jobs"]}
+    return attention.reconcile(source, references, subjects=subjects, actor="host-stream",
+                               present_jobs=present_jobs, deleted_jobs=deleted_jobs)

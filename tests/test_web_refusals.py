@@ -123,7 +123,8 @@ def test_per_request_job_items_from_before_are_folded_or_superseded(deck):
     def legacy(occurrence):
         owner = "job:home:j1"
         item = AttentionItem(id=occurrence, project="restoke", work_item=None, run=None, kind="decision",
-                             owner=owner, source="runtime-input:home", source_reference=f"{owner}:{occurrence}",
+                             owner="user", subject=owner, source="runtime-input:home",
+                             source_reference=f"{owner}:{occurrence}",
                              headline="Claude asks to use Bash", context_reference="git status", state="open",
                              snooze_until=None, resolution_details=None, last_seen=deck.state.attention.clock(),
                              stream_context=StreamContext("home", "job", "j1", "restoke", None,

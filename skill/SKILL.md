@@ -38,9 +38,16 @@ fleet send -H home -p <project> -d "<one line: what this job is doing>" -C <cwd 
 - The store records who sent, answered or retried: `--actor NAME`, by default
   `job:$FLEET_JOB_ID` inside a fleet job and `user` otherwise. `send` prints the
   run, permission and guidance versions it started the agent with.
-- `-p` is the host's label for a registered project and groups jobs in `fleet ls`
-  and the deck. An unlinked label is refused: link it first with
-  `fleet project link PROJECT_ID HOST:LABEL` (or `fleet project add NAME --link HOST:LABEL`).
+- `-p` selects a registered project (ID, prefix or name). Use `fleet project ls`
+  to find it. Fleet derives the job's host label from its registered link; for
+  example, `fleet project add "Agent Fleet" --link home:agent-fleet` lets
+  `fleet send -H home -p "Agent Fleet" ...` use the worker label `agent-fleet`.
+  Missing links are refused with the exact `fleet project link` command to run.
+  Multiple labels on that host must be reduced to one before dispatch. Raw host
+  labels are accepted only in explicit `HOST:LABEL` link commands, never as `-p`.
+  Exact IDs take precedence, then exact names, then unique ID prefixes. Duplicate
+  names or ambiguous prefixes are refused. The same references work in `ls`,
+  `watch`, `mv`, work, attention, guidance, history and project maintenance.
 - `--hold` creates the job without starting it; `fleet start host:id` starts it.
 
 ## Get notified of completion
@@ -62,6 +69,10 @@ hosts, run `fleet notify` under the Monitor tool.
 |---|---|
 | Everything, grouped by project | `fleet ls` (`--by host`, `-p proj`, `-b` brief, `--json`) |
 | One job: steps, todos, workspace (repo, worktree, branch, uncommitted), recent activity | `fleet show host:id` |
+| Store-backed history, including sessions and unlinked runs | `fleet history runs --project PROJECT --since 7d` |
+| Runs serving work or its descendants | `fleet history runs --work-item ID --descendants` |
+| Archived steps, commits, pushes, documents and trace | `fleet run show RUN_ID_PREFIX [--json]` |
+| Database rows and retained file sizes | `fleet store usage [--json]` |
 | Full final message of each step + outbox listing | `fleet result host:id [--step N]` |
 | Fetch files the agent left for you | `fleet pull host:id [dest]` |
 | Send more context mid-job | `fleet push host:id file…` then mention it in the next step |
@@ -73,6 +84,15 @@ Read results with `fleet result` before reporting to the user or dispatching
 dependent work; don't trust a `done` status alone. Status meanings: `running`,
 `queued` (steps pending), `stalled` (runner died mid-step), `failed`, `done`,
 `cancelled`, `blocked`.
+
+History reads the controller store, so it works while workers are offline.
+`history runs` also accepts `--host`, comma-separated `--status`, `--kind job|session`,
+`--unlinked`, `--until DATE`, `--limit N`, and `--json`. Its default limit is 50;
+read the `N of M` footer before claiming a complete list. History statuses are
+`running`, `succeeded`, `failed`, `stopped`, and `unknown outcome`. Date filters
+compare recorded start times; missing starts remain visible without a date filter.
+Terminal jobs retain normalized events on the controller; raw traces remain on
+the worker. `fleet rm` records worker trace removal and preserves retained evidence.
 
 A step that ends `FLEET_STATUS: blocked` holds its job: later steps wait until
 it is answered. `fleet add host:id -s "reply"` on such a job answers that step
@@ -96,6 +116,28 @@ user asks.
 The user watches the same jobs with `fleet watch` and `fleet web` (the
 kitchen dashboard), so keep descriptions and step titles meaningful.
 
+## Attention and project triage
+
+When raising user attention, include `--reason` explaining why the user must
+act. For example, a destructive operation needs the user's decision:
+
+```bash
+fleet attention add "Approve deleting old artifacts" --project <project> --kind decision --owner user \
+  --source agent --source-reference <unique-ref> \
+  --context-reference "outbox/REPORT.md" --reason "Deleting these artifacts is irreversible" --actor codex
+fleet attention delegate <item-id> --actor user --note "Let the project's triage agent inspect this failure"
+fleet attention take <item-id> --actor user
+fleet triage status <project>
+```
+
+Delegating changes ownership and keeps the item open and visible. Take back
+revokes the agent's ability to act on it. Session questions require their
+terminal and cannot be delegated. A confirmed project triage mandate is required
+for automatic triage; merely writing a draft does not grant authority. Existing
+items stay with the user. Inspect status for the pinned mandate version, queue,
+live run, remaining daily budget and delivery error. See CONTEXT.md for retry,
+timeout and untouched-run limits. Triage control commands record Decisions;
+triage never completes work or judges criteria.
 
 ## Test suite
 

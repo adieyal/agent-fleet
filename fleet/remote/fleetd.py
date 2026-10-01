@@ -48,6 +48,10 @@ TMUX_SOCKET = ("fleet" if FLEET_HOME == (Path.home() / ".fleet").resolve() else
 TMUX_COMMAND = ["tmux", "-L", TMUX_SOCKET, "-f", "/dev/null"]
 SUMMARY_LENGTH = 160
 TERMINAL_STATUSES = ("done", "failed", "blocked", "cancelled", "lost")
+# Only these leave ls and the stream after --since-hours; failed and blocked jobs wait for someone.
+AGED_STATUSES = ("done", "cancelled", "lost")
+# `rm` deletes these without --force; others still hold work or a question.
+REMOVABLE_STATUSES = ("done", "failed", "cancelled", "lost")
 STREAM_PROTOCOL_VERSION = 3
 DISPATCH_SCHEMA_VERSION = 4
 USAGE_SCHEMA_VERSION = 1
@@ -399,6 +403,10 @@ def job_preamble(job: JsonObject) -> str:
         "When you make images (screenshots, renders, charts), save them in the outbox and show the important ones "
         "in your step summary and reports with Markdown image syntax, e.g. `![Mock beside the concept](outbox/mock.png)` "
         "in the step summary, or a path relative to the report file. The deck displays them inline.\n"
+        "When raising user attention with fleet attention add --owner user, include --reason saying why "
+        "the user must act. Delegate existing items only within a confirmed project triage mandate; "
+        "fleet attention delegate keeps them open and visible, and fleet attention take revokes agent ownership. "
+        "Triage must not complete work or judge criteria.\n"
         f"{WRITING_GUIDE}"
         "Finish each step with a short plain summary of what you did and anything left open, then a final line "
         "`FLEET_STATUS: done`, `FLEET_STATUS: blocked — <reason>` (you could not do the work, e.g. tools or "
@@ -684,6 +692,103 @@ def refresh_workspace(job_id: str, cwd: str) -> None:
         job["workspace"], job["workspace_reason"] = workspace, reason
 
 
+def checked_git(cwd: str, *arguments: str) -> str:
+    result = git(cwd, *arguments)
+    if result.returncode != 0:
+        raise ValueError(f"git {arguments[0]}: {shorten(result.stderr.strip())}")
+    return result.stdout.strip()
+
+
+def git_branch(cwd: str) -> Optional[str]:
+    result = git(cwd, "symbolic-ref", "--quiet", "--short", "HEAD")
+    if result.returncode == 1:
+        return None  # detached HEAD
+    if result.returncode != 0:
+        raise ValueError(f"git symbolic-ref: {shorten(result.stderr.strip())}")
+    return result.stdout.strip()
+
+
+def git_ancestor(cwd: str, base: str, head: str) -> bool:
+    result = git(cwd, "merge-base", "--is-ancestor", base, head)
+    if result.returncode not in (0, 1):
+        raise ValueError(f"git merge-base: {shorten(result.stderr.strip())}")
+    return result.returncode == 0
+
+
+def begin_step_git(cwd: str) -> JsonObject:
+    """Capture HEAD before the agent starts; retain reflog offsets locally to exclude earlier same-second pushes."""
+    record: JsonObject = {"at": now()}
+    try:
+        record["base"] = checked_git(cwd, "rev-parse", "--verify", "HEAD")
+        record["branch"] = git_branch(cwd)
+        common = Path(os.path.realpath(os.path.join(cwd, checked_git(cwd, "rev-parse", "--git-common-dir"))))
+        logs = common / "logs" / "refs" / "remotes"
+        record["_reflog_offsets"] = {str(path.relative_to(common)): path.stat().st_size
+                                     for path in logs.rglob("*") if path.is_file()}
+    except Exception as error:  # capture must never cost the agent's step
+        record["reason"] = f"step git capture failed: {error}"
+    return record
+
+
+def end_step_git(cwd: str, beginning: JsonObject) -> JsonObject:
+    """Capture base..head and remote-tracking pushes; errors leave the available evidence and a reason."""
+    record = {key: value for key, value in beginning.items() if not key.startswith("_")}
+    record["ended_at"] = now()
+    if "reason" in record:
+        return record
+    try:
+        base = record["base"]
+        head = record["head"] = checked_git(cwd, "rev-parse", "--verify", "HEAD")
+        record["branch_end"] = git_branch(cwd)
+        record["base_is_ancestor"] = git_ancestor(cwd, base, head)
+        record["commit_count"] = int(checked_git(cwd, "rev-list", "--count", f"{base}..{head}"))
+        lines = checked_git(cwd, "log", "--no-show-signature", "--reverse", "--max-count=100",
+                            "--format=%H%x09%at%x09%s", f"{base}..{head}")
+        record["commits"] = [{"sha": sha, "at": int(at), "subject": subject[:72]}
+                             for sha, at, subject in (line.split("\t", 2) for line in lines.splitlines())]
+        record["truncated"] = record["commit_count"] > len(record["commits"])
+        common = Path(os.path.realpath(os.path.join(cwd, checked_git(cwd, "rev-parse", "--git-common-dir"))))
+        pushes = record["pushes"] = []
+        for path in sorted((common / "logs" / "refs" / "remotes").rglob("*")):
+            if not path.is_file():
+                continue
+            offset = beginning["_reflog_offsets"].get(str(path.relative_to(common)), 0)
+            size = path.stat().st_size
+            if size < offset:
+                raise ValueError(f"remote-tracking reflog shortened during step: {path.relative_to(common)}")
+            if size == offset:
+                continue
+            with path.open("rb") as handle:
+                handle.seek(offset)
+                entries = handle.read(size - offset).decode(errors="replace").splitlines()
+            for entry in entries:
+                metadata, message = entry.split("\t", 1)
+                if not message.startswith("update by push"):
+                    continue
+                old, new = metadata.split(" ", 2)[:2]
+                at = int(metadata.rsplit(" ", 2)[1])
+                if not int(record["at"]) <= at <= int(record["ended_at"]):
+                    continue
+                # Check the full range, including commits omitted from the bounded display list.
+                if new == head or (git_ancestor(cwd, new, head) and not git_ancestor(cwd, new, base)):
+                    pushes.append({"ref": path.relative_to(common / "logs").as_posix(),
+                                   "old": old, "new": new, "at": at})
+    except Exception as error:  # capture must never cost the agent's step
+        record["reason"] = f"step git capture failed: {error}"
+    return record
+
+
+def step_git_record(step: JsonObject, job_status: Optional[str] = None) -> JsonObject:
+    """Public git facts; local reflog offsets never enter the stream or controller history."""
+    if "git" not in step:
+        return {"reason": "not recorded: this step has no git capture"}
+    record = {key: value for key, value in step["git"].items() if not key.startswith("_")}
+    if "base" in record and "ended_at" not in record and "reason" not in record and job_status in (
+            "lost", "cancelled", "failed", "done", "blocked"):
+        record["reason"] = "step ended without its runner; end not recorded"
+    return record
+
+
 class WorkspaceWatch:
     """Refreshes a running step's workspace every WORKSPACE_REFRESH_SECONDS, off the runner's own thread."""
 
@@ -725,6 +830,9 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
     raw_path = JOBS_DIRECTORY / job_id / f"raw-{step['index']}.jsonl"
     refusals = StreamRefusals(job, step["index"]) if job["agent"] == "claude" else None
     refresh_workspace(job_id, job["cwd"])
+    step_git = begin_step_git(job["cwd"])
+    with locked_job(job_id) as live_job:
+        live_job["steps"][step["index"]]["git"] = step_git
     with open(raw_path, "a") as raw_file, WorkspaceWatch(job_id, job["cwd"]):
         process = subprocess.Popen(command, cwd=job["cwd"], env=environment, stdin=subprocess.DEVNULL,
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
@@ -766,6 +874,9 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
             mirror.sync()
         exit_code = process.wait()
     refresh_workspace(job_id, job["cwd"])
+    step_git = end_step_git(job["cwd"], step_git)
+    with locked_job(job_id) as live_job:
+        live_job["steps"][step["index"]]["git"] = step_git
     runtime.finish(outcome, exit_code, last_text)
     outcome["exit_code"] = exit_code
     if exit_code < 0 and not result_recorded:
@@ -902,7 +1013,7 @@ def job_summary(job: JsonObject, event_count: int) -> JsonObject:
         "created_at": job["created_at"], "updated_at": job.get("updated_at"),
         "steps": [{**{key: step.get(key) for key in ("index", "title", "status", "started_at", "finished_at", "result",
                                                      "answered_by", "work_item")},
-                   "message": blocked_message(job["id"], step)} for step in job["steps"]],
+                   "message": blocked_message(job["id"], step), "git": step_git_record(step, status)} for step in job["steps"]],
         "todos": job.get("todos", []),
         # Decisions the job's agent recorded here, for the controller to take into its store (see command_decision).
         "decisions": job.get("decisions", []),
@@ -911,9 +1022,7 @@ def job_summary(job: JsonObject, event_count: int) -> JsonObject:
         "session_id": job.get("session_id"),
         "tmux": shlex.join([*TMUX_COMMAND[:3], "attach", "-t", tmux_session(job['id'])]),
         "documents": job_documents(job),
-        "trace": {"path": str(JOBS_DIRECTORY / job["id"] / "events.jsonl"),
-                  "availability": "available" if (JOBS_DIRECTORY / job["id"] / "events.jsonl").is_file()
-                  else "unavailable"},
+        "trace": trace_summary(job["id"]),
     }
 
 
@@ -1086,6 +1195,41 @@ SESSION_EVENTS = 15
 SESSION_TITLE_LENGTH = 80
 SESSION_HEAD_BYTES = 256 * 1024  # read once per transcript for its start time and first prompt
 SESSION_TAIL_BYTES = 1024 * 1024  # most read on first sight, or when a transcript grew by more
+SESSION_RECORDS_DIRECTORY = FLEET_HOME / "sessions"
+REMOVALS_DIRECTORY = FLEET_HOME / "removals"
+
+
+def session_workspace(transcript: "Transcript", status: str) -> Tuple[Optional[JsonObject], Optional[str]]:
+    """First observed base survives stream restarts; the workspace refreshes while work continues."""
+    record = transcript.workspace_record
+    if record is None or (status == "working" and now() - record["observed_at"] >= WORKSPACE_REFRESH_SECONDS):
+        try:
+            if not re.fullmatch(r"[A-Za-z0-9._-]+", transcript.id) or transcript.id in (".", ".."):
+                raise ValueError("invalid session identity")
+            SESSION_RECORDS_DIRECTORY.mkdir(parents=True, exist_ok=True)
+            path = SESSION_RECORDS_DIRECTORY / f"{transcript.id}.json"
+            with open(path.with_suffix(".lock"), "a") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                previous = json.loads(path.read_text()) if path.exists() else None
+                workspace, reason = collect_workspace(transcript.cwd)
+                if previous is None:
+                    base = checked_git(transcript.cwd, "rev-parse", "--verify", "HEAD") if workspace and workspace["head"] else None
+                    base_at = now()
+                    base_reason = (reason or "repository has no commits") if base is None else None
+                else:
+                    base, base_at, base_reason = previous["base"], previous["base_at"], previous["base_reason"]
+                record = {"base": base, "base_at": base_at, "base_reason": base_reason, "workspace": workspace,
+                          "workspace_reason": reason, "observed_at": now()}
+                temporary = path.with_suffix(".tmp")
+                temporary.write_text(json.dumps(record))
+                temporary.replace(path)
+                transcript.workspace_record = record
+        except Exception as error:
+            return None, f"session workspace collection failed: {error}"
+    workspace = record["workspace"]
+    if workspace is not None:
+        workspace = {**workspace, "base": record["base"], "base_at": record["base_at"], "base_reason": record["base_reason"]}
+    return workspace, record["workspace_reason"]
 FLEET_PREAMBLE = "You are running as fleet job "
 COMMAND_NAME = re.compile(r"<command-name>(.*?)</command-name>", re.DOTALL)
 COMMAND_ARGUMENTS = re.compile(r"<command-args>(.*?)</command-args>", re.DOTALL)
@@ -1248,6 +1392,7 @@ class Transcript:
         self.events: Deque[JsonObject] = collections.deque(maxlen=SESSION_EVENTS)
         self.activity: Optional[JsonObject] = None
         self.todos: List[JsonObject] = []
+        self.workspace_record: Optional[JsonObject] = None
 
     def refresh(self, size: int) -> None:
         if size < self.offset:  # rewritten from scratch
@@ -1350,12 +1495,14 @@ class Transcript:
     def summary(self, status: str, updated_at: float) -> JsonObject:
         title = next((self.titles[key] for key in ("custom", "ai", "summary", "prompt") if self.titles.get(key)), None)
         resume = self.runtime.resume_command()
+        workspace, workspace_reason = session_workspace(self, status)
         return {
             "id": self.id, "host": os.uname().nodename, "agent": self.agent, "cwd": self.cwd,
             "project": repository_name(self.cwd) if self.cwd else None,
             "title": shorten(title, SESSION_TITLE_LENGTH) if title else None,
             "status": status, "started_at": self.started_at, "updated_at": updated_at, "model": self.model,
             "todos": self.todos, "activity": self.activity, "events": list(self.events),
+            "workspace": workspace, "workspace_reason": workspace_reason,
             "resume": f"cd {shlex.quote(self.cwd or '.')} && {resume} {self.id}",
         }
 
@@ -1375,12 +1522,13 @@ class SessionTracker:
     read stopped. Fleet jobs' own sessions are left out — the deck shows those as jobs.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, since: Optional[float] = None) -> None:
         self.transcripts: Dict[Path, Transcript] = {}
         self.job_sessions: Dict[Path, Tuple[int, Optional[str]]] = {}
+        self.since = since
 
     def candidates(self) -> Iterator[Tuple[Path, str, os.stat_result]]:
-        horizon = time.time() - SESSION_ACTIVE_SECONDS
+        horizon = max(self.since, time.time() - 30 * 86400) if self.since is not None else time.time() - SESSION_ACTIVE_SECONDS
         # Only top-level transcripts: sub-agents write theirs in a subdirectory of the session.
         for project in scan_directory(CLAUDE_PROJECTS_DIRECTORY):
             for entry in scan_directory(Path(project.path)) if project.is_dir() else []:
@@ -1390,7 +1538,8 @@ class SessionTracker:
                         if stat.st_mtime >= horizon:
                             yield Path(entry.path), "claude", stat
         today = datetime.date.today()
-        for day in (today, today - datetime.timedelta(days=1)):
+        days = min(31, int((time.time() - horizon) / 86400) + 2)
+        for day in (today - datetime.timedelta(days=index) for index in range(days)):
             for entry in scan_directory(CODEX_SESSIONS_DIRECTORY / day.strftime("%Y/%m/%d")):
                 if entry.name.startswith("rollout-") and entry.name.endswith(".jsonl"):
                     with contextlib.suppress(OSError):
@@ -1434,7 +1583,12 @@ class SessionTracker:
             if transcript.hidden or transcript.cwd is None or transcript.id in job_sessions:
                 continue
             active = min(stat.st_mtime, transcript.last_record_at or stat.st_mtime)
-            status = "working" if clock - active < SESSION_WORKING_SECONDS else "idle"
+            if clock - active >= SESSION_ACTIVE_SECONDS:
+                if self.since is None:
+                    continue
+                status = "stopped"
+            else:
+                status = "working" if clock - active < SESSION_WORKING_SECONDS else "idle"
             sessions[transcript.id] = transcript.summary(status, round(active, 3))
         moved = session_projects()
         for identity in sessions.keys() & moved.keys():
@@ -2145,6 +2299,8 @@ def command_grant(arguments: argparse.Namespace) -> None:
             job.setdefault("permission_grants", []).append(grant)
             fresh = True
         else:
+            if (grant['step'], grant['rules']) != (arguments.step, rules):
+                fail('grant key has changed payload')
             fresh = False
     if fresh:
         append_event(arguments.job, {"kind": "job", "status": "queued",
@@ -2240,6 +2396,16 @@ def add_keyed(arguments: argparse.Namespace) -> None:
             write_briefs(arguments.job, job["steps"])
             fresh = True
         else:
+            if added['answers'] != arguments.answers or len(added['steps']) != len(new_steps):
+                fail('add key has changed payload')
+            inherited = (job['steps'][arguments.answers].get('work_item')
+                         if arguments.answers is not None else None)
+            for index, requested in zip(added['steps'], new_steps):
+                expected = make_step(index, requested['prompt'], requested.get('title'),
+                                     requested.get('work_item', inherited))
+                if any(job['steps'][index].get(name) != expected.get(name)
+                       for name in ('prompt', 'title', 'work_item')):
+                    fail('add key has changed payload')
             fresh = False
     if fresh:
         summary = f"{len(added['steps'])} step(s) added" + (
@@ -2260,7 +2426,7 @@ def command_list(arguments: argparse.Namespace) -> None:
     jobs = all_jobs()
     if not arguments.all:
         horizon = now() - arguments.since_hours * 3600
-        jobs = [job for job in jobs if derive_status(job) not in TERMINAL_STATUSES or job.get("updated_at", 0) >= horizon]
+        jobs = [job for job in jobs if derive_status(job) not in AGED_STATUSES or job.get("updated_at", 0) >= horizon]
     emit({"host": os.uname().nodename, "time": now(),
           "jobs": [job_summary(job, arguments.events) for job in jobs]})
 
@@ -2315,6 +2481,7 @@ def command_stream(arguments: argparse.Namespace) -> None:
     pipelines = PipelineTracker()
     last_pipeline_scan = 0.0
     inputs: Dict[str, JsonObject] = {}
+    removals: Dict[Path, int] = {}
     try:
         emit({"type": "hello", "host": os.uname().nodename, "time": now(),
               "protocol_version": STREAM_PROTOCOL_VERSION})
@@ -2339,7 +2506,7 @@ def command_stream(arguments: argparse.Namespace) -> None:
                 except (ValueError, OSError):
                     continue
                 status = derive_status(job)
-                if status in TERMINAL_STATUSES and job.get("updated_at", 0) < now() - horizon_seconds:
+                if status in AGED_STATUSES and job.get("updated_at", 0) < now() - horizon_seconds:
                     ignored[job_id] = job_signature(path.parent, documents=False)
                     continue
                 seen.add(job_id)
@@ -2351,7 +2518,11 @@ def command_stream(arguments: argparse.Namespace) -> None:
             for job_id in set(signatures) - seen:
                 signatures.pop(job_id)
                 runner_states.pop(job_id, None)
-                emit({"type": "removed", "id": job_id})
+                removal = REMOVALS_DIRECTORY / f"{hashlib.sha256(job_id.encode()).hexdigest()}.json"
+                details = json.loads(removal.read_text()) if removal.is_file() else {"reason": "aged" if (JOBS_DIRECTORY / job_id).exists() else "deleted"}
+                emit({"type": "removed", "id": job_id, **details})
+            for message in removal_messages(removals):
+                emit(message)
             if now() - last_session_scan >= arguments.session_interval:
                 last_session_scan = now()
                 current = tracker.scan()
@@ -2359,7 +2530,7 @@ def command_stream(arguments: argparse.Namespace) -> None:
                     if sessions.get(session_id) != session:
                         emit({"type": "session", "session": session})
                 for session_id in set(sessions) - set(current):
-                    emit({"type": "session_removed", "id": session_id})
+                    emit({"type": "session_removed", "id": session_id, "updated_at": sessions[session_id]["updated_at"]})
                 sessions = current
             if now() - last_pipeline_scan >= PIPELINE_SCAN_INTERVAL:
                 last_pipeline_scan = now()
@@ -2376,7 +2547,10 @@ def command_stream(arguments: argparse.Namespace) -> None:
 
 
 def command_sessions(arguments: argparse.Namespace) -> None:
-    sessions = SessionTracker().scan().values()
+    since = parse_timestamp(arguments.since) if getattr(arguments, "since", None) is not None else None
+    if getattr(arguments, "since", None) is not None and since is None:
+        fail("sessions --since requires an ISO timestamp")
+    sessions = SessionTracker(since).scan().values()
     emit({"host": os.uname().nodename, "time": now(),
           "sessions": sorted(sessions, key=lambda session: session["started_at"] or 0)})
 
@@ -2404,6 +2578,31 @@ def command_events(arguments: argparse.Namespace) -> None:
             if derive_status(read_job(arguments.job)) not in ("running", "queued"):
                 return
             time.sleep(0.5)
+
+
+def trace_summary(job_id: str) -> JsonObject:
+    directory = JOBS_DIRECTORY / job_id
+    path = directory / "events.jsonl"
+    try:
+        stat = path.stat() if path.is_file() else None
+    except FileNotFoundError:
+        stat = None
+    return {"path": str(path), "availability": "available" if stat else "unavailable",
+            "size": stat.st_size if stat else None, "mtime": stat.st_mtime_ns if stat else None,
+            "raw": [{"path": str(raw), "availability": "available"} for raw in sorted(directory.glob("raw-*.jsonl"))]}
+
+
+def command_read_trace(arguments: argparse.Namespace) -> None:
+    """Read the complete normalized trace; no caller-supplied filesystem path."""
+    path = job_directory(arguments.job) / "events.jsonl"
+    if path.parent.resolve().parent != JOBS_DIRECTORY.resolve():
+        fail("trace path outside jobs directory")
+    if not path.is_file():
+        emit({"content": None, "reason": "worker events.jsonl is missing"})
+        return
+    if path.is_symlink():
+        fail("trace symlinks are refused")
+    emit({"content": path.read_bytes().decode("utf-8"), "reason": None})
 
 
 def command_wait(arguments: argparse.Namespace) -> None:
@@ -2476,12 +2675,40 @@ def command_move(arguments: argparse.Namespace) -> None:
     emit(job_summary(read_job(arguments.job), 0))
 
 
+def removal_messages(seen: Dict[Path, int]) -> Iterator[JsonObject]:
+    """Replay confirmed removals after reconnect, including manifests published after job disappearance."""
+    for entry in scan_directory(REMOVALS_DIRECTORY):
+        if not entry.name.endswith(".json") or not entry.is_file() or entry.is_symlink():
+            continue
+        path = Path(entry.path)
+        modified = entry.stat().st_mtime_ns
+        if seen.get(path) == modified:
+            continue
+        details = json.loads(path.read_text())
+        seen[path] = modified
+        yield {"type": "removed", **details}
+
+
 def command_remove(arguments: argparse.Namespace) -> None:
     job = read_job(arguments.job)
-    if derive_status(job) in ("running",):
+    status = derive_status(job)
+    if status == "running":
         fail("job is running; cancel it first")
-    shutil.rmtree(JOBS_DIRECTORY / arguments.job)
-    emit({"removed": arguments.job})
+    if status not in REMOVABLE_STATUSES and not arguments.force:
+        fail(f"job is {status}, not finished; removing it deletes its outbox and results for good "
+             f"(rerun with --force to remove it anyway)")
+    directory = JOBS_DIRECTORY / arguments.job
+    outbox = directory / "outbox"
+    outbox_files = sum(1 for path in outbox.rglob("*") if path.is_file()) if outbox.is_dir() else 0
+    results = len(list(directory.glob("result-*.md")))
+    shutil.rmtree(directory)
+    details = {"id": arguments.job, "reason": "removed by fleet rm", "removed_at": now()}
+    REMOVALS_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    path = REMOVALS_DIRECTORY / f"{hashlib.sha256(arguments.job.encode()).hexdigest()}.json"
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(details))
+    temporary.replace(path)
+    emit({"removed": arguments.job, "status": status, "outbox_files": outbox_files, "results": results, **details})
 
 
 def command_configure(arguments: argparse.Namespace) -> None:
@@ -2574,6 +2801,7 @@ def main() -> None:
     stream.set_defaults(handler=command_stream)
 
     sessions = commands.add_parser("sessions", help="live interactive Claude Code / Codex CLI sessions")
+    sessions.add_argument("--since", help="catch up transcripts modified since an ISO timestamp, capped at 30 days")
     sessions.set_defaults(handler=command_sessions)
 
     show = commands.add_parser("show")
@@ -2586,6 +2814,10 @@ def main() -> None:
     events.add_argument("--lines", type=int, default=40)
     events.add_argument("--follow", "-f", action="store_true")
     events.set_defaults(handler=command_events)
+
+    read_trace = commands.add_parser("read-trace", help="complete normalized events for retention")
+    read_trace.add_argument("job")
+    read_trace.set_defaults(handler=command_read_trace)
 
     wait = commands.add_parser("wait")
     wait.add_argument("job")
@@ -2621,6 +2853,7 @@ def main() -> None:
 
     remove = commands.add_parser("rm")
     remove.add_argument("job")
+    remove.add_argument("--force", action="store_true")
     remove.set_defaults(handler=command_remove)
 
     configure = commands.add_parser("configure")

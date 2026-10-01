@@ -24,3 +24,36 @@ def test_attention_commands_end_to_end(tmp_path):
     assert run("snooze", item["id"], "--until", "2099-01-01T00:00:00+00:00", "--actor", "user")["state"] == "snoozed"
     assert run("resolve", item["id"], "--details", "Handled", "--actor", "user")["state"] == "resolved"
     assert run("list", "--state", "open") == []
+
+
+def test_attention_owner_commands_end_to_end(tmp_path):
+    env = {**os.environ, "FLEET_CONFIG": str(tmp_path / "config.json"), "FLEET_STORE": str(tmp_path / "store.db")}
+    (tmp_path / 'config.json').write_text(json.dumps({'projects': {'p-00000001': {'name': 'p1'}}}))
+    open_store(tmp_path / "store.db")
+
+    def run(*args, code=0):
+        result = subprocess.run([sys.executable, "-m", "fleet.cli", "attention", *args],
+                                env=env, capture_output=True, text=True, timeout=30)
+        assert result.returncode == code, result.stderr
+        return json.loads(result.stdout) if code == 0 else result.stderr
+
+    item = run("add", "Push the release branch?", "--project", "p1", "--kind", "decision", "--owner", "user",
+               "--reason", "pushing needs the user's approval", "--source", "manual", "--source-reference", "q1",
+               "--context-reference", "doc:1", "--actor", "claude")
+    assert (item["owner"], item["owner_reason"], item["subject"]) == ("user", "pushing needs the user's approval", None)
+    assert "invalid choice: 'job:carbon:ab12'" in run(
+        "add", "Step failed", "--project", "p1", "--kind", "blocker", "--owner", "job:carbon:ab12", "--source",
+        "manual", "--source-reference", "q2", "--context-reference", "doc:2", "--actor", "user", code=2)
+
+    delegated = run("delegate", item["id"], "--actor", "user", "--note", "decide under the charter")
+    assert (delegated["owner"], delegated["owner_reason"], delegated["state"]) == (
+        "agent", "decide under the charter", "open")
+    assert [entry["id"] for entry in run("list", "--owner", "agent")] == [item["id"]]
+    assert run("list", "--owner", "user") == []
+    assert "escalation needs a reason" in run("escalate", item["id"], "--actor", "triage", "--reason", " ", code=2)
+    escalated = run("escalate", item["id"], "--actor", "triage", "--reason", "outside the charter")
+    assert (escalated["owner"], escalated["owner_reason"], escalated["owner_actor"]) == (
+        "user", "outside the charter", "triage")
+    assert "is yours, not the agent" in run("take", item["id"], "--actor", "user", code=2)
+    run("delegate", item["id"], "--actor", "user")
+    assert run("take", item["id"], "--actor", "user", "--reason", "I'll do it")["owner"] == "user"

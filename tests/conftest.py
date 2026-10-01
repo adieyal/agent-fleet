@@ -21,6 +21,7 @@ import pytest
 from fleet.composition import open_store
 from fleet.web.fixture import FixtureLibrary, FixtureState
 from fleet.web.server import make_handler
+from fleet.transport import FleetError
 
 FIXTURE = Path(__file__).parent / "fixtures" / "restoke.json"
 
@@ -123,6 +124,18 @@ def isolated_session_paths(tmp_path_factory: pytest.TempPathFactory, empty_store
 
 @pytest.fixture(autouse=True)
 def isolated_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, empty_store: Path) -> None:
+    # Reconnecting test decks must never read jobs from the user's configured workers.
+    monkeypatch.setattr("fleet.transport.catch_up_jobs", lambda host: [])
+    monkeypatch.setattr("fleet.transport.catch_up_sessions", lambda host, since: [])
+    # Trace retention tests explicitly restore this helper against their temporary worker.
+    monkeypatch.setattr("fleet.transport.keep_run_trace", lambda execution, host, job: None)
+    monkeypatch.setattr("fleet.remote.fleetd.SESSION_RECORDS_DIRECTORY", tmp_path / "fleet-home" / "sessions")
+    monkeypatch.setattr("fleet.remote.fleetd.REMOVALS_DIRECTORY", tmp_path / "fleet-home" / "removals")
+
+    def no_worker_documents(*args):
+        raise FleetError("test worker document transport is not configured")
+
+    monkeypatch.setattr("fleet.web.server.FleetState.fetch_raw", no_worker_documents)
     path = tmp_path / "fleet.db"
     shutil.copyfile(empty_store, path)
     monkeypatch.setenv("FLEET_STORE", str(path))

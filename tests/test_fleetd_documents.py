@@ -16,10 +16,12 @@ def test_trace_availability_survives_pruning(job):
     trace = directory / "events.jsonl"
     trace.write_text('{"kind":"text","summary":"working"}\n')
     signature = fleetd.job_signature(directory)
-    assert fleetd.job_summary(record, 1)["trace"] == {"path": str(trace), "availability": "available"}
+    assert fleetd.job_summary(record, 1)["trace"] == {"path": str(trace), "availability": "available",
+        "size": trace.stat().st_size, "mtime": trace.stat().st_mtime_ns, "raw": []}
     trace.unlink()
     assert fleetd.job_signature(directory) != signature
-    assert fleetd.job_summary(record, 1)["trace"] == {"path": str(trace), "availability": "unavailable"}
+    assert fleetd.job_summary(record, 1)["trace"] == {"path": str(trace), "availability": "unavailable",
+        "size": None, "mtime": None, "raw": []}
 
 
 @pytest.fixture
@@ -31,7 +33,8 @@ def job(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[dict, Path]:
     monkeypatch.setattr(fleetd, "JOBS_DIRECTORY", home / "jobs")
     monkeypatch.setattr(fleetd, "CONFIG_PATH", home / "config.json")
     record = {"id": "job1", "project": "project", "agent": "codex", "description": "work",
-              "cwd": str(tmp_path / "work"), "steps": [], "written_documents": []}
+              "cwd": str(tmp_path / "work"), "steps": [fleetd.make_step(0, "Write notes", "Write notes")],
+              "written_documents": []}
     (directory / "job.json").write_text(json.dumps(record))
     return record, directory
 

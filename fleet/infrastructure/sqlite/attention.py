@@ -21,10 +21,13 @@ def decode(row) -> AttentionItem:
                                 for question in json.loads(values["questions"]))
     if values["stream_context"] is not None:
         values["stream_context"] = StreamContext(**json.loads(values["stream_context"]))
-    for name in ("last_seen", "snooze_until", "acknowledged_at", "resolved_at"):
+    for name in TIMES:
         if values[name] is not None:
             values[name] = datetime.fromisoformat(values[name])
     return AttentionItem(**values)
+
+
+TIMES = ("last_seen", "snooze_until", "acknowledged_at", "resolved_at", "owner_at")
 
 
 class AttentionRepository(Repository):
@@ -51,6 +54,16 @@ class AttentionRepository(Repository):
                               datetime.fromisoformat(row["until"]) if row["until"] is not None else None)
 
     def save(self, item: AttentionItem, previous: str | None, actor: str) -> None:
+        self.write(item)
+        self.unit.record_change(f"attention:{item.id}", previous if previous is not None else "", item.state, actor)
+
+    def save_owner(self, item: AttentionItem, previous: str, actor: str) -> None:
+        """Save an item handed to a new owner; its history row says from whom, to whom and why."""
+        self.write(item)
+        self.unit.record_change(f"attention:{item.id}:owner", json.dumps({"owner": previous}),
+                                json.dumps({"owner": item.owner, "reason": item.owner_reason}), actor)
+
+    def write(self, item: AttentionItem) -> None:
         if self.unit is None:
             raise RuntimeError("attention writes require a transaction")
         values = asdict(item)
@@ -59,7 +72,7 @@ class AttentionRepository(Repository):
         values["questions"] = json.dumps(values["questions"])
         if values["stream_context"] is not None:
             values["stream_context"] = json.dumps(values["stream_context"])
-        for name in ("last_seen", "snooze_until", "acknowledged_at", "resolved_at"):
+        for name in TIMES:
             if values[name] is not None:
                 values[name] = values[name].isoformat()
         columns = ", ".join(values)
@@ -68,4 +81,3 @@ class AttentionRepository(Repository):
         self.unit.connection.execute(
             f"INSERT INTO attention_item ({columns}) VALUES ({parameters}) ON CONFLICT(id) DO UPDATE SET {updates}",
             tuple(values.values()))
-        self.unit.record_change(f"attention:{item.id}", previous if previous is not None else "", item.state, actor)

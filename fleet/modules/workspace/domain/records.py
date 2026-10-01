@@ -47,3 +47,4 @@ class MergeResult:
     merged: str
     freed: int | None
     floor: int | None
+    counts: dict[str, int] = field(default_factory=dict)

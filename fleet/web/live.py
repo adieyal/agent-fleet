@@ -75,6 +75,9 @@ class LiveWorkspace:
         if project_id not in self.known_projects():
             raise LookupError(f"no project '{project_id}'")
         result = self.workspace.link_in(project_id, hosts, label)
+        for host in hosts:
+            self.execution.assign_label(host, label, project_id, actor="web-user")
+            self.documents.assign_label(host, label, project_id)
         self.registry = self.workspace.registry()
         self.bump()
         return asdict(result)

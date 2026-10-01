@@ -27,11 +27,13 @@ class DecisionRepository(Repository):
     def __init__(self, store: Store, attention: Callable[[UnitOfWork], AttentionFacade],
                  work: Callable[[UnitOfWork], WorkFacade],
                  execution: Callable[[UnitOfWork], ExecutionFacade], *,
-                 records: Callable[[UnitOfWork], RecordsFacade]) -> None:
-        super().__init__(store)
+                 records: Callable[[UnitOfWork], RecordsFacade], unit: UnitOfWork | None = None) -> None:
+        super().__init__(store, unit)
         self.attention_factory, self.work_factory = attention, work
         self.execution_factory = execution
         self.records_factory = records
+        if unit is not None:
+            self.bind(unit)
 
     def bind(self, unit: UnitOfWork) -> None:
         self.attention = self.attention_factory(unit)

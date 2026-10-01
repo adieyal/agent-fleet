@@ -1,4 +1,4 @@
-// Running view (V4): the header's "N working" chip opens a list of every running, stalled, blocked and queued job on
+// Running view (V4): the header's "N working" chip opens a list of every running, stalled, blocked, failed, lost and queued job on
 // every host, grouped by project and then by the work item its current step serves (epic > milestone). Each row says
 // where the job runs, how far it is, which branch or worktree it works in, and opens the job's panel. Jobs with no work
 // item are listed apart, with the `fleet run link` command that gives them one. Read from the whole state document, so
@@ -9,8 +9,8 @@ import { hostLook } from './looks.js';
 import { workOf } from './model.js';
 import { idChip, select } from './panel.js';
 
-const LISTED = ['running', 'stalled', 'blocked', 'queued'];
-const GLYPH = { running: '▶', stalled: '◍', blocked: '⚑', queued: '○' };
+const LISTED = ['running', 'stalled', 'blocked', 'failed', 'lost', 'queued'];
+const GLYPH = { running: '▶', stalled: '◍', blocked: '⚑', failed: '✕', lost: '?', queued: '○' };
 const UNLINKED = 'Not linked to work';
 
 const panel = document.getElementById('runPanel');
@@ -18,11 +18,12 @@ const stats = document.getElementById('stats');
 let doc = null, opener = null;
 
 // ------------------------------------------------------------------ what each row stands for
-// The step the job is on: the one running, else the blocked one waiting for an answer, else the next pending one.
+// The step the job is on: the one running, else the blocked one waiting for an answer, else the failed one, else the
+// next pending one.
 function currentStep(j) {
   const steps = j.steps || [];
   return steps.find(s => s.status === 'running') || steps.find(s => s.status === 'blocked' && !s.answered_by)
-    || steps.find(s => s.status === 'pending') || null;
+    || steps.find(s => s.status === 'failed') || steps.find(s => s.status === 'pending') || null;
 }
 // The work item the current step serves (root first): the step's own item while it runs, else the job's.
 const workChain = j => j.work?.step?.chain?.length ? j.work.step.chain : j.work?.chain || [];
@@ -103,7 +104,7 @@ function rowHtml(r, unlinked) {
 const crumbs = path => path.map(n => `<span title="${esc(n.kind)}">${esc(n.title)}</span>`).join('<i aria-hidden="true"> > </i>');
 function bodyHtml() {
   const rows = listed();
-  if (!rows.length) return '<p class="run-empty">Nothing is running, blocked or queued.</p>';
+  if (!rows.length) return '<p class="run-empty">Nothing is running, blocked, failed or queued.</p>';
   const { projects, unlinked } = grouped(rows);
   const count = s => rows.filter(r => r.job.status === s).length;
   const counts = LISTED.filter(count).map(s => `${count(s)} ${s}`).join(' · ');

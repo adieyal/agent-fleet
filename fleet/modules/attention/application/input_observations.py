@@ -9,7 +9,7 @@ permissions rather than in words.
 from collections import Counter
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 from uuid import uuid4
 
 from .ports import AttentionRepository
@@ -17,6 +17,8 @@ from ..domain import AttentionItem, Question, QuestionOption, Refusal, StreamCon
 
 if TYPE_CHECKING:
     from .observations import HostObservation
+
+Router = Callable[..., tuple[str, str | None]]
 
 
 
@@ -101,14 +103,14 @@ def batch_context(refusals: tuple[Refusal, ...]) -> str:
 
 def hook_covers_question(items: list[AttentionItem], host: str, session: str, since: float | None) -> bool:
     """Prefer the terminal hook's question; a cleared hook also covers its older transcript activity."""
-    return any(item.source == f"runtime-input:{host}" and item.owner == f"session:{host}:{session}"
+    return any(item.source == f"runtime-input:{host}" and item.subject == f"session:{host}:{session}"
                and item.stream_context is not None and item.stream_context.source == "Claude question"
                and (item.state != "resolved" or (since is not None and since <= item.last_seen.timestamp()))
                for item in items)
 
 
 def ingest_input(repository: AttentionRepository, host: str, observation: InputObservation,
-                 project_id: str | None) -> None:
+                 project_id: str | None, *, router: Router | None = None) -> None:
     if observation.schema_version != 1:
         raise ValueError("unsupported input observation schema version")
     if observation.runtime != "claude":
@@ -125,7 +127,7 @@ def ingest_input(repository: AttentionRepository, host: str, observation: InputO
     if observation.owner_type == "job":
         if observation.step_index is None:
             raise ValueError("a job's input observation requires its step")
-        ingest_refusal(repository, host, observation, project_id)
+        ingest_refusal(repository, host, observation, project_id, router=router)
         return
     owner = f"{observation.owner_type}:{host}:{owner_id}"
     source = f"runtime-input:{host}"
@@ -138,7 +140,7 @@ def ingest_input(repository: AttentionRepository, host: str, observation: InputO
         if observation.reason == "question":
             for duplicate in transaction.list():
                 context = duplicate.stream_context
-                if (duplicate.source == f"stream:{host}" and duplicate.owner == owner
+                if (duplicate.source == f"stream:{host}" and duplicate.subject == owner
                         and duplicate.state != "resolved" and context is not None
                         and context.source == "session tool AskUserQuestion"
                         and (observation.kind == "input_requested" or context.since is None
@@ -158,9 +160,13 @@ def ingest_input(repository: AttentionRepository, host: str, observation: InputO
         context = StreamContext(host, observation.owner_type, owner_id, observation.project, project_id,
                                 "Claude question" if observation.reason == "question" else "Claude permission request",
                                 headline, observation.observed_at, cwd=observation.cwd)
+        project = project_id if project_id is not None else observation.project
+        routed_owner, owner_reason = (('user', None) if previous is not None or router is None else
+                                      router(project, 'decision', context))
         item = previous if previous is not None else AttentionItem(
-            id=str(uuid4()), project=project_id if project_id is not None else observation.project,
-            work_item=None, run=None, kind="decision", owner=owner, source=source,
+            id=str(uuid4()), project=project,
+            work_item=None, run=None, kind="decision", owner=routed_owner,
+            owner_reason=owner_reason, owner_at=seen, owner_actor="runtime-hook", subject=owner, source=source,
             source_reference=reference, headline=headline,
             context_reference=detail, state="open", snooze_until=None,
             resolution_details=None, last_seen=seen, stream_context=context, questions=questions)
@@ -170,7 +176,7 @@ def ingest_input(repository: AttentionRepository, host: str, observation: InputO
 
 
 def ingest_refusal(repository: AttentionRepository, host: str, observation: InputObservation,
-                   project_id: str | None) -> None:
+                   project_id: str | None, *, router: Router | None = None) -> None:
     """Gather a job's refused request into its step's batch, folding in any per-request item left from before."""
     step = observation.step_index
     assert step is not None and observation.job_id is not None
@@ -209,9 +215,13 @@ def ingest_refusal(repository: AttentionRepository, host: str, observation: Inpu
                                 min(refusal.observed_at for refusal in refusals), step=step)
         last_seen = datetime.fromtimestamp(max(refusal.observed_at for refusal in refusals), timezone.utc)
         if batch is None:
+            project = project_id if project_id is not None else observation.project
+            routed_owner, owner_reason = (('user', None) if router is None else
+                                          router(project, 'decision', context, refusals=refusals))
             batch = AttentionItem(
-                id=str(uuid4()), project=project_id if project_id is not None else observation.project,
-                work_item=None, run=None, kind="decision", owner=owner, source=source,
+                id=str(uuid4()), project=project,
+                work_item=None, run=None, kind="decision", owner=routed_owner,
+                owner_reason=owner_reason, owner_at=last_seen, owner_actor="runtime-hook", subject=owner, source=source,
                 source_reference=f"{owner}:step:{step}", headline=headline,
                 context_reference=batch_context(refusals), state="open", snooze_until=None,
                 resolution_details=None, last_seen=last_seen, stream_context=context, refusals=refusals)

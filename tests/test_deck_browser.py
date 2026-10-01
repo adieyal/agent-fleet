@@ -32,7 +32,7 @@ window.advanceClock = seconds => { offset += seconds * 1000; };
 window.resetClock = () => { offset = %d * 1000 - realNow(); };
 """
 FINISHED = {"done", "cancelled"}
-BLOCKED = {"failed", "stalled"}
+BLOCKED = {"failed", "lost", "stalled"}
 ASKING = "home:8e1f0c42-2b7d-4a55-9c1e-7f3a2d6b9e10"     # idle two minutes, with a decision waiting
 REVIEWING = "worker:019a7c3e-55d1-7b20-a8f4-3c9e0d1b2a67"  # idle about eighteen minutes
 BACKGROUND = {"invoice-parser"}                            # the fixture's one room in the background
@@ -1832,10 +1832,13 @@ def test_the_running_view_lists_live_jobs_by_project_and_work(changed_deck: Deck
     page.evaluate("doc => fleetDeck.apply(doc)", doc)
     chip, panel = page.locator("#workingOpen"), page.locator("#runPanel")
     expect(chip).to_have_text("4 working")
+    # done counts the finished job that left the deck; failed has a chip of its own
+    expect(page.locator("#stats .chip", has_text="done")).to_have_text("1 done")
+    expect(page.locator("#failedJobs")).to_have_text("1 failed")
     chip.click()
     expect(panel).to_be_visible()
     expect(chip).to_have_attribute("aria-expanded", "true")
-    expect(panel.locator(".run-sum")).to_have_text("4 running · 1 blocked · 1 queued")
+    expect(panel.locator(".run-sum")).to_have_text("4 running · 1 blocked · 1 failed · 1 queued")
     # restoke's linked jobs under their work path; a task sits under its parent's path and names itself on the row
     restoke = panel.locator('.run-proj-g[data-project="restoke"]')
     expect(restoke.locator("h4")).to_have_text("restoke")
@@ -1860,17 +1863,18 @@ def test_the_running_view_lists_live_jobs_by_project_and_work(changed_deck: Deck
     expect(unknown).to_have_attribute("title", "workspace unknown: not a git repository")
     expect(panel.locator('[data-key="worker:c90e11"] .run-ws')).to_have_attribute(
         "title", "workspace unknown: not reported by this worker")
-    # Unlinked jobs are described neutrally; the command remains available for the dispatching agent.
+    # the unlinked ones apart, saying what they need and how to give it; failed jobs are listed, finished ones not
     unlinked = panel.locator("[data-unlinked]")
     expect(unlinked.locator("h4")).to_have_text("Not linked to work")
     expect(unlinked.locator(".run-need")).to_have_text("Jobs without a linked work item. The dispatching agent can link them with fleet run link.")
-    expect(unlinked.locator(".run-row")).to_have_count(3)
-    for key, status in {"home:e1b5c8": "blocked", "worker:f20a6d": "running", "worker:0a9e3b": "queued"}.items():
+    expect(unlinked.locator(".run-row")).to_have_count(4)
+    for key, status in {"home:e1b5c8": "blocked", "worker:f20a6d": "running", "worker:0a9e3b": "queued",
+                        "worker:3c71d5": "failed"}.items():
         expect(unlinked.locator(f'.run-row[data-key="{key}"]')).to_have_attribute("data-status", status)
     expect(unlinked.locator('[data-key="worker:0a9e3b"] .run-m')).to_contain_text("step 1/2")
     expect(unlinked.locator('[data-key="worker:f20a6d"] .run-link')).to_have_attribute(
         "data-copy-id", "fleet run link worker f20a6d <work-item>")
-    expect(panel.locator('[data-key="worker:d4f7a2"], [data-key="worker:3c71d5"]')).to_have_count(0)
+    expect(panel.locator('[data-key="worker:d4f7a2"]')).to_have_count(0)
     shoot(request, page, "running-view")
 
     # live: a state update re-renders in place and keeps the scroll
@@ -1879,9 +1883,14 @@ def test_the_running_view_lists_live_jobs_by_project_and_work(changed_deck: Deck
     assert top > 0, "the list should scroll at this height"
     finished = json.loads(json.dumps(doc))
     next(job for host in finished["hosts"] for job in host["jobs"] if job["id"] == "c90e11")["status"] = "done"
+    next(job for host in finished["hosts"] for job in host["jobs"] if job["id"] == "3c71d5")["status"] = "lost"
     page.evaluate("doc => fleetDeck.apply(doc)", finished)
     expect(panel.locator('[data-key="worker:c90e11"]')).to_have_count(0)
-    expect(panel.locator(".run-sum")).to_have_text("3 running · 1 blocked · 1 queued")
+    expect(panel.locator(".run-sum")).to_have_text("3 running · 1 blocked · 1 lost · 1 queued")
+    expect(panel.locator('.run-row[data-key="worker:3c71d5"]')).to_have_attribute("data-status", "lost")
+    expect(page.locator("#failedJobs")).to_have_text("1 failed")   # a lost job counts as failed
+    assert "worker:3c71d5" not in {agent["key"] for agent in page.evaluate("fleetDeck.agents()")}   # its lantern carries it
+    expect(page.locator("#stats .chip", has_text="done")).to_have_text("2 done")
     assert panel.evaluate("el => el.scrollTop") == top
     panel.evaluate("el => { el.style.maxHeight = ''; }")
 
@@ -1907,7 +1916,7 @@ def test_the_running_view_lists_live_jobs_by_project_and_work(changed_deck: Deck
             job["status"] = "done"
     page.evaluate("doc => fleetDeck.apply(doc)", finished)
     chip.click()
-    expect(panel.locator(".run-empty")).to_have_text("Nothing is running, blocked or queued.")
+    expect(panel.locator(".run-empty")).to_have_text("Nothing is running, blocked, failed or queued.")
     page.keyboard.press("Escape")
 
     page.evaluate("doc => fleetDeck.apply(doc)", doc)
@@ -2353,4 +2362,32 @@ def test_p8_help_keeps_unsaved_guidance(changed_deck: Deck, deck_state, monkeypa
     page.keyboard.press('Escape')
     page.keyboard.press('Escape')
     page.locator('#viewToggle [data-view="deck"]').click()
+    assert changed_deck.errors == []
+
+
+def test_previous_and_next_step_through_open_attention_items(changed_deck: Deck, base_url: str) -> None:
+    from fleet.projections.attention import attention_display
+    page = changed_deck.page
+    with urlopen(base_url + "/api/state", timeout=5) as response:
+        document = json.load(response)
+    model = next(row for row in document["attention"] if row["project"] == "restoke")
+    document["attention"] = [row for row in document["attention"] if row["state"] != "resolved"] + [
+        {**model, "id": f"step{index}", "summary": f"Question {index}", "state": "open",
+         "last_seen": 1890000000 + index, "kind": "decision"} for index in range(3)]
+    document["attention_display"] = attention_display(document["attention"], document["building"], document["projects"])
+    page.evaluate("doc => fleetDeck.apply(doc)", document)
+    # each decision's detail, as the server would answer it
+    page.route("**/api/decision?**", lambda route: route.fulfill(json={
+        "question": "Which way?", "context": "", "proposal": None, "options": [], "state": "open"}))
+    total = len(document["attention"])
+    page.locator('.lantern[data-room="restoke"]').dispatch_event("click")
+    page.locator('#attnPanel .attn-item[data-id="step2"] [data-context]').first.click()   # the newest
+    expect(page.locator("#rdTitle")).to_have_text("Question 2")
+    expect(page.locator("#rdPos")).to_have_text(f"1 / {total}")
+    expect(page.locator("#rdPrev")).to_be_disabled()
+    page.locator("#rdNext").click()
+    expect(page.locator("#rdTitle")).to_have_text("Question 1")
+    expect(page.locator("#rdPos")).to_have_text(f"2 / {total}")
+    page.keyboard.press("ArrowLeft")
+    expect(page.locator("#rdTitle")).to_have_text("Question 2")
     assert changed_deck.errors == []

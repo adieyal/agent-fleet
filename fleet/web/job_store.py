@@ -29,7 +29,7 @@ UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
 MARKDOWN_SUFFIXES = (".md", ".markdown", ".mdx")
 READ_LIMIT = 2_000_000
 JOB_FIELDS = ("id", "project", "description", "agent", "model", "cwd", "status", "created_at", "updated_at")
-STEP_FIELDS = ("index", "title", "status", "started_at", "finished_at")
+STEP_FIELDS = ("index", "title", "status", "started_at", "finished_at", "git")
 DOCUMENT_FIELDS = ("id", "kind", "name", "step", "path", "size", "mtime")
 
 
@@ -49,10 +49,77 @@ def safe_name(text: str) -> str:
 class ProjectDocuments:
     def __init__(self, root: Path | None = None) -> None:
         self.root = root if root is not None else fleet_home() / "projects"
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
 
     def project_directory(self, project_id: str) -> Path:
+        if project_id.startswith("_labels/"):
+            parts = project_id.split("/")
+            if len(parts) != 3 or any(part != safe_name(part) for part in parts[1:]):
+                raise ValueError("invalid label document scope")
+            directory = self.root.joinpath(*parts)
+            redirect = directory / "project.json"
+            if redirect.is_file():
+                return self.root / safe_name(json.loads(redirect.read_text())["project"])
+            return directory
         return self.root / safe_name(project_id)
+
+    @staticmethod
+    def label_scope(host: str, label: str) -> str:
+        return f"_labels/{safe_name(host)}/{safe_name(label)}"
+
+    def assign_label(self, host: str, label: str, project_id: str) -> int:
+        """Move retained label jobs and redirect pending document copies to their registered project."""
+        scope = self.label_scope(host, label)
+        source = self.project_directory(scope)
+        target = self.project_directory(project_id)
+        if source == target or not source.exists():
+            return 0
+        with self._writing_directory(source):
+            if self.project_directory(scope) == target:
+                return 0
+            with self.writing(project_id):
+                jobs = source / "jobs"
+                directories = list(jobs.iterdir()) if jobs.is_dir() else []
+                (target / "jobs").mkdir(exist_ok=True)
+                for directory in directories:
+                    destination = target / "jobs" / directory.name
+                    if destination.exists():
+                        self._merge_job(directory, destination, project_id)
+                        continue
+                    summary = self._summary(directory)
+                    if summary is not None:
+                        summary["project_id"] = project_id
+                        self._write(directory / "job.json", json.dumps(summary, indent=1))
+                    directory.rename(target / "jobs" / directory.name)
+                self._write(source / "project.json", json.dumps({"project": project_id}))
+                return len(directories)
+
+    def _merge_job(self, source: Path, target: Path, project_id: str) -> None:
+        """A keeper may have copied into the project between registry linking and this move. Keep both copies."""
+        previous = self._summary(source)
+        current = self._summary(target)
+        if previous is None or current is None:
+            raise ValueError(f"cannot merge retained job with missing summary: {source.name}")
+        moved = {}
+        for path in source.iterdir():
+            name = path.name
+            if (target / name).exists():
+                name = next(f"unregistered-{n}-{path.name}" for n in range(1, 10_000)
+                            if not (target / f"unregistered-{n}-{path.name}").exists())
+            path.rename(target / name)
+            moved[path.name] = name
+        for entry in previous["documents"].values():
+            if entry.get("file"):
+                entry["file"] = moved[entry["file"]]
+        documents = dict(current["documents"])
+        for identity, entry in previous["documents"].items():
+            existing = documents.get(identity)
+            if existing is None or (entry.get("copied") and (
+                    not existing.get("copied") or entry["copied"][0] > existing["copied"][0])):
+                documents[identity] = entry
+        summary = previous if previous.get("updated_at", 0) > current.get("updated_at", 0) else current
+        self._write(target / "job.json", json.dumps({**summary, "documents": documents, "project_id": project_id}, indent=1))
+        source.rmdir()
 
     def job_directory(self, project_id: str, host: str, job_id: str) -> Path:
         return self.project_directory(project_id) / "jobs" / safe_name(f"{host}-{job_id}")
@@ -60,6 +127,16 @@ class ProjectDocuments:
     @contextlib.contextmanager
     def writing(self, project_id: str) -> Iterator[None]:
         directory = self.project_directory(project_id)
+        with self._writing_directory(directory):
+            # A CLI process may have linked this label while a keeper was waiting for its lock.
+            if self.project_directory(project_id) != directory:
+                with self.writing(project_id):
+                    yield
+            else:
+                yield
+
+    @contextlib.contextmanager
+    def _writing_directory(self, directory: Path) -> Iterator[None]:
         directory.mkdir(parents=True, exist_ok=True)
         with self.lock, open(directory / ".lock", "a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
@@ -87,6 +164,7 @@ class ProjectDocuments:
         """Record the job's summary and document index; return the listed documents whose copy is missing or stale."""
         directory = self.job_directory(project_id, host, job["id"])
         with self.writing(project_id):
+            directory = self.job_directory(project_id, host, job["id"])
             directory.mkdir(parents=True, exist_ok=True)
             previous = self._summary(directory) or {}
             documents = copy.deepcopy(previous.get("documents", {}))
@@ -98,7 +176,10 @@ class ProjectDocuments:
                 entry.update({key: listed.get(key) for key in DOCUMENT_FIELDS})
                 if entry.get("copied") != [listed.get("mtime"), listed.get("size")]:
                     stale.append(listed)
-            summary = {**{key: job.get(key) for key in JOB_FIELDS}, "host": host, "project_id": project_id,
+            project_directory = self.project_directory(project_id)
+            registered = len(project_directory.relative_to(self.root).parts) == 1
+            summary = {**{key: job.get(key) for key in JOB_FIELDS}, "host": host,
+                       "project_id": project_directory.name if registered else None,
                        "steps": [{key: step.get(key) for key in STEP_FIELDS} for step in job.get("steps", [])],
                        "documents": documents}
             if summary != previous:
@@ -109,6 +190,7 @@ class ProjectDocuments:
              truncated: bool = False) -> None:
         directory = self.job_directory(project_id, host, job_id)
         with self.writing(project_id):
+            directory = self.job_directory(project_id, host, job_id)
             summary = self._summary(directory)
             if summary is None or document["id"] not in summary["documents"]:
                 return
@@ -126,6 +208,7 @@ class ProjectDocuments:
         """Say why a document has no copy yet; an earlier copy, if any, stays readable."""
         directory = self.job_directory(project_id, host, job_id)
         with self.writing(project_id):
+            directory = self.job_directory(project_id, host, job_id)
             summary = self._summary(directory)
             if summary is not None and document_id in summary["documents"]:
                 summary["documents"][document_id]["error"] = error
@@ -136,7 +219,7 @@ class ProjectDocuments:
     def projects(self) -> list[str]:
         if not self.root.is_dir():
             return []
-        return sorted(path.name for path in self.root.iterdir() if path.is_dir() and not path.is_symlink())
+        return sorted(path.name for path in self.root.iterdir() if path.name != "_labels" and path.is_dir() and not path.is_symlink())
 
     def jobs(self, project_id: str) -> list[dict[str, Any]]:
         """Every stored job of the project, newest first, each with its documents and whether each has a copy."""
@@ -154,6 +237,22 @@ class ProjectDocuments:
             found.append({**{key: value for key, value in summary.items() if key != "documents"},
                           "key": directory.name, "documents": documents})
         return sorted(found, key=lambda job: job.get("created_at") or 0, reverse=True)
+
+    def run_documents(self, run: dict) -> list[dict]:
+        scopes = {self.label_scope(run["host"], run.get("label") or "")}
+        if run.get("project"):
+            scopes.add(run["project"])
+        documents = []
+        seen = set()
+        for scope in sorted(scopes):
+            for job in self.jobs(scope):
+                if job["id"] == run["remote_job_id"] and job["host"] == run["host"]:
+                    for document in job["documents"]:
+                        key = (str(self.project_directory(scope)), job["key"], document["id"])
+                        if key not in seen:
+                            documents.append({**document, "scope": scope, "job_key": job["key"]})
+                            seen.add(key)
+        return documents
 
     def text(self, project_id: str, job_key: str, document_id: str) -> str | None:
         """A stored document's Markdown as the host served it, or None when there is no copy."""
@@ -237,8 +336,10 @@ class DocumentKeeper:
     A read that fails is recorded on the document and retried the next time the job is listed.
     """
 
-    def __init__(self, store: ProjectDocuments, fetch: Callable[[str, str, str], dict[str, Any]]) -> None:
+    def __init__(self, store: ProjectDocuments, fetch: Callable[[str, str, str], dict[str, Any]],
+                 keep_trace: Callable[[str, dict], None] | None = None) -> None:
         self.store, self.fetch = store, fetch
+        self.keep_trace = keep_trace
         self.pending: dict[tuple[str, str], tuple[str, dict[str, Any]]] = {}
         self.wake = threading.Condition()
         self.busy = False
@@ -272,6 +373,8 @@ class DocumentKeeper:
                 self.store.keep(project_id, host, job["id"], document, read["content"], bool(read.get("truncated")))
             except (FleetError, KeyError, OSError) as error:
                 self.store.failed(project_id, host, job["id"], document["id"], str(error) or type(error).__name__)
+        if self.keep_trace is not None and job.get("trace"):
+            self.keep_trace(host, job)
 
     def settle(self, timeout: float) -> bool:
         """Wait until nothing is pending (tests and shutdown); true when settled."""

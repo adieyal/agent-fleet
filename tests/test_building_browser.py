@@ -666,13 +666,22 @@ def test_a_matching_repository_is_offered_and_a_new_project_stays_possible(page:
     assert {"host": "worker", "label": "fleet-docs"} not in restoke["links"]
 
 
-def test_merging_from_a_floor_keeps_the_older_project_and_frees_the_floor(page: Page, linking_url: str) -> None:
+def test_merging_from_a_floor_keeps_the_older_project_and_frees_the_floor(page: Page, linking_url: str, request) -> None:
     open_building(page, linking_url)
     page.locator('.plate[data-floor="4"] [data-merge]').click()
     dialog = page.locator(".merge")
     dialog.locator('[data-merge-with="p-1c0ce5a2"]').click()
     expect(dialog).to_contain_text("Invoice analysis is older, so it stays")
     dialog.locator('[data-merge-keep="p-1c0ce5a2"]').click()
+    expect(dialog).to_contain_text("Permanently delete")
+    expect(dialog).to_contain_text("This cannot be undone")
+    assert "p-00001c02" in {project["id"] for project in state(linking_url)["projects"]}
+    shots = request.config.getoption("--shots")
+    if shots:
+        from pathlib import Path
+        Path(shots).mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(Path(shots) / "2-safe-merge-confirm.png"))
+    dialog.locator('[data-confirm-merge]').click()
     expect(page.locator('.plate[data-floor="4"]')).to_have_attribute("data-mode", "to-let")
     expect(page.locator("#toast")).to_contain_text("Floor 4 is free")
     document = state(linking_url)

@@ -46,13 +46,15 @@ def test_host_rm_prints_what_it_removed_and_refuses_unknown_hosts(capsys):
 
 
 def test_library_rm_prints_and_refuses_unknown(capsys, tmp_path):
+    project = composition.open_workspace().edit_registry(lambda registry: registry.create("notes"))
     run(capsys, "library", "add", "notes", str(tmp_path))
     out, _ = run(capsys, "library", "rm", "notes")
-    assert f"removed library notes ({tmp_path})" in out and "files" in out
-    assert "no library 'notes'" in fails(capsys, "library", "rm", "notes")
+    assert f"removed library {project.id} ({tmp_path})" in out and "files" in out
+    assert f"no library '{project.id}'" in fails(capsys, "library", "rm", "notes")
 
 
 def test_project_repo_add_and_rm_print_the_change(capsys, project_id):
+    composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, "fake", "worker-p"))
     out, _ = run(capsys, "project", "repo", "add", project_id, "https://github.com/a/b")
     assert f"added repository https://github.com/a/b to {project_id}" in out
     out, _ = run(capsys, "project", "repo", "rm", project_id, "https://github.com/a/b")
@@ -60,6 +62,7 @@ def test_project_repo_add_and_rm_print_the_change(capsys, project_id):
 
 
 def test_project_management_prints_that_it_is_permanent_and_wraps_git_errors(capsys, tmp_path, project_id):
+    composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, "fake", "worker-p"))
     error = fails(capsys, "project", "management", project_id, str(tmp_path / "nonrepo"))
     assert "is not a Git working tree root" in error and "fatal:" not in error.split("(")[0]
     repo = tmp_path / "management"
@@ -84,16 +87,18 @@ def test_unknown_project_names_the_real_list_command(capsys):
 def test_send_to_an_unlinked_label_names_the_link_remedy(monkeypatch, capsys):
     monkeypatch.setattr(cli.transport, "host_by_name", lambda name: SimpleNamespace(name=name))
     error = fails(capsys, "send", "-H", "demo", "-p", "newrepo", "-d", "Fix", "-C", "/tmp", "-s", "Fix")
-    assert "fleet project link" in error and "demo:newrepo" in error
+    assert "fleet project ls" in error and "fleet project add NAME --link HOST:LABEL" in error
 
 
 def test_condition_lists_its_values(capsys, project_id):
+    composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, "fake", "worker-p"))
     item = composition.open_work().add(project=project_id, title="T", goal="g", actor="user")
     error = fails(capsys, "work", "set", item.id, "--condition", "paused", "--actor", "user")
     assert "'on hold'" in error and "'ready for review'" in error
 
 
 def test_a_new_work_kind_is_announced(capsys, project_id):
+    composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, "fake", "worker-p"))
     out, err = run(capsys, "work", "add", "T", "--project", project_id, "--goal", "g", "--kind", "spike",
                    "--actor", "user")
     assert json.loads(out)["kind"] == "spike"
@@ -104,6 +109,7 @@ def test_a_new_work_kind_is_announced(capsys, project_id):
 
 
 def test_attention_kind_is_a_choice_and_until_gives_an_example(capsys, project_id):
+    composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, "fake", "worker-p"))
     error = fails(capsys, "attention", "add", "H", "--project", project_id, "--kind", "bogus", "--owner", "user",
                   "--source", "s", "--source-reference", "r", "--context-reference", "c", "--actor", "a")
     assert "decision" in error and "blocker" in error
@@ -131,6 +137,7 @@ def test_missing_store_names_the_remedy(monkeypatch, tmp_path, capsys):
 
 
 def test_guidance_edit_prompts_on_a_terminal(monkeypatch, capsys, project_id, tmp_path):
+    composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, "fake", "worker-p"))
     terminal = io.StringIO("# Constitution\n\nBody.\n")
     terminal.isatty = lambda: True
     monkeypatch.setattr("sys.stdin", terminal)
@@ -145,6 +152,7 @@ def test_send_hold_help_says_how_to_start(capsys):
 
 
 def test_start_starts_a_held_run(monkeypatch, capsys, project_id):
+    composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, "fake", "worker-p"))
     calls = []
 
     def call(host, arguments, **kwargs):
@@ -167,6 +175,7 @@ def test_start_starts_a_held_run(monkeypatch, capsys, project_id):
 
 
 def test_resend_prints_text_without_json(monkeypatch, capsys, project_id):
+    composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, "fake", "worker-p"))
     def call(host, arguments, **kwargs):
         run = composition.open_execution().runs()[-1]
         return {"id": run.remote_job_id, "run_id": run.id, "schema_version": 4,

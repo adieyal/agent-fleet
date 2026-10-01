@@ -71,6 +71,17 @@ jobs. Add `"project_labels": {"restoke-analytics": "Bang bang!"}` to
 `~/.config/fleet/config.json` (or the file selected by `FLEET_CONFIG`), then
 restart `fleet web`.
 
+Every CLI project selector accepts a registered project (ID, prefix or name).
+Exact IDs resolve first, then exact unique names, then unique ID prefixes.
+`fleet project ls` lists registered projects; an unknown name or raw host label
+is refused with registration instructions. Register a project and host link with
+`fleet project add "Agent Fleet" --link home:agent-fleet`, then send with
+`fleet send -H home -p "Agent Fleet" ...`. Fleet derives `agent-fleet` for the
+worker. Missing links are refused with a runnable `fleet project link` command;
+multiple labels on one host must be reduced to one before dispatch. `ls` and
+`watch` match all of the project's registered host labels. Project creation
+accepts a new name; explicit `HOST:LABEL` link commands establish host labels.
+
 Projects have stable IDs in the persistent store. Host labels are linked explicitly;
 matching repository URLs only suggest links in `fleet project ls`. The deck's
 `/api/state` reports a null `project_id` when a job or session's label is unlinked.
@@ -227,6 +238,11 @@ Use the front desk and lanterns, or these commands, to manage attention:
 ```bash
 fleet attention add "Review the guide" --project PROJECT_ID --work-item WORK_ID --kind decision --owner user --source manual --source-reference guide-review --context-reference README.md --actor user
 fleet attention list --project PROJECT_ID
+fleet attention delegate ATTENTION_ID --actor user --note "retry once"   # stays open, listed as the agent's
+fleet attention list --owner agent                  # items an agent must act on; --owner user: yours
+fleet attention escalate ATTENTION_ID --actor triage --reason "needs a push to GitHub"   # agent to user
+fleet attention delegate ATTENTION_ID --actor user
+fleet attention take ATTENTION_ID --actor user      # back to you; the agent may no longer act on it
 fleet attention ack ATTENTION_ID --actor user
 fleet attention snooze ATTENTION_ID --until 2099-01-01T09:00:00+00:00 --actor user
 fleet attention resolve ATTENTION_ID --details "Review handled separately" --actor user
@@ -234,7 +250,9 @@ fleet attention add "May we publish?" --project PROJECT_ID --work-item WORK_ID -
 fleet answer ATTENTION_ID "Yes, publish the guide" --next-step "Publish"
 ```
 
-Use the second attention ID for the answer. Answering in the CLI or reader records
+An item's `owner` is who must act on it (`agent` or `user`), and its `subject` is the
+job, session or run it is about. Each hand-over keeps who made it and why
+(`owner_actor`, `owner_reason`) and leaves a history row. Use the second attention ID for the answer. Answering in the CLI or reader records
 a decision and resolves the item. For a blocked job step, `fleet answer` instead
 adds the reply as the job's next step on its host and resolves the item, as
 `fleet add host:id -s "reply"` does. Live-session answers have separately tracked
@@ -257,12 +275,13 @@ fleet run resolve-unknown RUN_ID
 ```
 
 These commands start real agents on your configured host. Choose its runtime,
-working directory and permission deliberately. `send --project` is the host label
-(`demo` here), while `--work-item` links the run to persistent work.
+working directory and permission deliberately. `send --project` accepts a registered project ID, unique prefix or unique name
+(`Workspace demo` here). Fleet derives the host label `demo` from its registered link;
+`--work-item` links the run to persistent work.
 
 ```bash
 fleet dispatch WORK_ID "Review the guide" --host workspace-demo --runtime codex --cwd WORKING_DIRECTORY --permission workspace-write
-fleet send --host workspace-demo --project demo --work-item WORK_ID --description "Review guide" --agent codex --cwd WORKING_DIRECTORY --permission workspace-write --step "Review the guide"
+fleet send --host workspace-demo --project "Workspace demo" --work-item WORK_ID --description "Review guide" --agent codex --cwd WORKING_DIRECTORY --permission workspace-write --step "Review the guide"
 ```
 
 For orchestration, first record a complete mandate. From this checkout's
@@ -301,6 +320,49 @@ raises attention for the user. There is no automatic scheduling. See
 [management records](docs/design/records-authoring.md),
 [activation commands](docs/design/authority-commands.md), the [design](docs/design/)
 and [ADRs](docs/adr/) for the detailed contracts.
+
+## Read run history
+
+Jobs and interactive sessions are recorded as runs, including work with no linked
+work item. These commands read the controller's store and work while a host is
+offline:
+
+```sh
+fleet history runs --project agent-fleet --since 7d
+fleet history runs --work-item WORK_ITEM_ID --descendants --status failed,stopped
+fleet history runs --host carbon --kind session --unlinked --limit 100 --json
+fleet run show RUN_ID_PREFIX
+fleet run show RUN_ID_PREFIX --json
+fleet store usage --json
+```
+
+Project filters accept a registered name or ID. Work filters include steps that
+served that item; `--descendants` includes its children recursively. Run statuses
+are `running`, `succeeded`, `failed`, `stopped`, and `unknown outcome`. The default
+limit is 50 and the footer states how many runs matched. `--since` accepts an age
+such as `7d`, `12h` or `30m`, or an ISO date/time; `--until` accepts an ISO date/time.
+Both compare the run's start inclusively. A date means midnight UTC; runs whose
+start was not recorded are excluded by date filters and still appear without them.
+
+Run details show the action, work and project, workspace, retained step git
+evidence, documents and trace availability. The document keeper copies complete
+normalized `events.jsonl` files for terminal jobs into `~/.fleet/traces/`.
+Raw `raw-*.jsonl` files stay on the worker. `fleet rm` keeps the run record and
+retained copies, and records when it removed worker traces. Missing copies and
+older runs explicitly say why trace evidence is unavailable. Failed copies retry
+when the job is reported again. Nothing in these commands automatically prunes
+run records or retained files.
+
+Offline hosts retain stale jobs and sessions, including across a deck restart.
+Hello starts catch-up and the first complete heartbeat confirms which entries
+remain. Quiet interactive sessions stop after 20 minutes and reopen under the
+same run ID when their transcript moves again. Their first observed git base is
+kept on the worker in `~/.fleet/sessions/<id>.json`.
+
+The read API exposes `GET /api/history/runs` with the same filters using
+`work_item`, `descendants=true`, and `unlinked=true`, and `GET /api/runs/<id>` for
+details. Lists include `runs`, `total`, `limit`, and `empty_reason`. Details include
+`run`, `action`, `steps`, `documents`, `kept_documents`, and `trace`.
 
 ## Read the work
 
