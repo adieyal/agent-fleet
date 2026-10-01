@@ -58,7 +58,9 @@ class WorkspaceFacade:
         linked = self.registry().project_for(host, project)
         shuttered = self.shuttered_snapshot()
         if project in shuttered or (linked is not None and linked.id in shuttered):
-            raise ValueError(f"project '{project}' is shuttered")
+            identity = project if project in shuttered else linked.id
+            raise ValueError(f"project '{project}' is shuttered (in the deck's storehouse), so no work can start in "
+                             f"it; restore it with: fleet project restore {identity}, or from the deck")
 
     def focus_of(self, item: ProjectReference) -> str:
         return self.application.focus_of(item)

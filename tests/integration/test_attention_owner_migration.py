@@ -1,10 +1,11 @@
+import json
 import sqlite3
 from contextlib import closing
 
 from fleet.composition import open_attention, open_store
 from fleet.infrastructure.sqlite.migrations import MIGRATIONS
 
-OWNER_SPLIT = 15  # the migration that splits attention_item.owner into subject and owner
+OWNER_SPLIT = 17  # the migration that splits attention_item.owner into subject and owner
 
 
 def old_store(path, owners):
@@ -33,3 +34,29 @@ def test_the_split_moves_job_session_and_run_references_to_subject_and_leaves_ev
     assert [(items[f"i{n}"].owner, items[f"i{n}"].subject) for n in range(len(owners))] == [
         ("user", "job:carbon:ab12"), ("user", "session:home:s1"), ("user", "run:r9"), ("user", None)]
     assert all((item.owner_reason, item.owner_actor, item.owner_at) == (None, None, None) for item in items.values())
+
+
+def test_version_16_upgrade_preserves_p2_observations_and_p3_history(tmp_path):
+    path = tmp_path / "store.db"
+    old_store(path, ["job:carbon:ab12"])
+    run = {"id": "r1", "status": "running"}
+    observation = {"last_observed": "2026-10-01T09:00:00+00:00", "usage": {"tokens": 42}}
+    with closing(sqlite3.connect(path)) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 16
+        connection.execute("INSERT INTO execution_action (id, record) VALUES ('a1', '{}')")
+        connection.execute("INSERT INTO execution_run (id, action, host, remote_job_id, record) "
+                           "VALUES (?, 'a1', 'carbon', 'job1', ?)", ("r1", json.dumps(run)))
+        connection.execute("INSERT INTO execution_run_observation (run, record) VALUES (?, ?)",
+                           ("r1", json.dumps(observation)))
+        connection.execute('INSERT INTO state_history (subject, "from", "to", actor, time, job) '
+                           "VALUES ('execution:run:r1', 'pending', 'running', 'codex', 'now', 'job1')")
+        connection.commit()
+    store = open_store(path)
+    assert store.schema_version() == OWNER_SPLIT == 17
+    with closing(sqlite3.connect(path)) as connection:
+        assert json.loads(connection.execute("SELECT record FROM execution_run WHERE id='r1'").fetchone()[0]) == run
+        assert json.loads(connection.execute("SELECT record FROM execution_run_observation WHERE run='r1'").fetchone()[0]) == observation
+        assert connection.execute("SELECT job FROM state_history WHERE subject='execution:run:r1'").fetchone()[0] == "job1"
+        assert connection.execute("SELECT count(*) FROM triage_scheduler").fetchone()[0] == 0
+        assert connection.execute("SELECT owner, subject FROM attention_item").fetchone() == ("user", "job:carbon:ab12")
+    assert open_store(path).schema_version() == 17

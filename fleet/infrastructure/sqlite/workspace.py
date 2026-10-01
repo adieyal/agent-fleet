@@ -39,12 +39,49 @@ class WorkspaceRepository(Repository):
         with super().transaction() as repository:
             unit = repository.unit
             before = unit.connection.execute("SELECT record FROM workspace_state WHERE id = 1").fetchone()[0]
-            state = WorkspaceState(decode_workspace(json.loads(before)))
+            state = WorkspaceState(decode_workspace(json.loads(before)),
+                                   lambda keep, other: repository.rehome_records(keep, other, actor))
             yield state
             after = json.dumps(workspace_config(state.snapshot()), sort_keys=True)
             if json.loads(before) != json.loads(after):
                 unit.connection.execute("UPDATE workspace_state SET record = ? WHERE id = 1", (after,))
                 unit.record_change("workspace", before, after, actor)
+
+    def rehome_records(self, keep: str, other: str, actor: str) -> dict[str, int]:
+        """Move ownership in the identity transaction; linked runs/decisions stay immutable."""
+        unit = self.unit
+        connection = unit.connection
+        work_ids = {row['id'] for row in connection.execute(
+            "SELECT id FROM work_item WHERE json_extract(record, '$.project') = ?", (other,))}
+        attention_ids = {row['id'] for row in connection.execute(
+            'SELECT id FROM attention_item WHERE project = ?', (other,))}
+        counts = dict(work_items=0, attention=0, runs=0, decisions=0)
+        counts['runs'] = connection.execute("""SELECT count(*) FROM execution_run
+            WHERE action IN (SELECT id FROM execution_action
+                             WHERE json_extract(record, '$.project') = ?
+                             OR json_extract(record, '$.work_item') IN
+                                (SELECT id FROM work_item WHERE json_extract(record, '$.project') = ?))""",
+            (other, other)).fetchone()[0]
+        counts['decisions'] = sum(
+            bool(work_ids.intersection(record['affected_work_items'])) or record.get('attention_item') in attention_ids
+            for record in (json.loads(row['record'])
+                           for row in connection.execute('SELECT record FROM decisions_decision')))
+        for table in ('work_item', 'execution_action'):
+            for row in connection.execute(
+                    f"SELECT id, record FROM {table} WHERE json_extract(record, '$.project') = ?", (other,)).fetchall():
+                before = row['record']
+                after = json.dumps({**json.loads(before), 'project': keep}, sort_keys=True)
+                connection.execute(f'UPDATE {table} SET record = ? WHERE id = ?', (after, row['id']))
+                unit.record_change(f'{table}:{row["id"]}', before, after, actor)
+                if table == 'work_item':
+                    counts['work_items'] += 1
+        for row in connection.execute('SELECT * FROM attention_item WHERE project = ?', (other,)).fetchall():
+            before = dict(row)
+            connection.execute('UPDATE attention_item SET project = ? WHERE id = ?', (keep, row['id']))
+            unit.record_change('attention:' + row['id'], json.dumps(before),
+                               json.dumps({**before, 'project': keep}), actor)
+            counts['attention'] += 1
+        return counts
 
     def initialize(self, config_path: Path, workspace_path: Path, initial: dict | None = None) -> None:
         with super().transaction() as repository:

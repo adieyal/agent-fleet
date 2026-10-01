@@ -515,7 +515,9 @@ ui.addEventListener('click', async ev => {
   const mergeWith = t.closest('[data-merge-with]');
   if (mergeWith) { merging.other = mergeWith.dataset.mergeWith; renderUi(); return; }
   const keep = t.closest('[data-merge-keep]');
-  if (keep) { await merge(keep, keep.dataset.mergeKeep, [merging.project, merging.other].find(id => id !== keep.dataset.mergeKeep)); return; }
+  if (keep) { merging.keep = keep.dataset.mergeKeep; renderUi(); return; }
+  const confirmMerge = t.closest('[data-confirm-merge]');
+  if (confirmMerge) { await merge(confirmMerge, merging.keep, [merging.project, merging.other].find(id => id !== merging.keep)); return; }
   const b = t.closest('[data-move-in]');
   if (!b) return;
   const row = b.closest('.visitor');
@@ -659,7 +661,11 @@ function mergeHtml(m) {
   if (!a) return '';
   const place = id => { const f = floors.find(x => x.projectId === id); return f ? `floor ${f.floor}` : id in (doc.building?.shuttered || {}) ? 'in the storehouse' : 'no floor'; };
   let body;
-  if (!b) {
+  if (m.keep && b) {
+    const kept = projects.get(m.keep), gone = m.keep === a.id ? b : a;
+    body = `<p>Permanently delete ${esc(gone.name)} (${esc(gone.id)}) and move its work items, attention, runs, decisions, hosts and repositories into ${esc(kept.name)} (${esc(kept.id)}). ${floors.some(f => f.projectId === gone.id) ? `${place(gone.id)} is freed.` : 'It holds no floor.'} This cannot be undone.</p>
+      <div class="acts"><button data-confirm-merge>Confirm permanent merge</button></div>`;
+  } else if (!b) {
     const others = [...projects.values()].filter(p => p.id !== a.id).sort((x, y) => x.name.localeCompare(y.name));
     body = `<p>Which project is the same work?</p>${others.length ? `<ul>${others.map(p => `<li><button data-merge-with="${esc(p.id)}">${
       esc(p.name)} <span class="fn">(${place(p.id)})</span></button></li>`).join('')}</ul>` : '<p class="none">No other projects</p>'}`;
@@ -667,7 +673,7 @@ function mergeHtml(m) {
     const [older, newer] = a.created_at <= b.created_at ? [a, b] : [b, a];
     body = `<p>${esc(older.name)} is older, so it stays; ${esc(newer.name)}’s hosts and repositories join it${
       floors.some(f => f.projectId === newer.id) ? ` and ${place(newer.id)} is freed` : ''}.</p>
-      <div class="acts"><button data-merge-keep="${esc(older.id)}">Merge</button></div>`;
+      <div class="acts"><button data-merge-keep="${esc(older.id)}">Review merge</button></div>`;
   } else {
     body = `<p>Which one should stay? The other’s hosts and repositories join it, and its floor is freed.</p>
       <ul>${[a, b].map(p => `<li><button data-merge-keep="${esc(p.id)}">Keep ${esc(p.name)} <span class="fn">(${place(p.id)})</span></button></li>`).join('')}</ul>`;

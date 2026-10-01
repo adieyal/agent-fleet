@@ -100,7 +100,8 @@ class WorkspaceApplication:
         with self.repository.transaction(self.actor) as state:
             state.registry.merge(keep, other)
             freed = state.choices.forget_project(other)
-            return MergeResult(keep, other, freed, state.choices.floors.get(keep))
+            counts = state.rehome_records(keep, other)
+            return MergeResult(keep, other, freed, state.choices.floors.get(keep), counts)
 
     def shutter(self, project_id: str) -> Placement:
         with self.repository.transaction(self.actor) as state:

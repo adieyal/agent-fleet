@@ -98,15 +98,47 @@ export function closePanel() {
 }
 // The linked work item's ancestry, root first; epics and milestones open the project's bench overlay there.
 function workCrumbs(work) {
-  if (!work) return '';
-  let epic = '';
-  const parts = work.chain.map(node => {
-    if (node.kind === 'epic') epic = node.id;
-    const target = node.kind === 'epic' ? `data-work-epic="${esc(epic)}"`
-      : node.kind === 'milestone' ? `data-work-epic="${esc(epic)}" data-work-milestone="${esc(node.id)}"` : '';
+  if (!work?.chain.length) return '';
+  const parts = work.chain.map((node, i) => {
+    const target = workTarget(work.chain.slice(0, i + 1));
     return target ? `<button ${target} title="Open ${esc(node.kind)}">${esc(node.title)}</button>` : `<span>${esc(node.title)}</span>`;
   });
   return `<nav class="work-crumbs" aria-label="Work item" data-work-project="${esc(work.project)}">${parts.join('<i aria-hidden="true"> > </i>')}</nav>`;
+}
+// The bench target of a chain's last node: an epic, or a milestone within its nearest epic; '' for anything else.
+function workTarget(chain) {
+  const node = chain.at(-1), epic = chain.findLast(n => n.kind === 'epic')?.id ?? '';
+  return node.kind === 'epic' ? `data-work-epic="${esc(epic)}"`
+    : node.kind === 'milestone' ? `data-work-epic="${esc(epic)}" data-work-milestone="${esc(node.id)}"` : '';
+}
+// Visibility V2: where the job runs, as fleetd last saw it: repo · worktree · branch @ head, and its uncommitted
+// paths. The full path is in the title and one click from the clipboard; an old fleetd reports nothing, so say so.
+const COPY_ICON = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5V3a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.5 3v5A1.5 1.5 0 0 0 4 9.5h.5"/></svg>';
+const BRANCH_ICON = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="4.5" cy="3.5" r="1.6"/><circle cx="4.5" cy="12.5" r="1.6"/><circle cx="11.5" cy="5.5" r="1.6"/><path d="M4.5 5.1v5.8M11.5 7.1c0 2.4-2 3-7 3.8"/></svg>';
+const baseName = path => path.replace(/\/+$/, '').split('/').pop();
+const copyPath = path => `<button class="wt-copy" data-copy-id="${esc(path)}" title="Copy ${esc(path)}" aria-label="Copy path ${esc(path)}">${COPY_ICON}</button>`;
+function workspaceChip(j) {
+  const w = j.workspace;
+  if (!w) {
+    const reason = j.workspace_reason ?? ('workspace' in j ? 'no reason reported' : 'not reported by this worker');
+    return `<span class="wt-chip unknown" data-workspace="unknown"${j.cwd ? ` title="${esc(j.cwd)}"` : ''}>workspace unknown · ${esc(reason)}${j.cwd ? copyPath(j.cwd) : ''}</span>`;
+  }
+  const where = [baseName(w.repository), ...(w.linked_worktree ? [baseName(w.toplevel)] : []), w.detached ? 'detached' : w.branch];
+  const title = w.linked_worktree ? `${w.toplevel}\nworktree of ${w.repository}` : w.toplevel;
+  const state = [w.head ? `@ ${esc(w.head)}` : '', w.dirty ? `<span class="wt-dirty">+${w.dirty} uncommitted</span>` : ''].filter(Boolean);
+  return `<span class="wt-chip" data-workspace title="${esc(title)}">${BRANCH_ICON}<span class="wt-where">${where.map(part => `<span>${esc(part)}</span>`).join(' · ')}</span>${
+    state.length ? ` <span class="wt-state">${state.join(' ')}</span>` : ''}${copyPath(w.toplevel)}</span>`;
+}
+// The work item a step serves, when it is not the job's own: its title opens it on the bench like the crumbs do.
+function stepWork(j, s) {
+  if (!s.work_item || s.work_item === j.work?.chain.at(-1)?.id) return '';
+  const chain = (j.work?.steps || []).find(served => served.index === s.index)?.chain;
+  if (!chain) return `<span class="w" data-step-work>for item ${idChip(s.work_item)} <small class="muted">not in this deck's plan</small></span>`;
+  const node = chain.at(-1), target = workTarget(chain);
+  const path = chain.map(n => n.title).join(' > ');
+  return `<span class="w" data-step-work>for ${target
+    ? `<button ${target} title="Open ${esc(node.kind)}: ${esc(path)}">${esc(trunc(node.title, 60))}</button>`
+    : `<span title="${esc(path)}">${esc(trunc(node.title, 60))}</span>`}</span>`;
 }
 export function renderPanel() {
   // mid-scroll, updates wait until the scroll settles rather than rewriting content under it
@@ -121,7 +153,8 @@ export function renderPanel() {
   const j = e.job;
   const ref = `${e.host}:${j.id}`;
   const headHtml = `<canvas style="width:46px;height:60px"></canvas>
-    <div style="min-width:0;flex:1"><h2>${esc(j.description)}</h2>${workCrumbs(j.work)}
+    <div style="min-width:0;flex:1"><h2>${esc(j.description)}</h2>
+      <div class="where">${workCrumbs(j.work)}${workspaceChip(j)}</div>
       <div class="sub">
         <span class="chip"><i style="background:${e.look.color}"></i><b>${esc(e.host)}</b></span>
         <span class="chip"><i style="background:${AGENT_COLOR[j.agent] || '#ccc'}"></i>${esc(j.agent)}</span>
@@ -140,13 +173,12 @@ export function renderPanel() {
       <dt>ref</dt><dd>${esc(ref)}</dd>
       <dt>project</dt><dd>${esc(j.project)}</dd>
       <dt>model</dt><dd>${esc(j.model || 'default')}</dd>
-      <dt>cwd</dt><dd>${esc(j.cwd)}</dd>
       ${j.permission ? `<dt>perms</dt><dd>${esc(j.permission)}</dd>` : ''}
       <dt>updated</dt><dd>${esc(age(j.updated_at))} ago</dd>
     </dl>`, `
     <h3>Steps · ${steps.filter(s => s.status === 'done').length}/${steps.length}</h3>
-    <ol class="steps">${steps.map(s => `<li class="${esc(s.status)}"><span class="si">${stepIcon[s.status] || '?'}</span>
-      <span class="t">${s.index + 1}. ${esc(s.title)}${s.started_at ? ` <small class="muted">${duration((s.finished_at ?? Date.now() / 1000) - s.started_at)}</small>` : ''}</span>${s.result ? `<span class="r">${esc(trunc(s.result, 400))}</span>` : ''}</li>`).join('')}</ol>`,
+    <ol class="steps"${j.work ? ` data-work-project="${esc(j.work.project)}"` : ''}>${steps.map(s => `<li class="${esc(s.status)}"${s.status === 'running' ? ' aria-current="step"' : ''}><span class="si">${stepIcon[s.status] || '?'}</span>
+      <span class="t">${s.index + 1}. ${esc(s.title)}${s.status === 'running' ? ' <b class="now">now</b>' : ''}${s.started_at ? ` <small class="muted">${duration((s.finished_at ?? Date.now() / 1000) - s.started_at)}</small>` : ''}</span>${stepWork(j, s)}${s.result ? `<span class="r">${esc(trunc(s.result, 400))}</span>` : ''}</li>`).join('')}</ol>`,
     (j.todos && j.todos.length) ? `<h3>Agent's own todo list</h3><ul class="todos">${j.todos.map(td => `<li class="${esc(td.status)}">${td.status === 'completed' ? '✓' : td.status === 'in_progress' ? '▸' : '·'} ${esc(td.text)}</li>`).join('')}</ul>` : '', `
     <h3>Recent activity</h3>
     ${traceHtml(rows, 'No events yet.')}`, `
@@ -415,16 +447,17 @@ export function renderLegend() {
   }
 }
 export function renderStats() {
-  const count = { running: 0, queued: 0, done: 0 }, live = { working: 0, idle: 0 };
-  // jobs in a background room count too, though they have no android
-  for (const h of hosts) for (const j of h.jobs || []) if (count[j.status] !== undefined) count[j.status]++;
+  const count = { running: 0, queued: 0, done: 0, failed: 0, lost: 0 }, live = { working: 0, idle: 0 };
+  // from the whole document: jobs in a background room, dismissed ones and finished ones that left the deck count too
+  for (const h of lastDoc?.hosts || []) for (const j of h.jobs || []) if (count[j.status] !== undefined) count[j.status]++;
   // every session counts, including idle ones that have left the deck
   for (const h of hosts) for (const s of h.sessions || []) if (s.project && live[s.status] !== undefined) live[s.status]++;
   document.getElementById('stats').innerHTML = `
     ${live.working + live.idle ? `<span class="chip sess" title="interactive Claude Code / Codex sessions"><i></i><b>${live.working + live.idle}</b> live${live.idle ? `<span class="opt"> · ${live.idle} waiting</span>` : ''}</span>` : ''}
-    <button class="chip restore" id="workingOpen" aria-haspopup="dialog" aria-expanded="false" title="Running, blocked and queued jobs by project and work"><i style="background:var(--run)"></i><b>${count.running}</b> working</button>
+    <button class="chip restore" id="workingOpen" aria-haspopup="dialog" aria-expanded="false" title="Running, blocked, failed, lost and queued jobs by project and work"><i style="background:var(--run)"></i><b>${count.running}</b> working</button>
     <span class="chip opt"><i style="background:var(--warn)"></i><b>${count.queued}</b> queued</span>
     <span class="chip opt"><i style="background:var(--ok)"></i><b>${count.done}</b> done</span>
+    <span class="chip" id="failedJobs" title="failed jobs, and lost ones whose agent died; the working list shows them"><i style="background:var(--bad)"></i><b>${count.failed + count.lost}</b> failed</span>
     <span class="chip" id="needYou" title="open attention items: acknowledged and snoozed ones aren't counted"><i style="background:var(--bad)"></i><b>${openCount}</b> need you</span>
     ${retiredCount ? `<button class="chip restore" id="toggleFinished" title="Show finished jobs that have left the deck"><b>${retiredCount}</b> finished · show</button>`
       : showFinished ? '<button class="chip restore" id="toggleFinished" title="Let finished jobs leave the deck again">hide finished</button>' : ''}

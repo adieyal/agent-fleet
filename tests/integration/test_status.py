@@ -42,5 +42,5 @@ def test_phase1_status_after_reopening_store_without_hosts(monkeypatch, capsys, 
                   "Which supplier mapping?", "blocked", "blocker", "User approves", "accepted",
                   "Inventory", "Mapping", "Review"):
         assert value in output
-    assert output.index("blocker") > output.index("  milestone: Mapping")
+    assert output.index("blocker") > output.index(f"  milestone {milestone.id[:8]}: Mapping")
     assert reopened.history_after(0) == before

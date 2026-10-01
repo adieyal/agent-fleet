@@ -11,8 +11,25 @@ from .repository import Repository
 from .store import Store, UnitOfWork
 
 
-def decode_run(payload: str) -> Run:
-    values = json.loads(payload)
+# A run's latest reading. It changes with every report from the host, so it is kept in execution_run_observation,
+# which has no history; only the rest of the run is a state change. A finished run's usage stays in its record too.
+OBSERVATION_FIELDS = ("last_observed", "current_action", "action_observed_at", "usage")
+FINISHED = ("succeeded", "failed", "stopped")
+RUN_ROWS = ("SELECT r.record, o.record AS observation FROM execution_run r "
+            "LEFT JOIN execution_run_observation o ON o.run = r.id")
+
+
+def encode_run(run: Run) -> tuple[dict, dict]:
+    """The run as its record and its observation, both JSON-ready."""
+    values = json.loads(json.dumps(asdict(run), default=lambda value: value.isoformat()))
+    observation = {key: values.pop(key) for key in OBSERVATION_FIELDS}
+    if run.status in FINISHED:
+        values["usage"] = observation["usage"]
+    return values, observation
+
+
+def decode_run(row) -> Run:
+    values = {**json.loads(row["record"]), **json.loads(row["observation"])}
     if values.get("usage") is not None:
         values["usage"] = Usage(**values["usage"])
     for key in ("start", "end", "last_observed"):
@@ -21,6 +38,10 @@ def decode_run(payload: str) -> Run:
     if values.get("action_observed_at") is not None:
         values["action_observed_at"] = datetime.fromisoformat(values["action_observed_at"])
     return Run(**values)
+
+
+def dumps(values: dict) -> str:
+    return json.dumps(values, sort_keys=True)
 
 
 class ExecutionRepository(Repository):
@@ -53,17 +74,17 @@ class ExecutionRepository(Repository):
         self.unit.record_change(f"execution:delivery:{delivery.key}", previous, payload, actor)
 
     def find(self, host: str, job: str) -> Run | None:
-        rows = self.rows("SELECT record FROM execution_run WHERE host = ? AND remote_job_id = ?", (host, job))
-        return decode_run(rows[0]["record"]) if rows else None
+        rows = self.rows(RUN_ROWS + " WHERE r.host = ? AND r.remote_job_id = ?", (host, job))
+        return decode_run(rows[0]) if rows else None
 
     def activation_run(self, activation: str, idempotency_key: str) -> Run:
-        rows = self.rows('SELECT r.record FROM execution_request q '
-            'JOIN execution_run r ON r.id = q.run JOIN execution_action a ON a.id = r.action '
+        rows = self.rows(RUN_ROWS + ' JOIN execution_request q ON q.run = r.id '
+            'JOIN execution_action a ON a.id = r.action '
             "WHERE q.key = ? AND json_extract(a.record, '$.activation') = ?",
             (idempotency_key, activation))
         if not rows:
             raise LookupError(f'no run for activation {activation} and request {idempotency_key}')
-        return decode_run(rows[0]['record'])
+        return decode_run(rows[0])
 
     def actions(self) -> list[Action]:
         return [Action(**json.loads(row["record"])) for row in self.rows("SELECT record FROM execution_action ORDER BY rowid")]
@@ -75,13 +96,13 @@ class ExecutionRepository(Repository):
         return Action(**json.loads(rows[0]["record"]))
 
     def get_run(self, identity: str) -> Run:
-        rows = self.rows("SELECT record FROM execution_run WHERE id = ?", (identity,))
+        rows = self.rows(RUN_ROWS + " WHERE r.id = ?", (identity,))
         if not rows:
             raise LookupError(f"no run '{identity}'")
-        return decode_run(rows[0]["record"])
+        return decode_run(rows[0])
 
     def runs(self) -> list[Run]:
-        return [decode_run(row["record"]) for row in self.rows("SELECT record FROM execution_run ORDER BY rowid")]
+        return [decode_run(row) for row in self.rows(RUN_ROWS + " ORDER BY r.rowid")]
 
     def save(self, action: Action, run: Run, actor: str) -> None:
         self.save_action(action, actor)
@@ -98,11 +119,14 @@ class ExecutionRepository(Repository):
     def save_run(self, run: Run, actor: str) -> None:
         if self.unit is None:
             raise RuntimeError("execution writes require a transaction")
-        run_payload = json.dumps(asdict(run), default=lambda value: value.isoformat(), sort_keys=True)
+        record, observation = encode_run(run)
+        run_payload = dumps(record)
         self.unit.connection.execute(
             "INSERT INTO execution_run (id, action, host, remote_job_id, record) VALUES (?, ?, ?, ?, ?)",
             (run.id, run.action, run.host, run.remote_job_id, run_payload))
         self.unit.record_change(f"execution:run:{run.id}", "", run_payload, actor)
+        self.unit.record_observation("INSERT INTO execution_run_observation (run, record) VALUES (?, ?)",
+                                     (run.id, dumps(observation)))
 
     def claims(self) -> list[Claim]:
         return [Claim(row["action"], row["run"], bool(row["active"]))
@@ -124,7 +148,7 @@ class ExecutionRepository(Repository):
             return None
         if rows[0]["fingerprint"] != fingerprint:
             raise ValueError("idempotency key already used with a different payload")
-        return decode_run(self.rows("SELECT record FROM execution_run WHERE id = ?", (rows[0]["run"],))[0]["record"])
+        return decode_run(self.rows(RUN_ROWS + " WHERE r.id = ?", (rows[0]["run"],))[0])
 
     def save_request(self, key: str, fingerprint: str, run: str, actor: str) -> None:
         self.unit.connection.execute("INSERT INTO execution_request VALUES (?, ?, ?)", (key, fingerprint, run))
@@ -133,7 +157,13 @@ class ExecutionRepository(Repository):
     def update(self, run: Run, actor: str) -> None:
         if self.unit is None:
             raise RuntimeError("execution writes require a transaction")
-        previous = self.rows("SELECT record FROM execution_run WHERE id = ?", (run.id,))[0]["record"]
-        payload = json.dumps(asdict(run), default=lambda value: value.isoformat(), sort_keys=True)
-        self.unit.connection.execute("UPDATE execution_run SET record = ? WHERE id = ?", (payload, run.id))
-        self.unit.record_change(f"execution:run:{run.id}", previous, payload, actor)
+        previous = self.rows(RUN_ROWS + " WHERE r.id = ?", (run.id,))[0]
+        record, observation = encode_run(run)
+        # Compared as values: records the migration rewrote are spaced differently from json.dumps.
+        if json.loads(previous["record"]) != record:
+            payload = dumps(record)
+            self.unit.connection.execute("UPDATE execution_run SET record = ? WHERE id = ?", (payload, run.id))
+            self.unit.record_change(f"execution:run:{run.id}", previous["record"], payload, actor)
+        if json.loads(previous["observation"]) != observation:
+            self.unit.record_observation("UPDATE execution_run_observation SET record = ? WHERE run = ?",
+                                         (dumps(observation), run.id))

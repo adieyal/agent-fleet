@@ -77,17 +77,19 @@ class AttentionFacade:
                                     details="dismissed; the job's permissions are unchanged")
 
     def observe(self, host: HostObservation, *, subjects: set[str] | None = None,
-                raise_items: bool = True) -> bool:
+                raise_items: bool = True, deleted_jobs: set[str] = frozenset()) -> bool:
         """Ingest observations and report whether any cleared items were resolved."""
-        return ingest_attention(self, host, subjects=subjects, raise_items=raise_items)
+        return ingest_attention(self, host, subjects=subjects, raise_items=raise_items, deleted_jobs=deleted_jobs)
 
     def reopen(self, item_id: str, *, actor: str) -> AttentionItem:
         return self.commands.change(item_id, "open", actor)
 
     def reconcile(self, source: str, references: set[str], *, actor: str,
-                  subjects: set[str] | None = None) -> bool:
+                  subjects: set[str] | None = None, present_jobs: set[str] | None = None,
+                  deleted_jobs: set[str] = frozenset()) -> bool:
         """Resolve cleared occurrences after a reachable source reports its current state."""
-        return self.commands.reconcile(source, references, actor=actor, subjects=subjects)
+        return self.commands.reconcile(source, references, actor=actor, subjects=subjects,
+                                       present_jobs=present_jobs, deleted_jobs=deleted_jobs)
 
     def snooze(self, item_id: str, *, until: datetime, actor: str) -> AttentionItem:
         return self.commands.change(item_id, "snoozed", actor, until=until)

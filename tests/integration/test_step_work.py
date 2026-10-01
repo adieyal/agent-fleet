@@ -41,7 +41,7 @@ def observe(store, run, statuses, job_status="running"):
 def plan_status(store, project):
     projection = project_status(project, open_work(store), open_attention(store), open_execution(store),
                                 open_library(store), open_decisions(store))
-    room, = bench_rooms(projection)["rooms"]
+    room, = bench_rooms(projection, {})["rooms"]
     return room, [line["status"] for line in room["plan"]]
 
 
@@ -139,3 +139,5 @@ def test_the_deck_state_carries_each_jobs_workspace_and_current_step_work(plan):
     assert [node["id"] for node in job["work"]["chain"]] == [epic.id]
     assert job["work"]["step"]["index"] == 1
     assert [node["id"] for node in job["work"]["step"]["chain"]] == [epic.id, milestones[1].id]
+    assert [(step["index"], step["chain"][-1]["id"]) for step in job["work"]["steps"]] == [
+        (0, milestones[0].id), (1, milestones[1].id)]

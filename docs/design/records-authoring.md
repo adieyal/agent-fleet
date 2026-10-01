@@ -12,7 +12,7 @@ project's registration migrates them. Cutover commits each summary as
 the path and confirmed revision. State history is append-only: cutover leaves
 every existing row unchanged, including recorded summary bodies. Those rows
 record past state and are not a second writable copy. Nothing updates history;
-only retention pruning removes rows older than a week. Status reads the confirmed Git
+only an explicit `fleet history prune --before DATE --yes` removes rows. Status reads the confirmed Git
 revision, so edits in the working tree cannot silently change accepted summaries.
 
 Records' `write` facade takes a project, relative path, body, idempotency key,

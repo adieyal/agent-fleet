@@ -1,10 +1,10 @@
 // Floor → epic room → milestone bench. All business state comes from /api/bench.
 import { duration, esc, store } from './util.js';
 import { hostLook } from './looks.js';
-import { glyphHtml, svg } from './glyphs.js';
-import { ents } from './model.js';
+import { actionOf, glyphHtml, svg } from './glyphs.js';
+import { ents, workOf } from './model.js';
 import { openReader, openStoredReader } from './reader.js';
-import { fallbackCopy } from './panel.js';
+import { fallbackCopy, idChip, select } from './panel.js';
 import { decisionsPanel, guidancePanel, guidanceSummary } from './guidance.js';
 
 const el = document.body.appendChild(document.createElement('section'));
@@ -177,8 +177,8 @@ function progressBar({ basis, total, counts }) {
 
 function epicCard(r) {
   const { total } = r.milestones;
-  const now = r.agents.length
-    ? `${r.agents.length} running: ${r.agents.map(a => `${esc(a.title)} (${esc(a.host)})`).join(', ')}`
+  const now = r.now.length
+    ? `${r.now.length} running${r.now.map(j => `<span data-now-row><span data-now-item>${esc(j.title)}</span>${jobChip(j)}</span>`).join('')}`
     : 'Nothing running';
   const next = r.upcoming.length
     ? `<ul>${r.upcoming.map(m => `<li data-upcoming="${esc(m.id)}">${esc(m.title)} — ${m.next_step === null ? '<i>Next step not recorded</i>' : esc(m.next_step)}</li>`).join('')}</ul>`
@@ -221,6 +221,27 @@ setInterval(() => el.querySelectorAll('[data-running-since]').forEach(line => {
   line.textContent = `Running for ${runningFor(line.dataset.runningSince)}`;
 }), 15000);
 
+// A job serving a line: host:id, its status as a glyph, the step it is on and its branch. Clicking opens its panel
+// while the deck still has the job; a finished job that is the line's latest shows quieter.
+const RUN_ACTIONS = { succeeded: 'done', failed: 'failed', stopped: 'cancelled', 'unknown outcome': 'unknown' };
+function jobChip(j) {
+  const key = `${j.host}:${j.job}`, live = workOf(key);
+  const action = j.status === 'running' ? (live ? actionOf(live) : 'unknown') : RUN_ACTIONS[j.status];
+  const step = j.step === null ? '<small data-job-step title="Step not known">step ?</small>'
+    : `<small data-job-step title="Step ${j.step.index + 1}${j.step.count === null ? ' (step count not known)' : ` of ${j.step.count}`} serves ${esc(j.step.work_item.title ?? j.step.work_item.id)}">step ${j.step.index + 1}${j.step.count === null ? '' : `/${j.step.count}`}</small>`;
+  return `<span class="job-chip" data-job-chip="${esc(key)}" data-status="${esc(j.status)}"${j.past ? ' data-past' : ''}${live ? '' : ' data-gone'}
+    title="${live ? 'Open this job’s panel' : 'Not on the deck'} · ${esc(j.runtime ?? 'runtime unknown')} · ${esc(j.status)}${j.status === j.job_status ? '' : ` here, job ${esc(j.job_status)}`}"><button data-job-open${live ? '' : ' disabled'} aria-label="${live ? 'Open the job panel' : 'Not on the deck'}: ${esc(j.host)} ${esc(j.job.slice(0, 8))}">${glyphHtml(action)}<b style="--hc:${hostLook(j.host).color}">${esc(j.host)}:</b></button>${idChip(j.job)}${step}${branchTag(j)}</span>`;
+}
+
+// The branch, or detached head; the worktree path and repository in its title, the path one click to copy.
+function branchTag({ workspace: w, workspace_reason: reason }) {
+  if (w === null) return `<small data-job-branch data-unknown title="${esc(reason)}"><span>workspace unknown</span></small>`;
+  const name = w.detached ? `detached @${w.head}` : w.branch;
+  const where = `${name} · ${w.linked_worktree ? 'worktree' : 'checkout'} ${w.toplevel}${w.linked_worktree ? ` of ${w.repository}` : ''} · ${w.dirty} uncommitted`;
+  return `<small data-job-branch title="${esc(where)}"><span>${esc(name)}</span>${w.dirty ? `<i data-dirty>*</i>` : ''}<button data-copy="${esc(w.toplevel)}" title="Copy the ${w.linked_worktree ? 'worktree' : 'checkout'} path" aria-label="Copy the ${w.linked_worktree ? 'worktree' : 'checkout'} path">${COPY_ICON}</button></small>`;
+}
+const jobChips = jobs => jobs.length ? `<span data-job-chips>${jobs.map(jobChip).join('')}</span>` : '';
+
 function planLine(item, opens) {
   const first = item.documents.find(docRef);
   const title = opens ? `<button data-slice="${esc(item.id)}">${esc(item.title)}</button>`
@@ -228,7 +249,7 @@ function planLine(item, opens) {
     : `<b>${esc(item.title)}</b>`;
   return `<li data-plan-item="${esc(item.id)}" data-status="${esc(item.status)}">
     <span data-glyph role="img" aria-label="${esc(STATUS_LABELS[item.status] ?? item.status)}" title="${esc(STATUS_LABELS[item.status] ?? item.status)} · ${esc(item.condition)}">${statuses[item.status]}</span>
-    <div>${title}<p>${esc(item.headline)}</p>${successorLine(item.superseded_by)}${item.running_since ? runningLine(item.running_since) : item.last_run ? ranLine(item.last_run) : ''}<small data-next-step>${item.next_step === null ? 'Next step not recorded' : `Next: ${esc(item.next_step)}`}</small>${
+    <div>${title}<p>${esc(item.headline)}</p>${successorLine(item.superseded_by)}${item.running_since ? runningLine(item.running_since) : item.last_run ? ranLine(item.last_run) : ''}${jobChips(item.jobs)}<small data-next-step>${item.next_step === null ? 'Next step not recorded' : `Next: ${esc(item.next_step)}`}</small>${
       item.plan === null ? '' : `<details data-step-plan><summary>Plan</summary><div>${esc(item.plan)}</div></details>`}${docsList(item.documents)}</div></li>`;
 }
 
@@ -423,6 +444,8 @@ el.addEventListener('click', async ev => {
     else fallbackCopy(copy.dataset.copy, done);
     return;
   }
+  const chip = ev.target.closest('[data-job-chip]');
+  if (chip) { if (workOf(chip.dataset.jobChip)) select(chip.dataset.jobChip); return; }
   if (collapsed && ev.target.closest('#benchBreadcrumb button')) { collapsed = false; store('localStorage', 'fleet.bench.collapsed', '0'); }
   if (ev.target.closest('[data-collapse]')) {
     collapsed = !collapsed;

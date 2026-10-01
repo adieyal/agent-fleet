@@ -149,7 +149,8 @@ def test_runs_on_two_hosts_and_unavailable_trace_preserve_work():
     assert node["runs"][0] == dict(id="r1", action="r1", host="host-a", remote_job_id="job",
         runtime="codex", status="failed", reason="lost", start=NOW.isoformat(), end=NOW.isoformat(),
         last_observed=(NOW + timedelta(minutes=1)).isoformat(), usage=None, current_action=None,
-        action_observed_at=None, step_work=None, action_glyph=None, action_freshness="unknown", guidance=None)
+        action_observed_at=None, step_work=None, kind="job", label=None, title=None, cwd=None, workspace=None,
+        workspace_reason=None, action_glyph=None, action_freshness="unknown", guidance=None)
     assert node["library"][0]["availability"] == "unavailable"
     assert len(node["library"]) == 1
     assert node["condition"] == "waiting"
@@ -214,7 +215,7 @@ def test_run_work_maps_each_job_to_its_items_ancestry():
     links = run_work(work, execution)
     assert links["home", "job"] == {"project": "p", "chain": [
         {"id": "epic", "kind": "epic", "title": "Overhaul"}, {"id": "m", "kind": "milestone", "title": "3. GET URLs"},
-        {"id": "t", "kind": "task", "title": "Port"}], "step": None}
+        {"id": "t", "kind": "task", "title": "Port"}], "step": None, "steps": []}
     assert [node["id"] for node in links["home", "relinked"]["chain"]] == ["epic", "m"]
     assert ("worker", "job") not in links
 

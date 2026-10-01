@@ -22,15 +22,18 @@ class RecordsFacade:
     def work(self):
         return self._work()
 
-    def register(self, project: str, path, *, actor: str) -> None:
+    def register(self, project: str, path, *, actor: str) -> int:
+        """Register the repository and move the project's store summaries into it; returns how many moved."""
         root = self.writer.root(path)
         self.workspace.register_management_repository(project, root, actor=actor)
-        for summary in self.work.legacy_summaries(project):
+        summaries = self.work.legacy_summaries(project)
+        for summary in summaries:
             result = self.write(project, f'summaries/{summary.id}.json',
                                 json.dumps(asdict(summary), default=str), key=f'cutover:{summary.id}', actor=actor)
             if result['state'] != 'confirmed':
                 raise ValueError(result['error'])
             self.work.retire_summary(summary.id, actor=actor)
+        return len(summaries)
 
     def write(self, project: str, path: str, body: str, **fields) -> dict:
         self.provide(project, actor=fields['actor'])

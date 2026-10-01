@@ -33,6 +33,7 @@ from fleet.modules.workspace import (NoVacancy, FOCUSES, AlreadyShuttered, NotSh
 from fleet.projections.workspace import annotate, resolve, registry_config
 from fleet.projections.project import project_status
 from fleet.projections.bench import bench_rooms, bench_state
+from fleet.projections.history import parse_since, subject_history
 from fleet.transport import FleetError, Host
 from fleet.web.documents import AssetNotImage, AssetTooLarge, DocumentAccessDenied, fetch_asset, fetch_document
 from fleet.web.fixture import FixtureLibrary, FixtureState
@@ -172,7 +173,7 @@ class FleetState(LiveWorkspace):
             stop.wait(0.25)
 
     def update(self, host_name: str, mutate: Any, *, subjects: set[str] | None = None,
-               ingest: bool = True, heartbeat: bool = False) -> None:
+               ingest: bool = True, heartbeat: bool = False, deleted_jobs: set[str] = frozenset()) -> None:
         with self.changed:
             previous = snapshot(self.by_host[host_name])
             sequence = self.store.latest_sequence()
@@ -188,7 +189,7 @@ class FleetState(LiveWorkspace):
                 reconciled = self.attention.observe({**host,
                     "jobs": [resolve(self.registry, host_name, job) for job in host["jobs"].values()],
                     "sessions": [resolve(self.registry, host_name, session) for session in host["sessions"].values()]},
-                    subjects=subjects, raise_items=not heartbeat)
+                    subjects=subjects, raise_items=not heartbeat, deleted_jobs=deleted_jobs)
                 # A heartbeat follows a full pass over the host's jobs, so absent jobs are gone.
                 reconciled = self.attention.close_refusals(
                     {**host, "jobs": list(host["jobs"].values()), "sessions": []}, complete=heartbeat) or reconciled
@@ -225,6 +226,11 @@ class FleetState(LiveWorkspace):
 
     def repository_remotes(self, host: str, directories: list[str]) -> dict[str, list[str]]:
         return transport.repository_remotes(next(known for known in self.hosts if known.name == host), directories)
+
+    def live_jobs(self) -> dict[tuple[str, str], dict[str, Any]]:
+        """Each host's job summaries as last streamed, by (host, job id)."""
+        with self.changed:
+            return {(host, job["id"]): job for host, entry in self.by_host.items() for job in entry["jobs"].values()}
 
     def document(self) -> dict[str, Any]:
         projects_error = self.refresh_registry()
@@ -332,8 +338,10 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
                      subjects={f"job:{host.name}:{job['id']}"})
         state.keep_documents(host.name, job)
     elif kind == "removed":
-        state.update(host.name, lambda entry: entry["jobs"].pop(message["id"], None),
-                     subjects={f"job:{host.name}:{message['id']}"})
+        subject = f"job:{host.name}:{message['id']}"
+        # An aged-out job leaves the floor but keeps its open item; only a deleted one resolves it.
+        state.update(host.name, lambda entry: entry["jobs"].pop(message["id"], None), subjects={subject},
+                     deleted_jobs={subject} if message.get("reason") == "deleted" else frozenset())
     elif kind == "session":
         session = message["session"]
         state.update(host.name, lambda entry: entry["sessions"].__setitem__(session["id"], session),
@@ -452,7 +460,8 @@ def make_handler(state: FleetState | FixtureState,
                 projection = project_status(query["project"][0], open_work(state.store), state.attention,
                     open_execution(state.store), open_library(state.store), open_decisions(state.store))
                 try:
-                    result = bench_state(projection, query["slice"][0]) if "slice" in query else bench_rooms(projection)
+                    result = (bench_state(projection, query["slice"][0]) if "slice" in query
+                              else bench_rooms(projection, state.live_jobs()))
                 except ValueError as error:
                     self.error(404, str(error))
                     return
@@ -461,6 +470,8 @@ def make_handler(state: FleetState | FixtureState,
                 self.guidance()
             elif path == "/api/decisions":
                 self.decisions()
+            elif path == "/api/history":
+                self.history()
             elif path in ("/", "/index.html"):
                 self.respond(200, "text/html; charset=utf-8", index_page)
             elif path in PROTOTYPES:
@@ -536,6 +547,25 @@ def make_handler(state: FleetState | FixtureState,
                 self.error(400, "epic is required")
                 return
             self.guidance_result(lambda services: epic_decisions(services, epic))
+
+        def history(self) -> None:
+            """GET /api/history?subject=&since= — the subject's audit trail, newest first, as `fleet history --json`
+            prints it; subject takes an id, a unique id prefix or a subject such as attention:<id>."""
+            query = {key: values[0] for key, values in parse_qs(urlsplit(self.path).query).items()}
+            if not query.get("subject", "").strip():
+                self.error(400, "subject is required")
+                return
+            try:
+                since = parse_since(query["since"]) if query.get("since") else None
+            except ValueError as error:
+                self.error(400, str(error))
+                return
+            try:
+                result = subject_history(state.store, query["subject"], since)
+            except LookupError as error:
+                self.error(404, str(error))
+                return
+            self.respond(200, "application/json", json.dumps(result).encode())
 
         def change_guidance(self, path: str, body: dict[str, Any]) -> None:
             """POST /api/guidance {"project", "epic" (null for the constitution), "markdown", "base": the version the

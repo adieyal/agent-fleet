@@ -63,7 +63,8 @@ def asking(message: str) -> str:
 
 
 def ingest_attention(attention: "AttentionFacade", host: HostObservation, *,
-                     subjects: set[str] | None = None, raise_items: bool = True) -> bool:
+                     subjects: set[str] | None = None, raise_items: bool = True,
+                     deleted_jobs: set[str] = frozenset()) -> bool:
     if not host["ok"]:
         return False
     source = f"stream:{host['name']}"
@@ -94,9 +95,10 @@ def ingest_attention(attention: "AttentionFacade", host: HostObservation, *,
     for job in host["jobs"]:
         if job.get("status") not in ("failed", "blocked", "stalled", "lost"):
             continue
-        wanted = "running" if job["status"] in ("stalled", "lost") else job["status"]
+        # A lost job's agent died mid-step: the step still reads running, or failed when the runner noticed.
+        wanted = {"stalled": ("running",), "lost": ("running", "failed")}.get(job["status"], (job["status"],))
         step = next((step for step in job.get("steps", [])
-                     if step.get("status") == wanted and step.get("answered_by") is None), None)
+                     if step.get("status") in wanted and step.get("answered_by") is None), None)
         since = step.get("started_at") if step else job.get("updated_at")
         occurrence = f"{step['index']}@{since}" if step else f"@{since}"
         summary = f"step {step['index'] + 1} {job['status']}: {step['title']}" if step else f"job {job['status']}"
@@ -114,4 +116,6 @@ def ingest_attention(attention: "AttentionFacade", host: HostObservation, *,
             summary += f": {activity['summary']}"
         record(session, "session", f"{activity['name']}@{activity.get('ts')}", "decision",
                f"session tool {activity['name']}", summary, activity.get("ts"))
-    return attention.reconcile(source, references, subjects=subjects, actor="host-stream")
+    present_jobs = {f"job:{host['name']}:{job['id']}" for job in host["jobs"]}
+    return attention.reconcile(source, references, subjects=subjects, actor="host-stream",
+                               present_jobs=present_jobs, deleted_jobs=deleted_jobs)

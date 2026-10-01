@@ -35,8 +35,13 @@ fleet send -H home -p <project> -d "<one line: what this job is doing>" -C <cwd 
 - Permissions: claude defaults to `acceptEdits` (Bash only if the host's
   settings allow it); codex defaults to `workspace-write`. Only use
   `bypassPermissions` / `danger-full-access` when the user asked for it.
-- `-p` groups jobs by project in `fleet ls` and the web view — use the repo or
-  initiative name, consistently.
+- The store records who sent, answered or retried: `--actor NAME`, by default
+  `job:$FLEET_JOB_ID` inside a fleet job and `user` otherwise. `send` prints the
+  run, permission and guidance versions it started the agent with.
+- `-p` is the host's label for a registered project and groups jobs in `fleet ls`
+  and the deck. An unlinked label is refused: link it first with
+  `fleet project link PROJECT_ID HOST:LABEL` (or `fleet project add NAME --link HOST:LABEL`).
+- `--hold` creates the job without starting it; `fleet start host:id` starts it.
 
 ## Get notified of completion
 
@@ -83,6 +88,11 @@ hold the job's run) it prints `Decision <id> handed to the controller via job
 unrecordable one, e.g. an unknown work item, becomes an alert). Check with
 `fleet decision list --project P`.
 
+To see who changed a work item, attention item or project and from which run,
+run `fleet history --subject <id or prefix> [--since 7d]`. Changes made inside a
+job name the job's run. Never prune history (`fleet history prune`) unless the
+user asks.
+
 The user watches the same jobs with `fleet watch` and `fleet web` (the
 kitchen dashboard), so keep descriptions and step titles meaningful.
 
@@ -108,3 +118,18 @@ items stay with the user. Inspect status for the pinned mandate version, queue,
 live run, remaining daily budget and delivery error. See CONTEXT.md for retry,
 timeout and untouched-run limits. Triage control commands record Decisions;
 triage never completes work or judges criteria.
+
+## Test suite
+
+Run the non-browser suite on any host:
+
+```sh
+uv run pytest -q -m "not browser"
+```
+
+Browser tests are marked automatically from their Playwright fixture dependencies.
+Run them on home with `uv run pytest -q -m browser`. On hosts without the
+Playwright browsers they skip with the reason "Playwright browsers not installed
+here; browser tests run on home". Browser tests also skip on other hosts even
+if executables are installed. Tests use temporary Fleet paths; pytest rejects
+access to the real `~/.config/fleet` store and config before opening them.

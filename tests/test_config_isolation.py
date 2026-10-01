@@ -36,7 +36,13 @@ def snapshot(directory):
 
 @pytest.mark.parametrize("command", ["attention", "status"])
 def test_attention_import_and_status_leave_real_config_untouched(monkeypatch, tmp_path, capsys, command):
-    original_config = Path.home() / ".config" / "fleet"
+    # A populated stand-in for the original HOME, never the user's live files.
+    original_home = tmp_path / "original-home"
+    original_config = original_home / ".config" / "fleet"
+    original_config.mkdir(parents=True)
+    (original_config / "config.json").write_text('{"hosts": {"sentinel": {}}}')
+    (original_config / "fleet.db").write_bytes(b"original-store-sentinel")
+    monkeypatch.setenv("HOME", str(original_home))
     before = snapshot(original_config)
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
