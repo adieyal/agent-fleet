@@ -108,7 +108,14 @@ def test_killed_dispatch_reconciles_one_job_and_claim(tmp_path, point):
     intent = execution.dispatch(item.id, host="local", runtime="codex", payload=payload,
         actor="user", reason="crash test", idempotency_key="crash")
     assert intent.created == point.startswith("transaction:")
-    assert len(store.history_after(sequence)) == 4
+    changes = store.history_after(sequence)
+    assert len(changes) == (5 if point == 'start' else 4)
+    if point == 'start':
+        observation = changes[-1]
+        assert observation['subject'] == f'execution:run:{intent.run.id}'
+        assert observation['actor'] == 'fleetd'
+        assert json.loads(observation['from'])['reason'] is None
+        assert json.loads(observation['to'])['reason'] == 'queued'
 
     calls = []
     def call(arguments, stdin):

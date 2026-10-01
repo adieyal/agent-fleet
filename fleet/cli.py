@@ -838,7 +838,7 @@ def command_history_runs(arguments: argparse.Namespace) -> None:
             changes = f"{run['commit_count']} commits · {run['push_count']} pushes" if run['commit_count'] is not None else "git unknown"
             offline = f" · offline since {history_local_time(run['offline_since'])}" if run['offline_since'] else ""
             rows.append([history_local_time(run['start']), history_duration(run['duration_seconds']),
-                         run['status'], run['kind'], run['host'], work,
+                         run.get('status_label', run['status']), run['kind'], run['host'], work,
                          f"{branch or 'branch unknown'} · {changes}{offline}", run['id'][:8]])
             if not branch and run['workspace_reason']:
                 rows[-1][6] += f" ({run['workspace_reason']})"
@@ -864,7 +864,9 @@ def command_run_show(arguments: argparse.Namespace) -> None:
         print(json.dumps(detail))
         return
     run = detail["run"]
-    print(f"Run {run['id']}: {run['status']} ({run['kind']})")
+    print(f"Run {run['id']}: {run.get('status_label', run['status'])} ({run['kind']})")
+    if run['offline_since']:
+        print(f"Host offline since {run['offline_since']}; worker state is last known.")
     for key in ("action_source", "work_item", "project", "host", "remote_job_id", "cwd", "start", "end", "reason", "workspace", "workspace_reason"):
         print(f"{key}: {run[key] if run[key] is not None else 'not recorded'}")
     for step in detail["steps"]:
@@ -1427,16 +1429,8 @@ def print_status_item(item: dict[str, Any], depth: int = 0) -> None:
 
 
 def resolve_cli_id(reference: str, identities: list[str], kind: str) -> str:
-    """Expand a unique prefix without changing canonical IDs in module APIs or JSON."""
-    if reference in identities:
-        return reference
-    matches = sorted(identity for identity in identities if reference and identity.startswith(reference))
-    if len(matches) == 1:
-        return matches[0]
-    if matches:
-        raise FleetError(f"ambiguous {kind} '{reference}': {', '.join(matches)}; give a longer ID")
-    remedy = "fleet status PROJECT lists work items and criteria" if kind != "attention item" else "fleet attention list lists IDs"
-    raise FleetError(f"no {kind} '{reference}'; {remedy}")
+    from fleet.identifiers import resolve_prefix
+    return resolve_prefix(reference, identities, kind)
 
 
 def work_cli_id(reference: str) -> str:

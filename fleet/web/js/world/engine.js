@@ -634,7 +634,10 @@ export class World {
   // the item under a screen point (CSS px), as { id, place }, or the floor point under it as { floor: [x, y] }
   pick(x, y) {
     const view = this.camera.view;
-    const entries = this.sorted().filter(it => it.hit !== false && this.sprites.get(it.sprite).hit !== 'none').map(it => {
+    // Cached wall props are drawn behind standing sprites but still have plan/step hit targets.
+    const ground = [...this.items.values()].filter(it => it.layer === 'ground' && it.visible && it.place && (it.intensity ?? 1) > 0)
+      .sort((a, b) => depth(a.at) - depth(b.at));
+    const entries = [...ground, ...this.sorted()].filter(it => it.hit !== false && this.sprites.get(it.sprite).hit !== 'none').map(it => {
       const s = this.sprites.get(it.sprite), r = this.screenRect(this.planeRect(it), view), t = s.tiers[Math.max(0, s.shown)];
       let keep = null;
       const cut = it.cut && t.fw && this.cutLines(it, t, view, r.x, r.y, r.w / t.fw);

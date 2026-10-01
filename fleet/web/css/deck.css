@@ -1456,3 +1456,9 @@ body[data-readonly] #attnPanel[data-scope=all] .aa{display:flex}
 .attn-triage-health { margin: 8px 14px; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; border-top: 1px solid #39435a; padding-top: 8px; }
 .attn-triage-health code { white-space: normal; }
 .run-triage { overflow-wrap: anywhere; }
+
+/* Audit 2 batch 4: hit consequences and touch-accessible world controls */
+#floorWorldUi .shelf-tip { white-space: normal; max-width: min(360px, calc(100vw - 28px)); box-sizing: border-box; }
+#floorWorldHelp { position: relative; }
+#floorWorldHelp summary { cursor: pointer; color: var(--text); }
+#floorWorldHelp p { position: fixed; left: 14px; bottom: 58px; margin: 0; width: min(320px, calc(100vw - 28px)); padding: 12px; border-radius: 10px; border: 1px solid var(--line2); background: #070c16; color: var(--text); font: 12px/1.5 var(--sans); box-sizing: border-box; }

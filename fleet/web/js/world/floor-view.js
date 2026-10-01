@@ -335,27 +335,36 @@ function place(view) {
 const isShelf = hit => hit && hit.place === 'library' && /^shelf-/.test(hit.id);
 const shelfTip = Object.assign(document.createElement('div'), { className: 'shelf-tip', hidden: true });
 ui.append(shelfTip);
+function targetOf(hit) {
+  const where = hit?.place;
+  if (!where || !layout) return null;
+  if (isShelf(hit)) return { kind: 'library', tip: `${labelsOf(doc).get(label)} library` };
+  const run = layout.runs.find(r => where === `run:${r.key}`);
+  if (run) return { kind: 'run', run, tip: `Open job: ${run.title || run.key}. Opening changes no stored state.` };
+  const m = where.match(/^(?:bench|plan):(.+)$/), step = layout.runs.find(r => where.startsWith(`step:${r.key}:`));
+  const bench = m ? layout.benches.find(b => b.key === m[1]) : step ? layout.benches.find(b => b.key === step.bench) : null;
+  return bench ? { kind: 'bench', bench, tip: 'Zoom to this bench. Esc zooms out; no stored state changes.' } : null;
+}
 canvas.addEventListener('pointermove', ev => {
-  if (!world || !layout || ev.buttons) return;
+  if (!world || !layout) return;
   const r = canvas.getBoundingClientRect(), x = ev.clientX - r.left, y = ev.clientY - r.top;
-  const on = isShelf(world.pick(x, y)) && ev.pointerType !== 'touch';
-  canvas.classList.toggle('hot', on);
-  shelfTip.hidden = !on;
-  if (!on) return;
-  shelfTip.textContent = `${labelsOf(doc).get(label)} library`;
-  shelfTip.style.left = `${x + 14}px`; shelfTip.style.top = `${y + 18}px`;
+  const target = ev.buttons || ev.pointerType === 'touch' ? null : targetOf(world.pick(x, y));
+  canvas.classList.toggle('hot', !!target);
+  shelfTip.hidden = !target;
+  if (!target) return;
+  shelfTip.textContent = target.tip;
+  shelfTip.style.left = `${Math.max(8, Math.min(x + 14, r.width - shelfTip.offsetWidth - 8))}px`;
+  shelfTip.style.top = `${Math.max(8, Math.min(y + 18, r.height - shelfTip.offsetHeight - 8))}px`;
 });
 canvas.addEventListener('pointerleave', () => { canvas.classList.remove('hot'); shelfTip.hidden = true; });
 function tap(hit) {
   probe.taps.push(hit);
-  const where = hit && hit.place;
-  if (!where || !layout) return;
-  if (isShelf(hit)) { shelfTip.hidden = true; openProjectLibrary(libraryKeyOf(doc, label), labelsOf(doc).get(label)); return; }
-  const run = layout.runs.find(r => where === `run:${r.key}`);
-  if (run) { select(run.key); return; }   // a robot, or its lantern: the job's panel
-  const m = where.match(/^(?:bench|plan):(.+)$/), step = layout.runs.find(r => where.startsWith(`step:${r.key}:`));
-  const bench = m ? layout.benches.find(b => b.key === m[1]) : step ? layout.benches.find(b => b.key === step.bench) : null;
-  if (bench) { world.camera.frame(bench.frame, ZOOM_RATE); world.request(); }
+  const target = targetOf(hit);
+  if (!target) return;
+  shelfTip.hidden = true;
+  if (target.kind === 'library') { openProjectLibrary(libraryKeyOf(doc, label), labelsOf(doc).get(label)); return; }
+  if (target.kind === 'run') { select(target.run.key); return; }
+  world.camera.frame(target.bench.frame, ZOOM_RATE); world.request();
 }
 probe.zoomTo = key => { const b = layout.benches.find(x => x.key === key); world.camera.frame(b.frame, ZOOM_RATE); world.request(); };
 probe.frame = which => { world.camera.frame(which === 'near' ? layout.frames.near : layout.frames.far, ZOOM_RATE); world.request(); };

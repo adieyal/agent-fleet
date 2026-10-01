@@ -88,6 +88,10 @@ def test_server_down_timeout_precedes_launch(triage):
 
 def test_unreachable_unknown_retains_reservation_and_escalates(triage):
     services, *_ = triage
+    # The 31-minute wait stays within one budget day, even near midnight.
+    now = services.store.clock().replace(hour=12, minute=0, second=0, microsecond=0)
+    services.store.clock = lambda: now
+    services.attention.commands.clock = services.store.clock
     a = item(triage)
     engine, calls = scheduler(triage)
     def unavailable(run, **kw):
