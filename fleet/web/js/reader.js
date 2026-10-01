@@ -7,6 +7,7 @@ import { DOC_KIND, isUpdating, jobDocSequence, kindOf } from './docs3d.js';
 import { hideDocTip } from './camera.js';
 import { fallbackCopy, idChip } from './panel.js';
 import { libraryDocs } from './library.js';
+import { openAttention } from './attention.js';
 import { demoDoc } from './demo.js';
 import { drawnDiagrams, enrichProse, linkImages, rethemeDiagrams } from './rich.js';
 
@@ -156,12 +157,12 @@ function renderSessionQuestion(prose, s) {
 // A job step that ended asking its supervisor: its final message, answered by a step that carries the reply.
 function renderBlocked(prose, id, b) {
   const open = b.state !== 'resolved';
-  prose.innerHTML = `<h2>Step ${b.step + 1} of job ${esc(b.job)} on ${esc(b.host)} is waiting for you</h2>
+  prose.innerHTML = `<h2>Step ${b.step + 1} of job ${idChip(b.job)} on ${esc(b.host)} is waiting for you</h2>
     ${b.message === null ? `<p class="refusal-note">fleetd on ${esc(b.host)} reported no final message for this step; upgrade it to see the question here, or read the step’s report.</p>`
       : `<blockquote class="blocked-message">${esc(b.message)}</blockquote>`}
     ${open ? `<form class="decision-answer">
         <label>Your answer<textarea name="answer" rows="5" required></textarea></label>
-        <p class="refusal-note">Sending adds your answer to job ${esc(b.job)} as a new step, which continues where step ${b.step + 1} stopped.</p>
+        <p class="refusal-note">Sending adds your answer to job ${idChip(b.job)} as a new step, which continues where step ${b.step + 1} stopped.</p>
         <button type="submit">Send answer</button><p role="alert"></p><p role="status"></p>
       </form>` : `<p role="status">${esc(b.resolution)}</p>`}`;
   const form = prose.querySelector('form');
@@ -191,14 +192,14 @@ function renderRefusals(prose, id, detail) {
   const covers = q => q.denied_by && q.denied_by.length ? `<span class="denied">denied by ${q.denied_by.map(esc).join(', ')}: no rule allowed for the job can override it</span>`
     : q.rules === null ? 'this worker names no rule' : q.rules.length ? q.rules.map(esc).join(', ') : 'no rule covers this';
   prose.innerHTML = `<h2>${esc(detail.question)}</h2>
-    <p>Job ${esc(r.job)} on ${esc(r.host)} ran step ${r.step + 1} with nobody at the prompt, so Claude refused these and carried on.</p>
+    <p>Job ${idChip(r.job)} on ${esc(r.host)} ran step ${r.step + 1} with nobody at the prompt, so Claude refused these and carried on.</p>
     ${open ? `<div class="refusal-actions">
         <button data-scope="refused"${r.rules && r.rules.length ? '' : ' disabled'}>Allow these for this job</button>
         <button data-scope="bash"${allDenied ? ' disabled' : ''}>Allow all Bash for this job</button>
         <button data-dismiss>Dismiss</button></div>
       <p class="refusal-note">${allDenied ? `A deny rule in the host’s Claude settings refuses ${denied.length === 1 ? 'this' : 'these'}; remove it there to let jobs run ${denied.length === 1 ? 'it' : 'them'}, or dismiss.`
         : r.rules === null ? 'This worker’s fleetd names no rules, so only all of Bash can be allowed from here.'
-        : `Allowing adds the rules to job ${esc(r.job)}; a new step continues step ${r.step + 1} with them.${denied.length ? ' Requests a deny rule refuses stay refused.' : ''}`}</p>`
+        : `Allowing adds the rules to job ${idChip(r.job)}; a new step continues step ${r.step + 1} with them.${denied.length ? ' Requests a deny rule refuses stay refused.' : ''}`}</p>`
       : `<p role="status">${esc(r.resolution)}</p>`}
     <p role="alert"></p><p role="status" class="refusal-done"></p>
     <ol class="refusals">${r.requests.map(q => `<li><code><b>${esc(q.tool)}</b> ${esc(q.detail)}</code>
@@ -316,10 +317,12 @@ function renderReaderHead() {
   document.getElementById('rdPrev').disabled = at <= 0;
   document.getElementById('rdNext').disabled = at < 0 || at >= list.length - 1;
 }
-// The documents Previous and Next step through: a job's, in the panel's order, or the same project's in the library.
+// What Previous and Next step through: a job's documents, in the panel's order; the same project's in the library; or
+// every attention item not yet resolved, newest first.
 function siblings() {
   if (rd.source === 'job' && rd.job) return jobDocSequence(rd.job);
   if (rd.source === 'library') return libraryDocs.filter(x => x.project === rd.doc.project);
+  if (rd.source === 'attention') return openAttention();
   return [];
 }
 function stepDoc(delta) {
@@ -328,6 +331,7 @@ function stepDoc(delta) {
   if (at < 0 || !next) return;
   saveReaderScroll();
   if (rd.source === 'library') openLibraryReader(next);
+  else if (rd.source === 'attention') openAttentionReader(next);
   else openReader({ host: rd.host, job: rd.job }, next);
 }
 function renderReaderLoading() {

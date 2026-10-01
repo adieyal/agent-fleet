@@ -2030,3 +2030,28 @@ def test_a_failed_job_can_still_be_dismissed_from_its_panel(changed_deck: Deck) 
     page.locator('#attnPanel [data-owner="home:e1b5c8"]').click()
     expect(page.locator("#panel")).to_have_class(re.compile("open"))
     assert changed_deck.errors == []
+
+
+def test_previous_and_next_step_through_open_attention_items(changed_deck: Deck, base_url: str) -> None:
+    from fleet.projections.attention import attention_display
+    page = changed_deck.page
+    with urlopen(base_url + "/api/state", timeout=5) as response:
+        document = json.load(response)
+    model = next(row for row in document["attention"] if row["project"] == "restoke")
+    document["attention"] = [row for row in document["attention"] if row["state"] != "resolved"] + [
+        {**model, "id": f"step{index}", "summary": f"Question {index}", "state": "open",
+         "last_seen": 1790500000 + index, "kind": "decision"} for index in range(3)]
+    document["attention_display"] = attention_display(document["attention"], document["building"], document["projects"])
+    page.evaluate("doc => fleetDeck.apply(doc)", document)
+    total = len(document["attention"])
+    page.locator('.lantern[data-room="restoke"]').dispatch_event("click")
+    page.locator('#attnPanel .attn-item[data-id="step2"] [data-context]').first.click()   # the newest
+    expect(page.locator("#rdTitle")).to_have_text("Question 2")
+    expect(page.locator("#rdPos")).to_have_text(f"1 / {total}")
+    expect(page.locator("#rdPrev")).to_be_disabled()
+    page.locator("#rdNext").click()
+    expect(page.locator("#rdTitle")).to_have_text("Question 1")
+    expect(page.locator("#rdPos")).to_have_text(f"2 / {total}")
+    page.keyboard.press("ArrowLeft")
+    expect(page.locator("#rdTitle")).to_have_text("Question 2")
+    assert changed_deck.errors == []
