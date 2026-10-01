@@ -148,6 +148,7 @@ function renderPanel() {
                     : `<button class="owner" data-context="${esc(i.id)}">Open context</button>`}
           ${i.refusals ? `<button class="owner" data-context="${esc(i.id)}">Review refused commands</button>`
             : i.questions ? `<button class="owner" data-context="${esc(i.id)}">Read the question</button>`
+            : i.blocked ? `<button class="owner" data-context="${esc(i.id)}">Answer</button>`
             : i.kind === 'decision' ? `<button class="owner" data-context="${esc(i.id)}">Answer question</button>` : ''}
           <div class="aa">${actions}</div><em class="err"></em></div>
       </li>`;

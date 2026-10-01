@@ -1378,6 +1378,62 @@ def test_a_session_question_is_shown_with_where_to_answer_it(changed_deck: Deck,
         server.close()
 
 
+def test_a_blocked_job_is_answered_from_the_deck(changed_deck: Deck, base_url: str, tmp_path,
+                                                 monkeypatch, request) -> None:
+    from test_web_attention import Deck as ServerDeck, HOSTS
+    from test_answer_blocked import QUESTION, blocked
+    from fleet import transport
+    from fleet.projections.attention import attention_display
+    from fleet.web.server import apply_message
+
+    config = tmp_path / "hosts.json"
+    config.write_text(json.dumps({"hosts": {"home": {}}}))
+    monkeypatch.setenv("FLEET_CONFIG", str(config))
+    server = ServerDeck()
+    apply_message(server.state, HOSTS[0], {"type": "hello"})
+    server.report("home", jobs=[blocked()])
+    sent = []
+
+    def call(host, arguments, stdin_text=None):   # the worker, as fleetd answers a keyed add
+        sent.append(json.loads(stdin_text))
+        return {"schema_version": 1, "key": arguments[arguments.index("--key") + 1], "status": "applied",
+                "answers": 1, "steps": [2]}
+    monkeypatch.setattr(transport, "call", call)
+    page = changed_deck.page
+
+    def proxy(route):
+        route.fulfill(response=route.fetch(url=server.url + "/api/" + route.request.url.split("/api/", 1)[1],
+                                           headers={"Content-Type": "application/json"}))
+    for pattern in ("**/api/decision**", "**/api/attention/answer"):
+        page.route(pattern, proxy)
+    try:
+        [item] = server.state.document()["attention"]
+        with urlopen(base_url + "/api/state", timeout=5) as response:
+            document = json.load(response)
+        document["attention"].append(item)
+        document["attention_display"] = attention_display(document["attention"], document["building"], document["projects"])
+        page.evaluate("doc => fleetDeck.apply(doc)", document)
+        page.locator('.lantern[data-room="restoke"]').dispatch_event("click")
+        row = page.locator(f'#attnPanel .attn-item[data-id="{item["id"]}"]')
+        expect(row).to_contain_text("step 2 asks: May I exempt the existing")
+        shoot(request, page, "blocked-job-popover")
+        row.get_by_role("button", name="Answer", exact=True).click()
+        body = page.locator("#rdBody")
+        expect(body.locator(".blocked-message")).to_have_text(QUESTION)
+        shoot(request, page, "blocked-job-reader")
+        body.get_by_label("Your answer", exact=True).fill("Yes, exempt it and continue.")
+        body.get_by_role("button", name="Send answer", exact=True).click()
+        expect(body.locator('[role="status"]')).to_have_text("answered; step 2 continues as step 3")
+        assert sent == [[{"prompt": "Yes, exempt it and continue.", "title": "Answer to step 2"}]]
+        assert server.state.attention.get(item["id"]).state == "resolved"
+        expect(body.get_by_role("button", name="Send answer", exact=True)).to_be_disabled()
+        assert changed_deck.errors == []
+    finally:
+        for pattern in ("**/api/decision**", "**/api/attention/answer"):
+            page.unroute(pattern, proxy)
+        server.close()
+
+
 def test_the_attention_list_closes_on_escape_or_a_click_away(changed_deck: Deck, base_url: str, request) -> None:
     from fleet.projections.attention import attention_display
     page = changed_deck.page
