@@ -350,7 +350,7 @@ def test_epic_page_lists_milestones_tasks_and_child_epics(changed_deck: Deck, ro
     assert changed_deck.errors == []
 
 
-WORKTREE = {'toplevel': '/home/adi/Development/restoke-routes', 'linked_worktree': True,
+ROUTES_WORKTREE = {'toplevel': '/home/adi/Development/restoke-routes', 'linked_worktree': True,
             'repository': '/home/adi/Development/restoke', 'branch': 'feat/route-migration', 'detached': False,
             'head': '4be1c0d', 'dirty': 3, 'collected_at': 1790398500.0}
 
@@ -364,7 +364,7 @@ def test_epic_rows_and_cards_show_the_jobs_serving_them(changed_deck: Deck, rout
     now = store.clock()
     # home:a1c3e9 is on the deck, step 2 of 2 running; its host reports a linked worktree.
     live = next(job for host in deck_state.fixture['hosts'] for job in host['jobs'] if job['id'] == 'a1c3e9')
-    monkeypatch.setitem(live, 'workspace', WORKTREE)
+    monkeypatch.setitem(live, 'workspace', ROUTES_WORKTREE)
     monkeypatch.setitem(live, 'workspace_reason', None)
     execution.link('home', 'a1c3e9', milestones[4].id, actor='user')
     execution.observe('home', JobObservation('a1c3e9', 'running', 'claude', now, None, now))
@@ -406,8 +406,8 @@ def test_epic_rows_and_cards_show_the_jobs_serving_them(changed_deck: Deck, rout
     expect(fifth.locator('[data-job-branch]')).to_have_text('feat/route-migration*')
     expect(fifth.locator('[data-job-branch]')).to_have_attribute(
         'title', 'feat/route-migration · worktree /home/adi/Development/restoke-routes of /home/adi/Development/restoke · 3 uncommitted')
-    expect(fifth.locator('[data-job-branch] [data-copy]')).to_have_attribute('data-copy', WORKTREE['toplevel'])
-    expect(page.locator('[data-epic-page]')).not_to_contain_text(WORKTREE['toplevel'])
+    expect(fifth.locator('[data-job-branch] [data-copy]')).to_have_attribute('data-copy', ROUTES_WORKTREE['toplevel'])
+    expect(page.locator('[data-epic-page]')).not_to_contain_text(ROUTES_WORKTREE['toplevel'])
     shoot(request, page, 'v3-epic-rows')
     if request.config.getoption('--shots'):
         page.set_viewport_size(VIEWPORTS['narrow'])
@@ -515,7 +515,7 @@ def test_panel_breadcrumb_names_the_linked_work_and_opens_it(changed_deck: Deck,
     assert changed_deck.errors == []
 
 
-WORKTREE = {"toplevel": "/home/adi/Development/restoke-suppliers", "linked_worktree": True,
+SUPPLIERS_WORKTREE = {"toplevel": "/home/adi/Development/restoke-suppliers", "linked_worktree": True,
             "repository": "/home/adi/Development/restoke", "branch": "feat/suppliers", "detached": False,
             "head": "abc1234", "dirty": 3, "collected_at": 1790399980.0}
 
@@ -531,7 +531,7 @@ def deck_job(base_url: str, job_id: str, **fields: Any) -> dict[str, Any]:
 def test_the_panel_names_the_jobs_workspace_and_copies_its_path(changed_deck: Deck, base_url: str,
                                                                 request: pytest.FixtureRequest) -> None:
     page = changed_deck.page
-    page.evaluate('doc => fleetDeck.apply(doc)', deck_job(base_url, 'a1c3e9', workspace=WORKTREE, workspace_reason=None))
+    page.evaluate('doc => fleetDeck.apply(doc)', deck_job(base_url, 'a1c3e9', workspace=SUPPLIERS_WORKTREE, workspace_reason=None))
     page.evaluate("fleetDeck.select('home:a1c3e9')")
     chip = page.locator('#panelHead [data-workspace]')
     expect(chip).to_have_text('restoke · restoke-suppliers · feat/suppliers @ abc1234 +3 uncommitted')
@@ -546,14 +546,14 @@ def test_the_panel_names_the_jobs_workspace_and_copies_its_path(changed_deck: De
         ['ref', 'project', 'model', 'perms', 'updated'])
     page.locator('#panelTabs [data-tab="summary"]').click()
 
-    main_checkout = {**WORKTREE, "toplevel": "/home/adi/Development/restoke", "linked_worktree": False,
+    main_checkout = {**SUPPLIERS_WORKTREE, "toplevel": "/home/adi/Development/restoke", "linked_worktree": False,
                      "branch": None, "detached": True, "dirty": 0}
     page.evaluate('doc => fleetDeck.apply(doc)', deck_job(base_url, 'a1c3e9', workspace=main_checkout))
     expect(chip).to_have_text('restoke · detached @ abc1234')
     expect(chip).to_have_attribute('title', '/home/adi/Development/restoke')
 
     page.set_viewport_size(VIEWPORTS["narrow"])
-    page.evaluate('doc => fleetDeck.apply(doc)', deck_job(base_url, 'a1c3e9', workspace=WORKTREE))
+    page.evaluate('doc => fleetDeck.apply(doc)', deck_job(base_url, 'a1c3e9', workspace=SUPPLIERS_WORKTREE))
     box, head = chip.bounding_box(), page.locator('#panelHead').bounding_box()
     assert box['x'] + box['width'] <= head['x'] + head['width']
     shoot(request, page, 'v2-workspace-chip-narrow')
