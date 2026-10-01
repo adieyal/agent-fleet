@@ -10,6 +10,7 @@ from fleet.composition import facades, open_store, open_workspace
 from fleet.modules.work import WorkItem
 from fleet.modules.execution import Action, Run
 from fleet.modules.decisions import Decision
+from fleet.infrastructure.sqlite.execution import encode_run
 from fleet.projections.decisions import decision_log
 
 
@@ -32,8 +33,11 @@ def seeded():
             ('decisions_decision', 'decision', encode(decision)),
         ]:
             unit.connection.execute(f'INSERT INTO {table} (id, record) VALUES (?, ?)', (identity, record))
+        record, observation = encode_run(run)
         unit.connection.execute('INSERT INTO execution_run VALUES (?, ?, ?, ?, ?)',
-                                ('run', 'action', 'home', 'job', encode(run)))
+                                ('run', 'action', 'home', 'job', json.dumps(record)))
+        unit.connection.execute('INSERT INTO execution_run_observation (run, record) VALUES (?, ?)',
+                                ('run', json.dumps(observation)))
         unit.connection.execute("""INSERT INTO attention_item
             (id,project,kind,owner,source,source_reference,headline,context_reference,state,last_seen)
             VALUES ('attention',?,'blocker','job:home:job','test','ref','Blocked','','open','now')""", (other,))
