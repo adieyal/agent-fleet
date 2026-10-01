@@ -25,6 +25,7 @@ class UnitOfWork:
         self.store = store
         self.connection: sqlite3.Connection
         self.recorded = 0
+        self.observed = 0
 
     def __enter__(self) -> UnitOfWork:
         self.connection = connect(self.store.path)
@@ -40,10 +41,16 @@ class UnitOfWork:
         self.connection.execute("DELETE FROM state_history WHERE time < ?", ((now - RETENTION).isoformat(),))
         self.recorded += 1
 
+    def record_observation(self, statement: str, parameters: tuple) -> None:
+        """Write a reading that is not a state change (such as a run's activity glyph), with no history entry.
+
+        Only rows written here are exempt from the rule that every change has a history entry."""
+        self.observed += self.connection.execute(statement, parameters).rowcount
+
     def __exit__(self, error_type: object, error: object, traceback: object) -> None:
         try:
             if error_type is None:
-                if self.connection.total_changes and not self.recorded:
+                if self.connection.total_changes > self.observed and not self.recorded:
                     self.connection.rollback()
                     raise ValueError("a state change requires a history entry")
                 self.connection.commit()

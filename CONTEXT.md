@@ -219,4 +219,4 @@ A packaged specialised display for a space: a manifest, an optional collector th
 | Attention item | open, acknowledged, snoozed, resolved |
 | Observation | current, stale, unknown |
 
-State changes to work items, attention items and runs are timestamped and kept for at least a week, independently of raw traces.
+State changes to work items, attention items and runs are timestamped and kept for at least a week, independently of raw traces. A run's latest reading (when it was last observed, its current activity, its usage so far) is an observation, not a state change: it is kept current without history, and a finished run's usage is recorded with its end.
