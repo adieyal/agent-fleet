@@ -904,6 +904,8 @@ def job_summary(job: JsonObject, event_count: int) -> JsonObject:
                                                      "answered_by", "work_item")},
                    "message": blocked_message(job["id"], step)} for step in job["steps"]],
         "todos": job.get("todos", []),
+        # Decisions the job's agent recorded here, for the controller to take into its store (see command_decision).
+        "decisions": job.get("decisions", []),
         "activity": activity,
         "events": events[-event_count:] if event_count else [],
         "session_id": job.get("session_id"),
@@ -2142,6 +2144,36 @@ def command_grant(arguments: argparse.Namespace) -> None:
           "continuation": grant["continuation"]})
 
 
+DECISION_FIELDS = ("id", "work_item", "question", "answer", "principle", "actor", "context")
+
+
+def command_decision(arguments: argparse.Namespace) -> None:
+    """Keep a decision an agent recorded in this job (JSON object on stdin) for the controller to take from the stream.
+
+    The job's decisions are append-only and keyed by the id the agent's CLI generated: a re-sent decision is
+    reported as held once more and changes nothing; the same id with a different decision is refused.
+    """
+    if arguments.schema_version != 1:
+        fail("unsupported decision schema version")
+    decision = json.loads(sys.stdin.read() or "null")
+    if (not isinstance(decision, dict) or not all(isinstance(decision.get(name), str) for name in DECISION_FIELDS)
+            or not isinstance(decision.get("time"), (int, float))):
+        fail(f"a decision needs {', '.join(DECISION_FIELDS)} as text and time as epoch seconds")
+    if not all(decision[name].strip() for name in DECISION_FIELDS if name != "context"):
+        fail(f"a decision's {', '.join(name for name in DECISION_FIELDS if name != 'context')} must not be blank")
+    decision = {name: decision[name] for name in (*DECISION_FIELDS, "time")}
+    with locked_job(arguments.job) as job:
+        held = next((held for held in job.get("decisions", []) if held["id"] == decision["id"]), None)
+        if held is None:
+            job.setdefault("decisions", []).append(decision)
+        elif held != decision:
+            fail("decision id has changed payload")
+    if held is None:
+        append_event(arguments.job, {"kind": "job", "status": "decision",
+                                     "summary": f"decision recorded: {shorten(decision['question'])}"})
+    emit({"schema_version": 1, "id": decision["id"], "status": "held"})
+
+
 def command_add(arguments: argparse.Namespace) -> None:
     if arguments.key is not None:
         add_keyed(arguments)
@@ -2469,6 +2501,11 @@ def main() -> None:
     grant.add_argument("--key", required=True)
     grant.add_argument("--schema-version", type=int, required=True)
     grant.set_defaults(handler=command_grant)
+
+    decision = commands.add_parser("decision", help="hold an agent's decision (JSON object on stdin) on its job")
+    decision.add_argument("job")
+    decision.add_argument("--schema-version", type=int, required=True)
+    decision.set_defaults(handler=command_decision)
 
     create = commands.add_parser("create")
     create.add_argument("--id")
