@@ -269,7 +269,7 @@ def test_epic_cards_summarise_nested_route_migration(changed_deck: Deck, route_m
     expect(cards).to_have_count(2)
     parent, child = cards.nth(0), cards.nth(1)
     expect(parent.locator('[data-now]')).to_have_text('Now: 1 running: Port supplier list (home)')
-    expect(parent.locator('[data-milestones]')).to_have_text('No milestones recorded')
+    expect(parent.locator('[data-milestones]')).to_have_text('No milestones or tasks recorded')
     expect(parent.locator('[data-next]')).to_have_text('Next: No milestones recorded')
     expect(parent.locator('[data-child-epics]')).to_have_text('Epics: Route migration')
     expect(parent.locator('[data-attention-count]')).to_have_attribute('data-attention-count', '2')
