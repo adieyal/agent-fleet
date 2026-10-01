@@ -136,7 +136,8 @@ const statuses = { complete: svg(`<circle cx="12" cy="12" r="9" fill="currentCol
   active: svg('<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3" fill="currentColor"/>'),
   next: svg('<circle cx="12" cy="12" r="8"/>'),
   blocked: svg('<circle cx="12" cy="12" r="8"/><path d="M6.5 17.5 17.5 6.5"/>'),
-  'on hold': svg('<path d="M9 6v12M15 6v12"/>') };
+  'on hold': svg('<path d="M9 6v12M15 6v12"/>'),
+  dropped: svg('<circle cx="12" cy="12" r="8"/><path d="M8 12h8"/>') };
 
 function progressText({ basis, complete, total }) {
   if (basis === 'unknown') return 'Progress not recorded';

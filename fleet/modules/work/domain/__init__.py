@@ -4,7 +4,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 
 KINDS = ("epic", "workstream", "milestone", "task")
-CONDITIONS = ("none", "waiting", "ready for review", "blocked", "on hold", "complete")
+CONDITIONS = ("none", "waiting", "ready for review", "blocked", "on hold", "complete", "dropped")
 
 
 @dataclass(frozen=True)
@@ -15,7 +15,7 @@ class Progress:
 
 
 def accepted_progress(children: list["WorkItem"], criteria: list["Criterion"]) -> Progress:
-    milestones = [item for item in children if item.kind == "milestone"]
+    milestones = [item for item in children if item.kind == "milestone" and item.condition != "dropped"]
     if milestones:
         return Progress("milestones", sum(item.condition == "complete" for item in milestones), len(milestones))
     if criteria:

@@ -16,12 +16,12 @@ def headline(goal: str) -> str:
 
 
 def status(item: dict) -> str:
-    """One of complete, blocked, on hold, active, ran or next; recorded condition outranks runs.
+    """One of complete, dropped, blocked, on hold, active, ran or next; recorded condition outranks runs.
 
     `ran` is work that is ready for review, or whose latest run finished, but which nobody has accepted as complete:
     a run never completes work."""
     condition = item["condition"]
-    if condition in ("complete", "blocked", "on hold"):
+    if condition in ("complete", "dropped", "blocked", "on hold"):
         return condition
     if condition == "waiting":
         return "on hold"
@@ -78,7 +78,13 @@ def milestone_groups(epic: dict) -> tuple[list[dict], list[tuple[dict, list[dict
 
 
 def milestone_count(milestones: list[dict]) -> dict[str, int]:
-    return {"complete": sum(item["condition"] == "complete" for item in milestones), "total": len(milestones)}
+    """Dropped milestones are neither done nor still to do, so they leave the count."""
+    kept = [item for item in milestones if item["condition"] != "dropped"]
+    return {"complete": sum(item["condition"] == "complete" for item in kept), "total": len(kept)}
+
+
+def outstanding(item: dict) -> bool:
+    return item["condition"] not in ("complete", "dropped")
 
 
 def upcoming(item: dict) -> dict[str, Any]:
@@ -86,7 +92,7 @@ def upcoming(item: dict) -> dict[str, Any]:
 
 
 def workstream(stream: dict, milestones: list[dict]) -> dict[str, Any]:
-    pending = [item for item in milestones if item["condition"] != "complete"]
+    pending = [item for item in milestones if outstanding(item)]
     return {"id": stream["id"], "title": stream["title"], "milestones": milestone_count(milestones),
             "next": upcoming(pending[0]) if pending else None,
             "plan": [line_item(item) for item in milestones]}
@@ -107,7 +113,7 @@ def epic_room(epic: dict, parent: dict | None, depth: int) -> dict[str, Any]:
         "milestones": milestone_count(milestones),
         "agents": [{"run": run["id"], "host": run["host"], "work_item": item["id"], "title": item["title"]}
                    for item in scope for run in item["runs"] if run["status"] == "running"],
-        "upcoming": [upcoming(item) for item in milestones if item["condition"] != "complete"][:UPCOMING],
+        "upcoming": [upcoming(item) for item in milestones if outstanding(item)][:UPCOMING],
         "children": [{"id": child["id"], "title": child["title"]}
                      for child in epic["children"] if child["kind"] == "epic"],
         "attention": [{"id": entry["id"], "kind": entry["kind"], "headline": entry["headline"],
@@ -143,10 +149,10 @@ def bench_state(project: dict, identity: str) -> dict[str, Any]:
     for task in scope:
         if task["kind"] != "task":
             continue
-        lane = "done" if task["condition"] == "complete" else (
+        lane = "done" if task["condition"] == "complete" else "dropped" if task["condition"] == "dropped" else (
             "doing" if any(run["status"] == "running" for run in task["runs"]) else "next")
         tasks.append({**task, "lane": lane})
-    tasks.sort(key=lambda task: ("done", "doing", "next").index(task["lane"]))
+    tasks.sort(key=lambda task: ("done", "doing", "next", "dropped").index(task["lane"]))
     return {"id": identity, "project": project["project"], "title": node["title"],
             "tasks": tasks, "criteria": node["criteria"], "progress": node["progress"],
             "summary": node["summary"],

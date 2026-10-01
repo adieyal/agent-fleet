@@ -1067,10 +1067,14 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 [data-status="next"] [data-glyph] { color:#94a3b8; }
 [data-status="blocked"] [data-glyph] { color:#f87171; }
 [data-status="on hold"] [data-glyph] { color:#fbbf24; }
+[data-status="dropped"] [data-glyph] { color:#64748b; }
+[data-plan-item][data-status="dropped"] > div { opacity:.6; }
+[data-plan-item][data-status="dropped"] :is(b, button[data-slice]) { text-decoration:line-through; }
 [data-epic-card] [data-attention-count] svg { width:18px; height:18px; fill:none; stroke:#fbbf24; stroke-width:2; vertical-align:middle; }
 #benchRoute [data-lane] { padding:6px; border-left:4px solid #94a3b8; }
 #benchRoute [data-lane="done"] { border-color:#34d399; text-decoration:line-through; }
 #benchRoute [data-lane="doing"] { border-color:#38bdf8; font-weight:bold; }
+#benchRoute [data-lane="dropped"] { border-color:#475569; color:#64748b; text-decoration:line-through; }
 #benchRoute [data-condition="blocked"] { outline:2px dashed #f87171; }
 #benchRoute [data-verification] { display:inline-block; padding:8px; border:1px solid #64748b; }
 #benchRoute [data-state="met"] { background:#047857; }

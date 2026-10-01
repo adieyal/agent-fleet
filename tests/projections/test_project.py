@@ -217,3 +217,10 @@ def test_run_work_maps_each_job_to_its_items_ancestry():
         {"id": "t", "kind": "task", "title": "Port"}]}
     assert [node["id"] for node in links["home", "relinked"]["chain"]] == ["epic", "m"]
     assert ("worker", "job") not in links
+
+
+def test_dropped_milestones_leave_progress():
+    items = [item("epic", kind="epic"), item("done", parent="epic", kind="milestone", condition="complete"),
+             item("gone", parent="epic", kind="milestone", condition="dropped")]
+    epic, = project(items)["work_items"]
+    assert epic["progress"] == {"basis": "milestones", "complete": 1, "total": 1}

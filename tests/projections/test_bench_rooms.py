@@ -179,3 +179,18 @@ def test_a_finished_workstream_has_no_next_milestone():
     room, = bench_rooms(project(items))["rooms"]
     assert room["workstreams"][0]["milestones"] == {"complete": 1, "total": 1}
     assert room["workstreams"][0]["next"] is None
+
+
+def test_a_dropped_milestone_shows_as_dropped_and_leaves_the_count_and_next():
+    items = [item("epic", kind="epic"), item("ws", kind="workstream", parent="epic"),
+             item("m1", kind="milestone", parent="ws", condition="complete"),
+             item("m2", kind="milestone", parent="ws", condition="dropped", next_step="Replaced by m3"),
+             item("m3", kind="milestone", parent="ws")]
+    doc = project(items)
+    doc["work_items"][0]["children"][0]["children"][1]["runs"] = [{"status": "succeeded", "start": "2026-09-30T08:00"}]
+    room, = bench_rooms(doc)["rooms"]
+    stream, = room["workstreams"]
+    assert [m["status"] for m in stream["plan"]] == ["complete", "dropped", "next"]
+    assert stream["milestones"] == room["milestones"] == {"complete": 1, "total": 2}
+    assert stream["next"]["id"] == "m3"
+    assert [m["id"] for m in room["upcoming"]] == ["m3"]

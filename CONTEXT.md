@@ -197,7 +197,7 @@ A packaged specialised display for a space: a manifest, an optional collector th
 |---|---|
 | Project | live, shuttered |
 | Focus (projects, epics) | priority, background |
-| Work item | waiting, ready for review, blocked, on hold, complete (accepted) |
+| Work item | waiting, ready for review, blocked, on hold, complete (accepted), dropped (superseded or abandoned; leaves milestone counts) |
 | Agent run | running, succeeded, failed (including lost), stopped, unknown outcome |
 | Completion criterion | unmet, met (checked, judged or accepted) |
 | Attention item | open, acknowledged, snoozed, resolved |
