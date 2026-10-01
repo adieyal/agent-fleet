@@ -1596,6 +1596,126 @@ def test_the_attention_list_closes_on_escape_or_a_click_away(changed_deck: Deck,
     assert changed_deck.errors == []
 
 
+def running_state(base_url: str, route_migration: dict[str, Any]) -> dict[str, Any]:
+    """The fleet with two jobs linked to Route migration's work, one on a step serving a milestone of its own, a
+    blocked job, and workspaces as a current fleetd reports them (or the reason it could not)."""
+    execution = open_execution(open_store())
+    milestones = route_migration["milestones"]
+    execution.link("home", "a1c3e9", milestones[2].id, actor="user")
+    execution.link("worker", "c90e11", route_migration["redirect"].id, actor="user")
+    with urlopen(base_url + "/api/state", timeout=5) as response:
+        doc = json.load(response)
+    jobs = {(host["name"], job["id"]): job for host in doc["hosts"] for job in host["jobs"]}
+    assert jobs["home", "a1c3e9"]["work"] is not None and jobs["worker", "c90e11"]["work"] is not None
+    chain = [{"id": item.id, "kind": item.kind, "title": item.title}
+             for item in (route_migration["routes"], milestones[3])]
+    chain.insert(0, jobs["home", "a1c3e9"]["work"]["chain"][0])
+    jobs["home", "b7d042"]["work"] = {"project": "restoke-v2", "chain": [], "step": {"index": 1, "chain": chain}}
+    jobs["home", "b7d042"].update(workspace_reason=None, workspace={
+        "toplevel": "/home/adi/src/restoke-flaky-upload", "linked_worktree": True, "repository": "/home/adi/src/restoke",
+        "branch": "fix/flaky-upload", "detached": False, "head": "abc1234", "dirty": 3, "collected_at": doc["time"]})
+    jobs["home", "a1c3e9"].update(workspace=None, workspace_reason="not a git repository")
+    blocked = jobs["home", "e1b5c8"]
+    blocked["status"] = "blocked"
+    blocked["steps"][0]["status"] = "blocked"
+    return doc
+
+
+def test_the_running_view_lists_live_jobs_by_project_and_work(changed_deck: Deck, route_migration, base_url: str,
+                                                              request) -> None:
+    page = changed_deck.page
+    doc = running_state(base_url, route_migration)
+    page.evaluate("doc => fleetDeck.apply(doc)", doc)
+    chip, panel = page.locator("#workingOpen"), page.locator("#runPanel")
+    expect(chip).to_have_text("4 working")
+    chip.click()
+    expect(panel).to_be_visible()
+    expect(chip).to_have_attribute("aria-expanded", "true")
+    expect(panel.locator(".run-sum")).to_have_text("4 running · 1 blocked · 1 queued")
+    # restoke's linked jobs under their work path; a task sits under its parent's path and names itself on the row
+    restoke = panel.locator('.run-proj-g[data-project="restoke"]')
+    expect(restoke.locator("h4")).to_have_text("restoke")
+    expect(restoke.locator(".run-path h5")).to_have_text([
+        "V2 frontend overhaul > Route migration", "V2 frontend overhaul > Route migration > 3. Milestone 3",
+        "V2 frontend overhaul > Route migration > 4. Milestone 4"])
+    paths = restoke.locator(".run-path")
+    expect(paths.nth(0).locator(".run-row")).to_have_attribute("data-key", "worker:c90e11")
+    expect(paths.nth(0).locator(".run-work")).to_have_text("◆ Fix redirect loop")
+    expect(paths.nth(1).locator(".run-row")).to_have_attribute("data-key", "home:a1c3e9")
+    step_row = paths.nth(2).locator(".run-row")   # linked through its running step alone
+    expect(step_row).to_have_attribute("data-key", "home:b7d042")
+    expect(step_row.locator(".run-work")).to_have_attribute("title", re.compile("^step 2 serves this milestone"))
+    expect(step_row.locator(".run-m")).to_contain_text("home:b7d042")
+    expect(step_row.locator(".run-m")).to_contain_text(re.compile(r"step 2/3 · \d+"))
+    workspace = step_row.locator(".run-ws")
+    expect(workspace.locator("span, small, em")).to_have_text(["fix/flaky-upload", "restoke-flaky-upload", "±3"])
+    expect(workspace).to_have_attribute("data-copy-id", "/home/adi/src/restoke-flaky-upload")
+    expect(workspace).to_have_attribute("title", re.compile("worktree /home/adi/src/restoke-flaky-upload of /home/adi/src/restoke"))
+    unknown = paths.nth(1).locator(".run-ws")
+    expect(unknown).to_have_text("workspace unknown")
+    expect(unknown).to_have_attribute("title", "workspace unknown: not a git repository")
+    expect(panel.locator('[data-key="worker:c90e11"] .run-ws')).to_have_attribute(
+        "title", "workspace unknown: not reported by this worker")
+    # the unlinked ones apart, saying what they need and how to give it; finished and failed jobs are not listed
+    unlinked = panel.locator("[data-unlinked]")
+    expect(unlinked.locator("h4")).to_have_text("Not linked to work")
+    expect(unlinked.locator(".run-need")).to_contain_text("need a work item")
+    expect(unlinked.locator(".run-row")).to_have_count(3)
+    for key, status in {"home:e1b5c8": "blocked", "worker:f20a6d": "running", "worker:0a9e3b": "queued"}.items():
+        expect(unlinked.locator(f'.run-row[data-key="{key}"]')).to_have_attribute("data-status", status)
+    expect(unlinked.locator('[data-key="worker:0a9e3b"] .run-m')).to_contain_text("step 1/2")
+    expect(unlinked.locator('[data-key="worker:f20a6d"] .run-link')).to_have_attribute(
+        "data-copy-id", "fleet run link worker f20a6d <work-item>")
+    expect(panel.locator('[data-key="worker:d4f7a2"], [data-key="worker:3c71d5"]')).to_have_count(0)
+    shoot(request, page, "running-view")
+
+    # live: a state update re-renders in place and keeps the scroll
+    panel.evaluate("el => { el.style.maxHeight = '220px'; el.scrollTop = 120; }")
+    top = panel.evaluate("el => el.scrollTop")
+    assert top > 0, "the list should scroll at this height"
+    finished = json.loads(json.dumps(doc))
+    next(job for host in finished["hosts"] for job in host["jobs"] if job["id"] == "c90e11")["status"] = "done"
+    page.evaluate("doc => fleetDeck.apply(doc)", finished)
+    expect(panel.locator('[data-key="worker:c90e11"]')).to_have_count(0)
+    expect(panel.locator(".run-sum")).to_have_text("3 running · 1 blocked · 1 queued")
+    assert panel.evaluate("el => el.scrollTop") == top
+    panel.evaluate("el => { el.style.maxHeight = ''; }")
+
+    # a row opens its job's panel; Escape and a click away close the list
+    panel.locator('.run-row[data-key="home:a1c3e9"] .run-b > b').click()
+    expect(panel).to_be_hidden()
+    expect(page.locator("#panel")).to_have_attribute("aria-hidden", "false")
+    expect(page.locator("#panelHead h2")).to_have_text(re.compile("^Migrate the suppliers list"))
+    page.locator("#panel #close").click()
+    chip.click()
+    expect(panel).to_be_visible()
+    page.keyboard.press("Escape")
+    expect(panel).to_be_hidden()
+    expect(chip).to_be_focused()
+    expect(chip).to_have_attribute("aria-expanded", "false")
+    chip.click()
+    page.mouse.click(700, 820)
+    expect(panel).to_be_hidden()
+
+    # with nothing live, it says so
+    for host in finished["hosts"]:
+        for job in host["jobs"]:
+            job["status"] = "done"
+    page.evaluate("doc => fleetDeck.apply(doc)", finished)
+    chip.click()
+    expect(panel.locator(".run-empty")).to_have_text("Nothing is running, blocked or queued.")
+    page.keyboard.press("Escape")
+
+    page.evaluate("doc => fleetDeck.apply(doc)", doc)
+    page.set_viewport_size(VIEWPORTS["narrow"])
+    chip.click()
+    box = panel.bounding_box()
+    assert box["x"] >= 0 and box["x"] + box["width"] <= VIEWPORTS["narrow"]["width"]
+    shoot(request, page, "running-view-narrow")
+    page.keyboard.press("Escape")
+    assert changed_deck.errors == []
+
+
 def expect_need_you(page: Page, base_url: str) -> None:
     """The header's count is the open items, the same ones the lanterns stand for."""
     open_items = sum(state == "open" for state in attention_on_server(base_url).values())
