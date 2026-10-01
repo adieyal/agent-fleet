@@ -26,6 +26,7 @@ from rich.tree import Tree
 from fleet import transport
 from fleet.modules import workspace as projects
 from fleet.composition import open_attention, open_decisions, open_execution, open_library, open_records, open_store, open_work, open_workspace
+from fleet.projections.decisions import decision_log
 from fleet.projections.project import project_status
 from fleet.modules.work import RELATION_TYPES, EvidenceSpecification
 from fleet.modules.execution import Run
@@ -982,10 +983,7 @@ def print_status_item(item: dict[str, Any], depth: int = 0) -> None:
         for field in ("runtime", "reason", "start", "end", "last_observed", "usage"):
             value = "unknown" if run[field] is None else run[field]
             print(f"{indent}      {field.replace('_', ' ').capitalize()}: {value}")
-        guidance = run["guidance"]
-        attached = "none attached" if guidance is None else ", ".join(
-            f"{name} version {guidance[name]['version']}" for name in ("constitution", "charter")
-            if guidance[name] is not None)
+        attached = "none attached" if run["guidance"] is None else describe_guidance(run["guidance"])
         print(f"{indent}      Guidance: {attached}")
     print(f"{indent}  Library:")
     for entry in item["library"]:
@@ -1000,6 +998,7 @@ def print_status_item(item: dict[str, Any], depth: int = 0) -> None:
     for decision in item["decisions"]:
         print(f"{indent}  Decision {decision['id']}: {decision['question']}")
         print(f"{indent}    {decision['answer']} — {decision['actor']} at {decision['time']}")
+        print(f"{indent}    Principle: {'unknown' if decision['principle'] is None else decision['principle']}")
     summary = item["summary"]
     if summary is not None:
         print(f"{indent}  Summary ({summary['authoring_role']}, {summary['updated']}):")
@@ -1082,6 +1081,66 @@ def add_work_parsers(commands) -> None:
     action.add_argument("id", help="work item ID")
     for field in ("purpose", "done", "doing", "next", "authoring-role", "actor"):
         action.add_argument(f"--{field}", required=True)
+
+
+def describe_guidance(guidance: dict) -> str:
+    return ", ".join(f"{name} version {guidance[name]['version']}" for name in ("constitution", "charter")
+                     if guidance[name] is not None)
+
+
+def decision_run(reference: str | None) -> str | None:
+    """The run named, else the run of the fleet job this agent runs in (FLEET_JOB_ID), else None."""
+    if reference is not None:
+        return reference
+    job = os.environ.get("FLEET_JOB_ID")
+    if job is None:
+        return None
+    runs = [run for run in open_execution().runs() if run.remote_job_id == job]
+    if len(runs) > 1:
+        raise FleetError(f"job {job} matches runs on several hosts; give --run")
+    if not runs:
+        error_console.print(f"fleet: job {job} is not a recorded run; the decision has no source run", markup=False)
+        return None
+    return runs[0].id
+
+
+def command_decision_record(arguments: argparse.Namespace) -> None:
+    try:
+        decision = open_decisions().record_guided(arguments.work_item, actor=arguments.actor,
+            question=arguments.question, answer=arguments.answer, principle=arguments.principle,
+            context=arguments.context, source_run=decision_run(arguments.run))
+    except (ValueError, LookupError) as error:
+        raise FleetError(str(error)) from error
+    print(json.dumps(asdict(decision), default=lambda value: value.isoformat()))
+
+
+def command_decision_list(arguments: argparse.Namespace) -> None:
+    store = open_store()
+    work = open_work(store)
+    try:
+        if arguments.epic is not None:
+            epic = work.get(arguments.epic)
+            if epic.kind != "epic":
+                raise ValueError(f"{epic.id} is a {epic.kind}, not an epic")
+            project, scope = epic.project, epic.id
+        else:
+            project, scope = open_workspace(store).resolve_project(arguments.project), None
+    except (ValueError, LookupError) as error:
+        raise FleetError(str(error)) from error
+    log = decision_log(work, open_decisions(store), project=project, epic=scope)
+    if arguments.json:
+        print(json.dumps(log, default=str))
+        return
+    if not log:
+        print("No decisions recorded.")
+    for entry in log:
+        items = ", ".join(item["id"] if item["title"] is None else f"{item['title']} ({item['id']})"
+                          for item in entry["work_items"])
+        print(f"{entry['time']} {entry['actor']} on {items}")
+        print(f"  Question: {entry['question']}")
+        print(f"  Answer: {entry['answer']}")
+        print(f"  Principle: {'unknown' if entry['principle'] is None else entry['principle']}")
+        print(f"  Guidance: {'unknown' if entry['guidance'] is None else describe_guidance(entry['guidance'])}")
 
 
 def command_answer(arguments: argparse.Namespace) -> None:
@@ -1382,6 +1441,25 @@ def build_parser() -> argparse.ArgumentParser:
     status.add_argument("project")
     status.add_argument("--json", action="store_true", help="emit the project projection")
     status.set_defaults(handler=command_status)
+
+    decision = commands.add_parser("decision", help="decisions agents made under guidance").add_subparsers(
+        dest="decision_command", required=True)
+    decision_record = decision.add_parser("record", help="record a decision and the principle it relied on")
+    decision_record.add_argument("--work-item", required=True)
+    decision_record.add_argument("--question", required=True)
+    decision_record.add_argument("--answer", required=True)
+    decision_record.add_argument("--principle", required=True,
+                                 help='the rule relied on, e.g. "Constitution: decide yourself — test-only fixes"')
+    decision_record.add_argument("--actor", required=True)
+    decision_record.add_argument("--context", default="", help="where the question arose")
+    decision_record.add_argument("--run", help="the run deciding; FLEET_JOB_ID's run when omitted")
+    decision_record.set_defaults(handler=command_decision_record)
+    decision_list = decision.add_parser("list", help="decisions on a project's or an epic's work, newest first")
+    decision_scope = decision_list.add_mutually_exclusive_group(required=True)
+    decision_scope.add_argument("--project")
+    decision_scope.add_argument("--epic")
+    decision_list.add_argument("--json", action="store_true")
+    decision_list.set_defaults(handler=command_decision_list)
 
     answer = commands.add_parser("answer", help="record an answer; options use 1-based numbers")
     answer.add_argument("id")

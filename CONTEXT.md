@@ -158,7 +158,7 @@ The transition that marks a work item complete against its completion criteria. 
 Records showing that a completion criterion is met, such as test results, reports or run outputs. A run finishing is not in itself evidence that criteria are met.
 
 **Decision**:
-A recorded choice with its actor, mandate version, context and affected work. Decisions within a mandate are recorded without interrupting the user; others begin as decision requests.
+A recorded choice with its actor, mandate version, context and affected work. Decisions within a mandate are recorded without interrupting the user; others begin as decision requests. A decision an agent makes itself under guidance names its **principle**, the rule it relied on (such as "Constitution: decide yourself — test-only fixes"), and carries the guidance versions its run received. A decision whose principle was never given shows it as unknown.
 
 **Proposal**:
 A change awaiting acceptance: an edit beyond its author's authority, a disputed completion, or an offline edit that conflicts with accepted state. Proposals are never applied by order of arrival.

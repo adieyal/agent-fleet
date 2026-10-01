@@ -11,17 +11,43 @@ from ..domain import Decision, Proposal, selected_answer
 
 
 def record_decision(repository, clock, records, authorization, source_run: str,
-                    question: str, answer: str, context: str) -> Decision:
-    decision = Decision(str(uuid4()), None, question, answer, authorization.actor, context,
-                        (authorization.work_item,), clock(), authorization.id,
-                        authorization.mandate_version, source_run)
-    body = json.dumps(asdict(decision), default=str)
+                    question: str, answer: str, context: str, principle: str | None = None) -> Decision:
     with repository.transaction() as transaction:
+        decision = Decision(str(uuid4()), None, question, answer, authorization.actor, context,
+                            (authorization.work_item,), clock(), authorization.id,
+                            authorization.mandate_version, source_run, principle,
+                            run_guidance(transaction.execution, source_run))
+        body = json.dumps(asdict(decision), default=str)
         transaction.insert(decision)
         intent = transaction.records.prepare(authorization.project, f'decisions/{decision.id}.json',
             body, key=decision.id, actor=authorization.actor, source_run=source_run)
     records.publish(intent, body)
     return decision
+
+
+def run_guidance(execution, source_run: str | None) -> dict | None:
+    """The guidance versions pinned on the run's dispatch; None when there was no run or no guidance."""
+    if source_run is None:
+        return None
+    return execution.get_action(execution.get_run(source_run).action).guidance
+
+
+def record_guided(repository, clock, work_item: str, *, actor: str, question: str, answer: str,
+                  principle: str, context: str, source_run: str | None) -> Decision:
+    """A decision an agent made itself under guidance, without an activation."""
+    if not question.strip() or not principle.strip():
+        raise ValueError("question and principle are required")
+    with repository.transaction() as transaction:
+        project = transaction.work.get(work_item).project
+        if source_run is not None:
+            run = transaction.execution.get_run(source_run)
+            if transaction.execution.get_action(run.action).project != project:
+                raise ValueError(f"run {source_run} is not in {project}, the project of {work_item}")
+        decision = Decision(str(uuid4()), None, question, answer, actor, context, (work_item,), clock(),
+                            source_run=source_run, principle=principle,
+                            guidance=run_guidance(transaction.execution, source_run))
+        transaction.insert(decision)
+        return decision
 
 
 def propose(repository, clock, activation, *, question: str, change: str, reason: str) -> Proposal:

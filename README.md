@@ -188,6 +188,16 @@ fleet guidance show PROJECT_ID
 fleet guidance history PROJECT_ID
 ```
 
+An agent records what it decided itself, naming the principle it relied on. Inside
+a fleet job the decision is linked to the job's run and the guidance versions it
+received; elsewhere give `--run` or leave the versions unknown. List decisions for
+a project or an epic (`--epic EPIC_ID`), newest first.
+
+```bash
+fleet decision record --work-item WORK_ID --question "Rerun the flaky test?" --answer "Once" --principle "Constitution: decide yourself — test-only fixes" --actor claude
+fleet decision list --project PROJECT_ID
+```
+
 Use the front desk and lanterns, or these commands, to manage attention:
 
 ```bash

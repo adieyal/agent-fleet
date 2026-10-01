@@ -32,6 +32,7 @@ def test_workspace_guide(tmp_path, monkeypatch, capsys):
                     steps=[{}], description='Review')
 
     pushed = []
+    monkeypatch.delenv('FLEET_JOB_ID', raising=False)  # the guide is followed outside a fleet job
     monkeypatch.setattr(cli.transport, 'call', call)
     monkeypatch.setattr(cli, 'push_context', lambda host, job, paths: pushed.append(sorted(Path(p).name for p in paths)))
     for language, block in re.findall(r'```(bash|python)\n(.*?)```', section, re.S):

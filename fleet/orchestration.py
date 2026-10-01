@@ -35,7 +35,7 @@ state: {{}}
 progress: next_step, condition, resume_condition (only changed fields)
 meet: criterion, evidence (array of recorded references)
 attention: headline, context_reference
-decide: question, answer, context
+decide: question, answer, context, principle (optional: the rule relied on)
 summary: purpose, done, doing, next
 propose: question, change, reason
 dispatch: host, runtime, reason, idempotency_key, payload
