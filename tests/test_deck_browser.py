@@ -1409,7 +1409,7 @@ def test_a_background_room_is_lit_while_its_work_runs(changed_deck: Deck, base_u
     assert rooms["invoice-parser"]["attention"] == {"kind": "blocker", "state": "open", "count": 1}
     assert crew(page, "invoice-parser") == set()
     expect(page.locator("#tags .tag", has_text="0a9e3b")).to_have_count(0)
-    expect(page.locator("#stats .chip", has_text="working")).to_have_text("5 working")   # still counted
+    expect(page.locator("#workingOpen")).to_have_text("5 running · list")   # still counted
     page.evaluate("doc => fleetDeck.apply(doc)", finish_jobs(base_url, {}))
     assert rooms_by_name(page)["invoice-parser"]["lit"] is False
     assert changed_deck.errors == []
@@ -1426,6 +1426,7 @@ def test_the_switch_sends_the_crew_away_and_brings_it_back(deck: Deck, base_url:
     expect(switch).to_have_attribute("data-focus", "background")
     wait_for_dim(page, "restoke", 1)
     assert settled_focus_on_server(base_url, "restoke", "background") == {"background"}
+    expect(page.locator("#toast")).to_contain_text("Its androids are hidden; running work continues")
     dim, _, warm = room_colour(page, "restoke")
     assert dim < bright * 0.75 and warm > cool + 20                            # its work runs: dim, but lit warm
     assert crew(page, "restoke") == set()
@@ -1831,7 +1832,7 @@ def test_the_running_view_lists_live_jobs_by_project_and_work(changed_deck: Deck
     doc = running_state(base_url, route_migration)
     page.evaluate("doc => fleetDeck.apply(doc)", doc)
     chip, panel = page.locator("#workingOpen"), page.locator("#runPanel")
-    expect(chip).to_have_text("4 working")
+    expect(chip).to_have_text("4 running · list")
     chip.click()
     expect(panel).to_be_visible()
     expect(chip).to_have_attribute("aria-expanded", "true")
@@ -2029,6 +2030,7 @@ def test_a_failed_job_can_still_be_dismissed_from_its_panel(changed_deck: Deck) 
     expect(chip).to_have_text("1 hidden · show")
     expect(page.locator('#attnPanel [data-owner="home:e1b5c8"]')).to_have_count(0)   # nothing to open while hidden
     expect(page.locator('.lantern[data-room="restoke"]')).to_have_attribute("data-count", "2")
+    page.once('dialog', lambda dialog: dialog.accept())
     chip.click()
     expect(chip).to_have_count(0)
     page.locator('#attnPanel [data-owner="home:e1b5c8"]').click()
@@ -2201,3 +2203,70 @@ def test_p5_global_actions_and_owner_navigation(changed_deck: Deck, base_url: st
     page.locator('#panel #close').click()
     page.locator('#viewToggle [data-view="deck"]').click()
     assert changed_deck.errors == []
+
+
+def test_audit1_batch6_running_navigation_preserves_saved_view(changed_deck: Deck) -> None:
+    page = changed_deck.page
+    page.locator('#viewToggle [data-view="building"]').click()
+    saved = page.evaluate("localStorage.getItem('fleet.view')")
+    page.locator('#workingOpen').click()
+    page.locator('#runPanel .run-row[data-key="home:a1c3e9"]').click()
+    expect(page.locator('body')).to_have_attribute('data-view', 'deck')
+    expect(page.locator('#panel')).to_have_class('open')
+    assert page.evaluate("localStorage.getItem('fleet.view')") == saved
+    page.locator('#panel #close').click()
+    page.locator('#viewToggle [data-view="deck"]').click()
+
+
+def test_audit1_batch6_header_and_focus_copy(changed_deck: Deck, request) -> None:
+    page = changed_deck.page
+    expect(page.locator('#workingOpen')).to_have_text('4 running · list')
+    expect(page.locator('#stats .chip-inert')).to_have_count(3)
+    expect(page.locator('.focus-switch[data-room="restoke"] [data-set="background"]')).to_have_attribute('title', re.compile('androids.*Running work continues', re.I))
+    shoot(request, page, 'batch6-header-focus')
+    page.set_viewport_size(VIEWPORTS['narrow'])
+    shoot(request, page, 'batch6-header-focus-390')
+
+
+def test_audit1_batch6_move_consequences_and_feedback(changed_deck: Deck, request) -> None:
+    page = changed_deck.page
+    sent = []
+    def move(route):
+        sent.append(route.request.post_data_json)
+        route.fulfill(json={'host': 'home', 'id': 'a1c3e9', 'project': 'invoice-parser',
+                            'project_id': 'p-1c0ce5a2', 'linked': True})
+    page.route('**/api/agent/move', move)
+    try:
+        page.locator('#tags .tag', has_text='a1c3e9').click()
+        page.locator('#moveAgent').click()
+        menu = page.locator('#moveMenu')
+        expect(menu.locator('.move-consequence')).to_contain_text('Move back')
+        expect(menu).to_contain_text('fleet project unlink home:invoice-parser')
+        shoot(request, page, 'batch6-move')
+        page.set_viewport_size(VIEWPORTS['narrow'])
+        page.locator('#moveAgent').click()
+        page.locator('#moveAgent').click()
+        shoot(request, page, 'batch6-move-390')
+        menu.get_by_role('menuitem', name=re.compile('Invoice analysis')).click()
+        expect(page.locator('#toast')).to_contain_text('Invoice analysis')
+        expect(page.locator('#toast')).to_contain_text('Linked home:invoice-parser')
+        assert sent == [{'host': 'home', 'id': 'a1c3e9', 'project': 'p-1c0ce5a2'}]
+    finally:
+        page.unroute('**/api/agent/move', move)
+        page.keyboard.press('Escape')
+
+
+def test_audit1_batch6_hidden_restore_says_and_confirms_its_effect(changed_deck: Deck) -> None:
+    page = changed_deck.page
+    page.locator('.lantern[data-room="restoke"]').dispatch_event('click')
+    page.locator('#attnPanel [data-owner="home:e1b5c8"]').click()
+    page.locator('#dismiss').click()
+    chip = page.locator('#restoreDismissed')
+    expect(chip).to_have_attribute('title', re.compile('permanently forget'))
+    page.once('dialog', lambda dialog: dialog.dismiss())
+    chip.click()
+    expect(chip).to_be_visible()
+    page.once('dialog', lambda dialog: dialog.accept())
+    chip.click()
+    expect(chip).to_have_count(0)
+    expect(page.locator('#toast')).to_contain_text('dismissals forgotten')

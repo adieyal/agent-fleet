@@ -492,6 +492,7 @@ def test_the_focus_switch_changes_a_floor_and_moves_nothing(page: Page, ten_floo
     expect(plate).to_have_attribute("data-mode", "windowed")
     page.wait_for_function("fleetBuilding.floors()[0].built.mode === 'windowed'")
     assert state(url)["building"]["focus"][project] == "background"
+    expect(page.locator("#toast")).to_contain_text("Its androids are hidden; running work continues")
     expect(page.locator("body")).to_have_attribute("data-view", "building")   # a switch is not a way in
     settle(page)
     assert layout(page) == before
@@ -707,3 +708,15 @@ def test_p5_front_desk_opens_same_global_list(page: Page, visitor_asks_url: str,
     expect(panel).to_be_visible()
     expect(panel.locator('[data-attention-group="open"] .attn-item')).to_have_count(4)
     expect(page.locator('body')).to_have_attribute('data-view', 'floor')
+
+
+def test_audit1_batch6_building_focus_uses_same_vocabulary(page: Page, restoke_url: str, request) -> None:
+    open_building(page, restoke_url)
+    switch = page.locator('.plate[data-floor="1"] .fswitch')
+    expect(switch.locator('[data-focus="priority"]')).to_have_text('priority')
+    expect(switch.locator('[data-focus="background"]')).to_have_text('background')
+    expect(switch.locator('[data-focus="background"]')).to_have_attribute('title', re.compile('androids.*Running work continues', re.I))
+    if request.config.getoption('--shots'):
+        page.screenshot(path=request.config.getoption('--shots') + '/batch6-building-focus.png')
+        page.set_viewport_size({'width': 390, 'height': 844})
+        page.screenshot(path=request.config.getoption('--shots') + '/batch6-building-focus-390.png')

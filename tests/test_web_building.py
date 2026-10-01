@@ -463,12 +463,14 @@ def test_an_agent_moves_to_a_project_under_its_label_on_that_host(deck, monkeypa
     invoices = register("Invoice training", ("home", "invoice-training"))
     status, moved = post(deck, "/api/agent/move", {"host": "home", "id": "j0", "project": invoices})
     assert (status, moved["project"], calls) == (200, "invoice-training", [("home", ["mv", "j0", "invoice-training"])])
+    assert moved["linked"] is False
     home = next(host for host in fetch_state(deck)["hosts"] if host["name"] == "home")
     assert next(job for job in home["jobs"] if job["id"] == "j0")["project_id"] == invoices
 
     # gpu has no label for the project yet: it is linked under the project's own label, and the session moves there
     status, moved = post(deck, "/api/agent/move", {"host": "gpu", "id": "s0", "project": invoices})
     assert (status, calls[-1]) == (200, ("gpu", ["mv", "s0", "invoice-training"]))
+    assert moved["linked"] is True
     gpu = next(host for host in fetch_state(deck)["hosts"] if host["name"] == "gpu")
     assert gpu["sessions"][0]["project_id"] == invoices
 

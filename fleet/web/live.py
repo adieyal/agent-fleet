@@ -93,12 +93,13 @@ class LiveWorkspace:
             raise LookupError(f"no project '{project_id}'")
         project = self.registry.get(project_id)
         label = next((link.label for link in project.links if link.host == host), None)
-        if label is None:
+        linked = label is None
+        if linked:
             label = project.links[0].label if project.links else project.name
             self.edit_registry(lambda registry: registry.link(project_id, host, label))
         self.move_on_host(host, identity, label)
         self.bump()
-        return {"host": host, "id": identity, "project": label, "project_id": project_id}
+        return {"host": host, "id": identity, "project": label, "project_id": project_id, "linked": linked}
 
     def move_in_options(self, label: str, hosts: list[str]) -> dict[str, Any]:
         """What moving the label in on `hosts` could mean: projects it may belong to (see Registry.link_candidates),

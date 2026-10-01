@@ -1,4 +1,4 @@
-// Running view (V4): the header's "N working" chip opens a list of every running, stalled, blocked and queued job on
+// Running view (V4): the header's "N running · list" chip opens a list of every running, stalled, blocked and queued job on
 // every host, grouped by project and then by the work item its current step serves (epic > milestone). Each row says
 // where the job runs, how far it is, which branch or worktree it works in, and opens the job's panel. Jobs with no work
 // item are listed apart, with the `fleet run link` command that gives them one. Read from the whole state document, so
@@ -8,6 +8,7 @@ import { duration, esc, trunc } from './util.js';
 import { hostLook } from './looks.js';
 import { workOf } from './model.js';
 import { idChip, select } from './panel.js';
+import { showView } from './building.js';
 
 const LISTED = ['running', 'stalled', 'blocked', 'queued'];
 const GLYPH = { running: '▶', stalled: '◍', blocked: '⚑', queued: '○' };
@@ -150,7 +151,7 @@ function openRow(row) {
   if (!row || row.getAttribute('aria-disabled') === 'true') return;
   close();
   if (!onDeck() && (document.body.dataset.view === 'building' || !workOf(row.dataset.key))) {
-    document.querySelector('#viewToggle [data-view="deck"]').click();
+    showView('deck');
   }
   if (workOf(row.dataset.key)) select(row.dataset.key);
 }

@@ -18,6 +18,7 @@ import { openAttentionReader, openReader } from './reader.js';
 import { noteTrace, summarySections, traceRows } from './summary.js';
 import { openWorkarea } from './workarea.js';
 import { enterFloor } from './bench.js';
+import { showToast } from './building.js';
 
 // ------------------------------------------------------------------ portraits for the manifest and the panel
 // Rendered once per look into an offscreen target with the main renderer, then copied into small 2D canvases.
@@ -227,10 +228,13 @@ function openMoveMenu(button) {
   const menu = document.body.appendChild(document.createElement('div'));
   menu.id = 'moveMenu';
   menu.setAttribute('role', 'menu');
-  menu.innerHTML = `<p>Move to project</p>${projects.length ? projects.map(p =>
-    `<button role="menuitem" data-project="${esc(p.id)}">${esc(p.name)}</button>`).join('') : '<p class="muted">No other projects</p>'}<p role="alert" hidden></p>`;
+  menu.innerHTML = `<p>Move to project</p><div class="move-consequence">Changes this agent’s project label on ${esc(e.host)}. Move back to undo the label change. Any added registry link remains until you unlink it.</div>${projects.length ? projects.map(p => {
+    const link = p.links?.find(l => l.host === e.host);
+    const label = link?.label ?? p.links?.[0]?.label ?? p.name;
+    return `<button role="menuitem" data-project="${esc(p.id)}">${esc(p.name)}<small>${link ? `Uses label ${esc(label)}` : `Adds registry link ${esc(e.host + ':' + label)}; remove with fleet project unlink ${esc(e.host + ':' + label)}`}</small></button>`;
+  }).join('') : '<p class="muted">No other projects</p>'}<p role="alert" hidden></p>`;
   const at = button.getBoundingClientRect();
-  menu.style.top = `${at.bottom + 4}px`;
+  menu.style.top = `${Math.max(8, Math.min(at.bottom + 4, innerHeight - menu.offsetHeight - 8))}px`;
   menu.style.left = `${Math.max(8, Math.min(at.left, innerWidth - menu.offsetWidth - 8))}px`;
   menu.querySelector('button')?.focus();
   menu.addEventListener('click', async ev => {
@@ -239,7 +243,13 @@ function openMoveMenu(button) {
     menu.querySelectorAll('button').forEach(b => { b.disabled = true; });
     const response = await fetch('/api/agent/move', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ host: e.host, id: agent.id, project: choice.dataset.project }) }).catch(error => ({ ok: false, error }));
-    if (response.ok) { closeMoveMenu(); return; }
+    if (response.ok) {
+      const result = await response.json();
+      const destination = projects.find(p => p.id === result.project_id)?.name ?? result.project;
+      closeMoveMenu();
+      showToast(`Moved ${e.host}:${shortId(agent.id)} to ${destination} using label ${result.project}.${result.linked ? ` Linked ${e.host}:${result.project} to ${destination}.` : ''}`);
+      return;
+    }
     const alert = menu.querySelector('[role=alert]');
     alert.textContent = response.json ? (await response.json().catch(() => ({}))).error || 'Move failed' : String(response.error);
     alert.hidden = false;
@@ -453,18 +463,23 @@ export function renderStats() {
   // every session counts, including idle ones that have left the deck
   for (const h of hosts) for (const s of h.sessions || []) if (s.project && live[s.status] !== undefined) live[s.status]++;
   document.getElementById('stats').innerHTML = `
-    ${live.working + live.idle ? `<span class="chip sess" title="interactive Claude Code / Codex sessions"><i></i><b>${live.working + live.idle}</b> live${live.idle ? `<span class="opt"> · ${live.idle} waiting</span>` : ''}</span>` : ''}
-    <button class="chip restore" id="workingOpen" aria-haspopup="dialog" aria-expanded="false" title="Running, blocked and queued jobs by project and work"><i style="background:var(--run)"></i><b>${count.running}</b> working</button>
-    <span class="chip opt"><i style="background:var(--warn)"></i><b>${count.queued}</b> queued</span>
-    <span class="chip opt"><i style="background:var(--ok)"></i><b>${count.done}</b> done</span>
+    ${live.working + live.idle ? `<span class="chip chip-inert sess" title="interactive Claude Code / Codex sessions"><i></i><b>${live.working + live.idle}</b> live${live.idle ? `<span class="opt"> · ${live.idle} waiting</span>` : ''}</span>` : ''}
+    <button class="chip restore" id="workingOpen" aria-haspopup="dialog" aria-expanded="false" title="Open Running: includes running, queued and jobs needing attention; this number counts running jobs only"><i style="background:var(--run)"></i><b>${count.running}</b> running · list</button>
+    <span class="chip chip-inert opt"><i style="background:var(--warn)"></i><b>${count.queued}</b> queued</span>
+    <span class="chip chip-inert opt"><i style="background:var(--ok)"></i><b>${count.done}</b> done</span>
     <button class="chip restore" id="needYou" aria-haspopup="dialog" aria-controls="attnPanel" aria-expanded="${allAttentionOpen()}" title="Open all-rooms attention: every open item, its owner, age and action consequences; acknowledged and snoozed items are in a fold"><i style="background:var(--bad)"></i><b>${openCount}</b> need you</button>
     ${retiredCount ? `<button class="chip restore" id="toggleFinished" title="Show finished jobs that have left the deck"><b>${retiredCount}</b> finished · show</button>`
       : showFinished ? '<button class="chip restore" id="toggleFinished" title="Let finished jobs leave the deck again">hide finished</button>' : ''}
-    ${hiddenCount ? `<button class="chip restore" id="restoreDismissed" title="Show dismissed agents again"><b>${hiddenCount}</b> hidden · show</button>` : ''}`;
+    ${hiddenCount ? `<button class="chip restore" id="restoreDismissed" title="Show all dismissed agents and permanently forget every dismissal in this browser; you can dismiss agents again, but cannot restore this set"><b>${hiddenCount}</b> hidden · show</button>` : ''}`;
 }
 document.getElementById('stats').addEventListener('click', ev => {
   if (ev.target.closest('#needYou')) openAllAttention(ev.target.closest('#needYou'));
-  else if (ev.target.closest('#restoreDismissed')) restoreDismissed();
+  else if (ev.target.closest('#restoreDismissed')) {
+    if (confirm('Show all dismissed agents and permanently forget every dismissal in this browser? You can dismiss agents again, but cannot restore this set.')) {
+      restoreDismissed();
+      showToast('Dismissed agents shown; saved dismissals forgotten.');
+    }
+  }
   else if (ev.target.closest('#toggleFinished')) toggleFinished();
 });
 export function renderLive() {

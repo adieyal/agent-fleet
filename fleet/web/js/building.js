@@ -1,3 +1,4 @@
+import { focusTitle, focusFeedback } from './focus-copy.js';
 // The building (L0): every registered project on its own floor of a building seen in cross-section, with the lobby on
 // the ground floor. A view beside the deck, chosen with the header's deck | building switch and remembered.
 //
@@ -208,9 +209,11 @@ async function setFocus(projectId, focus) {
     const res = await fetch('/api/focus', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ focus, projects: [projectId], labels: [] }) });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
+    showToast(focusFeedback(f.name, focus));
   } catch (err) {
     pending.delete(projectId);
     focusErrors.set(projectId, err.message);
+    showToast(`Couldn’t change focus: ${err.message}`);
     applyBuilding(doc);
   }
 }
@@ -410,7 +413,7 @@ function stepLanterns(now) {
 const WORDS = 3;
 const plateName = name => { const w = name.trim().split(/\s+/); return w.length > WORDS ? w.slice(0, WORDS).join(' ') + '…' : w.join(' '); };
 const RING = `<svg class="ring" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/></svg><i aria-hidden="true">?</i>`;
-const SWITCH = { priority: 'open', background: 'windows' };   // the switch's two positions, as the floor shows them
+const SWITCH = { priority: 'priority', background: 'background' };   // the switch's two positions, as the floor shows them
 function renderUi() {
   const frontDeskOpen = ui.querySelector('.front-desk')?.open;
   const plates = floors.map(f => {
@@ -420,7 +423,7 @@ function renderUi() {
       <button class="enter" data-enter="${f.floor}" title="Enter ${esc(f.name)}"><span class="fn">${f.floor}</span><b>${esc(plateName(f.name))}</b></button>
       <span class="progress" data-progress="unknown" title="Progress unknown: no plan yet" aria-label="progress unknown">${RING}</span>
       <span class="fswitch" role="group" aria-label="Focus for ${esc(f.name)}" data-focus="${f.focus}"${error ? ` data-error title="Couldn’t change focus: ${esc(error)}"` : ''}>${
-        Object.entries(SWITCH).map(([focus, label]) => `<button data-focus="${focus}" aria-pressed="${f.focus === focus}" title="${focus}">${label}</button>`).join('')}</span>
+        Object.entries(SWITCH).map(([focus, label]) => `<button data-focus="${focus}" aria-pressed="${f.focus === focus}" title="${esc(focusTitle(f.name, focus))}">${label}</button>`).join('')}</span>
       <button class="merge-handle" data-merge="${esc(f.projectId)}" aria-label="Merge ${esc(f.name)} with another project"
         title="Merge with a project registered for the same work by mistake">⇄</button>
     </div>`;

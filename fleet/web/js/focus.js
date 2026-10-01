@@ -9,6 +9,8 @@ import { RD, RW } from './env.js';
 import { toScreen } from './scene.js';
 import { setDimmed } from './dim.js';
 import { applyState, lastDoc } from './state.js';
+import { focusTitle, focusFeedback } from './focus-copy.js';
+import { showToast } from './building.js';
 
 const FADE_S = 0.4;
 const floorUi = document.getElementById('floorUi');
@@ -76,7 +78,10 @@ function renderSwitch(r) {
   el.room = r;
   el.dataset.room = r.name;
   el.dataset.focus = r.focus;
-  for (const b of el.children) b.setAttribute('aria-pressed', String(b.dataset.set === r.focus));
+  for (const b of el.children) {
+    b.setAttribute('aria-pressed', String(b.dataset.set === r.focus));
+    b.title = focusTitle(r.label, b.dataset.set);
+  }
   el.setAttribute('aria-label', `Focus for ${r.label}`);
   el.title = el.dataset.error ? `Couldn’t change focus: ${el.dataset.error}` : `${r.label} is in ${r.focus}`;
 }
@@ -95,9 +100,11 @@ async function setFocus(r, focus) {
   try {
     const res = await fetch('/api/focus', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
+    showToast(focusFeedback(r.label, focus));
   } catch (err) {
     for (const key of keys) pending.delete(key);
     el.dataset.error = err.message;
+    showToast(`Couldn’t change focus: ${err.message}`);
     applyState(lastDoc);
   }
 }
