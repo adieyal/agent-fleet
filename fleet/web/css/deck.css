@@ -1402,3 +1402,7 @@ body[data-readonly] #attnPanel[data-scope=all] .aa{display:flex}
 
 .kh-head button,#keyboardHelpOpen{border:1px solid #38536d;border-radius:6px;background:#17293d;color:#dbe7f4;cursor:pointer}
 #keyboardHelpOpen{padding:4px 9px} .kh-head button:hover,#keyboardHelpOpen:hover{background:#254360}
+
+.attn-owned{font-size:11px;color:var(--muted);display:inline-block!important;width:max-content;padding:2px 7px;border:1px solid var(--line);border-radius:12px;margin-top:5px}
+.attn-reason{margin:8px 0;color:var(--text)}
+@media(max-width:600px){header #withAgent{order:-1}}

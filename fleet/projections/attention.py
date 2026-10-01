@@ -62,4 +62,4 @@ def attention_display(items: list[dict], building: dict, projects: list[dict]) -
     return {"places": [{"place": place, **marker(rows)} for place, rows in places.items()],
             "rooms": {label: marker(rows) for label, rows in rooms.items()},
             "front_desk": [row["id"] for row in items if row["state"] in ("open", "acknowledged")],
-            "open_count": sum(row["state"] == "open" for row in items)}
+            "open_count": sum(row["state"] == "open" and row.get("owned_by") != "agent" for row in items)}

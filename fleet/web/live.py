@@ -21,7 +21,7 @@ from fleet.projections.attention import attention_display, attention_items
 from fleet.projections.building import building_state
 from fleet.modules.workspace import Registry, WorkspaceFacade, AlreadyHoused
 from fleet.transport import FleetError
-from fleet.composition import open_work, open_execution
+from fleet.composition import open_work, open_execution, open_records, facades
 from fleet.projections.project import run_work
 from fleet.web.job_store import ProjectDocuments
 from fleet.web.overview import Overview
@@ -238,7 +238,14 @@ class LiveWorkspace:
 
     def act_on_attention(self, action: str, item_id: str, seconds: float | None = None, undo: str | None = None) -> dict:
         result = {}
-        if action == "acknowledge":
+        if action == "delegate":
+            item = self.attention.get(item_id)
+            if not item.project or open_records(self.store).triage_mandate(item.project) is None:
+                raise FleetError("This project has no confirmed triage mandate; delegation is unavailable")
+            self.attention.delegate(item_id, actor="web-user")
+        elif action == "take":
+            self.attention.take(item_id, actor="web-user")
+        elif action == "acknowledge":
             self.attention.acknowledge(item_id, actor="web-user")
         elif action == "snooze":
             if not isinstance(seconds, (int, float)) or isinstance(seconds, bool) or seconds <= 0:
@@ -271,8 +278,19 @@ class LiveWorkspace:
 
     def with_attention(self, document: dict[str, Any]) -> dict[str, Any]:
         """Add stored focus choices and the Attention projection."""
+        from fleet.triage_scheduler import TriageScheduler
+        services = facades(self.store)
+        items = attention_items(self.attention, document["hosts"])
+        triage = {project: TriageScheduler(services, None, None).status(project)
+                  for project in {item["project_id"] for item in items if item["project_id"]}}
+        for status in triage.values():
+            if status["live_run"]:
+                run = services.execution.get_run(status["live_run"]["id"])
+                status["live_run"].update(host=run.host, remote_job_id=run.remote_job_id)
+        for item in items:
+            item["delegable"] = bool(triage.get(item["project_id"], {}).get("mandate_version")) and not item["questions"]
         return {**document, "focus": asdict(self.workspace.focus_snapshot()),
-                "attention": attention_items(self.attention, document["hosts"])}
+                "attention": items, "triage": triage}
 
     def with_work(self, document: dict[str, Any]) -> dict[str, Any]:
         """Give each job and session the work item its run is linked to, or null when none is."""

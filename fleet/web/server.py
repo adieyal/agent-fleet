@@ -79,7 +79,7 @@ STATIC_TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; char
                 ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".json": "application/json",
                 ".md": "text/markdown; charset=utf-8", ".txt": "text/plain; charset=utf-8"}
 ASSET_POLICY = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox"
-ATTENTION_ACTIONS = ("acknowledge", "snooze", "reopen", "resolve", "undo-resolve")
+ATTENTION_ACTIONS = ("acknowledge", "snooze", "reopen", "resolve", "undo-resolve", "delegate", "take")
 REFUSAL_ACTIONS = ("allow", "dismiss")   # a job step's permission refusals
 JOB_ACTIONS = ("answer",)   # a blocked job step's question
 GUIDANCE_CHANGES = ("/api/guidance", "/api/guidance/promote")

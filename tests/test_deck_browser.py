@@ -1132,7 +1132,10 @@ def test_document_reader_opens_from_a_failed_jobs_panel(deck: Deck) -> None:
     page = deck.page
     page.locator('.lantern[data-room="restoke"]').dispatch_event("click")
     page.locator('#attnPanel [data-owner="home:e1b5c8"]').click()
-    page.locator("#attnPanel [data-close]").click()
+    if page.viewport_size["width"] <= 760:
+        expect(page.locator("#attnPanel")).to_be_hidden()
+    else:
+        page.locator("#attnPanel [data-close]").click()
     expect(page.locator("#panel")).to_have_class("open")
     expect(page.locator("#panelHead h2")).to_have_text("Upgrade Django to 5.2")
     page.locator('#panelBody [data-tab="summary"] [data-doc="report-0"]').click()   # the finished step's report
@@ -2576,7 +2579,10 @@ def test_p8_keyboard_help_preserves_context_and_focus(deck: Deck, request: pytes
     page.keyboard.press('Escape')
     expect(page.locator('#attnPanel')).to_be_visible()
     page.locator('#attnPanel [data-owner="home:e1b5c8"]').click()
-    page.locator('#attnPanel [data-close]').click()
+    if page.viewport_size['width'] <= 760:
+        expect(page.locator('#attnPanel')).to_be_hidden()
+    else:
+        page.locator('#attnPanel [data-close]').click()
     page.locator('#panelTabs [data-workarea]').click()
     page.keyboard.press('?')
     expect(help.locator('[data-help-escape]')).to_have_text('Close the workarea; keep the job panel open.')
@@ -2677,3 +2683,42 @@ def test_previous_and_next_step_through_open_attention_items(changed_deck: Deck,
     page.keyboard.press("ArrowLeft")
     expect(page.locator("#rdTitle")).to_have_text("Question 2")
     assert changed_deck.errors == []
+
+
+def test_p1_owner_fold_and_consequences(changed_deck: Deck, base_url: str, request) -> None:
+    page = changed_deck.page
+    with urlopen(base_url + '/api/state', timeout=5) as response:
+        document = json.load(response)
+    model = document['attention'][0]
+    host, job = next((host, job) for host in document['hosts'] for job in host['jobs'] if job['status'] == 'running')
+    document['triage'] = {'p': {'queue': ['p1-agent'], 'live_run': {
+        'id': 'triage-run', 'host': host['name'], 'remote_job_id': job['id']}}}
+    document['attention'] = [
+        {**model, 'id': 'p1-user', 'state': 'open', 'owned_by': 'user',
+         'owner_reason': 'Needs approval outside the mandate', 'delegable': False},
+        {**model, 'id': 'p1-agent', 'state': 'open', 'owned_by': 'agent'}]
+    from fleet.projections.attention import attention_display
+    document['attention_display'] = attention_display(document['attention'], document['building'], document['projects'])
+    page.evaluate('doc => fleetDeck.apply(doc)', document)
+    expect(page.locator('#needYou')).to_contain_text('1 need you')
+    expect(page.locator('#withAgent')).to_contain_text('1 with agent')
+    page.locator('#withAgent').click()
+    panel = page.locator('#attnPanel')
+    expect(panel.locator('[data-id="p1-user"]')).to_contain_text('Needs approval outside the mandate')
+    expect(panel.locator('[data-act="delegate"]')).to_be_disabled()
+    expect(panel.locator('[data-act="delegate"]')).to_have_attribute('title', 'This project has no confirmed triage mandate')
+    fold = panel.locator('[data-attention-group="agent"]')
+    expect(fold).not_to_have_attribute('open', '')
+    fold.locator('summary').click()
+    expect(fold.locator('.attn-owned')).to_have_text('Agent')
+    expect(fold.locator('[data-act="take"]')).to_have_attribute('title', 'Move this to you; the agent stops acting on it')
+    expect(page.locator('#toast')).to_be_hidden(timeout=7000)
+    shoot(request, page, 'p1-desktop')
+    page.set_viewport_size(VIEWPORTS['narrow'])
+    shoot(request, page, 'p1-390')
+    page.keyboard.press('Escape')
+    page.locator('#workingOpen').click()
+    expect(page.locator('#runPanel .run-triage')).to_have_text('handling 1 item')
+    shoot(request, page, 'p1-running-390')
+    page.keyboard.press('Escape')
+    assert not changed_deck.errors

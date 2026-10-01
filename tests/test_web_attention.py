@@ -465,3 +465,23 @@ def test_restreamed_resolved_failure_remains_visible(deck, resolution):
     assert result.returncode == 0, result.stderr
     listed, = json.loads(result.stdout)
     assert listed["id"] == first.id and listed["resolution_details"] == resolved.resolution_details
+
+
+def test_p1_delegation_requires_mandate_and_take_keeps_open(deck, monkeypatch):
+    from types import SimpleNamespace
+    deck.report('home', jobs=[job('owned-job', 'failed')])
+    item = deck.items()['home:owned-job']
+    assert deck.act('delegate', {'id': item['id']}) == 400
+    assert deck.state.attention.get(item['id']).owner == 'user'
+    # Isolate the confirmed-mandate gate; module tests exercise mandate parsing.
+    monkeypatch.setattr('fleet.web.live.open_records', lambda store: SimpleNamespace(triage_mandate=lambda p: object()))
+    stored = deck.state.attention.get(item['id'])
+    from dataclasses import replace
+    with deck.state.attention.repository.transaction() as transaction:
+        transaction.save(replace(stored, project='p1'), stored.state, 'test')
+    assert deck.act('delegate', {'id': item['id']}) == 200
+    assert deck.state.attention.get(item['id']).owner == 'agent'
+    assert deck.state.attention.get(item['id']).state == 'open'
+    assert deck.act('take', {'id': item['id']}) == 200
+    assert deck.state.attention.get(item['id']).owner == 'user'
+    assert deck.state.attention.get(item['id']).state == 'open'

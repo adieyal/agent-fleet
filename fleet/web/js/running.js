@@ -96,7 +96,7 @@ function rowHtml(r, unlinked) {
     <span class="run-g" title="${esc(j.status)}" aria-label="${esc(j.status)}">${GLYPH[j.status]}</span>
     <div class="run-b"><b>${esc(trunc(j.description, 90))}</b>${j.stale ? `<span data-stale title="${esc(j.stale_reason || 'host offline')}; showing last-known status, current status unknown">stale · last known</span>` : ''}
       <div class="run-m"><span class="run-host"><i style="background:${hostLook(r.host).color}"></i>${esc(r.host)}:${idChip(j.id)}</span>
-        ${stepHtml(j)}${workspaceHtml(j)}${unlinked ? `<span class="run-proj">${esc(doc.project_labels?.[j.project] || j.project)}</span>
+        ${Object.values(doc.triage || {}).filter(t => t.live_run && (t.live_run.id === j.run_id || (t.live_run.host === r.host && t.live_run.remote_job_id === j.id))).map(t => `<span class="run-triage">handling ${t.queue.length} item${t.queue.length === 1 ? '' : 's'}</span>`).join('')}${(doc.attention || []).some(i => i.owner?.key === r.key && i.owned_by === 'agent' && i.state !== 'resolved') ? '<span>agent handling</span>' : ''}${stepHtml(j)}${workspaceHtml(j)}${unlinked ? `<span class="run-proj">${esc(doc.project_labels?.[j.project] || j.project)}</span>
         <button class="run-link" data-copy-id="${esc(link)}" title="${esc(`Copy: ${link}`)}">fleet run link</button>` : workHtml(r)}</div></div>
   </li>`;
 }

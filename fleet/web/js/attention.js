@@ -26,6 +26,7 @@ const SNOOZE_S = 3600;
 const seen = new Set();   // open item ids already announced: each swings the lantern once
 let items = [], projects = [];
 let display = { rooms: {}, open_count: 0 };
+export let agentCount = 0;
 export let openCount = 0;   // open items under the lanterns: the header's "need you"
 // Every item not yet resolved, newest first: what the reader's Previous and Next step through.
 export const openAttention = () => items.filter(i => i.state !== 'resolved').sort((a, b) => b.last_seen - a.last_seen);
@@ -33,7 +34,8 @@ export const attentionFor = key =>items.filter(i => i.owner?.key === key && i.st
 export function applyAttention(rooms, doc) {
   if (doc) { items = doc.attention; display = doc.attention_display; projects = doc.projects || []; }
   const now = animationNow() / 1000;
-  openCount = display.open_count;
+  openCount = items.filter(i => i.state === 'open' && i.owned_by !== 'agent').length;
+  agentCount = items.filter(i => i.state !== 'resolved' && i.owned_by === 'agent').length;
   for (const r of rooms) {
     const marker = display.rooms[r.name];
     r.attention = marker ? { ...marker, listed: marker.listed.map(id => items.find(i => i.id === id)),
@@ -161,7 +163,7 @@ function closePanel(returnFocus = false) {
 function ownerMeta(owner) {
   if (!owner) return 'Owner not reported';
   if (typeof owner === 'string') return `Owner: ${esc(owner)}`;
-  return `Owner: ${esc(owner.name || owner.label || owner.type || 'reported owner')}${owner.host ? ` · ${esc(owner.host)}` : ''}${owner.id ? ` · ${idChip(owner.id)}` : ''}`;
+  return `Subject: ${esc(owner.name || owner.label || owner.type || 'reported owner')}${owner.host ? ` · ${esc(owner.host)}` : ''}${owner.id ? ` · ${idChip(owner.id)}` : ''}`;
 }
 function placeName(item) {
   const project = projects.find(p => p.id === item.project_id);
@@ -178,14 +180,17 @@ function renderItem(i, global) {
   const owner = typeof i.owner === 'object' ? i.owner : null;
   const present = owner?.key && !!workOf(owner.key);
   const state = i.state === 'snoozed' ? `snoozed until ${esc(clock(i.snoozed_until).slice(0, 5))}` : i.state;
-  const actions = (i.state === 'open' ? `<button data-act="acknowledge" title="Mark as seen: dims the lantern when all items are acknowledged; keeps the item open. Reopen restores attention; work is unchanged">Acknowledge</button><button data-act="snooze" title="Hide from the lantern for 1 hour, then return automatically; Reopen restores it sooner. Work is unchanged">Snooze 1h</button>`
+  const ownership = i.owned_by === 'agent'
+    ? '<button data-act="take" title="Move this to you; the agent stops acting on it">Take back</button>'
+    : `<button data-act="delegate" ${i.delegable ? '' : 'disabled'} title="${esc(i.questions ? 'Session questions can only be answered at the terminal' : !i.delegable ? 'This project has no confirmed triage mandate' : `Hand this to the triage agent for ${placeName(i)}. It stays listed under With agent; you can take it back`)}">Delegate to agent</button>`;
+  const actions = ownership + (i.state === 'open' ? `<button data-act="acknowledge" title="Mark as seen: dims the lantern when all items are acknowledged; keeps the item open. Reopen restores attention; work is unchanged">Acknowledge</button><button data-act="snooze" title="Hide from the lantern for 1 hour, then return automatically; Reopen restores it sooner. Work is unchanged">Snooze 1h</button>`
     : i.state === 'acknowledged' ? `<button data-act="snooze" title="Hide for 1 hour; Reopen restores it sooner. Work is unchanged">Snooze 1h</button><button data-act="reopen" title="Return this item to open attention and light its lantern; acknowledge or snooze it again to undo">Reopen</button>`
     : `<button data-act="reopen" title="Return this item to open attention and light its lantern; acknowledge or snooze it again to undo">Reopen</button>`)
     + '<button data-act="resolve" title="Close this attention item and remove it from the lantern; does not answer, restart work or grant permissions. Undo is available for 6 seconds">Resolve</button>';
   const since = i.since ?? i.last_seen;
   const context = i.refusals ? 'Review refused commands' : i.questions ? 'Read the question' : i.blocked ? 'Answer' : i.kind === 'decision' ? 'Answer question' : null;
   return `<li class="attn-item" data-id="${esc(i.id)}" data-state="${esc(i.state)}" data-kind="${esc(i.kind)}">
-    <span class="ak">${GLYPH[i.kind]}</span><div class="ab"><b>${esc(i.summary)}</b>
+    <span class="ak">${GLYPH[i.kind]}</span><div class="ab"><b>${esc(i.summary)}</b><span class="attn-owned">${i.owned_by === 'agent' ? 'Agent' : 'You'}</span>${i.owned_by !== 'agent' ? `<p class="attn-reason">${esc(i.owner_reason || 'no reason given')}</p>` : ''}
       ${global ? `<small class="attn-place">${esc(placeName(i))} · ${idChip(i.id)}</small><small class="attn-owner">${ownerMeta(i.owner)}</small>` : ''}
       <small>${itemKind(i)} · ${state} · ${global ? `<time class="attn-age" title="${since ? esc(new Date(since * 1000).toLocaleString()) : ''}">${since ? `${i.since == null ? 'last seen ' : ''}${age(since)} ago` : 'Age not reported'}</time>` : `<time title="${esc(new Date(i.last_seen * 1000).toLocaleString())}">${stamp(i.last_seen)}</time>`}${i.stale ? ' · host unreachable' : ''}</small>
       ${present ? `<button class="owner" data-owner="${esc(owner.key)}" title="${global ? 'Open on the whole deck; your saved view is unchanged' : esc(owner.key)}">${owner.type === 'job' ? 'Open job' : 'Open session'} ${esc(ownerName(owner))}</button>` : `<button class="owner" data-context="${esc(i.id)}" title="Read context; opening changes no stored state">Open context</button>`}
@@ -203,11 +208,13 @@ function renderPanel() {
   const global = listRoom === ALL_ROOMS;
   const listed = global ? items.filter(i => i.state === 'open') : (display.rooms[listRoom]?.listed || []).map(id => items.find(i => i.id === id)).filter(Boolean);
   if (!global && !listed.length) { closePanel(); listRoom = null; panel.replaceChildren(); return; }
+  const agentRows = (global ? items.filter(i => i.state !== 'resolved') : listed).filter(i => i.owned_by === 'agent');
+  const userRows = listed.filter(i => i.owned_by !== 'agent');
   const room = global ? null : lanterns.get(listRoom)?.room;
-  const others = global ? items.filter(i => i.state === 'acknowledged' || i.state === 'snoozed') : [];
+  const others = global ? items.filter(i => i.owned_by !== 'agent' && (i.state === 'acknowledged' || i.state === 'snoozed')) : [];
   panel.innerHTML = `<div class="ah"><h3>${global ? 'All-rooms attention' : esc(room ? room.label : listRoom)}</h3><button data-close aria-label="Close">✕</button></div>
-    ${global ? `<p class="attn-guide">Every room and the front desk. Acknowledge marks seen; Snooze hides for 1 hour. Reopen returns either to open attention; work stays unchanged.</p><p class="attn-status" role="status">${esc(panelStatus)}</p>${listed.length ? renderGroup(listed, 'open', 'Open') : '<p class="attn-empty">No open attention items across the fleet.</p>'}${others.length ? renderGroup(others, 'other', 'Acknowledged and snoozed', true) : ''}`
-      : `<ul>${listed.map(i => renderItem(i, false)).join('')}</ul>`}`;
+    ${global ? `<p class="attn-guide">Every room and the front desk. Existing items stay with you; new items can route to an agent when a triage mandate is confirmed. Acknowledge marks seen; Snooze hides for 1 hour. Reopen returns either to open attention; work stays unchanged.</p><p class="attn-status" role="status">${esc(panelStatus)}</p>${userRows.length ? renderGroup(userRows, 'open', 'Open') : `<p class="attn-empty">${agentRows.length ? 'No open items need you; agent-owned items remain below.' : 'No open attention items across the fleet.'}</p>`}${agentRows.length ? renderGroup(agentRows, 'agent', 'With agent', true) : ''}${others.length ? renderGroup(others, 'other', 'Acknowledged and snoozed', true) : ''}`
+      : `<ul>${userRows.map(i => renderItem(i, false)).join('')}</ul>${agentRows.length ? renderGroup(agentRows, 'agent', 'With agent', true) : ''}`}`;
   for (const fold of panel.querySelectorAll('details[data-attention-group]')) fold.addEventListener('toggle', ev => {
     const key = ev.target.dataset.attentionGroup;
     if (ev.target.open) openFolds.add(key); else openFolds.delete(key);
@@ -221,10 +228,11 @@ panel.addEventListener('click', async ev => {
   const owner = ev.target.closest('[data-owner]');
   if (owner) {
     if (listRoom === ALL_ROOMS) { closePanel(); showView('deck'); }
+    else if (vw <= 760) closePanel();
     select(owner.dataset.owner); return;
   }
   const b = ev.target.closest('[data-act]');
-  if (!b) return;
+  if (!b || b.disabled) return;
   const row = b.closest('.attn-item'), body = { id: row.dataset.id };
   if (b.dataset.act === 'snooze') body.seconds = SNOOZE_S;
   for (const x of row.querySelectorAll('[data-act]')) x.disabled = true;
@@ -232,8 +240,9 @@ panel.addEventListener('click', async ev => {
     const res = await fetch('/api/attention/' + b.dataset.act, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const result = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(result.error || `HTTP ${res.status}`);
+    if (b.dataset.act === 'delegate' || b.dataset.act === 'take') showToast(b.dataset.act === 'delegate' ? 'Delegated; stays open under With agent. You can take it back.' : 'Taken back; you own this item and the agent can no longer act on it.');
     if (listRoom === ALL_ROOMS) {
-      panelStatus = `${b.dataset.act === 'acknowledge' ? 'Acknowledged; now in the fold below' : b.dataset.act === 'snooze' ? 'Snoozed for 1 hour; now in the fold below' : b.dataset.act === 'reopen' ? 'Returned to open attention' : 'Resolved; Undo is available in the toast'}. Work is unchanged.`;
+      panelStatus = `${b.dataset.act === 'delegate' ? 'Delegated; stays open under With agent' : b.dataset.act === 'take' ? 'Taken back; the agent can no longer act on this item' : b.dataset.act === 'acknowledge' ? 'Acknowledged; now in the fold below' : b.dataset.act === 'snooze' ? 'Snoozed for 1 hour; now in the fold below' : b.dataset.act === 'reopen' ? 'Returned to open attention' : 'Resolved; Undo is available in the toast'}.${['delegate', 'take'].includes(b.dataset.act) ? '' : ' Work is unchanged.'}`;
       const status = panel.querySelector('.attn-status');
       if (status) status.textContent = panelStatus;
     }
@@ -254,7 +263,7 @@ panel.addEventListener('click', async ev => {
       });
     }
   } catch (err) {
-    for (const x of row.querySelectorAll('[data-act]')) x.disabled = false;
+    for (const x of row.querySelectorAll('[data-act]')) x.disabled = x.dataset.act === 'delegate' && !items.find(i => i.id === row.dataset.id)?.delegable;
     row.querySelector('.err').textContent = `Couldn’t ${b.dataset.act}: ${err.message}`;
   }
   // the new state arrives with the next pushed document

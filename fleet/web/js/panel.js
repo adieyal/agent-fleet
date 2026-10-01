@@ -13,7 +13,7 @@ import { DOC_KIND, DOC_UPDATING_SECONDS, docMeta, isUpdating, jobDocSequence, ki
 import { action, buildRobot } from './agents.js';
 import { dismiss, entered, hiddenCount, lastDoc, restoreDismissed, retiredCount, showFinished, toggleFinished } from './state.js';
 import { focusOn } from './camera.js';
-import { allAttentionOpen, attentionFor, openAllAttention, openCount } from './attention.js';
+import { allAttentionOpen, attentionFor, openAllAttention, openCount, agentCount } from './attention.js';
 import { openAttentionReader, openReader } from './reader.js';
 import { noteTrace, summarySections, traceRows } from './summary.js';
 import { openWorkarea } from './workarea.js';
@@ -470,11 +470,13 @@ export function renderStats() {
     <span class="chip chip-inert opt"><i style="background:var(--ok)"></i><b>${count.done}</b> done</span>
     <span class="chip chip-inert" id="failedJobs" title="failed jobs, and lost ones whose agent died; the working list shows them"><i style="background:var(--bad)"></i><b>${count.failed + count.lost}</b> failed</span>
     <button class="chip restore" id="needYou" aria-haspopup="dialog" aria-controls="attnPanel" aria-expanded="${allAttentionOpen()}" title="Open all-rooms attention: every open item, its owner, age and action consequences; acknowledged and snoozed items are in a fold"><i style="background:var(--bad)"></i><b>${openCount}</b> need you</button>
+    <button class="chip restore" id="withAgent" title="Open attention including the With agent fold; these items stay open"><b>${agentCount}</b> with agent</button>
     ${retiredCount ? `<button class="chip restore" id="toggleFinished" title="Show finished jobs that have left the deck"><b>${retiredCount}</b> finished · show</button>`
       : showFinished ? '<button class="chip restore" id="toggleFinished" title="Let finished jobs leave the deck again">hide finished</button>' : ''}
     ${hiddenCount ? `<button class="chip restore" id="restoreDismissed" title="Show all dismissed agents and permanently forget every dismissal in this browser; you can dismiss agents again, but cannot restore this set"><b>${hiddenCount}</b> hidden · show</button>` : ''}`;
 }
 document.getElementById('stats').addEventListener('click', ev => {
+  if (ev.target.closest('#withAgent')) openAllAttention(ev.target.closest('#withAgent'));
   if (ev.target.closest('#needYou')) openAllAttention(ev.target.closest('#needYou'));
   else if (ev.target.closest('#restoreDismissed')) {
     if (confirm('Show all dismissed agents and permanently forget every dismissal in this browser? You can dismiss agents again, but cannot restore this set.')) {
