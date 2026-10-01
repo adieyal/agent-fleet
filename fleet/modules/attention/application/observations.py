@@ -1,5 +1,6 @@
 """Raise and reconcile attention from reachable host observations."""
 
+from decimal import Decimal, InvalidOperation
 import re
 from typing import TYPE_CHECKING, TypedDict
 
@@ -62,6 +63,20 @@ def asking(message: str) -> str:
     return next((sentence for sentence in sentences if sentence.endswith("?")), " ".join(sentences))
 
 
+def occurrence_key(reference: str) -> str:
+    """Match numeric timestamps across JSON integer/float representations, including stored keys."""
+    prefix, separator, timestamp = reference.rpartition("@")
+    if not separator:
+        return reference
+    try:
+        value = Decimal(timestamp)
+    except InvalidOperation:
+        return reference
+    if not value.is_finite():
+        return reference
+    return f"{prefix}@{format(value.normalize(), 'f')}"
+
+
 def ingest_attention(attention: "AttentionFacade", host: HostObservation, *,
                      subjects: set[str] | None = None, raise_items: bool = True,
                      deleted_jobs: set[str] = frozenset()) -> bool:
@@ -69,13 +84,17 @@ def ingest_attention(attention: "AttentionFacade", host: HostObservation, *,
         return False
     source = f"stream:{host['name']}"
     references = set()
-    existing = {item.source_reference: item for item in attention.list() if item.source == source}
+    existing = {occurrence_key(item.source_reference): item for item in attention.list() if item.source == source}
 
     def record(work: WorkObservation, owner_type: str, occurrence: str, kind: str,
                reason: str, summary: str, since: float | None, *, step: int | None = None,
                message: str | None = None) -> None:
         subject = f"{owner_type}:{host['name']}:{work['id']}"
-        reference = f"{subject}:{occurrence}"
+        reference = occurrence_key(f"{subject}:{occurrence}")
+        previous = existing.get(reference)
+        # Keep the original persisted identity so history and resolutions stay attached.
+        if previous is not None:
+            reference = previous.source_reference
         references.add(reference)
         if not raise_items or (subjects is not None and subject not in subjects):
             return
@@ -83,7 +102,6 @@ def ingest_attention(attention: "AttentionFacade", host: HostObservation, *,
                                 work.get("project_id"), reason, summary, since, step=step, message=message)
         project = work["project_id"] if work.get("project_id") is not None else work["project"]
         # Do not reload policy or change ownership for an occurrence already in the store.
-        previous = existing.get(reference)
         owner, owner_reason = ((previous.owner, previous.owner_reason) if previous else
                                attention.route(project, kind, context))
         attention.raise_item(project=project,
