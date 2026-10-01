@@ -31,7 +31,8 @@ def job(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[dict, Path]:
     monkeypatch.setattr(fleetd, "JOBS_DIRECTORY", home / "jobs")
     monkeypatch.setattr(fleetd, "CONFIG_PATH", home / "config.json")
     record = {"id": "job1", "project": "project", "agent": "codex", "description": "work",
-              "cwd": str(tmp_path / "work"), "steps": [], "written_documents": []}
+              "cwd": str(tmp_path / "work"), "steps": [fleetd.make_step(0, "Write notes", "Write notes")],
+              "written_documents": []}
     (directory / "job.json").write_text(json.dumps(record))
     return record, directory
 

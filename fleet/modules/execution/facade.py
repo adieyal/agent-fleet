@@ -144,3 +144,16 @@ class ExecutionFacade:
 
     def runs(self) -> list[Run]:
         return self.repository.runs()
+
+    def steps(self, run: str) -> list[dict]:
+        self.repository.get_run(run)
+        return self.repository.steps(run)
+
+    def observe_steps(self, run: str, steps: list[dict]) -> None:
+        with self.repository.transaction() as transaction:
+            transaction.get_run(run)
+            for step in steps:
+                index = step["index"]
+                if not isinstance(index, int) or isinstance(index, bool) or index < 0:
+                    raise ValueError("step index must be a nonnegative integer")
+                transaction.save_step(run, index, {key: value for key, value in step.items() if key != "index"}, "fleetd")

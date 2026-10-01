@@ -142,6 +142,23 @@ class ExecutionRepository(Repository):
         return [Claim(row["action"], row["run"], bool(row["active"]))
                 for row in self.rows("SELECT action, run, active FROM execution_claim ORDER BY rowid")]
 
+    def steps(self, run: str) -> list[dict]:
+        return [{"index": row["idx"], **json.loads(row["record"])}
+                for row in self.rows("SELECT idx, record FROM execution_step WHERE run = ? ORDER BY idx", (run,))]
+
+    def save_step(self, run: str, index: int, record: dict, actor: str) -> None:
+        if self.unit is None:
+            raise RuntimeError("execution writes require a transaction")
+        rows = self.rows("SELECT record FROM execution_step WHERE run = ? AND idx = ?", (run, index))
+        previous = rows[0]["record"] if rows else ""
+        if previous and json.loads(previous) == record:
+            return
+        payload = dumps(record)
+        self.unit.connection.execute("INSERT INTO execution_step (run, idx, record) VALUES (?, ?, ?) "
+                                     "ON CONFLICT(run, idx) DO UPDATE SET record = excluded.record",
+                                     (run, index, payload))
+        self.unit.record_change(f"execution:run:{run}:step:{index}", previous, payload, actor)
+
     def save_claim(self, claim: Claim, actor: str) -> None:
         self.unit.connection.execute("INSERT INTO execution_claim VALUES (?, ?, ?)",
                                      (claim.action, claim.run, claim.active))

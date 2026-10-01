@@ -29,7 +29,7 @@ UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
 MARKDOWN_SUFFIXES = (".md", ".markdown", ".mdx")
 READ_LIMIT = 2_000_000
 JOB_FIELDS = ("id", "project", "description", "agent", "model", "cwd", "status", "created_at", "updated_at")
-STEP_FIELDS = ("index", "title", "status", "started_at", "finished_at")
+STEP_FIELDS = ("index", "title", "status", "started_at", "finished_at", "git")
 DOCUMENT_FIELDS = ("id", "kind", "name", "step", "path", "size", "mtime")
 
 

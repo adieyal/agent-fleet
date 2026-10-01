@@ -22,6 +22,7 @@ def jobs(tmp_path, monkeypatch):
     monkeypatch.setattr(fleetd, "CONFIG_PATH", tmp_path / "config.json")
     monkeypatch.setattr(fleetd.signal, "signal", lambda *args: None)
     monkeypatch.setattr(fleetd, "collect_workspace", lambda cwd: (None, "not a git repository"))  # git would use the fake
+    monkeypatch.setattr(fleetd, "begin_step_git", lambda cwd: {"reason": "git transport mocked by blocked test"})
 
     def write(steps, **fields):
         job = {"id": "job", "agent": "claude", "project": "p", "description": "Blocked", "cwd": str(tmp_path),

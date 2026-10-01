@@ -684,6 +684,103 @@ def refresh_workspace(job_id: str, cwd: str) -> None:
         job["workspace"], job["workspace_reason"] = workspace, reason
 
 
+def checked_git(cwd: str, *arguments: str) -> str:
+    result = git(cwd, *arguments)
+    if result.returncode != 0:
+        raise ValueError(f"git {arguments[0]}: {shorten(result.stderr.strip())}")
+    return result.stdout.strip()
+
+
+def git_branch(cwd: str) -> Optional[str]:
+    result = git(cwd, "symbolic-ref", "--quiet", "--short", "HEAD")
+    if result.returncode == 1:
+        return None  # detached HEAD
+    if result.returncode != 0:
+        raise ValueError(f"git symbolic-ref: {shorten(result.stderr.strip())}")
+    return result.stdout.strip()
+
+
+def git_ancestor(cwd: str, base: str, head: str) -> bool:
+    result = git(cwd, "merge-base", "--is-ancestor", base, head)
+    if result.returncode not in (0, 1):
+        raise ValueError(f"git merge-base: {shorten(result.stderr.strip())}")
+    return result.returncode == 0
+
+
+def begin_step_git(cwd: str) -> JsonObject:
+    """Capture HEAD before the agent starts; retain reflog offsets locally to exclude earlier same-second pushes."""
+    record: JsonObject = {"at": now()}
+    try:
+        record["base"] = checked_git(cwd, "rev-parse", "--verify", "HEAD")
+        record["branch"] = git_branch(cwd)
+        common = Path(os.path.realpath(os.path.join(cwd, checked_git(cwd, "rev-parse", "--git-common-dir"))))
+        logs = common / "logs" / "refs" / "remotes"
+        record["_reflog_offsets"] = {str(path.relative_to(common)): path.stat().st_size
+                                     for path in logs.rglob("*") if path.is_file()}
+    except Exception as error:  # capture must never cost the agent's step
+        record["reason"] = f"step git capture failed: {error}"
+    return record
+
+
+def end_step_git(cwd: str, beginning: JsonObject) -> JsonObject:
+    """Capture base..head and remote-tracking pushes; errors leave the available evidence and a reason."""
+    record = {key: value for key, value in beginning.items() if not key.startswith("_")}
+    record["ended_at"] = now()
+    if "reason" in record:
+        return record
+    try:
+        base = record["base"]
+        head = record["head"] = checked_git(cwd, "rev-parse", "--verify", "HEAD")
+        record["branch_end"] = git_branch(cwd)
+        record["base_is_ancestor"] = git_ancestor(cwd, base, head)
+        record["commit_count"] = int(checked_git(cwd, "rev-list", "--count", f"{base}..{head}"))
+        lines = checked_git(cwd, "log", "--no-show-signature", "--reverse", "--max-count=100",
+                            "--format=%H%x09%at%x09%s", f"{base}..{head}")
+        record["commits"] = [{"sha": sha, "at": int(at), "subject": subject[:72]}
+                             for sha, at, subject in (line.split("\t", 2) for line in lines.splitlines())]
+        record["truncated"] = record["commit_count"] > len(record["commits"])
+        common = Path(os.path.realpath(os.path.join(cwd, checked_git(cwd, "rev-parse", "--git-common-dir"))))
+        pushes = record["pushes"] = []
+        for path in sorted((common / "logs" / "refs" / "remotes").rglob("*")):
+            if not path.is_file():
+                continue
+            offset = beginning["_reflog_offsets"].get(str(path.relative_to(common)), 0)
+            size = path.stat().st_size
+            if size < offset:
+                raise ValueError(f"remote-tracking reflog shortened during step: {path.relative_to(common)}")
+            if size == offset:
+                continue
+            with path.open("rb") as handle:
+                handle.seek(offset)
+                entries = handle.read(size - offset).decode(errors="replace").splitlines()
+            for entry in entries:
+                metadata, message = entry.split("\t", 1)
+                if not message.startswith("update by push"):
+                    continue
+                old, new = metadata.split(" ", 2)[:2]
+                at = int(metadata.rsplit(" ", 2)[1])
+                if not int(record["at"]) <= at <= int(record["ended_at"]):
+                    continue
+                # Check the full range, including commits omitted from the bounded display list.
+                if new == head or (git_ancestor(cwd, new, head) and not git_ancestor(cwd, new, base)):
+                    pushes.append({"ref": path.relative_to(common / "logs").as_posix(),
+                                   "old": old, "new": new, "at": at})
+    except Exception as error:  # capture must never cost the agent's step
+        record["reason"] = f"step git capture failed: {error}"
+    return record
+
+
+def step_git_record(step: JsonObject, job_status: Optional[str] = None) -> JsonObject:
+    """Public git facts; local reflog offsets never enter the stream or controller history."""
+    if "git" not in step:
+        return {"reason": "not recorded: this step has no git capture"}
+    record = {key: value for key, value in step["git"].items() if not key.startswith("_")}
+    if "base" in record and "ended_at" not in record and "reason" not in record and job_status in (
+            "lost", "cancelled", "failed", "done", "blocked"):
+        record["reason"] = "step ended without its runner; end not recorded"
+    return record
+
+
 class WorkspaceWatch:
     """Refreshes a running step's workspace every WORKSPACE_REFRESH_SECONDS, off the runner's own thread."""
 
@@ -725,6 +822,9 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
     raw_path = JOBS_DIRECTORY / job_id / f"raw-{step['index']}.jsonl"
     refusals = StreamRefusals(job, step["index"]) if job["agent"] == "claude" else None
     refresh_workspace(job_id, job["cwd"])
+    step_git = begin_step_git(job["cwd"])
+    with locked_job(job_id) as live_job:
+        live_job["steps"][step["index"]]["git"] = step_git
     with open(raw_path, "a") as raw_file, WorkspaceWatch(job_id, job["cwd"]):
         process = subprocess.Popen(command, cwd=job["cwd"], env=environment, stdin=subprocess.DEVNULL,
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
@@ -766,6 +866,9 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
             mirror.sync()
         exit_code = process.wait()
     refresh_workspace(job_id, job["cwd"])
+    step_git = end_step_git(job["cwd"], step_git)
+    with locked_job(job_id) as live_job:
+        live_job["steps"][step["index"]]["git"] = step_git
     runtime.finish(outcome, exit_code, last_text)
     outcome["exit_code"] = exit_code
     if exit_code < 0 and not result_recorded:
@@ -902,7 +1005,7 @@ def job_summary(job: JsonObject, event_count: int) -> JsonObject:
         "created_at": job["created_at"], "updated_at": job.get("updated_at"),
         "steps": [{**{key: step.get(key) for key in ("index", "title", "status", "started_at", "finished_at", "result",
                                                      "answered_by", "work_item")},
-                   "message": blocked_message(job["id"], step)} for step in job["steps"]],
+                   "message": blocked_message(job["id"], step), "git": step_git_record(step, status)} for step in job["steps"]],
         "todos": job.get("todos", []),
         # Decisions the job's agent recorded here, for the controller to take into its store (see command_decision).
         "decisions": job.get("decisions", []),

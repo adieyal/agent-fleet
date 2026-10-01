@@ -54,6 +54,11 @@ def observe_runs(execution: ExecutionFacade, library: LibraryFacade, host: dict,
         run = execution.observe(host["name"], observation)
         if run is None:
             continue
+        execution.observe_steps(run.id, [{"index": step["index"], "title": step.get("title"),
+            "status": step["status"], "start": iso(step["started_at"]), "end": iso(step["finished_at"]),
+            "work_item": step.get("work_item"),
+            "git": step.get("git", {"reason": "not recorded: the worker did not report per-step git"})}
+            for step in job["steps"]])
         # A step's own documents belong to the work it served; the rest to the job's work item.
         served = {step["index"]: step["work_item"] for step in run.step_work or []}
         outputs = [(document["kind"], document["name"], document["path"], "available", document.get("step"))
