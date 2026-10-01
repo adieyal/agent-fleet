@@ -30,6 +30,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 import urllib.parse
 from pathlib import Path
@@ -50,6 +51,8 @@ TERMINAL_STATUSES = ("done", "failed", "blocked", "cancelled", "lost")
 STREAM_PROTOCOL_VERSION = 3
 DISPATCH_SCHEMA_VERSION = 4
 USAGE_SCHEMA_VERSION = 1
+WORKSPACE_REFRESH_SECONDS = 30
+GIT_TIMEOUT_SECONDS = 10
 
 JsonObject = Dict[str, Any]
 
@@ -624,6 +627,83 @@ def write_briefs(job_id: str, steps: List[JsonObject]) -> None:
             path.write_text(step["prompt"])
 
 
+# ---------------------------------------------------------------- workspace
+
+
+def git(cwd: str, *arguments: str) -> subprocess.CompletedProcess:
+    # Optional locks off: a status read must never take index.lock from under the agent's own git commands.
+    return subprocess.run(["git", "-C", cwd, *arguments], capture_output=True, text=True, stdin=subprocess.DEVNULL,
+                          timeout=GIT_TIMEOUT_SECONDS, env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"})
+
+
+def collect_workspace(cwd: str) -> Tuple[Optional[JsonObject], Optional[str]]:
+    """The git checkout cwd is in, or None and why not; nothing is filled in that git did not report.
+
+    `toplevel` is the checkout's root, `repository` the main repository a linked worktree belongs to (the
+    checkout itself otherwise, or the git directory of a bare one), `branch` None when HEAD is detached, `head`
+    None on a branch with no commit yet, and `dirty` the count of changed and untracked paths."""
+    if not os.path.isdir(cwd):
+        return None, "working directory is missing"
+    try:
+        located = git(cwd, "rev-parse", "--show-toplevel", "--absolute-git-dir", "--git-common-dir")
+        if located.returncode != 0:
+            message = located.stderr.strip()
+            return None, "not a git repository" if "not a git repository" in message else f"git: {shorten(message)}"
+        toplevel, git_directory, common = located.stdout.splitlines()
+        status = git(cwd, "status", "--porcelain=v2", "--branch")
+        if status.returncode != 0:
+            return None, f"git status: {shorten(status.stderr.strip())}"
+        headers = dict(line[2:].split(" ", 1) for line in status.stdout.splitlines() if line.startswith("# "))
+        oid, branch = headers["branch.oid"], headers["branch.head"]
+        head = None
+        if oid != "(initial)":
+            short = git(cwd, "rev-parse", "--short", oid)
+            if short.returncode != 0:
+                return None, f"git rev-parse: {shorten(short.stderr.strip())}"
+            head = short.stdout.strip()
+    except FileNotFoundError:
+        return None, "git is not installed"
+    except subprocess.TimeoutExpired:
+        return None, f"git took longer than {GIT_TIMEOUT_SECONDS} s"
+    common = os.path.realpath(os.path.join(cwd, common))
+    return {"toplevel": toplevel,
+            "linked_worktree": os.path.realpath(git_directory) != common,
+            "repository": os.path.dirname(common) if os.path.basename(common) == ".git" else common,
+            "branch": None if branch == "(detached)" else branch, "detached": branch == "(detached)", "head": head,
+            "dirty": sum(not line.startswith("#") for line in status.stdout.splitlines()),
+            "collected_at": now()}, None
+
+
+def refresh_workspace(job_id: str, cwd: str) -> None:
+    """Record the job's workspace as it is now; any fault becomes its reason rather than costing the step."""
+    try:
+        workspace, reason = collect_workspace(cwd)
+    except Exception as error:  # noqa: BLE001 — reported, never raised into the runner
+        workspace, reason = None, f"workspace collection failed: {error}"
+    with locked_job(job_id) as job:
+        job["workspace"], job["workspace_reason"] = workspace, reason
+
+
+class WorkspaceWatch:
+    """Refreshes a running step's workspace every WORKSPACE_REFRESH_SECONDS, off the runner's own thread."""
+
+    def __init__(self, job_id: str, cwd: str) -> None:
+        self.stopped = threading.Event()
+        self.thread = threading.Thread(target=self.loop, args=(job_id, cwd), daemon=True)
+
+    def loop(self, job_id: str, cwd: str) -> None:
+        while not self.stopped.wait(WORKSPACE_REFRESH_SECONDS):
+            refresh_workspace(job_id, cwd)
+
+    def __enter__(self) -> "WorkspaceWatch":
+        self.thread.start()
+        return self
+
+    def __exit__(self, *_: Any) -> None:
+        self.stopped.set()
+        self.thread.join()
+
+
 def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
     job_id = job["id"]
     config = load_config()
@@ -644,7 +724,8 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
     mirror = DocumentMirror(job_id)
     raw_path = JOBS_DIRECTORY / job_id / f"raw-{step['index']}.jsonl"
     refusals = StreamRefusals(job, step["index"]) if job["agent"] == "claude" else None
-    with open(raw_path, "a") as raw_file:
+    refresh_workspace(job_id, job["cwd"])
+    with open(raw_path, "a") as raw_file, WorkspaceWatch(job_id, job["cwd"]):
         process = subprocess.Popen(command, cwd=job["cwd"], env=environment, stdin=subprocess.DEVNULL,
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
         with locked_job(job_id) as live_job:
@@ -684,6 +765,7 @@ def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
             # A Claude write lands after its tool_use line, so every later line checks again.
             mirror.sync()
         exit_code = process.wait()
+    refresh_workspace(job_id, job["cwd"])
     runtime.finish(outcome, exit_code, last_text)
     outcome["exit_code"] = exit_code
     if exit_code < 0 and not result_recorded:
@@ -799,9 +881,12 @@ def job_summary(job: JsonObject, event_count: int) -> JsonObject:
         "fingerprint": job.get("fingerprint"), "start_requested": job.get("start_requested"),
         "description": job["description"], "agent": job["agent"], "model": job.get("model"),
         "cwd": job["cwd"], "permission": job["permission"], "status": status,
+        # Jobs created before workspaces were collected have neither key until their next step.
+        "workspace": job.get("workspace"),
+        "workspace_reason": job["workspace_reason"] if "workspace_reason" in job else "not collected yet",
         "created_at": job["created_at"], "updated_at": job.get("updated_at"),
         "steps": [{**{key: step.get(key) for key in ("index", "title", "status", "started_at", "finished_at", "result",
-                                                     "answered_by")},
+                                                     "answered_by", "work_item")},
                    "message": blocked_message(job["id"], step)} for step in job["steps"]],
         "todos": job.get("todos", []),
         "activity": activity,
@@ -1852,14 +1937,22 @@ def command_session_hooks(arguments: argparse.Namespace) -> None:
                            if any(SESSION_HOOK_MARK in json.dumps(group) for group in groups))})
 
 
-def make_step(index: int, prompt: str, title: Optional[str]) -> JsonObject:
-    return {"index": index, "title": title or shorten(prompt.splitlines()[0] if prompt.strip() else prompt, 80),
+def make_step(index: int, prompt: str, title: Optional[str], work_item: Optional[str] = None) -> JsonObject:
+    """A pending step; `work_item` names the work the step serves when it is not the job's own."""
+    step = {"index": index, "title": title or shorten(prompt.splitlines()[0] if prompt.strip() else prompt, 80),
             "prompt": prompt, "status": "pending", "started_at": None, "finished_at": None, "result": None}
+    if work_item is not None:
+        step["work_item"] = work_item
+    return step
 
 
 def parse_steps(steps_json: str) -> List[JsonObject]:
     raw_steps = json.loads(steps_json)
-    return [{"prompt": item, "title": None} if isinstance(item, str) else item for item in raw_steps]
+    steps = [{"prompt": item, "title": None} if isinstance(item, str) else item for item in raw_steps]
+    for step in steps:
+        if "work_item" in step and (not isinstance(step["work_item"], str) or not step["work_item"].strip()):
+            fail("a step's work_item must be a work item ID")
+    return steps
 
 
 def command_create(arguments: argparse.Namespace) -> None:
@@ -1876,7 +1969,7 @@ def command_create(arguments: argparse.Namespace) -> None:
     except ValueError as error:
         fail(str(error))
     _runtime(arguments.agent).validate_permission(arguments.permission)
-    steps = [make_step(index, item["prompt"], item.get("title"))
+    steps = [make_step(index, item["prompt"], item.get("title"), item.get("work_item"))
              for index, item in enumerate(parse_steps(Path(arguments.steps_file).read_text()))]
     if not steps:
         fail("a job needs at least one step")
@@ -1892,6 +1985,7 @@ def command_create(arguments: argparse.Namespace) -> None:
         job.update(run_id=arguments.run_id, fingerprint=arguments.fingerprint,
                    definition_fingerprint=hashlib.sha256(json.dumps(definition, sort_keys=True).encode()).hexdigest(),
                    start_requested=False)
+    job["workspace"], job["workspace_reason"] = collect_workspace(cwd)
     JOBS_DIRECTORY.mkdir(parents=True, exist_ok=True)
     with open(JOBS_DIRECTORY / ".create-lock", "a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
@@ -2012,7 +2106,7 @@ def command_grant(arguments: argparse.Namespace) -> None:
             step = make_step(len(job["steps"]),
                              f"Continue step {arguments.step + 1}: the commands you were refused are now allowed "
                              f"({', '.join(rules)}). Retry what was refused, then finish that step's work.",
-                             f"Continue step {arguments.step + 1}")
+                             f"Continue step {arguments.step + 1}", job["steps"][arguments.step].get("work_item"))
             job["steps"].append(step)
             job["cancelled"] = False
             grant = {"key": arguments.key, "step": arguments.step, "rules": rules, "added": added,
@@ -2039,7 +2133,7 @@ def command_add(arguments: argparse.Namespace) -> None:
     with locked_job(arguments.job) as job:
         job["cancelled"] = False
         for item in new_steps:
-            job["steps"].append(make_step(len(job["steps"]), item["prompt"], item.get("title")))
+            job["steps"].append(make_step(len(job["steps"]), item["prompt"], item.get("title"), item.get("work_item")))
         if arguments.retry:
             for step in job["steps"]:
                 if step["status"] in ("failed", "blocked", "cancelled"):
@@ -2072,10 +2166,13 @@ def add_keyed(arguments: argparse.Namespace) -> None:
                 if answered["status"] != "blocked" or answered.get("answered_by") is not None:
                     fail(f"step {arguments.answers + 1} is not waiting for an answer")
                 answered["answered_by"] = len(job["steps"])
+                # A reply carries on the answered step's work unless it names its own.
+                new_steps = [{"work_item": answered["work_item"], **item} if "work_item" in answered else item
+                             for item in new_steps]
             job["cancelled"] = False
             indices = []
             for item in new_steps:
-                job["steps"].append(make_step(len(job["steps"]), item["prompt"], item.get("title")))
+                job["steps"].append(make_step(len(job["steps"]), item["prompt"], item.get("title"), item.get("work_item")))
                 indices.append(len(job["steps"]) - 1)
             added = {"key": arguments.key, "answers": arguments.answers, "steps": indices, "at": now()}
             job.setdefault("keyed_additions", []).append(added)

@@ -32,6 +32,7 @@ def test_recorded_results_reach_durable_run_without_replay_churn(tmp_path, monke
         return SimpleNamespace(pid=123, stdout=StringIO(records), wait=lambda: 0)
 
     monkeypatch.setattr(fleetd.subprocess, "Popen", popen)
+    monkeypatch.setattr(fleetd, "collect_workspace", lambda cwd: (None, "not a git repository"))  # git would use the fake
     job = {"id": "job", "agent": agent, "project": "p", "description": "Usage",
            "cwd": str(tmp_path), "permission": "read-only", "created_at": 1,
            "steps": [fleetd.make_step(0, "Proceed", "First")], "runner_pid": None}

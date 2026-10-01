@@ -109,6 +109,8 @@ def add_steps(node: Tree, job: dict[str, Any], *, brief: bool) -> None:
     for step in steps:
         icon, style = STEP_STYLE.get(step["status"], ("?", ""))
         line = Text(f"{icon} {step['index'] + 1}. {step['title']}", style)
+        if step.get("work_item") and not brief:
+            line.append(f"  [{step['work_item']}]", "cyan")
         if step["status"] in ("done", "failed", "blocked") and step.get("result") and not brief:
             line.append(f"  — {step['result'][:100]}", "dim")
         step_node = node.add(line)
@@ -458,12 +460,32 @@ def command_show(arguments: argparse.Namespace) -> None:
     add_steps(tree, job, brief=False)
     console.print(tree)
     console.print(f"[dim]cwd {job['cwd']} · {job['permission']} · session {job.get('session_id')}[/]")
+    console.print(workspace_line(job), highlight=False)
     for event in job["events"]:
         stamp = time.strftime("%H:%M:%S", time.localtime(event["ts"]))
         kind = event.get("tool") or event["kind"]
         line = Text(f"{stamp} {event.get('step', '')} ", "dim")
         line.append(f"{TOOL_ICON.get(kind, kind)} {event.get('summary', '')}", "red" if event["kind"] == "error" else "")
         console.print(line, highlight=False)
+
+
+def workspace_line(job: dict[str, Any]) -> Text:
+    """Where the job works: repository, worktree, branch or detached head, and uncommitted paths."""
+    workspace = job.get("workspace")
+    if workspace is None:
+        # A worker older than workspace reports sends neither key.
+        return Text(f"workspace unknown: {job.get('workspace_reason') or 'not reported by this worker'}", "dim")
+    line = Text("repo ", "dim")
+    line.append(workspace["repository"])
+    if workspace["linked_worktree"]:
+        line.append(" · worktree ", "dim")
+        line.append(workspace["toplevel"])
+    line.append(" · ", "dim")
+    line.append("detached" if workspace["detached"] else workspace["branch"], "yellow" if workspace["detached"] else "cyan")
+    line.append(f" @ {workspace['head'] or 'no commits'}", "dim")
+    line.append(f" · {workspace['dirty']} uncommitted" if workspace["dirty"] else " · clean",
+                "yellow" if workspace["dirty"] else "dim")
+    return line
 
 
 def command_tail(arguments: argparse.Namespace) -> None:
