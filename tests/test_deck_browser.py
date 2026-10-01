@@ -2714,14 +2714,14 @@ def test_p1_owner_fold_and_consequences(changed_deck: Deck, base_url: str, reque
     expect(fold).not_to_have_attribute('open', '')
     fold.locator('summary').click()
     expect(fold.locator('.attn-owned')).to_have_text('Agent')
-    expect(fold.locator('[data-act="take"]')).to_have_attribute('title', 'Move this to you; the agent stops acting on it')
+    expect(fold.locator('[data-act="take"]')).to_have_attribute('title', 'Take this item back; revokes agent authority for this item. The triage process may continue for other items')
     expect(page.locator('#toast')).to_be_hidden(timeout=7000)
     shoot(request, page, 'p1-desktop')
     page.set_viewport_size(VIEWPORTS['narrow'])
     shoot(request, page, 'p1-390')
     page.keyboard.press('Escape')
     page.locator('#workingOpen').click()
-    expect(page.locator('#runPanel .run-triage')).to_have_text('handling 1 item')
+    expect(page.locator('#runPanel .run-triage')).to_contain_text('handling 1 item')
     shoot(request, page, 'p1-running-390')
     page.keyboard.press('Escape')
     assert not changed_deck.errors
@@ -2988,3 +2988,44 @@ def test_triage_policy_room(changed_deck: Deck, route_migration, request, viewpo
     shoot(request, page, f'triage-policy-{viewport}')
     page.locator('[data-room-policy] [data-open-constitution]').click()
     expect(page.locator('[data-constitution-page] [data-triage-policy]')).to_contain_text('version 1')
+
+
+@pytest.mark.parametrize('viewport', ['desktop', 'narrow'])
+def test_a2_batch3_triage_diagnostics(changed_deck: Deck, base_url: str, request, viewport):
+    from fleet.projections.attention import attention_display
+    page = changed_deck.page
+    page.set_viewport_size(VIEWPORTS[viewport])
+    with urlopen(base_url + '/api/state', timeout=5) as response:
+        document = json.load(response)
+    host, job = next((host, job) for host in document['hosts'] for job in host['jobs'] if job['status'] == 'running')
+    model = document['attention'][0]
+    document['attention'] = [{**model, 'id': 'a2-agent', 'project_id': 'p', 'owned_by': 'agent', 'state': 'open'}]
+    document['triage'] = {'p': {'queue': ['a2-agent'], 'mandate_version': 'v1', 'budget_left': 0,
+        'budget_resets_at': '2026-10-03T00:00:00+00:00', 'oldest_wait_seconds': 1860,
+        'delivery_error': 'connection refused', 'pending_publications': [{'id': 'publication'}],
+        'live_run': {'id': 'triage-run', 'status': 'unknown outcome', 'host': host['name'], 'remote_job_id': job['id']}}}
+    document['attention_display'] = attention_display(document['attention'], document['building'], document['projects'])
+    page.evaluate('doc => fleetDeck.apply(doc)', document)
+    page.locator('#withAgent').click()
+    panel = page.locator('#attnPanel')
+    expect(panel).to_contain_text('1 queued')
+    expect(panel).to_contain_text('oldest wait 31 min')
+    expect(panel).to_contain_text('0 runs left')
+    expect(panel).to_contain_text('connection refused')
+    expect(panel).to_contain_text('1 pending publications')
+    expect(panel).to_contain_text('unknown outcome')
+    panel.locator('[data-attention-group="agent"] summary').click()
+    expect(panel.locator('[data-act="take"]')).to_have_attribute('title', 'Take this item back; revokes agent authority for this item. The triage process may continue for other items')
+    shoot(request, page, f'a2-batch3-health-{viewport}')
+    page.keyboard.press('Escape')
+    page.locator('#workingOpen').click()
+    expect(page.locator('#runPanel .run-triage')).to_contain_text('connection refused')
+    expect(page.locator('#runPanel .run-triage')).to_contain_text('0 runs left')
+    shoot(request, page, f'a2-batch3-running-{viewport}')
+    page.keyboard.press('Escape')
+    document['triage']['p'].update(mandate_version=None, budget_left=None, budget_resets_at=None, live_run=None)
+    page.evaluate('doc => fleetDeck.apply(doc)', document)
+    page.locator('#withAgent').click()
+    expect(panel).to_contain_text('No confirmed triage policy; agent-owned items cannot be serviced')
+    shoot(request, page, f'a2-batch3-no-policy-{viewport}')
+    assert not changed_deck.errors

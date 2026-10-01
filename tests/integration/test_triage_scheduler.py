@@ -166,7 +166,7 @@ def test_cli_status_resolves_registered_project_name(triage, capsys):
     services, activation, *_ = triage
     a = item(triage)
     project = next(p for p in services.workspace.registry().projects.values() if p.id == activation.project)
-    cli.command_triage_status(SimpleNamespace(project=project.name))
+    cli.command_triage_status(SimpleNamespace(project=project.name, json=True))
     result = json.loads(capsys.readouterr().out)
     assert result['project'] == activation.project and result['queue'] == [a.id]
     assert result['live_run'] is None and result['budget_left'] == 12

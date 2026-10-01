@@ -408,13 +408,18 @@ def command_triage_policy(arguments: argparse.Namespace) -> None:
                     print(f"  {field}: {old} -> {json.dumps(value)}")
             print('Future triage activations use this policy; active runs keep their pinned version. '
                   'Existing attention ownership is unchanged. Triage cannot complete work or judge criteria.')
+        elif getattr(arguments, 'json', False):
+            print(json.dumps(before))
         elif before is None:
             print(f"No triage policy recorded for {project}; set one with: "
-                  f"fleet triage policy set {project} --file F --actor A")
+                  f"fleet triage policy set {project} --file F --actor A. Setup example: docs/triage-policy.md")
         else:
             print(f"Triage policy for {project}, version {before['version']['number']} "
                   f"by {before['version']['actor']} ({before['version']['revision'][:12]})")
-            print(json.dumps(before['policy'], indent=2))
+            for field, value in before['policy'].items():
+                label = field.replace('_', ' ').capitalize()
+                print(f"  {label}: {json.dumps(value) if not isinstance(value, str) else value}")
+            print('Setup example and field explanations: docs/triage-policy.md')
     except (ValueError, LookupError, OSError) as error:
         raise FleetError(str(error)) from error
 
@@ -424,7 +429,26 @@ def command_triage_status(arguments: argparse.Namespace) -> None:
     services = facades()
     project = open_workspace(services.store).resolve_project(arguments.project)
     result = TriageScheduler(services, None, transport.host_by_name).status(project)
-    print(json.dumps(result))
+    if getattr(arguments, 'json', False):
+        print(json.dumps(result))
+        return
+    print(f"Triage for {project}")
+    print(f"Mandate: {result['mandate_version'] or 'No confirmed triage policy'}")
+    print(f"Queue: {len(result['queue'])} agent-owned items")
+    for identity in result['queue']:
+        print(f"  {identity} — take back: fleet attention take {identity} --actor ACTOR")
+    run = result['live_run']
+    print(f"Live run: {run['id'] + ' (' + run['status'] + ')' if run else 'none'}")
+    print(f"Budget: {result['budget_left']} runs left; resets at {result['budget_resets_at']}" if result['budget_left'] is not None else 'Budget: unavailable; no confirmed triage policy')
+    wait = result['oldest_wait_seconds']
+    print(f"Oldest queue wait: {int(wait)} seconds" if wait is not None else 'Oldest queue wait: not recorded' if result['queue'] else 'Oldest queue wait: no queued items')
+    print(f"Delivery error: {result['delivery_error'] or 'none recorded'}")
+    print(f"Pending publications: {len(result['pending_publications'])}")
+    if result['mandate_version'] is None and result['queue']:
+        print(f"{len(result['queue'])} agent-owned items cannot be serviced; take them back or record a policy.")
+    print(f"Inspect policy: fleet triage policy show {project}; setup example: docs/triage-policy.md")
+    if run:
+        print(f"Inspect run: fleet run show {run['id']}; do not launch a duplicate while its outcome is unknown.")
 
 
 def command_orchestrate(arguments: argparse.Namespace) -> None:
@@ -1733,7 +1757,11 @@ def command_attention(arguments: argparse.Namespace) -> None:
             item = attention.snooze(arguments.id, until=until, actor=arguments.actor)
         else:
             item = attention.resolve(arguments.id, details=arguments.details, actor=arguments.actor)
-        console.print_json(json.dumps(asdict(item), default=str))
+        if command in ('delegate', 'take') and not getattr(arguments, 'json', False):
+            print(f"{item.id}: " + ('Delegated; stays open under With agent. Take it back with fleet attention take ' + item.id + ' --actor ACTOR'
+                  if command == 'delegate' else 'Taken back; agent authority for this item is revoked. The triage process may continue for other items.'))
+        else:
+            console.print_json(json.dumps(asdict(item), default=str))
     except (ValueError, LookupError) as error:
         raise FleetError(str(error)) from error
 
@@ -1895,15 +1923,17 @@ def build_parser() -> argparse.ArgumentParser:
     triage_commands = triage.add_subparsers(dest='triage_command', required=True)
     triage_status = triage_commands.add_parser('status', help='mandate, queue, live run and daily budget')
     add_project_argument(triage_status, 'project')
+    triage_status.add_argument('--json', action='store_true', help='machine-readable status')
     triage_status.set_defaults(handler=command_triage_status)
     policy = triage_commands.add_parser('policy', help='read or version the project triage mandate')
     policy_commands = policy.add_subparsers(dest='policy_command', required=True)
     policy_show = policy_commands.add_parser('show', help='show current policy and version')
     add_project_argument(policy_show, 'project')
+    policy_show.add_argument('--json', action='store_true', help='machine-readable policy and version')
     policy_show.set_defaults(handler=command_triage_policy)
     policy_set = policy_commands.add_parser('set', help='validate and record a new policy; active runs retain their version')
     add_project_argument(policy_set, 'project')
-    policy_set.add_argument('--file', required=True, help='triage mandate JSON file')
+    policy_set.add_argument('--file', required=True, help='triage mandate JSON file; explicit example and fields: docs/triage-policy.md')
     policy_set.add_argument('--actor', required=True, help='author recorded on this version')
     policy_set.set_defaults(handler=command_triage_policy)
 
@@ -2223,13 +2253,17 @@ def build_parser() -> argparse.ArgumentParser:
     attention_list.add_argument("--owner", choices=("agent", "user"), help="only items this owner must act on")
     attention_list.set_defaults(handler=command_attention)
     delegate = attention.add_parser(
-        "delegate", help="hand your item to the project's agent; it stays open and listed, and you can take it back")
-    take = attention.add_parser("take", help="take an item back from the agent; the agent may no longer act on it")
+        "delegate", help="hand your item to the project's agent under a confirmed triage policy; it stays open and listed, and you can take it back")
+    take = attention.add_parser("take", help="take an item back from the agent; revokes authority for this item, while the triage process may continue for other items")
+    delegate.description = "Requires a confirmed triage policy. The item stays open under With agent; take it back to revoke item authority. Session questions remain terminal-only."
+    take.description = "Revokes agent authority for this item. The triage process may continue handling other items. Delegate again under a confirmed policy to return ownership."
     escalate = attention.add_parser("escalate", help="(agents) hand an agent's item to the user, saying why")
     for action in (delegate, take, escalate):
         action.add_argument("id")
         action.add_argument("--actor", required=True)
         action.set_defaults(handler=command_attention, note=None, reason=None)
+    delegate.add_argument("--json", action="store_true", help="machine-readable resulting item")
+    take.add_argument("--json", action="store_true", help="machine-readable resulting item")
     delegate.add_argument("--note", help="what you want the agent to do, kept with the item")
     take.add_argument("--reason", help="why you are taking it back, kept with the item")
     escalate.add_argument("--reason", required=True, help="why the user must decide it")

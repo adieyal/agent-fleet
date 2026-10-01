@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 from fleet import cli, composition
+from fleet.modules.records import TRIAGE_PATH
 
 
 README = Path(__file__).resolve().parents[1] / 'README.md'
@@ -41,7 +42,8 @@ def test_workspace_guide(tmp_path, monkeypatch, capsys):
         if language == 'python':
             exec(compile(block, 'README mandate', 'exec'), {})
             records = composition.open_records()
-            assert records.mandate_version(values['PROJECT_ID'], 'mandate.json')[0]
+            path = TRIAGE_PATH if 'TRIAGE_PATH' in block else 'mandate.json'
+            assert records.mandate_version(values['PROJECT_ID'], path)[0]
             continue
         for line in block.replace('\\\n', '').splitlines():
             args = shlex.split(line, comments=True)

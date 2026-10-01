@@ -45,7 +45,22 @@ class AttentionFacade:
 
     def delegate(self, item_id: str, *, actor: str, note: str | None = None) -> AttentionItem:
         """Hand a user's item to the agent; it stays open and listed as the agent's."""
+        self.require_delegable(item_id)
         return self.commands.hand_over(item_id, "agent", actor, reason=note, expected="user")
+
+    def require_delegable(self, item_id: str) -> None:
+        """Shared CLI/deck guard; checking availability grants no authority."""
+        item = self.get(item_id)
+        # Preserve lifecycle/session validation before checking the project's mandate.
+        if item.state == "resolved":
+            raise ItemResolved("attention item is resolved")
+        if item.at_terminal or item.questions or (item.subject or '').startswith('session:'):
+            raise ValueError("a session's question is answered only at its terminal, so an agent cannot take it")
+        if item.owner == 'agent':
+            raise ValueError("attention item is with the agent, not yours")
+        if self.mandate is None or self.mandate(item.project) is None:
+            raise ValueError("This project has no confirmed triage mandate; delegation is unavailable. "
+                             "Inspect with fleet triage policy show PROJECT; record a policy before delegating.")
 
     def take(self, item_id: str, *, actor: str, reason: str | None = None) -> AttentionItem:
         """Take an item back from the agent; the agent may no longer act on it."""

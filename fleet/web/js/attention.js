@@ -25,7 +25,7 @@ const SNOOZE_S = 3600;
 
 // ------------------------------------------------------------------ items per room, from the state document
 const seen = new Set();   // open item ids already announced: each swings the lantern once
-let items = [], projects = [];
+let items = [], projects = [], triage = {};
 let display = { rooms: {}, open_count: 0 };
 export let agentCount = 0;
 export let openCount = 0;   // open items under the lanterns: the header's "need you"
@@ -33,7 +33,7 @@ export let openCount = 0;   // open items under the lanterns: the header's "need
 export const openAttention = () => items.filter(i => i.state !== 'resolved').sort((a, b) => b.last_seen - a.last_seen);
 export const attentionFor = key =>items.filter(i => i.owner?.key === key && i.state !== 'resolved');   // a job's or session's
 export function applyAttention(rooms, doc) {
-  if (doc) { items = doc.attention; display = doc.attention_display; projects = doc.projects || []; }
+  if (doc) { items = doc.attention; display = doc.attention_display; projects = doc.projects || []; triage = doc.triage || {}; }
   const now = animationNow() / 1000;
   openCount = items.filter(i => i.state === 'open' && i.owned_by !== 'agent').length;
   agentCount = items.filter(i => i.state !== 'resolved' && i.owned_by === 'agent').length;
@@ -182,7 +182,7 @@ function renderItem(i, global) {
   const present = owner?.key && !!workOf(owner.key);
   const state = i.state === 'snoozed' ? `snoozed until ${esc(clock(i.snoozed_until).slice(0, 5))}` : i.state;
   const ownership = i.owned_by === 'agent'
-    ? '<button data-act="take" title="Move this to you; the agent stops acting on it">Take back</button>'
+    ? '<button data-act="take" title="Take this item back; revokes agent authority for this item. The triage process may continue for other items">Take back</button>'
     : `<button data-act="delegate" ${i.delegable ? '' : 'disabled'} title="${esc(i.questions ? 'Session questions can only be answered at the terminal' : !i.delegable ? 'This project has no confirmed triage mandate' : `Hand this to the triage agent for ${placeName(i)}. It stays listed under With agent; you can take it back`)}">Delegate to agent</button>`;
   const actions = ownership + (i.state === 'open' ? `<button data-act="acknowledge" title="Mark as seen: dims the lantern when all items are acknowledged; keeps the item open. Reopen restores attention; work is unchanged">Acknowledge</button><button data-act="snooze" title="Hide from the lantern for 1 hour, then return automatically; Reopen restores it sooner. Work is unchanged">Snooze 1h</button>`
     : i.state === 'acknowledged' ? `<button data-act="snooze" title="Hide for 1 hour; Reopen restores it sooner. Work is unchanged">Snooze 1h</button><button data-act="reopen" title="Return this item to open attention and light its lantern; acknowledge or snooze it again to undo">Reopen</button>`
@@ -200,6 +200,14 @@ function renderItem(i, global) {
       <p class="attn-consequence">Resolve closes this item and removes it from the lantern; it does not answer, restart work or grant permissions. Undo is available for 6 seconds.</p><div class="aa">${actions}<button data-item-attention-history="${esc(i.id)}" title="Read who changed this item; opening changes no stored state">History</button></div><em class="err" role="alert"></em>
     </div></li>`;
 }
+function triageHealth() {
+  return Object.entries(triage).map(([project, t]) => {
+    const label = projects.find(p => p.id === project)?.name || project;
+    const wait = t.oldest_wait_seconds == null ? 'Queue wait not reported' : `oldest wait ${Math.floor(t.oldest_wait_seconds / 60)} min`;
+    const budget = t.budget_left == null ? 'No confirmed triage policy; agent-owned items cannot be serviced' : `${t.budget_left} runs left`;
+    return `<p class="attn-triage-health"><b>${esc(label)}</b> · ${(t.queue || []).length} queued · ${esc(wait)} · ${esc(budget)}${t.budget_resets_at ? ` · budget resets ${esc(t.budget_resets_at)}` : ''}<br>Delivery error: ${esc(t.delivery_error || 'none recorded')} · ${(t.pending_publications || []).length} pending publications${t.live_run ? `<br>Run: ${idChip(t.live_run.id)} · ${esc(t.live_run.status || 'status not reported')}` : '<br>No live triage run'}<br>Inspect: <code>${esc(`fleet triage status ${project}`)}</code> · <code>${esc(`fleet triage policy show ${project}`)}</code>. Take back revokes authority for an item; the process may continue for other items.</p>`;
+  }).join('');
+}
 function renderGroup(rows, key, name, fold = false) {
   const content = `<ul>${rows.map(i => renderItem(i, true)).join('')}</ul>`;
   return fold ? `<details data-attention-group="${esc(key)}"${openFolds.has(key) ? ' open' : ''}><summary>${esc(name)} · ${rows.length}</summary>${content}</details>`
@@ -214,8 +222,8 @@ function renderPanel() {
   const room = global ? null : lanterns.get(listRoom)?.room;
   const others = global ? items.filter(i => i.owned_by !== 'agent' && (i.state === 'acknowledged' || i.state === 'snoozed')) : [];
   panel.innerHTML = `<div class="ah"><h3>${global ? 'All-rooms attention' : esc(room ? room.label : listRoom)}</h3><button data-close aria-label="Close">✕</button></div>
-    ${global ? `<p class="attn-guide">Every room and the front desk. Existing items stay with you; new items can route to an agent when a triage mandate is confirmed. Acknowledge marks seen; Snooze hides for 1 hour. Reopen returns either to open attention; work stays unchanged.</p><p class="attn-status" role="status">${esc(panelStatus)}</p>${userRows.length ? renderGroup(userRows, 'open', 'Open') : `<p class="attn-empty">${agentRows.length ? 'No open items need you; agent-owned items remain below.' : 'No open attention items across the fleet.'}</p>`}${agentRows.length ? renderGroup(agentRows, 'agent', 'With agent', true) : ''}${others.length ? renderGroup(others, 'other', 'Acknowledged and snoozed', true) : ''}`
-      : `<ul>${userRows.map(i => renderItem(i, false)).join('')}</ul>${agentRows.length ? renderGroup(agentRows, 'agent', 'With agent', true) : ''}`}`;
+    ${global ? `<p class="attn-guide">Every room and the front desk. Existing items stay with you; new items can route to an agent when a triage mandate is confirmed. Acknowledge marks seen; Snooze hides for 1 hour. Reopen returns either to open attention; work stays unchanged.</p><p class="attn-status" role="status">${esc(panelStatus)}</p>${userRows.length ? renderGroup(userRows, 'open', 'Open') : `<p class="attn-empty">${agentRows.length ? 'No open items need you; agent-owned items remain below.' : 'No open attention items across the fleet.'}</p>`}${triageHealth()}${agentRows.length ? renderGroup(agentRows, 'agent', 'With agent', true) : ''}${others.length ? renderGroup(others, 'other', 'Acknowledged and snoozed', true) : ''}`
+      : `<ul>${userRows.map(i => renderItem(i, false)).join('')}</ul>${triageHealth()}${agentRows.length ? renderGroup(agentRows, 'agent', 'With agent', true) : ''}`}`;
   for (const fold of panel.querySelectorAll('details[data-attention-group]')) fold.addEventListener('toggle', ev => {
     const key = ev.target.dataset.attentionGroup;
     if (ev.target.open) openFolds.add(key); else openFolds.delete(key);
