@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -134,3 +135,54 @@ def test_waiting_observations_are_durable_occurrences(attention, tool):
     facade.observe(host)
     assert len(facade.list()) == 2
     assert len(facade.list(state="open")) == 1
+
+
+@pytest.mark.parametrize("resolution", ["removed", "user"])
+@pytest.mark.parametrize("initial_start,restreamed_start", [(100, 100), (100, 100.0), (100.0, 100)])
+def test_resolved_failure_survives_restream(attention, resolution, initial_start, restreamed_start):
+    facade, repo, now = attention
+    job = dict(id="j1", project="demo", project_id=None, status="failed", updated_at=500,
+               steps=[dict(index=0, status="failed", title="test", started_at=initial_start,
+                           message=None, answered_by=None)])
+    host = dict(name="worker", ok=True, jobs=[job], sessions=[])
+    facade.observe(host)
+    first, = facade.list()
+    # Older stores wrote the raw float spelling; exercise compatibility with those keys.
+    if isinstance(initial_start, float):
+        first = replace(first, source_reference="job:worker:j1:failed:0@100.0")
+        repo.items[first.id] = first
+    if resolution == "removed":
+        # The pre-retention stream reconciled missing jobs without present_jobs.
+        facade.reconcile("stream:worker", set(), actor="host-stream")
+    else:
+        facade.resolve(first.id, actor="user", details="Handled already")
+    resolved = facade.get(first.id)
+    history = list(repo.history)
+    facade.mandate = lambda project: pytest.fail("resolved occurrence must not route to triage")
+    job["steps"][0]["started_at"] = restreamed_start
+    now[0] += timedelta(seconds=1)
+    facade.observe(host)
+    assert facade.list(state="open") == []
+    again, = facade.list(state="resolved")
+    assert again.id == first.id
+    assert again.resolved_at == resolved.resolved_at
+    assert again.resolution_details == resolved.resolution_details
+    assert repo.history[:len(history)] == history
+    assert job["status"] == "failed"
+
+
+@pytest.mark.parametrize("change", [dict(started_at=100.000001), dict(index=1)])
+def test_new_failure_occurrence_still_raises(attention, change):
+    facade, _, _ = attention
+    step = dict(index=0, status="failed", title="test", started_at=100.0,
+                message=None, answered_by=None)
+    host = dict(name="worker", ok=True, sessions=[], jobs=[dict(
+        id="j1", project="demo", project_id=None, status="failed", updated_at=500, steps=[step])])
+    facade.observe(host)
+    first, = facade.list()
+    facade.resolve(first.id, actor="user", details="Handled")
+    step.update(change)
+    facade.observe(host)
+    new, = facade.list(state="open")
+    assert new.id != first.id
+    assert facade.list(state="resolved")[0].id == first.id

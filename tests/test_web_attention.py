@@ -385,3 +385,35 @@ def test_a_permission_request_says_what_the_agent_wants_to_run(deck):
     assert item.headline == "Claude asks to use Bash"
     assert item.context_reference == "Check worktree state\n\ngit status --short"
     assert deck.items()["home:s1"]["summary"] == "Claude asks to use Bash"   # the list shows the new headline
+
+
+@pytest.mark.parametrize("resolution", ["removed", "user"])
+def test_restreamed_resolved_failure_remains_visible(deck, resolution):
+    import os
+    import subprocess
+    import sys
+
+    failing = job("f1", "failed", [("failed", 100)])
+    deck.report("home", jobs=[failing])
+    first, = deck.state.attention.list()
+    if resolution == "removed":
+        deck.state.attention.reconcile("stream:home", set(), actor="host-stream")
+    else:
+        deck.state.attention.resolve(first.id, actor="user", details="Handled")
+    resolved = deck.state.attention.get(first.id)
+    history = deck.state.store.history_after(0)
+    failing["steps"][0]["started_at"] = 100.0
+    deck.report("home", jobs=[failing])
+    assert deck.state.attention.list(state="open") == []
+    again, = deck.state.attention.list(state="resolved")
+    assert again.id == first.id and again.resolved_at == resolved.resolved_at
+    assert again.resolution_details == resolved.resolution_details
+    assert deck.state.store.history_after(0)[:len(history)] == history
+    document = deck.state.document()
+    assert document["hosts"][0]["jobs"][0]["status"] == "failed"
+    assert deck.state.execution.runs()[0].status == "failed"
+    result = subprocess.run([sys.executable, "-m", "fleet.cli", "attention", "list", "--state", "resolved"],
+                            env=dict(os.environ), capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    listed, = json.loads(result.stdout)
+    assert listed["id"] == first.id and listed["resolution_details"] == resolved.resolution_details
