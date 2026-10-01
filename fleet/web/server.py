@@ -31,6 +31,7 @@ from fleet.modules.workspace import (NoVacancy, FOCUSES, AlreadyShuttered, NotSh
 from fleet.projections.workspace import annotate, resolve, registry_config
 from fleet.projections.project import project_status
 from fleet.projections.bench import bench_rooms, bench_state
+from fleet.projections.history import parse_since, subject_history
 from fleet.transport import FleetError, Host
 from fleet.web.documents import AssetNotImage, AssetTooLarge, DocumentAccessDenied, fetch_asset, fetch_document
 from fleet.web.fixture import FixtureLibrary, FixtureState
@@ -452,6 +453,8 @@ def make_handler(state: FleetState | FixtureState,
                 self.guidance()
             elif path == "/api/decisions":
                 self.decisions()
+            elif path == "/api/history":
+                self.history()
             elif path in ("/", "/index.html"):
                 self.respond(200, "text/html; charset=utf-8", index_page)
             elif path in PROTOTYPES:
@@ -527,6 +530,25 @@ def make_handler(state: FleetState | FixtureState,
                 self.error(400, "epic is required")
                 return
             self.guidance_result(lambda services: epic_decisions(services, epic))
+
+        def history(self) -> None:
+            """GET /api/history?subject=&since= — the subject's audit trail, newest first, as `fleet history --json`
+            prints it; subject takes an id, a unique id prefix or a subject such as attention:<id>."""
+            query = {key: values[0] for key, values in parse_qs(urlsplit(self.path).query).items()}
+            if not query.get("subject", "").strip():
+                self.error(400, "subject is required")
+                return
+            try:
+                since = parse_since(query["since"]) if query.get("since") else None
+            except ValueError as error:
+                self.error(400, str(error))
+                return
+            try:
+                result = subject_history(state.store, query["subject"], since)
+            except LookupError as error:
+                self.error(404, str(error))
+                return
+            self.respond(200, "application/json", json.dumps(result).encode())
 
         def change_guidance(self, path: str, body: dict[str, Any]) -> None:
             """POST /api/guidance {"project", "epic" (null for the constitution), "markdown", "base": the version the

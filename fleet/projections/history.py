@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+import re
+from datetime import datetime, timedelta, timezone
 
 from fleet.infrastructure.sqlite import Store
 
@@ -11,6 +12,24 @@ from fleet.infrastructure.sqlite import Store
 NOISE = {"updated", "next_step_recorded_at"}
 # A work item's history includes the records that belong to it.
 WORK_PARTS = ("work:criterion:", "work:relation:")
+
+
+def parse_moment(text: str) -> datetime:
+    """An ISO date or time; a date means midnight, and a time without a zone means UTC."""
+    try:
+        moment = datetime.fromisoformat(text)
+    except ValueError as error:
+        raise ValueError(f"not an ISO date or time: {text}") from error
+    return moment if moment.tzinfo is not None else moment.replace(tzinfo=timezone.utc)
+
+
+def parse_since(text: str, now: datetime | None = None) -> datetime:
+    """An ISO date or time, or an age such as 30m, 12h or 7d."""
+    match = re.fullmatch(r"(\d+)([mhd])", text.strip())
+    if match is None:
+        return parse_moment(text)
+    unit = {"m": "minutes", "h": "hours", "d": "days"}[match.group(2)]
+    return (now or datetime.now(timezone.utc)) - timedelta(**{unit: int(match.group(1))})
 
 
 def parse(text: str) -> object:

@@ -13,7 +13,7 @@ import tempfile
 import time
 from collections import defaultdict
 from dataclasses import asdict
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -29,7 +29,7 @@ from fleet import transport
 from fleet.modules import workspace as projects
 from fleet.composition import open_attention, open_decisions, open_execution, open_library, open_records, open_store, open_work, open_workspace
 from fleet.projections.decisions import decision_log
-from fleet.projections.history import subject_history
+from fleet.projections.history import parse_moment, parse_since, subject_history
 from fleet.projections.project import project_status
 from fleet.modules.work import RELATION_TYPES, EvidenceSpecification
 from fleet.modules.execution import Run
@@ -1242,21 +1242,17 @@ def command_decision_list(arguments: argparse.Namespace) -> None:
 
 
 def history_cutoff(text: str) -> datetime:
-    """An ISO date or time; a date means midnight, and a time without a zone means UTC."""
     try:
-        moment = datetime.fromisoformat(text)
+        return parse_moment(text)
     except ValueError as error:
-        raise argparse.ArgumentTypeError(f"not an ISO date or time: {text}") from error
-    return moment if moment.tzinfo is not None else moment.replace(tzinfo=timezone.utc)
+        raise argparse.ArgumentTypeError(str(error)) from error
 
 
 def history_since(text: str) -> datetime:
-    """An ISO date or time, or an age such as 30m, 12h or 7d."""
-    match = re.fullmatch(r"(\d+)([mhd])", text.strip())
-    if match is None:
-        return history_cutoff(text)
-    unit = {"m": "minutes", "h": "hours", "d": "days"}[match.group(2)]
-    return datetime.now(timezone.utc) - timedelta(**{unit: int(match.group(1))})
+    try:
+        return parse_since(text)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(str(error)) from error
 
 
 def history_value(value: object) -> str:
