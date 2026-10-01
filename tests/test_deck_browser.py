@@ -2099,3 +2099,105 @@ def test_audit1_batch4_attention_resolve_undo(changed_deck: Deck, base_url: str,
     expect(page.locator('#toast')).to_contain_text('restored')
     shoot(request, page, 'batch4-restored-390')
     assert changed_deck.errors == []
+
+
+def test_p5_all_rooms_attention_from_header(changed_deck: Deck, base_url: str, request) -> None:
+    from fleet.projections.attention import attention_display
+    page = changed_deck.page
+    with urlopen(base_url + '/api/state', timeout=5) as response:
+        document = json.load(response)
+    model = document['attention'][0]
+    document['attention'] += [
+        {**model, 'id': 'p5-front-desk', 'project': None, 'project_id': None,
+         'summary': 'Visitor needs a route', 'owner': None, 'state': 'open', 'blocked': False},
+        {**model, 'id': 'p5-owned', 'project': None, 'project_id': None,
+         'summary': 'Agent-owned request', 'owner': 'dispatcher', 'state': 'open', 'blocked': False},
+        {**model, 'id': 'p5-ack', 'summary': 'Already seen', 'state': 'acknowledged'},
+        {**model, 'id': 'p5-snooze', 'summary': 'Waiting until later', 'state': 'snoozed',
+         'snoozed_until': document['time'] + 3600},
+        {**model, 'id': 'p5-resolved', 'summary': 'Already resolved', 'state': 'resolved'}]
+    document['attention_display'] = attention_display(document['attention'], document['building'], document['projects'])
+    page.evaluate('doc => fleetDeck.apply(doc)', document)
+    chip = page.get_by_role('button', name=re.compile(r'\d+ need you'))
+    chip.click()
+    panel = page.locator('#attnPanel')
+    expect(panel).to_have_attribute('data-scope', 'all')
+    expect(panel.locator('[data-attention-group="open"] .attn-item')).to_have_count(5)
+    expect(panel.locator('[data-id="p5-resolved"]')).to_have_count(0)
+    expect(panel.locator('[data-id="p5-front-desk"]')).to_contain_text('Owner not reported')
+    expect(panel.locator('[data-id="p5-owned"]')).to_contain_text('dispatcher')
+    expect(panel.locator('[data-id="p5-owned"] .attn-place')).to_contain_text('Front desk')
+    expect(panel.locator('.attn-age').first).to_contain_text('ago')
+    expect(panel).to_contain_text('Undo is available for 6 seconds')
+    expect(panel.locator('[data-attention-group="other"]')).not_to_have_attribute('open', '')
+    panel.locator('[data-attention-group="other"] summary').click()
+    expect(panel.locator('[data-id="p5-ack"]')).to_be_visible()
+    expect(panel.locator('[data-id="p5-snooze"]')).to_be_visible()
+    panel.evaluate('el => { el.scrollTop = 0; }')
+    shoot(request, page, 'p5-all-rooms')
+    page.set_viewport_size(VIEWPORTS['narrow'])
+    page.wait_for_function("document.getElementById('attnPanel').getBoundingClientRect().right <= innerWidth")
+    panel.evaluate('el => { el.scrollTop = 0; }')
+    shoot(request, page, 'p5-all-rooms-390')
+    page.keyboard.press('Escape')
+    expect(panel).to_be_hidden()
+    expect(page.locator('#needYou')).to_be_focused()
+    page.locator('#needYou').click()
+    expect(panel).to_be_visible()
+    page.keyboard.press('Escape')
+    assert changed_deck.errors == []
+
+
+def test_p5_global_attention_empty_and_preserves_building(changed_deck: Deck, base_url: str) -> None:
+    from fleet.projections.attention import attention_display
+    page = changed_deck.page
+    page.locator('#viewToggle [data-view="building"]').click()
+    saved = page.evaluate("localStorage.getItem('fleet.view')")
+    page.locator('#needYou').click()
+    panel = page.locator('#attnPanel')
+    expect(panel).to_be_visible()
+    expect(page.locator('body')).to_have_attribute('data-view', 'building')
+    with urlopen(base_url + '/api/state', timeout=5) as response:
+        document = json.load(response)
+    document['attention'] = []
+    document['attention_display'] = attention_display([], document['building'], document['projects'])
+    page.evaluate('doc => fleetDeck.apply(doc)', document)
+    expect(panel).to_contain_text('No open attention items')
+    expect(page.locator('#needYou')).to_have_attribute('aria-expanded', 'true')
+    assert page.evaluate("localStorage.getItem('fleet.view')") == saved
+    page.keyboard.press('Escape')
+    expect(page.locator('#needYou')).to_be_focused()
+    page.locator('#viewToggle [data-view="deck"]').click()
+
+
+def test_p5_global_actions_and_owner_navigation(changed_deck: Deck, base_url: str) -> None:
+    page = changed_deck.page
+    page.locator('#viewToggle [data-view="building"]').click()
+    saved = page.evaluate("localStorage.getItem('fleet.view')")
+    page.locator('#needYou').click()
+    panel = page.locator('#attnPanel')
+    row = panel.locator('.attn-item', has=page.locator('[data-owner="home:e1b5c8"]'))
+    item_id = row.get_attribute('data-id')
+    row.locator('[data-act="acknowledge"]').click()
+    expect(panel.locator('[data-attention-group="open"] .attn-item')).to_have_count(2)
+    expect(panel.locator('.attn-status')).to_contain_text('Acknowledged')
+    if panel.locator('[data-attention-group="other"]').get_attribute('open') is None:
+        panel.locator('[data-attention-group="other"] summary').click()
+    row = panel.locator(f'[data-id="{item_id}"]')
+    expect(row).to_have_attribute('data-state', 'acknowledged')
+    row.locator('[data-act="reopen"]').click()
+    expect(panel.locator('[data-attention-group="open"] .attn-item')).to_have_count(3)
+    row.locator('[data-act="resolve"]').click()
+    expect(row).to_have_count(0)
+    page.locator('#toast [data-undo]').click()
+    expect(row).to_have_attribute('data-state', 'open')
+    expect(page.locator('#needYou')).to_have_attribute('aria-expanded', 'true')
+    expect(row.locator('[data-owner]')).to_have_attribute('title', re.compile('whole deck'))
+    row.locator('[data-owner]').click()
+    expect(panel).to_be_hidden()
+    expect(page.locator('body')).to_have_attribute('data-view', 'deck')
+    expect(page.locator('#panelHead h2')).to_have_text('Upgrade Django to 5.2')
+    assert page.evaluate("localStorage.getItem('fleet.view')") == saved
+    page.locator('#panel #close').click()
+    page.locator('#viewToggle [data-view="deck"]').click()
+    assert changed_deck.errors == []

@@ -664,7 +664,7 @@ def test_merging_from_a_floor_keeps_the_older_project_and_frees_the_floor(page: 
 def test_audit1_batch4_lantern_titles_name_navigation(page: Page, visitor_asks_url: str, request) -> None:
     open_building(page, visitor_asks_url)
     expect(page.locator('.floor-lantern[data-place="1"]')).to_have_attribute('title', re.compile('Enter .*floor'))
-    expect(page.locator('.floor-lantern[data-place="lobby"]')).to_have_attribute('title', re.compile('Show the whole deck'))
+    expect(page.locator('.floor-lantern[data-place="lobby"]')).to_have_attribute('title', re.compile('Open all-rooms attention'))
     if request.config.getoption('--shots'):
         page.screenshot(path=request.config.getoption('--shots') + '/batch4-building.png')
         page.set_viewport_size({'width': 390, 'height': 844})
@@ -676,3 +676,34 @@ def test_audit1_batch4_lantern_titles_name_navigation(page: Page, visitor_asks_u
         expect(page.locator('.floor-lantern[data-place="store"]')).to_have_attribute('title', re.compile('Open the storehouse'))
     finally:
         post(visitor_asks_url, '/api/restore', {'project': project})
+
+
+def test_p5_front_desk_opens_same_global_list(page: Page, visitor_asks_url: str, request) -> None:
+    open_building(page, visitor_asks_url)
+    lamp = page.locator('.floor-lantern[data-place="lobby"]')
+    expect(lamp).to_have_attribute('title', re.compile('Open all-rooms attention'))
+    saved = page.evaluate("localStorage.getItem('fleet.view')")
+    lamp.click()
+    panel = page.locator('#attnPanel')
+    expect(panel).to_be_visible()
+    expect(panel).to_have_attribute('data-scope', 'all')
+    expect(panel.locator('[data-attention-group="open"] .attn-item')).to_have_count(4)
+    expect(page.locator('body')).to_have_attribute('data-view', 'building')
+    if request.config.getoption('--shots'):
+        page.screenshot(path=request.config.getoption('--shots') + '/p5-front-desk.png')
+        page.set_viewport_size({'width': 390, 'height': 844})
+        page.screenshot(path=request.config.getoption('--shots') + '/p5-front-desk-390.png')
+    assert page.evaluate("localStorage.getItem('fleet.view')") == saved
+    page.keyboard.press('Escape')
+    expect(lamp).to_be_focused()
+    page.locator('#needYou').click()
+    expect(panel.locator('[data-attention-group="open"] .attn-item')).to_have_count(4)
+    expect(page.locator('body')).to_have_attribute('data-view', 'building')
+
+    page.keyboard.press('Escape')
+    page.locator('.plate[data-floor="1"] .enter').click()
+    expect(page.locator('body')).to_have_attribute('data-view', 'floor')
+    page.locator('#needYou').click()
+    expect(panel).to_be_visible()
+    expect(panel.locator('[data-attention-group="open"] .attn-item')).to_have_count(4)
+    expect(page.locator('body')).to_have_attribute('data-view', 'floor')

@@ -41,6 +41,7 @@ import { working } from './activity.js';
 import { enterProject } from './state.js';
 import { openAttentionReader } from './reader.js';
 import { enterFloor } from './bench.js';
+import { openAllAttention } from './attention.js';
 
 // ------------------------------------------------------------------ views: the deck, the building (L0), a floor (L1)
 // Inside, `current` is the floor entered, or 'S' with `crate` the project whose crate is open (read-only).
@@ -50,7 +51,7 @@ let current = null, crate = null;
 const toggle = document.getElementById('viewToggle');
 const lift = document.getElementById('lift');
 // ('world' is a project floor in the sprite world, world/floor-view.js; opened from inside a floor, it shows that one)
-function showView(view, where = null) {
+export function showView(view, where = null) {
   const leaving = current !== null;
   const project = view === 'world' && typeof current === 'number' ? floors.find(f => f.floor === current)?.projectId ?? null : null;
   current = view === 'floor' ? where : view === 'crate' ? 'S' : null;
@@ -426,7 +427,7 @@ function renderUi() {
   }).join('');
   const lamps = [...lanterns].map(([place, l]) => {
     const where = place === 'lobby' ? 'the front desk' : place === 'store' ? 'the storehouse' : floors.find(f => f.floor === place)?.name;
-    const action = place === 'lobby' ? 'Show the whole deck' : place === 'store' ? 'Open the storehouse' : `Enter ${where}’s floor`;
+    const action = place === 'lobby' ? 'Open all-rooms attention' : place === 'store' ? 'Open the storehouse' : `Enter ${where}’s floor`;
     const label = `${action} · ${where}: ${l.count > 1 ? `${l.count} things need you` : 'something needs you'}${l.level === 'acknowledged' ? ' (acknowledged)' : ''}`;
     const lantern = `<button class="floor-lantern${l.level === 'acknowledged' ? ' ack' : ''}" data-place="${place}" data-state="${l.level}"
       data-count="${l.count}" data-kind="${l.kind}" aria-label="${esc(label)}" title="${esc(label)}"><span class="lg">${esc(l.glyph)}</span><b>${l.count > 1 ? l.count : ''}</b></button>`;
@@ -480,7 +481,7 @@ ui.addEventListener('click', async ev => {
   const lamp = t.closest('.floor-lantern');
   if (lamp) {
     const place = lamp.dataset.place;
-    if (place === 'lobby') showView('deck'); else if (place === 'store') openStorehouse(); else enter(Number(place));
+    if (place === 'lobby') openAllAttention(lamp); else if (place === 'store') openStorehouse(); else enter(Number(place));
     return;
   }
   const handle = t.closest('[data-shutter]');

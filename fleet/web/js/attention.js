@@ -9,13 +9,13 @@
 import * as THREE from 'three';
 import { animationNow } from './clock.js';
 import { BOT_H, RD, REDUCED, RW, vh, vw } from './env.js';
-import { clock, esc, stamp } from './util.js';
+import { age, clock, esc, stamp } from './util.js';
 import { G, deckGroup, softDot, toScreen } from './scene.js';
 import { workOf } from './model.js';
-import { select } from './panel.js';
+import { idChip, select } from './panel.js';
 import { shortId } from './activity.js';
 import { openAttentionReader } from './reader.js';
-import { showToast } from './building.js';
+import { showToast, showView } from './building.js';
 
 const GLYPH = { blocker: '✋', decision: '?', alert: '✱' };
 const KIND = { blocker: 'Blocked', decision: 'Needs a decision', alert: 'Alert' };
@@ -24,12 +24,12 @@ const SNOOZE_S = 3600;
 
 // ------------------------------------------------------------------ items per room, from the state document
 const seen = new Set();   // open item ids already announced: each swings the lantern once
-let items = [];
+let items = [], projects = [];
 let display = { rooms: {}, open_count: 0 };
 export let openCount = 0;   // open items under the lanterns: the header's "need you"
 export const attentionFor = key => items.filter(i => i.owner?.key === key && i.state !== 'resolved');   // a job's or session's
 export function applyAttention(rooms, doc) {
-  if (doc) { items = doc.attention; display = doc.attention_display; }
+  if (doc) { items = doc.attention; display = doc.attention_display; projects = doc.projects || []; }
   const now = animationNow() / 1000;
   openCount = display.open_count;
   for (const r of rooms) {
@@ -110,18 +110,35 @@ function renderLanterns(rooms) {
 // ------------------------------------------------------------------ the list: what needs you in this room, and what to do
 const panel = document.getElementById('attnPanel');
 const reader = document.getElementById('reader');
+const ALL_ROOMS = Symbol('all rooms');
+let panelStatus = '';
+const openFolds = new Set();
+export const allAttentionOpen = () => listRoom === ALL_ROOMS && !panel.hidden;
 let listRoom = null, opener = null;   // the room whose list is rendered, whether or not it is open
-function openPanel(name) {
+export function openAllAttention(from = document.getElementById('needYou')) {
+  if (allAttentionOpen() && from?.id === 'needYou') { closePanel(true); return; }
+  openPanel(ALL_ROOMS, from);
+}
+function openPanel(name, from = lanterns.get(name)) {
   listRoom = name;
-  opener = lanterns.get(name);
+  opener = from;
+  panelStatus = '';
+  panel.dataset.scope = name === ALL_ROOMS ? 'all' : 'room';
+  panel.setAttribute('aria-label', name === ALL_ROOMS ? 'All-rooms attention' : 'What needs you here');
   renderPanel();
   if (listRoom === null) return;   // nothing listed there any more
   panel.hidden = false;
   positionPanel();
+  document.getElementById('needYou')?.setAttribute('aria-expanded', String(allAttentionOpen()));
   panel.querySelector('[data-close]')?.focus({ preventScroll: true });
 }
 function positionPanel() {
-  if (panel.hidden || !opener) return;
+  if (panel.hidden) return;
+  if (listRoom === ALL_ROOMS) {
+    panel.style.transform = `translate(${Math.max(8, vw - panel.offsetWidth - 12)}px,60px)`;
+    return;
+  }
+  if (!opener) return;
   const at = opener.getBoundingClientRect(), w = panel.offsetWidth, h = panel.offsetHeight;
   const x = Math.min(Math.max(8, at.right + 10), vw - w - 8), y = Math.min(Math.max(60, at.top - 20), vh - h - 8);
   panel.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px)`;
@@ -131,35 +148,68 @@ const ownerName = owner => `${owner.host}:${shortId(owner.id)}`;
 // A person closing it gets focus back on the lantern that opened it; an emptied list just goes.
 function closePanel(returnFocus = false) {
   if (panel.hidden) return;
-  const back = opener;
+  const back = opener?.id === 'needYou' ? document.getElementById('needYou')
+    : opener?.dataset.place === 'lobby' ? document.querySelector('.floor-lantern[data-place="lobby"]') : opener;
   opener = null; panel.hidden = true;
-  if (returnFocus && back && back.isConnected) back.focus({ preventScroll: true });
+  document.getElementById('needYou')?.setAttribute('aria-expanded', 'false');
+  const target = back?.isConnected ? back : listRoom === ALL_ROOMS ? document.getElementById('needYou') : null;
+  if (returnFocus) target?.focus({ preventScroll: true });
+}
+// P5: shared rows and separate groups leave room for a later ownership fold.
+function ownerMeta(owner) {
+  if (!owner) return 'Owner not reported';
+  if (typeof owner === 'string') return `Owner: ${esc(owner)}`;
+  return `Owner: ${esc(owner.name || owner.label || owner.type || 'reported owner')}${owner.host ? ` · ${esc(owner.host)}` : ''}${owner.id ? ` · ${idChip(owner.id)}` : ''}`;
+}
+function placeName(item) {
+  const project = projects.find(p => p.id === item.project_id);
+  return project?.name || item.project || (item.project_id ? `Project ${item.project_id} · room not reported` : 'Front desk · no registered room');
+}
+function readerConsequence(item) {
+  if (item.refusals) return 'Review before allowing: grants change job permissions and start a continuation; Fleet cannot undo them. All Bash requires confirmation.';
+  if (item.questions) return 'Read the question; answer in the session’s terminal. Fleet cannot type there.';
+  if (item.blocked) return 'Send an answer to add a new job step and continue work; sending cannot be undone in Fleet.';
+  if (item.kind === 'decision') return 'Answer to record a decision and resolve the request; this cannot be undone in Fleet.';
+  return 'Open the job or context to inspect the problem; opening changes no stored state.';
+}
+function renderItem(i, global) {
+  const owner = typeof i.owner === 'object' ? i.owner : null;
+  const present = owner?.key && !!workOf(owner.key);
+  const state = i.state === 'snoozed' ? `snoozed until ${esc(clock(i.snoozed_until).slice(0, 5))}` : i.state;
+  const actions = (i.state === 'open' ? `<button data-act="acknowledge" title="Mark as seen: dims the lantern when all items are acknowledged; keeps the item open. Reopen restores attention; work is unchanged">Acknowledge</button><button data-act="snooze" title="Hide from the lantern for 1 hour, then return automatically; Reopen restores it sooner. Work is unchanged">Snooze 1h</button>`
+    : i.state === 'acknowledged' ? `<button data-act="snooze" title="Hide for 1 hour; Reopen restores it sooner. Work is unchanged">Snooze 1h</button><button data-act="reopen" title="Return this item to open attention and light its lantern; acknowledge or snooze it again to undo">Reopen</button>`
+    : `<button data-act="reopen" title="Return this item to open attention and light its lantern; acknowledge or snooze it again to undo">Reopen</button>`)
+    + '<button data-act="resolve" title="Close this attention item and remove it from the lantern; does not answer, restart work or grant permissions. Undo is available for 6 seconds">Resolve</button>';
+  const since = i.since ?? i.last_seen;
+  const context = i.refusals ? 'Review refused commands' : i.questions ? 'Read the question' : i.blocked ? 'Answer' : i.kind === 'decision' ? 'Answer question' : null;
+  return `<li class="attn-item" data-id="${esc(i.id)}" data-state="${esc(i.state)}" data-kind="${esc(i.kind)}">
+    <span class="ak">${GLYPH[i.kind]}</span><div class="ab"><b>${esc(i.summary)}</b>
+      ${global ? `<small class="attn-place">${esc(placeName(i))} · ${idChip(i.id)}</small><small class="attn-owner">${ownerMeta(i.owner)}</small>` : ''}
+      <small>${itemKind(i)} · ${state} · ${global ? `<time class="attn-age" title="${since ? esc(new Date(since * 1000).toLocaleString()) : ''}">${since ? `${i.since == null ? 'last seen ' : ''}${age(since)} ago` : 'Age not reported'}</time>` : `<time title="${esc(new Date(i.last_seen * 1000).toLocaleString())}">${stamp(i.last_seen)}</time>`}${i.stale ? ' · host unreachable' : ''}</small>
+      ${present ? `<button class="owner" data-owner="${esc(owner.key)}" title="${global ? 'Open on the whole deck; your saved view is unchanged' : esc(owner.key)}">${owner.type === 'job' ? 'Open job' : 'Open session'} ${esc(ownerName(owner))}</button>` : `<button class="owner" data-context="${esc(i.id)}" title="Read context; opening changes no stored state">Open context</button>`}
+      ${context ? `<button class="owner" data-context="${esc(i.id)}" title="${esc(readerConsequence(i))}">${context}</button>` : ''}
+      ${global ? `<p class="attn-consequence">${esc(readerConsequence(i))}</p>` : ''}
+      <p class="attn-consequence">Resolve closes this item and removes it from the lantern; it does not answer, restart work or grant permissions. Undo is available for 6 seconds.</p><div class="aa">${actions}</div><em class="err" role="alert"></em>
+    </div></li>`;
+}
+function renderGroup(rows, key, name, fold = false) {
+  const content = `<ul>${rows.map(i => renderItem(i, true)).join('')}</ul>`;
+  return fold ? `<details data-attention-group="${esc(key)}"${openFolds.has(key) ? ' open' : ''}><summary>${esc(name)} · ${rows.length}</summary>${content}</details>`
+    : `<section data-attention-group="${esc(key)}"><h4>${esc(name)} · ${rows.length}</h4>${content}</section>`;
 }
 function renderPanel() {
-  const listed = (display.rooms[listRoom]?.listed || []).map(id => items.find(i => i.id === id));
-  if (!listed.length) { closePanel(); listRoom = null; panel.replaceChildren(); return; }
-  const room = lanterns.get(listRoom)?.room;
-  panel.innerHTML = `<div class="ah"><h3>${esc(room ? room.label : listRoom)}</h3><button data-close aria-label="Close">✕</button></div>
-    <ul>${listed.map(i => {
-      const owner = i.owner, present = !!workOf(owner.key);
-      const state = i.state === 'snoozed' ? `snoozed until ${esc(clock(i.snoozed_until).slice(0, 5))}` : i.state;
-      const actions = (i.state === 'open' ? `<button data-act="acknowledge" title="Mark as seen: dims the lantern when all items are acknowledged; keeps the item open and does not answer or restart work">Acknowledge</button><button data-act="snooze">Snooze 1h</button>`
-        : i.state === 'acknowledged' ? `<button data-act="snooze">Snooze 1h</button><button data-act="reopen">Reopen</button>`
-        : `<button data-act="reopen">Reopen</button>`)
-        + '<button data-act="resolve" title="Close this attention item and remove it from the lantern; does not answer, restart work or grant permissions. Undo is available for 6 seconds">Resolve</button>';
-      return `<li class="attn-item" data-id="${esc(i.id)}" data-state="${esc(i.state)}" data-kind="${esc(i.kind)}">
-        <span class="ak">${GLYPH[i.kind]}</span>
-        <div class="ab"><b>${esc(i.summary)}</b>
-          <small>${itemKind(i)} · ${state} · <time title="${esc(new Date(i.last_seen * 1000).toLocaleString())}">${stamp(i.last_seen)}</time>${i.stale ? ' · host unreachable' : ''}</small>
-          ${present ? `<button class="owner" data-owner="${esc(owner.key)}" title="${esc(owner.key)}">${owner.type === 'job' ? 'Open job' : 'Open session'} ${esc(ownerName(owner))}</button>`
-                    : `<button class="owner" data-context="${esc(i.id)}">Open context</button>`}
-          ${i.refusals ? `<button class="owner" data-context="${esc(i.id)}">Review refused commands</button>`
-            : i.questions ? `<button class="owner" data-context="${esc(i.id)}">Read the question</button>`
-            : i.blocked ? `<button class="owner" data-context="${esc(i.id)}">Answer</button>`
-            : i.kind === 'decision' ? `<button class="owner" data-context="${esc(i.id)}">Answer question</button>` : ''}
-          <p class="attn-consequence">Resolve closes this item and removes it from the lantern; it does not answer, restart work or grant permissions. Undo is available for 6 seconds.</p><div class="aa">${actions}</div><em class="err"></em></div>
-      </li>`;
-    }).join('')}</ul>`;
+  const global = listRoom === ALL_ROOMS;
+  const listed = global ? items.filter(i => i.state === 'open') : (display.rooms[listRoom]?.listed || []).map(id => items.find(i => i.id === id)).filter(Boolean);
+  if (!global && !listed.length) { closePanel(); listRoom = null; panel.replaceChildren(); return; }
+  const room = global ? null : lanterns.get(listRoom)?.room;
+  const others = global ? items.filter(i => i.state === 'acknowledged' || i.state === 'snoozed') : [];
+  panel.innerHTML = `<div class="ah"><h3>${global ? 'All-rooms attention' : esc(room ? room.label : listRoom)}</h3><button data-close aria-label="Close">✕</button></div>
+    ${global ? `<p class="attn-guide">Every room and the front desk. Acknowledge marks seen; Snooze hides for 1 hour. Reopen returns either to open attention; work stays unchanged.</p><p class="attn-status" role="status">${esc(panelStatus)}</p>${listed.length ? renderGroup(listed, 'open', 'Open') : '<p class="attn-empty">No open attention items across the fleet.</p>'}${others.length ? renderGroup(others, 'other', 'Acknowledged and snoozed', true) : ''}`
+      : `<ul>${listed.map(i => renderItem(i, false)).join('')}</ul>`}`;
+  for (const fold of panel.querySelectorAll('details[data-attention-group]')) fold.addEventListener('toggle', ev => {
+    const key = ev.target.dataset.attentionGroup;
+    if (ev.target.open) openFolds.add(key); else openFolds.delete(key);
+  });
   positionPanel();
 }
 panel.addEventListener('click', async ev => {
@@ -167,7 +217,10 @@ panel.addEventListener('click', async ev => {
   const context = ev.target.closest('[data-context]');
   if (context) { openAttentionReader(items.find(item => item.id === context.dataset.context)); return; }
   const owner = ev.target.closest('[data-owner]');
-  if (owner) { select(owner.dataset.owner); return; }
+  if (owner) {
+    if (listRoom === ALL_ROOMS) { closePanel(); showView('deck'); }
+    select(owner.dataset.owner); return;
+  }
   const b = ev.target.closest('[data-act]');
   if (!b) return;
   const row = b.closest('.attn-item'), body = { id: row.dataset.id };
@@ -177,6 +230,11 @@ panel.addEventListener('click', async ev => {
     const res = await fetch('/api/attention/' + b.dataset.act, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const result = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(result.error || `HTTP ${res.status}`);
+    if (listRoom === ALL_ROOMS) {
+      panelStatus = `${b.dataset.act === 'acknowledge' ? 'Acknowledged; now in the fold below' : b.dataset.act === 'snooze' ? 'Snoozed for 1 hour; now in the fold below' : b.dataset.act === 'reopen' ? 'Returned to open attention' : 'Resolved; Undo is available in the toast'}. Work is unchanged.`;
+      const status = panel.querySelector('.attn-status');
+      if (status) status.textContent = panelStatus;
+    }
     if (b.dataset.act === 'resolve') {
       showToast('Attention resolved; work is unchanged. Undo within 6 seconds.', async () => {
         try {
@@ -184,6 +242,11 @@ panel.addEventListener('click', async ev => {
             headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: body.id, undo: result.undo }) });
           const data = await response.json();
           if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+          if (listRoom === ALL_ROOMS) {
+            panelStatus = 'Attention restored to its previous state; work is unchanged.';
+            const status = panel.querySelector('.attn-status');
+            if (status) status.textContent = panelStatus;
+          }
           showToast('Attention restored; work is unchanged.');
         } catch (err) { showToast(`Couldn’t undo Resolve: ${err.message}`); }
       });

@@ -13,7 +13,7 @@ import { DOC_KIND, DOC_UPDATING_SECONDS, docMeta, isUpdating, jobDocSequence, ki
 import { action, buildRobot } from './agents.js';
 import { dismiss, entered, hiddenCount, lastDoc, restoreDismissed, retiredCount, showFinished, toggleFinished } from './state.js';
 import { focusOn } from './camera.js';
-import { attentionFor, openCount } from './attention.js';
+import { allAttentionOpen, attentionFor, openAllAttention, openCount } from './attention.js';
 import { openAttentionReader, openReader } from './reader.js';
 import { noteTrace, summarySections, traceRows } from './summary.js';
 import { openWorkarea } from './workarea.js';
@@ -457,13 +457,14 @@ export function renderStats() {
     <button class="chip restore" id="workingOpen" aria-haspopup="dialog" aria-expanded="false" title="Running, blocked and queued jobs by project and work"><i style="background:var(--run)"></i><b>${count.running}</b> working</button>
     <span class="chip opt"><i style="background:var(--warn)"></i><b>${count.queued}</b> queued</span>
     <span class="chip opt"><i style="background:var(--ok)"></i><b>${count.done}</b> done</span>
-    <span class="chip" id="needYou" title="open attention items: acknowledged and snoozed ones aren't counted"><i style="background:var(--bad)"></i><b>${openCount}</b> need you</span>
+    <button class="chip restore" id="needYou" aria-haspopup="dialog" aria-controls="attnPanel" aria-expanded="${allAttentionOpen()}" title="Open all-rooms attention: every open item, its owner, age and action consequences; acknowledged and snoozed items are in a fold"><i style="background:var(--bad)"></i><b>${openCount}</b> need you</button>
     ${retiredCount ? `<button class="chip restore" id="toggleFinished" title="Show finished jobs that have left the deck"><b>${retiredCount}</b> finished · show</button>`
       : showFinished ? '<button class="chip restore" id="toggleFinished" title="Let finished jobs leave the deck again">hide finished</button>' : ''}
     ${hiddenCount ? `<button class="chip restore" id="restoreDismissed" title="Show dismissed agents again"><b>${hiddenCount}</b> hidden · show</button>` : ''}`;
 }
 document.getElementById('stats').addEventListener('click', ev => {
-  if (ev.target.closest('#restoreDismissed')) restoreDismissed();
+  if (ev.target.closest('#needYou')) openAllAttention(ev.target.closest('#needYou'));
+  else if (ev.target.closest('#restoreDismissed')) restoreDismissed();
   else if (ev.target.closest('#toggleFinished')) toggleFinished();
 });
 export function renderLive() {
