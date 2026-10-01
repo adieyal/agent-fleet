@@ -68,6 +68,7 @@ def ingest_attention(attention: "AttentionFacade", host: HostObservation, *,
         return False
     source = f"stream:{host['name']}"
     references = set()
+    existing = {item.source_reference: item for item in attention.list() if item.source == source}
 
     def record(work: WorkObservation, owner_type: str, occurrence: str, kind: str,
                reason: str, summary: str, since: float | None, *, step: int | None = None,
@@ -79,15 +80,21 @@ def ingest_attention(attention: "AttentionFacade", host: HostObservation, *,
             return
         context = StreamContext(host["name"], owner_type, work["id"], work["project"],
                                 work.get("project_id"), reason, summary, since, step=step, message=message)
-        attention.raise_item(project=work["project_id"] if work.get("project_id") is not None else work["project"],
-                             kind=kind, owner="user", subject=subject, source=source, source_reference=reference,
+        project = work["project_id"] if work.get("project_id") is not None else work["project"]
+        # Do not reload policy or change ownership for an occurrence already in the store.
+        previous = existing.get(reference)
+        owner, owner_reason = ((previous.owner, previous.owner_reason) if previous else
+                               attention.route(project, kind, context))
+        attention.raise_item(project=project,
+                             kind=kind, owner=owner, owner_reason=owner_reason,
+                             subject=subject, source=source, source_reference=reference,
                              headline=" ".join(summary.split()[:12]), context_reference=subject,
                              stream_context=context, actor="host-stream")
 
     for job in host["jobs"]:
-        if job.get("status") not in ("failed", "blocked", "stalled"):
+        if job.get("status") not in ("failed", "blocked", "stalled", "lost"):
             continue
-        wanted = "running" if job["status"] == "stalled" else job["status"]
+        wanted = "running" if job["status"] in ("stalled", "lost") else job["status"]
         step = next((step for step in job.get("steps", [])
                      if step.get("status") == wanted and step.get("answered_by") is None), None)
         since = step.get("started_at") if step else job.get("updated_at")
@@ -97,7 +104,7 @@ def ingest_attention(attention: "AttentionFacade", host: HostObservation, *,
         if message:
             summary = f"step {step['index'] + 1} asks: {asking(message)}"
         record(job, "job", f"{job['status']}:{occurrence}", "blocker", f"job status {job['status']}", summary, since,
-               step=step["index"] if step and job["status"] == "blocked" else None, message=message)
+               step=step["index"] if step else None, message=message)
     for session in host["sessions"]:
         activity = session.get("activity") or {}
         if activity.get("kind") != "tool" or activity.get("name") not in WAITING_TOOLS:

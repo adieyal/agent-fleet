@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from .application import Authoring
 from .domain import CONSTITUTION, GUIDANCE_FILES, Guidance, GuidanceConflict, Mandate, Version, charter_path, in_force
+from .domain import TRIAGE_PATH, TriageMandate
 
 
 class RecordsFacade:
@@ -72,14 +73,18 @@ class RecordsFacade:
             raise ValueError(result['error'])
 
     def write_mandate(self, project: str, path: str, body: str, **fields) -> dict:
-        Mandate.parse(body)
+        (TriageMandate if path == TRIAGE_PATH else Mandate).parse(body)
         return self.write(project, path, body, **fields)
+
+    def triage_mandate(self, project: str) -> TriageMandate | None:
+        body = self.read(project, TRIAGE_PATH)
+        return None if body is None else TriageMandate.parse(body)
 
     def mandate(self, project: str, path: str) -> Mandate:
         body = self.read(project, path)
         if body is None:
             raise LookupError('mandate is not recorded')
-        return Mandate.parse(body)
+        return (TriageMandate if path == TRIAGE_PATH else Mandate).parse(body)
 
     def registered(self, project: str) -> bool:
         """Whether the project has a management repository to hold its records."""
@@ -202,4 +207,4 @@ class RecordsFacade:
                 raise LookupError('mandate is not recorded')
             revision = record['revision']
         body = self.writer.read(self.workspace.management_repository(project), path, revision)
-        return revision, Mandate.parse(body)
+        return revision, (TriageMandate if path == TRIAGE_PATH else Mandate).parse(body)

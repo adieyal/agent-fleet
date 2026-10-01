@@ -56,7 +56,8 @@ class Facades:
 
     @cached_property
     def attention(self):
-        return AttentionFacade(AttentionRepository(self.store, self.unit), self.store.clock)
+        return AttentionFacade(AttentionRepository(self.store, self.unit), self.store.clock,
+                               mandate=lambda project: self.records.triage_mandate(project))
 
     @cached_property
     def workspace_repository(self):

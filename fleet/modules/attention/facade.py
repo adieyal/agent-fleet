@@ -7,14 +7,27 @@ from .application import Commands
 from .application.ports import AttentionRepository
 from .application.observations import HostObservation, ingest_attention
 from .application.input_observations import InputObservation, close_refusals, ingest_input
-from .domain import AttentionItem, ItemResolved, OWNERS, StreamContext, STATES
+from .domain import AttentionItem, ItemResolved, OWNERS, Refusal, StreamContext, STATES
+from .domain.routing import RoutingHistory, route
+from fleet.modules.records import TriageMandate
 
 
 class AttentionFacade:
-    def __init__(self, repository: AttentionRepository, clock: Callable[[], datetime]) -> None:
+    def __init__(self, repository: AttentionRepository, clock: Callable[[], datetime], *,
+                 mandate: Callable[[str], TriageMandate | None] | None = None,
+                 routing_history: Callable[[StreamContext], RoutingHistory] | None = None) -> None:
         self.repository = repository
         self.clock = clock
         self.commands = Commands(repository, clock)
+        self.mandate = mandate
+        self.routing_history = routing_history
+
+    def route(self, project: str, kind: str, context: StreamContext | None, *,
+              refusals: tuple[Refusal, ...] = ()) -> tuple[str, str | None]:
+        mandate = None if self.mandate is None else self.mandate(project)
+        history = (RoutingHistory() if self.routing_history is None or context is None
+                   else self.routing_history(context))
+        return route(kind, context, mandate, history, refusals=refusals)
 
     def raise_item(self, *, project: str, kind: str, owner: str, source: str, source_reference: str,
                    headline: str, context_reference: str, actor: str,
@@ -48,7 +61,7 @@ class AttentionFacade:
         return self.commands.change(item_id, "acknowledged", actor)
 
     def observe_input(self, host: str, observation: InputObservation, *, project_id: str | None = None) -> None:
-        ingest_input(self.repository, host, observation, project_id)
+        ingest_input(self.repository, host, observation, project_id, router=self.route)
 
     def close_refusals(self, host: HostObservation, *, complete: bool) -> bool:
         """Resolve job refusal batches whose step has ended; report whether any were."""
