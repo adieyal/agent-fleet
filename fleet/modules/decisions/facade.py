@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+from dataclasses import asdict
+from uuid import uuid4
 from datetime import datetime
 from typing import Callable
 from fleet.modules.execution import ExecutionFacade
@@ -39,6 +42,44 @@ class DecisionsFacade:
             actor=actor, activation=activation, source_run=source_run, command=command, answer=answer,
             principle=principle, context=context, question=question, effect=effect,
             completed_item=completed_item, retry_run=retry_run)
+
+    def escalate_triage_guard(self, item_id: str, *, reason: str, mandate_version: str,
+                              source_run: str | None = None) -> Decision:
+        """Controller guard: commit the Decision, handover and archival intent together.
+
+        The controller reconciles archival intents after committing its scheduling transaction.
+        This is a system limit, independent of an agent's authority to escalate voluntarily.
+        """
+        with self.repository.transaction() as transaction:
+            item = transaction.attention.get(item_id)
+            decision = Decision(str(uuid4()), item.id, 'Why must the user handle this item?', reason,
+                'triage:scheduler', json.dumps(dict(command='scheduler_guard', project=item.project,
+                                                   subject=item.subject)),
+                () if item.work_item is None else (item.work_item,), self.clock(),
+                mandate_version=mandate_version, source_run=source_run,
+                principle='Triage guard rails: bounded attempts and visible escalation')
+            transaction.attention.escalate(item.id, actor=decision.actor, reason=reason)
+            transaction.insert(decision)
+            transaction.records.prepare(item.project, f'decisions/{decision.id}.json',
+                json.dumps(asdict(decision), default=str), key=decision.id, actor=decision.actor,
+                source_run=source_run)
+        return decision
+
+    def publish_triage_guards(self, project: str) -> None:
+        """Resume guard archival from the durable Decision after its transaction commits."""
+        for intent in self.records.intents():
+            if (intent['project'] != project or intent['state'] == 'confirmed'
+                    or not intent['path'].startswith('decisions/')):
+                continue
+            identity = intent['path'].removeprefix('decisions/').removesuffix('.json')
+            try:
+                decision = self.get(identity)
+            except LookupError:
+                continue
+            if decision.actor == 'triage:scheduler':
+                result = self.records.publish(intent, json.dumps(asdict(decision), default=str))
+                if result['state'] != 'confirmed':
+                    raise RuntimeError('triage Decision archive not confirmed: ' + str(result['error']))
 
     def record_streamed(self, identity: str, time: datetime, work_item: str, *, actor: str, question: str,
                         answer: str, principle: str, context: str, source_run: str | None) -> Decision:

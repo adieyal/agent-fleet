@@ -26,7 +26,8 @@ class Commands:
             previous = repository.find(source, source_reference)
             # Seen again, an item keeps the owner it was handed to; the owner given applies to a new item.
             handed = (dict(owner=previous.owner, owner_reason=previous.owner_reason, owner_actor=previous.owner_actor,
-                           owner_at=previous.owner_at) if previous else dict(owner=owner, owner_reason=owner_reason))
+                           owner_at=previous.owner_at) if previous else dict(owner=owner, owner_reason=owner_reason,
+                           owner_at=now, owner_actor=actor))
             item = AttentionItem(
                 id=previous.id if previous else str(uuid4()), project=project, kind=kind, subject=subject, **handed,
                 source=source, source_reference=source_reference, headline=headline,

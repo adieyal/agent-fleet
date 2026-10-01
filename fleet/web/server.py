@@ -25,6 +25,8 @@ from fleet.composition import (Store, facades, open_attention, open_execution, o
                                open_workspace, open_work, open_decisions)
 from fleet.modules.records import GuidanceConflict
 from fleet.orchestration import promote_decision
+from fleet.triage_scheduler import TriageScheduler
+from fleet.composition import deliver_triage
 from fleet.modules.attention import InputObservation, ItemResolved, refusal_rules
 from fleet.modules.workspace import (NoVacancy, FOCUSES, AlreadyShuttered, NotShuttered,
                                      WorkspaceFacade, Registry)
@@ -155,8 +157,14 @@ class FleetState(LiveWorkspace):
         with self.changed:
             return {name: (bool(entry["ok"]), set(entry["jobs"])) for name, entry in self.by_host.items()}
 
+    def schedule_triage(self) -> None:
+        services = facades(self.store)
+        TriageScheduler(services, lambda run, **options: deliver_triage(services, run, **options),
+                        transport.host_by_name).schedule()
+
     def follow_history(self, stop: threading.Event) -> None:
         while not stop.is_set():
+            self.schedule_triage()
             changes = self.store.history_after(self.history_cursor)
             if changes:
                 self.history_cursor = int(changes[-1]["sequence"])
@@ -190,6 +198,7 @@ class FleetState(LiveWorkspace):
             self.changed.notify_all()
         if retry_deliveries:
             self.execution.retry_deliveries(host_name)
+        self.schedule_triage()
 
     def refresh_registry(self) -> str | None:
         try:

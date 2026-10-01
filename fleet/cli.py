@@ -344,6 +344,14 @@ def push_guided_context(host: Host, job_id: str, paths: list[str], guidance: dic
         push_context(host, job_id, paths + open_records().write_guidance_files(guidance, directory))
 
 
+def command_triage_status(arguments: argparse.Namespace) -> None:
+    from fleet.triage_scheduler import TriageScheduler
+    services = facades()
+    project = open_workspace(services.store).resolve_project(arguments.project)
+    result = TriageScheduler(services, None, transport.host_by_name).status(project)
+    print(json.dumps(result))
+
+
 def command_orchestrate(arguments: argparse.Namespace) -> None:
     host = transport.host_by_name(arguments.host)
     if not host.is_local:
@@ -1374,6 +1382,12 @@ def build_parser() -> argparse.ArgumentParser:
     dispatch.set_defaults(handler=command_dispatch_work, permission=None, model=None, allow=None,
                           add_dir=None, env=None, keep_going=False, hold=False, wait=False,
                           context=None, steps_file=None, step_work_items=None)
+
+    triage = commands.add_parser('triage', help='inspect project triage policy and queue')
+    triage_commands = triage.add_subparsers(dest='triage_command', required=True)
+    triage_status = triage_commands.add_parser('status', help='mandate, queue, live run and daily budget')
+    triage_status.add_argument('project')
+    triage_status.set_defaults(handler=command_triage_status)
 
     orchestrate = commands.add_parser('orchestrate', help='start a controller-local orchestrator')
     orchestrate.add_argument('work_item')

@@ -148,7 +148,7 @@ def ingest_input(repository: AttentionRepository, host: str, observation: InputO
         item = previous if previous is not None else AttentionItem(
             id=str(uuid4()), project=project,
             work_item=None, run=None, kind="decision", owner=routed_owner,
-            owner_reason=owner_reason, subject=owner, source=source,
+            owner_reason=owner_reason, owner_at=seen, owner_actor="runtime-hook", subject=owner, source=source,
             source_reference=reference, headline=headline,
             context_reference=detail, state="open", snooze_until=None,
             resolution_details=None, last_seen=seen, stream_context=context, questions=questions)
@@ -203,7 +203,7 @@ def ingest_refusal(repository: AttentionRepository, host: str, observation: Inpu
             batch = AttentionItem(
                 id=str(uuid4()), project=project,
                 work_item=None, run=None, kind="decision", owner=routed_owner,
-                owner_reason=owner_reason, subject=owner, source=source,
+                owner_reason=owner_reason, owner_at=last_seen, owner_actor="runtime-hook", subject=owner, source=source,
                 source_reference=f"{owner}:step:{step}", headline=headline,
                 context_reference=batch_context(refusals), state="open", snooze_until=None,
                 resolution_details=None, last_seen=last_seen, stream_context=context, refusals=refusals)

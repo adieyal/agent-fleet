@@ -18,7 +18,9 @@ class Commands:
             version, mandate = self.records.mandate_version(project, mandate_path)
             if mandate.criteria_it_may_judge:
                 raise AuthorityRejected('triage may not judge work criteria')
-            activation = Activation(str(uuid4()), actor, role, project, None, mandate_path, version)
+            identity = str(uuid4())
+            activation = Activation(identity, 'triage:' + identity if actor == 'triage' else actor,
+                                    role, project, None, mandate_path, version)
             self.repository.insert(activation)
             return activation
         if not actor.strip() or role != 'orchestrator' or work_item is None:

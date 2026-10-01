@@ -220,3 +220,46 @@ A packaged specialised display for a space: a manifest, an optional collector th
 | Observation | current, stale, unknown |
 
 State changes to work items, attention items and runs are timestamped and kept for at least a week, independently of raw traces.
+
+### Project triage
+
+A confirmed `mandates/triage.json` grants a project's triage role its attention
+commands. The activation pins that record's revision, names actor
+`triage:<activation-id>`, and has no work item. It may retry, add a step, grant
+exact refused rules, resolve attention, escalate, or record a decision only as
+its mandate allows. It cannot judge criteria or complete work. The item stays
+visible with `owner=agent`; `subject` names the job or session it concerns.
+Existing items remain user-owned until explicitly delegated.
+
+`fleet web` schedules one bounded run per project after observations and on its
+history loop. Reservation, activation, execution intent and daily budget are
+committed together. The runtime gets writable directories for the controller store
+and this project's management repository so its scoped commands can record effects
+under `workspace-write`; its worker job directory is already writable. Unknown outcomes retain their reservation; reconciliation
+uses the same run ID. Budgets reset on the controller's UTC calendar day. Every
+system escalation records a Decision and an ownership history entry. A project
+without a confirmed mandate has no automatic triage; `fleet triage status P`
+reports a null mandate version and budget, with its queue still visible.
+
+An unclaimed item times out after `unclaimed_minutes` from its ownership time.
+Items predating ownership timestamps get a grace period from the scheduler's
+first observation. Refusal timestamps survive replay. Failed delivery shows its
+error in triage status; an unconfirmed run eventually escalates its items while
+retaining the unknown run. An ended run's untouched items get one more run;
+a second untouched ending escalates with the run ID. Retry limits count Decisions
+across an Action's runs for the same step and name them on repeated failure.
+A triage run's own failure, stall or refusal always goes to the user.
+
+```mermaid
+flowchart LR
+  Observe[New attention] --> Route{Confirmed mandate?}
+  Route -->|no| User[User ownership]
+  Route -->|yes, within scope| Queue[Visible agent queue]
+  Queue --> Reserve[Serialized reservation and budget]
+  Reserve --> Run[One project triage run]
+  Run --> Controls[Scoped control commands and Decisions]
+  Run -->|unknown outcome| Reconcile[Reconcile same run ID]
+  Reconcile --> Run
+  Queue -->|timeout or exhausted budget| User
+  Run -->|second untouched ending| User
+```

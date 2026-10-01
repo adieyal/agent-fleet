@@ -85,3 +85,26 @@ unrecordable one, e.g. an unknown work item, becomes an alert). Check with
 
 The user watches the same jobs with `fleet watch` and `fleet web` (the
 kitchen dashboard), so keep descriptions and step titles meaningful.
+
+## Attention and project triage
+
+When raising user attention, include `--reason` explaining why the user must
+act. For example, a destructive operation needs the user's decision:
+
+```bash
+fleet attention add "Approve deleting old artifacts" --project <project> --kind decision --owner user \
+  --source agent --source-reference <unique-ref> \
+  --context-reference "outbox/REPORT.md" --reason "Deleting these artifacts is irreversible" --actor codex
+fleet attention delegate <item-id> --actor user --note "Let the project's triage agent inspect this failure"
+fleet attention take <item-id> --actor user
+fleet triage status <project>
+```
+
+Delegating changes ownership and keeps the item open and visible. Take back
+revokes the agent's ability to act on it. Session questions require their
+terminal and cannot be delegated. A confirmed project triage mandate is required
+for automatic triage; merely writing a draft does not grant authority. Existing
+items stay with the user. Inspect status for the pinned mandate version, queue,
+live run, remaining daily budget and delivery error. See CONTEXT.md for retry,
+timeout and untouched-run limits. Triage control commands record Decisions;
+triage never completes work or judges criteria.

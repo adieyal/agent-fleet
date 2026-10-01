@@ -60,11 +60,11 @@ class RecordsFacade:
     def intents(self) -> list[dict]:
         return self.repository.list()
 
-    def read(self, project: str, path: str) -> str | None:
+    def read(self, project: str, path: str, *, revision: str | None = None) -> str | None:
         record = self.repository.current(project, path)
         if record is None:
             return None
-        return self.writer.read(self.workspace.management_repository(project), path, record['revision'])
+        return self.writer.read(self.workspace.management_repository(project), path, revision or record['revision'])
 
     def write_summary(self, summary, project: str, *, actor: str, source_run: str | None = None) -> None:
         result = self.write(project, f'summaries/{summary.id}.json', json.dumps(asdict(summary), default=str),

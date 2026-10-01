@@ -108,4 +108,8 @@ MIGRATIONS = (
         "UPDATE attention_item SET subject = owner WHERE owner != 'user'",
         "UPDATE attention_item SET owner = 'user'",
     ),
+    (
+        # P1 scheduler only: no history or run-import schema dependencies.
+        'CREATE TABLE triage_scheduler (project TEXT PRIMARY KEY, record TEXT NOT NULL)',
+    ),
 )
