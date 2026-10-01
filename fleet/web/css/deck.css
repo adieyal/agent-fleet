@@ -1223,3 +1223,22 @@ html[data-quality=high] #workarea{background:rgba(3,6,12,.6)}
 .id-chip{all:unset;cursor:copy;font:inherit;font-family:var(--mono);border-bottom:1px dotted currentColor;opacity:.9}
 .id-chip:hover,.id-chip:focus-visible{opacity:1;color:var(--text)}
 .id-chip[data-copied]::after{content:" copied";color:var(--ok)}
+/* ---------- Visibility V2: the job panel's workspace chip and each step's work item */
+#panel .where{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin-top:4px}
+#panel .where .work-crumbs{margin-top:0}
+.wt-chip{display:inline-block;max-width:100%;box-sizing:border-box;font:12px/20px var(--mono);color:var(--muted);
+  padding:1px 4px 1px 8px;border:1px solid var(--line);border-radius:6px;background:rgba(255,255,255,.025);overflow-wrap:anywhere}
+.wt-chip > svg{vertical-align:-2px;margin-right:6px}
+.wt-chip .wt-where{color:var(--text)}
+.wt-chip .wt-where span,.wt-chip .wt-state{white-space:nowrap}
+.wt-chip .wt-dirty{color:var(--warn)}
+.wt-chip.unknown{border-style:dashed;color:var(--dim);font-family:var(--sans)}
+.wt-copy{all:unset;display:inline-grid;place-items:center;vertical-align:top;width:20px;height:20px;margin-left:4px;border-radius:4px;cursor:copy;color:var(--dim)}
+.wt-copy:hover,.wt-copy:focus-visible{color:var(--text);background:rgba(255,255,255,.06)}
+.wt-copy[data-copied]{color:var(--ok)}
+.steps li .w{grid-column:2;font:12.5px/1.4 var(--sans);color:var(--muted)}
+.steps li .w button{all:unset;cursor:pointer;color:var(--text);text-decoration:underline dotted;text-underline-offset:3px}
+.steps li .w button:hover,.steps li .w button:focus-visible{text-decoration-style:solid}
+.steps li.running{box-shadow:inset 3px 0 0 var(--run)}
+.steps li .now{font:600 10.5px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--run);
+  border:1px solid rgba(56,189,248,.5);border-radius:4px;padding:0 4px;vertical-align:1px}
