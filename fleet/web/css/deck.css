@@ -275,6 +275,8 @@ body[data-view=floor] #lift{display:flex}
 #lift button{position:relative;width:32px;height:30px;border-radius:50%;border:1px solid var(--line2);background:rgba(255,255,255,.04);
   font:600 12px var(--mono);color:var(--muted);cursor:pointer}
 #lift button[aria-current]{background:var(--text);color:#05080f;border-color:var(--text);box-shadow:0 0 10px rgba(230,237,248,.45)}
+#lift button[data-active]:not([aria-current]){color:var(--run);border-color:var(--run);box-shadow:0 0 8px rgba(56,189,248,.45)}
+#lift button[data-active][aria-current]{box-shadow:0 0 0 2px var(--run),0 0 12px rgba(56,189,248,.6)}
 #lift button:disabled{opacity:.35;cursor:default}
 #lift button[data-lift=L]{margin-top:6px}
 .lift-lantern{position:absolute;right:-5px;top:-4px;width:11px;height:11px;transform:rotate(45deg);border-radius:2px;

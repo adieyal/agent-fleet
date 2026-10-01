@@ -441,6 +441,11 @@ def test_the_lift_goes_between_floors_and_back_to_the_building(page: Page, resto
         expect(lift.locator(f'[data-lift="{free}"]')).to_be_disabled()
     expect(lift.locator(".lift-lantern")).to_have_count(2)   # floors 1 and 2 need you
     expect(lift.locator('[data-lift="2"] .lift-lantern')).to_have_count(1)
+    # a floor whose work is running is marked, and says so
+    active = {f["floor"] for f in page.evaluate("fleetBuilding.floors()") if f["active"]}
+    assert active, "the fixture has running work on some floor"
+    assert set(lift.locator("[data-active]").evaluate_all("els => els.map(e => +e.dataset.lift)")) == active
+    expect(lift.locator(f'[data-lift="{min(active)}"]')).to_have_attribute("title", re.compile("work running"))
 
     lift.locator('[data-lift="2"]').click()
     expect(lift.locator('[aria-current="true"]')).to_have_attribute("data-lift", "2")

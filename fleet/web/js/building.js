@@ -750,13 +750,14 @@ function placeUi() {
 
 // ------------------------------------------------------------------ the lift panel: the way around once inside
 // One button per floor, top floor first, then L (the whole building) and S (the storehouse). The current floor, or S
-// while a crate is open, is lit; a place with attention shows the lantern's diamond on its button.
+// while a crate is open, is lit; a floor whose project has work running glows in the run colour; a place with
+// attention shows the lantern's diamond on its button.
 function renderLift() {
   if (current === null) { lift.innerHTML = ''; return; }
   const button = f => {
     const l = lanterns.get(f.floor);
-    const label = f.projectId ? `${f.floor}: ${f.name}${l ? ` · ${l.count > 1 ? `${l.count} things need you` : 'something needs you'}` : ''}` : `${f.floor}: to let`;
-    return `<button data-lift="${f.floor}"${f.floor === current ? ' aria-current="true"' : ''}${f.projectId ? '' : ' disabled'}
+    const label = f.projectId ? `${f.floor}: ${f.name}${f.active ? ' · work running' : ''}${l ? ` · ${l.count > 1 ? `${l.count} things need you` : 'something needs you'}` : ''}` : `${f.floor}: to let`;
+    return `<button data-lift="${f.floor}"${f.floor === current ? ' aria-current="true"' : ''}${f.active ? ' data-active' : ''}${f.projectId ? '' : ' disabled'}
       aria-label="${esc(label)}" title="${esc(label)}">${f.floor}${l ? `<i class="lift-lantern" data-glyph="${l.glyph}" data-state="${l.level}" aria-hidden="true"></i>` : ''}</button>`;
   };
   const storeLamp = lanterns.get('store');
