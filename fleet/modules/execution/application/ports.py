@@ -5,10 +5,11 @@ from fleet.modules.work import WorkFacade
 from fleet.modules.workspace import WorkspaceFacade
 
 from ..domain import Action, Claim, Delivery, Run
-from .dtos import GrantRequest, GrantResult, InputResult
+from .dtos import AnswerRequest, GrantRequest, GrantResult, InputResult
 
 InputSender = Callable[[Run, Delivery], InputResult]
 GrantSender = Callable[[GrantRequest], GrantResult]  # raises when the worker does not confirm
+AnswerSender = Callable[[AnswerRequest], int]  # the index of the step that carries the reply; raises unconfirmed
 
 
 class ExecutionRepository(Protocol):

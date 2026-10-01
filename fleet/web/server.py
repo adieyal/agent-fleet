@@ -71,6 +71,7 @@ STATIC_TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; char
 ASSET_POLICY = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox"
 ATTENTION_ACTIONS = ("acknowledge", "snooze", "reopen", "resolve")
 REFUSAL_ACTIONS = ("allow", "dismiss")   # a job step's permission refusals
+JOB_ACTIONS = ("answer",)   # a blocked job step's question
 FLOOR_CHANGES = ("/api/move-in", "/api/link", "/api/merge", "/api/shutter", "/api/restore")
 EVENTS_PER_JOB = "15"
 STREAM_SILENCE_LIMIT = 20  # seconds without a heartbeat before the stream is considered dead
@@ -351,6 +352,13 @@ def question_detail(item, projects: dict[str, Any]) -> dict[str, Any]:
             "questions": [asdict(question) for question in item.questions]}
 
 
+def blocked_detail(item) -> dict[str, Any]:
+    """A blocked job step and its final message; message is None when the host's fleetd reported none."""
+    context = item.stream_context
+    return {"host": context.host, "job": context.owner_id, "step": context.step, "message": context.message,
+            "state": item.state, "resolution": item.resolution_details}
+
+
 def make_handler(state: FleetState | FixtureState,
                  library: ProjectLibrary | FixtureLibrary | None = None) -> type[BaseHTTPRequestHandler]:
     # Read once so a running server keeps serving the page and code that match its API.
@@ -411,7 +419,10 @@ def make_handler(state: FleetState | FixtureState,
                               # a job step's refused requests, answered with actions rather than words
                               "refusals": refusal_detail(item) if item.refusals else None,
                               "session_question": (question_detail(item, state.known_projects())
-                                                   if item.questions else None)}
+                                                   if item.questions else None),
+                              # a blocked job step's question, answered by adding a step to the job
+                              "blocked": (blocked_detail(item) if item.stream_context is not None
+                                          and item.stream_context.blocked_step else None)}
                 except LookupError as error:
                     self.error(404, str(error))
                     return
@@ -446,7 +457,7 @@ def make_handler(state: FleetState | FixtureState,
             path = self.path.split("?", 1)[0]
             action = path.removeprefix("/api/attention/") if path.startswith("/api/attention/") else None
             if (path not in FLOOR_CHANGES + ("/api/focus", "/api/decision/answer", "/api/agent/move")
-                    and action not in ATTENTION_ACTIONS + REFUSAL_ACTIONS):
+                    and action not in ATTENTION_ACTIONS + REFUSAL_ACTIONS + JOB_ACTIONS):
                 self.respond(404, "text/plain", b"not found")
             elif not self.same_origin():
                 self.respond(403, "application/json", b'{"error": "cross-origin writes are refused"}')
@@ -462,6 +473,8 @@ def make_handler(state: FleetState | FixtureState,
                     self.answer(body)
                 elif action in REFUSAL_ACTIONS:
                     self.refusals(action, body)
+                elif action in JOB_ACTIONS:
+                    self.answer_blocked(body)
                 elif action:
                     self.attention(action, body)
                 elif path in ("/api/move-in", "/api/link"):
@@ -593,6 +606,26 @@ def make_handler(state: FleetState | FixtureState,
                     details = open_execution(state.store).grant_permissions(body["id"], body["scope"], actor="web-user")
                 else:
                     details = state.attention.dismiss_refusals(body["id"], actor="web-user").resolution_details
+            except LookupError as error:
+                self.error(404, str(error.args[0]))
+                return
+            except ItemResolved as error:
+                self.error(409, str(error))
+                return
+            except (FleetError, ValueError, RuntimeError) as error:
+                self.error(400, str(error))
+                return
+            state.bump()
+            self.respond(200, "application/json", json.dumps({"id": body["id"], "resolution": details}).encode())
+
+        def answer_blocked(self, body: dict[str, Any]) -> None:
+            """POST /api/attention/answer {"id": item id, "answer": reply} — add the reply as a step to the blocked
+            job on its worker, and resolve the item."""
+            if not isinstance(body.get("id"), str) or not isinstance(body.get("answer"), str):
+                self.error(400, "the item's id and an answer are required")
+                return
+            try:
+                details = open_execution(state.store).answer_blocked(body["id"], body["answer"], actor="web-user")
             except LookupError as error:
                 self.error(404, str(error.args[0]))
                 return

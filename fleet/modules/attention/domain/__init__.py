@@ -33,8 +33,17 @@ class StreamContext:
     source: str
     summary: str
     since: float | None
-    step: int | None = None  # the job step a permission batch belongs to
+    step: int | None = None  # the job step a permission batch belongs to, or that is blocked
     cwd: str | None = None   # where the session runs, from its hook
+    message: str | None = None  # a blocked step's final message, its question; None when fleetd reported none
+
+    @property
+    def blocked_step(self) -> bool:
+        """A job step that ended asking its supervisor, answered by adding a step to the job."""
+        return self.owner_type == "job" and self.source == BLOCKED_SOURCE and self.step is not None
+
+
+BLOCKED_SOURCE = "job status blocked"
 
 
 @dataclass(frozen=True)

@@ -4,8 +4,9 @@ from datetime import datetime, timezone
 from .application import link, observe, unavailable
 from .application.delivery import queue, retry as retry_delivery
 
+from .application.answers import answer
 from .application.permissions import grant
-from .application.ports import ExecutionRepository, GrantSender, InputSender
+from .application.ports import AnswerSender, ExecutionRepository, GrantSender, InputSender
 from .domain import Action, Claim, Delivery, DispatchResult, JobObservation, Run
 from .domain.activity import HOST_FRESHNESS_SECONDS, classify_activity
 from fleet.modules.attention import AttentionItem
@@ -21,10 +22,10 @@ if TYPE_CHECKING:
 class ExecutionFacade:
     def __init__(self, repository: ExecutionRepository, work: WorkFacade,
                  prepare_dispatch: Callable[[], object] | None = None, *, send: InputSender | None = None,
-                 grant: GrantSender | None = None,
+                 grant: GrantSender | None = None, answer: AnswerSender | None = None,
                  authority=None, clock: Callable[[], datetime] | None = None) -> None:
         self.repository, self.work = repository, work
-        self.send, self.grant = send, grant
+        self.send, self.grant, self.answer = send, grant, answer
         self.prepare_dispatch = prepare_dispatch
         self.authority = authority
         self.clock = clock if clock is not None else lambda: datetime.now(timezone.utc)
@@ -61,6 +62,12 @@ class ExecutionFacade:
         if self.grant is None:
             raise RuntimeError("permission transport is not configured")
         return grant(self.repository, self.grant, item_id, scope, actor)
+
+    def answer_blocked(self, item_id: str, reply: str, *, actor: str) -> str:
+        """Answer a blocked job step: add a step carrying the reply to the job on its host; returns what was done."""
+        if self.answer is None:
+            raise RuntimeError("answer transport is not configured")
+        return answer(self.repository, self.answer, item_id, reply, actor)
 
     def deliveries(self) -> list[Delivery]:
         return self.repository.deliveries()

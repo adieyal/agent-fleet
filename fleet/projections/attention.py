@@ -24,6 +24,7 @@ def attention_items(attention: AttentionFacade, hosts: list[dict[str, Any]]) -> 
         result.append({**context, "id": item.id, "kind": item.kind, "state": item.state, "stale": stale,
                        "context_reference": item.context_reference, "refusals": len(item.refusals),
                        "questions": len(item.questions),
+                       "blocked": item.stream_context is not None and item.stream_context.blocked_step,
                        "last_seen": item.last_seen.timestamp(), "resolution_details": item.resolution_details,
                        "acknowledged_at": item.acknowledged_at.timestamp() if item.acknowledged_at else None,
                        "resolved_at": item.resolved_at.timestamp() if item.resolved_at else None,
