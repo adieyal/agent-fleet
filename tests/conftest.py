@@ -6,12 +6,15 @@ Tests that change a fleet (moving a project in) start their own with serve_fixtu
 import json
 import os
 import shutil
+import socket
+import sys
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlsplit
 
 import pytest
 
@@ -24,6 +27,62 @@ FIXTURE = Path(__file__).parent / "fixtures" / "restoke.json"
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption("--shots", default=None, help="a directory browser tests leave screenshots in, for reviewing the look")
+
+
+BROWSER_FIXTURES = {"page", "browser", "context", "new_context", "persistent_context"}
+REAL_CONFIG_DIRECTORY = (Path.home() / ".config" / "fleet").resolve()
+_guard_active = False
+
+
+def _guard_real_config(event: str, args: tuple[Any, ...]) -> None:
+    """Reject access before Python opens a live store or config file."""
+    if not _guard_active or event not in {"open", "sqlite3.connect", "os.rename", "os.remove", "os.rmdir", "os.mkdir"}:
+        return
+    paths = args[:2] if event == "os.rename" else args[:1]
+    for value in paths:
+        if not isinstance(value, (str, bytes, os.PathLike)):
+            continue
+        name = os.fsdecode(value)
+        if event == "sqlite3.connect" and name.startswith("file:"):
+            name = unquote(urlsplit(name).path)
+        path = Path(name).resolve()
+        if path == REAL_CONFIG_DIRECTORY or REAL_CONFIG_DIRECTORY in path.parents:
+            raise AssertionError(f"Tests must not access the user's real Fleet config/store: {path}")
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    global _guard_active
+    config.addinivalue_line("markers", "browser: requires a Playwright browser; runs on home")
+    sys.addaudithook(_guard_real_config)
+    _guard_active = True
+
+
+def pytest_unconfigure(config: pytest.Config) -> None:
+    global _guard_active
+    _guard_active = False
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    from playwright.sync_api import sync_playwright
+
+    browser_items = []
+    for item in items:
+        if BROWSER_FIXTURES.intersection(getattr(item, "fixturenames", ())):
+            item.add_marker(pytest.mark.browser)
+        if item.get_closest_marker("browser") is not None:
+            browser_items.append(item)
+    if not browser_items:
+        return
+    with sync_playwright() as playwright:
+        installed = {name: Path(getattr(playwright, name).executable_path).is_file()
+                     for name in ("chromium", "firefox", "webkit")}
+    for item in browser_items:
+        name = getattr(item, "callspec", None)
+        browser_name = name.params.get("browser_name", "chromium") if name is not None else "chromium"
+        if not installed[browser_name]:
+            item.add_marker(pytest.mark.skip(reason="Playwright browsers not installed here; browser tests run on home"))
+        elif socket.gethostname().split(".")[0] != "home":
+            item.add_marker(pytest.mark.skip(reason="Browser tests run on home; browsers must not launch on this host"))
 
 
 @pytest.fixture(scope="session")
@@ -41,6 +100,25 @@ def empty_store(tmp_path_factory: pytest.TempPathFactory) -> Path:
     path = tmp_path_factory.mktemp("store-template") / "fleet.db"
     open_store(path)
     return path
+
+
+@pytest.fixture(scope="session", autouse=True)
+def isolated_session_paths(tmp_path_factory: pytest.TempPathFactory, empty_store: Path) -> Iterator[None]:
+    """Class/session setup happens before the per-test isolation fixture."""
+    root = tmp_path_factory.mktemp("fleet-session")
+    config = root / "config" / "config.json"
+    config.parent.mkdir()
+    config.write_text('{"hosts": {}}')
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        for name, path in {
+            "FLEET_CONFIG": config,
+            "FLEET_STORE": empty_store,
+            "FLEET_HOME": root / "fleet-home",
+            "FLEET_MANAGEMENT": root / "management",
+            "CLAUDE_CONFIG_DIR": root / "claude-config",
+        }.items():
+            monkeypatch.setenv(name, str(path))
+        yield
 
 
 @pytest.fixture(autouse=True)
@@ -71,7 +149,7 @@ def real_config_unchanged() -> Iterator[None]:
 
     def snapshot() -> dict[Path, tuple[int, int, int]]:
         return {path.relative_to(directory): (stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
-                for path in directory.rglob("*") if path.is_file()
+                for path in directory.rglob("*") if path.is_file() and not path.name.startswith("fleet.db")
                 for stat in [path.stat()]}
 
     before = snapshot()

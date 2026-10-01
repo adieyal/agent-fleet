@@ -90,3 +90,19 @@ user asks.
 
 The user watches the same jobs with `fleet watch` and `fleet web` (the
 kitchen dashboard), so keep descriptions and step titles meaningful.
+
+
+## Test suite
+
+Run the non-browser suite on any host:
+
+```sh
+uv run pytest -q -m "not browser"
+```
+
+Browser tests are marked automatically from their Playwright fixture dependencies.
+Run them on home with `uv run pytest -q -m browser`. On hosts without the
+Playwright browsers they skip with the reason "Playwright browsers not installed
+here; browser tests run on home". Browser tests also skip on other hosts even
+if executables are installed. Tests use temporary Fleet paths; pytest rejects
+access to the real `~/.config/fleet` store and config before opening them.
