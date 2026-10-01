@@ -15,7 +15,7 @@ def test_unknown_text_never_renders_as_zero_or_percentage(monkeypatch, capsys, p
         "project": "p", "attention": [], "work_items": [{
             "title": "Investigation", "kind": "task", "goal": "Find cause", "condition": "none",
             "next_step": None, "plan": None, "resume_condition": None, "criteria": [], "summary": None,
-            "attention": [], "children": [], "decisions": [],
+            "attention": [], "children": [], "decisions": [], "relations": [],
             "runs": [], "library": [], "no_follow_up_yet": False,
             "progress": {"basis": "unknown", "complete": None, "total": None}}]})
     cli.main(["status", "p"])
