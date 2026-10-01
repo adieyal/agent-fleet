@@ -48,9 +48,9 @@ function visibleHosts(doc) {
   };
   const out = (doc.hosts || []).map(h => ({ ...h,
     jobs: (h.jobs || []).filter(j => keep(h, j, j.status === 'running')).map(j => ({ ...j,
-      stale: !!j.stale || h.ok === false, stale_reason: j.stale_reason || h.error })),
+      stale: !!j.stale || h.ok === false, stale_since: j.stale_since ?? h.down_since, stale_reason: j.stale_reason || h.error })),
     sessions: (h.sessions || []).filter(s => keep(h, s, s.status !== 'idle')).map(s => ({ ...s,
-      stale: !!s.stale || h.ok === false, stale_reason: s.stale_reason || h.error })) }));
+      stale: !!s.stale || h.ok === false, stale_since: s.stale_since ?? h.down_since, stale_reason: s.stale_reason || h.error })) }));
   retireFinished(out);
   // forget dismissals for jobs a reachable host no longer reports
   const okHosts = new Set((doc.hosts || []).filter(h => h.ok !== false).map(h => h.name));

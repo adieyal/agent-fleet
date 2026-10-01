@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { BK, HALF, PI, RD, PHONE_ROOM_FILL, REDUCED, ROOM_FILL, RW, TINY_Z, tagsEl, vh, vw } from './env.js';
-import { clamp, clock, esc, trunc } from './util.js';
+import { clamp, clock, esc, offlineLabel, trunc } from './util.js';
 import { AGENT_COLOR, hostLook } from './looks.js';
 import { isSession, mumble, shortId } from './activity.js';
 import { crowdsOf } from './behaviour.js';
@@ -188,8 +188,8 @@ function setBubble(e, action, words, cls) {
 export function updateTag(e) {
   const j = e.job;
   e.el.toggleAttribute('data-stale', !!j.stale);
-  e.el.title = j.stale ? `Stale: ${j.stale_reason || 'host offline'}. Showing last-known ${j.status}; current status is unknown.` : '';
-  const stale = j.stale ? '<span class="stale-label">stale</span>' : '';
+  e.el.title = j.stale ? `${offlineLabel(j)}: ${j.stale_reason || 'host offline'}. Showing last-known ${j.status}; current status is unknown.` : '';
+  const stale = j.stale ? `<span class="stale-label">${esc(offlineLabel(j, true))}</span>` : '';
   if (isSession(e)) {
     const [words, cls] = sessionWords(j), action = actionOf(j);
     const stack = `${stale}<span class="lv${j.status === 'idle' ? ' idle' : ''}">LIVE</span><span class="id">${esc(trunc(j.title || shortId(j.id), vw < 760 ? 16 : 28))}</span><span class="ag">${esc(j.agent)}</span>`;

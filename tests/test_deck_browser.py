@@ -2722,3 +2722,121 @@ def test_p1_owner_fold_and_consequences(changed_deck: Deck, base_url: str, reque
     shoot(request, page, 'p1-running-390')
     page.keyboard.press('Escape')
     assert not changed_deck.errors
+
+
+@pytest.mark.parametrize('viewport', ['desktop', 'narrow'])
+def test_p2_history_archive_and_offline(changed_deck: Deck, base_url: str, request, viewport) -> None:
+    """History stays store-backed, filters survive state, and archived documents use kept copies."""
+    from urllib.parse import parse_qs, urlsplit
+    page = changed_deck.page
+    page.set_viewport_size(VIEWPORTS[viewport])
+    run = {'id': 'p2-run-12345678', 'host': 'home', 'remote_job_id': 'p2-job',
+           'kind': 'job', 'runtime': 'codex', 'model': 'gpt-test', 'title': 'Ship History',
+           'start': page.evaluate('new Date(Date.now() - 86400000).toISOString()'), 'status': 'succeeded', 'reason': None,
+           'duration_seconds': 120, 'workspace': {'branch': 'feat/history'},
+           'commit_count': 1, 'push_count': 1, 'document_count': 1, 'work_item': None}
+    session = {**run, 'id': 'p2-session', 'title': 'Inspect runs', 'kind': 'session',
+               'start': page.evaluate('new Date(Date.now() - 172800000).toISOString()'), 'status': 'stopped', 'reason': 'quiet'}
+    queries = []
+    history_error = False
+    def history(route):
+        query = parse_qs(urlsplit(route.request.url).query)
+        queries.append(query)
+        if history_error:
+            route.fulfill(status=503, json={'error': 'History store unavailable'})
+            return
+        runs = [] if query.get('host') == ['missing'] else [run, session]
+        route.fulfill(json={'runs': runs, 'total': 102 if runs else 0, 'limit': int(query['limit'][0]),
+                            'empty_reason': 'No stored runs match these filters.' if not runs else None})
+    detail = {'run': run, 'steps': [{'index': 0, 'title': 'Ship', 'status': 'done',
+               'git': {'commit_count': 1, 'commits': [{'sha': 'abcdef123456', 'subject': 'Add history'}],
+                       'pushes': [{'ref': 'origin/main'}]}},
+               {'index': 1, 'title': 'Verify', 'status': 'done',
+                'git': {'commit_count': 0, 'commits': [], 'pushes': []}}], 'documents': [],
+              'kept_documents': [{'id': 'report-0', 'name': 'History report', 'kind': 'report',
+                                  'stored': True, 'scope': 'p2', 'job_key': 'home-p2-job'}],
+              'trace': {'events': {'availability': 'kept', 'content': json.dumps({'kind': 'result', 'summary': 'History shipped'})},
+                        'source': {'availability': 'removed by fleet rm', 'raw': []}}}
+    page.route('**/api/history/runs?*', history)
+    page.route('**/api/runs/p2-run-12345678', lambda route: route.fulfill(json=detail))
+    page.route('**/api/library/job?*', lambda route: route.fulfill(json={
+        'id': 'report-0', 'name': 'History report', 'kind': 'report', 'html': '<p>Kept report body</p>',
+        'markdown': 'Kept report body', 'toc': [], 'words': 3, 'minutes': 1}))
+    bench_changed = False
+    page.route('**/api/bench?*', lambda route: route.fulfill(json={'rooms': [{'id': 'changed-room'}] if bench_changed else []}))
+    try:
+        page.evaluate("fleetDeck.enterFloor('p2')")
+        page.locator('[data-open-history]').click()
+        expect(page.locator('[data-history-run]')).to_have_count(2)
+        expect(page.locator('[data-history-day]')).to_have_count(2)
+        expect(page.locator('[data-run-history]')).to_contain_text('2 of 102 stored runs')
+        expect(page.locator('[data-run-history]')).to_contain_text('quiet')
+        shoot(request, page, f'p2-history-{viewport}')
+        page.locator('[data-history-more]').click()
+        expect(page.locator('[data-history-run]')).to_have_count(2)
+        assert queries[-1]['limit'] == ['200']
+        page.locator('[data-history-filters] [name=kind]').select_option('job')
+        page.locator('[data-history-filters] [name=status]').select_option('succeeded')
+        page.locator('[data-history-filters] [name=since]').fill('7d')
+        page.locator('[data-history-filters] [name=unlinked]').check()
+        page.locator('[data-history-filters] button[type=submit]').click()
+        expect(page.locator('[data-history-run]')).to_have_count(2)
+        assert queries[-1]['kind'] == ['job'] and queries[-1]['status'] == ['succeeded']
+        assert queries[-1]['since'] == ['7d'] and queries[-1]['unlinked'] == ['true']
+        with urlopen(base_url + '/api/state', timeout=5) as response:
+            state = json.load(response)
+        bench_changed = True
+        page.evaluate('doc => fleetDeck.apply(doc)', state)
+        page.evaluate("async () => { advanceClock(4); const bench = await import('/js/bench.js'); await bench.refreshBench(); }")
+        expect(page.locator('[data-history-filters] [name=since]')).to_have_value('7d')
+        history_error = True
+        page.locator('[data-history-filters] button[type=submit]').click()
+        expect(page.locator('[data-history-results] [role=alert]')).to_have_text('History store unavailable')
+        history_error = False
+        page.locator('[data-history-retry]').click()
+        expect(page.locator('[data-history-run]')).to_have_count(2)
+
+        page.locator('[data-history-filters] [name=host]').fill('missing')
+        page.locator('[data-history-filters] button[type=submit]').click()
+        expect(page.locator('[data-history-empty]')).to_contain_text('host: missing')
+        shoot(request, page, f'p2-empty-{viewport}')
+        page.locator('[data-history-filters] button[type=reset]').click()
+        page.locator('[data-open-run="p2-run-12345678"]').click()
+        expect(page.locator('#panel')).to_have_attribute('data-archived', '')
+        expect(page.locator('[data-archived-content]')).to_contain_text('Add history')
+        expect(page.locator('[data-archived-content]')).to_contain_text('origin/main')
+        expect(page.locator('[data-archived-content]')).to_contain_text('No commits in this step')
+        shoot(request, page, f'p2-archive-{viewport}')
+        page.evaluate('doc => fleetDeck.apply(doc)', state)
+        expect(page.locator('[data-archived-content]')).to_contain_text('Add history')
+
+        page.locator('#panelTabs [data-tab=activity]').click()
+        expect(page.locator('[data-archived-content]')).to_contain_text('History shipped')
+        expect(page.locator('[data-archived-content]')).to_contain_text('removed by fleet rm')
+        page.locator('#panelTabs [data-tab=documents]').click()
+        page.locator('[data-kept-doc]').click()
+        expect(page.locator('#rdBody')).to_contain_text('Kept report body')
+        page.keyboard.press('Escape')
+        page.keyboard.press('Escape')
+        expect(page.locator('#panel')).to_have_attribute('aria-hidden', 'true')
+        expect(page.locator('[data-run-history]')).to_be_visible()
+        page.evaluate('fleetDeck.enterFloor(null)')
+        with urlopen(base_url + '/api/state', timeout=5) as response:
+            document = json.load(response)
+        host = next(h for h in document['hosts'] if any(j['status'] == 'running' for j in h['jobs']))
+        host.update(ok=False, error='test offline', down_since=page.evaluate('Date.now() / 1000 - 7200'))
+        page.evaluate('doc => fleetDeck.apply(doc)', document)
+        expect(page.locator('.tag[data-stale]').first).to_have_attribute('title', re.compile('offline since'))
+        shoot(request, page, f'p2-offline-androids-{viewport}')
+        page.locator('#workingOpen').click()
+        expect(page.locator('#runPanel [data-stale]').first).to_contain_text('offline since')
+        shoot(request, page, f'p2-offline-{viewport}')
+        changed_deck.errors[:] = [error for error in changed_deck.errors if '503 (Service Unavailable)' not in error]
+        assert queries[0]['project'] == ['p2'] and queries[0]['limit'] == ['100']
+        assert not changed_deck.errors
+    finally:
+        page.unroute('**/api/history/runs?*', history)
+        page.unroute('**/api/runs/p2-run-12345678')
+        page.unroute('**/api/library/job?*')
+        page.unroute('**/api/bench?*')
+        page.evaluate('fleetDeck.enterFloor(null)')

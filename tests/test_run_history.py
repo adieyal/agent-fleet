@@ -108,7 +108,7 @@ def test_cli_filters_match_projection(history, capsys, arguments, options):
     assert [run["id"] for run in value["runs"]] == [run["id"] for run in expected["runs"]]
 
 
-def test_run_detail_retains_steps_git_and_unlinked_documents(history, capsys):
+def test_run_detail_retains_steps_git_and_unlinked_documents(history, capsys, api):
     from fleet.web.job_store import ProjectDocuments
     execution = history[3]
     run = history[8]
@@ -125,6 +125,12 @@ def test_run_detail_retains_steps_git_and_unlinked_documents(history, capsys):
     assert result["steps"][0]["git"] == git and result["run"]["commit_count"] == 1
     assert result["run"]["push_count"] == 1
     assert result["kept_documents"][0]["stored"] and result["kept_documents"][0]["id"] == "REPORT.md"
+    status, listing = get(api, "/api/history/runs", host=run.host)
+    assert status == 200
+    entry = next(entry for entry in listing["runs"] if entry["id"] == run.id)
+    assert entry["document_count"] == 1
+    stored_detail = get(api, "/api/runs/" + run.id)[1]
+    assert stored_detail["kept_documents"][0]["stored"]
     cli.main(["history", "runs", "--work-item", history[4].id, "--descendants", "--json"])
     assert json.loads(capsys.readouterr().out)["total"] == 2
 

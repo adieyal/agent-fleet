@@ -1,3 +1,4 @@
+import { mountRunHistory } from './run-history.js';
 // Floor → epic room → milestone bench. All business state comes from /api/bench.
 import { duration, esc, store } from './util.js';
 import { hostLook } from './looks.js';
@@ -28,7 +29,7 @@ const ROOMS_REFRESH_MS = 3000;
 let roomsReadAt = 0, roomsTimer = null;
 
 export async function refreshBench() {
-  if (el.hidden || project === null) return;
+  if (el.hidden || project === null || page === 'history') return;
   if (!bench) { refreshRooms(); return; }
   const request = ++revision;
   try {
@@ -55,7 +56,7 @@ function refreshRooms() {
   // Its own check, not `revision`: a background read must never cancel a page the user just asked for.
   const asked = { project, revision };
   read().then(doc => {
-    if (asked.project !== project || asked.revision !== revision || bench || editing
+    if (asked.project !== project || asked.revision !== revision || bench || page === 'history' || editing
         || JSON.stringify(doc.rooms) === JSON.stringify(rooms)) return;
     rooms = doc.rooms;
     if (room) room = rooms.find(r => r.id === room.id) ?? null;
@@ -106,7 +107,7 @@ async function loadGuidance(key) {
     if (asked !== project) return;
     views.set(key, { error: error.message });
   }
-  if (!editing) render();
+  if (!editing && page !== 'history' && !el.hidden) render();
 }
 
 async function loadDecisions(epic) {
@@ -323,7 +324,7 @@ function render(flipped = new Set()) {
   el.toggleAttribute('data-collapsed', collapsed);
   el.toggleAttribute('data-editing', editing !== null);
   const crumbs = `<div data-bench-head><nav id="benchBreadcrumb" aria-label="Breadcrumb"><button data-back-floor>Floor</button>${
-    room ? ` / <button data-back-room>${esc(room.title)}</button>` : page && !bench ? ` / <span>${page === 'decisions' ? 'Project decisions' : 'Constitution'}</span>` : ''}${bench ? ` / <span>${esc(bench.title)}</span>` : ''}</nav>
+    room ? ` / <button data-back-room>${esc(room.title)}</button>` : page && !bench ? ` / <span>${page === 'history' ? 'History' : page === 'decisions' ? 'Project decisions' : 'Constitution'}</span>` : ''}${bench ? ` / <span>${esc(bench.title)}</span>` : ''}</nav>
     <button data-collapse aria-expanded="${!collapsed}" title="${collapsed ? 'Show' : 'Hide'} the plan" aria-label="${collapsed ? 'Show' : 'Hide'} the plan"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${collapsed ? 'M6 3.5 10.5 8 6 12.5' : 'M3.5 6 8 10.5 12.5 6'}"/></svg></button></div>`;
   let content;
   if (bench) {
@@ -344,6 +345,8 @@ function render(flipped = new Set()) {
       <section><button data-briefing aria-expanded="${briefing}">Briefing</button><div data-summary ${briefing ? '' : 'hidden'}>${bench.summary === null ? 'Summary unknown' : ['purpose', 'done', 'doing', 'next'].map(key => `<p><b>${key}</b> ${esc(bench.summary[key])}</p>`).join('')}</div></section></div>`;
   } else if (room) {
     content = epicPage(room);
+  } else if (page === 'history') {
+    content = '<div data-history-mount></div>';
   } else if (page === 'decisions') {
     content = `<article data-project-decisions>${decisionsPanel(decisionLists.get('project'))}</article>`;
   } else if (page === 'constitution') {
@@ -352,7 +355,8 @@ function render(flipped = new Set()) {
     content = `<div class="epic-cards">${constitutionCard()}<article data-project-decisions-card><button data-open-decisions title="Read every decision in this project, including work outside epic rooms; opening changes no stored state">Project decisions</button></article>${rooms.map(epicCard).join('')}</div>`;
     if (!rooms.length) content += '<p>No epic rooms recorded.</p>';
   }
-  el.innerHTML = crumbs + (guidanceFeedback ? `<p data-guidance-feedback role="status">${esc(guidanceFeedback)}</p>` : '') + content;
+  el.innerHTML = crumbs + ((!room && !bench) ? `<nav aria-label="Floor views"><button data-floor-overview aria-current="${page ? 'false' : 'page'}">Overview</button><button data-open-history aria-current="${page === 'history' ? 'page' : 'false'}">History</button></nav>` : '') + (guidanceFeedback ? `<p data-guidance-feedback role="status">${esc(guidanceFeedback)}</p>` : '') + content;
+  if (page === 'history') mountRunHistory(el.querySelector('[data-history-mount]'), project);
 }
 
 async function saveGuidance() {
@@ -472,9 +476,10 @@ el.addEventListener('click', async ev => {
     render();
     return;
   }
+  if (ev.target.closest('[data-open-history]')) { if (!discardGuidance()) return; ++revision; room = bench = null; page = 'history'; render(); return; }
   if (ev.target.closest('[data-open-decisions]')) { page = 'decisions'; render(); loadDecisions('project'); return; }
   if (guidanceClick(ev.target)) return;
-  if (ev.target.closest('[data-back-floor]')) { if (!discardGuidance()) return; ++revision; room = bench = page = editing = null; render(); return; }
+  if (ev.target.closest('[data-back-floor], [data-floor-overview]')) { if (!discardGuidance()) return; ++revision; room = bench = page = editing = null; render(); return; }
   if (ev.target.closest('[data-back-room]')) { if (!discardGuidance()) return; ++revision; bench = editing = null; render(); return; }
   const epic = ev.target.closest('[data-epic]'), slice = ev.target.closest('[data-slice]');
   if (epic) { if (!discardGuidance()) return; editing = null; openRoom(rooms.find(r => r.id === epic.dataset.epic)); }
@@ -494,7 +499,7 @@ el.addEventListener('click', async ev => {
 // Capture at window so the building cannot consume this same Escape.
 window.addEventListener('keydown', ev => {
   if (ev.key !== 'Escape' || el.hidden) return;
-  if (!document.getElementById('reader').hidden) return;
+  if (!document.getElementById('reader').hidden || document.getElementById('panel').hasAttribute('data-archived')) return;
   // A milestone with no epic above it opens with no room; stepping back from it lands on the floor list.
   if (!room && !bench && !page) { enterFloor(null); return; }
   ev.stopImmediatePropagation();

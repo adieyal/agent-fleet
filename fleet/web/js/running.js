@@ -4,7 +4,7 @@
 // item are listed apart, with the `fleet run link` command that gives them one. Read from the whole state document, so
 // dismissed jobs and other floors' jobs are listed too; only a job the deck draws or lists under a lantern can open.
 
-import { duration, esc, trunc } from './util.js';
+import { duration, esc, offlineLabel, trunc } from './util.js';
 import { hostLook } from './looks.js';
 import { workOf } from './model.js';
 import { idChip, select } from './panel.js';
@@ -32,7 +32,7 @@ const workChain = j => j.work?.step?.chain?.length ? j.work.step.chain : j.work?
 function listed() {
   const rows = [];
   for (const h of doc?.hosts || []) for (const j of h.jobs || []) {
-    if (LISTED.includes(j.status)) rows.push({ key: `${h.name}:${j.id}`, host: h.name, job: { ...j, stale: !!j.stale || h.ok === false, stale_reason: j.stale_reason || h.error }, chain: workChain(j) });
+    if (LISTED.includes(j.status)) rows.push({ key: `${h.name}:${j.id}`, host: h.name, job: { ...j, stale: !!j.stale || h.ok === false, stale_since: j.stale_since ?? h.down_since, stale_reason: j.stale_reason || h.error }, chain: workChain(j) });
   }
   return rows;
 }
@@ -94,7 +94,7 @@ function rowHtml(r, unlinked) {
   return `<li class="run-row" data-key="${esc(r.key)}" data-status="${esc(j.status)}" ${here
     ? 'tabindex="0" role="button"' : 'aria-disabled="true"'} title="${esc(here ? j.description : `${j.description}\nDismissed from the deck`)}">
     <span class="run-g" title="${esc(j.status)}" aria-label="${esc(j.status)}">${GLYPH[j.status]}</span>
-    <div class="run-b"><b>${esc(trunc(j.description, 90))}</b>${j.stale ? `<span data-stale title="${esc(j.stale_reason || 'host offline')}; showing last-known status, current status unknown">stale · last known</span>` : ''}
+    <div class="run-b"><b>${esc(trunc(j.description, 90))}</b>${j.stale ? `<span data-stale title="${esc(j.stale_reason || 'host offline')}; showing last-known status, current status unknown">stale · ${esc(offlineLabel(j))} · last known</span>` : ''}
       <div class="run-m"><span class="run-host"><i style="background:${hostLook(r.host).color}"></i>${esc(r.host)}:${idChip(j.id)}</span>
         ${Object.values(doc.triage || {}).filter(t => t.live_run && (t.live_run.id === j.run_id || (t.live_run.host === r.host && t.live_run.remote_job_id === j.id))).map(t => `<span class="run-triage">handling ${t.queue.length} item${t.queue.length === 1 ? '' : 's'}</span>`).join('')}${(doc.attention || []).some(i => i.owner?.key === r.key && i.owned_by === 'agent' && i.state !== 'resolved') ? '<span>agent handling</span>' : ''}${stepHtml(j)}${workspaceHtml(j)}${unlinked ? `<span class="run-proj">${esc(doc.project_labels?.[j.project] || j.project)}</span>
         <button class="run-link" data-copy-id="${esc(link)}" title="${esc(`Copy: ${link}`)}">fleet run link</button>` : workHtml(r)}</div></div>

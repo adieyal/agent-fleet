@@ -33,6 +33,7 @@ def record(run: Run, execution: ExecutionFacade, work: WorkFacade) -> dict:
     value["project"] = work.get(action.work_item).project if action.work_item else action.project
     value["work_item"] = action.work_item
     value["action_source"] = action.source
+    value["model"] = (action.payload or {}).get("model")
     value["work_title"] = work.get(action.work_item).title if action.work_item else None
     host = next((entry for entry in execution.hosts() if entry["name"] == run.host), None)
     value["offline_since"] = host["since"] if host and not host["reachable"] else None

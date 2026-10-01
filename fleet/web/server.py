@@ -610,6 +610,9 @@ def make_handler(state: FleetState | FixtureState,
                     if "limit" in filters:
                         filters["limit"] = int(filters["limit"])
                     result = history_runs(services.execution, services.work, services.workspace, **filters)
+                    jobs_cache = {}
+                    for run in result["runs"]:
+                        run["document_count"] = len(state.documents.run_documents(run, jobs_cache=jobs_cache))
                 else:
                     identity = path.removeprefix("/api/runs/")
                     if not identity or "/" in identity:

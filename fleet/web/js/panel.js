@@ -1,8 +1,9 @@
+import { archivedPanes, readArchivedDocument } from './archived-run.js';
 // Side panel, crew manifest, stats, deck log and hints.
 
 import * as THREE from 'three';
 import { BOT_H, DEBUG, DEMO, PI, QS } from './env.js';
-import { age, clock, duration, esc, mix, store, trunc } from './util.js';
+import { age, clock, duration, esc, offlineLabel, mix, store, trunc } from './util.js';
 import { AGENT_COLOR, TOOL_ICON, hostLook } from './looks.js';
 import { isSession, shortId } from './activity.js';
 import { ROBOT, renderer } from './scene.js';
@@ -80,6 +81,7 @@ document.getElementById('panelBody').addEventListener('scroll', () => {
   panelScrollUntil = performance.now() + PANEL_SCROLL_HOLD_MS;
 }, { passive: true });
 export function select(key) {
+  archived = null; ++archiveRequest; delete panel.dataset.archived; document.getElementById('panelBody').archiveHtml = null;
   if (key !== selectedKey) {
     document.getElementById('panelBody').scrollTop = 0;
     shownTab = chosenTab; jumped = null;
@@ -92,6 +94,7 @@ export function select(key) {
   focusOn(ents.get(key));
 }
 export function closePanel() {
+  archived = null; ++archiveRequest; delete panel.dataset.archived; document.getElementById('panelBody').archiveHtml = null;
   setSelectedKey(null);
   setFanned(null);   // a fanned-out crowd gathers again
   panel.classList.remove('open');
@@ -141,8 +144,36 @@ function stepWork(j, s) {
     ? `<button ${target} title="Open ${esc(node.kind)}: ${esc(path)}">${esc(trunc(node.title, 60))}</button>`
     : `<span title="${esc(path)}">${esc(trunc(node.title, 60))}</span>`}</span>`;
 }
-const staleChip = job => job.stale ? `<span class="chip" data-stale title="${esc(job.stale_reason || 'host offline')}; current status unknown">stale · last known</span>` : '';
+let archived = null, archiveRequest = 0;
+export async function openArchivedRun(id) {
+  const at = ++archiveRequest; document.getElementById('panelBody').archiveHtml = null;
+  setSelectedKey(null); archived = { loading: true, id }; shownTab = 'summary';
+  panel.dataset.archived = ''; panel.classList.add('open'); panel.setAttribute('aria-hidden', 'false');
+  renderArchived();
+  document.getElementById('panelHead').querySelector('#close').focus();
+  try {
+    const response = await fetch('/api/runs/' + encodeURIComponent(id));
+    const data = await response.json();
+    if (at !== archiveRequest) return;
+    if (!response.ok) throw new Error(data.error || 'Stored run could not be loaded');
+    archived = { ...data, panes: archivedPanes(data) };
+  } catch (error) { if (at !== archiveRequest) return; archived = { error: error.message, id }; }
+  renderArchived();
+}
+function renderArchived() {
+  const head = document.getElementById('panelHead'), tabs = document.getElementById('panelTabs'), body = document.getElementById('panelBody');
+  const html = `<div><h2>${esc(archived.run?.title || 'Stored run')}</h2><span class="chip">Stored · controller record</span></div><button id="close" aria-label="Close">✕</button>`;
+  if (head.lastHtml !== html) { head.lastHtml = html; head.innerHTML = html; head.querySelector('#close').onclick = closePanel; }
+  if (!archived.run) { tabs.innerHTML = ''; tabs.lastHtml = null; body.innerHTML = archived.error ? `<p role="alert">${esc(archived.error)}</p><button data-archive-retry="${esc(archived.id)}">Retry</button>` : '<p>Loading stored run…</p>'; return; }
+  const panes = archived.panes, show = panes[shownTab] ? shownTab : 'summary';
+  const tabHtml = `<div role="tablist">${Object.keys(panes).map(name => `<button role="tab" data-tab="${name}" aria-selected="${name === show}">${TABS[name]}</button>`).join('')}</div>`;
+  if (tabs.lastHtml !== tabHtml) { tabs.lastHtml = tabHtml; tabs.innerHTML = tabHtml; }
+  const content = `<div data-archived-content>${panes[show]}</div>`;
+  if (body.archiveHtml !== content) { body.archiveHtml = content; body.innerHTML = content; }
+}
+const staleChip = job => job.stale ? `<span class="chip" data-stale title="${esc(job.stale_reason || 'host offline')}; current status unknown">stale · ${esc(offlineLabel(job))} · last known</span>` : '';
 export function renderPanel() {
+  if (archived) { renderArchived(); return; }
   // mid-scroll, updates wait until the scroll settles rather than rewriting content under it
   const wait = panelScrollUntil - performance.now();
   if (wait > 0) {
@@ -381,6 +412,10 @@ function docsPanelHtml(e) {
   }).join('')}</ul>`;
 }
 panel.addEventListener('click', ev => {
+  const kept = ev.target.closest('[data-kept-doc]');
+  if (kept && archived?.run) { readArchivedDocument(archived, Number(kept.dataset.keptDoc)); return; }
+  const retry = ev.target.closest('[data-archive-retry]');
+  if (retry) { openArchivedRun(retry.dataset.archiveRetry); return; }
   const tab = ev.target.closest('[data-tab][role="tab"]');
   if (tab) { chosenTab = tab.dataset.tab; store('localStorage', TAB_KEY, chosenTab); showTab(chosenTab); return; }
   const jump = ev.target.closest('[data-jump]');

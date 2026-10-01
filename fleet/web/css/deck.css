@@ -1406,3 +1406,22 @@ body[data-readonly] #attnPanel[data-scope=all] .aa{display:flex}
 .attn-owned{font-size:11px;color:var(--muted);display:inline-block!important;width:max-content;padding:2px 7px;border:1px solid var(--line);border-radius:12px;margin-top:5px}
 .attn-reason{margin:8px 0;color:var(--text)}
 @media(max-width:600px){header #withAgent{order:-1}}
+/* P2 stored history: rows wrap on phones and filters survive live observations. */
+#benchRoute[data-level=history]{width:min(780px,calc(100vw - 32px));max-height:75vh}
+#benchRoute nav[aria-label="Floor views"]{display:flex;gap:8px;margin:8px 0}
+#benchRoute [aria-current=page]{border-color:var(--accent);color:#e2e8f0}
+[data-history-filters]{display:flex;flex-wrap:wrap;gap:10px;align-items:end}
+[data-history-filters] label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:#94a3b8}
+[data-history-filters] input,[data-history-filters] select{background:#0b1422;color:#e2e8f0;border:1px solid #475569;border-radius:5px;padding:6px;max-width:175px}
+[data-history-filters] label:has([type=checkbox]){flex-direction:row;align-items:center}
+[data-history-day] ul{list-style:none;padding:0}
+[data-history-run]{border-top:1px solid #334155;padding:12px 0;overflow-wrap:anywhere}
+[data-history-run] p{margin:5px 0;color:#94a3b8;font-size:12px}
+[data-history-run]>div{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+#benchRoute [data-open-run]{text-align:left;white-space:normal}
+[data-archived-content]{overflow-wrap:anywhere;font-size:13px}
+[data-archived-content] li{margin:8px 0}
+[data-archived-content] h4{margin:10px 0 4px}
+.tag .stale-label{max-width:220px;white-space:normal}
+@media(max-width:600px){#benchRoute[data-level=history]{left:12px;right:12px;width:auto;max-height:70vh}[data-history-filters] label{flex:1 1 130px}[data-history-filters] input,[data-history-filters] select{width:100%;max-width:none;box-sizing:border-box}}
+#benchRoute [data-history-run] [data-copy]{width:auto;height:auto;min-height:28px;padding:3px 7px;white-space:nowrap;border-color:#3b4a60}

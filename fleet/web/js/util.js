@@ -50,3 +50,10 @@ export function store(area, key, value) {
   try { if (value === undefined) return window[area].getItem(key); window[area].setItem(key, value); } catch (err) { /* storage unavailable */ }
   return null;
 }
+
+export function offlineLabel(item, compact = false) {
+  const since = item.stale_since ?? item.offline_since;
+  if (since == null) return 'offline since unknown';
+  const date = new Date(typeof since === 'number' ? since * 1000 : since);
+  return compact ? `offline since ${age(date.getTime() / 1000)} ago` : `offline since ${date.toLocaleString()}`;
+}

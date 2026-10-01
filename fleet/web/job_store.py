@@ -238,14 +238,16 @@ class ProjectDocuments:
                           "key": directory.name, "documents": documents})
         return sorted(found, key=lambda job: job.get("created_at") or 0, reverse=True)
 
-    def run_documents(self, run: dict) -> list[dict]:
+    def run_documents(self, run: dict, *, jobs_cache: dict | None = None) -> list[dict]:
         scopes = {self.label_scope(run["host"], run.get("label") or "")}
         if run.get("project"):
             scopes.add(run["project"])
         documents = []
         seen = set()
         for scope in sorted(scopes):
-            for job in self.jobs(scope):
+            if jobs_cache is not None and scope not in jobs_cache:
+                jobs_cache[scope] = self.jobs(scope)
+            for job in jobs_cache[scope] if jobs_cache is not None else self.jobs(scope):
                 if job["id"] == run["remote_job_id"] and job["host"] == run["host"]:
                     for document in job["documents"]:
                         key = (str(self.project_directory(scope)), job["key"], document["id"])
