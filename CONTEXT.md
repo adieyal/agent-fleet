@@ -162,6 +162,9 @@ A decision request, genuine blocker or actionable alert that calls for the user.
 **Permission refusal**:
 A permission request a job's agent was refused because nobody was at the prompt; the agent carries on without it. A job step's refusals form one attention item, answered by allowing permission rules for the job, which continues the refused step, or by dismissing it. When the job moves on to a later step, or is gone, with the item untouched, it resolves as refused. An interactive session's permission request is a question to the person at its prompt and stays its own item.
 
+**Blocked step**:
+A job step whose agent finished its turn saying it needs its supervisor (`FLEET_STATUS: blocked`); its final message is the question. It is an attention item headed by what the message asks, answered from the deck by adding a step that carries the reply. That step answers the blocked one, which then no longer holds the job blocked; the answer is sent once per item, so a retried reply queues nothing more.
+
 **Session question**:
 A question an interactive session asks the person at its terminal, with the options it offers. It is an attention item so it is not missed, but it is answered only in that terminal; the item closes when the session has its answer.
 
