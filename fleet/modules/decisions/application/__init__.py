@@ -71,6 +71,8 @@ def answer_question(repository: DecisionRepository, clock: Callable[[], datetime
             raise ValueError("a job's permission refusals are answered by allowing or dismissing them")
         if item.questions:
             raise ValueError("a session's question is answered in its terminal")
+        if item.stream_context is not None and item.stream_context.blocked_step:
+            raise ValueError("a blocked job step is answered by a step added to its job (execution answer_blocked)")
         decision = Decision(str(uuid4()), item.id, item.headline,
             selected_answer(answer, item.options), actor, item.context_reference,
             () if item.work_item is None else (item.work_item,), clock())

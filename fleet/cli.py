@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -447,9 +448,42 @@ def command_add(arguments: argparse.Namespace) -> None:
             raise FleetError(str(error)) from error
     if arguments.context:
         push_context(host, job_id, arguments.context)
+    waiting = None if arguments.retry or arguments.no_answer else waiting_step(host, job_id)
+    if waiting is not None:
+        answer_waiting_step(host, job_id, waiting, steps)
+        return
     fleetd_arguments = ["add", job_id, "--steps-file", "/dev/stdin"] + (["--retry"] if arguments.retry else [])
     job = transport.call(host, fleetd_arguments, stdin_text=json.dumps(steps))
     console.print(f"[bold]{host.name}:{job_id}[/] {job['status']} · now {len(job['steps'])} step(s)")
+
+
+def waiting_step(host: Host, job_id: str) -> int | None:
+    """The job's blocked step that has no answer yet, if any."""
+    job = transport.call(host, ["show", job_id, "--events", "0"])
+    return next((step["index"] for step in job["steps"]
+                 if step["status"] == "blocked" and step.get("answered_by") is None), None)
+
+
+def answer_waiting_step(host: Host, job_id: str, step: int, steps: list[dict[str, Any]]) -> None:
+    """Add the steps as the answer to the waiting step, as the deck does: they run next, and the open attention
+    item for the step is resolved. Keyed like the deck's answer, so a retried add queues nothing more."""
+    attention = open_attention()
+    item = next((item for item in attention.list() if item.state != "resolved" and item.stream_context is not None
+                 and item.stream_context.blocked_step and (item.stream_context.host, item.stream_context.owner_id,
+                                                           item.stream_context.step) == (host.name, job_id, step)),
+                None)
+    payload = json.dumps([{"title": f"Answer to step {step + 1}", **added} for added in steps])
+    key = f"{item.id}:answer" if item is not None else (
+        f"cli:{job_id}:{step}:{hashlib.sha256(payload.encode()).hexdigest()[:16]}")
+    result = transport.call(host, ["add", job_id, "--steps-file", "/dev/stdin", "--schema-version", "1",
+                                   "--key", key, "--answers", str(step)], stdin_text=payload)
+    if not isinstance(result, dict) or (result.get("status"), result.get("answers")) != ("applied", step):
+        raise FleetError("worker did not confirm the answer")
+    continuation = result["steps"][0]
+    details = f"answered; step {step + 1} continues as step {continuation + 1}"
+    if item is not None:
+        attention.resolve(item.id, details=details, actor="user")
+    console.print(f"[bold]{host.name}:{job_id}[/] {details} (--no-answer appends instead)")
 
 
 def command_push(arguments: argparse.Namespace) -> None:
@@ -1192,6 +1226,14 @@ def command_decision_list(arguments: argparse.Namespace) -> None:
 
 def command_answer(arguments: argparse.Namespace) -> None:
     try:
+        context = open_attention().get(arguments.id).stream_context
+        if context is not None and context.blocked_step:
+            # A blocked job step is answered by a step added to its job, as the deck does, not a recorded decision.
+            if arguments.next_step is not None:
+                raise ValueError("a blocked job step's answer has no --next-step; use fleet work set")
+            details = open_execution().answer_blocked(arguments.id, arguments.answer, actor="user")
+            console.print_json(json.dumps({"id": arguments.id, "resolution": details}))
+            return
         decision = open_decisions().answer(arguments.id, arguments.answer, actor="user",
                                            next_step=arguments.next_step)
         console.print_json(json.dumps(asdict(decision), default=lambda value: value.isoformat()))
@@ -1339,6 +1381,8 @@ def build_parser() -> argparse.ArgumentParser:
     add = commands.add_parser("add", help="append steps to a job (restarts it if idle)")
     add.add_argument("job")
     add.add_argument("--retry", action="store_true", help="also re-queue failed/blocked/cancelled steps")
+    add.add_argument("--no-answer", action="store_true",
+                     help="append even when a blocked step waits for an answer (by default the steps answer it)")
     add_step_options(add)
     add.set_defaults(handler=command_add)
 

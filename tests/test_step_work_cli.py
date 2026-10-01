@@ -44,7 +44,8 @@ def test_fleet_add_refuses_work_outside_the_jobs_project(project_id, monkeypatch
     open_execution().link("h", "job", own.id, actor="user")
     sent = []
     monkeypatch.setattr(cli, "resolve", lambda reference: (SimpleNamespace(name="h"), "job"))
-    monkeypatch.setattr(cli.transport, "call", lambda host, arguments, stdin_text=None: sent.append(
+    monkeypatch.setattr(cli.transport, "call", lambda host, arguments, stdin_text=None: {
+        "status": "queued", "steps": [{"index": 0, "status": "done"}]} if arguments[0] == "show" else sent.append(
         json.loads(stdin_text)) or {"status": "queued", "steps": [{}]})
     with pytest.raises(FleetError, match="another project"):
         cli.command_add(parsed("-s", "go", "--step-work-item", other.id))
