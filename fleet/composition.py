@@ -44,7 +44,7 @@ def management_home() -> Path:
 
 
 def open_store(path: Path | None = None, *, clock: Callable[[], datetime] | None = None) -> Store:
-    return Store(path if path is not None else store_path(), clock)
+    return Store(path if path is not None else store_path(), clock, os.environ.get("FLEET_JOB_ID") or None)
 
 
 class Facades:

@@ -98,4 +98,9 @@ MIGRATIONS = (
     (
         "ALTER TABLE attention_item ADD COLUMN questions TEXT NOT NULL DEFAULT '[]'",
     ),
+    (
+        # The fleet job whose process made the change; history reads it as the source run.
+        "ALTER TABLE state_history ADD COLUMN job TEXT",
+        "CREATE INDEX state_history_subject ON state_history(subject)",
+    ),
 )

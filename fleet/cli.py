@@ -13,7 +13,7 @@ import tempfile
 import time
 from collections import defaultdict
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -29,6 +29,7 @@ from fleet import transport
 from fleet.modules import workspace as projects
 from fleet.composition import open_attention, open_decisions, open_execution, open_library, open_records, open_store, open_work, open_workspace
 from fleet.projections.decisions import decision_log
+from fleet.projections.history import subject_history
 from fleet.projections.project import project_status
 from fleet.modules.work import RELATION_TYPES, EvidenceSpecification
 from fleet.modules.execution import Run
@@ -1249,6 +1250,56 @@ def history_cutoff(text: str) -> datetime:
     return moment if moment.tzinfo is not None else moment.replace(tzinfo=timezone.utc)
 
 
+def history_since(text: str) -> datetime:
+    """An ISO date or time, or an age such as 30m, 12h or 7d."""
+    match = re.fullmatch(r"(\d+)([mhd])", text.strip())
+    if match is None:
+        return history_cutoff(text)
+    unit = {"m": "minutes", "h": "hours", "d": "days"}[match.group(2)]
+    return datetime.now(timezone.utc) - timedelta(**{unit: int(match.group(1))})
+
+
+def history_value(value: object) -> str:
+    if value is None:
+        return "—"
+    text = value if isinstance(value, str) else json.dumps(value, sort_keys=True)
+    text = " ".join(text.split())
+    return text if len(text) <= 100 else text[:99] + "…"
+
+
+def history_source(entry: dict[str, Any]) -> str:
+    if entry["source_run"] is not None:
+        return f"run {entry['source_run'][:8]}"
+    if entry["job"] is not None:
+        return f"job {entry['job'][:8]}"
+    return "no recorded run"
+
+
+def command_history(arguments: argparse.Namespace) -> None:
+    if arguments.subject is None:
+        raise FleetError("give --subject (a work item, attention item, project, run or other id or id prefix), "
+                         "or a subcommand such as prune")
+    try:
+        history = subject_history(open_store(), arguments.subject, arguments.since)
+    except LookupError as error:
+        raise FleetError(str(error)) from error
+    if arguments.json:
+        print(json.dumps(history))
+        return
+    print(f"History of {history['kind']} {history['id']}, newest first")
+    if not history["entries"]:
+        print("No changes recorded" + (" in that period." if arguments.since is not None else "."))
+    for entry in history["entries"]:
+        about = "" if (entry["kind"], entry["id"]) == (history["kind"], history["id"]) \
+            else f" ({entry['kind']} {entry['id'][:8]})"
+        time_text = datetime.fromisoformat(entry["time"]).strftime("%Y-%m-%d %H:%M:%S %Z")
+        print(f"{time_text}  {entry['actor']}  {history_source(entry)}{about}")
+        if not entry["changes"]:
+            print("  no field changed")
+        for change in entry["changes"]:
+            print(f"  {change['field']}: {history_value(change['before'])} → {history_value(change['after'])}")
+
+
 def command_history_prune(arguments: argparse.Namespace) -> None:
     store = open_store()
     count, oldest, newest = store.history_span_before(arguments.before)
@@ -1614,7 +1665,12 @@ def build_parser() -> argparse.ArgumentParser:
     decision_list.set_defaults(handler=command_decision_list)
 
     history = commands.add_parser("history", help="the audit trail: who changed what, and when")
-    history_commands = history.add_subparsers(dest="history_command", required=True)
+    history.add_argument("--subject", help="a work item, attention item, project, run or other id; "
+                                           "a unique id prefix or a subject such as attention:<id> also works")
+    history.add_argument("--since", type=history_since, help="an ISO date or time, or an age such as 12h or 7d")
+    history.add_argument("--json", action="store_true")
+    history.set_defaults(handler=command_history)
+    history_commands = history.add_subparsers(dest="history_command")
     history_prune = history_commands.add_parser(
         "prune", help="delete entries older than a date; shows what it would delete unless --yes")
     history_prune.add_argument("--before", required=True, type=history_cutoff,
