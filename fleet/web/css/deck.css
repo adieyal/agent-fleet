@@ -1060,6 +1060,12 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 [data-plan-item] small[data-ran-for] { display:block; }
 [data-step-plan] { margin-top:4px; font-size:13px; }
 [data-step-plan] summary { cursor:pointer; color:#7dd3fc; }
+[data-step-docs] { margin-top:4px; font-size:13px; }
+[data-step-docs] summary { cursor:pointer; color:#7dd3fc; }
+[data-step-docs] ul { margin:4px 0 0; padding:0 0 0 8px; list-style:none; border-left:2px solid #334155; }
+#benchRoute [data-step-docs] button { all:unset; cursor:pointer; display:block; padding:2px 4px; color:#cbd5e1; overflow-wrap:anywhere; }
+#benchRoute [data-step-docs] button:hover, #benchRoute [data-step-docs] button:focus-visible { color:#e2e8f0; text-decoration:underline; }
+[data-step-docs] button small { color:#94a3b8; margin-right:4px; }
 [data-step-plan] div { white-space:pre-wrap; margin-top:4px; padding:6px 8px; border-left:2px solid #334155; color:#cbd5e1; }
 [data-glyph] svg { width:22px; height:22px; fill:none; stroke-width:2.5; stroke:currentColor; }
 [data-status="complete"] [data-glyph] { color:#34d399; }

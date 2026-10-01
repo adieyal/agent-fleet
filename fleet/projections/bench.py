@@ -58,7 +58,21 @@ def line_item(item: dict) -> dict[str, Any]:
     return {"id": item["id"], "title": item["title"], "headline": headline(item["goal"]),
             "condition": item["condition"], "status": status(item), "next_step": item["next_step"],
             "plan": item["plan"], "running_since": running_since(item),
-            "last_run": last_run(item), "superseded_by": successors(item)}
+            "last_run": last_run(item), "superseded_by": successors(item), "documents": documents(item)}
+
+
+READABLE = ("report", "brief", "outbox", "context")
+
+
+def documents(item: dict) -> list[dict]:
+    """The item's own readable documents, newest step's report first; one entry per location."""
+    seen, kept = set(), []
+    for entry in item["library"]:
+        if entry["kind"] in READABLE and entry["canonical_location"] not in seen:
+            seen.add(entry["canonical_location"])
+            kept.append({key: entry[key] for key in ("kind", "title", "canonical_location", "availability")})
+    order = sorted(enumerate(kept), key=lambda pair: (READABLE.index(pair[1]["kind"]), -pair[0]))
+    return [entry for _, entry in order]
 
 
 def milestone_groups(epic: dict) -> tuple[list[dict], list[tuple[dict, list[dict]]]]:

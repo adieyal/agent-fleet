@@ -162,11 +162,14 @@ setInterval(() => el.querySelectorAll('[data-running-since]').forEach(line => {
 }), 15000);
 
 function planLine(item, opens) {
-  const title = opens ? `<button data-slice="${esc(item.id)}">${esc(item.title)}</button>` : `<b>${esc(item.title)}</b>`;
+  const first = item.documents.find(docRef);
+  const title = opens ? `<button data-slice="${esc(item.id)}">${esc(item.title)}</button>`
+    : first ? `<button ${openDocAttrs(docRef(first), esc(item.title))} title="Read its latest ${esc(first.kind)}">${esc(item.title)}</button>`
+    : `<b>${esc(item.title)}</b>`;
   return `<li data-plan-item="${esc(item.id)}" data-status="${esc(item.status)}">
     <span data-glyph role="img" aria-label="${esc(STATUS_LABELS[item.status] ?? item.status)}" title="${esc(STATUS_LABELS[item.status] ?? item.status)} · ${esc(item.condition)}">${statuses[item.status]}</span>
     <div>${title}<p>${esc(item.headline)}</p>${successorLine(item.superseded_by)}${item.running_since ? runningLine(item.running_since) : item.last_run ? ranLine(item.last_run) : ''}<small data-next-step>${item.next_step === null ? 'Next step not recorded' : `Next: ${esc(item.next_step)}`}</small>${
-      item.plan === null ? '' : `<details data-step-plan><summary>Plan</summary><div>${esc(item.plan)}</div></details>`}</div></li>`;
+      item.plan === null ? '' : `<details data-step-plan><summary>Plan</summary><div>${esc(item.plan)}</div></details>`}${docsList(item.documents)}</div></li>`;
 }
 
 function epicPage(r) {
@@ -193,10 +196,26 @@ function reportWhere(location) {
 }
 const OPEN_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M4 1.8h5.2L12.5 5v9.2H4z"/><path d="M9 1.8V5.3h3.5M6 8.2h4.3M6 10.8h4.3"/></svg>';
 const COPY_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.6"/><path d="M10.5 5.5V3.6A1.1 1.1 0 0 0 9.4 2.5H3.6a1.1 1.1 0 0 0-1.1 1.1v5.8a1.1 1.1 0 0 0 1.1 1.1h1.9"/></svg>';
-// A step report's reader address from its fleet:// location: the host, and the report's document id (report-<step>).
-function reportRef(report) {
-  const m = /^fleet:\/\/([^/]+)\/.*\/result-(\d+)\.md$/.exec(report.canonical_location || '');
-  return m && report.run ? { host: m[1], doc: `report-${m[2]}` } : null;
+// A job document's reader address from its fleet:// location: the host, the job, and the document id fleetd gives it
+// (report-<step>, brief-<step>, outbox-<path>, context-<path>); null for anything the reader can't open.
+function docRef(entry) {
+  const m = /^fleet:\/\/([^/]+)\/(?:.*\/)?jobs\/([^/]+)\/((?:result|brief)-\d+\.md|(?:outbox|context)\/.+)$/
+    .exec(entry.canonical_location || '');
+  if (!m) return null;
+  const [, host, job, rest] = m;
+  const doc = rest.replace(/^result-(\d+)\.md$/, 'report-$1').replace(/^brief-(\d+)\.md$/, 'brief-$1')
+    .replace(/^(outbox|context)\//, '$1-');
+  return { host: decodeURIComponent(host), job, doc: decodeURIComponent(doc) };
+}
+const openDocAttrs = (at, title) => `data-open-report data-host="${esc(at.host)}" data-job="${esc(at.job)}" data-doc="${esc(at.doc)}" data-title="${title}"`;
+// A step's documents: the title opens its latest report, the list holds every one the reader can open.
+function docsList(list) {
+  const open = list.map(entry => ({ entry, at: docRef(entry) })).filter(x => x.at);
+  if (!open.length) return '';
+  return `<details data-step-docs><summary>Documents <b>${open.length}</b></summary><ul>${open.map(({ entry, at }) => {
+    const title = entry.title === null ? 'Title unknown' : esc(entry.title);
+    return `<li><button ${openDocAttrs(at, title)} title="Read: ${title}"><small>${esc(entry.kind)}</small> ${title}</button></li>`;
+  }).join('')}</ul></details>`;
 }
 
 function render(flipped = new Set()) {
@@ -216,9 +235,9 @@ function render(flipped = new Set()) {
         : bench.agents.map(agentMarkup).join('')}</section>
       <section data-desk aria-label="Question desk">${bench.attention.length ? `<span data-lantern aria-label="Open attention">${lantern}</span>` : '<p data-empty>Desk clear</p>'}</section>
       <details data-tray><summary>Reports <b>${bench.reports.length}</b></summary><ul>${bench.reports.map(report => {
-        const at = reportRef(report), title = report.title === null ? 'Title unknown' : esc(report.title);
+        const at = docRef(report), title = report.title === null ? 'Title unknown' : esc(report.title);
         const where = reportWhere(report.canonical_location);
-        return `<li data-availability="${esc(report.availability)}"><span data-report-title title="${title}">${title}</span>${at ? `<button data-open-report data-host="${esc(at.host)}" data-job="${esc(report.run)}" data-doc="${esc(at.doc)}" data-title="${title}" title="Read this report" aria-label="Read ${title}">${OPEN_ICON}</button>` : ''}
+        return `<li data-availability="${esc(report.availability)}"><span data-report-title title="${title}">${title}</span>${at ? `<button ${openDocAttrs(at, title)} title="Read this report" aria-label="Read ${title}">${OPEN_ICON}</button>` : ''}
           <small>${esc(report.availability)} · <span title="${esc(report.canonical_location)}">${esc(where)}</span>${report.canonical_location ? `<button data-copy="${esc(report.canonical_location)}" title="Copy the full location" aria-label="Copy the full location">${COPY_ICON}</button>` : ''}</small></li>`;
       }).join('')}</ul></details>
       <section><button data-briefing aria-expanded="${briefing}">Briefing</button><div data-summary ${briefing ? '' : 'hidden'}>${bench.summary === null ? 'Summary unknown' : ['purpose', 'done', 'doing', 'next'].map(key => `<p><b>${key}</b> ${esc(bench.summary[key])}</p>`).join('')}</div></section></div>`;

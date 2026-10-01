@@ -3,6 +3,7 @@ from dataclasses import replace
 import pytest
 
 from fleet.modules.attention import AttentionItem
+from fleet.modules.library import LibraryEntry
 from fleet.modules.work import Relation
 from fleet.projections.bench import bench_rooms, headline, status
 
@@ -205,3 +206,17 @@ def test_a_superseded_epic_names_its_successor():
     assert (old["condition"], old["superseded_by"]) == ("dropped", [{"id": "new", "title": "New epic"}])
     assert old["plan"][0]["superseded_by"] == [{"id": "new", "title": "New epic"}]
     assert new["superseded_by"] == []
+
+
+def test_a_step_lists_its_readable_documents_latest_report_first():
+    jobs = "fleet://home/home/u/.fleet/jobs/j1"
+    def entry(identity, kind, location):
+        return LibraryEntry(identity, "p", "t", "r", kind, identity, "run", f"{jobs}/{location}", "available", True)
+    entries = [entry("b0", "brief", "brief-0.md"), entry("r0", "report", "result-0.md"),
+               entry("r1", "report", "result-1.md"), entry("trace", "trace", "events.jsonl"),
+               entry("out", "outbox", "outbox/H0-report.md"), entry("file", "file", "outbox/H0-report.md")]
+    room, = bench_rooms(project([item("epic", kind="epic"), item("t", parent="epic")], entries=entries))["rooms"]
+    task, = room["tasks"]
+    assert [(d["kind"], d["title"]) for d in task["documents"]] == [
+        ("report", "r1"), ("report", "r0"), ("brief", "b0"), ("outbox", "out")]
+    assert task["documents"][0]["canonical_location"] == f"{jobs}/result-1.md"
