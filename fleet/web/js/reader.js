@@ -121,7 +121,7 @@ async function loadDecision(id, req) {
     });
     form.addEventListener('submit', async ev => {
       ev.preventDefault();
-      const button = form.querySelector('button');
+      const button = form.querySelector('button[type="submit"]');
       button.disabled = true;
       form.querySelector('[role="alert"]').textContent = '';
       try {
@@ -169,7 +169,7 @@ function renderBlocked(prose, id, b) {
   if (!form) return;
   form.addEventListener('submit', async ev => {
     ev.preventDefault();
-    const button = form.querySelector('button');
+    const button = form.querySelector('button[type="submit"]');
     button.disabled = true;
     form.querySelector('[role="alert"]').textContent = '';
     try {
