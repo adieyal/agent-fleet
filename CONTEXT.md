@@ -141,7 +141,13 @@ The worker records full base and head commit IDs around each step, start and end
 The work item one step of a job serves, when it is not the job's own. A run stays linked to its action's work item; its steps may each name another in the same project, and while such a step runs that item (and its ancestors) shows active, and its step's documents join that item's library. A step's work is part of the dispatch payload, so it is covered by the idempotency key and kept on retry, and recorded on the run as observed (`step_work`), not as further actions or claims: a step finishing completes no more than a run finishing does. An answer to a blocked step, or a permission continuation, serves the step it continues unless it names its own.
 
 **Run trace**:
-The detailed activity emitted by one agent run. It stays on the worker under a retention policy and is not the durable project record. The library may link to it; a pruned trace stays visible as unavailable.
+The activity emitted by one agent run. Raw runtime files stay on the worker. For terminal jobs, the controller's document keeper copies the complete normalized `events.jsonl` into `FLEET_HOME/traces/<hashed run ID>/<content SHA>.jsonl`. Run metadata records its hash, byte count and availability; changed traces keep older content-addressed copies. Copy errors name the cause and retry on a later job report. An empty trace is a retained zero-byte file. Missing or corrupt retained files are shown as unavailable. Raw traces are never copied into this archive.
+
+`fleet rm` removes worker files, preserves the run, steps and controller copies, and records `removed by fleet rm` with a timestamp. Worker removal manifests report that provenance to an existing stream and replay it to a fresh stream after reconnect. Disappearance without that provenance does not assert that Fleet deleted the files. Session runs have no worker `events.jsonl` copy; details explicitly say when no trace was recorded.
+
+`fleet history runs` and `GET /api/history/runs` share a store-backed projection, with project, work and descendants, host, status, kind, unlinked, start-time range and limit filters. Unknown start times remain null and are excluded only when a start-time range is requested. `fleet run show` and `GET /api/runs/<id>` expose action metadata, retained steps and git evidence, library references, kept documents and trace availability. Prefixes must identify one run. `fleet store usage` accounts for SQLite files and table rows, project documents and retained traces without changing or pruning them.
+
+Interactive sessions are runs identified by host and transcript ID. Working and idle map to running; quiet removal after 20 minutes stops the run at its last transcript update, and a later update reopens it without claims. The worker persists the first observed base in `FLEET_HOME/sessions/<id>.json`. Hosts persist reachability transitions and retain stale work during outages; a deck restart seeds active/unknown runs from the store, and reconnect confirmation waits for the first complete heartbeat.
 
 ### Authority and attention
 
@@ -226,4 +232,4 @@ A packaged specialised display for a space: a manifest, an optional collector th
 | Attention item | open, acknowledged, snoozed, resolved |
 | Observation | current, stale, unknown |
 
-State changes to work items, attention items and runs are timestamped and kept for at least a week, independently of raw traces. A run's latest reading (when it was last observed, its current activity, its usage so far) is an observation, not a state change: it is kept current without history, and a finished run's usage is recorded with its end.
+State changes to work items, attention items and runs are timestamped independently of raw traces. P2 retains run, action and step records and controller trace copies indefinitely, with no automatic pruning; P3 owns explicit audit-history pruning. A run's latest reading (when it was last observed, its current activity, its usage so far) is an observation, not a state change: it is kept current without history, and a finished run's usage is recorded with its end.

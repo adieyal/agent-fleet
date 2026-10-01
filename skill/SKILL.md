@@ -57,6 +57,10 @@ hosts, run `fleet notify` under the Monitor tool.
 |---|---|
 | Everything, grouped by project | `fleet ls` (`--by host`, `-p proj`, `-b` brief, `--json`) |
 | One job: steps, todos, workspace (repo, worktree, branch, uncommitted), recent activity | `fleet show host:id` |
+| Store-backed history, including sessions and unlinked runs | `fleet history runs --project PROJECT --since 7d` |
+| Runs serving work or its descendants | `fleet history runs --work-item ID --descendants` |
+| Archived steps, commits, pushes, documents and trace | `fleet run show RUN_ID_PREFIX [--json]` |
+| Database rows and retained file sizes | `fleet store usage [--json]` |
 | Full final message of each step + outbox listing | `fleet result host:id [--step N]` |
 | Fetch files the agent left for you | `fleet pull host:id [dest]` |
 | Send more context mid-job | `fleet push host:id file…` then mention it in the next step |
@@ -68,6 +72,15 @@ Read results with `fleet result` before reporting to the user or dispatching
 dependent work; don't trust a `done` status alone. Status meanings: `running`,
 `queued` (steps pending), `stalled` (runner died mid-step), `failed`, `done`,
 `cancelled`, `blocked`.
+
+History reads the controller store, so it works while workers are offline.
+`history runs` also accepts `--host`, comma-separated `--status`, `--kind job|session`,
+`--unlinked`, `--until DATE`, `--limit N`, and `--json`. Its default limit is 50;
+read the `N of M` footer before claiming a complete list. History statuses are
+`running`, `succeeded`, `failed`, `stopped`, and `unknown outcome`. Date filters
+compare recorded start times; missing starts remain visible without a date filter.
+Terminal jobs retain normalized events on the controller; raw traces remain on
+the worker. `fleet rm` records worker trace removal and preserves retained evidence.
 
 A step that ends `FLEET_STATUS: blocked` holds its job: later steps wait until
 it is answered. `fleet add host:id -s "reply"` on such a job answers that step

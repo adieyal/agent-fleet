@@ -170,6 +170,25 @@ def catch_up_sessions(host: Host, since: str) -> list[dict]:
     return call(host, ["sessions", "--since", since], timeout=30)["sessions"]
 
 
+def keep_run_trace(execution, host: Host, job: dict) -> None:
+    """Copy terminal normalized events once; retain an explicit error and retry on the next report."""
+    run = execution.record_observed(host.name, job)
+    if job.get("trace") is None:
+        return
+    source = {**job["trace"], "observed_at": job.get("updated_at")}
+    previous = run.trace or {}
+    if previous.get("events", {}).get("availability") == "kept" and previous.get("source") == source:
+        return
+    if job["status"] not in ("done", "failed", "cancelled", "lost", "blocked"):
+        execution.record_trace(run.id, source)
+        return
+    try:
+        result = call(host, ["read-trace", job["id"]], timeout=30)
+        execution.record_trace(run.id, source, content=result["content"], error=result.get("reason"))
+    except (FleetError, OSError, ValueError, KeyError) as error:
+        execution.record_trace(run.id, source, error=f"trace copy failed: {error}")
+
+
 def gather_sessions(hosts: list[Host]) -> dict[str, list[dict[str, Any]]]:
     """Live interactive CLI sessions per host name, from `fleetd sessions`.
 

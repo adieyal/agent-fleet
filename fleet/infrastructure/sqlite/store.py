@@ -95,3 +95,12 @@ class Store:
     def latest_sequence(self) -> int:
         with closing(connect(self.path)) as connection:
             return connection.execute("SELECT COALESCE(MAX(sequence), 0) FROM state_history").fetchone()[0]
+
+    def usage(self) -> dict:
+        with closing(connect(self.path)) as connection:
+            counts = {name: connection.execute(f'SELECT COUNT(*) FROM "{name}"').fetchone()[0]
+                      for (name,) in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+                      if not name.startswith("sqlite_")}
+        files = [self.path, Path(str(self.path) + "-wal"), Path(str(self.path) + "-shm")]
+        return {"path": str(self.path), "bytes": sum(path.stat().st_size for path in files if path.is_file()),
+                "tables": counts}

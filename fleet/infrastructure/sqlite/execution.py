@@ -1,6 +1,10 @@
 """Atomic action/run links and their state history."""
 
 import json
+import hashlib
+import os
+import tempfile
+from pathlib import Path
 from dataclasses import asdict
 from datetime import datetime
 from typing import Callable
@@ -148,6 +152,35 @@ class ExecutionRepository(Repository):
 
     def hosts(self) -> list[dict]:
         return [json.loads(row["record"]) for row in self.rows("SELECT record FROM execution_host ORDER BY name")]
+
+    def trace_path(self, run: str, digest: str) -> Path:
+        root = Path(os.environ.get("FLEET_HOME") or "~/.fleet").expanduser() / "traces"
+        return root / hashlib.sha256(run.encode()).hexdigest() / f"{digest}.jsonl"
+
+    def keep_trace(self, run: str, content: str) -> dict:
+        payload = content.encode("utf-8")
+        digest = hashlib.sha256(payload).hexdigest()
+        path = self.trace_path(run, digest)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as handle:
+                temporary = Path(handle.name)
+                handle.write(payload)
+            try:
+                temporary.replace(path)
+            finally:
+                temporary.unlink(missing_ok=True)
+        return {"availability": "kept", "bytes": len(payload), "sha256": digest, "path": str(path)}
+
+    def read_trace(self, run: str, record: dict) -> str | None:
+        digest = record.get("sha256", "")
+        if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+            return None
+        path = self.trace_path(run, digest)
+        if not path.is_file():
+            return None
+        payload = path.read_bytes()
+        return payload.decode("utf-8") if hashlib.sha256(payload).hexdigest() == digest else None
 
     def save_host(self, record: dict) -> None:
         if self.unit is None:

@@ -139,6 +139,15 @@ def open_execution(store: Store | None = None) -> ExecutionFacade:
     return facades(store).execution
 
 
+def storage_usage(store: Store | None = None) -> dict:
+    value = (store or open_store()).usage()
+    root = Path(os.environ.get("FLEET_HOME") or "~/.fleet").expanduser()
+    for name, directory in (("documents", root / "projects"), ("traces", root / "traces")):
+        files = [path for path in directory.rglob("*") if path.is_file() and not path.is_symlink()]
+        value[name] = {"path": str(directory), "files": len(files), "bytes": sum(path.stat().st_size for path in files)}
+    return value
+
+
 def open_library(store: Store | None = None) -> LibraryFacade:
     return facades(store).library
 

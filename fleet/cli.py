@@ -30,6 +30,8 @@ from fleet.modules import workspace as projects
 from fleet.composition import open_attention, open_decisions, open_execution, open_library, open_records, open_store, open_work, open_workspace
 from fleet.projections.decisions import decision_log
 from fleet.projections.project import project_status
+from fleet.projections.run_history import history_runs, run_detail
+from fleet.composition import storage_usage
 from fleet.modules.work import RELATION_TYPES, EvidenceSpecification
 from fleet.modules.execution import Run
 from fleet.transport import FleetError, Host, HostReport
@@ -652,8 +654,99 @@ def command_move(arguments: argparse.Namespace) -> None:
 
 def command_remove(arguments: argparse.Namespace) -> None:
     host, job_id = resolve(arguments.job)
-    transport.call(host, ["rm", job_id])
+    job = transport.call(host, ["show", job_id, "--events", "0"])
+    from fleet.web.ingester import observe_runs
+    from fleet.projections.workspace import resolve as resolve_label
+    store = open_store()
+    execution = open_execution(store)
+    registry = open_workspace(store).registry()
+    observe_runs(execution, open_library(store), {"name": host.name, "ok": True, "jobs": {job_id: job}},
+                 project_of=lambda value: resolve_label(registry, host.name, value)["project_id"])
+    transport.keep_run_trace(execution, host, job)
+    result = transport.call(host, ["rm", job_id])
+    execution.removed(host.name, job_id, at=result.get("removed_at"))
     console.print(f"removed {host.name}:{job_id}")
+
+
+def command_history_runs(arguments: argparse.Namespace) -> None:
+    store = open_store()
+    try:
+        result = history_runs(open_execution(store), open_work(store), open_workspace(store),
+            **{key: getattr(arguments, key) for key in ("project", "work_item", "descendants", "host", "status",
+                "kind", "unlinked", "since", "until", "limit")})
+    except (ValueError, LookupError) as error:
+        raise FleetError(str(error)) from error
+    if arguments.json:
+        print(json.dumps(result))
+        return
+    if result["empty_reason"]:
+        print(result["empty_reason"])
+    else:
+        print("STARTED  DURATION  STATUS  KIND  HOST  WORK  BRANCH / CHANGE  RUN")
+        for run in result["runs"]:
+            work = f"{run['work_title']} ({run['work_item'][:8]})" if run["work_item"] else f"unlinked · {run['label'] or 'unregistered label'}"
+            branch = (run["workspace"] or {}).get("branch")
+            duration = f"{run['duration_seconds'] / 60:.0f}m" if run['duration_seconds'] is not None else "duration not recorded"
+            changes = f"{run['commit_count']} commits · {run['push_count']} pushes" if run['commit_count'] is not None else "git changes not recorded"
+            offline = f" · offline since {run['offline_since']}" if run['offline_since'] else ""
+            print(f"{run['start'] or 'start not recorded'}  {duration}  {run['status']}  {run['kind']}  {run['host']}  "
+                  f"{work}  {branch or run['workspace_reason'] or 'branch not recorded'} · {changes}{offline}  {run['id'][:8]}")
+    print(f"{len(result['runs'])} of {result['total']} runs; --limit to see more")
+
+
+def stored_run_detail(identity: str, store, documents=None) -> dict:
+    from fleet.web.job_store import ProjectDocuments
+    detail = run_detail(identity, open_execution(store), open_work(store), open_library(store))
+    detail["kept_documents"] = (documents or ProjectDocuments()).run_documents(detail["run"])
+    return detail
+
+
+def command_run_show(arguments: argparse.Namespace) -> None:
+    try:
+        detail = stored_run_detail(arguments.id, open_store())
+    except (ValueError, LookupError) as error:
+        raise FleetError(str(error)) from error
+    if arguments.json:
+        print(json.dumps(detail))
+        return
+    run = detail["run"]
+    print(f"Run {run['id']}: {run['status']} ({run['kind']})")
+    for key in ("action_source", "work_item", "project", "host", "remote_job_id", "cwd", "start", "end", "reason", "workspace", "workspace_reason"):
+        print(f"{key}: {run[key] if run[key] is not None else 'not recorded'}")
+    for step in detail["steps"]:
+        print(f"Step {step['index'] + 1}: {step['title']} ({step['status']})")
+        print(json.dumps(step["git"], indent=2))
+    print("Documents:")
+    if not detail["documents"] and not detail["kept_documents"]:
+        print("  No documents were recorded for this run.")
+    for document in detail["documents"]:
+        print(f"  {document['title']}: {document['canonical_location']} ({document['availability']})")
+    for document in detail["kept_documents"]:
+        print(f"  {document['name']}: {'kept' if document['stored'] else document['error'] or 'not copied yet'}")
+    trace = detail["trace"]
+    if trace.get("copy_error"):
+        print(f"Trace copy error: {trace['copy_error']}")
+    print(f"Trace: {trace['events']['availability']} "
+          f"({trace['events'].get('bytes', 0)} bytes)" if trace['events']['availability'] == 'kept'
+          else f"Trace: {trace['events']['reason']}")
+    source = trace["source"]
+    if source:
+        removed = f" at {source['removed_at']}" if source.get("removed_at") else ""
+        print(f"Worker events: {run['host']}:{source.get('path') or 'path not recorded'} ({source['availability']}{removed})")
+        for raw in source.get("raw", []):
+            print(f"Raw: {run['host']}:{raw['path']} ({raw['availability']}{removed})")
+
+
+def command_store_usage(arguments: argparse.Namespace) -> None:
+    result = storage_usage()
+    if arguments.json:
+        print(json.dumps(result))
+        return
+    print(f"SQLite: {result['bytes']} bytes at {result['path']}")
+    for name, count in sorted(result["tables"].items()):
+        print(f"  {name}: {count} rows")
+    for name in ("documents", "traces"):
+        print(f"{name}: {result[name]['files']} files, {result[name]['bytes']} bytes at {result[name]['path']}")
 
 
 def command_notify(arguments: argparse.Namespace) -> None:
@@ -1334,6 +1427,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="fleet", description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
 
+    # P3 owns subject history and prune; merge this runs parser into its history_commands.
+    history = commands.add_parser("history", help="stored run history")
+    history_commands = history.add_subparsers(dest="history_command", required=True)
+    runs = history_commands.add_parser("runs", help="stored runs, newest first")
+    for name in ("project", "work-item", "host", "status", "kind", "since", "until"):
+        runs.add_argument(f"--{name}")
+    runs.add_argument("--limit", type=int, default=50)
+    for name in ("descendants", "unlinked", "json"):
+        runs.add_argument(f"--{name}", action="store_true")
+    runs.set_defaults(handler=command_history_runs)
+
+    store_commands = commands.add_parser("store", help="local storage accounting").add_subparsers(dest="store_command", required=True)
+    usage = store_commands.add_parser("usage", help="database rows and retained documents and traces")
+    usage.add_argument("--json", action="store_true")
+    usage.set_defaults(handler=command_store_usage)
+
     listing = commands.add_parser("ls", help="list jobs across hosts, grouped by project")
     add_listing_options(listing)
     listing.add_argument("--json", action="store_true")
@@ -1394,6 +1503,10 @@ def build_parser() -> argparse.ArgumentParser:
     control.set_defaults(handler=command_control)
 
     run = commands.add_parser("run", help="stored execution runs").add_subparsers(dest="run_command", required=True)
+    show_run = run.add_parser("show", help="steps, git, documents and trace of a stored run")
+    show_run.add_argument("id", help="run ID or an unambiguous prefix")
+    show_run.add_argument("--json", action="store_true")
+    show_run.set_defaults(handler=command_run_show)
     run_link = run.add_parser("link", help="link an existing host job without fetching it")
     run_link.add_argument("host")
     run_link.add_argument("job")

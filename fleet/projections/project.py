@@ -96,6 +96,13 @@ def run_work(work: WorkFacade, execution: ExecutionFacade) -> dict[tuple[str, st
     return links
 
 
+def project_run(run: Run) -> dict[str, Any]:
+    """Keep the work-summary contract; retained trace manifests belong to run history and detail."""
+    value = asdict(run)
+    del value["trace"]
+    return value
+
+
 def project_status(project: str, work: WorkFacade, attention: AttentionFacade,
                    execution: ExecutionFacade, library: LibraryFacade,
                    decisions: DecisionsFacade) -> dict[str, Any]:
@@ -129,7 +136,7 @@ def project_status(project: str, work: WorkFacade, attention: AttentionFacade,
             "summary": asdict(summary) if summary is not None else None,
             "attention": [asdict(entry) for entry in open_items if entry.work_item == item.id],
             "decisions": [asdict(answer) for answer in answers if item.id in answer.affected_work_items],
-            "runs": [{**asdict(run), **execution.run_activity(run), "guidance": guidance[run.action]}
+            "runs": [{**project_run(run), **execution.run_activity(run), "guidance": guidance[run.action]}
                      for run in item_runs],
             # Run steps that named this item as the work they serve (see Run.step_work).
             "steps": served.get(item.id, []),

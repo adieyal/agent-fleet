@@ -238,6 +238,22 @@ class ProjectDocuments:
                           "key": directory.name, "documents": documents})
         return sorted(found, key=lambda job: job.get("created_at") or 0, reverse=True)
 
+    def run_documents(self, run: dict) -> list[dict]:
+        scopes = {self.label_scope(run["host"], run.get("label") or "")}
+        if run.get("project"):
+            scopes.add(run["project"])
+        documents = []
+        seen = set()
+        for scope in sorted(scopes):
+            for job in self.jobs(scope):
+                if job["id"] == run["remote_job_id"] and job["host"] == run["host"]:
+                    for document in job["documents"]:
+                        key = (str(self.project_directory(scope)), job["key"], document["id"])
+                        if key not in seen:
+                            documents.append({**document, "scope": scope, "job_key": job["key"]})
+                            seen.add(key)
+        return documents
+
     def text(self, project_id: str, job_key: str, document_id: str) -> str | None:
         """A stored document's Markdown as the host served it, or None when there is no copy."""
         found = self._stored(project_id, job_key, document_id)
@@ -320,8 +336,10 @@ class DocumentKeeper:
     A read that fails is recorded on the document and retried the next time the job is listed.
     """
 
-    def __init__(self, store: ProjectDocuments, fetch: Callable[[str, str, str], dict[str, Any]]) -> None:
+    def __init__(self, store: ProjectDocuments, fetch: Callable[[str, str, str], dict[str, Any]],
+                 keep_trace: Callable[[str, dict], None] | None = None) -> None:
         self.store, self.fetch = store, fetch
+        self.keep_trace = keep_trace
         self.pending: dict[tuple[str, str], tuple[str, dict[str, Any]]] = {}
         self.wake = threading.Condition()
         self.busy = False
@@ -355,6 +373,8 @@ class DocumentKeeper:
                 self.store.keep(project_id, host, job["id"], document, read["content"], bool(read.get("truncated")))
             except (FleetError, KeyError, OSError) as error:
                 self.store.failed(project_id, host, job["id"], document["id"], str(error) or type(error).__name__)
+        if self.keep_trace is not None and job.get("trace"):
+            self.keep_trace(host, job)
 
     def settle(self, timeout: float) -> bool:
         """Wait until nothing is pending (tests and shutdown); true when settled."""

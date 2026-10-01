@@ -1014,9 +1014,7 @@ def job_summary(job: JsonObject, event_count: int) -> JsonObject:
         "session_id": job.get("session_id"),
         "tmux": shlex.join([*TMUX_COMMAND[:3], "attach", "-t", tmux_session(job['id'])]),
         "documents": job_documents(job),
-        "trace": {"path": str(JOBS_DIRECTORY / job["id"] / "events.jsonl"),
-                  "availability": "available" if (JOBS_DIRECTORY / job["id"] / "events.jsonl").is_file()
-                  else "unavailable"},
+        "trace": trace_summary(job["id"]),
     }
 
 
@@ -1180,6 +1178,7 @@ SESSION_TITLE_LENGTH = 80
 SESSION_HEAD_BYTES = 256 * 1024  # read once per transcript for its start time and first prompt
 SESSION_TAIL_BYTES = 1024 * 1024  # most read on first sight, or when a transcript grew by more
 SESSION_RECORDS_DIRECTORY = FLEET_HOME / "sessions"
+REMOVALS_DIRECTORY = FLEET_HOME / "removals"
 
 
 def session_workspace(transcript: "Transcript", status: str) -> Tuple[Optional[JsonObject], Optional[str]]:
@@ -2452,6 +2451,7 @@ def command_stream(arguments: argparse.Namespace) -> None:
     pipelines = PipelineTracker()
     last_pipeline_scan = 0.0
     inputs: Dict[str, JsonObject] = {}
+    removals: Dict[Path, int] = {}
     try:
         emit({"type": "hello", "host": os.uname().nodename, "time": now(),
               "protocol_version": STREAM_PROTOCOL_VERSION})
@@ -2488,7 +2488,11 @@ def command_stream(arguments: argparse.Namespace) -> None:
             for job_id in set(signatures) - seen:
                 signatures.pop(job_id)
                 runner_states.pop(job_id, None)
-                emit({"type": "removed", "id": job_id})
+                removal = REMOVALS_DIRECTORY / f"{hashlib.sha256(job_id.encode()).hexdigest()}.json"
+                details = json.loads(removal.read_text()) if removal.is_file() else {}
+                emit({"type": "removed", "id": job_id, **details})
+            for message in removal_messages(removals):
+                emit(message)
             if now() - last_session_scan >= arguments.session_interval:
                 last_session_scan = now()
                 current = tracker.scan()
@@ -2544,6 +2548,31 @@ def command_events(arguments: argparse.Namespace) -> None:
             if derive_status(read_job(arguments.job)) not in ("running", "queued"):
                 return
             time.sleep(0.5)
+
+
+def trace_summary(job_id: str) -> JsonObject:
+    directory = JOBS_DIRECTORY / job_id
+    path = directory / "events.jsonl"
+    try:
+        stat = path.stat() if path.is_file() else None
+    except FileNotFoundError:
+        stat = None
+    return {"path": str(path), "availability": "available" if stat else "unavailable",
+            "size": stat.st_size if stat else None, "mtime": stat.st_mtime_ns if stat else None,
+            "raw": [{"path": str(raw), "availability": "available"} for raw in sorted(directory.glob("raw-*.jsonl"))]}
+
+
+def command_read_trace(arguments: argparse.Namespace) -> None:
+    """Read the complete normalized trace; no caller-supplied filesystem path."""
+    path = job_directory(arguments.job) / "events.jsonl"
+    if path.parent.resolve().parent != JOBS_DIRECTORY.resolve():
+        fail("trace path outside jobs directory")
+    if not path.is_file():
+        emit({"content": None, "reason": "worker events.jsonl is missing"})
+        return
+    if path.is_symlink():
+        fail("trace symlinks are refused")
+    emit({"content": path.read_bytes().decode("utf-8"), "reason": None})
 
 
 def command_wait(arguments: argparse.Namespace) -> None:
@@ -2616,12 +2645,32 @@ def command_move(arguments: argparse.Namespace) -> None:
     emit(job_summary(read_job(arguments.job), 0))
 
 
+def removal_messages(seen: Dict[Path, int]) -> Iterator[JsonObject]:
+    """Replay confirmed removals after reconnect, including manifests published after job disappearance."""
+    for entry in scan_directory(REMOVALS_DIRECTORY):
+        if not entry.name.endswith(".json") or not entry.is_file() or entry.is_symlink():
+            continue
+        path = Path(entry.path)
+        modified = entry.stat().st_mtime_ns
+        if seen.get(path) == modified:
+            continue
+        details = json.loads(path.read_text())
+        seen[path] = modified
+        yield {"type": "removed", **details}
+
+
 def command_remove(arguments: argparse.Namespace) -> None:
     job = read_job(arguments.job)
     if derive_status(job) in ("running",):
         fail("job is running; cancel it first")
     shutil.rmtree(JOBS_DIRECTORY / arguments.job)
-    emit({"removed": arguments.job})
+    details = {"id": arguments.job, "reason": "removed by fleet rm", "removed_at": now()}
+    REMOVALS_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    path = REMOVALS_DIRECTORY / f"{hashlib.sha256(arguments.job.encode()).hexdigest()}.json"
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(details))
+    temporary.replace(path)
+    emit({"removed": arguments.job, **details})
 
 
 def command_configure(arguments: argparse.Namespace) -> None:
@@ -2727,6 +2776,10 @@ def main() -> None:
     events.add_argument("--lines", type=int, default=40)
     events.add_argument("--follow", "-f", action="store_true")
     events.set_defaults(handler=command_events)
+
+    read_trace = commands.add_parser("read-trace", help="complete normalized events for retention")
+    read_trace.add_argument("job")
+    read_trace.set_defaults(handler=command_read_trace)
 
     wait = commands.add_parser("wait")
     wait.add_argument("job")

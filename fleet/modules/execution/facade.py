@@ -1,5 +1,6 @@
 from typing import Callable, TYPE_CHECKING
 from datetime import datetime, timezone
+from dataclasses import replace
 
 from .application import assign_label, link, observe, observe_session, record_observed, stop_session, unavailable
 from .application.delivery import queue, retry as retry_delivery
@@ -57,6 +58,55 @@ class ExecutionFacade:
 
     def stop_session(self, host: str, identity: str) -> Run | None:
         return stop_session(self.repository, host, identity)
+
+    def record_trace(self, identity: str, source: dict, *, content: str | None = None,
+                     error: str | None = None) -> None:
+        self.get_run(identity)
+        kept = self.repository.keep_trace(identity, content) if content is not None else None
+        with self.repository.transaction() as transaction:
+            run = transaction.get_run(identity)
+            previous = run.trace or {}
+            removed = previous.get("source") or {}
+            if removed.get("availability") == "removed by fleet rm" and source.get("availability") != "removed by fleet rm":
+                at = source.get("observed_at")
+                if at is None or at <= datetime.fromisoformat(removed["removed_at"]).timestamp():
+                    if kept is None:
+                        return
+                    source = removed
+            old = previous.get("events")
+            events = kept or (old if old and old["availability"] == "kept" else None) or {
+                "availability": "unavailable", "reason": error or "not copied yet"}
+            value = {"source": source, "events": events}
+            if error is None and kept is None:
+                error = previous.get("copy_error")
+            if error is not None:
+                value["copy_error"] = error
+            if value != run.trace:
+                transaction.update(replace(run, trace=value), "fleetd")
+
+    def trace(self, identity: str) -> dict:
+        run = self.get_run(identity)
+        if run.trace is None:
+            return {"events": {"availability": "unavailable", "reason": "not recorded for this run"}, "source": None}
+        value = {**run.trace, "events": dict(run.trace["events"])}
+        if value["events"]["availability"] == "kept":
+            content = self.repository.read_trace(identity, value["events"])
+            if content is None:
+                value["events"].update(availability="unavailable", reason="retained trace file is missing or corrupt")
+            else:
+                value["events"]["content"] = content
+        return value
+
+    def removed(self, host: str, job: str, *, at: float | None = None) -> None:
+        run = self.repository.find(host, job)
+        if run is None:
+            return
+        source = dict((run.trace or {}).get("source") or {})
+        source["availability"] = "removed by fleet rm"
+        source["removed_at"] = datetime.fromtimestamp(at, timezone.utc).isoformat() if at is not None else self.clock().isoformat()
+        source["raw"] = [{**entry, "availability": "removed by fleet rm"} for entry in source.get("raw", [])]
+        copied = (run.trace or {}).get("events", {}).get("availability") == "kept"
+        self.record_trace(run.id, source, error=None if copied else "worker trace removed before a copy was retained")
 
     def run_activity(self, run: Run) -> dict:
         observed = run.action_observed_at

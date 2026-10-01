@@ -32,6 +32,7 @@ from fleet.modules.workspace import (NoVacancy, FOCUSES, AlreadyShuttered, NotSh
                                      WorkspaceFacade, Registry)
 from fleet.projections.workspace import annotate, resolve, registry_config
 from fleet.projections.project import project_status
+from fleet.projections.run_history import history_runs, run_detail
 from fleet.projections.bench import bench_rooms, bench_state
 from fleet.transport import FleetError, Host
 from fleet.web.documents import AssetNotImage, AssetTooLarge, DocumentAccessDenied, fetch_asset, fetch_document
@@ -140,7 +141,8 @@ class FleetState(LiveWorkspace):
         self.pipeline_runs = {}
         self.pipeline_seq = 0
         self.documents = documents if documents is not None else ProjectDocuments()
-        self.keeper = DocumentKeeper(self.documents, self.fetch_raw)
+        self.trace_retainer = transport.keep_run_trace
+        self.keeper = DocumentKeeper(self.documents, self.fetch_raw, keep_trace=self.keep_trace)
         for observed in self.execution.hosts():
             if observed["name"] in self.by_host and not observed["reachable"]:
                 entry = self.by_host[observed["name"]]
@@ -170,9 +172,13 @@ class FleetState(LiveWorkspace):
     def keep_documents(self, host_name: str, job: dict[str, Any]) -> None:
         """Keep job documents in its project or under its unregistered host label."""
         project_id = resolve(self.registry, host_name, job)["project_id"]
-        if job.get("documents"):
+        if job.get("documents") or job.get("trace"):
             scope = project_id if project_id is not None else self.documents.label_scope(host_name, job.get("project") or "")
             self.keeper.observe(host_name, scope, job)
+
+    def keep_trace(self, host_name: str, job: dict) -> None:
+        host = next(host for host in self.hosts if host.name == host_name)
+        self.trace_retainer(self.execution, host, job)
 
     def job_hosts(self) -> dict[str, tuple[bool, set[str]]]:
         with self.changed:
@@ -394,6 +400,8 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
                      owners={f"job:{host.name}:{job['id']}"})
         state.keep_documents(host.name, job)
     elif kind == "removed":
+        if message.get("reason") == "removed by fleet rm":
+            state.execution.removed(host.name, message["id"], at=message.get("removed_at"))
         state.update(host.name, lambda entry: entry["jobs"].pop(message["id"], None),
                      owners={f"job:{host.name}:{message['id']}"})
     elif kind == "session":
@@ -464,6 +472,8 @@ def make_handler(state: FleetState | FixtureState,
             path = self.path.split("?", 1)[0]
             if path == "/api/stream":
                 self.stream()
+            elif path == "/api/history/runs" or path.startswith("/api/runs/"):
+                self.run_history(path)
             elif path == "/api/doc":
                 self.document()
             elif path == "/api/doc/asset":
@@ -547,6 +557,37 @@ def make_handler(state: FleetState | FixtureState,
                 self.checkout_file(path)
             else:
                 self.respond(404, "text/plain", b"not found")
+
+        def run_history(self, path: str) -> None:
+            services = facades(state.store)
+            try:
+                if path == "/api/history/runs":
+                    query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+                    allowed = {"project", "work_item", "descendants", "host", "status", "kind", "unlinked", "since", "until", "limit"}
+                    if query.keys() - allowed or any(len(values) != 1 for values in query.values()):
+                        raise ValueError("unknown or repeated history filter")
+                    filters = {key: values[0] for key, values in query.items()}
+                    for key in ("unlinked", "descendants"):
+                        if key in filters:
+                            if filters[key] not in ("true", "false"):
+                                raise ValueError(f"{key} must be true or false")
+                            filters[key] = filters[key] == "true"
+                    if "limit" in filters:
+                        filters["limit"] = int(filters["limit"])
+                    result = history_runs(services.execution, services.work, services.workspace, **filters)
+                else:
+                    identity = path.removeprefix("/api/runs/")
+                    if not identity or "/" in identity:
+                        raise LookupError("a stored run ID is required")
+                    result = run_detail(identity, services.execution, services.work, services.library)
+                    result["kept_documents"] = state.documents.run_documents(result["run"])
+            except LookupError as error:
+                self.error(404, str(error))
+                return
+            except (ValueError, FleetError) as error:
+                self.error(400, str(error))
+                return
+            self.respond(200, "application/json", json.dumps(result).encode())
 
         def do_POST(self) -> None:  # noqa: N802 — http.server naming
             path = self.path.split("?", 1)[0]

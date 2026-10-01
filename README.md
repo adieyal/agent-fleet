@@ -286,6 +286,49 @@ raises attention for the user. There is no automatic scheduling. See
 [activation commands](docs/design/authority-commands.md), the [design](docs/design/)
 and [ADRs](docs/adr/) for the detailed contracts.
 
+## Read run history
+
+Jobs and interactive sessions are recorded as runs, including work with no linked
+work item. These commands read the controller's store and work while a host is
+offline:
+
+```sh
+fleet history runs --project agent-fleet --since 7d
+fleet history runs --work-item WORK_ITEM_ID --descendants --status failed,stopped
+fleet history runs --host carbon --kind session --unlinked --limit 100 --json
+fleet run show RUN_ID_PREFIX
+fleet run show RUN_ID_PREFIX --json
+fleet store usage --json
+```
+
+Project filters accept a registered name or ID. Work filters include steps that
+served that item; `--descendants` includes its children recursively. Run statuses
+are `running`, `succeeded`, `failed`, `stopped`, and `unknown outcome`. The default
+limit is 50 and the footer states how many runs matched. `--since` accepts an age
+such as `7d`, `12h` or `30m`, or an ISO date/time; `--until` accepts an ISO date/time.
+Both compare the run's start inclusively. A date means midnight UTC; runs whose
+start was not recorded are excluded by date filters and still appear without them.
+
+Run details show the action, work and project, workspace, retained step git
+evidence, documents and trace availability. The document keeper copies complete
+normalized `events.jsonl` files for terminal jobs into `~/.fleet/traces/`.
+Raw `raw-*.jsonl` files stay on the worker. `fleet rm` keeps the run record and
+retained copies, and records when it removed worker traces. Missing copies and
+older runs explicitly say why trace evidence is unavailable. Failed copies retry
+when the job is reported again. Nothing in these commands automatically prunes
+run records or retained files.
+
+Offline hosts retain stale jobs and sessions, including across a deck restart.
+Hello starts catch-up and the first complete heartbeat confirms which entries
+remain. Quiet interactive sessions stop after 20 minutes and reopen under the
+same run ID when their transcript moves again. Their first observed git base is
+kept on the worker in `~/.fleet/sessions/<id>.json`.
+
+The read API exposes `GET /api/history/runs` with the same filters using
+`work_item`, `descendants=true`, and `unlinked=true`, and `GET /api/runs/<id>` for
+details. Lists include `runs`, `total`, `limit`, and `empty_reason`. Details include
+`run`, `action`, `steps`, `documents`, `kept_documents`, and `trace`.
+
 ## Read the work
 
 The deck collects step reports, Markdown files the agent wrote, and Markdown in its
