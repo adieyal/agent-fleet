@@ -7,6 +7,7 @@ import subprocess
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
+from datetime import timedelta
 from typing import Any
 from urllib.request import urlopen
 
@@ -269,7 +270,9 @@ def test_epic_cards_summarise_nested_route_migration(changed_deck: Deck, route_m
     cards = page.locator('[data-epic-card]')
     expect(cards).to_have_count(2)
     parent, child = cards.nth(0), cards.nth(1)
-    expect(parent.locator('[data-now]')).to_have_text('Now: 1 running: Port supplier list (home)')
+    expect(parent.locator('[data-now]')).to_contain_text('Now: 1 running')
+    expect(parent.locator('[data-now] [data-now-item]')).to_have_text(['Port supplier list'])
+    expect(parent.locator('[data-now] [data-job-chip]')).to_have_attribute('data-job-chip', 'home:route-job')
     expect(parent.locator('[data-milestones]')).to_have_text('No milestones or tasks recorded')
     expect(parent.locator('[data-next]')).to_have_text('Next: No milestones recorded')
     expect(parent.locator('[data-child-epics]')).to_have_text('Epics: Route migration')
@@ -286,7 +289,8 @@ def test_epic_cards_summarise_nested_route_migration(changed_deck: Deck, route_m
     expect(child.locator('[data-upcoming]')).to_have_text([
         '4. Milestone 4 — Port the supplier list', '5. Milestone 5 — Next step not recorded',
         '6. Milestone 6 — Delete router.js'])
-    expect(child.locator('[data-now]')).to_have_text('Now: 1 running: Port supplier list (home)')
+    expect(child.locator('[data-now] [data-now-item]')).to_have_text(['Port supplier list'])
+    expect(child.locator('[data-now] [data-job-chip]')).to_have_attribute('data-job-chip', 'home:route-job')
     expect(child.locator('[data-attention-count]')).to_have_text('2 open decisions or blockers')
     shoot(request, page, 'epic-cards')
     card, title = child.bounding_box(), child.locator('[data-epic]').bounding_box()
@@ -342,6 +346,87 @@ def test_epic_page_lists_milestones_tasks_and_child_epics(changed_deck: Deck, ro
     expect(epic.get_by_role('heading', level=2)).to_have_text('Route migration')
     page.locator('[data-back-floor]').click()
     expect(route).to_have_attribute('data-level', 'floor')
+    page.evaluate('fleetDeck.enterFloor(null)')
+    assert changed_deck.errors == []
+
+
+WORKTREE = {'toplevel': '/home/adi/Development/restoke-routes', 'linked_worktree': True,
+            'repository': '/home/adi/Development/restoke', 'branch': 'feat/route-migration', 'detached': False,
+            'head': '4be1c0d', 'dirty': 3, 'collected_at': 1790398500.0}
+
+
+def test_epic_rows_and_cards_show_the_jobs_serving_them(changed_deck: Deck, route_migration, deck_state,
+                                                         monkeypatch, request) -> None:
+    """Each plan line shows its jobs as chips: host:id, a status glyph, the step and the branch; a chip opens its
+    job's panel, and a finished line's latest job shows quieter."""
+    store, milestones = route_migration['store'], route_migration['milestones']
+    execution = open_execution(store)
+    now = store.clock()
+    # home:a1c3e9 is on the deck, step 2 of 2 running; its host reports a linked worktree.
+    live = next(job for host in deck_state.fixture['hosts'] for job in host['jobs'] if job['id'] == 'a1c3e9')
+    monkeypatch.setitem(live, 'workspace', WORKTREE)
+    monkeypatch.setitem(live, 'workspace_reason', None)
+    execution.link('home', 'a1c3e9', milestones[4].id, actor='user')
+    execution.observe('home', JobObservation('a1c3e9', 'running', 'claude', now, None, now))
+    # worker:d4f7a2 finished milestone 4's task earlier and has left the deck.
+    execution.link('worker', 'd4f7a2', route_migration['milestones'][3].id, actor='user')
+    execution.observe('worker', JobObservation('d4f7a2', 'done', 'claude', now - timedelta(hours=2),
+                                               now - timedelta(hours=1), now))
+    page = changed_deck.page
+    page.evaluate("fleetDeck.enterFloor('restoke-v2')")
+    card = page.locator('[data-epic-card]').nth(1)
+    expect(card.locator('[data-now-item]')).to_have_text(['Port supplier list', '5. Milestone 5'])
+    expect(card.locator('[data-now] [data-job-chip]')).to_have_count(2)
+    fits = "r => r.scrollWidth <= r.clientWidth"   # chips shorten their branch rather than widen the page
+    assert page.locator('#benchRoute').evaluate(fits)
+    shoot(request, page, 'v3-epic-cards')
+    card.get_by_role('button', name='Route migration', exact=True).click()
+
+    items = page.locator('[data-epic-page] [data-plan-item]')
+    fourth, fifth = items.nth(3).locator('[data-job-chip]'), items.nth(4).locator('[data-job-chip]')
+    # Milestone 4: its task's running job, which no host reports, then its own finished one, quieter.
+    expect(fourth).to_have_count(2)
+    running, finished = fourth.nth(0), fourth.nth(1)
+    expect(running).to_have_attribute('data-job-chip', 'home:route-job')
+    expect(running).to_have_attribute('data-gone', '')
+    expect(running.locator('[data-job-step]')).to_have_text('step ?')
+    expect(running.locator('[data-job-branch]')).to_have_text('workspace unknown')
+    expect(running.locator('[data-job-branch]')).to_have_attribute('title', 'the host is not reporting this job')
+    expect(finished).to_have_attribute('data-job-chip', 'worker:d4f7a2')
+    expect(finished).to_have_attribute('data-past', '')
+    expect(finished.locator('.glyph')).to_have_attribute('data-action', 'done')
+    expect(finished.locator('[data-job-step]')).to_have_text('step 2/2')
+    assert float(finished.evaluate('e => getComputedStyle(e).opacity')) < 1
+    # Milestone 5: the deck's job with its step, branch and worktree.
+    expect(fifth).to_have_count(1)
+    expect(fifth.locator('.id-chip')).to_have_text('a1c3e9')
+    expect(fifth.locator('b')).to_have_text('home:')
+    expect(fifth.locator('[data-job-step]')).to_have_text('step 2/2')
+    expect(fifth.locator('[data-job-step]')).to_have_attribute('title', 'Step 2 of 2 serves 5. Milestone 5')
+    expect(fifth.locator('[data-job-branch]')).to_have_text('feat/route-migration*')
+    expect(fifth.locator('[data-job-branch]')).to_have_attribute(
+        'title', 'feat/route-migration · worktree /home/adi/Development/restoke-routes of /home/adi/Development/restoke · 3 uncommitted')
+    expect(fifth.locator('[data-job-branch] [data-copy]')).to_have_attribute('data-copy', WORKTREE['toplevel'])
+    expect(page.locator('[data-epic-page]')).not_to_contain_text(WORKTREE['toplevel'])
+    shoot(request, page, 'v3-epic-rows')
+    if request.config.getoption('--shots'):
+        page.set_viewport_size(VIEWPORTS['narrow'])
+        fourth.first.scroll_into_view_if_needed()
+        assert page.locator('#benchRoute').evaluate(fits)
+        shoot(request, page, 'v3-epic-rows-narrow')
+        page.set_viewport_size(VIEWPORTS['desktop'])
+
+    # Copying the id or the path leaves the panel shut; the rest of the chip opens it.
+    fifth.locator('.id-chip').click()
+    fifth.locator('[data-job-branch] [data-copy]').click()
+    expect(page.locator('#panel')).not_to_have_class(re.compile(r'\bopen\b'))
+    finished.click()
+    expect(page.locator('#panel')).not_to_have_class(re.compile(r'\bopen\b'))
+    fifth.get_by_role('button', name='Open the job panel: home a1c3e9').click()
+    expect(page.locator('#panel')).to_have_class(re.compile(r'\bopen\b'))
+    assert page.evaluate("import('/js/model.js').then(m => m.selectedKey)") == 'home:a1c3e9'
+    shoot(request, page, 'v3-chip-opens-panel')
+    page.evaluate("import('/js/panel.js').then(m => m.closePanel())")
     page.evaluate('fleetDeck.enterFloor(null)')
     assert changed_deck.errors == []
 

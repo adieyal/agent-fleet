@@ -1094,6 +1094,35 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 [data-dropped] { margin-left:8px; padding:1px 6px; border:1px solid #475569; border-radius:4px; color:#94a3b8; font-weight:normal; }
 [data-epic-card][data-condition="dropped"] { opacity:.65; }
 [data-epic-card][data-condition="dropped"] [data-epic-head] > button { text-decoration:line-through; }
+/* Visibility V3: job chips on an epic's plan lines and its card's Now line. */
+[data-job-chips] { display:flex; flex-wrap:wrap; gap:4px; margin:3px 0 1px; }
+[data-epic-card], [data-plan-item], [data-plan-item] > div { min-width:0; }   /* a long branch shortens rather than widening the page */
+.job-chip { display:inline-flex; align-items:center; gap:6px; max-width:100%; min-width:0; overflow:hidden; padding:1px 7px 1px 3px; box-sizing:border-box;
+  border:1px solid #334155; border-radius:999px; background:#1a2638; font:11px/1.6 var(--mono); color:#cbd5e1; cursor:pointer; }
+.job-chip:hover:not([data-gone]) { border-color:#94a3b8; }
+.job-chip[data-gone] { cursor:default; }
+.job-chip[data-past] { opacity:.6; background:none; border-style:dashed; }
+.job-chip[data-status="running"] { border-color:#38bdf8; }
+.job-chip .glyph svg { width:13px; height:13px; }
+.job-chip[data-status="failed"] .glyph { color:#f87171; }
+.job-chip[data-status="succeeded"] .glyph { color:#34d399; }
+#benchRoute .job-chip button { all:unset; display:inline-flex; align-items:center; gap:3px; cursor:inherit; }
+#benchRoute .job-chip button:focus-visible { outline:2px solid #7cc4ff; outline-offset:1px; border-radius:4px; }
+#benchRoute .job-chip .id-chip { cursor:copy; }
+.job-chip b { color:var(--hc); font-weight:600; }
+.job-chip > * { flex:none; }
+.job-chip small { color:#94a3b8; font:inherit; white-space:nowrap; }
+#benchRoute .job-chip .id-chip { margin-left:-6px; }
+.job-chip [data-job-branch] { display:inline-flex; flex:0 1 auto; align-items:center; gap:2px; min-width:0; color:#a5b4fc; }
+.job-chip [data-job-branch] > span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.job-chip [data-job-branch][data-unknown] { color:#94a3b8; font-style:italic; }
+.job-chip [data-dirty] { color:#fbbf24; font-style:normal; }
+#benchRoute .job-chip [data-job-branch] button { opacity:.7; cursor:copy; }
+#benchRoute .job-chip [data-job-branch] button:hover { opacity:1; }
+#benchRoute .job-chip [data-job-branch] svg { width:11px; height:11px; }
+#benchRoute .job-chip [data-copied]::after { content:" copied"; color:var(--ok); }
+[data-now-row] { display:flex; flex-wrap:wrap; align-items:center; gap:2px 6px; margin-top:3px; min-width:0; }
+[data-now-item] { color:#cbd5e1; }
 /* Guidance: the floor's constitution, an epic's charter, the editor, versions, and the epic's decisions. */
 #benchRoute[data-level="constitution"] { width:min(560px, calc(100vw - 32px)); }
 #benchRoute[data-editing] { width:min(720px, calc(100vw - 32px)); }

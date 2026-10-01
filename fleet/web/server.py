@@ -218,6 +218,11 @@ class FleetState(LiveWorkspace):
     def repository_remotes(self, host: str, directories: list[str]) -> dict[str, list[str]]:
         return transport.repository_remotes(next(known for known in self.hosts if known.name == host), directories)
 
+    def live_jobs(self) -> dict[tuple[str, str], dict[str, Any]]:
+        """Each host's job summaries as last streamed, by (host, job id)."""
+        with self.changed:
+            return {(host, job["id"]): job for host, entry in self.by_host.items() for job in entry["jobs"].values()}
+
     def document(self) -> dict[str, Any]:
         projects_error = self.refresh_registry()
         capacity_error = self.refresh_capacity()
@@ -444,7 +449,8 @@ def make_handler(state: FleetState | FixtureState,
                 projection = project_status(query["project"][0], open_work(state.store), state.attention,
                     open_execution(state.store), open_library(state.store), open_decisions(state.store))
                 try:
-                    result = bench_state(projection, query["slice"][0]) if "slice" in query else bench_rooms(projection)
+                    result = (bench_state(projection, query["slice"][0]) if "slice" in query
+                              else bench_rooms(projection, state.live_jobs()))
                 except ValueError as error:
                     self.error(404, str(error))
                     return
