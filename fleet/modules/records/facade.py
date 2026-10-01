@@ -1,11 +1,11 @@
 """Authored documents, summaries and mandates."""
 
 import json
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from uuid import uuid4
 
 from .application import Authoring
-from .domain import Mandate
+from .domain import CONSTITUTION, Guidance, Mandate, Version, charter_path
 
 
 class RecordsFacade:
@@ -64,6 +64,66 @@ class RecordsFacade:
         if body is None:
             raise LookupError('mandate is not recorded')
         return Mandate.parse(body)
+
+    def guidance(self, project: str, epic: str | None = None, *, number: int | None = None) -> Guidance | None:
+        """The project's constitution, or the epic's charter with the constitution versions it inherits;
+        the current version unless number names an older one."""
+        path = self.guidance_path(project, epic)
+        root = self.workspace.management_repository(project)
+        record = self.repository.current(project, path)
+        if record is None:
+            if number is not None:
+                raise LookupError(f'{path} has no version {number}')
+            return None
+        versions = self.versions(root, path, record['revision'])
+        version = versions[0] if number is None else next((v for v in versions if v.number == number), None)
+        if version is None:
+            raise LookupError(f'{path} has no version {number}; versions are 1 to {versions[0].number}')
+        guidance = Guidance(path, self.writer.read(root, path, version.revision), version)
+        if epic is None:
+            return guidance
+        constitution = self.repository.current(project, CONSTITUTION)
+        if constitution is None:
+            return guidance
+        inherits = self.versions(root, CONSTITUTION, version.revision)
+        return replace(guidance, inherits=inherits[0] if inherits else None,
+                       constitution=self.versions(root, CONSTITUTION, constitution['revision'])[0])
+
+    def write_guidance(self, project: str, body: str, *, epic: str | None = None, actor: str,
+                       source_run: str | None = None) -> Guidance:
+        if not body.strip():
+            raise ValueError('guidance is empty')
+        path = self.guidance_path(project, epic)
+        current = self.guidance(project, epic)
+        if current is not None and current.body == body:
+            raise ValueError(f'unchanged from version {current.version.number}')
+        result = self.write(project, path, body, key=str(uuid4()), actor=actor, source_run=source_run)
+        if result['state'] != 'confirmed':
+            raise ValueError(result['error'])
+        return self.guidance(project, epic)
+
+    def guidance_history(self, project: str, epic: str | None = None) -> list[Version]:
+        """Versions of the constitution or charter, newest first."""
+        path = self.guidance_path(project, epic)
+        root = self.workspace.management_repository(project)
+        record = self.repository.current(project, path)
+        if record is None:
+            return []
+        return self.versions(root, path, record['revision'])
+
+    def guidance_path(self, project: str, epic: str | None) -> str:
+        if epic is None:
+            return CONSTITUTION
+        item = self.work.get(epic)
+        if item.kind != 'epic':
+            raise ValueError(f'{epic} is a {item.kind}; charters belong to epics')
+        if item.project != project:
+            raise ValueError(f'epic {epic} belongs to {item.project}, not {project}')
+        return charter_path(epic)
+
+    def versions(self, root: str, path: str, revision: str) -> list[Version]:
+        log = self.writer.log(root, path, revision)
+        return [Version(number=len(log) - index, **entry) for index, entry in enumerate(log)]
 
     def mandate_version(self, project: str, path: str, *, revision: str | None = None) -> tuple[str, Mandate]:
         if revision is None:

@@ -144,6 +144,13 @@ The role that keeps the library in order. It may make reversible documentation i
 **Mandate**:
 A versioned statement, attached to a scope of work and given to a role, of the goal, constraints, decision authority and escalation conditions, including which of the scope's completion criteria the role may judge. Authority scales with risk and cost so routine choices do not interrupt the user. Every activation and decision records the mandate version it relied on.
 
+**Constitution**:
+A project's prose principles for every agent working in it: goals, anti-goals, hard limits, evidence rules, what an agent decides itself and what it escalates. It is `constitution.md` in the management repository, and each edit is a new version with its author. Unlike a mandate, which is machine-checked command authority for one orchestrator activation, a constitution is guidance an agent reads and applies.
+_Avoid_: policy, rules file
+
+**Charter**:
+An epic's prose guidance: its goal, what done means, anti-goals, canonical line, dated decisions in force and open questions. It is `charters/<epic-id>.md` in the management repository and inherits the constitution version in force when it was written. A task brief overrides the charter, and the charter overrides the constitution.
+
 **Acceptance**:
 The transition that marks a work item complete against its completion criteria. It records the actor, mandate version, evidence and outcome, and is separate from any run finishing. Every criterion must be met in the way it declares: an orchestrator cannot accept a checked criterion without the check, or one reserved for the user. An orchestrator may accept only within its mandate; otherwise the decision becomes an attention item.
 

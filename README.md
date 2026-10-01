@@ -173,6 +173,18 @@ fleet summary set WORK_ID --purpose "Ship the guide" --done "Draft written" --do
 fleet status PROJECT_ID
 ```
 
+A project's constitution and each epic's charter are Markdown in the management
+repository; every edit is a new version committed with its actor. Give an epic ID
+instead of a project to work on its charter, which shows the constitution version
+it inherits. Without `--file`, `edit` reads stdin; `show --version N` prints an
+older version from `history`.
+
+```bash
+fleet guidance edit PROJECT_ID --file CONSTITUTION_PATH --actor user
+fleet guidance show PROJECT_ID
+fleet guidance history PROJECT_ID
+```
+
 Use the front desk and lanterns, or these commands, to manage attention:
 
 ```bash

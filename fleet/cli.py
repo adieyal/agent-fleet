@@ -699,6 +699,71 @@ def command_project_management(arguments: argparse.Namespace) -> None:
         raise FleetError(str(error)) from error
 
 
+def guidance_subject(reference: str) -> tuple[str, str | None]:
+    """(project, epic) for an epic ID, or (project, None) for a project ID or name."""
+    store = open_store()
+    try:
+        item = open_work(store).get(reference)
+    except LookupError:
+        return open_workspace(store).resolve_project(reference), None
+    return item.project, item.id
+
+
+def describe_version(version) -> str:
+    run = "" if version.source_run is None else f", run {version.source_run}"
+    return f"version {version.number} by {version.actor} at {version.time}{run} ({version.revision[:12]})"
+
+
+def command_guidance_show(arguments: argparse.Namespace) -> None:
+    project, epic = guidance_subject(arguments.subject)
+    try:
+        guidance = open_records().guidance(project, epic, number=arguments.version)
+    except (ValueError, LookupError) as error:
+        raise FleetError(str(error)) from error
+    name = f"charter of epic {epic}" if epic else f"constitution of {project}"
+    if guidance is None:
+        raise FleetError(f"no {name} recorded; write one with: fleet guidance edit {arguments.subject} --file F --actor A")
+    if arguments.json:
+        print(json.dumps(asdict(guidance)))
+        return
+    print(f"{name[0].upper()}{name[1:]}, {describe_version(guidance.version)}")
+    if epic is not None:
+        if guidance.constitution is None:
+            print(f"Inherits no constitution: none recorded for {project}")
+        else:
+            inherited = ("none (written before it)" if guidance.inherits is None
+                         else f"constitution version {guidance.inherits.number}")
+            print(f"Inherits {inherited}; current constitution version {guidance.constitution.number}")
+    print()
+    print(guidance.body, end="" if guidance.body.endswith("\n") else "\n")
+
+
+def command_guidance_edit(arguments: argparse.Namespace) -> None:
+    project, epic = guidance_subject(arguments.subject)
+    try:
+        body = sys.stdin.read() if arguments.file is None else Path(arguments.file).read_text()
+        guidance = open_records().write_guidance(project, body, epic=epic, actor=arguments.actor,
+                                                 source_run=arguments.run)
+    except (ValueError, LookupError, OSError) as error:
+        raise FleetError(str(error)) from error
+    print(f"recorded {guidance.path} {describe_version(guidance.version)}")
+
+
+def command_guidance_history(arguments: argparse.Namespace) -> None:
+    project, epic = guidance_subject(arguments.subject)
+    try:
+        versions = open_records().guidance_history(project, epic)
+    except (ValueError, LookupError) as error:
+        raise FleetError(str(error)) from error
+    if arguments.json:
+        print(json.dumps([asdict(version) for version in versions]))
+        return
+    if not versions:
+        print("No versions recorded.")
+    for version in versions:
+        print(describe_version(version))
+
+
 def command_project_repo_add(arguments: argparse.Namespace) -> None:
     open_workspace().edit_registry(lambda registry: registry.add_repository(arguments.id, arguments.url))
 
@@ -1272,6 +1337,26 @@ def build_parser() -> argparse.ArgumentParser:
     management.add_argument('id')
     management.add_argument('path')
     management.set_defaults(handler=command_project_management)
+
+    guidance = commands.add_parser(
+        "guidance", help="a project's constitution and its epics' charters, versioned in the management repository"
+    ).add_subparsers(dest="guidance_command", required=True)
+    subject_help = "a project ID or name (its constitution) or an epic ID (its charter)"
+    guidance_show = guidance.add_parser("show", help="print the current or a numbered version")
+    guidance_show.add_argument("subject", help=subject_help)
+    guidance_show.add_argument("--version", type=int, help="an older version number from history")
+    guidance_show.add_argument("--json", action="store_true")
+    guidance_show.set_defaults(handler=command_guidance_show)
+    guidance_edit = guidance.add_parser("edit", help="record a new version from a file or stdin")
+    guidance_edit.add_argument("subject", help=subject_help)
+    guidance_edit.add_argument("--file", help="Markdown file; stdin when omitted")
+    guidance_edit.add_argument("--actor", required=True)
+    guidance_edit.add_argument("--run", help="the run that wrote this version")
+    guidance_edit.set_defaults(handler=command_guidance_edit)
+    guidance_history = guidance.add_parser("history", help="versions, newest first")
+    guidance_history.add_argument("subject", help=subject_help)
+    guidance_history.add_argument("--json", action="store_true")
+    guidance_history.set_defaults(handler=command_guidance_history)
 
     add_work_parsers(commands)
 

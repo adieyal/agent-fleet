@@ -6,6 +6,34 @@ from dataclasses import dataclass
 from fleet.modules.authority import DECISION_AUTHORITY_COMMANDS
 
 
+CONSTITUTION = 'constitution.md'
+
+
+def charter_path(epic: str) -> str:
+    return f'charters/{epic}.md'
+
+
+@dataclass(frozen=True)
+class Version:
+    """One commit of a guidance document; number counts that document's commits from 1."""
+    revision: str
+    number: int
+    actor: str
+    time: str
+    source_run: str | None
+
+
+@dataclass(frozen=True)
+class Guidance:
+    """A constitution or charter body at a version. A charter inherits the constitution version in force when it
+    was written (None when there was none), and the current one may be newer."""
+    path: str
+    body: str
+    version: Version
+    inherits: Version | None = None
+    constitution: Version | None = None
+
+
 @dataclass(frozen=True)
 class Mandate:
     goal: str
