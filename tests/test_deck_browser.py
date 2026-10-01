@@ -243,7 +243,7 @@ def route_migration(deck_state, monkeypatch) -> dict[str, Any]:
         work.set(milestone.id, condition='complete', actor='user')
     work.set(milestones[5].id, condition='blocked', actor='user')
     task = add('Port supplier list', 'Port it', parent=milestones[3].id)
-    add('Fix redirect loop', 'Fix it', parent=routes.id)
+    redirect = add('Fix redirect loop', 'Fix it', parent=routes.id)
     parked = add('Tidy styles', 'Tidy them', parent=routes.id, next_step='Wait for tokens')
     work.set(parked.id, condition='on hold', actor='user')
     execution = open_execution(store)
@@ -253,7 +253,7 @@ def route_migration(deck_state, monkeypatch) -> dict[str, Any]:
     deck_state.attention.raise_item(project='restoke-v2', work_item=milestones[4].id, kind='decision',
         owner='user', source='manual', source_reference='route-question', headline='Keep order URLs?',
         context_reference='work:' + milestones[4].id, actor='user')
-    return {'routes': routes, 'milestones': milestones}
+    return {'routes': routes, 'milestones': milestones, 'redirect': redirect, 'store': store}
 
 
 def test_epic_cards_summarise_nested_route_migration(changed_deck: Deck, route_migration) -> None:
@@ -449,6 +449,34 @@ def test_lone_milestone_steps_back_to_the_floor(changed_deck: Deck, deck_state, 
     expect(route).to_have_attribute('data-level', 'floor')
     page.evaluate('fleetDeck.enterFloor(null)')
     page.locator('#panel #close').click()
+    assert changed_deck.errors == []
+
+
+def test_a_tasks_title_opens_its_latest_report_and_its_documents_list_by_icon(
+        changed_deck: Deck, route_migration, request: pytest.FixtureRequest) -> None:
+    store, task = route_migration['store'], route_migration['redirect']
+    run = open_execution(store).link('home', 'docs-job', task.id, actor='user')
+    jobs = 'fleet://home/home/u/.fleet/jobs/docs-job'
+    for kind, title, path in [('brief', 'Step 1 brief', 'brief-0.md'), ('report', 'Step 1: fix it', 'result-0.md'),
+                              ('report', 'Step 2: prove it', 'result-1.md'), ('outbox', 'H0-report.md', 'outbox/H0-report.md'),
+                              ('trace', 'Run trace', 'events.jsonl')]:
+        open_library(store).index_run(run=run.id, work_item=task.id, kind=kind, title=title,
+                                      location=f'{jobs}/{path}', availability='available')
+    page = changed_deck.page
+    page.evaluate("fleetDeck.enterFloor('restoke-v2')")
+    page.get_by_role('button', name='Route migration', exact=True).click()
+    line = page.locator(f'[data-plan-item="{task.id}"]')
+    title = line.get_by_role('button', name='Fix redirect loop', exact=True)
+    expect(title).to_have_attribute('data-doc', 'report-1')
+    box = title.bounding_box()
+    assert box['height'] < 40 and box['width'] > 100, box   # one line, not squeezed into an icon button
+    line.locator('[data-step-docs] summary').click()
+    docs = line.locator('[data-step-docs] button')
+    assert docs.evaluate_all('els => els.map(e => e.dataset.doc)') == [
+        'report-1', 'report-0', 'brief-0', 'outbox-H0-report.md']
+    expect(docs.locator('svg')).to_have_count(4)
+    expect(docs.first).to_have_attribute('title', 'Read this report: Step 2: prove it')
+    shoot(request, page, 'task-documents')
     assert changed_deck.errors == []
 
 

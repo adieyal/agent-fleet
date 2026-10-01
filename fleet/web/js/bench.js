@@ -207,14 +207,21 @@ function docRef(entry) {
     .replace(/^(outbox|context)\//, '$1-');
   return { host: decodeURIComponent(host), job, doc: decodeURIComponent(doc) };
 }
-const openDocAttrs = (at, title) => `data-open-report data-host="${esc(at.host)}" data-job="${esc(at.job)}" data-doc="${esc(at.doc)}" data-title="${title}"`;
+const docIcon = paths => `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+const DOC_ICONS = {
+  report: OPEN_ICON,   // a page of text
+  brief: docIcon('<rect x="3.5" y="3" width="9" height="11.5" rx="1.2"/><path d="M6 1.8h4v2.4H6zM6 8h4.5M6 10.8h4.5"/>'),   // a clipboard
+  outbox: docIcon('<path d="M2 9.5h3.2l1 1.8h3.6l1-1.8H14v3.8a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/><path d="M8 8V1.8M5.5 4.2 8 1.8l2.5 2.4"/>'),   // a tray, arrow out
+  context: docIcon('<path d="M10.5 4.5 5.6 9.4a1.4 1.4 0 0 0 2 2l5.2-5.2a2.8 2.8 0 0 0-4-4L3.6 7.4a4.2 4.2 0 0 0 6 6L13.5 9.5"/>'),   // a paperclip
+};
+const openDocAttrs =(at, title) => `data-open-report data-host="${esc(at.host)}" data-job="${esc(at.job)}" data-doc="${esc(at.doc)}" data-title="${title}"`;
 // A step's documents: the title opens its latest report, the list holds every one the reader can open.
 function docsList(list) {
   const open = list.map(entry => ({ entry, at: docRef(entry) })).filter(x => x.at);
   if (!open.length) return '';
   return `<details data-step-docs><summary>Documents <b>${open.length}</b></summary><ul>${open.map(({ entry, at }) => {
     const title = entry.title === null ? 'Title unknown' : esc(entry.title);
-    return `<li><button ${openDocAttrs(at, title)} title="Read: ${title}"><small>${esc(entry.kind)}</small> ${title}</button></li>`;
+    return `<li><button ${openDocAttrs(at, title)} title="Read this ${esc(entry.kind)}: ${title}">${DOC_ICONS[entry.kind]}<span>${title}</span></button></li>`;
   }).join('')}</ul></details>`;
 }
 

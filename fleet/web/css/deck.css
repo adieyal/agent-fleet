@@ -1065,7 +1065,8 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 [data-step-docs] ul { margin:4px 0 0; padding:0 0 0 8px; list-style:none; border-left:2px solid #334155; }
 #benchRoute [data-step-docs] button { all:unset; cursor:pointer; display:block; padding:2px 4px; color:#cbd5e1; overflow-wrap:anywhere; }
 #benchRoute [data-step-docs] button:hover, #benchRoute [data-step-docs] button:focus-visible { color:#e2e8f0; text-decoration:underline; }
-[data-step-docs] button small { color:#94a3b8; margin-right:4px; }
+#benchRoute [data-step-docs] button { display:flex; gap:6px; align-items:flex-start; }
+#benchRoute [data-step-docs] button svg { flex-shrink:0; width:14px; height:14px; margin-top:2px; color:#94a3b8; }
 [data-step-plan] div { white-space:pre-wrap; margin-top:4px; padding:6px 8px; border-left:2px solid #334155; color:#cbd5e1; }
 [data-glyph] svg { width:22px; height:22px; fill:none; stroke-width:2.5; stroke:currentColor; }
 [data-status="complete"] [data-glyph] { color:#34d399; }
@@ -1112,10 +1113,10 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 #benchRoute [data-tray] small { display:block; }
 #benchRoute [data-tray] li { margin:6px 0; }
 #benchRoute [data-report-title] { display:inline-block; max-width:calc(100% - 40px); vertical-align:middle; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-#benchRoute :is([data-open-report],[data-copy]) { display:inline-flex; align-items:center; justify-content:center; margin:0 0 0 6px; padding:0; width:24px; height:24px; vertical-align:middle; }
+#benchRoute :is([data-tray] [data-open-report],[data-copy]) { display:inline-flex; align-items:center; justify-content:center; margin:0 0 0 6px; padding:0; width:24px; height:24px; vertical-align:middle; }
 #benchRoute [data-copy] { width:20px; height:20px; border-color:transparent; background:none; }
-#benchRoute :is([data-open-report],[data-copy]) svg { width:14px; height:14px; }
-#benchRoute :is([data-open-report],[data-copy]):hover { border-color:#e2e8f0; }
+#benchRoute :is([data-tray] [data-open-report],[data-copy]) svg { width:14px; height:14px; }
+#benchRoute :is([data-tray] [data-open-report],[data-copy]):hover { border-color:#e2e8f0; }
 #benchRoute [data-copy][data-copied] { color:#34d399; border-color:#34d399; }
 #benchRoute [data-empty] { margin:0; color:#94a3b8; font-style:italic; }
 #benchRoute [data-flipped="true"] { animation:bench-flip .5s ease-out; }
