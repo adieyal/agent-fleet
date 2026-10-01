@@ -18,6 +18,7 @@ import { lanternState } from './building.js';
 import { fit, resize, setRenderScale } from './camera.js';
 import { miniBot, panelScrollUntil, renderLive, select } from './panel.js';
 import './library.js';
+import './running.js';
 import { lowerQuality, quality } from './quality.js';
 import { reader } from './reader.js';
 import { demoSource } from './demo.js';

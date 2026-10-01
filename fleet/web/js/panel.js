@@ -422,7 +422,7 @@ export function renderStats() {
   for (const h of hosts) for (const s of h.sessions || []) if (s.project && live[s.status] !== undefined) live[s.status]++;
   document.getElementById('stats').innerHTML = `
     ${live.working + live.idle ? `<span class="chip sess" title="interactive Claude Code / Codex sessions"><i></i><b>${live.working + live.idle}</b> live${live.idle ? `<span class="opt"> · ${live.idle} waiting</span>` : ''}</span>` : ''}
-    <span class="chip"><i style="background:var(--run)"></i><b>${count.running}</b> working</span>
+    <button class="chip restore" id="workingOpen" aria-haspopup="dialog" aria-expanded="false" title="Running, blocked and queued jobs by project and work"><i style="background:var(--run)"></i><b>${count.running}</b> working</button>
     <span class="chip opt"><i style="background:var(--warn)"></i><b>${count.queued}</b> queued</span>
     <span class="chip opt"><i style="background:var(--ok)"></i><b>${count.done}</b> done</span>
     <span class="chip" id="needYou" title="open attention items: acknowledged and snoozed ones aren't counted"><i style="background:var(--bad)"></i><b>${openCount}</b> need you</span>

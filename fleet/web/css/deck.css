@@ -1230,3 +1230,46 @@ html[data-quality=high] #workarea{background:rgba(3,6,12,.6)}
 .id-chip{all:unset;cursor:copy;font:inherit;font-family:var(--mono);border-bottom:1px dotted currentColor;opacity:.9}
 .id-chip:hover,.id-chip:focus-visible{opacity:1;color:var(--text)}
 .id-chip[data-copied]::after{content:" copied";color:var(--ok)}
+/* ---------- V4 running view: the "N working" chip's list of jobs by project and work (running.js) */
+#runPanel{position:fixed;left:0;top:0;z-index:41;width:460px;max-width:calc(100vw - 16px);max-height:72vh;overflow:auto;
+  background:var(--panel-solid);border:1px solid var(--line2);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.5);font-size:13px}
+#runPanel .ah{display:flex;align-items:center;justify-content:space-between;padding:10px 12px 6px;
+  position:sticky;top:0;z-index:1;background:var(--panel-solid)}
+#runPanel h3{margin:0;font:600 13px var(--display);letter-spacing:.04em}
+#runPanel .ah button{border:0;background:none;color:var(--muted);cursor:pointer;padding:4px 6px;font-size:14px}
+.run-body{padding:0 8px 8px}
+.run-sum{margin:0 4px 6px;font:12px var(--mono);color:var(--muted)}
+.run-empty{margin:4px 4px 8px;color:var(--muted)}
+.run-proj-g{border-top:1px solid var(--line);padding-top:6px;margin-top:4px}
+.run-proj-g h4{margin:2px 4px 4px;font:600 12px var(--display);letter-spacing:.06em;text-transform:uppercase;color:var(--text)}
+.run-proj-g.unlinked h4{color:var(--warn)}
+.run-path h5{margin:6px 4px 2px;font:500 11.5px var(--sans);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.run-path h5 i{font-style:normal;color:var(--dim)}
+.run-need{margin:0 4px 4px;font-size:12px;color:var(--muted)}
+#runPanel ul{list-style:none;margin:0;padding:0}
+.run-row{display:flex;gap:8px;padding:6px 4px;border-radius:8px;cursor:pointer}
+.run-row:hover,.run-row:focus-visible{background:rgba(255,255,255,.05);outline:none}
+.run-row:focus-visible{box-shadow:inset 0 0 0 1px var(--run)}
+.run-row[aria-disabled=true]{cursor:default;opacity:.7}
+.run-g{flex:none;width:16px;text-align:center;font:600 12px/1.5 var(--mono)}
+.run-row[data-status=running] .run-g{color:var(--run)}
+.run-row[data-status=stalled] .run-g{color:var(--stall)}
+.run-row[data-status=blocked] .run-g{color:var(--bad)}
+.run-row[data-status=queued] .run-g{color:var(--warn)}
+.run-b{min-width:0;flex:1}
+.run-b>b{display:block;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.run-m{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin-top:2px;font:11.5px var(--mono);color:var(--muted)}
+.run-host i{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px;vertical-align:1px}
+.run-ws,.run-link{all:unset;display:inline-flex;align-items:center;gap:4px;cursor:copy;padding:0 6px;border-radius:999px;
+  border:1px solid var(--line);font:11px var(--mono);color:var(--muted);max-width:100%}
+.run-ws:hover,.run-ws:focus-visible,.run-link:hover,.run-link:focus-visible{border-color:var(--muted);color:var(--text)}
+.run-ws.wt{border-color:rgba(56,189,248,.35)}
+.run-ws small{font-size:10.5px;color:var(--dim)}
+.run-ws em{font-style:normal;color:var(--warn)}
+.run-ws.unknown{cursor:help;border-style:dashed;color:var(--dim)}
+.run-ws[data-copied]::after,.run-link[data-copied]::after{content:" copied";color:var(--ok)}
+.run-work{color:#c4b5fd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.run-proj{color:var(--text)}
+/* A phone's header is wider than the screen: it scrolls sideways (no bar) so the stats, and the chip that opens this
+   list, stay reachable instead of shrinking to nothing. */
+@media (max-width:760px){header{overflow-x:auto;scrollbar-width:none}header::-webkit-scrollbar{display:none}.stats{flex:none}}
