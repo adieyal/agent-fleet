@@ -113,10 +113,10 @@ MIGRATIONS = (
             PRIMARY KEY (run, idx))""",
         "CREATE TABLE execution_host (name TEXT PRIMARY KEY, record TEXT NOT NULL)",
         """INSERT INTO execution_run_observation (run, record)
-            SELECT id, json_object('last_observed', record -> '$.last_observed',
-                                   'current_action', record -> '$.current_action',
-                                   'action_observed_at', record -> '$.action_observed_at',
-                                   'usage', record -> '$.usage')
+            SELECT id, json_object('last_observed', json_extract(record, '$.last_observed'),
+                                   'current_action', json_extract(record, '$.current_action'),
+                                   'action_observed_at', json_extract(record, '$.action_observed_at'),
+                                   'usage', json_extract(record, '$.usage'))
             FROM execution_run""",
         """INSERT INTO state_history (subject, "from", "to", actor, time)
             SELECT 'execution:run:' || id, 'observation fields in the run record',
@@ -124,7 +124,7 @@ MIGRATIONS = (
                    strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now')
             FROM execution_run""",
         """UPDATE execution_run SET record = CASE
-            WHEN record ->> '$.status' IN ('succeeded', 'failed', 'stopped')
+            WHEN json_extract(record, '$.status') IN ('succeeded', 'failed', 'stopped')
                 THEN json_remove(record, '$.last_observed', '$.current_action', '$.action_observed_at')
             ELSE json_remove(record, '$.last_observed', '$.current_action', '$.action_observed_at', '$.usage') END""",
     ),
