@@ -7,6 +7,7 @@ from urllib.request import urlopen
 
 import pytest
 
+from fleet.modules.records import TRIAGE_PATH
 from fleet import cli, composition
 
 
@@ -59,6 +60,13 @@ def test_attention_history_includes_ownership_and_reasons(base_url, deck_state, 
     store = composition.open_store()
     monkeypatch.setattr(deck_state, 'store', store)
     attention = composition.open_attention(store)
+    # delegation needs the project's confirmed triage policy
+    policy = dict(goal='Triage', constraints=[], escalation_conditions=[], criteria_it_may_judge=[],
+                  decision_authority=['retry', 'escalate', 'record_decision'], host='carbon', runtime='codex',
+                  cwd='/tmp', permission='acceptEdits', routing={}, permissions={'allow': ['Read'], 'escalate': []},
+                  limits={'retries_per_step': 2, 'runs_per_day': 12, 'unclaimed_minutes': 30})
+    composition.facades(store).records.write_mandate(project_id, TRIAGE_PATH, json.dumps(policy), key='policy',
+                                                     actor='user')
     item = attention.raise_item(project=project_id, kind='alert', owner='user', source='manual',
         source_reference='ownership-history', headline='Review failure', context_reference='report', actor='reporter')
     other = attention.raise_item(project=project_id, kind='alert', owner='user', source='manual',
