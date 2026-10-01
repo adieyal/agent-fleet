@@ -90,9 +90,58 @@ def test_retry_requeues_a_blocked_step_and_drops_its_reason(jobs, tmp_path):
     (fleetd.JOBS_DIRECTORY / "job" / "job.json").write_text(json.dumps(job))
     steps_file = tmp_path / "steps.json"
     steps_file.write_text("[]")
-    fleetd.command_add(argparse.Namespace(job="job", steps_file=str(steps_file), retry=True, hold=True))
+    fleetd.command_add(argparse.Namespace(job="job", steps_file=str(steps_file), retry=True, hold=True,
+                                          key=None, answers=None, schema_version=None))
     step = fleetd.read_job("job")["steps"][0]
     assert step["status"] == "pending" and "reason" not in step
+
+
+def answer(tmp_path, key="item:answer", answers=0, reply="Yes, exempt it and continue."):
+    steps_file = tmp_path / "answer.json"
+    steps_file.write_text(json.dumps([{"prompt": reply, "title": "Answer to step 1"}]))
+    fleetd.command_add(argparse.Namespace(job="job", steps_file=str(steps_file), retry=False, hold=True,
+                                          key=key, answers=answers, schema_version=1))
+
+
+def test_a_blocked_step_reports_its_final_message_in_full(jobs, monkeypatch):
+    jobs(["first"])
+    question = "May I exempt the existing import and continue? " + "The rule says stop. " * 40
+    job = run_with_replies(monkeypatch, [claude_result(question + "\n\nFLEET_STATUS: blocked — needs your decision")])
+    [step] = fleetd.job_summary(job, 0)["steps"]
+    assert step["message"] == question + "\n\nFLEET_STATUS: blocked — needs your decision"
+    assert step["result"] != step["message"]   # the result is shortened for lists
+    assert step["answered_by"] is None
+
+
+def test_an_answer_continues_the_job_once_per_key(jobs, monkeypatch, tmp_path, capsys):
+    jobs(["first"])
+    run_with_replies(monkeypatch, [claude_result("Exempt it?\n\nFLEET_STATUS: blocked — needs a decision")])
+    for _ in range(2):   # the second is a retry after a lost reply
+        answer(tmp_path)
+        assert json.loads(capsys.readouterr().out.strip().splitlines()[-1]) == {
+            "schema_version": 1, "key": "item:answer", "status": "applied", "answers": 0, "steps": [1]}
+    job = fleetd.read_job("job")
+    assert [(step["title"], step["prompt"], step["status"]) for step in job["steps"][1:]] == [
+        ("Answer to step 1", "Yes, exempt it and continue.", "pending")]
+    assert job["steps"][0]["answered_by"] == 1
+    assert fleetd.derive_status(job) == "queued"
+    assert fleetd.job_summary(job, 0)["steps"][0]["message"] is None   # answered: no longer asking
+    job = run_with_replies(monkeypatch, [claude_result("Done.\n\nFLEET_STATUS: done")])
+    assert fleetd.derive_status(job) == "done"
+
+
+@pytest.mark.parametrize("status, answers, error", [
+    ("done", 0, "not waiting for an answer"),
+    ("blocked", 3, "job has no step 3"),
+])
+def test_an_answer_to_a_step_that_is_not_asking_changes_nothing(jobs, tmp_path, capsys, status, answers, error):
+    job = jobs(["first"])
+    job["steps"][0]["status"] = status
+    (fleetd.JOBS_DIRECTORY / "job" / "job.json").write_text(json.dumps(job))
+    with pytest.raises(SystemExit):
+        answer(tmp_path, answers=answers)
+    assert error in capsys.readouterr().out
+    assert fleetd.read_job("job") == job
 
 
 def test_fleetd_wait_returns_for_a_blocked_job(jobs, capsys):

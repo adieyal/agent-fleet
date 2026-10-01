@@ -706,6 +706,7 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 .decision-answer button{padding:10px 16px;justify-self:start;cursor:pointer}
 .decision-answer button:disabled{opacity:.6;cursor:default}
 .decision-answer [role="alert"]{color:var(--rd-bad)}
+.blocked-message{margin:0;padding:10px 14px;border-left:3px solid var(--rd-accent);white-space:pre-wrap;overflow-wrap:anywhere}
 /* no scroll anchoring: a live refresh restores the reading position itself, and anchoring would nudge it after */
 .rd-body{flex:1;min-height:0;overflow:auto;overflow-anchor:none;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--rd-rule) transparent}
 .rd-grid{--rd-size:18.5px;font:400 var(--rd-size)/1.65 var(--serif);display:grid;grid-template-columns:minmax(0,68ch);justify-content:center;

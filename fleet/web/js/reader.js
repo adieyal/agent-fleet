@@ -94,7 +94,7 @@ export function openAttentionReader(item) {
   renderReaderHead();
   renderReaderBody();
   rdSheet.focus();
-  if (item.kind === 'decision') loadDecision(item.id, rd.req);
+  if (item.kind === 'decision' || item.blocked) loadDecision(item.id, rd.req);
 }
 async function loadDecision(id, req) {
   try {
@@ -105,6 +105,7 @@ async function loadDecision(id, req) {
     const prose = rdBody.querySelector('.prose');
     if (detail.refusals) { renderRefusals(prose, id, detail); return; }
     if (detail.session_question) { renderSessionQuestion(prose, detail.session_question); return; }
+    if (detail.blocked) { renderBlocked(prose, id, detail.blocked); return; }
     prose.innerHTML = `<h2>${esc(detail.question)}</h2><p class="decision-context">${esc(detail.context)}</p>
       ${detail.proposal === null ? '' : `<h3>Proposed change</h3><pre>${esc(detail.proposal.change)}</pre><p>${esc(detail.proposal.reason)}</p>`}
       <form class="decision-answer">
@@ -151,6 +152,37 @@ function renderSessionQuestion(prose, s) {
       ${q.multi_select ? '<p class="qm">More than one may be chosen.</p>' : ''}
       <ol class="question-options">${q.options.map(o => `<li><b>${esc(o.label)}</b>${o.description ? `<span>${esc(o.description)}</span>` : ''}</li>`).join('')}</ol>
     </section>`).join('')}`;
+}
+// A job step that ended asking its supervisor: its final message, answered by a step that carries the reply.
+function renderBlocked(prose, id, b) {
+  const open = b.state !== 'resolved';
+  prose.innerHTML = `<h2>Step ${b.step + 1} of job ${esc(b.job)} on ${esc(b.host)} is waiting for you</h2>
+    ${b.message === null ? `<p class="refusal-note">fleetd on ${esc(b.host)} reported no final message for this step; upgrade it to see the question here, or read the step’s report.</p>`
+      : `<blockquote class="blocked-message">${esc(b.message)}</blockquote>`}
+    ${open ? `<form class="decision-answer">
+        <label>Your answer<textarea name="answer" rows="5" required></textarea></label>
+        <p class="refusal-note">Sending adds your answer to job ${esc(b.job)} as a new step, which continues where step ${b.step + 1} stopped.</p>
+        <button type="submit">Send answer</button><p role="alert"></p><p role="status"></p>
+      </form>` : `<p role="status">${esc(b.resolution)}</p>`}`;
+  const form = prose.querySelector('form');
+  if (!form) return;
+  form.addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const button = form.querySelector('button');
+    button.disabled = true;
+    form.querySelector('[role="alert"]').textContent = '';
+    try {
+      const res = await fetch('/api/attention/answer', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, answer: form.elements.answer.value }) });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error);
+      form.querySelector('[role="status"]').textContent = result.resolution;
+      form.elements.answer.disabled = true;
+    } catch (error) {
+      form.querySelector('[role="alert"]').textContent = error.message;
+      button.disabled = false;
+    }
+  });
 }
 // A job step's refused permission requests: every one listed, answered by changing the job's permissions.
 function renderRefusals(prose, id, detail) {
