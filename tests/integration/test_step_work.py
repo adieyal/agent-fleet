@@ -139,3 +139,5 @@ def test_the_deck_state_carries_each_jobs_workspace_and_current_step_work(plan):
     assert [node["id"] for node in job["work"]["chain"]] == [epic.id]
     assert job["work"]["step"]["index"] == 1
     assert [node["id"] for node in job["work"]["step"]["chain"]] == [epic.id, milestones[1].id]
+    assert [(step["index"], step["chain"][-1]["id"]) for step in job["work"]["steps"]] == [
+        (0, milestones[0].id), (1, milestones[1].id)]
