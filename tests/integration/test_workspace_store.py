@@ -100,6 +100,7 @@ def test_failure_after_partial_move_or_merge_rolls_back(monkeypatch):
 
 
 WRITER = """
+import contextlib
 import os
 import sqlite3
 import sys
@@ -134,7 +135,9 @@ for index in range(24):
     sys.stdin.readline()
     url = f'https://example.org/{role}/{index}'
     if role == 'cli':
-        cli.main(['project', 'repo', 'add', project, url])
+        # stdout carries this protocol; the command's own report goes to stderr
+        with contextlib.redirect_stdout(sys.stderr):
+            cli.main(['project', 'repo', 'add', project, url])
     else:
         state.edit_registry(lambda registry: registry.add_repository(project, url))
     print('written', flush=True)

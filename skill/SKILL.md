@@ -38,8 +38,10 @@ fleet send -H home -p <project> -d "<one line: what this job is doing>" -C <cwd 
 - The store records who sent, answered or retried: `--actor NAME`, by default
   `job:$FLEET_JOB_ID` inside a fleet job and `user` otherwise. `send` prints the
   run, permission and guidance versions it started the agent with.
-- `-p` groups jobs by project in `fleet ls` and the web view — use the repo or
-  initiative name, consistently.
+- `-p` is the host's label for a registered project and groups jobs in `fleet ls`
+  and the deck. An unlinked label is refused: link it first with
+  `fleet project link PROJECT_ID HOST:LABEL` (or `fleet project add NAME --link HOST:LABEL`).
+- `--hold` creates the job without starting it; `fleet start host:id` starts it.
 
 ## Get notified of completion
 

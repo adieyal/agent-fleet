@@ -16,8 +16,12 @@ class RepositoryWriter:
 
     def root(self, path) -> str:
         root = str(Path(path).resolve())
-        if self.git(root, 'rev-parse', '--show-toplevel') != root:
-            raise ValueError('management repository must be a Git working tree root')
+        try:
+            top = self.git(root, 'rev-parse', '--show-toplevel')
+        except ValueError as error:
+            raise ValueError(f'{root} is not a Git working tree root ({error})') from error
+        if top != root:
+            raise ValueError(f'{root} is not a Git working tree root; the repository root is {top}')
         return root
 
     def validate_path(self, root: str, path: str) -> None:

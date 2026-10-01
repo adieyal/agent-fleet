@@ -113,7 +113,8 @@ keeps its ID, links and focus; runs already going finish and show on its crate; 
 attention moves to the front desk and the storehouse door. Open a crate to look around
 the project read-only, or restore it to its old floor if that is free (the lowest free
 floor otherwise). When every floor is taken, moving in or restoring asks which floor to
-clear, or you can cancel.
+clear, or you can cancel. A shuttered project starts no new work; from the CLI,
+`fleet project restore PROJECT_ID [--shutter OTHER_ID]` brings it back.
 
 ## Getting started with the workspace
 
@@ -221,7 +222,9 @@ fleet answer ATTENTION_ID "Yes, publish the guide" --next-step "Publish"
 ```
 
 Use the second attention ID for the answer. Answering in the CLI or reader records
-a decision and resolves the item; live-session answers have separately tracked
+a decision and resolves the item. For a blocked job step, `fleet answer` instead
+adds the reply as the job's next step on its host and resolves the item, as
+`fleet add host:id -s "reply"` does. Live-session answers have separately tracked
 delivery, so an offline host does not lose the answer.
 
 Link existing jobs without fetching them, and add external references to the library

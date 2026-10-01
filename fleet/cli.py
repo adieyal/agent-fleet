@@ -30,7 +30,8 @@ from fleet.modules import workspace as projects
 from fleet.composition import open_attention, open_decisions, open_execution, open_library, open_records, open_store, open_work, open_workspace
 from fleet.projections.decisions import decision_log
 from fleet.projections.project import project_status
-from fleet.modules.work import RELATION_TYPES, EvidenceSpecification
+from fleet.modules import attention as attention_module
+from fleet.modules.work import CONDITIONS, KINDS, RELATION_TYPES, EvidenceSpecification
 from fleet.modules.execution import Run
 from fleet.transport import FleetError, Host, HostReport
 from fleet.orchestration import ControllerCommands, guide, orchestrator_prompt, promote_decision
@@ -276,7 +277,12 @@ def command_dispatch(arguments: argparse.Namespace) -> None:
     host = transport.host_by_name(arguments.host)
     workspace = open_workspace()
     linked_project = workspace.registry().project_for(host.name, arguments.project)
-    project_id = linked_project.id if linked_project is not None else workspace.resolve_project(arguments.project)
+    try:
+        project_id = linked_project.id if linked_project is not None else workspace.resolve_project(arguments.project)
+    except FleetError as error:
+        raise FleetError(f"{error}. To use '{arguments.project}' as {host.name}'s label for a registered project, "
+                         f"link it: fleet project link ID {host.name}:{arguments.project}, or register one: "
+                         f"fleet project add NAME --link {host.name}:{arguments.project}") from error
     steps = read_steps(arguments)
     if not steps:
         raise FleetError("give at least one --step or a --steps-file")
@@ -316,8 +322,13 @@ def command_dispatch(arguments: argparse.Namespace) -> None:
         if intent.run.status == "unknown outcome":
             deliver_dispatch(intent.run, reconcile=True)
         current = execution.get_run(intent.run.id)
-        print(json.dumps({"job": f"{intent.run.host}:{intent.run.remote_job_id}", "status": current.status,
-                          "run": intent.run.id, "action": intent.run.action, "steps": len(steps)}))
+        reference = f"{intent.run.host}:{intent.run.remote_job_id}"
+        if arguments.json:
+            print(json.dumps({"job": reference, "status": current.status,
+                              "run": intent.run.id, "action": intent.run.action, "steps": len(steps)}))
+        else:
+            console.print(f"{reference} already sent with this --id: run {intent.run.id[:8]} is {current.status}; "
+                          f"nothing new started", markup=False)
         return
     job = deliver_dispatch(intent.run)
     reference = f"{host.name}:{job['id']}"
@@ -490,6 +501,19 @@ def answer_waiting_step(host: Host, job_id: str, step: int, steps: list[dict[str
     if item is not None:
         attention.resolve(item.id, details=details, actor=actor)
     console.print(f"[bold]{host.name}:{job_id}[/] {details} (--no-answer appends instead)")
+
+
+def command_start(arguments: argparse.Namespace) -> None:
+    host, job_id = resolve(arguments.job)
+    execution = open_execution()
+    run = next((run for run in execution.runs() if (run.host, run.remote_job_id) == (host.name, job_id)), None)
+    call = lambda fleetd_arguments, stdin: transport.call(host, fleetd_arguments, stdin_text=stdin)
+    try:
+        job = call(["start", job_id], None) if run is None else execution.start(run, call)
+    except (ValueError, LookupError) as error:
+        raise FleetError(str(error)) from error
+    console.print(f"started {host.name}:{job_id}: its agent works through the job's pending steps "
+                  f"({job['status']})", markup=False)
 
 
 def command_push(arguments: argparse.Namespace) -> None:
@@ -688,20 +712,41 @@ def command_notify(arguments: argparse.Namespace) -> None:
 def command_host_add(arguments: argparse.Namespace) -> None:
     open_workspace()
     config = transport.load_config()
-    config.setdefault("hosts", {})[arguments.name] = {"ssh": None if arguments.local else (arguments.ssh or arguments.name),
-                                                      "python": arguments.python}
+    entry = {"ssh": None if arguments.local else (arguments.ssh or arguments.name), "python": arguments.python}
+    previous = config.setdefault("hosts", {}).get(arguments.name)
+    config["hosts"][arguments.name] = entry
     transport.save_config(config)
-    console.print(f"added {arguments.name}; now run: fleet install {arguments.name}")
+    if previous is None:
+        console.print(f"added {arguments.name} ({describe_host(entry)}); now run: fleet install {arguments.name}",
+                      markup=False)
+    else:
+        console.print(f"replaced {arguments.name} (was {describe_host(previous)}, now {describe_host(entry)}); "
+                      f"now run: fleet install {arguments.name}", markup=False)
+
+
+def describe_host(entry: dict) -> str:
+    return "local" if entry.get("ssh") is None else f"ssh {entry['ssh']}"
 
 
 def command_host_remove(arguments: argparse.Namespace) -> None:
-    open_workspace()
+    workspace = open_workspace()
     config = transport.load_config()
-    config.get("hosts", {}).pop(arguments.name, None)
+    entry = config.get("hosts", {}).pop(arguments.name, None)
+    if entry is None:
+        raise FleetError(f"no host '{arguments.name}'; fleet hosts lists them")
     transport.save_config(config)
+    links = sorted(f"{link.host}:{link.label}" for project in workspace.registry().projects.values()
+                   for link in project.links if link.host == arguments.name)
+    console.print(f"removed host {arguments.name} ({describe_host(entry)}) from the config; "
+                  f"its jobs stay on the host", markup=False)
+    if links:
+        console.print(f"projects still link it: {', '.join(links)} (fleet project unlink HOST:LABEL)", markup=False)
 
 
 def command_hosts(arguments: argparse.Namespace) -> None:
+    if not transport.configured_hosts():
+        print("No hosts configured; add one with: fleet host add NAME --ssh TARGET (or --local)")
+        return
     for report in transport.gather(transport.configured_hosts(), ["ls"]):
         target = report.host.ssh_target or "(local)"
         state = f"[red]{report.error}[/]" if report.error else f"[green]ok[/] · {len(report.jobs)} active job(s)"
@@ -723,12 +768,19 @@ def command_library_add(arguments: argparse.Namespace) -> None:
 def command_library_remove(arguments: argparse.Namespace) -> None:
     open_workspace()
     config = transport.load_config()
-    config.get("libraries", {}).pop(arguments.project, None)
+    entry = config.get("libraries", {}).pop(arguments.project, None)
+    if entry is None:
+        raise FleetError(f"no library '{arguments.project}'; fleet libraries lists them")
     transport.save_config(config)
+    path = entry if isinstance(entry, str) else entry["path"]
+    console.print(f"removed library {arguments.project} ({path}) from the config; its files stay", markup=False)
 
 
 def command_libraries(arguments: argparse.Namespace) -> None:
-    for project, entry in sorted(transport.load_config().get("libraries", {}).items()):
+    libraries = transport.load_config().get("libraries", {})
+    if not libraries:
+        print("No libraries configured; add one with: fleet library add PROJECT PATH")
+    for project, entry in sorted(libraries.items()):
         if isinstance(entry, str):
             console.print(f"[bold]{project}[/] {entry}")
         else:
@@ -786,10 +838,13 @@ def command_project_merge(arguments: argparse.Namespace) -> None:
 
 
 def command_project_management(arguments: argparse.Namespace) -> None:
+    path = Path(arguments.path).resolve()
     try:
-        open_records().register(arguments.id, Path(arguments.path), actor='user')
+        moved = open_records().register(arguments.id, path, actor=arguments.actor)
     except (ValueError, OSError) as error:
         raise FleetError(str(error)) from error
+    console.print(f"registered {path} as the management repository of {arguments.id}; {moved} summaries moved "
+                  f"out of the store into it. This is permanent.", markup=False)
 
 
 def guidance_subject(reference: str) -> tuple[str, str | None]:
@@ -833,6 +888,8 @@ def command_guidance_show(arguments: argparse.Namespace) -> None:
 
 def command_guidance_edit(arguments: argparse.Namespace) -> None:
     project, epic = guidance_subject(arguments.subject)
+    if arguments.file is None and sys.stdin.isatty():
+        error_console.print("Reading Markdown from stdin; end with Ctrl-D (or pass --file).", markup=False)
     try:
         body = sys.stdin.read() if arguments.file is None else Path(arguments.file).read_text()
         guidance = open_records().write_guidance(project, body, epic=epic, actor=arguments.actor,
@@ -867,10 +924,23 @@ def command_guidance_history(arguments: argparse.Namespace) -> None:
 
 def command_project_repo_add(arguments: argparse.Namespace) -> None:
     open_workspace().edit_registry(lambda registry: registry.add_repository(arguments.id, arguments.url))
+    console.print(f"added repository {arguments.url} to {arguments.id}", markup=False)
 
 
 def command_project_repo_remove(arguments: argparse.Namespace) -> None:
     open_workspace().edit_registry(lambda registry: registry.remove_repository(arguments.id, arguments.url))
+    console.print(f"removed repository {arguments.url} from {arguments.id}", markup=False)
+
+
+def command_project_restore(arguments: argparse.Namespace) -> None:
+    workspace = open_workspace()
+    try:
+        placement = workspace.restore(arguments.id, arguments.shutter)
+    except LookupError as error:
+        raise FleetError(str(error)) from error
+    name = workspace.registry().get(placement.project_id).name
+    cleared = f"; {arguments.shutter} moved to the storehouse" if arguments.shutter else ""
+    console.print(f"restored {placement.project_id} {name} to floor {placement.floor}{cleared}", markup=False)
 
 
 def observed_labels(registry: projects.Registry, hosts: list[Host]) -> tuple[list[tuple[str, str, str]], list[str]]:
@@ -1117,12 +1187,20 @@ def command_work(arguments: argparse.Namespace) -> None:
             item = work.relate(identity, fields.pop("to_item"), **fields)
         elif command == "add":
             fields['project'] = open_workspace().resolve_project(fields['project'])
+            known = work.kinds(fields['project'])
             item = work.add(**fields)
         else:
+            known = work.kinds(work.get(identity).project) if "kind" in fields else None
             item = getattr(work, command)(identity, **fields)
         console.print_json(json.dumps(asdict(item), default=str))
     except (ValueError, LookupError, OSError) as error:
         raise FleetError(str(error)) from error
+    if command in ("add", "set") and known is not None and item.kind not in known:
+        error_console.print(f"new kind '{item.kind}' added to project {item.project}'s kinds "
+                            f"(known: {', '.join(known)})", markup=False)
+
+
+KIND_HELP = (f"{', '.join(KINDS)}, or a new label, which becomes one of the project's kinds; default task")
 
 
 def add_work_parsers(commands) -> None:
@@ -1139,11 +1217,15 @@ def add_work_parsers(commands) -> None:
         if name == "add":
             action.add_argument("--project", required=True)
             action.add_argument("--goal", required=True)
-            action.add_argument("--kind", default="task")
+            action.add_argument("--kind", default="task", help=KIND_HELP)
             for field in ("parent", "focus", "next-step", "plan"):
                 action.add_argument(f"--{field}")
         elif name == "set":
-            for field in ("title", "goal", "kind", "condition", "resume-condition", "next-step", "focus", "plan"):
+            action.add_argument("--kind", default=argparse.SUPPRESS, help=KIND_HELP)
+            # Checked by the domain, whose error quotes the values: argparse would list "ready for review" bare
+            action.add_argument("--condition", default=argparse.SUPPRESS,
+                                help="one of: " + ", ".join(f"'{condition}'" for condition in CONDITIONS))
+            for field in ("title", "goal", "resume-condition", "next-step", "focus", "plan"):
                 action.add_argument(f"--{field}", default=argparse.SUPPRESS)
         elif name == "move":
             parent = action.add_mutually_exclusive_group(required=True)
@@ -1266,6 +1348,9 @@ def command_answer(arguments: argparse.Namespace) -> None:
         raise FleetError(str(error)) from error
 
 
+UNTIL_EXAMPLE = "2026-10-02T09:00:00+00:00"
+
+
 def command_attention(arguments: argparse.Namespace) -> None:
     if arguments.attention_command in ('add', 'list') and arguments.project is not None:
         arguments.project = open_workspace().resolve_project(arguments.project)
@@ -1285,7 +1370,11 @@ def command_attention(arguments: argparse.Namespace) -> None:
         elif command == "ack":
             item = attention.acknowledge(arguments.id, actor=arguments.actor)
         elif command == "snooze":
-            item = attention.snooze(arguments.id, until=datetime.fromisoformat(arguments.until), actor=arguments.actor)
+            try:
+                until = datetime.fromisoformat(arguments.until)
+            except ValueError:
+                raise ValueError(f"--until takes a timezone-aware ISO timestamp, e.g. {UNTIL_EXAMPLE}") from None
+            item = attention.snooze(arguments.id, until=until, actor=arguments.actor)
         else:
             item = attention.resolve(arguments.id, details=arguments.details, actor=arguments.actor)
         console.print_json(json.dumps(asdict(item), default=str))
@@ -1309,7 +1398,7 @@ def add_actor_option(parser: argparse.ArgumentParser) -> None:
 
 
 COMMAND_GROUPS = {
-    "Jobs": ("send", "dispatch", "add", "push", "pull", "ls", "watch", "show", "tail", "attach", "wait", "result",
+    "Jobs": ("send", "dispatch", "start", "add", "push", "pull", "ls", "watch", "show", "tail", "attach", "wait", "result",
              "cancel", "mv", "rm", "notify", "run"),
     "Work": ("status", "work", "criterion", "summary", "attention", "answer", "decision", "guidance", "library"),
     "Projects": ("project", "building", "libraries", "web"),
@@ -1407,7 +1496,7 @@ def build_parser() -> argparse.ArgumentParser:
     send.add_argument("--env", action="append", help="NAME=value set in the agent's environment (repeatable)")
     send.add_argument("--id")
     send.add_argument("--keep-going", action="store_true", help="continue to next step after a failure")
-    send.add_argument("--hold", action="store_true", help="create but don't start")
+    send.add_argument("--hold", action="store_true", help="create but don't start; start it with fleet start JOB")
     send.add_argument("--wait", "-w", action="store_true", help="block until the job finishes")
     send.add_argument("--json", action="store_true")
     add_step_options(send)
@@ -1478,6 +1567,10 @@ def build_parser() -> argparse.ArgumentParser:
     add_actor_option(add)
     add_step_options(add)
     add.set_defaults(handler=command_add)
+
+    start = commands.add_parser("start", help="start a job sent with --hold: starts its agent on the host")
+    start.add_argument("job")
+    start.set_defaults(handler=command_start)
 
     push = commands.add_parser("push", help="copy files into a job's context dir")
     push.add_argument("job")
@@ -1610,9 +1703,19 @@ def build_parser() -> argparse.ArgumentParser:
     project_repo_remove.add_argument("url")
     project_repo_remove.set_defaults(handler=command_project_repo_remove)
 
-    management = project.add_parser('management', help='register the management Git repository and migrate summaries')
+    management = project.add_parser(
+        'management', help="register a project's management Git repository; permanent",
+        description="Registers PATH, the root of an existing Git working tree, as the project's management "
+                    "repository and moves its summaries out of the store into it. This is permanent: it cannot be "
+                    "changed or undone. Optional: a project's first record creates one under fleet's home.")
     management.add_argument('id')
-    management.add_argument('path')
+    management.add_argument('path', help='root of an existing Git working tree')
+    add_actor_option(management)
+    project_restore = project.add_parser("restore", help="bring a shuttered project back from the storehouse to a floor")
+    project_restore.add_argument("id")
+    project_restore.add_argument("--shutter", metavar="OTHER-ID",
+                                 help="when no floor is free, move this project to the storehouse to make room")
+    project_restore.set_defaults(handler=command_project_restore)
     management.set_defaults(handler=command_project_management)
 
     guidance = commands.add_parser(
@@ -1681,7 +1784,9 @@ def build_parser() -> argparse.ArgumentParser:
         dest="attention_command", required=True)
     attention_add = attention.add_parser("add", help="raise an attention item")
     attention_add.add_argument("headline")
-    for field in ("project", "kind", "owner", "source", "source-reference", "context-reference", "actor"):
+    attention_add.add_argument("--kind", required=True, choices=attention_module.KINDS)
+    attention_add.add_argument("--owner", required=True, help="who must act, e.g. user")
+    for field in ("project", "source", "source-reference", "context-reference", "actor"):
         attention_add.add_argument(f"--{field}", required=True)
     attention_add.add_argument("--work-item")
     attention_add.add_argument("--run")
@@ -1698,7 +1803,7 @@ def build_parser() -> argparse.ArgumentParser:
         action.add_argument("id")
         action.add_argument("--actor", required=True)
         if name == "snooze":
-            action.add_argument("--until", required=True, help="timezone-aware ISO timestamp")
+            action.add_argument("--until", required=True, help=f"timezone-aware ISO timestamp, e.g. {UNTIL_EXAMPLE}")
         elif name == "resolve":
             action.add_argument("--details", required=True)
         action.set_defaults(handler=command_attention)
@@ -1747,8 +1852,13 @@ def main(argv: list[str] | None = None) -> None:
                 continue
             if name == "FLEET_STORE" and arguments.command == "web":
                 error_console.print(f"Creating new store at {path} (FLEET_STORE)", markup=False)
+            elif name == "FLEET_STORE":
+                raise FleetError(f"FLEET_STORE points to a missing file: {path}. Create the store there by running "
+                                 f"fleet web once (it creates a missing store), or unset FLEET_STORE to use the "
+                                 f"default store")
             else:
-                raise FleetError(f"{name} points to a missing file: {path}")
+                raise FleetError(f"FLEET_CONFIG points to a missing file: {path}. Unset FLEET_CONFIG to use the "
+                                 f"default config, or create the file with {{\"hosts\": {{}}}} in it")
         open_store()
         arguments.handler(arguments)
     except FleetError as error:
