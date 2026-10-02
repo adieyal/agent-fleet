@@ -3059,6 +3059,14 @@ def test_audit2_batch2_resolved_context_and_real_history(changed_deck: Deck, dec
     attention = open_attention(store)
     monkeypatch.setattr(deck_state, 'store', store)
     monkeypatch.setattr(deck_state, 'attention', attention)
+    # delegation needs the project's confirmed triage policy
+    from fleet.composition import facades
+    from fleet.modules.records import TRIAGE_PATH
+    policy = dict(goal='Triage', constraints=[], escalation_conditions=[], criteria_it_may_judge=[],
+                  decision_authority=['retry', 'escalate', 'record_decision'], host='carbon', runtime='codex',
+                  cwd='/tmp', permission='acceptEdits', routing={}, permissions={'allow': ['Read'], 'escalate': []},
+                  limits={'retries_per_step': 2, 'runs_per_day': 12, 'unclaimed_minutes': 30})
+    facades(store).records.write_mandate('restoke', TRIAGE_PATH, json.dumps(policy), key='policy', actor='user')
     item = attention.raise_item(project='restoke', kind='decision', owner='user', source='manual',
         source_reference='batch2-resolved', headline='Which recovery?', context_reference='report:failure', actor='reporter')
     attention.delegate(item.id, actor='adi', note='Review under the charter')
