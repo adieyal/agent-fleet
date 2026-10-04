@@ -1106,6 +1106,12 @@ def test_a_jobs_workarea_shows_its_plan_desk_and_tray(deck: Deck, fixture_data: 
     expect(page.locator("#rdTitle")).to_have_text("par-by-weekday.md")
     page.locator("#rdPrev").click()
     expect(page.locator("#rdTitle")).to_have_text("Step 2: Draft the article")
+    # with focus on nothing (as after clicking an image, or leaving fullscreen) the arrows still step
+    page.evaluate("document.activeElement.blur()")
+    page.keyboard.press("ArrowRight")
+    expect(page.locator("#rdPos")).to_have_text("2 / 2")
+    page.keyboard.press("ArrowLeft")
+    expect(page.locator("#rdPos")).to_have_text("1 / 2")
     page.keyboard.press("Escape")
     expect(page.locator("#reader")).to_be_hidden()
     expect(workarea).to_be_visible()

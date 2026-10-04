@@ -396,10 +396,12 @@ function stepDoc(delta) {
   const { list, at, left } = readerPlace();
   const next = at >= 0 ? list[at + delta] : left != null ? list[delta > 0 ? left : left - 1] : undefined;
   if (!next) return;
+  const fullscreen = !!document.fullscreenElement && rdBody.contains(document.fullscreenElement);
   saveReaderScroll();
   if (rd.source === 'library') openLibraryReader(next);
   else if (rd.source === 'attention') openAttentionReader(next);
   else openReader({ host: rd.host, job: rd.job }, next);
+  rd.fullscreenNext = fullscreen;   // an image stepped to from a fullscreen one opens fullscreen when it renders
 }
 function renderReaderLoading() {
   document.getElementById('rdProgress').style.transform = 'scaleX(0)';
@@ -461,6 +463,11 @@ function renderReaderBody(scrollTop) {
   rdBody.scrollTop = scrollTop === Infinity ? rdBody.scrollHeight
     : scrollTop ?? (Number(store('sessionStorage','fleet.reader.scroll.' + rd.key)) || 0);
   onReaderScroll();
+  if (rd.fullscreenNext) {
+    rd.fullscreenNext = false;
+    const img = d.media === 'image' && prose.querySelector('img');
+    if (img && document.fullscreenElement !== img) showFullscreen(img);
+  }
 }
 // images resolve beside the document, under the same roots the document was read from
 function assetUrl(path) {
@@ -609,18 +616,23 @@ document.getElementById('rdDownload').addEventListener('click', () => {
 });
 document.getElementById('rdPrev').addEventListener('click', () => stepDoc(-1));
 document.getElementById('rdNext').addEventListener('click', () => stepDoc(1));
-// ← and → step between documents, except while typing or when a modifier asks for something else
-reader.addEventListener('keydown', ev => {
+// Keys reach the reader wherever focus sits while it is open: in it, or nowhere (the page itself), as after a click
+// on an image, which takes no focus, or on leaving fullscreen.
+const forReader = ev => !reader.hidden && (reader.contains(ev.target) || ev.target === document.body || ev.target === document.documentElement);
+// ← and → step between documents, except while typing or when a modifier asks for something else. From a fullscreen
+// image they go on to the next document fullscreen too, when it is an image.
+document.addEventListener('keydown', ev => {
   if ((ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight') || ev.altKey || ev.ctrlKey || ev.metaKey || ev.shiftKey) return;
-  if (ev.target.closest('input,textarea,select,[contenteditable="true"]')) return;
+  if (!forReader(ev) || ev.target.closest('input,textarea,select,[contenteditable="true"]')) return;
   ev.preventDefault();
   stepDoc(ev.key === 'ArrowLeft' ? -1 : 1);
 });
 // The arrow, page, space, Home and End keys scroll the document wherever focus sits in the reader (the sheet or a
 // header button); inside the body, and in fields and buttons that use the key themselves, the browser has them.
 const SCROLL_KEYS = new Set(['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', ' ', 'Home', 'End']);
-reader.addEventListener('keydown', ev => {
+document.addEventListener('keydown', ev => {
   if (!SCROLL_KEYS.has(ev.key) || ev.altKey || ev.ctrlKey || ev.metaKey || ev.defaultPrevented) return;
+  if (!forReader(ev) || document.fullscreenElement) return;
   if (rdBody.contains(ev.target) || ev.target.closest('input,textarea,select,[contenteditable="true"],summary')) return;
   if (ev.key === ' ' && ev.target.closest('button')) return;
   ev.preventDefault();
