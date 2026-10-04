@@ -880,6 +880,29 @@ def test_audit3_stored_job_image_uses_known_origin(page, restoke_url):
 
 
 @pytest.mark.browser
+@pytest.mark.parametrize('redraw', ['focus', 'lantern'])
+def test_audit3_move_in_returns_focus_after_stream_redraw(page, visitor_asks_url, redraw):
+    open_building(page, visitor_asks_url)
+    def options(route):
+        reply = route.fetch()
+        page.evaluate("""async redraw => {
+            const d = await (await fetch('/api/state')).json();
+            const project = Object.keys(d.building.focus)[0];
+            if (redraw === 'focus') d.building.focus[project] = d.building.focus[project] === 'priority' ? 'background' : 'priority';
+            else d.attention_display.places = [];
+            fleetDeck.apply(d);
+        }""", redraw)
+        route.fulfill(response=reply)
+    page.route('**/api/move-in?**', options)
+    page.locator('[data-move-in]').first.focus()
+    page.keyboard.press('Enter')
+    expect(page.locator('.movein')).to_be_visible()
+    assert page.evaluate('!!document.activeElement.closest(".movein")')
+    page.keyboard.press('Escape')
+    assert page.evaluate('document.activeElement.hasAttribute("data-move-in")')
+
+
+@pytest.mark.browser
 def test_audit3_unlabelled_job_keeps_deck_updates_visible(page, restoke_url):
     open_building(page, restoke_url)
     document = state(restoke_url)

@@ -4,9 +4,12 @@ export function focusIdentity(root, element = document.activeElement) {
   const path = [];
   for (let node = element; node !== root; node = node.parentElement) {
     if (node.id) { path.unshift('#' + CSS.escape(node.id)); break; }
-    const data = [...node.attributes].filter(a => a.name.startsWith('data-'));
+    const identities = ['data-project', 'data-floor', 'data-label', 'data-hosts', 'data-job', 'data-id', 'data-task', 'data-plan-item', 'data-epic', 'data-slice'];
+    const data = [...node.attributes].filter(a => a.name.startsWith('data-')
+      && (node.matches('button,input,select,textarea') || identities.includes(a.name)));
     let selector = node.tagName.toLowerCase();
     if (data.length) selector += data.map(a => `[${a.name}="${CSS.escape(a.value)}"]`).join('');
+    else if (node.classList.length) selector += '.' + CSS.escape(node.classList[0]);
     else selector += `:nth-of-type(${[...node.parentElement.children].filter(n => n.tagName === node.tagName).indexOf(node) + 1})`;
     path.unshift(selector);
   }

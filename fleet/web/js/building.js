@@ -420,7 +420,7 @@ function renderUi() {
   const frontDeskOpen = ui.querySelector('.front-desk')?.open;
   const hadDialog = !!ui.querySelector('[role=dialog]');
   const focus = focusIdentity(ui);
-  if (!hadDialog && (storehouseOpen || vacancy || moving || merging)) dialogOpener = focus;
+  if (!hadDialog && (storehouseOpen || vacancy || moving || merging)) dialogOpener = focus || dialogOpener;
   const plates = floors.map(f => {
     if (!f.projectId) return `<div class="plate" data-floor="${f.floor}" data-mode="to-let"><span class="fn">${f.floor}</span><b>To let</b></div>`;
     const error = focusErrors.get(f.projectId);
@@ -665,6 +665,7 @@ let moving = null;    // { label, hosts, chosen: Set of hosts, candidates, error
 let merging = null;   // { project, other: the project picked to merge with, or null }
 const WHY = { linked: 'linked on another host', repository: 'same repository', name: 'same name' };
 async function moveIn(button, label, hosts) {
+  const opener = focusIdentity(ui, button);
   let options;
   await act(button, async () => {
     const query = new URLSearchParams([['label', label], ...hosts.map(h => ['host', h])]);
@@ -673,6 +674,7 @@ async function moveIn(button, label, hosts) {
     if (!res.ok) throw new Error(options.error || `HTTP ${res.status}`);
   });
   if (!options?.candidates) return;
+  dialogOpener = opener;
   button.disabled = false;
   closeDialogs();
   moving = { label, hosts, chosen: new Set(hosts), candidates: options.candidates, errors: options.errors };
