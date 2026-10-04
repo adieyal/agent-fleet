@@ -836,3 +836,24 @@ def test_audit3_floor_navigation_keeps_keyboard_focus(page, restoke_url):
     assert page.evaluate('benchRoute.contains(document.activeElement)')
     page.keyboard.press('Tab')
     assert page.evaluate('benchRoute.contains(document.activeElement)')
+
+
+@pytest.mark.browser
+def test_audit3_stored_job_image_uses_known_origin(page, restoke_url):
+    import base64
+    open_building(page, restoke_url)
+    requests = []
+    page.route('**/api/test-stored-image', lambda route: route.fulfill(json={
+        'name': 'image.png', 'media': 'image', 'html': '<img src="image.png">'}))
+    pixel = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=')
+    def image(route):
+        requests.append(route.request.url)
+        route.fulfill(body=pixel, content_type='image/png')
+    page.route('**/api/doc/asset?**', image)
+    page.evaluate("""async () => (await import('/js/reader.js')).openStoredReader('/api/test-stored-image',
+        {id:'outbox-image.png',name:'image.png'}, {host:'home',id:'old-job',description:'Original job'})""")
+    page.wait_for_function('rdBody.querySelector("img")?.naturalWidth === 1', timeout=5000)
+    assert len(requests) == 1
+    from urllib.parse import parse_qs, urlparse
+    assert parse_qs(urlparse(requests[0]).query) == {
+        'host':['home'], 'job':['old-job'], 'id':['outbox-image.png'], 'path':['image.png']}

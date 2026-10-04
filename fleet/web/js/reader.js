@@ -444,6 +444,7 @@ function renderReaderHead() {
       : rd.source === 'library' ? `<span>${esc(doc.project)} · ${esc(doc.id)}</span>`
       : rd.source === 'stored' && !rd.host ? `<span>working · ${esc(doc.id)}</span>`
       : `<span title="${esc(d.job_description || rd.job.description)}"><i class="hd" style="background:${hostLook(rd.host).color}"></i>${esc(rd.host)} · ${idChip(rd.job.id)} ·${esc(d.agent || rd.job.agent)}</span>`,
+    rd.source === 'stored' && rd.host ? `<span>Document copy on controller · images read from ${esc(rd.host)}</span>` : '',
     step != null ? `<span>step ${step + 1}</span>` : '',
     d.minutes && d.media !== 'image' ? `<span>${d.minutes} min read</span>` : '',
     (d.mtime || doc.mtime) ? `<span>updated ${age(d.mtime || doc.mtime)} ago</span>` : '',
@@ -577,7 +578,7 @@ function documentAssetUrl(t, path, data) {
     : { host: t.host, job: t.job, id: t.doc.id, path });
   if (data?.media === 'image') params.set('v', `${data.mtime ?? t.doc.mtime}-${data.size ?? t.doc.size}`);
   if (t.source === 'library') return '/api/library/asset?' + params;
-  if (t.source === 'job') return '/api/doc/asset?' + params;
+  if (t.source === 'job' || (t.source === 'stored' && t.host && t.job !== 'working')) return '/api/doc/asset?' + params;
   return null;
 }
 function assetUrl(path) {
