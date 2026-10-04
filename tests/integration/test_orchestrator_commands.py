@@ -32,7 +32,7 @@ def orchestration(tmp_path):
         host='local', runtime='codex', payload={'cwd': str(tmp_path)}, reason='Orchestrate',
         idempotency_key=activation.id).run
     from fleet.orchestration import ControllerCommands
-    return ControllerCommands(store, activation.id), store, item, judged, accepted, checked, run, root
+    return ControllerCommands(composition.facades(store), activation.id), store, item, judged, accepted, checked, run, root
 
 
 def test_scripted_routine_decision_summary_and_projection(orchestration):
@@ -208,7 +208,7 @@ def test_complete_requires_separate_accept_authority(orchestration):
     activation = composition.open_authority(store).activate(item.id, actor='orchestrator',
         role='orchestrator', mandate_path='mandate.json')
     from fleet.orchestration import ControllerCommands
-    ControllerCommands(store, activation.id).execute('progress', {'condition': 'complete'})
+    ControllerCommands(composition.facades(store), activation.id).execute('progress', {'condition': 'complete'})
     assert work.get(item.id).condition == 'complete'
 
 

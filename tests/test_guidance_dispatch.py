@@ -34,7 +34,8 @@ def worker(monkeypatch):
 
     monkeypatch.setattr(cli.transport, "host_by_name", lambda name: SimpleNamespace(name=name))
     monkeypatch.setattr(cli.transport, "call", call)
-    monkeypatch.setattr(cli, "push_context", push)
+    from fleet.services.context import Context
+    monkeypatch.setattr(Context, "push", lambda self, host, job, paths: push(host, job, paths))
     return SimpleNamespace(calls=calls, pushes=pushes,
                            prompts=lambda: [json.loads(stdin)[0]["prompt"] for arguments, stdin in calls
                                             if arguments[0] == "create"])
@@ -150,7 +151,7 @@ def test_orchestrate_and_its_dispatches_are_guided(tmp_path, tree, worker, capsy
     prompt, = worker.prompts()
     assert prompt.startswith("Guidance: your context directory has CONSTITUTION.md") and f"orchestrator for work item {tree.task.id}" in prompt
     assert worker.pushes == [{"CONSTITUTION.md": CONSTITUTION}]
-    result = ControllerCommands(composition.open_store(), activation).execute("dispatch", dict(
+    result = ControllerCommands(composition.facades(), activation).execute("dispatch", dict(
         host="worker", runtime="codex", reason="Go", idempotency_key="child",
         payload=dict(cwd="/repo", arguments=["create"], steps=[dict(prompt="Child")], context=None, hold=False)))
     action = composition.open_execution().get_action(result.run.action)

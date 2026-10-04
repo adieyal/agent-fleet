@@ -35,7 +35,7 @@ def triage(project_id, tmp_path):
         return 'retry submitted' if request.retry else 'added step 2'
 
     services.execution.grant, services.execution.step = grant, step
-    return services, activation, ControllerCommands(services.store, activation.id), calls, body, run
+    return services, activation, ControllerCommands(services, activation.id), calls, body, run
 
 
 def item(triage, status='failed', *, owner='agent', job='j', project=None, work_item=None):
@@ -322,7 +322,8 @@ def test_cli_retry_delivers_the_queued_run(triage, monkeypatch, capsys):
     services.execution.observe('carbon', JobObservation(target.remote_job_id, 'failed', 'codex', None, None, None))
     attention = item(triage, job=target.remote_job_id)
     delivered = []
-    monkeypatch.setattr(cli, 'deliver_dispatch', lambda run, **kwargs: delivered.append(run.id))
+    from fleet.services.dispatch import Dispatch
+    monkeypatch.setattr(Dispatch, 'deliver', lambda self, run, **kwargs: delivered.append(run.id))
     cli.main(['control', activation.id, 'retry', json.dumps(dict(item=attention.id, reason='transient'))])
     result = json.loads(capsys.readouterr().out)
     assert delivered == [result['run']] and delivered[0] != target.id
@@ -378,7 +379,7 @@ def test_mandate_must_authorize_the_specific_command(triage):
     services.execution.dispatch(None, project=activation.project, host='carbon', runtime='codex',
         payload={'cwd': body['cwd']}, actor=restricted.actor, activation=restricted.id,
         reason='Triage', idempotency_key=restricted.id)
-    commands = ControllerCommands(services.store, restricted.id)
+    commands = ControllerCommands(services, restricted.id)
     attention = item(triage)
     before = services.store.latest_sequence()
     with pytest.raises(AuthorityRejected, match='does not authorize retry'):
@@ -406,7 +407,7 @@ def test_undispatched_activation_cannot_send_or_mutate(triage):
     attention = item(triage)
     before = services.store.latest_sequence()
     with pytest.raises(AuthorityRejected, match='source run'):
-        ControllerCommands(services.store, new.id).execute('retry', dict(item=attention.id, reason='transient'))
+        ControllerCommands(services, new.id).execute('retry', dict(item=attention.id, reason='transient'))
     assert calls == [] and services.store.latest_sequence() == before
 
 
@@ -504,7 +505,7 @@ def test_partial_retry_escalation_respects_revoked_authority(triage, revocation)
         services.execution.dispatch(None, project=activation.project, host='carbon', runtime='codex',
             payload={'cwd': body['cwd']}, actor=other.actor, activation=other.id,
             reason='Triage', idempotency_key=other.id)
-        commands = ControllerCommands(services.store, other.id)
+        commands = ControllerCommands(services, other.id)
     before = services.store.latest_sequence()
     with pytest.raises(AuthorityRejected):
         commands.execute('escalate', dict(item=attention.id, reason='unconfirmed action', principle='mandate'))

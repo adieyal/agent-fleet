@@ -1,6 +1,5 @@
 """Local orchestrator command delivery through controller facades."""
 
-from fleet import composition
 from fleet.modules.records import GUIDANCE_FILES, guidance_brief
 from fleet.projections.decisions import decision_log, promotion, promotion_marker
 from fleet.projections.project import project_status
@@ -74,8 +73,8 @@ Completion needs all criteria met and explicit accept authority.
 
 
 class ControllerCommands:
-    def __init__(self, store, activation: str):
-        self.services = composition.facades(store)
+    def __init__(self, services, activation: str):
+        self.services = services
         self.activation = self.services.authority.get(activation)
 
     def execute(self, command: str, payload: dict):

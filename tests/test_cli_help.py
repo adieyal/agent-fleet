@@ -131,6 +131,12 @@ def test_run_retry_and_resolve_unknown_pass_the_actor(monkeypatch, project_id):
             return SimpleNamespace(id=run)
 
     monkeypatch.setattr(cli, "open_execution", Execution)
+    original_dispatch = composition.open_dispatch
+    def dispatch():
+        service = original_dispatch()
+        service.services.execution = Execution()
+        return service
+    monkeypatch.setattr(cli, "open_dispatch", dispatch)
     monkeypatch.setattr(cli, "asdict", lambda value: vars(value))
     cli.main(["run", "retry", "r1", "--actor", "orchestrator"])
     cli.main(["run", "resolve-unknown", "r1", "--actor", "orchestrator"])

@@ -166,3 +166,50 @@ def project_status(project: str, work: WorkFacade, attention: AttentionFacade,
         count_interruptions(root)
     return _json_value({"project": project, "work_items": roots,
                         "attention": [asdict(entry) for entry in open_items if entry.work_item is None]})
+
+
+def status_node(items: list[dict[str, Any]], identity: str) -> dict[str, Any]:
+    for item in items:
+        if item["id"] == identity:
+            return item
+        try:
+            return status_node(item["children"], identity)
+        except LookupError:
+            pass
+    raise LookupError(f"work item '{identity}' is not in this project")
+
+
+def filter_status_items(items: list[dict[str, Any]], depth: int | None,
+                        only_open: bool) -> list[dict[str, Any]]:
+    if depth is not None and depth < 0:
+        return []
+    result = []
+    for item in items:
+        children = filter_status_items(item["children"], None if depth is None else depth - 1, only_open)
+        if only_open and item["condition"] == "complete":
+            result.extend(children)
+            continue
+        result.append({**item, "children": children})
+    return result
+
+
+def work_detail(identity, work, attention, execution, library, decisions):
+    record = work.get(identity)
+    projection = project_status(record.project, work, attention, execution, library, decisions)
+    item = status_node(projection['work_items'], identity)
+    parents = []
+    parent = record.parent
+    while parent is not None:
+        ancestor = work.get(parent)
+        parents.insert(0, asdict(ancestor))
+        parent = ancestor.parent
+    item['attention'] = [asdict(entry) for entry in attention.list() if entry.work_item == identity]
+    return {**item, 'parents': parents}
+
+
+def filter_status(projection, *, item=None, depth=None, only_open=False):
+    if item is not None:
+        projection['work_items'] = [status_node(projection['work_items'], item)]
+        projection['attention'] = []
+    projection['work_items'] = filter_status_items(projection['work_items'], depth, only_open)
+    return projection

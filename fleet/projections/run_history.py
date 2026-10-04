@@ -113,3 +113,9 @@ def run_detail(identity: str, execution: ExecutionFacade, work: WorkFacade, libr
             "steps": execution.steps(run.id), "documents": [asdict(entry) for entry in library.list()
                 if entry.run == run.id and entry.kind != "trace"],
             "trace": execution.trace(run.id)}
+
+
+def kept_run_detail(identity, execution, work, library, documents):
+    detail = run_detail(identity, execution, work, library)
+    detail['kept_documents'] = documents.run_documents(detail['run'])
+    return detail

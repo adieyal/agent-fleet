@@ -22,7 +22,7 @@ def test_attach_uses_side_by_side_workers_published_command(tmp_path, monkeypatc
     published = json.loads(created.stdout)["tmux"]
     assert shlex.split(published)[2] != "fleet"
     executed = []
-    monkeypatch.setattr(cli.os, "execvp", lambda executable, argv: executed.append((executable, argv)))
+    monkeypatch.setattr(cli.transport.os, "execvp", lambda executable, argv: executed.append((executable, argv)))
 
     cli.main(["attach", "local:attach-job"])
 

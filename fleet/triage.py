@@ -10,7 +10,7 @@ from fleet.modules.decisions import Decision
 from fleet.modules.records import TriageMandate
 
 if TYPE_CHECKING:
-    from fleet.composition import Facades
+    from fleet.services.facades import Facades
 
 
 FIELDS = {

@@ -179,12 +179,9 @@ def open_execution(store: Store | None = None) -> ExecutionFacade:
 
 
 def storage_usage(store: Store | None = None) -> dict:
-    value = (store or open_store()).usage()
+    from fleet.services.storage import usage
     root = Path(os.environ.get("FLEET_HOME") or "~/.fleet").expanduser()
-    for name, directory in (("documents", root / "projects"), ("traces", root / "traces")):
-        files = [path for path in directory.rglob("*") if path.is_file() and not path.is_symlink()]
-        value[name] = {"path": str(directory), "files": len(files), "bytes": sum(path.stat().st_size for path in files)}
-    return value
+    return usage(store or open_store(), root)
 
 
 def open_library(store: Store | None = None) -> LibraryFacade:
@@ -212,3 +209,96 @@ def open_documents(root: Path | None = None) -> ProjectDocuments:
 
 def open_document_keeper(documents, fetch, *, keep_trace=None) -> DocumentKeeper:
     return DocumentKeeper(documents, fetch, keep_trace=keep_trace)
+
+
+# Application services accept collaborators; only this module constructs their graph.
+def open_references(store=None):
+    from fleet.services.references import References
+    services = facades(store)
+    return References(services, transport, lambda: open_workspace(services.store), lambda: open_attention(services.store))
+
+
+def open_context(store=None):
+    from fleet.services.context import Context
+    return Context(facades(store).records, transport)
+
+
+def open_jobs(store=None):
+    from fleet.services.jobs import Jobs
+    services = facades(store)
+    return Jobs(services, transport, lambda: open_workspace(services.store), lambda: open_attention(services.store),
+                open_references(services.store), open_context(services.store))
+
+
+def open_hosts():
+    from fleet.services.hosts import HostSetup
+    return HostSetup(transport)
+
+
+def open_controller_commands(store, activation):
+    from fleet.orchestration import ControllerCommands
+    return ControllerCommands(facades(store), activation)
+
+
+def open_dispatch(store=None):
+    from fleet.services.dispatch import Dispatch
+    services = facades(store)
+    return Dispatch(services, transport, lambda: open_workspace(services.store), open_references(services.store),
+                    open_context(services.store), lambda activation: open_controller_commands(services.store, activation))
+
+
+def open_projects(store=None):
+    from fleet.services.projects import Projects
+    services = facades(store)
+    return Projects(lambda: open_workspace(services.store), services.execution, services.records, open_documents, transport)
+
+
+def open_configuration(store=None):
+    from fleet.services.configuration import Configuration
+    services = facades(store)
+    return Configuration(transport, lambda: open_workspace(services.store))
+
+
+def open_work_commands(store=None):
+    from fleet.services.work import WorkCommands
+    services = facades(store)
+    return WorkCommands(services.work, lambda: open_workspace(services.store), open_references(services.store))
+
+
+def open_triage_policy(store=None):
+    from fleet.services.triage import TriagePolicy
+    from fleet.triage_scheduler import TriageScheduler
+    services = facades(store)
+    return TriagePolicy(services, lambda: open_workspace(services.store),
+                        lambda: TriageScheduler(services, None, transport.host_by_name))
+
+
+def open_attention_commands(store=None):
+    from fleet.services.attention import AttentionCommands
+    services = facades(store)
+    return AttentionCommands(services, lambda: open_workspace(services.store), lambda: open_attention(services.store),
+                             open_references(services.store))
+
+
+def open_decision_commands(store=None):
+    from fleet.services.decisions import DecisionCommands
+    services = facades(store)
+    return DecisionCommands(services, lambda: open_workspace(services.store), open_references(services.store), transport)
+
+
+def open_history(store=None):
+    from fleet.services.history import History
+    return History(store or open_store())
+
+
+def stored_run_detail(identity, store, documents=None):
+    from fleet.projections.run_history import kept_run_detail
+    services = facades(store)
+    return kept_run_detail(identity, services.execution, services.work, services.library, documents or open_documents())
+
+
+def work_detail(reference, store=None):
+    from fleet.projections.project import work_detail
+    services = facades(store)
+    identity = open_references(services.store).work(reference)
+    return work_detail(identity, services.work, open_attention(services.store), services.execution, services.library, services.decisions)

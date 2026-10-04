@@ -36,7 +36,8 @@ def test_an_ambiguous_or_unknown_prefix_is_refused(home, prefix, count):
 
 def test_push_with_a_short_id_copies_into_the_full_jobs_context(home, monkeypatch, tmp_path):
     pushed = []
-    monkeypatch.setattr(cli, "push_context", lambda host, job, paths: pushed.append(job))
+    from fleet.services.context import Context
+    monkeypatch.setattr(Context, "push", lambda self, host, job, paths: pushed.append(job))
     (tmp_path / "brief.md").write_text("x")
     cli.main(["push", "home:6b0dbd89", str(tmp_path / "brief.md")])
     assert pushed == ["6b0dbd89-d087-4d48-a20f-9a47af709c32"]
@@ -214,7 +215,7 @@ def test_streaming_commands_prepare_connection_before_opening_pipe(home, monkeyp
         order.append("pipe")
         output = "" if command == "tail" else json.dumps({"status": "done", "description": "Finished", "results": []})
         return SimpleNamespace(stdout=StringIO(output), poll=lambda: 0)
-    monkeypatch.setattr(cli.subprocess, "Popen", spawn)
+    monkeypatch.setattr(cli.transport.subprocess, "Popen", spawn)
     if command == "wait":
         with pytest.raises(SystemExit) as error:
             cli.main([command, "home:6b0dbd89"])
@@ -234,7 +235,7 @@ def test_wait_prepares_all_hosts_before_launching_any_waiter(monkeypatch):
         if host is second:
             raise FleetError("carbon: SSH control connection check timed out after 10s")
     monkeypatch.setattr(cli.transport, "ensure_master", prepare)
-    monkeypatch.setattr(cli.subprocess, "Popen", lambda *args, **kwargs: pytest.fail("waiter launched before preparation completed"))
+    monkeypatch.setattr(cli.transport.subprocess, "Popen", lambda *args, **kwargs: pytest.fail("waiter launched before preparation completed"))
     with pytest.raises(FleetError, match="carbon: SSH control connection check timed out"):
         cli.wait_for(["one", "two"], step=None, timeout=None, as_json=False)
     assert order == ["home", "carbon"]

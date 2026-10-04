@@ -2,22 +2,15 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
-import os
 import re
 import shlex
-import subprocess
 import sys
-import tempfile
 import time
-from collections import defaultdict
-from dataclasses import asdict
+from dataclasses import asdict, fields
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
 
 from rich.console import Console, Group
 from rich.live import Live
@@ -28,18 +21,26 @@ from rich.tree import Tree
 from fleet import transport
 from fleet.modules import workspace as projects
 from fleet.composition import open_attention, open_decisions, open_execution, open_library, open_records, open_store, open_work, open_workspace
-from fleet.projections.decisions import decision_log
 from fleet.modules.attention import ItemResolved
 from fleet.projections.history import parse_moment, parse_since, subject_history
-from fleet.projections.project import project_status
-from fleet.projections.run_history import history_runs, run_detail
+from fleet.projections.project import project_status, filter_status
+from fleet.projections.run_history import history_runs
 from fleet.composition import storage_usage
 from fleet.modules import attention as attention_module
-from fleet.modules.work import CONDITIONS, KINDS, RELATION_TYPES, EvidenceSpecification
+from fleet.modules.work import CONDITIONS, KINDS, RELATION_TYPES
 from fleet.modules.execution import Run
 from fleet.transport import FleetError, Host, HostReport
-from fleet.orchestration import ControllerCommands, guide, orchestrator_prompt, promote_decision
-from fleet.composition import facades, open_authority
+from fleet.orchestration import promote_decision
+from fleet.composition import facades
+from fleet.composition import (open_references, open_context, open_jobs, open_hosts, open_dispatch,
+                               open_projects, open_configuration, open_work_commands, open_triage_policy)
+from fleet.composition import (open_attention_commands, open_decision_commands, open_history,
+    stored_run_detail as compose_run_detail, work_detail as compose_work_detail)
+from fleet.projections.notifications import Notifications
+from fleet.services.dispatch import DispatchRequest
+from fleet.services.jobs import listing_arguments
+from fleet.services.hosts import merge_detected as parse_detected
+from fleet.services.configuration import validate_paths, default_actor as actor_identity
 from fleet.web.server import serve, serve_fixture
 
 console = Console()
@@ -64,44 +65,7 @@ LIST_ITEM = re.compile(r"^\s*(?:[-*]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+)(.+)$")
 
 
 def resolve(reference: str) -> tuple[Host, str]:
-    """Expand job prefixes locally first; query workers only for identities not yet retained."""
-    host_name, job_id = reference.split(":", 1) if ":" in reference else (None, reference)
-    if not job_id:
-        raise FleetError("job id must not be empty; use host:id")
-    hosts = [transport.host_by_name(host_name)] if host_name is not None else transport.configured_hosts()
-    # A full worker UUID already names its directory; no listing is needed.
-    if host_name is not None and re.fullmatch(r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", job_id):
-        return hosts[0], job_id
-    by_name = {host.name: host for host in hosts}
-    identities = open_execution().job_identities(host_name)
-    local = [(by_name[name], identity) for name, identity in identities
-             if name in by_name and identity.startswith(job_id)]
-    exact = [match for match in local if match[1] == job_id]
-    matches = exact or local
-    if len(matches) == 1:
-        return matches[0]
-    if len(matches) > 1:
-        scope = f" on {host_name}" if host_name is not None else "; use host:id"
-        raise FleetError(f"'{job_id}' matches {len(matches)} jobs{scope}")
-    if host_name is not None:
-        try:
-            jobs = transport.call(hosts[0], ["ls", "--all", "--events", "0"]).get("jobs", [])
-        except FleetError as error:
-            raise FleetError(f"cannot resolve '{reference}': {error}") from error
-        remote = [(hosts[0], job["id"]) for job in jobs if job["id"].startswith(job_id)]
-    else:
-        reports = transport.gather(hosts, ["ls", "--all", "--events", "0"])
-        errors = [report.error for report in reports if report.error]
-        if errors:
-            raise FleetError(f"cannot resolve '{reference}': " + "; ".join(errors))
-        remote = [(report.host, job["id"]) for report in reports for job in report.jobs
-                  if job["id"].startswith(job_id)]
-    exact = [match for match in remote if match[1] == job_id]
-    matches = exact or remote
-    if len(matches) != 1:
-        scope = f" on {host_name}" if host_name is not None else "; use host:id"
-        raise FleetError(f"'{job_id}' matches {len(matches)} jobs{scope}")
-    return matches[0]
+    return open_references().job(reference)
 
 
 def age(timestamp: float | None) -> str:
@@ -209,35 +173,16 @@ def render(reports: list[HostReport], *, group_by: str, brief: bool,
 
 
 def list_arguments(arguments: argparse.Namespace) -> list[str]:
-    fleetd_arguments = ["ls", "--since-hours", str(arguments.since)]
-    return fleetd_arguments + (["--all"] if arguments.all else [])
+    return listing_arguments(since=arguments.since, all_jobs=arguments.all)
 
 
 def selected_hosts(arguments: argparse.Namespace) -> list[Host]:
-    hosts = transport.configured_hosts()
-    if getattr(arguments, "host", None):
-        hosts = [host for host in hosts if host.name in arguments.host]
-    if not hosts:
-        raise FleetError("no hosts configured — fleet host add <name> --ssh <target>")
-    return hosts
+    return open_jobs().selected_hosts(getattr(arguments, "host", None))
 
 
 def gather_listing(hosts: list[Host], arguments: argparse.Namespace) -> tuple[list[HostReport], dict[str, list[dict[str, Any]]]]:
-    """Jobs and live interactive sessions from every host, fetched side by side."""
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        jobs = pool.submit(transport.gather, hosts, list_arguments(arguments))
-        sessions = pool.submit(transport.gather_sessions, hosts) if arguments.sessions else None
-        reports = jobs.result()
-        by_host = sessions.result() if sessions else {}
-    if arguments.project:
-        workspace = open_workspace()
-        identity = workspace.resolve_project(arguments.project)
-        links = {(link.host, link.label) for link in workspace.registry().get(identity).links}
-        for report in reports:
-            report.jobs = [job for job in report.jobs if (report.host.name, job.get("project")) in links]
-        by_host = {name: [session for session in host_sessions if (name, session.get("project")) in links]
-                   for name, host_sessions in by_host.items()}
-    return reports, by_host
+    return open_jobs().listing(hosts, since=arguments.since, all_jobs=arguments.all,
+                               sessions=arguments.sessions, project=arguments.project)
 
 
 # ------------------------------------------------------------- commands
@@ -278,12 +223,7 @@ def read_steps(arguments: argparse.Namespace) -> list[dict[str, Any]]:
 
 
 def push_context(host: Host, job_id: str, paths: list[str]) -> None:
-    missing = [path for path in paths if not os.path.exists(path)]
-    if missing:
-        raise FleetError(f"context not found: {', '.join(missing)}")
-    remote_directory = f"~/.fleet/jobs/{job_id}/context/" if not host.is_local else os.path.expanduser(
-        f"~/.fleet/jobs/{job_id}/context/")
-    transport.rsync([os.path.abspath(path) for path in paths], host.rsync_target(remote_directory), host)
+    open_context().push(host, job_id, paths)
 
 
 def command_send(arguments: argparse.Namespace) -> None:
@@ -291,57 +231,11 @@ def command_send(arguments: argparse.Namespace) -> None:
 
 
 def command_dispatch(arguments: argparse.Namespace) -> None:
-    if arguments.work_item is not None:
-        try:
-            open_work().get(arguments.work_item)
-        except LookupError as error:
-            raise FleetError(str(error)) from error
-    host = transport.host_by_name(arguments.host)
-    workspace = open_workspace()
-    project_id = workspace.resolve_project(arguments.project)
-    label = workspace.host_label(project_id, host.name)
-    if arguments.work_item is not None and open_work().get(arguments.work_item).project != project_id:
-        raise FleetError("work item belongs to another project; use its registered project")
     steps = read_steps(arguments)
-    resolve_step_work_ids(steps)
-    if not steps:
-        raise FleetError("give at least one --step or a --steps-file")
-    fleetd_arguments = ["create", "--project", label, "--description", arguments.description,
-                        "--agent", arguments.agent, "--cwd", arguments.cwd,
-                        "--steps-file", "/dev/stdin", "--hold"]
-    if arguments.permission is not None:
-        fleetd_arguments += ['--permission', arguments.permission]
-    for flag, value in (("--model", arguments.model), ("--id", arguments.id)):
-        if value:
-            fleetd_arguments += [flag, value]
-    if arguments.allow:
-        fleetd_arguments += ["--allowed-tools", json.dumps(arguments.allow)]
-    for directory in arguments.add_dir or []:
-        fleetd_arguments += ["--add-dir", directory]
-    for pair in arguments.env or []:
-        if "=" not in pair:
-            raise FleetError(f"--env takes NAME=value, not {pair}")
-        fleetd_arguments += ["--env", pair]
-    if arguments.keep_going:
-        fleetd_arguments.append("--keep-going")
-    from uuid import uuid4
-
-    execution = open_execution()
-    key = str(uuid4()) if arguments.id is None else arguments.id
-    try:
-        payload, guidance = guide(open_records(), arguments.work_item,
-            {"cwd": arguments.cwd, "arguments": fleetd_arguments, "steps": steps,
-             "context": arguments.context, "hold": arguments.hold})
-        intent = execution.dispatch(arguments.work_item, host=host.name, runtime=arguments.agent,
-            payload=payload, project=project_id, guidance=guidance,
-            actor=arguments.actor, reason=arguments.description, idempotency_key=key,
-            remote_job_id=arguments.id)
-    except (ValueError, LookupError) as error:
-        raise FleetError(str(error)) from error
+    request = DispatchRequest(**{field.name: getattr(arguments, field.name) for field in fields(DispatchRequest)})
+    result = open_dispatch().send(request, steps)
+    intent, guidance, current, job = (result[name] for name in ('intent', 'guidance', 'current', 'job'))
     if not intent.created:
-        if intent.run.status == "unknown outcome":
-            deliver_dispatch(intent.run, reconcile=True)
-        current = execution.get_run(intent.run.id)
         reference = f"{intent.run.host}:{intent.run.remote_job_id}"
         if arguments.json:
             print(json.dumps({"job": reference, "status": current.status,
@@ -350,8 +244,7 @@ def command_dispatch(arguments: argparse.Namespace) -> None:
             console.print(f"{reference} already sent with this --id: run {intent.run.id[:8]} is {current.status}; "
                           f"nothing new started", markup=False)
         return
-    job = deliver_dispatch(intent.run)
-    reference = f"{host.name}:{job['id']}"
+    reference = f"{intent.run.host}:{job['id']}"
     if arguments.json:
         print(json.dumps({"job": reference, "status": job["status"], "steps": len(job["steps"]),
                           "run": intent.run.id, "permission": job.get("permission"), "guidance": guidance}))
@@ -365,42 +258,25 @@ def command_dispatch(arguments: argparse.Namespace) -> None:
 
 
 def deliver_dispatch(run: Run, *, reconcile: bool = False) -> dict:
-    host = transport.host_by_name(run.host)
-    return open_execution().deliver(run,
-        lambda arguments, stdin: transport.call(host, arguments, stdin_text=stdin),
-        lambda job, context, guidance: push_guided_context(host, job, context, guidance), reconcile=reconcile)
+    return open_dispatch().deliver(run, reconcile=reconcile)
 
 
 def push_guided_context(host: Host, job_id: str, paths: list[str], guidance: dict | None) -> None:
-    """Context paths plus the pinned constitution and charter, written as CONSTITUTION.md and CHARTER.md."""
-    if guidance is None:
-        push_context(host, job_id, paths)
-        return
-    with tempfile.TemporaryDirectory(prefix="fleet-guidance-") as directory:
-        push_context(host, job_id, paths + open_records().write_guidance_files(guidance, directory))
+    open_context().push_guided(host, job_id, paths, guidance)
 
 
 def command_triage_policy(arguments: argparse.Namespace) -> None:
-    from fleet.modules.records import TRIAGE_PATH, TriageMandate
     try:
-        services = facades()
-        project = services.workspace.resolve_project(arguments.project)
-        records = services.records
-        before = records.triage_policy(project)
+        policy_service = open_triage_policy()
+        project, before = policy_service.show(arguments.project)
         if arguments.policy_command == 'set':
             body = Path(arguments.file).read_text()
-            policy = asdict(TriageMandate.parse(body))
-            if policy['criteria_it_may_judge']:
-                raise ValueError('triage may not judge work criteria')
+            project, before, current, unchanged = policy_service.set(arguments.project, body, actor=arguments.actor)
+            policy = current['policy']
             previous = None if before is None else before['policy']
-            if previous == policy:
+            if unchanged:
                 print(f"Triage policy for {project}: unchanged, version {before['version']['number']}")
                 return
-            result = records.write_mandate(project, TRIAGE_PATH, json.dumps(policy, indent=2) + '\n',
-                                           key=str(uuid4()), actor=arguments.actor)
-            if result['state'] != 'confirmed':
-                raise ValueError(result['error'])
-            current = records.triage_policy(project)
             print(f"Recorded triage policy for {project}, version {current['version']['number']} "
                   f"by {current['version']['actor']} ({current['version']['revision'][:12]})")
             for field, value in policy.items():
@@ -426,10 +302,7 @@ def command_triage_policy(arguments: argparse.Namespace) -> None:
 
 
 def command_triage_status(arguments: argparse.Namespace) -> None:
-    from fleet.triage_scheduler import TriageScheduler
-    services = facades()
-    project = open_workspace(services.store).resolve_project(arguments.project)
-    result = TriageScheduler(services, None, transport.host_by_name).status(project)
+    project, result = open_triage_policy().status(arguments.project)
     if getattr(arguments, 'json', False):
         print(json.dumps(result))
         return
@@ -456,68 +329,27 @@ def command_triage_status(arguments: argparse.Namespace) -> None:
 
 
 def command_orchestrate(arguments: argparse.Namespace) -> None:
-    host = transport.host_by_name(arguments.host)
-    if not host.is_local:
-        raise FleetError('orchestrator must run on the controller machine')
-    arguments.work_item = work_cli_id(arguments.work_item)
-    store = open_store()
-    try:
-        activation = open_authority(store).activate(arguments.work_item, actor='orchestrator',
-            role='orchestrator', mandate_path=arguments.mandate)
-        records = open_records(store)
-        _, mandate = records.mandate_version(activation.project, activation.mandate_path,
-                                             revision=activation.mandate_version)
-        payload, guidance = guide(records, activation.work_item, dict(
-            steps=[dict(prompt=orchestrator_prompt(activation, mandate), title='Orchestrate')], context=None))
-        worker =['create', '--project', open_workspace(store).host_label(activation.project, host.name), '--description', 'Orchestrate work item',
-                  '--agent', arguments.agent, '--cwd', arguments.cwd, '--steps-file', '/dev/stdin', '--hold']
-        if arguments.permission is not None:
-            worker += ['--permission', arguments.permission]
-        for name in ('FLEET_STORE', 'FLEET_CONFIG', 'FLEET_HOME'):
-            if name in os.environ:
-                worker += ['--env', name + '=' + os.environ[name]]
-        intent = open_execution(store).dispatch(activation.work_item, actor=activation.actor,
-            activation=activation.id, host=host.name, runtime=arguments.agent, guidance=guidance,
-            payload=dict(payload, cwd=arguments.cwd, arguments=worker, hold=False),
-            reason='Orchestrate work item', idempotency_key=activation.id)
-        deliver_dispatch(intent.run)
-    except (ValueError, LookupError) as error:
-        raise FleetError(str(error)) from error
+    activation, intent = open_dispatch().orchestrate(host=arguments.host, work_item=arguments.work_item,
+        mandate=arguments.mandate, agent=arguments.agent, cwd=arguments.cwd, permission=arguments.permission)
     print(json.dumps(dict(activation=activation.id, run=intent.run.id, mandate_version=activation.mandate_version)))
 
 
 def command_control(arguments: argparse.Namespace) -> None:
     try:
-        result = ControllerCommands(open_store(), arguments.activation).execute(arguments.operation,
-                                                                              json.loads(arguments.payload))
-        if arguments.operation == 'dispatch':
-            deliver_dispatch(result.run, reconcile=not result.created)
-        elif arguments.operation == 'retry' and isinstance(result, dict) and result.get('run') is not None:
-            deliver_dispatch(open_execution().get_run(result['run']), reconcile=not result['created'])
-        print(json.dumps(result if isinstance(result, dict) else asdict(result), default=str))
-    except (ValueError, LookupError, TypeError) as error:
+        payload = json.loads(arguments.payload)
+    except (ValueError, TypeError) as error:
         raise FleetError(str(error)) from error
+    result = open_dispatch().control(arguments.activation, arguments.operation, payload)
+    print(json.dumps(result if isinstance(result, dict) else asdict(result), default=str))
 
 
 def command_run_retry(arguments: argparse.Namespace) -> None:
-    from uuid import uuid4
-
-    execution = open_execution()
-    try:
-        intent = execution.retry(arguments.run, actor=arguments.actor, idempotency_key=str(uuid4()))
-    except (ValueError, LookupError) as error:
-        raise FleetError(str(error)) from error
-    if intent.created:
-        deliver_dispatch(intent.run)
-    print(json.dumps(asdict(intent.run), default=str))
+    run = open_dispatch().retry(arguments.run, actor=arguments.actor)
+    print(json.dumps(asdict(run), default=str))
 
 
 def command_dispatch_work(arguments: argparse.Namespace) -> None:
-    try:
-        item = open_work().get(arguments.work_item)
-    except LookupError as error:
-        raise FleetError(str(error)) from error
-    arguments.project = item.project
+    arguments.project = open_dispatch().project_for_work(arguments.work_item)
     arguments.description = arguments.instruction
     arguments.step = [arguments.instruction]
     command_dispatch(arguments)
@@ -553,64 +385,26 @@ def command_library_link(arguments: argparse.Namespace) -> None:
 def command_add(arguments: argparse.Namespace) -> None:
     host, job_id = resolve(arguments.job)
     steps = read_steps(arguments)
-    resolve_step_work_ids(steps)
-    named = [step["work_item"] for step in steps if step.get("work_item") is not None]
-    if named:
-        execution = open_execution()
-        try:
-            for work_item in named:
-                execution.require_step_work(host.name, job_id, work_item)
-        except (ValueError, LookupError) as error:
-            raise FleetError(str(error)) from error
-    if arguments.context:
-        push_context(host, job_id, arguments.context)
-    waiting = None if arguments.retry or arguments.no_answer else waiting_step(host, job_id)
-    if waiting is not None:
-        answer_waiting_step(host, job_id, waiting, steps, arguments.actor)
-        return
-    fleetd_arguments = ["add", job_id, "--steps-file", "/dev/stdin"] + (["--retry"] if arguments.retry else [])
-    job = transport.call(host, fleetd_arguments, stdin_text=json.dumps(steps))
-    console.print(f"[bold]{host.name}:{job_id}[/] {job['status']} · now {len(job['steps'])} step(s)")
+    job, details = open_jobs().add(host, job_id, steps, context=arguments.context, retry=arguments.retry,
+                                 no_answer=arguments.no_answer, actor=arguments.actor)
+    if details is not None:
+        console.print(f"[bold]{host.name}:{job_id}[/] {details} (--no-answer appends instead)")
+    else:
+        console.print(f"[bold]{host.name}:{job_id}[/] {job['status']} · now {len(job['steps'])} step(s)")
 
 
 def waiting_step(host: Host, job_id: str) -> int | None:
-    """The job's blocked step that has no answer yet, if any."""
-    job = transport.call(host, ["show", job_id, "--events", "0"])
-    return next((step["index"] for step in job["steps"]
-                 if step["status"] == "blocked" and step.get("answered_by") is None), None)
+    return open_jobs().waiting_step(host, job_id)
 
 
 def answer_waiting_step(host: Host, job_id: str, step: int, steps: list[dict[str, Any]], actor: str) -> None:
-    """Add the steps as the answer to the waiting step, as the deck does: they run next, and the open attention
-    item for the step is resolved. Keyed like the deck's answer, so a retried add queues nothing more."""
-    attention = open_attention()
-    item = next((item for item in attention.list() if item.state != "resolved" and item.stream_context is not None
-                 and item.stream_context.blocked_step and (item.stream_context.host, item.stream_context.owner_id,
-                                                           item.stream_context.step) == (host.name, job_id, step)),
-                None)
-    payload = json.dumps([{"title": f"Answer to step {step + 1}", **added} for added in steps])
-    key = f"{item.id}:answer" if item is not None else (
-        f"cli:{job_id}:{step}:{hashlib.sha256(payload.encode()).hexdigest()[:16]}")
-    result = transport.call(host, ["add", job_id, "--steps-file", "/dev/stdin", "--schema-version", "1",
-                                   "--key", key, "--answers", str(step)], stdin_text=payload)
-    if not isinstance(result, dict) or (result.get("status"), result.get("answers")) != ("applied", step):
-        raise FleetError("worker did not confirm the answer")
-    continuation = result["steps"][0]
-    details = f"answered; step {step + 1} continues as step {continuation + 1}"
-    if item is not None:
-        attention.resolve(item.id, details=details, actor=actor)
+    details = open_jobs().answer_waiting_step(host, job_id, step, steps, actor)
     console.print(f"[bold]{host.name}:{job_id}[/] {details} (--no-answer appends instead)")
 
 
 def command_start(arguments: argparse.Namespace) -> None:
     host, job_id = resolve(arguments.job)
-    execution = open_execution()
-    run = next((run for run in execution.runs() if (run.host, run.remote_job_id) == (host.name, job_id)), None)
-    call = lambda fleetd_arguments, stdin: transport.call(host, fleetd_arguments, stdin_text=stdin)
-    try:
-        job = call(["start", job_id], None) if run is None else execution.start(run, call)
-    except (ValueError, LookupError) as error:
-        raise FleetError(str(error)) from error
+    job = open_jobs().start(host, job_id)
     console.print(f"started {host.name}:{job_id}: its agent works through the job's pending steps "
                   f"({job['status']})", markup=False)
 
@@ -623,16 +417,13 @@ def command_push(arguments: argparse.Namespace) -> None:
 
 def command_pull(arguments: argparse.Namespace) -> None:
     host, job_id = resolve(arguments.job)
-    destination = Path(arguments.destination or f"./fleet-{job_id}").resolve()
-    destination.mkdir(parents=True, exist_ok=True)
-    source = f"~/.fleet/jobs/{job_id}/outbox/"
-    transport.rsync([host.rsync_target(os.path.expanduser(source) if host.is_local else source)], str(destination), host)
+    destination = open_context().pull(host, job_id, arguments.destination)
     console.print(f"outbox of {host.name}:{job_id} → {destination}")
 
 
 def command_show(arguments: argparse.Namespace) -> None:
     host, job_id = resolve(arguments.job)
-    job = transport.call(host, ["show", job_id, "--events", str(arguments.events)])
+    job = open_jobs().show(host, job_id, events=arguments.events)
     if arguments.json:
         print(json.dumps(job))
         return
@@ -651,7 +442,6 @@ def command_show(arguments: argparse.Namespace) -> None:
         line = Text(f"{stamp} {event.get('step', '')} ", "dim")
         line.append(f"{TOOL_ICON.get(kind, kind)} {event.get('summary', '')}", "red" if event["kind"] == "error" else "")
         console.print(line, highlight=False)
-
 
 def workspace_line(job: dict[str, Any]) -> Text:
     """Where the job works: repository, worktree, branch or detached head, and uncommitted paths."""
@@ -674,53 +464,24 @@ def workspace_line(job: dict[str, Any]) -> Text:
 
 def command_tail(arguments: argparse.Namespace) -> None:
     host, job_id = resolve(arguments.job)
-    transport.ensure_master(host)
-    command = host.fleetd_command(["events", job_id, "--lines", str(arguments.lines)] + (["-f"] if arguments.follow else []))
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, text=True)
-    assert process.stdout is not None
-    try:
-        for line in process.stdout:
-            event = json.loads(line)
-            stamp = time.strftime("%H:%M:%S", time.localtime(event["ts"]))
-            kind = event.get("tool") or event["kind"]
-            print(f"{stamp} [{event.get('step', '-')}] {TOOL_ICON.get(kind, kind)} {event.get('summary', '')}", flush=True)
-    except KeyboardInterrupt:
-        process.terminate()
+    for event in open_jobs().events(host, job_id, lines=arguments.lines, follow=arguments.follow):
+        stamp = time.strftime("%H:%M:%S", time.localtime(event["ts"]))
+        kind = event.get("tool") or event["kind"]
+        print(f"{stamp} [{event.get('step', '-')}] {TOOL_ICON.get(kind, kind)} {event.get('summary', '')}", flush=True)
 
 
 def command_attach(arguments: argparse.Namespace) -> None:
     host, job_id = resolve(arguments.job)
-    job = transport.call(host, ["show", job_id])
-    command = host.shell_command(job["tmux"], interactive=True)
-    os.execvp(command[0], command)
+    open_jobs().attach(host, job_id)
 
 
 def wait_for(references: list[str], *, step: int | None, timeout: float | None, as_json: bool,
              any_job: bool = False) -> None:
-    """Block until the jobs finish. Exit code 0 if all finished jobs are done, 1 otherwise."""
     pending = {reference: resolve(reference) for reference in references}
-    # Prepare all connections before opening pipes, so a setup failure cannot orphan another waiter.
-    for host, _ in pending.values():
-        transport.ensure_master(host)
-    finished: dict[str, dict[str, Any]] = {}
-    processes = {}
-    for reference, (host, job_id) in pending.items():
-        fleetd_arguments = ["wait", job_id] + (["--step", str(step)] if step is not None else [])
-        fleetd_arguments += ["--timeout", str(timeout)] if timeout else []
-        processes[reference] = subprocess.Popen(host.fleetd_command(fleetd_arguments), stdout=subprocess.PIPE, text=True)
-    while processes:
-        for reference, process in list(processes.items()):
-            if process.poll() is None:
-                continue
-            output = (process.stdout.read() if process.stdout else "").strip().splitlines()
-            finished[reference] = json.loads(output[-1]) if output else {"error": "no output"}
-            del processes[reference]
-            report_finished(reference, finished[reference], as_json=as_json)
-        if any_job and finished:
-            for process in processes.values():
-                process.terminate()
-            break
-        time.sleep(0.5)
+    finished = {}
+    for reference, job in open_jobs().wait(pending, step=step, timeout=timeout, any_job=any_job):
+        finished[reference] = job
+        report_finished(reference, job, as_json=as_json)
     sys.exit(0 if all(job.get("status") == "done" for job in finished.values()) else 1)
 
 
@@ -747,8 +508,7 @@ def command_wait(arguments: argparse.Namespace) -> None:
 
 def command_result(arguments: argparse.Namespace) -> None:
     host, job_id = resolve(arguments.job)
-    fleetd_arguments = ["result", job_id] + (["--step", str(arguments.step - 1)] if arguments.step else [])
-    document = transport.call(host, fleetd_arguments)
+    document = open_jobs().result(host, job_id, step=arguments.step)
     if arguments.json:
         print(json.dumps(document))
         return
@@ -760,48 +520,22 @@ def command_result(arguments: argparse.Namespace) -> None:
 
 def command_cancel(arguments: argparse.Namespace) -> None:
     host, job_id = resolve(arguments.job)
-    job = transport.call(host, ["cancel", job_id] + (["--all-steps"] if arguments.all_steps else []))
+    job = open_jobs().cancel(host, job_id, all_steps=arguments.all_steps)
     console.print(f"{host.name}:{job_id} {job['status']}")
 
-
 def resolve_job_or_session(reference: str) -> tuple[Host, str]:
-    """`host:id`, or a bare id of a job, else of an interactive session, searched on every host."""
-    try:
-        return resolve(reference)
-    except FleetError:
-        hosts = transport.configured_hosts()
-        sessions = transport.gather_sessions(hosts)
-        matches = [(host, session["id"]) for host in hosts for session in sessions.get(host.name, [])
-                   if session["id"].startswith(reference)]
-        if len(matches) != 1:
-            raise
-        return matches[0]
+    return open_references().job_or_session(reference)
 
 
 def command_move(arguments: argparse.Namespace) -> None:
-    """Move jobs, or interactive sessions started outside fleet, to a project (its label on that host)."""
-    workspace = open_workspace()
-    identity = workspace.resolve_project(arguments.project)
     targets = [resolve_job_or_session(reference) for reference in arguments.jobs]
-    moves = [(host, job_id, workspace.host_label(identity, host.name)) for host, job_id in targets]
-    for host, job_id, label in moves:
-        transport.call(host, ["mv", job_id, label])
+    for host, job_id, identity, label in open_jobs().move(arguments.project, targets):
         console.print(f"{host.name}:{job_id} → {identity} ({label})")
 
 
 def command_remove(arguments: argparse.Namespace) -> None:
     host, job_id = resolve(arguments.job)
-    job = transport.call(host, ["show", job_id, "--events", "0"])
-    from fleet.composition import observe_runs
-    from fleet.projections.workspace import resolve as resolve_label
-    store = open_store()
-    execution = open_execution(store)
-    registry = open_workspace(store).registry()
-    observe_runs(execution, open_library(store), {"name": host.name, "ok": True, "jobs": {job_id: job}},
-                 project_of=lambda value: resolve_label(registry, host.name, value)["project_id"])
-    transport.keep_run_trace(execution, host, job)
-    removed = transport.call(host, ["rm", job_id, *(["--force"] if arguments.force else [])])
-    execution.removed(host.name, job_id, at=removed.get("removed_at"))
+    removed = open_jobs().remove(host, job_id, force=arguments.force)
     if "outbox_files" not in removed:   # fleetd before audit 1 reports only the id
         console.print(f"removed {host.name}:{job_id} for good (this host's fleetd does not count what it deleted)")
         return
@@ -857,10 +591,7 @@ def command_history_runs(arguments: argparse.Namespace) -> None:
 
 
 def stored_run_detail(identity: str, store, documents=None) -> dict:
-    from fleet.composition import open_documents
-    detail = run_detail(identity, open_execution(store), open_work(store), open_library(store))
-    detail["kept_documents"] = (documents or open_documents()).run_documents(detail["run"])
-    return detail
+    return compose_run_detail(identity, store, documents)
 
 
 def command_run_show(arguments: argparse.Namespace) -> None:
@@ -914,45 +645,26 @@ def command_store_usage(arguments: argparse.Namespace) -> None:
 
 
 def command_notify(arguments: argparse.Namespace) -> None:
-    """Print one line whenever any step or job changes status — made for a Monitor/background watcher."""
     hosts = selected_hosts(arguments)
-    known: dict[str, str] = {}
-    down: dict[str, str] = {}
-    first_pass = True
+    notifications = Notifications()
     while True:
-        for report in transport.gather(hosts, ["ls", "--since-hours", "48"]):
-            if getattr(report, "error", None):
-                if report.host.name not in down:
-                    down[report.host.name] = datetime.now().astimezone().isoformat()
-                    print(f"HOST DOWN {report.host.name} since {down[report.host.name]}: {report.error}", flush=True)
-                continue
-            if report.host.name in down:
-                down.pop(report.host.name)
-                print(f"HOST UP {report.host.name}", flush=True)
-            for job in report.jobs:
-                reference = f"{report.host.name}:{job['id']}"
-                for step in job["steps"]:
-                    key = f"{reference}#{step['index']}"
-                    if known.get(key) != step["status"]:
-                        if not first_pass and step["status"] in ("done", "failed", "blocked", "cancelled", "running"):
-                            print(f"STEP {step['status'].upper()} {reference} step {step['index'] + 1}/{len(job['steps'])}: "
-                                  f"{step['title']}" + (f" — {step['result'][:200]}" if step.get("result") else ""), flush=True)
-                        known[key] = step["status"]
-                if known.get(reference) != job["status"]:
-                    if not first_pass and job["status"] in ("done", "failed", "blocked", "cancelled", "stalled", "lost"):
-                        print(f"JOB {job['status'].upper()} {reference} ({job['project']}): {job['description']}", flush=True)
-                    known[reference] = job["status"]
-        first_pass = False
+        for event in notifications.update(open_jobs().notification_reports(hosts)):
+            if event['kind'] == 'host_down':
+                print(f"HOST DOWN {event['host']} since {event['since']}: {event['error']}", flush=True)
+            elif event['kind'] == 'host_up':
+                print(f"HOST UP {event['host']}", flush=True)
+            elif event['kind'] == 'step':
+                step, reference = event['step'], event['reference']
+                print(f"STEP {step['status'].upper()} {reference} step {step['index'] + 1}/{event['total']}: "
+                      f"{step['title']}" + (f" — {step['result'][:200]}" if step.get('result') else ''), flush=True)
+            else:
+                job, reference = event['job'], event['reference']
+                print(f"JOB {job['status'].upper()} {reference} ({job['project']}): {job['description']}", flush=True)
         time.sleep(arguments.interval)
 
 
 def command_host_add(arguments: argparse.Namespace) -> None:
-    open_workspace()
-    config = transport.load_config()
-    entry = {"ssh": None if arguments.local else (arguments.ssh or arguments.name), "python": arguments.python}
-    previous = config.setdefault("hosts", {}).get(arguments.name)
-    config["hosts"][arguments.name] = entry
-    transport.save_config(config)
+    entry, previous = open_configuration().host_add(arguments.name, local=arguments.local, ssh=arguments.ssh, python=arguments.python)
     if previous is None:
         console.print(f"added {arguments.name} ({describe_host(entry)}); now run: fleet install {arguments.name}",
                       markup=False)
@@ -966,14 +678,7 @@ def describe_host(entry: dict) -> str:
 
 
 def command_host_remove(arguments: argparse.Namespace) -> None:
-    workspace = open_workspace()
-    config = transport.load_config()
-    entry = config.get("hosts", {}).pop(arguments.name, None)
-    if entry is None:
-        raise FleetError(f"no host '{arguments.name}'; fleet hosts lists them")
-    transport.save_config(config)
-    links = sorted(f"{link.host}:{link.label}" for project in workspace.registry().projects.values()
-                   for link in project.links if link.host == arguments.name)
+    entry, links = open_configuration().host_remove(arguments.name)
     console.print(f"removed host {arguments.name} ({describe_host(entry)}) from the config; "
                   f"its jobs stay on the host", markup=False)
     if links:
@@ -981,53 +686,32 @@ def command_host_remove(arguments: argparse.Namespace) -> None:
 
 
 def command_hosts(arguments: argparse.Namespace) -> None:
-    if not transport.configured_hosts():
+    reports = open_jobs().host_reports()
+    if not reports:
         print("No hosts configured; add one with: fleet host add NAME --ssh TARGET (or --local)")
         return
-    for report in transport.gather(transport.configured_hosts(), ["ls"]):
+    for report in reports:
         target = report.host.ssh_target or "(local)"
         state = f"[red]{report.error}[/]" if report.error else f"[green]ok[/] · {len(report.jobs)} active job(s)"
         console.print(f"[bold]{report.host.name}[/] {target} · {state}")
 
 
 def local_library_key(project: str, libraries: dict[str, Any]) -> str:
-    """Keep a legacy registered-name key only when it unambiguously owns this library."""
-    if project in libraries:
-        return project
-    workspace = open_workspace()
-    name = workspace.registry().get(project).name
-    if name in libraries and workspace.resolve_project(name) == project:
-        return name
-    return project
+    return open_configuration().library_key(project, libraries)
 
 
 def command_library_add(arguments: argparse.Namespace) -> None:
-    arguments.project = open_workspace().resolve_project(arguments.project)
-    root = Path(arguments.path).expanduser().resolve()
-    if not root.is_dir():
-        raise FleetError(f"not a directory: {root}")
-    config = transport.load_config()
-    libraries = config.setdefault("libraries", {})
-    libraries[local_library_key(arguments.project, libraries)] = (
-        {"path": str(root), "recursive": True} if arguments.recursive else str(root))
-    transport.save_config(config)
+    arguments.project, root = open_configuration().library_add(arguments.project, arguments.path, recursive=arguments.recursive)
     console.print(f"added library {arguments.project}: {root}{' (every folder)' if arguments.recursive else ''}")
 
 
 def command_library_remove(arguments: argparse.Namespace) -> None:
-    arguments.project = open_workspace().resolve_project(arguments.project)
-    config = transport.load_config()
-    libraries = config.get("libraries", {})
-    entry = libraries.pop(local_library_key(arguments.project, libraries), None)
-    if entry is None:
-        raise FleetError(f"no library '{arguments.project}'; fleet libraries lists them")
-    transport.save_config(config)
-    path = entry if isinstance(entry, str) else entry["path"]
+    arguments.project, path = open_configuration().library_remove(arguments.project)
     console.print(f"removed library {arguments.project} ({path}) from the config; its files stay", markup=False)
 
 
 def command_libraries(arguments: argparse.Namespace) -> None:
-    libraries = transport.load_config().get("libraries", {})
+    libraries = open_configuration().libraries()
     if not libraries:
         print("No libraries configured; add one with: fleet library add PROJECT PATH")
     for project, entry in sorted(libraries.items()):
@@ -1038,58 +722,33 @@ def command_libraries(arguments: argparse.Namespace) -> None:
 
 
 def parse_link(text: str) -> tuple[str, str]:
-    """`host:label` → (host, label) for a configured host."""
-    host, _, label = text.partition(":")
-    if not host or not label:
-        raise FleetError(f"expected host:label, got '{text}'")
-    return transport.host_by_name(host).name, label
+    return open_projects().parse_link(text)
 
 
 def command_project_add(arguments: argparse.Namespace) -> None:
-    links = [parse_link(text) for text in arguments.link or []]
-
-    def create(registry: projects.Registry) -> projects.Project:
-        project = registry.create(arguments.name, arguments.repo or [])
-        for host, label in links:
-            registry.link(project.id, host, label)
-        return project
-    project = open_workspace().edit_registry(create)
+    project = open_projects().add(arguments.name, arguments.repo or [], arguments.link or [])
     console.print(f"added project [bold]{project.id}[/] {escape(project.name)}")
 
 
 def command_project_rename(arguments: argparse.Namespace) -> None:
-    arguments.id = open_workspace().resolve_project(arguments.id)
-    workspace = open_workspace()
-    workspace.edit_registry(lambda registry: registry.rename(arguments.id, arguments.name))
-    console.print(f"{arguments.id} → {escape(workspace.registry().get(arguments.id).name)}")
+    project = open_projects().rename(arguments.id, arguments.name)
+    console.print(f"{project.id} → {escape(project.name)}")
 
 
 def command_project_link(arguments: argparse.Namespace) -> None:
-    arguments.id = open_workspace().resolve_project(arguments.id)
-    host, label = parse_link(arguments.link)
-    link = open_workspace().edit_registry(lambda registry: registry.link(arguments.id, host, label))
-    count = open_execution().assign_label(host, label, arguments.id, actor="user")
-    from fleet.composition import open_documents
-    documents = open_documents().assign_label(host, label, arguments.id)
+    arguments.id, link, count, documents = open_projects().link(arguments.id, arguments.link)
     console.print(f"linked {escape(link.host)}:{escape(link.label)} → {arguments.id}; "
                   f"{count} earlier runs assigned; {documents} retained jobs moved")
 
 
 def command_project_unlink(arguments: argparse.Namespace) -> None:
-    host, _, label = arguments.link.partition(":")
-    project_id = open_workspace().edit_registry(lambda registry: registry.unlink(host, label))
+    host, label, project_id = open_projects().unlink(arguments.link)
     console.print(f"unlinked {escape(host)}:{escape(label)} from {project_id}")
 
 
 def command_project_merge(arguments: argparse.Namespace) -> None:
-    """Merge project identity and free the other's floor in one transaction."""
-    workspace = open_workspace()
-    arguments.keep = workspace.resolve_project(arguments.keep)
-    arguments.other = workspace.resolve_project(arguments.other)
-    registry = workspace.registry()
-    other = registry.get(arguments.other)
-    result = workspace.merge(arguments.keep, arguments.other)
-    keep = workspace.registry().get(arguments.keep)
+    other, keep, result = open_projects().merge(arguments.keep, arguments.other)
+    arguments.other = other.id
     console.print(f"merged {arguments.other} {escape(other.name)} into [bold]{keep.id}[/] {escape(keep.name)}")
     console.print("  moved " + ", ".join(f"{count} {kind.replace('_', ' ')}" for kind, count in result.counts.items()))
     floor_feedback = f"floor {result.freed} is freed" if result.freed is not None else "it held no floor"
@@ -1099,28 +758,13 @@ def command_project_merge(arguments: argparse.Namespace) -> None:
 
 
 def command_project_management(arguments: argparse.Namespace) -> None:
-    arguments.id = open_workspace().resolve_project(arguments.id)
-    path = Path(arguments.path).resolve()
-    try:
-        moved = open_records().register(arguments.id, path, actor=arguments.actor)
-    except (ValueError, OSError) as error:
-        raise FleetError(str(error)) from error
+    arguments.id, path, moved = open_projects().management(arguments.id, arguments.path, actor=arguments.actor)
     console.print(f"registered {path} as the management repository of {arguments.id}; {moved} summaries moved "
                   f"out of the store into it. This is permanent.", markup=False)
 
 
 def guidance_subject(reference: str) -> tuple[str, str | None]:
-    """(project, epic) for an epic ID, or (project, None) for a project ID or name."""
-    store = open_store()
-    work = open_work(store)
-    identities = [item.id for item in work.list()]
-    if any(identity.startswith(reference) for identity in identities):
-        reference = resolve_cli_id(reference, identities, "work item")
-    try:
-        item = work.get(reference)
-    except LookupError:
-        return open_workspace(store).resolve_project(reference), None
-    return item.project, item.id
+    return open_references().guidance(reference)
 
 
 def describe_version(version) -> str:
@@ -1189,58 +833,23 @@ def command_guidance_history(arguments: argparse.Namespace) -> None:
 
 
 def command_project_repo_add(arguments: argparse.Namespace) -> None:
-    arguments.id = open_workspace().resolve_project(arguments.id)
-    open_workspace().edit_registry(lambda registry: registry.add_repository(arguments.id, arguments.url))
+    arguments.id = open_projects().repository(arguments.id, arguments.url, remove=False)
     console.print(f"added repository {arguments.url} to {arguments.id}", markup=False)
 
 
 def command_project_repo_remove(arguments: argparse.Namespace) -> None:
-    arguments.id = open_workspace().resolve_project(arguments.id)
-    open_workspace().edit_registry(lambda registry: registry.remove_repository(arguments.id, arguments.url))
+    arguments.id = open_projects().repository(arguments.id, arguments.url, remove=True)
     console.print(f"removed repository {arguments.url} from {arguments.id}", markup=False)
 
 
 def command_project_restore(arguments: argparse.Namespace) -> None:
-    arguments.id = open_workspace().resolve_project(arguments.id)
-    workspace = open_workspace()
-    if arguments.shutter is not None:
-        arguments.shutter = workspace.resolve_project(arguments.shutter)
-    try:
-        placement = workspace.restore(arguments.id, arguments.shutter)
-    except LookupError as error:
-        raise FleetError(str(error)) from error
-    name = workspace.registry().get(placement.project_id).name
+    placement, name, arguments.shutter = open_projects().restore(arguments.id, arguments.shutter)
     cleared = f"; {arguments.shutter} moved to the storehouse" if arguments.shutter else ""
     console.print(f"restored {placement.project_id} {name} to floor {placement.floor}{cleared}", markup=False)
 
 
 def observed_labels(registry: projects.Registry, hosts: list[Host]) -> tuple[list[tuple[str, str, str]], list[str]]:
-    """(host, label, remote) for unlinked labels in jobs and sessions, plus per-host errors."""
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        jobs = pool.submit(transport.gather, hosts, ["ls", "--all"])
-        sessions = pool.submit(transport.gather_sessions, hosts)
-        reports, by_host = jobs.result(), sessions.result()
-    errors = [report.error for report in reports if report.error]
-    directories: dict[str, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))
-    for report in reports:
-        for item in report.jobs + by_host.get(report.host.name, []):
-            label, directory = item.get("project"), item.get("cwd")
-            if label and directory and registry.project_for(report.host.name, label) is None:
-                directories[report.host.name][directory].add(label)
-
-    def remotes(host: Host) -> list[tuple[str, str, str]]:
-        found = transport.repository_remotes(host, sorted(directories[host.name]))
-        return [(host.name, label, url) for directory, urls in found.items()
-                for label in sorted(directories[host.name][directory]) for url in urls]
-
-    observed = []
-    for host in hosts:
-        if directories.get(host.name):
-            try:
-                observed += remotes(host)
-            except FleetError as error:
-                errors.append(str(error))
-    return observed, errors
+    return open_projects().observed_labels(registry, hosts)
 
 
 def command_project_list(arguments: argparse.Namespace) -> None:
@@ -1255,9 +864,7 @@ def command_project_list(arguments: argparse.Namespace) -> None:
             console.print(f"  [dim]repo[/] {escape(repository)}")
     if not arguments.suggest or not any(project.repositories for project in registry.projects.values()):
         return
-    observed, errors = observed_labels(registry, transport.configured_hosts())
-    suggestions = list(dict.fromkeys((suggestion.link, suggestion.project_id)
-                                     for suggestion in registry.suggest_links(observed)))
+    suggestions, errors = open_projects().suggestions(registry)
     if suggestions:
         console.print("\n[bold]suggested links[/] (repository matches)")
     for link, project_id in suggestions:
@@ -1266,7 +873,6 @@ def command_project_list(arguments: argparse.Namespace) -> None:
                       f"  [dim]fleet project link {project_id} {escape(shlex.quote(target))}[/]")
     for error in errors:
         console.print(f"[yellow]no suggestions from {escape(error)}[/]")
-
 
 def command_building_capacity(arguments: argparse.Namespace) -> None:
     """The building's floors: a deliberate setting, never raised as a side effect of starting work (ADR 0005)."""
@@ -1278,51 +884,12 @@ def command_building_capacity(arguments: argparse.Namespace) -> None:
     console.print(f"the building has {arguments.floors} floors")
 
 
-# Agents are often only on PATH in interactive login shells (nvm, pyenv), so ask those first.
-# Each shell may set up a different PATH (e.g. nvm only in .bashrc), so every one is asked.
-DETECT_SCRIPT = r"""
-probe='echo "PATH=$PATH"; echo "claude=$(command -v claude)"; echo "codex=$(command -v codex)"'
-for shell in zsh bash; do
-  command -v $shell >/dev/null || continue
-  $shell -lic "$probe" 2>/dev/null </dev/null | grep -E '^(PATH|claude|codex)='
-done
-eval "$probe"
-"""
-
-
 def merge_detected(output: str) -> dict[str, str | None]:
-    """First hit for each agent wins; its directory goes on PATH so `#!/usr/bin/env node` resolves."""
-    found: dict[str, str] = {}
-    first_path = ""
-    for line in output.splitlines():
-        name, _, value = line.partition("=")
-        if name == "PATH":
-            first_path = first_path or value
-        elif value.startswith("/") and name not in found:
-            found[name] = value
-    directories = list(dict.fromkeys(os.path.dirname(binary) for binary in found.values()))
-    path = ":".join(directories + [entry for entry in first_path.split(":") if entry and entry not in directories])
-    return {"path": path, "claude": found.get("claude"), "codex": found.get("codex")}
-
-
-# Spelled out rather than $XDG_RUNTIME_DIR, which some sshd/PAM setups leave unset.
-AGENT_SOCKET = "/run/user/$(id -u)/fleet-ssh-agent.sock"
+    return parse_detected(output)
 
 
 def command_install(arguments: argparse.Namespace) -> None:
-    """Copy fleetd to the host and record where its agent binaries live."""
-    host = transport.host_by_name(arguments.name)
-    destination = transport.REMOTE_FLEETD_PATH
-    subprocess.run(host.shell_command("mkdir -p ~/.local/share/fleet"), check=True, capture_output=True)
-    transport.rsync([str(transport.LOCAL_FLEETD_SOURCE)],
-                    host.rsync_target(os.path.expanduser(destination) if host.is_local else destination), host)
-    detected = subprocess.run(host.shell_command(DETECT_SCRIPT), capture_output=True, text=True, timeout=60).stdout
-    agent_socket = subprocess.run(host.shell_command(f"test -S {AGENT_SOCKET} && echo {AGENT_SOCKET}"),
-                                  capture_output=True, text=True, timeout=20).stdout.strip()
-    if host.is_local and not agent_socket:
-        agent_socket = os.environ.get("SSH_AUTH_SOCK", "")  # this machine's own agent already holds the keys
-    settings = {**merge_detected(detected), "ssh_auth_sock": agent_socket or None}
-    report = transport.call(host, ["configure", json.dumps(settings)])
+    host, report, agent_socket = open_hosts().install(arguments.name)
     console.print(f"[bold]{host.name}[/] ({report['host']}) installed")
     for name in ("claude", "codex"):
         console.print(f"  {name}: {report['config'].get(name) or '[red]not found[/]'}")
@@ -1332,12 +899,7 @@ def command_install(arguments: argparse.Namespace) -> None:
 
 
 def command_hooks(arguments: argparse.Namespace) -> None:
-    """Add fleet's hooks to every interactive Claude session on a host, or take them out again."""
-    host = transport.host_by_name(arguments.name)
-    try:
-        report = transport.call(host, ["session-hooks", arguments.action])
-    except FleetError as error:
-        raise FleetError(f"{error} — if fleetd there predates session hooks, run: fleet install {host.name}") from error
+    host, report = open_hosts().hooks(arguments.name, arguments.action)
     events = ", ".join(report["events"]) or "none"
     console.print(f"[bold]{host.name}[/] ({report['host']}): {report['settings']} — fleet hooks now on: {events}")
 
@@ -1347,21 +909,15 @@ def command_unlock(arguments: argparse.Namespace) -> None:
     if not sys.stdin.isatty():
         raise FleetError("unlock needs a real terminal to read the passphrase — run it in your own shell, "
                          "not via Claude Code's ! prefix")
-    host = transport.host_by_name(arguments.name)
-    key = f" {shlex.quote(arguments.key)}" if arguments.key else ""
-    command = host.shell_command(f"SSH_AUTH_SOCK={AGENT_SOCKET} ssh-add{key} && SSH_AUTH_SOCK={AGENT_SOCKET} ssh-add -l",
-                                 interactive=True)
-    sys.exit(subprocess.run(command).returncode)
+    sys.exit(open_hosts().unlock(arguments.name, arguments.key))
 
 
 def command_web(arguments: argparse.Namespace) -> None:
     if arguments.fixture:
         serve_fixture(arguments.fixture, port=arguments.port, bind=arguments.bind, open_browser=arguments.open)
         return
-    config = transport.load_config()
     serve(selected_hosts(arguments), port=arguments.port, bind=arguments.bind, open_browser=arguments.open,
-          libraries=config.get("libraries", {}), project_labels=config.get("project_labels", {}),
-          pipelines=config.get("pipelines", {}))
+          **open_configuration().web_settings())
 
 
 # --------------------------------------------------------------- parser
@@ -1374,48 +930,9 @@ def nonnegative_depth(value: str) -> int:
     return depth
 
 
-def status_node(items: list[dict[str, Any]], identity: str) -> dict[str, Any]:
-    for item in items:
-        if item["id"] == identity:
-            return item
-        try:
-            return status_node(item["children"], identity)
-        except LookupError:
-            pass
-    raise LookupError(f"work item '{identity}' is not in this project")
-
-
-def filter_status_items(items: list[dict[str, Any]], depth: int | None,
-                        only_open: bool) -> list[dict[str, Any]]:
-    if depth is not None and depth < 0:
-        return []
-    result = []
-    for item in items:
-        children = filter_status_items(item["children"], None if depth is None else depth - 1, only_open)
-        if only_open and item["condition"] == "complete":
-            result.extend(children)
-            continue
-        result.append({**item, "children": children})
-    return result
-
-
 def command_work_show(arguments: argparse.Namespace) -> None:
-    store = open_store()
-    work = open_work(store)
-    identity = work_cli_id(arguments.id)
-    record = work.get(identity)
-    projection = project_status(record.project, work, open_attention(store), open_execution(store),
-                                open_library(store), open_decisions(store))
-    item = status_node(projection["work_items"], identity)
-    parents = []
-    parent = record.parent
-    while parent is not None:
-        ancestor = work.get(parent)
-        parents.insert(0, asdict(ancestor))
-        parent = ancestor.parent
-    # A detail read includes historical attention as well as the open queue.
-    item["attention"] = [asdict(entry) for entry in open_attention(store).list()
-                         if entry.work_item == identity]
+    item = compose_work_detail(arguments.id)
+    parents = item["parents"]
     if arguments.json:
         print(json.dumps({**item, "parents": parents}, default=str))
         return
@@ -1434,13 +951,11 @@ def command_status(arguments: argparse.Namespace) -> None:
     project = open_workspace(store).resolve_project(arguments.project)
     projection = project_status(project, open_work(store), open_attention(store),
                                 open_execution(store), open_library(store), open_decisions(store))
-    if arguments.item is not None:
-        try:
-            projection["work_items"] = [status_node(projection["work_items"], work_cli_id(arguments.item))]
-        except LookupError as error:
-            raise FleetError(str(error)) from error
-        projection["attention"] = []
-    projection["work_items"] = filter_status_items(projection["work_items"], arguments.depth, arguments.open)
+    try:
+        projection = filter_status(projection, item=work_cli_id(arguments.item) if arguments.item is not None else None,
+                                   depth=arguments.depth, only_open=arguments.open)
+    except LookupError as error:
+        raise FleetError(str(error)) from error
     if arguments.json:
         print(json.dumps(projection))
         return
@@ -1514,81 +1029,33 @@ def resolve_cli_id(reference: str, identities: list[str], kind: str) -> str:
 
 
 def work_cli_id(reference: str) -> str:
-    return resolve_cli_id(reference, [item.id for item in open_work().list()], "work item")
+    return open_references().work(reference)
 
 
 def located_context(reference: str) -> str:
-    """A context reference naming a local file, addressed as fleet://<this host>/<absolute path> so the deck can open
-    it from any machine. Relative paths resolve against the working directory, then the calling job's directory.
-    Anything else (a URL, a session, prose) is kept as given; a path-like reference that resolves nowhere is kept and
-    warned about, since the deck will show it only as text."""
-    if "://" in reference or reference.startswith(("session:", "job:")) or not reference.strip():
-        return reference
-    candidates = [Path(reference).expanduser()]
-    if not candidates[0].is_absolute():
-        candidates = [Path.cwd() / reference]
-        if os.environ.get("FLEET_JOB_ID"):
-            candidates.append(Path("~/.fleet/jobs").expanduser() / os.environ["FLEET_JOB_ID"] / reference)
-    local = next((host for host in transport.configured_hosts() if host.is_local), None)
-    for candidate in candidates:
-        if candidate.is_file() and local is not None:
-            return f"fleet://{local.name}{candidate.resolve()}"
-    if "/" in reference or reference.endswith((".md", ".json", ".txt", ".png")):
+    value, warn = open_context().locate(reference)
+    if warn:
         error_console.print(f"fleet: context reference '{reference}' is not a file here; the deck will show it as "
                             "text only. Give an absolute path or fleet://<host>/<path>.", style="yellow", markup=False,
                             soft_wrap=True)
-    return reference
+    return value
 
 
 def attention_cli_id(reference: str) -> str:
-    return resolve_cli_id(reference, [item.id for item in open_attention().list()], "attention item")
+    return open_references().attention_item(reference)
 
 
 def resolve_step_work_ids(steps: list[dict[str, Any]]) -> None:
-    for step in steps:
-        if step.get("work_item") is not None:
-            step["work_item"] = work_cli_id(step["work_item"])
+    open_references().step_work(steps)
 
 
 def command_work(arguments: argparse.Namespace) -> None:
-    work = open_work()
-    fields = vars(arguments).copy()
-    command = fields.pop("work_operation")
-    for name in ("handler", "command"):
-        fields.pop(name, None)
-    identity = fields.pop("id", None)
-    if identity is not None:
-        if command == "meet":
-            identity = resolve_cli_id(identity, [criterion.id for criteria in work.criteria_by_item().values()
-                                               for criterion in criteria], "criterion")
-        else:
-            identity = work_cli_id(identity)
-    for name in ("parent", "to_item"):
-        if fields.get(name) is not None:
-            fields[name] = work_cli_id(fields[name])
-    try:
-        if command == "criterion_add":
-            reference = fields.pop("evidence_reference")
-            result = fields.pop("required_result")
-            if result is not None and reference is None:
-                raise ValueError("required result needs an evidence reference")
-            fields["specification"] = EvidenceSpecification(reference, result) if reference is not None else None
-            item = work.add_criterion(identity, **fields)
-        elif command == "meet":
-            fields["evidence"] = tuple(fields["evidence"])
-            item = work.meet(identity, **fields)
-        elif command == "relate":
-            item = work.relate(identity, fields.pop("to_item"), **fields)
-        elif command == "add":
-            fields['project'] = open_workspace().resolve_project(fields['project'])
-            known = work.kinds(fields['project'])
-            item = work.add(**fields)
-        else:
-            known = work.kinds(work.get(identity).project) if "kind" in fields else None
-            item = getattr(work, command)(identity, **fields)
-        console.print_json(json.dumps(asdict(item), default=str))
-    except (ValueError, LookupError, OSError) as error:
-        raise FleetError(str(error)) from error
+    data = vars(arguments).copy()
+    command = data.pop('work_operation')
+    for name in ('handler', 'command'):
+        data.pop(name, None)
+    item, known = open_work_commands().execute(command, data)
+    console.print_json(json.dumps(asdict(item), default=str))
     if command in ("add", "set") and known is not None and item.kind not in known:
         error_console.print(f"new kind '{item.kind}' added to project {item.project}'s kinds "
                             f"(known: {', '.join(known)})", markup=False)
@@ -1660,61 +1127,26 @@ def describe_guidance(guidance: dict) -> str:
 
 
 def job_run(job: str) -> str | None:
-    """The run this machine's store holds for the fleet job, or None when it holds none."""
-    runs = [run for run in open_execution().runs() if run.remote_job_id == job]
-    if len(runs) > 1:
-        raise FleetError(f"job {job} matches runs on several hosts; give --run")
-    return runs[0].id if runs else None
+    return open_decision_commands().job_run(job)
 
 
 def hand_decision_to_job(job: str, arguments: argparse.Namespace) -> str:
-    """Give the decision to this host's fleetd to hold on the job; the controller records it from the job's stream."""
-    decision = {"id": str(uuid4()), "work_item": arguments.work_item, "question": arguments.question,
-                "answer": arguments.answer, "principle": arguments.principle, "actor": arguments.actor,
-                "context": arguments.context, "time": time.time()}
-    if not all(decision[name].strip() for name in ("work_item", "question", "answer", "principle", "actor")):
-        raise FleetError("work item, question, answer, principle and actor are required")
-    held = transport.call(Host(os.uname().nodename, None), ["decision", job, "--schema-version", "1"],
-                          stdin_text=json.dumps(decision))
-    return held["id"]
+    return open_decision_commands().hand_to_job(job, {name: getattr(arguments, name)
+        for name in ('work_item', 'question', 'answer', 'principle', 'actor', 'context')})
 
 
 def command_decision_record(arguments: argparse.Namespace) -> None:
-    """Record into this machine's store, unless inside a fleet job whose run another machine's store holds.
-
-    That store dispatched the job, so it is the job's controller; the decision reaches it on the job's stream.
-    """
-    job = os.environ.get("FLEET_JOB_ID")
-    run = arguments.run if arguments.run is not None or job is None else job_run(job)
-    if run is None and job is not None:
-        identity = hand_decision_to_job(job, arguments)
+    decision, identity, job = open_decision_commands().record(**{name: getattr(arguments, name)
+        for name in ('work_item', 'question', 'answer', 'principle', 'actor', 'context', 'run')})
+    if decision is None:
         print(f"Decision {identity} handed to the controller via job {job}'s stream; "
               f"it is recorded there when the controller next hears from this host.")
-        return
-    arguments.work_item = work_cli_id(arguments.work_item)
-    try:
-        decision = open_decisions().record_guided(arguments.work_item, actor=arguments.actor,
-            question=arguments.question, answer=arguments.answer, principle=arguments.principle,
-            context=arguments.context, source_run=run)
-    except (ValueError, LookupError) as error:
-        raise FleetError(str(error)) from error
-    print(json.dumps(asdict(decision), default=lambda value: value.isoformat()))
+    else:
+        print(json.dumps(asdict(decision), default=lambda value: value.isoformat()))
 
 
 def command_decision_list(arguments: argparse.Namespace) -> None:
-    store = open_store()
-    work = open_work(store)
-    try:
-        if arguments.epic is not None:
-            epic = work.get(arguments.epic)
-            if epic.kind != "epic":
-                raise ValueError(f"{epic.id} is a {epic.kind}, not an epic")
-            project, scope = epic.project, epic.id
-        else:
-            project, scope = open_workspace(store).resolve_project(arguments.project), None
-    except (ValueError, LookupError) as error:
-        raise FleetError(str(error)) from error
-    log = decision_log(work, open_decisions(store), project=project, epic=scope)
+    log = open_decision_commands().listing(epic=arguments.epic, project=arguments.project)
     if arguments.json:
         print(json.dumps(log, default=str))
         return
@@ -1786,8 +1218,8 @@ def command_history(arguments: argparse.Namespace) -> None:
 
 
 def command_history_prune(arguments: argparse.Namespace) -> None:
-    store = open_store()
-    count, oldest, newest = store.history_span_before(arguments.before)
+    history = open_history(open_store())
+    count, oldest, newest = history.span_before(arguments.before)
     if not count:
         print(f"No history entries before {arguments.before.isoformat()}; nothing to delete.")
         return
@@ -1795,87 +1227,48 @@ def command_history_prune(arguments: argparse.Namespace) -> None:
         print(f"Would delete {count} history entries, from {oldest} to {newest} (everything before "
               f"{arguments.before.isoformat()}). Who changed what in that period would no longer be readable.")
         raise FleetError("nothing deleted; run again with --yes to delete them")
-    deleted = store.prune_history(arguments.before, arguments.actor)
+    deleted = history.prune(arguments.before, actor=arguments.actor)
     print(f"Deleted {deleted} history entries from {oldest} to {newest}; "
           f"one entry by {arguments.actor} records the pruning.")
 
 
 def command_answer(arguments: argparse.Namespace) -> None:
-    arguments.id = attention_cli_id(arguments.id)
-    try:
-        context = open_attention().get(arguments.id).stream_context
-        if context is not None and context.blocked_step:
-            # A blocked answer is recorded and delivered as a continuation, as the deck does.
-            if arguments.next_step is not None:
-                raise ValueError("a blocked job step's answer has no --next-step; use fleet work set")
-            details = open_execution().answer_blocked(arguments.id, arguments.answer, actor=arguments.actor)
-            console.print_json(json.dumps({"id": arguments.id, "resolution": details}))
-            return
-        decision = open_decisions().answer(arguments.id, arguments.answer, actor=arguments.actor,
-                                           next_step=arguments.next_step)
-        console.print_json(json.dumps(asdict(decision), default=lambda value: value.isoformat()))
-    except (ValueError, LookupError) as error:
-        raise FleetError(str(error)) from error
+    result = open_attention_commands().answer(arguments.id, arguments.answer, actor=arguments.actor,
+                                               next_step=arguments.next_step)
+    console.print_json(json.dumps(result if isinstance(result, dict) else asdict(result),
+                                  default=lambda value: value.isoformat()))
 
 
 UNTIL_EXAMPLE = "2026-10-02T09:00:00+00:00"
 
 
 def command_attention(arguments: argparse.Namespace) -> None:
-    if arguments.attention_command in ('add', 'list') and arguments.project is not None:
-        arguments.project = open_workspace().resolve_project(arguments.project)
-    try:
-        attention = open_attention()
-        command = arguments.attention_command
-        if command not in ("add", "list"):
-            arguments.id = attention_cli_id(arguments.id)
-        if command == "add" and arguments.work_item is not None:
-            arguments.work_item = work_cli_id(arguments.work_item)
-        if command == "add":
-            item = attention.raise_item(
-                project=arguments.project, kind=arguments.kind, owner=arguments.owner,
-                source=arguments.source, source_reference=arguments.source_reference,
-                headline=arguments.headline, context_reference=located_context(arguments.context_reference),
-                work_item=arguments.work_item, run=arguments.run, actor=arguments.actor,
-                owner_reason=arguments.reason)
-        elif command == "list":
-            items = attention.list(project=arguments.project, state=arguments.state, owner=arguments.owner)
-            if arguments.state is None and not arguments.all:
-                items = [item for item in items if item.state != "resolved"]
-            console.print_json(json.dumps([asdict(item) for item in items], default=str))
-            return
-        elif command == "delegate":
-            item = attention.delegate(arguments.id, actor=arguments.actor, note=arguments.note)
-        elif command == "take":
-            item = attention.take(arguments.id, actor=arguments.actor, reason=arguments.reason)
-        elif command == "escalate":
-            item = attention.escalate(arguments.id, actor=arguments.actor, reason=arguments.reason)
-        elif command == "ack":
-            item = attention.acknowledge(arguments.id, actor=arguments.actor)
-        elif command == "snooze":
-            try:
-                until = datetime.fromisoformat(arguments.until)
-            except ValueError:
-                raise ValueError(f"--until takes a timezone-aware ISO timestamp, e.g. {UNTIL_EXAMPLE}") from None
-            item = attention.snooze(arguments.id, until=until, actor=arguments.actor)
-        else:
-            item = attention.resolve(arguments.id, details=arguments.details, actor=arguments.actor)
-        if command in ('delegate', 'take') and not getattr(arguments, 'json', False):
-            print(f"{item.id}: " + ('Delegated; stays open under With agent. Take it back with fleet attention take ' + item.id + ' --actor ACTOR'
-                  if command == 'delegate' else 'Taken back; agent authority for this item is revoked. The triage process may continue for other items.'))
-        else:
-            console.print_json(json.dumps(asdict(item), default=str))
-    except (ValueError, LookupError) as error:
-        raise FleetError(str(error)) from error
+    command = arguments.attention_command
+    data = vars(arguments).copy()
+    for name in ('handler', 'command', 'attention_command', 'json'):
+        data.pop(name, None)
+    if command == 'add':
+        data['context_reference'] = located_context(data['context_reference'])
+    if command == 'snooze':
+        try:
+            data['until'] = datetime.fromisoformat(data['until'])
+        except ValueError:
+            raise FleetError(f"--until takes a timezone-aware ISO timestamp, e.g. {UNTIL_EXAMPLE}") from None
+    item = open_attention_commands().execute(command, data)
+    if command == 'list':
+        console.print_json(json.dumps([asdict(entry) for entry in item], default=str))
+    elif command in ('delegate', 'take') and not getattr(arguments, 'json', False):
+        print(f"{item.id}: " + ('Delegated; stays open under With agent. Take it back with fleet attention take ' + item.id + ' --actor ACTOR'
+              if command == 'delegate' else 'Taken back; agent authority for this item is revoked. The triage process may continue for other items.'))
+    else:
+        console.print_json(json.dumps(asdict(item), default=str))
 
 
 DEFAULT_PERMISSION_HELP = "permission acceptEdits (claude) or workspace-write (codex) unless --permission says otherwise"
 
 
 def default_actor() -> str:
-    """Who a CLI write is recorded as: the fleet job it runs inside, else the user at the terminal."""
-    job = os.environ.get("FLEET_JOB_ID")
-    return f"job:{job}" if job else "user"
+    return actor_identity()
 
 
 def add_actor_option(parser: argparse.ArgumentParser) -> None:
@@ -2423,21 +1816,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> None:
     arguments = build_parser().parse_args(argv)
     try:
-        for name in ("FLEET_CONFIG", "FLEET_STORE"):
-            if name not in os.environ:
-                continue
-            path = Path(os.environ[name])
-            if path.exists():
-                continue
-            if name == "FLEET_STORE" and arguments.command == "web":
-                error_console.print(f"Creating new store at {path} (FLEET_STORE)", markup=False)
-            elif name == "FLEET_STORE":
-                raise FleetError(f"FLEET_STORE points to a missing file: {path}. Create the store there by running "
-                                 f"fleet web once (it creates a missing store), or unset FLEET_STORE to use the "
-                                 f"default store")
-            else:
-                raise FleetError(f"FLEET_CONFIG points to a missing file: {path}. Unset FLEET_CONFIG to use the "
-                                 f"default config, or create the file with {{\"hosts\": {{}}}} in it")
+        for message in validate_paths(arguments.command):
+            error_console.print(message, markup=False)
         open_store()
         # Worker decisions may belong to a controller's store, so resolve those only
         # after command_decision_record has determined where the write belongs.
@@ -2451,7 +1831,7 @@ def main(argv: list[str] | None = None) -> None:
         error_console.print(f"fleet: {error}", style="red", markup=False,
                             soft_wrap=isinstance(error.__cause__, ItemResolved))
         sys.exit(2)
-    except subprocess.TimeoutExpired as error:
+    except transport.TimeoutExpired as error:
         error_console.print(f"fleet: {arguments.command} timed out after {error.timeout}s", style="red", markup=False)
         sys.exit(2)
     except KeyboardInterrupt:

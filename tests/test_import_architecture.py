@@ -77,6 +77,13 @@ def test_production_import_contracts(tmp_path):
     ("fleet/modules/work/__init__.py", "import fleet.ingestion", "Module independence"),
     ("fleet/modules/work/__init__.py", "import fleet.services", "Module independence"),
     ("fleet/web/server.py", "import subprocess", "Web processes use transport"),
+    ("fleet/cli.py", "import subprocess", "CLI processes use transport"),
+    ("fleet/cli.py", "import fleet.web.documents", "Controller layers"),
+    ("fleet/web/server.py", "import fleet.cli", "Controller layers"),
+    ("fleet/triage.py", "import fleet.composition", "Controller layers"),
+    ("fleet/triage_scheduler.py", "import fleet.web.server", "Document library independence"),
+    ("fleet/modules/work/__init__.py", "import fleet.triage", "Module independence"),
+    ("fleet/services/dispatch.py", "import argparse", "Services have no presentation dependencies"),
 ])
 def test_forbidden_import_fails(tmp_path, filename, statement, contract):
     result = lint_copy(tmp_path, filename, statement)

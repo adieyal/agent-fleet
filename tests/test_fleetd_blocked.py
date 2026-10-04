@@ -220,7 +220,7 @@ def test_fleet_wait_exits_1_and_says_blocked(monkeypatch, capsys):
                 "results": [{"index": 0, "title": "Gather", "status": "blocked", "result": "no access"}]}
     host = SimpleNamespace(name="h", is_local=True, fleetd_command=lambda arguments: arguments)
     monkeypatch.setattr(cli, "resolve", lambda reference: (host, "job"))
-    monkeypatch.setattr(cli.subprocess, "Popen", lambda command, **kwargs: SimpleNamespace(
+    monkeypatch.setattr(cli.transport.subprocess, "Popen", lambda command, **kwargs: SimpleNamespace(
         poll=lambda: 0, stdout=StringIO(json.dumps(finished) + "\n"), terminate=lambda: None))
     with pytest.raises(SystemExit) as exit_info:
         cli.wait_for(["h:job"], step=None, timeout=None, as_json=False)

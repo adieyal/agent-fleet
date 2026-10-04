@@ -36,7 +36,7 @@ def run_scenario(store, slice_id: str, directory: Path) -> dict:
         constraints=[], escalation_conditions=['Reserved acceptance'], criteria_it_may_judge=[judged.id],
         decision_authority=['dispatch', 'update_progress', 'record_decision'])), key=path, actor='user')
     activation = services.authority.activate(item.id, actor='orchestrator', role='orchestrator', mandate_path=path)
-    commands = ControllerCommands(store, activation.id)
+    commands = ControllerCommands(composition.facades(store), activation.id)
     run = commands.execute('dispatch', dict(host='phase3-fake-controller', runtime='codex',
         payload={'cwd': str(directory)}, reason='Scripted orchestrator', idempotency_key=activation.id)).run
     before_attention = services.attention.list(project=item.project)
@@ -81,7 +81,7 @@ def run_scenario(store, slice_id: str, directory: Path) -> dict:
     # Reopen everything: the reviewer has only persisted records, never host state.
     reopened = composition.open_store(store.path)
     sequence = reopened.latest_sequence()
-    state = ControllerCommands(reopened, activation.id).execute('state', {})
+    state = ControllerCommands(composition.facades(reopened), activation.id).execute('state', {})
     def find(nodes):
         for node in nodes:
             if node['id'] == item.id:

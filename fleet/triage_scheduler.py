@@ -9,7 +9,7 @@ from fleet.transport import Host
 from fleet.modules.execution import Run
 
 if TYPE_CHECKING:
-    from fleet.composition import Facades
+    from fleet.services.facades import Facades
 
 from fleet.errors import FleetError
 from fleet.modules.records import TRIAGE_PATH

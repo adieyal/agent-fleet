@@ -249,7 +249,7 @@ def test_observed_failure_dispatch_retry_then_failure_escalates(triage):
     assert len(calls) == 1
     triage_run = services.execution.get_run(calls[0][0])
     triage_action = services.execution.get_action(triage_run.action)
-    controller = ControllerCommands(services.store, triage_action.activation)
+    controller = ControllerCommands(services, triage_action.activation)
     result = controller.execute('retry', dict(item=first.id, reason='Transient fixture failure'))
     retried = services.execution.get_run(result['run'])
     finish(services, retried, 'failed')

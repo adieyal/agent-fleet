@@ -7,6 +7,7 @@ import queue
 import shlex
 import subprocess
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -289,3 +290,54 @@ def follow_stream(host: Host, receive: Callable[[dict[str, Any]], None], *,
     finally:
         if process.poll() is None:
             process.kill()
+
+
+TimeoutExpired = subprocess.TimeoutExpired
+
+
+def run_shell(host: Host, command: str, *, interactive: bool = False, **options):
+    return subprocess.run(host.shell_command(command, interactive=interactive), **options)
+
+
+def exec_shell(host: Host, command: str) -> None:
+    arguments = host.shell_command(command, interactive=True)
+    os.execvp(arguments[0], arguments)
+
+
+def events(host: Host, job_id: str, *, lines: int, follow: bool):
+    ensure_master(host)
+    command = host.fleetd_command(["events", job_id, "--lines", str(lines)] + (["-f"] if follow else []))
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, text=True)
+    assert process.stdout is not None
+    try:
+        for line in process.stdout:
+            yield json.loads(line)
+    except KeyboardInterrupt:
+        process.terminate()
+
+
+def wait_jobs(pending: dict[str, tuple[Host, str]], *, step: int | None,
+              timeout: float | None, any_job: bool):
+    # Prepare every connection before opening a pipe, so setup failure cannot orphan another waiter.
+    for host, _ in pending.values():
+        ensure_master(host)
+    processes = {}
+    for reference, (host, job_id) in pending.items():
+        arguments = ["wait", job_id] + (["--step", str(step)] if step is not None else [])
+        arguments += ["--timeout", str(timeout)] if timeout else []
+        processes[reference] = subprocess.Popen(host.fleetd_command(arguments), stdout=subprocess.PIPE, text=True)
+    finished = False
+    while processes:
+        for reference, process in list(processes.items()):
+            if process.poll() is None:
+                continue
+            output = (process.stdout.read() if process.stdout else "").strip().splitlines()
+            job = json.loads(output[-1]) if output else {"error": "no output"}
+            del processes[reference]
+            finished = True
+            yield reference, job
+        if any_job and finished:
+            for process in processes.values():
+                process.terminate()
+            break
+        time.sleep(0.5)

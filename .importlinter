@@ -6,13 +6,15 @@ include_external_packages = True
 name = Controller layers
 type = layers
 layers =
-    fleet.cli : fleet.web
-    fleet.orchestration
+    fleet.cli | fleet.web
     fleet.composition
-    fleet.services : fleet.ingestion
+    fleet.services : fleet.orchestration : fleet.triage : fleet.triage_scheduler : fleet.ingestion
     fleet.transport
     fleet.projections
     fleet.modules
+# Temporary fleet web entrypoint; M3 replaces this exact crossing with plugin discovery.
+ignore_imports =
+    fleet.cli -> fleet.web.server
 
 [importlinter:contract:infrastructure]
 name = Infrastructure construction
@@ -32,6 +34,9 @@ forbidden_modules =
     fleet.projections
     fleet.services
     fleet.ingestion
+    fleet.orchestration
+    fleet.triage
+    fleet.triage_scheduler
 
 # Each module's descendants are private, including its facade implementation.
 # Add a public-surface contract whenever a new business module is introduced.
@@ -106,6 +111,9 @@ type = forbidden
 source_modules =
     fleet.infrastructure.documents.job_store
     fleet.services
+    fleet.orchestration
+    fleet.triage
+    fleet.triage_scheduler
     fleet.ingestion
 forbidden_modules =
     fleet.cli
@@ -115,7 +123,11 @@ forbidden_modules =
 [importlinter:contract:service-infrastructure]
 name = Service infrastructure separation
 type = forbidden
-source_modules = fleet.services
+source_modules =
+    fleet.services
+    fleet.orchestration
+    fleet.triage
+    fleet.triage_scheduler
 forbidden_modules = fleet.infrastructure
 
 [importlinter:contract:web-processes]
@@ -124,3 +136,22 @@ type = forbidden
 source_modules = fleet.web
 forbidden_modules = subprocess
 allow_indirect_imports = True
+
+[importlinter:contract:cli-processes]
+name = CLI processes use transport
+type = forbidden
+source_modules = fleet.cli
+forbidden_modules = subprocess
+allow_indirect_imports = True
+
+[importlinter:contract:service-presentation]
+name = Services have no presentation dependencies
+type = forbidden
+source_modules =
+    fleet.services
+    fleet.orchestration
+    fleet.triage
+    fleet.triage_scheduler
+forbidden_modules =
+    argparse
+    rich
