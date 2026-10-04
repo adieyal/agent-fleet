@@ -23,6 +23,12 @@ def import_workspace(store: Store, path: Path) -> None:
                 raise ValueError(f"unknown imported attention state: {state}")
             at = datetime.fromtimestamp(action["at"], timezone.utc).isoformat()
             until = datetime.fromtimestamp(action["until"], timezone.utc).isoformat() if state == "snoozed" else None
+            existing = work.connection.execute(
+                "SELECT state, at, until FROM attention_imported_action WHERE reference = ?", (reference,)).fetchone()
+            if existing is not None:
+                if tuple(existing) != (state, at, until):
+                    raise ValueError(f"conflicting imported attention action: {reference}")
+                continue
             work.connection.execute(
                 "INSERT INTO attention_imported_action (reference, state, at, until) VALUES (?, ?, ?, ?)",
                 (reference, state, at, until))
