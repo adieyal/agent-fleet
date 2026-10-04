@@ -877,3 +877,20 @@ def test_audit3_stored_job_image_uses_known_origin(page, restoke_url):
     from urllib.parse import parse_qs, urlparse
     assert parse_qs(urlparse(requests[0]).query) == {
         'host':['home'], 'job':['old-job'], 'id':['outbox-image.png'], 'path':['image.png']}
+
+
+@pytest.mark.browser
+def test_audit3_unlabelled_job_keeps_deck_updates_visible(page, restoke_url):
+    open_building(page, restoke_url)
+    document = state(restoke_url)
+    host = document['hosts'][0]
+    job = {**host['jobs'][0], 'id':'unlabelled-job', 'project':None, 'project_id':None, 'status':'running'}
+    host['jobs'].append(job)
+    page.evaluate('d => fleetDeck.apply(d)', document)
+    rooms = page.evaluate('fleetDeck.rooms()')
+    assert next(r for r in rooms if r['name'] is None)['label'] == 'No project label'
+    assert any(a['key'] == host['name'] + ':unlabelled-job' for a in page.evaluate('fleetDeck.agents()'))
+    job['status'] = 'failed'
+    page.evaluate('d => fleetDeck.apply(d)', document)
+    page.evaluate("async key => (await import('/js/panel.js')).select(key)", host['name'] + ':unlabelled-job')
+    expect(page.locator('#panel')).to_contain_text('failed')

@@ -228,7 +228,7 @@ export function layoutRooms(names) {
     const look = projectLook(name, taken), theme = THEMES[forced] ? forced : themeFor(name, themes);
     Object.assign(look, THEMES[theme].pal(look.hue));
     return {
-      name, label: name, theme,
+      name, label: name ?? 'No project label', theme,
       ox: column ? i * (RD + GAP) : (i % cols) * (RW + GAP),
       oy: column ? i * (RD + GAP) : Math.floor(i / cols) * (RD + GAP),
       look, ents: [], busy: {},

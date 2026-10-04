@@ -135,7 +135,7 @@ export function applyState(doc) {
   for (const label of pipelineRooms(entered)) projects.add(label);
   layoutRooms([...projects].sort());
   buildScreens();
-  for (const room of rooms) room.label = doc.project_labels?.[room.name] || room.name;
+  for (const room of rooms) room.label = doc.project_labels?.[room.name] || (room.name ?? 'No project label');
   for (const room of rooms) room.libraryKey = libraryKeyOf(doc, room.name);
   applyFocus(doc, rooms);
   const seen = new Set();
