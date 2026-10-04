@@ -1,3 +1,4 @@
+import { focusIdentity, restoreFocus, overlayOpen } from './keyboard-focus.js';
 import { showToast } from './building.js';
 import { openItemHistory } from './item-history.js';
 import { mountRunHistory } from './run-history.js';
@@ -12,6 +13,8 @@ import { decisionsPanel, guidancePanel, guidanceSummary, triagePolicyPanel } fro
 
 const el = document.body.appendChild(document.createElement('section'));
 el.id = 'benchRoute';
+el.tabIndex = -1;
+let focusEnteredRoute = false;
 el.hidden = true;
 let project = null, rooms = [], room = null, bench = null, revision = 0;
 let briefing = false;
@@ -135,6 +138,7 @@ export async function enterFloor(identity, { epic = null, milestone = null } = {
   project = identity; room = bench = page = editing = guidanceFeedback = null;
   views.clear(); decisionLists.clear(); historyOpen.clear();
   el.hidden = identity === null;
+  focusEnteredRoute = identity !== null;
   if (identity === null) { el.replaceChildren(); return; }
   el.innerHTML = '<p>Loading work…</p>';
   try {
@@ -326,6 +330,8 @@ function docsList(list) {
 }
 
 function render(flipped = new Set()) {
+  const wasFocused = el.contains(document.activeElement);
+  const focused = focusIdentity(el);
   el.dataset.level = bench ? 'bench' : room ? 'room' : page ?? 'floor';
   el.toggleAttribute('data-collapsed', collapsed);
   el.toggleAttribute('data-editing', editing !== null);
@@ -363,6 +369,10 @@ function render(flipped = new Set()) {
   }
   if (room || bench) content = `<nav aria-label="Work item views">${itemHistoryButton(bench || room, true)}</nav>` + content;
   el.innerHTML = crumbs + ((!room && !bench) ? `<nav aria-label="Floor views"><button data-floor-overview aria-current="${page ? 'false' : 'page'}">Overview</button><button data-open-history aria-current="${page === 'history' ? 'page' : 'false'}">History</button></nav>` : '') + (guidanceFeedback ? `<p data-guidance-feedback role="status">${esc(guidanceFeedback)}</p>` : '') + content;
+  if (!overlayOpen() && (focusEnteredRoute || wasFocused)) {
+    if (!restoreFocus(el, focused)) el.focus({ preventScroll: true });
+    focusEnteredRoute = false;
+  }
   if (page === 'history') mountRunHistory(el.querySelector('[data-history-mount]'), project);
 }
 

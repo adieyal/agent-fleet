@@ -822,3 +822,17 @@ def test_audit3_storehouse_keyboard_focus(page, restoke_url):
     page.keyboard.press('Escape')
     expect(page.locator('.storehouse')).to_have_count(0)
     expect(opener).to_be_focused()
+
+
+@pytest.mark.browser
+def test_audit3_floor_navigation_keeps_keyboard_focus(page, restoke_url):
+    open_building(page, restoke_url)
+    page.locator('[data-enter="1"]').click()
+    history = page.locator('#benchRoute [data-open-history]')
+    expect(history).to_be_visible()
+    assert page.evaluate('benchRoute.contains(document.activeElement)')
+    history.focus(); page.keyboard.press('Enter')
+    expect(page.locator('#benchRoute')).to_have_attribute('data-level', 'history')
+    assert page.evaluate('benchRoute.contains(document.activeElement)')
+    page.keyboard.press('Tab')
+    assert page.evaluate('benchRoute.contains(document.activeElement)')
