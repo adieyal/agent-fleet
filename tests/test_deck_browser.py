@@ -3474,3 +3474,130 @@ def test_resolved_answer_explains_itself(changed_deck: Deck, base_url: str, proj
     finally:
         page.unroute("**/api/decision**", proxy)
         server.close()
+
+
+@dataclass
+class PrefetchDeck:
+    page: Page
+    state: Any
+    job: dict[str, Any]
+    requests: list[str]
+
+    def settle(self) -> None:
+        # Let completed-response fetch continuations settle before checking cache hits.
+        self.page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+
+
+@pytest.fixture
+def prefetch_deck(browser: Browser, fixture_data: dict[str, Any], monkeypatch) -> Iterator[PrefetchDeck]:
+    from conftest import serve_fixture
+    from fleet.web.fixture import FixtureState
+
+    fixture = json.loads(json.dumps(fixture_data))
+    host = next(host for host in fixture['hosts'] if host['name'] == 'home')
+    job = next(job for job in host['jobs'] if job['status'] == 'running')
+    job['documents'] = [dict(id=f'cache-{index}', name=f'cache-{index}.md', kind='report',
+                             path=f'outbox/cache-{index}.md', size=100, mtime=fixture['time'] - 600 - index)
+                        for index in range(3)]
+    image = job['documents'][2]
+    image.update(name='chart.svg', path='outbox/chart.svg', media='image')
+    for index, doc in enumerate(job['documents']):
+        fixture['job_documents'][f"home/{job['id']}/{doc['id']}"] = (
+            '![Chart](chart.svg)' if doc.get('media') == 'image' else f'# Cached document {index}\n\nOld text {index}.')
+    state = FixtureState(fixture)
+    monkeypatch.setattr(state, 'read_asset', lambda *_args: ('image/svg+xml',
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="240" height="80"><rect width="240" height="80" fill="#e2b56d"/></svg>'))
+    with serve_fixture(state) as url:
+        context = browser.new_context(viewport=VIEWPORTS['desktop'], reduced_motion='reduce')
+        context.add_init_script(PIN_CLOCK % (fixture['time'], fixture['time']))
+        page = context.new_page()
+        requests: list[str] = []
+        page.on('request', lambda req: requests.append(req.url) if '/api/doc?' in req.url else None)
+        page.goto(url)
+        page.wait_for_function('window.fleetDeck && fleetDeck.agents().length > 0')
+        page.evaluate('''async jobId => {
+            const module = await import('/js/reader.js');
+            const {lastDoc} = await import('/js/state.js');
+            const find = state => state.hosts.find(host => host.name === 'home').jobs.find(job => job.id === jobId);
+            window.readerJob = find(lastDoc);
+            document.addEventListener('fleet:state', event => { window.readerJob = find(event.detail); });
+            window.openFixtureDoc = index => module.openReader({host: 'home', job: readerJob}, readerJob.documents[index]);
+        }''', job['id'])
+        try:
+            yield PrefetchDeck(page, state, job, requests)
+        finally:
+            context.close()
+            state.attention_directory.cleanup()
+
+
+def test_reader_prefetched_step_has_no_skeleton_or_document_request(prefetch_deck: PrefetchDeck, request) -> None:
+    page = prefetch_deck.page
+    with page.expect_response(lambda response: '/api/doc?' in response.url and 'id=cache-1' in response.url) as loaded:
+        page.evaluate('openFixtureDoc(0)')
+    loaded.value.finished()
+    page.wait_for_function("readerJob && document.querySelector('#rdBody h1')?.textContent === 'Cached document 0'")
+    page.wait_for_function("document.querySelector('#rdBody') && performance.getEntriesByType('resource').some(e => e.name.includes('id=cache-2'))")
+    prefetch_deck.settle()
+    before = list(prefetch_deck.requests)
+    page.evaluate('''() => {
+        document.querySelector('.rd-sheet').dispatchEvent(new KeyboardEvent('keydown', {key: 'ArrowRight', bubbles: true}));
+        window.cacheHit = {text: document.querySelector('#rdBody h1')?.textContent,
+                           skeleton: !!document.querySelector('#rdBody .rd-skel')};
+    }''')
+    assert page.evaluate('cacheHit') == {'text': 'Cached document 1', 'skeleton': False}
+    expect(page.locator('#rdBody h1')).to_be_visible()
+    prefetch_deck.settle()
+    assert prefetch_deck.requests == before
+    shots = request.config.getoption('--shots')
+    if shots:
+        page.locator('#reader .rd-sheet').screenshot(path=f'{shots}/deck-reader-prefetched.png')
+
+
+def test_reader_stream_invalidates_cached_mtime_and_refreshes_in_place(prefetch_deck: PrefetchDeck, request) -> None:
+    page, state, job = prefetch_deck.page, prefetch_deck.state, prefetch_deck.job
+    with page.expect_response(lambda response: '/api/doc?' in response.url and 'id=cache-1' in response.url) as loaded:
+        page.evaluate('openFixtureDoc(0)')
+    loaded.value.finished()
+    expect(page.locator('#rdBody h1')).to_have_text('Cached document 0')
+    prefetch_deck.settle()
+    pending = []
+    page.route('**/api/doc?*', lambda route: pending.append(route) if 'id=cache-1' in route.request.url else route.continue_())
+    new_mtime = job['documents'][1]['mtime'] + 10
+    with state.changed:
+        job['documents'][1]['mtime'] = new_mtime
+        state.fixture['job_documents'][f"home/{job['id']}/cache-1"] = '# Refreshed document 1\n\nNew streamed text.'
+        state.version += 1
+        state.changed.notify_all()
+    page.wait_for_function('mtime => readerJob.documents[1].mtime === mtime', arg=new_mtime)
+    with page.expect_request(lambda req: '/api/doc?' in req.url and 'id=cache-1' in req.url):
+        page.evaluate('openFixtureDoc(1)')
+    expect(page.locator('#rdBody h1')).to_have_text('Cached document 1')
+    expect(page.locator('#rdMeta')).to_contain_text('updating live')
+    expect(page.locator('#rdBody .rd-skel')).to_have_count(0)
+    assert len(pending) == 1
+    shots = request.config.getoption('--shots')
+    if shots:
+        page.locator('#reader .rd-sheet').screenshot(path=f'{shots}/deck-reader-stream-refresh.png')
+    pending[0].continue_()
+    expect(page.locator('#rdBody h1')).to_have_text('Refreshed document 1')
+    expect(page.locator('#rdBody')).to_contain_text('New streamed text.')
+    expect(page.locator('#rdMeta')).not_to_contain_text('updating live')
+
+
+def test_reader_image_asset_is_versioned_and_cacheable(prefetch_deck: PrefetchDeck, request) -> None:
+    from urllib.parse import parse_qs, urlsplit
+
+    page = prefetch_deck.page
+    with page.expect_response(lambda response: '/api/doc/asset?' in response.url) as loaded:
+        page.evaluate('openFixtureDoc(2)')
+    image = page.locator('#rdBody .prose img')
+    expect(image).to_be_visible()
+    page.wait_for_function("document.querySelector('#rdBody .prose img')?.naturalWidth === 240")
+    query = parse_qs(urlsplit(image.get_attribute('src')).query)
+    doc = prefetch_deck.job['documents'][2]
+    assert query['v'] == [f"{doc['mtime']}-{doc['size']}"]
+    assert loaded.value.status == 200
+    assert loaded.value.headers['cache-control'] == 'private, max-age=86400'
+    shots = request.config.getoption('--shots')
+    if shots:
+        page.locator('#reader .rd-sheet').screenshot(path=f'{shots}/deck-reader-image-version.png')

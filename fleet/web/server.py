@@ -995,7 +995,8 @@ def make_handler(state: FleetState | FixtureState,
             content_type, content = found
             # an SVG can carry script: the policy keeps it inert even if opened on its own
             self.respond(200, content_type, content, headers={"Content-Security-Policy": ASSET_POLICY,
-                                                              "X-Content-Type-Options": "nosniff"})
+                                                              "X-Content-Type-Options": "nosniff",
+                                                              "Cache-Control": "private, max-age=86400" if query.get("v") else "max-age=60"})
 
         def library_document(self) -> None:
             """GET /api/library/doc?project=&id= — Markdown under a configured local root."""
@@ -1055,7 +1056,8 @@ def make_handler(state: FleetState | FixtureState,
             self.send_header("Content-Type", content_type)
             for name, value in (headers or {}).items():
                 self.send_header(name, value)
-            self.send_header("Cache-Control", f"max-age={cache_seconds}" if cache_seconds else "no-store")
+            if "Cache-Control" not in (headers or {}):
+                self.send_header("Cache-Control", f"max-age={cache_seconds}" if cache_seconds else "no-store")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
