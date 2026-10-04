@@ -109,9 +109,14 @@ class WorkspaceApplication:
             return Placement(project_id, state.choices.shutter(project_id, time.time()))
 
     def restore(self, project_id: str, shutter: str | None = None) -> Placement:
+        """Move a crate back in, or give a registered project that has no floor one; when full, only by shuttering."""
         with self.repository.transaction(self.actor) as state:
             state.registry.get(project_id)
             if project_id not in state.choices.shuttered:
-                raise NotShuttered(f"{project_id} is not in the storehouse")
+                floor = state.choices.floors.get(project_id)
+                if floor is not None and floor <= state.capacity:
+                    raise NotShuttered(f"{project_id} already has floor {floor}")
             self._make_room(state, shutter)
-            return Placement(project_id, state.choices.restore(project_id, state.capacity))
+            if project_id in state.choices.shuttered:
+                return Placement(project_id, state.choices.restore(project_id, state.capacity))
+            return Placement(project_id, state.choices.house(project_id, state.capacity))

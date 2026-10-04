@@ -423,6 +423,28 @@ def test_a_full_building_offers_only_shuttering(deck, config_path):
     assert set(building_of(deck)["shuttered"]) == {invoices, agent_fleet}
 
 
+def test_a_project_with_no_floor_moves_in_by_clearing_one(deck, config_path):
+    set_config(config_path, capacity=2)
+    restoke, invoices = housed(deck, "restoke", "invoices")
+    agent_fleet = register("Agent Fleet", ("home", "agent-fleet"))
+    assert building_of(deck)["no_floor"] == [agent_fleet]
+
+    status, body = post(deck, "/api/restore", {"project": agent_fleet})
+    assert status == 409 and "full" in body["error"]
+    status, body = post(deck, "/api/restore", {"project": agent_fleet, "shutter": invoices})
+    assert status == 200 and body == {"project_id": agent_fleet, "floor": 2}
+    building_state = building_of(deck)
+    assert building_state["floors"] == {restoke: 1, agent_fleet: 2}
+    assert building_state["no_floor"] == [] and list(building_state["shuttered"]) == [invoices]
+
+    # a project left above a lowered capacity takes a free floor within it
+    set_config(config_path, capacity=1)
+    assert building_of(deck)["no_floor"] == [agent_fleet]
+    status, body = post(deck, "/api/restore", {"project": agent_fleet, "shutter": restoke})
+    assert status == 200 and body["floor"] == 1
+    assert post(deck, "/api/restore", {"project": agent_fleet})[0] == 409   # it already has a floor
+
+
 def test_shuttering_and_restoring_refuse_what_makes_no_sense(deck, config_path):
     (restoke,) = housed(deck, "restoke")
     assert post(deck, "/api/shutter", {"project": "p-00000000"})[0] == 404

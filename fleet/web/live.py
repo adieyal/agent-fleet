@@ -146,7 +146,8 @@ class LiveWorkspace:
         return asdict(result)
 
     def restore(self, project_id: str, shutter: str | None = None) -> dict[str, Any]:
-        """Move a crate back in: to its old floor if free, else the lowest free one; when full, only by shuttering."""
+        """Move a crate back in: to its old floor if free, else the lowest free one; when full, only by shuttering.
+        A registered project with no floor moves in the same way."""
         if project_id not in self.known_projects():
             raise LookupError(f"no project '{project_id}'")
         result = self.workspace.restore(project_id, shutter)

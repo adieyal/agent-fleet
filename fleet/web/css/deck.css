@@ -385,6 +385,8 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 .lobby .none{margin:0;color:var(--dim)}
 .novacancy{flex:none;align-self:center;padding:2px 8px;border-radius:6px;border:2px solid var(--warn);color:var(--warn);font:700 11px var(--display);letter-spacing:.12em;text-transform:uppercase}
 .nofloor li{font:500 12px var(--sans);color:var(--muted)}
+.nofloor button{all:unset;cursor:pointer;color:var(--muted);text-decoration:underline dotted;text-underline-offset:3px}
+.nofloor button:hover,.nofloor button:focus-visible{color:var(--text);text-decoration-style:solid}
 @media (max-width:760px){
   .view-toggle button{padding:3px 8px}
   .plate{font-size:11px;gap:5px;padding:0 6px 0 4px;max-width:150px}

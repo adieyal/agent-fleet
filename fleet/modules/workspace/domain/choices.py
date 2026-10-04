@@ -134,6 +134,15 @@ class Choices:
             self.floors[project_id] = floor
             return floor
 
+    def house(self, project_id: str, capacity: int) -> int:
+        """Give a project with no floor within capacity the lowest free one; a floor it held above capacity is let go."""
+        with self.lock:
+            held = self.floors.get(project_id)
+            if held is not None and held <= capacity:
+                return held
+            self.floors[project_id] = self.free_floor(capacity)
+            return self.floors[project_id]
+
     def forget_project(self, project_id: str) -> int | None:
         """Drop a project merged into another: its focus, its floor or crate. Return the floor it freed."""
         with self.lock:

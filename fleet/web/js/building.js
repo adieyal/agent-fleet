@@ -461,7 +461,7 @@ function renderUi() {
         const item = doc.attention.find(item => item.id === id);
         return `<li><button data-attention-context="${esc(id)}">✱ ${esc(item.summary)}</button></li>`;
       }).join('')}</ul></details>
-      ${L.noFloor.length ? `<div class="nofloor"><h3>No floor</h3><ul>${L.noFloor.map(p => `<li data-project="${esc(p.id)}" title="${esc(p.name)}">${esc(plateName(p.name))}</li>`).join('')}</ul></div>` : ''}
+      ${L.noFloor.length ? `<div class="nofloor"><h3>No floor</h3><ul>${L.noFloor.map(p => `<li data-project="${esc(p.id)}"><button data-house="${esc(p.id)}" title="Move ${esc(p.name)} onto a floor${L.full ? '; the building is full, so you choose a project to pack into the storehouse' : ''}">${esc(plateName(p.name))}</button></li>`).join('')}</ul></div>` : ''}
     </div>`;
   // (an unchanged document leaves the controls alone: no flicker, and hover and keyboard focus stay where they were)
   if (html !== uiHtml) { ui.innerHTML = html; uiHtml = html; }
@@ -502,11 +502,21 @@ ui.addEventListener('click', async ev => {
     await act(restore, () => post('/api/restore', { project }), reply => showToast(`${name} is restored to floor ${reply.floor}. Shutter it to pack it away again.`));
     return;
   }
+  const house = t.closest('[data-house]');
+  if (house) {
+    const project = house.dataset.house;
+    if (lobby.full) { closeDialogs(); vacancy = { kind: 'restore', project }; renderUi(); return; }
+    const name = lobby.noFloor.find(p => p.id === project).name;
+    await act(house, () => post('/api/restore', { project }), reply => showToast(`${name} moved onto floor ${reply.floor}. Shutter it to pack it away.`));
+    return;
+  }
   const clear = t.closest('[data-clear]');
   if (clear) {
     const v = vacancy, shutterId = clear.dataset.clear;
     const displaced = floors.find(f => f.projectId === shutterId);
-    const incomingName = v.kind === 'restore' ? crates.find(c => c.id === v.project)?.name : lobby.labels[v.label] || v.label;
+    const incomingName = v.kind === 'restore'
+      ? (crates.find(c => c.id === v.project) || lobby.noFloor.find(p => p.id === v.project))?.name
+      : lobby.labels[v.label] || v.label;
     await act(clear, () => v.kind === 'restore' ? post('/api/restore', { project: v.project, shutter: shutterId })
       : post('/api/move-in', { hosts: v.hosts, label: v.label, shutter: shutterId }), reply => {
         vacancy = null; storehouseOpen = false; renderUi();
