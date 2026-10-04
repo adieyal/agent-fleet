@@ -796,7 +796,8 @@ def test_bench_route_steps_out_one_level(changed_deck: Deck) -> None:
 
 
 @pytest.mark.parametrize('redact', [False, True])
-def test_l3_bench_projection(changed_deck: Deck, base_url: str, redact: bool) -> None:
+def test_l3_bench_projection(changed_deck: Deck, base_url: str, redact: bool,
+                             request: pytest.FixtureRequest) -> None:
     page = changed_deck.page
     doc = {
         'id': 'slice', 'title': 'Supplier slice', 'project': 'p-5e1f0a01',
@@ -819,12 +820,17 @@ def test_l3_bench_projection(changed_deck: Deck, base_url: str, redact: bool) ->
             route.fulfill(json=doc)
         else:
             route.fulfill(json={'rooms': [{'id': 'epic', 'title': 'Suppliers', 'depth': 0, 'parent': None,
+                                          'condition': 'waiting', 'superseded_by': [], 'now': [],
                                           'goal': 'Find suppliers', 'headline': 'Find suppliers',
                                           'milestones': {'complete': 0, 'total': 1}, 'agents': [],
+                                          'breakdown': {'basis': 'milestones', 'total': 1,
+                                                        'counts': {'next': 1}},
                                           'upcoming': [], 'children': [], 'attention': [], 'criteria': [],
                                           'progress': {'basis': 'milestones', 'complete': 0, 'total': 1},
                                           'plan': [{'id': 'slice', 'title': 'Supplier slice', 'headline': 'Find',
-                                                    'condition': 'none', 'status': 'next', 'next_step': None}],
+                                                    'condition': 'waiting', 'status': 'next', 'next_step': None,
+                                                    'plan': None, 'running_since': None, 'last_run': None,
+                                                    'superseded_by': [], 'documents': [], 'jobs': []}],
                                           'tasks': [], 'workstreams': [],
                                           'benches': [{'id': 'slice', 'title': 'Supplier slice'}]}]})
     page.route('**/api/bench?*', respond)
@@ -858,6 +864,7 @@ def test_l3_bench_projection(changed_deck: Deck, base_url: str, redact: bool) ->
         if redact:
             assert page.evaluate("fleetDeck.textBudget(document.getElementById('benchRoute'))") == 0
             assert bench.locator('[data-verification] svg').first.evaluate('(e) => getComputedStyle(e).stroke') != 'rgba(0, 0, 0, 0)'
+        shoot(request, page, f'l3-bench-projection-{redact}')
         doc['tasks'][1].update(lane='done', condition='complete')
         bench.locator('[data-tray] summary').click()
         doc['agents'].append({**doc['agents'][0], 'run': 'six'})
