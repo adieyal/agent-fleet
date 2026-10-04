@@ -3040,6 +3040,20 @@ def test_reader_pages_on_after_the_open_item_is_resolved(changed_deck: Deck) -> 
     expect(page.locator('#rdPos')).to_have_text(f'1 / {total - 1} · All rooms and owners')
 
 
+def test_a_stored_run_lists_each_document_once(changed_deck: Deck) -> None:
+    html = changed_deck.page.evaluate("""async () => (await import('/js/archived-run.js')).archivedPanes({
+        run: {host: 'carbon', kind: 'job'}, steps: [], trace: {},
+        kept_documents: [{kind: 'outbox', name: 'REPORT.md', stored: true}, {kind: 'brief', name: 'Step 1 brief', stored: true},
+                         {kind: 'outbox', name: 'notes.md', stored: false, error: 'copy failed'}],
+        documents: [{kind: 'outbox', title: 'REPORT.md', availability: 'available'},
+                    {kind: 'brief', title: 'Step 1 brief', availability: 'available'},
+                    {kind: 'outbox', title: 'notes.md', availability: 'available'}],
+    }).documents""")
+    assert html.count('REPORT.md') == 1 and html.count('Step 1 brief') == 1
+    assert 'Not kept on the controller · 1' in html and html.count('notes.md') == 2   # its failed copy, and its reference
+    assert 'Indexed references' not in html
+
+
 def test_reader_keys_scroll_the_document_and_images_go_fullscreen(changed_deck: Deck) -> None:
     page = changed_deck.page
     pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='

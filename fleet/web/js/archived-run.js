@@ -5,6 +5,15 @@ const list = (entries, render, empty) => entries?.length ? `<ul>${entries.map(x 
 export function archivedPanes(detail) {
   const r = detail.run, steps = detail.steps || [], trace = detail.trace || {}, events = trace.events || {};
   const docs = detail.kept_documents || [];
+  // The store indexes each document where the worker wrote it; most also have a copy kept on the controller, listed
+  // (and readable) above. Only the ones without a kept copy are listed again, so nothing shows twice.
+  const kept = new Map();
+  for (const d of docs) if (d.stored) kept.set(`${d.kind}\n${d.name}`, (kept.get(`${d.kind}\n${d.name}`) || 0) + 1);
+  const unkept = (detail.documents || []).filter(d => {
+    const key = `${d.kind}\n${d.title}`, left = kept.get(key) || 0;
+    if (left) kept.set(key, left - 1);
+    return !left;
+  });
   let recorded = [];
   if (events.content) for (const line of events.content.split('\n').filter(Boolean)) {
     try { const ev = JSON.parse(line); recorded.push(`${ev.ts ? new Date(ev.ts * 1000).toLocaleString() + ' · ' : ''}${ev.summary || ev.status || ev.kind || line}`); }
@@ -13,7 +22,7 @@ export function archivedPanes(detail) {
   return {
     summary: `<h3>Stored run</h3><p>${esc(storedStatus(r))}${r.reason && !['queued', 'stalled'].includes(r.reason) ? ` · ${esc(r.reason)}` : ''}${r.offline_since ? ` · ${esc(offlineLabel(r))} · last known worker state` : ''}</p><p>${esc(r.host)} · ${esc(r.runtime || 'Runtime not recorded')} · ${esc(r.kind)}</p><p>${r.start ? esc(new Date(r.start).toLocaleString()) : 'Start not recorded'} · ${r.duration_seconds == null ? 'Duration not recorded' : duration(r.duration_seconds)}</p><p>${esc(r.work_title || r.work_item || 'Unlinked: no work item')}</p><p>${esc(r.workspace?.branch || r.workspace_reason || 'Workspace not recorded')}</p><h3>Steps</h3>${list(steps, s => `<b>${s.index + 1}. ${esc(s.title || 'Title not recorded')}</b> · ${esc(s.status)}${s.result ? `<p>${esc(s.result)}</p>` : ''}<p>${esc(s.git?.reason || '')}</p><h4>Commits${s.git?.commit_count != null ? ` · ${s.git.commit_count}` : ''}</h4>${list(s.git?.commits, c => `<code>${esc(c.sha?.slice(0,8))}</code> ${esc(c.subject)}`, Array.isArray(s.git?.commits) ? 'No commits in this step' : 'Commits not recorded')}<h4>Pushes</h4>${list(s.git?.pushes, p => `${esc(p.remote || '')} ${esc(p.ref || '')} ${esc(p.sha || p.head || '')}`, Array.isArray(s.git?.pushes) ? 'No pushes in this step' : 'Pushes not recorded')}`, 'No steps recorded')}`,
     activity: `<h3>Kept trace</h3><p>${esc(events.availability || 'unavailable')}${events.reason ? ` · ${esc(events.reason)}` : ''}</p>${list(recorded, esc, 'No kept events available')}<h3>Worker source</h3><p>${esc(trace.source?.availability || 'Not recorded')}</p>${list(trace.source?.raw, raw => `${esc(raw.name || raw.path || raw.kind || 'Raw trace')} · ${esc(raw.availability || 'Availability not recorded')}${raw.reason ? ` · ${esc(raw.reason)}` : ''}`, 'Raw trace availability not recorded')}${trace.copy_error ? `<p>${esc(trace.copy_error)}</p>` : ''}`,
-    documents: `<h3>Documents · ${docs.length}</h3>${list(docs, (d) => `<button data-kept-doc="${docs.indexOf(d)}"${d.stored ? '' : ' disabled'}>${esc(d.name || d.id)}</button> · ${d.stored ? 'kept on controller' : esc(d.error || 'No kept copy available')}`, 'No kept documents recorded')}<h3>Indexed references</h3>${list(detail.documents, d => `${esc(d.title || d.id)} · ${esc(d.availability || 'Availability not recorded')}`, 'No indexed references recorded')}`,
+    documents: `<h3>Documents · ${docs.length}</h3>${list(docs, (d) => `<button data-kept-doc="${docs.indexOf(d)}"${d.stored ? '' : ' disabled'}>${esc(d.name || d.id)}</button> · ${d.stored ? 'kept on controller' : esc(d.error || 'No kept copy available')}`, 'No kept documents recorded')}${unkept.length ? `<h3>Not kept on the controller · ${unkept.length}</h3>${list(unkept, d => `${esc(d.title || d.id)} · ${esc(d.availability || 'Availability not recorded')}`)}` : ''}`,
   };
 }
 export function readArchivedDocument(detail, index) {
