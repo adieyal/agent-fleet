@@ -30,7 +30,7 @@ renderer = (
 
 IMAGE_TYPES = {".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
                ".gif": "image/gif", ".webp": "image/webp"}
-ASSET_READ_LIMIT = 5 * 1024 * 1024  # fleetd's cap for the same images
+ASSET_READ_LIMIT = 32 * 1024 * 1024  # fleetd's cap for the same images: room for full-resolution contact sheets
 
 
 class DocumentAccessDenied(FleetError):

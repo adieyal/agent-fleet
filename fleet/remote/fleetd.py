@@ -227,7 +227,7 @@ DOCUMENT_READ_LIMIT = 2 * 1024 * 1024
 # Images a document links to, served by `fleetd read-asset`; anything else is refused.
 ASSET_TYPES = {".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
                ".gif": "image/gif", ".webp": "image/webp"}
-ASSET_READ_LIMIT = 5 * 1024 * 1024
+ASSET_READ_LIMIT = 32 * 1024 * 1024
 
 
 def is_markdown(path: str) -> bool:
