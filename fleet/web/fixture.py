@@ -32,7 +32,7 @@ from fleet.modules.workspace import Registry
 from fleet.projections.workspace import annotate, resolve, registry_config
 from fleet.transport import FleetError
 from fleet.web.documents import STATUS_LINE, render_markdown
-from fleet.web.job_store import ProjectDocuments
+from fleet.composition import open_documents
 from fleet.web.library import ProjectLibrary, is_private
 from fleet.web.live import LiveWorkspace
 
@@ -70,7 +70,7 @@ class FixtureState(LiveWorkspace):
                                                                      "baseline": report.get("baseline"), "seq": 1}
                               for report in fixture.get("pipeline_reports", [])}
         self.pipeline_seq = 1 if self.pipeline_runs else 0
-        self.documents = ProjectDocuments(Path(self.attention_directory.name) / "projects")
+        self.documents = open_documents(Path(self.attention_directory.name) / "projects")
         self.keep_recorded_documents()
 
     def keep_recorded_documents(self) -> None:

@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import shlex
 import subprocess
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from fleet.errors import FleetError
 
@@ -241,3 +243,49 @@ def rsync(sources: list[str], destination: str, host: Host) -> None:
     completed = subprocess.run(command, capture_output=True, text=True)
     if completed.returncode != 0:
         raise FleetError(f"rsync failed: {completed.stderr.strip()}")
+
+
+def follow_stream(host: Host, receive: Callable[[dict[str, Any]], None], *,
+                  events: str, silence_limit: int) -> str:
+    """Drain a worker stream while its messages are handled; return why it ended."""
+    try:
+        ensure_master(host)
+    except subprocess.TimeoutExpired:
+        return "ssh connect timed out"
+    process = subprocess.Popen(host.fleetd_command(["stream", "--events", events]),
+                               stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert process.stdout is not None and process.stderr is not None
+    # Both pipes are drained on their own threads. Applying a message may call the host again over the same ssh
+    # master (the catch-up after hello); the master writes the stream into these pipes and, once one is full,
+    # blocks every channel to the host, the catch-up's included, so reading here alone deadlocked.
+    lines: queue.Queue[bytes | None] = queue.Queue()
+    stderr_lines: list[str] = []
+
+    def pump_stdout() -> None:
+        for line in process.stdout:
+            lines.put(line)
+        lines.put(None)
+
+    def pump_stderr() -> None:
+        for line in process.stderr:
+            stderr_lines.append(line.decode(errors="replace").rstrip())
+            del stderr_lines[:-20]
+
+    pumps = [threading.Thread(target=pump, daemon=True) for pump in (pump_stdout, pump_stderr)]
+    for pump in pumps:
+        pump.start()
+    try:
+        while True:
+            try:
+                line = lines.get(timeout=silence_limit)
+            except queue.Empty:
+                return f"no heartbeat for {silence_limit}s"
+            if line is None:
+                process.wait(timeout=5)
+                pumps[1].join(timeout=5)
+                return stderr_lines[-1] if stderr_lines else f"stream ended (exit {process.returncode})"
+            if line.strip():
+                receive(json.loads(line))
+    finally:
+        if process.poll() is None:
+            process.kill()

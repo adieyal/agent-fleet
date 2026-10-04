@@ -20,7 +20,7 @@ from fleet.composition import (open_attention, open_decisions, open_execution, o
                                open_store, open_work)
 from fleet.modules.execution import JobObservation
 from fleet.modules.work import EvidenceSpecification
-from fleet.web.ingester import observe_runs
+from fleet.composition import observe_runs
 
 VIEWPORTS = {"desktop": {"width": 1440, "height": 900}, "narrow": {"width": 390, "height": 844}}
 # The deck ages jobs against the browser clock; pin it to the moment the fixture was recorded.

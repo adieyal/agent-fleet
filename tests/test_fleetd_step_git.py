@@ -149,7 +149,7 @@ def test_runner_records_commit_and_push_in_streamed_step(repository, tmp_path, m
     assert record["pushes"][0]["new"] == record["head"] == git(repository, "rev-parse", "HEAD")
     assert "_reflog_offsets" not in record
     from fleet import composition
-    from fleet.web.ingester import observe_runs
+    from fleet.composition import observe_runs
 
     store = composition.open_store()
     execution = composition.open_execution(store)

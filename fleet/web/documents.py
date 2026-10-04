@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import base64
-import re
 import shlex
 from pathlib import PurePosixPath
 from typing import Any
@@ -13,10 +12,10 @@ from mdit_py_plugins.footnote import footnote_plugin
 from mdit_py_plugins.tasklists import tasklists_plugin
 
 from fleet import transport
+from fleet.composition import STATUS_LINE
 from fleet.transport import FleetError, Host
 
 WORDS_PER_MINUTE = 230
-STATUS_LINE = re.compile(r"^\s*\**FLEET_STATUS:.*$", re.MULTILINE)
 
 # html=False escapes any raw HTML in the document, so agent output can't inject markup or scripts.
 renderer = (

@@ -9,8 +9,8 @@ from threading import Barrier
 import pytest
 
 from fleet import composition, transport
-from fleet.web.ingester import observe_runs
-from fleet.web.job_store import DocumentKeeper, ProjectDocuments
+from fleet.composition import observe_runs
+from fleet.composition import DocumentKeeper, ProjectDocuments
 from fleet.web.server import FleetState, apply_message
 
 real_catch_up_jobs = transport.catch_up_jobs

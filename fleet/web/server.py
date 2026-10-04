@@ -11,8 +11,6 @@ import logging
 from dataclasses import asdict
 import pickle
 import os
-import queue
-import subprocess
 import threading
 import sys
 import time
@@ -39,13 +37,14 @@ from fleet.projections.run_history import history_runs, run_detail
 from fleet.projections.bench import bench_rooms, bench_state
 from fleet.projections.history import parse_since, subject_history
 from fleet.transport import FleetError, Host
-from fleet.web.documents import AssetNotImage, AssetTooLarge, DocumentAccessDenied, fetch_asset, fetch_document
+from fleet.web.documents import (AssetNotImage, AssetTooLarge, DocumentAccessDenied, fetch_asset,
+                                 fetch_document, render_markdown)
 from fleet.web.fixture import FixtureLibrary, FixtureState
 from fleet.web.guidance import epic_decisions, project_decisions, guidance_view
-from fleet.web.job_store import DocumentKeeper, ProjectDocuments
+from fleet.composition import ProjectDocuments, open_documents, open_document_keeper
 from fleet.web.library import ProjectLibrary
 from fleet.web.live import AlreadyHoused, LiveWorkspace
-from fleet.web.ingester import observe_runs, observe_sessions, record_decisions
+from fleet.composition import observe_runs, observe_sessions, record_decisions
 
 WEB_ROOT = Path(__file__).parent.resolve()
 INDEX_PATH = WEB_ROOT / "index.html"
@@ -144,9 +143,9 @@ class FleetState(LiveWorkspace):
         self.pipeline_config = pipelines or {}
         self.pipeline_runs = {}
         self.pipeline_seq = 0
-        self.documents = documents if documents is not None else ProjectDocuments()
+        self.documents = documents if documents is not None else open_documents()
         self.trace_retainer = transport.keep_run_trace
-        self.keeper = DocumentKeeper(self.documents, self.fetch_raw, keep_trace=self.keep_trace)
+        self.keeper = open_document_keeper(self.documents, self.fetch_raw, keep_trace=self.keep_trace)
         for observed in self.execution.hosts():
             if observed["name"] in self.by_host and not observed["reachable"]:
                 entry = self.by_host[observed["name"]]
@@ -352,47 +351,8 @@ def follow_host(state: FleetState, host: Host) -> None:
 
 def run_stream(state: FleetState, host: Host) -> str:
     """Apply stream messages until the stream ends; return why it ended."""
-    try:
-        transport.ensure_master(host)
-    except subprocess.TimeoutExpired:
-        return "ssh connect timed out"
-    process = subprocess.Popen(host.fleetd_command(["stream", "--events", EVENTS_PER_JOB]),
-                               stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    assert process.stdout is not None and process.stderr is not None
-    # Both pipes are drained on their own threads. Applying a message may call the host again over the same ssh
-    # master (the catch-up after hello); the master writes the stream into these pipes and, once one is full,
-    # blocks every channel to the host, the catch-up's included, so reading here alone deadlocked.
-    lines: queue.Queue[bytes | None] = queue.Queue()
-    stderr_lines: list[str] = []
-
-    def pump_stdout() -> None:
-        for line in process.stdout:
-            lines.put(line)
-        lines.put(None)
-
-    def pump_stderr() -> None:
-        for line in process.stderr:
-            stderr_lines.append(line.decode(errors="replace").rstrip())
-            del stderr_lines[:-20]
-
-    pumps = [threading.Thread(target=pump, daemon=True) for pump in (pump_stdout, pump_stderr)]
-    for pump in pumps:
-        pump.start()
-    try:
-        while True:
-            try:
-                line = lines.get(timeout=STREAM_SILENCE_LIMIT)
-            except queue.Empty:
-                return f"no heartbeat for {STREAM_SILENCE_LIMIT}s"
-            if line is None:
-                process.wait(timeout=5)
-                pumps[1].join(timeout=5)
-                return stderr_lines[-1] if stderr_lines else f"stream ended (exit {process.returncode})"
-            if line.strip():
-                apply_message(state, host, json.loads(line))
-    finally:
-        if process.poll() is None:
-            process.kill()
+    return transport.follow_stream(host, lambda message: apply_message(state, host, message),
+                                  events=EVENTS_PER_JOB, silence_limit=STREAM_SILENCE_LIMIT)
 
 
 def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> None:
@@ -1025,7 +985,7 @@ def make_handler(state: FleetState | FixtureState,
             if body is None:
                 self.respond(404, "application/json", b'{"error": "document not in the project store"}')
                 return
-            self.respond(200, "application/json", json.dumps(body).encode())
+            self.respond(200, "application/json", json.dumps({**body, **render_markdown(body["markdown"])}).encode())
 
         def stream(self) -> None:
             self.send_response(200)

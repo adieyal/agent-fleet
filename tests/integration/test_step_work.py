@@ -5,7 +5,7 @@ import pytest
 from fleet.composition import open_execution, open_library, open_store, open_work, open_attention, open_decisions
 from fleet.projections.bench import bench_rooms
 from fleet.projections.project import project_status, run_work
-from fleet.web.ingester import observe_runs
+from fleet.composition import observe_runs
 
 
 @pytest.fixture

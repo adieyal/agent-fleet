@@ -19,7 +19,7 @@ import pytest
 from fleet.composition import open_workspace
 from fleet.remote import fleetd
 from fleet.transport import Host
-from fleet.web.job_store import ProjectDocuments
+from fleet.composition import ProjectDocuments
 from fleet.web.server import FleetState, follow_host, make_handler
 
 real_fetch_raw = FleetState.fetch_raw
@@ -141,6 +141,9 @@ def test_documents_are_copied_live_and_outlive_the_job_and_the_host(
         assert {document["id"] for document in job["documents"]} == {"brief-0", "outbox-findings.md", "file-0"}
         status, body = get(url, "/api/library/job", project=project_id, job=key, id="outbox-findings.md")
         assert status == 200 and "Second pass" in body["markdown"]
+        assert '<h1 id="findings">Findings</h1>' in body["html"]
+        assert body["toc"] == [{"level": 1, "id": "findings", "text": "Findings"}]
+        assert (body["words"], body["minutes"]) == (7, 1)
 
 
 def test_reading_stays_inside_the_projects_store(tmp_path: Path) -> None:
@@ -187,3 +190,20 @@ def test_an_older_hosts_local_notes_are_never_stored(tmp_path: Path) -> None:
     assert [document["id"] for document in store.observe("p-1", "host", job)] == ["outbox-report.md"]
     [stored] = store.jobs("p-1")
     assert [document["id"] for document in stored["documents"]] == ["outbox-report.md"]
+
+
+def test_working_documents_keep_the_reader_response_fields(tmp_path: Path) -> None:
+    store = ProjectDocuments(tmp_path / "projects")
+    working = store.root / "p-1" / "working"
+    working.mkdir(parents=True)
+    markdown = "# Working\n\nFLEET_STATUS: done\n\nText."
+    (working / "note.md").write_text(markdown)
+    state = FleetState([], documents=store)
+    with deck(state) as url:
+        status, body = get(url, "/api/library/working", project="p-1", id="note.md")
+    assert status == 200
+    assert body["markdown"] == markdown
+    assert '<h1 id="working">Working</h1>' in body["html"]
+    assert "FLEET_STATUS: done" in body["html"]
+    assert body["toc"] == [{"level": 1, "id": "working", "text": "Working"}]
+    assert (body["words"], body["minutes"], body["project_id"]) == (5, 1, "p-1")

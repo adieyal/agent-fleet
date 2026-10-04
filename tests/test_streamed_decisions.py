@@ -13,7 +13,7 @@ from fleet import transport
 from fleet.composition import open_attention, open_decisions, open_execution, open_store, open_work
 from fleet.projections.decisions import decision_log
 from fleet.remote import fleetd
-from fleet.web.ingester import record_decisions
+from fleet.composition import record_decisions
 from fleet.web.server import FleetState, apply_message
 
 GUIDANCE = dict(project="p", epic=None, constitution=dict(path="constitution.md", revision="abc", version=3),

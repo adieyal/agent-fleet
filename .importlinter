@@ -1,5 +1,6 @@
 [importlinter]
 root_package = fleet
+include_external_packages = True
 
 [importlinter:contract:layers]
 name = Controller layers
@@ -8,6 +9,7 @@ layers =
     fleet.cli : fleet.web
     fleet.orchestration
     fleet.composition
+    fleet.services : fleet.ingestion
     fleet.transport
     fleet.projections
     fleet.modules
@@ -28,6 +30,8 @@ forbidden_modules =
     fleet.cli
     fleet.composition
     fleet.projections
+    fleet.services
+    fleet.ingestion
 
 # Each module's descendants are private, including its facade implementation.
 # Add a public-surface contract whenever a new business module is introduced.
@@ -95,3 +99,28 @@ forbidden_modules =
     fleet
     fleet.**
 as_packages = False
+
+[importlinter:contract:document-library]
+name = Document library independence
+type = forbidden
+source_modules =
+    fleet.infrastructure.documents.job_store
+    fleet.services
+    fleet.ingestion
+forbidden_modules =
+    fleet.cli
+    fleet.web
+    fleet.composition
+
+[importlinter:contract:service-infrastructure]
+name = Service infrastructure separation
+type = forbidden
+source_modules = fleet.services
+forbidden_modules = fleet.infrastructure
+
+[importlinter:contract:web-processes]
+name = Web processes use transport
+type = forbidden
+source_modules = fleet.web
+forbidden_modules = subprocess
+allow_indirect_imports = True

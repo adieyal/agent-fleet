@@ -5,7 +5,7 @@ import json
 import pytest
 
 from fleet import composition
-from fleet.web.ingester import observe_runs
+from fleet.composition import observe_runs
 
 
 def test_ingester_persists_steps_once_with_git_and_legacy_reason():

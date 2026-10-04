@@ -34,6 +34,9 @@ from fleet.modules.records import RecordsFacade
 from fleet.modules.authority import AuthorityFacade
 from fleet.infrastructure.sqlite.authority import AuthorityRepository
 from fleet.infrastructure.sqlite.triage import TriageRepository
+from fleet.infrastructure.documents.job_store import ProjectDocuments, fleet_home
+from fleet.services.documents import DocumentKeeper, STATUS_LINE, is_private
+from fleet.ingestion import observe_runs, observe_sessions, record_decisions
 
 
 def store_path() -> Path:
@@ -201,3 +204,11 @@ def deliver_triage(services, run, *, reconcile=False):
     return services.execution.deliver(run,
         lambda arguments, stdin: transport.call(host, arguments, stdin_text=stdin),
         lambda job, paths, guidance: None, reconcile=reconcile)
+
+
+def open_documents(root: Path | None = None) -> ProjectDocuments:
+    return ProjectDocuments(root)
+
+
+def open_document_keeper(documents, fetch, *, keep_trace=None) -> DocumentKeeper:
+    return DocumentKeeper(documents, fetch, keep_trace=keep_trace)

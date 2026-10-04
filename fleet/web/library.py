@@ -16,6 +16,7 @@ import os
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from fleet.composition import is_private
 from fleet.web.documents import (ASSET_READ_LIMIT, IMAGE_TYPES, AssetNotImage, AssetTooLarge,
                                  DocumentAccessDenied, render_markdown)
 
@@ -28,11 +29,6 @@ def skipped(relative: Path | PurePosixPath) -> bool:
     """Hidden files and folders, and bulky tool folders, never enter a recursive library."""
     return any(part.startswith(".") for part in relative.parts) or any(
         part in SKIPPED_DIRECTORIES for part in relative.parts[:-1])
-
-
-def is_private(name: str) -> bool:
-    """CLAUDE.local.md and other *.local.md files are someone's private local notes."""
-    return name.lower().endswith(".local.md")
 
 
 def is_prd(name: str) -> bool:

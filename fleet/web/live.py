@@ -24,7 +24,7 @@ from fleet.modules.workspace import Registry, WorkspaceFacade, AlreadyHoused
 from fleet.transport import FleetError
 from fleet.composition import open_work, open_execution, open_records, facades
 from fleet.projections.project import run_work
-from fleet.web.job_store import ProjectDocuments
+from fleet.composition import ProjectDocuments
 from fleet.web.overview import Overview
 T = TypeVar("T")
 
@@ -42,7 +42,7 @@ class LiveWorkspace:
     pipeline_runs: dict[tuple[str, str], dict[str, Any]]  # (host, name) → {"run", "baseline", "seq"} as last reported
     work_links: tuple[tuple[Any, int], dict[tuple[str, str], dict[str, Any]], dict[tuple[str, str], str]] | None = None  # revision, links, run ids
     pipeline_seq: int
-    documents: ProjectDocuments   # each project's document store (see fleet.web.job_store)
+    documents: ProjectDocuments   # each project's document store (see fleet.composition.open_documents)
 
     def known_projects(self) -> Container[str]:
         raise NotImplementedError

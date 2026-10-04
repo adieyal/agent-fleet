@@ -61,11 +61,11 @@ def test_silence_deadline_marks_linked_run_unknown(monkeypatch):
 
         def get(self, *, timeout):
             waits.append(timeout)
-            raise server.queue.Empty
+            raise server.transport.queue.Empty
 
-    monkeypatch.setattr(server.queue, "Queue", Silent)
+    monkeypatch.setattr(server.transport.queue, "Queue", Silent)
     monkeypatch.setattr(server.transport, "ensure_master", lambda host: None)
-    monkeypatch.setattr(server.subprocess, "Popen", lambda command, **kwargs: commands.append(command) or process)
+    monkeypatch.setattr(server.transport.subprocess, "Popen", lambda command, **kwargs: commands.append(command) or process)
 
     class Finished(Exception):
         pass

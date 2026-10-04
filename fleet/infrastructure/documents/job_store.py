@@ -19,11 +19,10 @@ import os
 import re
 import threading
 from pathlib import Path, PurePosixPath
-from typing import Any, Callable, Iterator
+from typing import Any, Iterator
 
 from fleet.transport import FleetError
-from fleet.web.documents import STATUS_LINE, render_markdown
-from fleet.web.library import is_private
+from fleet.services.documents import STATUS_LINE, is_private
 
 UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
 MARKDOWN_SUFFIXES = (".md", ".markdown", ".mdx")
@@ -281,7 +280,7 @@ class ProjectDocuments:
         return {**{key: entry.get(key) for key in DOCUMENT_FIELDS}, "truncated": bool(entry.get("truncated")),
                 "job": summary.get("id"), "host": summary.get("host"), "agent": summary.get("agent"),
                 "job_description": summary.get("description"), "project_id": project_id,
-                **render_markdown(markdown)}
+                "markdown": markdown}
 
     def working(self, project_id: str) -> list[dict[str, Any]]:
         """Markdown under the project's own working/ folder; symlinks are skipped."""
@@ -311,7 +310,7 @@ class ProjectDocuments:
         stat = path.stat()
         return {"id": document_id, "name": path.name, "kind": "working", "size": stat.st_size, "mtime": stat.st_mtime,
                 "project_id": project_id, "truncated": len(raw) > READ_LIMIT,
-                **render_markdown(raw[:READ_LIMIT].decode(errors="replace"))}
+                "markdown": raw[:READ_LIMIT].decode(errors="replace")}
 
     def _contained(self, project_id: str, path: Path) -> bytes | None:
         """The file's bytes, only if it is a regular file (no symlink on the way) inside the project's store."""
@@ -329,56 +328,3 @@ class ProjectDocuments:
             return None
         with open(path, "rb") as handle:
             return handle.read(READ_LIMIT + 1)
-
-
-class DocumentKeeper:
-    """Copies jobs' documents into the store in the background, so the stream never waits on a read.
-
-    Only the newest listing of each job is kept; unchanged documents (same mtime and size) are skipped.
-    A read that fails is recorded on the document and retried the next time the job is listed.
-    """
-
-    def __init__(self, store: ProjectDocuments, fetch: Callable[[str, str, str], dict[str, Any]],
-                 keep_trace: Callable[[str, dict], None] | None = None) -> None:
-        self.store, self.fetch = store, fetch
-        self.keep_trace = keep_trace
-        self.pending: dict[tuple[str, str], tuple[str, dict[str, Any]]] = {}
-        self.wake = threading.Condition()
-        self.busy = False
-        self.thread: threading.Thread | None = None
-
-    def observe(self, host: str, project_id: str, job: dict[str, Any]) -> None:
-        with self.wake:
-            self.pending[(host, job["id"])] = (project_id, job)
-            if self.thread is None:
-                self.thread = threading.Thread(target=self.run, daemon=True)
-                self.thread.start()
-            self.wake.notify_all()
-
-    def run(self) -> None:
-        while True:
-            with self.wake:
-                self.wake.wait_for(lambda: self.pending)
-                (host, _), (project_id, job) = self.pending.popitem()
-                self.busy = True
-            try:
-                self.copy(host, project_id, job)
-            finally:
-                with self.wake:
-                    self.busy = False
-                    self.wake.notify_all()
-
-    def copy(self, host: str, project_id: str, job: dict[str, Any]) -> None:
-        for document in self.store.observe(project_id, host, job):
-            try:
-                read = self.fetch(host, job["id"], document["id"])
-                self.store.keep(project_id, host, job["id"], document, read["content"], bool(read.get("truncated")))
-            except (FleetError, KeyError, OSError) as error:
-                self.store.failed(project_id, host, job["id"], document["id"], str(error) or type(error).__name__)
-        if self.keep_trace is not None and job.get("trace"):
-            self.keep_trace(host, job)
-
-    def settle(self, timeout: float) -> bool:
-        """Wait until nothing is pending (tests and shutdown); true when settled."""
-        with self.wake:
-            return self.wake.wait_for(lambda: not self.pending and not self.busy, timeout=timeout)

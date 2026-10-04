@@ -5,7 +5,7 @@ import pytest
 from fleet.composition import open_attention, open_decisions, open_execution, open_library, open_store, open_work
 from fleet.projections.bench import bench_rooms
 from fleet.projections.project import project_status
-from fleet.web.ingester import observe_runs
+from fleet.composition import observe_runs
 
 WORKSPACE = {"toplevel": "/home/adi/wt/feat-x", "linked_worktree": True, "repository": "/home/adi/repo",
              "branch": "feat/x", "detached": False, "head": "abc1234", "dirty": 2, "collected_at": 1_000.0}

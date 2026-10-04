@@ -7,7 +7,7 @@ import pytest
 
 from fleet import cli, composition
 from fleet.remote import fleetd
-from fleet.web.ingester import observe_runs
+from fleet.composition import observe_runs
 
 
 @pytest.mark.parametrize("agent,tokens,cost", [

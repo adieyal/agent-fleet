@@ -70,6 +70,13 @@ def test_production_import_contracts(tmp_path):
     ("fleet/remote/fleetd.py", "import fleet.cli", "Standalone worker"),
     ("fleet/remote/fleetd.py", "import fleet", "Standalone worker"),
     ("fleet/remote/fleetd.py", "import fleet.remote", "Standalone worker"),
+    ("fleet/infrastructure/documents/job_store.py", "import fleet.web.documents", "Document library independence"),
+    ("fleet/services/documents.py", "import fleet.composition", "Document library independence"),
+    ("fleet/services/documents.py", "import fleet.infrastructure.documents.job_store", "Service infrastructure separation"),
+    ("fleet/ingestion.py", "import fleet.web.server", "Document library independence"),
+    ("fleet/modules/work/__init__.py", "import fleet.ingestion", "Module independence"),
+    ("fleet/modules/work/__init__.py", "import fleet.services", "Module independence"),
+    ("fleet/web/server.py", "import subprocess", "Web processes use transport"),
 ])
 def test_forbidden_import_fails(tmp_path, filename, statement, contract):
     result = lint_copy(tmp_path, filename, statement)

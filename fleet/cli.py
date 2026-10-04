@@ -792,7 +792,7 @@ def command_move(arguments: argparse.Namespace) -> None:
 def command_remove(arguments: argparse.Namespace) -> None:
     host, job_id = resolve(arguments.job)
     job = transport.call(host, ["show", job_id, "--events", "0"])
-    from fleet.web.ingester import observe_runs
+    from fleet.composition import observe_runs
     from fleet.projections.workspace import resolve as resolve_label
     store = open_store()
     execution = open_execution(store)
@@ -857,9 +857,9 @@ def command_history_runs(arguments: argparse.Namespace) -> None:
 
 
 def stored_run_detail(identity: str, store, documents=None) -> dict:
-    from fleet.web.job_store import ProjectDocuments
+    from fleet.composition import open_documents
     detail = run_detail(identity, open_execution(store), open_work(store), open_library(store))
-    detail["kept_documents"] = (documents or ProjectDocuments()).run_documents(detail["run"])
+    detail["kept_documents"] = (documents or open_documents()).run_documents(detail["run"])
     return detail
 
 
@@ -1069,8 +1069,8 @@ def command_project_link(arguments: argparse.Namespace) -> None:
     host, label = parse_link(arguments.link)
     link = open_workspace().edit_registry(lambda registry: registry.link(arguments.id, host, label))
     count = open_execution().assign_label(host, label, arguments.id, actor="user")
-    from fleet.web.job_store import ProjectDocuments
-    documents = ProjectDocuments().assign_label(host, label, arguments.id)
+    from fleet.composition import open_documents
+    documents = open_documents().assign_label(host, label, arguments.id)
     console.print(f"linked {escape(link.host)}:{escape(link.label)} → {arguments.id}; "
                   f"{count} earlier runs assigned; {documents} retained jobs moved")
 

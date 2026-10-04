@@ -109,7 +109,7 @@ def test_cli_filters_match_projection(history, capsys, arguments, options):
 
 
 def test_run_detail_retains_steps_git_and_unlinked_documents(history, capsys, api):
-    from fleet.web.job_store import ProjectDocuments
+    from fleet.composition import ProjectDocuments
     execution = history[3]
     run = history[8]
     git = {"base": "a" * 40, "head": "b" * 40, "commit_count": 1,
