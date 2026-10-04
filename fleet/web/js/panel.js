@@ -210,6 +210,8 @@ export function renderPanel() {
       ${j.permission ? `<dt>perms</dt><dd>${esc(j.permission)}</dd>` : ''}
       <dt>updated</dt><dd>${esc(age(j.updated_at))} ago</dd>
     </dl>`, `
+    <h3>Decisions since dispatch · ${(j.decisions_since_dispatch || []).length}</h3>
+    ${(j.decisions_since_dispatch || []).map(d => `<dl class="meta"><dt>question</dt><dd>${esc(d.question)}</dd><dt>answer</dt><dd>${esc(d.answer)}</dd><dt>actor</dt><dd>${esc(d.actor)}</dd><dt>principle</dt><dd>${esc(d.principle ?? 'unknown')}</dd>${d.delivery_status ? `<dt>delivery</dt><dd>${esc(d.delivery_status === 'applied' ? 'received by host' : 'pending receipt')}${d.delivery_error ? ` · ${esc(d.delivery_error)}` : ''}</dd>` : ''}</dl>`).join('')}
     <h3>Steps · ${steps.filter(s => s.status === 'done').length}/${steps.length}</h3>
     <ol class="steps"${j.work ? ` data-work-project="${esc(j.work.project)}"` : ''}>${steps.map(s => `<li class="${esc(s.status)}"${s.status === 'running' ? ' aria-current="step"' : ''}><span class="si">${stepIcon[s.status] || '?'}</span>
       <span class="t">${s.index + 1}. ${esc(s.title)}${s.status === 'running' ? ' <b class="now">now</b>' : ''}${s.started_at ? ` <small class="muted">${duration((s.finished_at ?? Date.now() / 1000) - s.started_at)}</small>` : ''}</span>${stepWork(j, s)}${s.result ? `<span class="r">${esc(trunc(s.result, 400))}</span>` : ''}</li>`).join('')}</ol>`,

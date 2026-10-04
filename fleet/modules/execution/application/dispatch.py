@@ -8,6 +8,9 @@ from .ports import ExecutionRepository
 
 
 def fingerprint(work_item: str | None, project: str, host: str, runtime: str, payload: dict) -> str:
+    # Delivery bookkeeping must not turn a repeated dispatch request into a different command.
+    payload = {key: value for key, value in payload.items()
+               if key not in ('decisions_dispatch_at', 'decisions_dispatch_ids')}
     return hashlib.sha256(json.dumps([work_item, project, host, runtime, payload], sort_keys=True).encode()).hexdigest()
 
 

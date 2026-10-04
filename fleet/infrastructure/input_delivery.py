@@ -6,8 +6,9 @@ from fleet.modules.execution import Delivery, InputResult, Run
 
 def send_input(run: Run, delivery: Delivery) -> InputResult:
     try:
+        command = "receive-decision" if delivery.key.startswith("context-decision:") else "deliver"
         result = transport.call(transport.host_by_name(run.host),
-            ["deliver", run.remote_job_id, "--schema-version", "1", "--key", delivery.key],
+            [command, run.remote_job_id, "--schema-version", "1", "--key", delivery.key],
             stdin_text=delivery.answer)
         if result == {"schema_version": 1, "key": delivery.key, "status": "busy"}:
             return InputResult("busy")

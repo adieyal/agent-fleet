@@ -8,6 +8,7 @@ Registry in use), `project_labels`, `capacity`, `known_projects()`, `host_names(
 from __future__ import annotations
 
 import contextlib
+import json
 from dataclasses import asdict
 import threading
 import time
@@ -306,8 +307,20 @@ class LiveWorkspace:
             cached = self.work_links = (revision, run_work(open_work(self.store), execution),
                                        {(run.host, run.remote_job_id): run.id for run in execution.runs()})
         links = cached[1]
+        deliveries = open_execution(self.store).deliveries()
+
+        def decisions(item, run_id):
+            entries = {decision['id']: decision for decision in item.get('decisions_since_dispatch', [])}
+            for delivery in deliveries:
+                if delivery.run == run_id and delivery.key.startswith('context-decision:'):
+                    decision = json.loads(delivery.answer)
+                    entries[decision['id']] = dict(decision, delivery_status=delivery.status,
+                                                    delivery_error=delivery.error)
+            return {'decisions_since_dispatch': list(entries.values())} if entries else {}
+
         return {**document, "hosts": [{**host, **{kind: [{**item, "work": links.get((host["name"], item["id"])),
-                                                        "audit_run_id": cached[2].get((host["name"], item["id"]))}
+                                                        "audit_run_id": cached[2].get((host["name"], item["id"])),
+                                                        **decisions(item, cached[2].get((host["name"], item["id"])))}
                                                          for item in host[kind]] for kind in ("jobs", "sessions")}}
                                       for host in document["hosts"]]}
 

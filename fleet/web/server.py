@@ -226,8 +226,9 @@ class FleetState(LiveWorkspace):
                     entry.pop("down_since", None)
                 self.execution.record_host(host_name, reachable=entry["ok"], error=entry["error"])
             self.by_host[host_name] = snapshot(self.by_host[host_name])
+            retry_deliveries = self.by_host[host_name]["ok"]
             public = lambda value: {key: item for key, item in value.items() if not key.startswith("_")}
-            retry_deliveries = self.by_host[host_name]["ok"] and public(previous) != public(self.by_host[host_name])
+            context_only = public(previous) == public(self.by_host[host_name])
             reconciled = False
             if ingest:
                 entry = self.by_host[host_name]
@@ -245,12 +246,14 @@ class FleetState(LiveWorkspace):
                 # A heartbeat follows a full pass over the host's jobs, so absent jobs are gone.
                 reconciled = self.attention.close_refusals(
                     {**host, "jobs": list(host["jobs"].values()), "sessions": []}, complete=heartbeat) or reconciled
-            if previous == self.by_host[host_name] and self.store.latest_sequence() == sequence and not reconciled:
-                return
-            self.version += 1
-            self.changed.notify_all()
+            if previous != self.by_host[host_name] or self.store.latest_sequence() != sequence or reconciled:
+                self.version += 1
+                self.changed.notify_all()
         if retry_deliveries:
-            self.execution.retry_deliveries(host_name)
+            if context_only:
+                self.execution.retry_decisions(host_name)
+            else:
+                self.execution.retry_deliveries(host_name)
         self.schedule_triage()
 
     def refresh_registry(self) -> str | None:
