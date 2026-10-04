@@ -576,7 +576,8 @@ function documentAssetUrl(t, path, data) {
   const params = new URLSearchParams(t.source === 'library'
     ? { project: t.doc.project, id: t.doc.id, path }
     : { host: t.host, job: t.job, id: t.doc.id, path });
-  if (data?.media === 'image') params.set('v', `${data.mtime ?? t.doc.mtime}-${data.size ?? t.doc.size}`);
+  // stored copies are immutable, so only live documents need a version to bust the image cache
+  if (data?.media === 'image' && t.source !== 'stored') params.set('v', `${data.mtime ?? t.doc.mtime}-${data.size ?? t.doc.size}`);
   if (t.source === 'library') return '/api/library/asset?' + params;
   if (t.source === 'job' || (t.source === 'stored' && t.host && t.job !== 'working')) return '/api/doc/asset?' + params;
   return null;
