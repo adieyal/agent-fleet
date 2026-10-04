@@ -178,3 +178,179 @@ def test_linked_svg_shows_inline_in_both_themes_and_remote_images_are_not_fetche
     expect(page.locator(".prose .rd-img-note a")).to_contain_text("remote chart")
     assert not [url for url in reader.requests if "example.com" in url]
     assert reader.errors == []
+
+
+@pytest.fixture
+def cached_reader(reader: Reader) -> Reader:
+    reader.page.evaluate("""async () => {
+      window.readerModule = await import('/js/reader.js');
+      window.reads = []; window.pendingReads = [];
+      const originalFetch = window.fetch;
+      window.fetch = (url, ...args) => {
+        if (!String(url).startsWith('/api/doc?')) return originalFetch(url, ...args);
+        const id = new URL(url, location.origin).searchParams.get('id');
+        reads.push(id);
+        return new Promise(resolve => pendingReads.push({id, resolve}));
+      };
+      window.finishRead = (id, error = false, image = false) => {
+        const index = pendingReads.findIndex(p => p.id === id);
+        const pending = pendingReads.splice(index, 1)[0];
+        pending.resolve({ok: !error, json: async () => error ? {error: 'read failed'} : {
+          name: id, html: image ? '<img src="architecture.svg">' : '<h1>' + id + '</h1>',
+          media: image ? 'image' : 'markdown', path: 'outbox/architecture.svg', toc: []}});
+      };
+      window.testJob = {id: 'prefetch-job', status: 'succeeded', documents:
+        Array.from({length: 5}, (_, i) => ({id: 'doc' + i, name: 'doc' + i,
+          kind: 'report', mtime: 10 - i, size: 100}))};
+      window.openTestDoc = i => readerModule.openReader({host: 'home', job: testJob}, testJob.documents[i]);
+      openTestDoc(1);
+    }""")
+    return reader
+
+
+def test_prefetch_neighbors_render_immediately_and_share_pending_reads(cached_reader: Reader) -> None:
+    page = cached_reader.page
+    page.evaluate("finishRead('doc1')")
+    expect(page.locator('#rdBody h1')).to_have_text('doc1')
+    assert page.evaluate('reads') == ['doc1', 'doc2', 'doc3', 'doc0']
+    page.locator('#rdNext').click()
+    assert page.evaluate("reads.filter(id => id === 'doc2').length") == 1
+    page.evaluate("finishRead('doc2')")
+    expect(page.locator('#rdBody h1')).to_have_text('doc2')
+    page.evaluate("""() => {
+      document.getElementById('rdPrev').click();
+      window.instant = {title: document.querySelector('#rdBody h1')?.textContent,
+        skeleton: !!document.querySelector('.rd-skel')};
+    }""")
+    assert page.evaluate('instant') == {'title': 'doc1', 'skeleton': False}
+    cached_reader.shot('prefetched')
+
+
+def test_stale_cache_keeps_content_and_marks_refresh(cached_reader: Reader) -> None:
+    page = cached_reader.page
+    page.evaluate("finishRead('doc1')")
+    expect(page.locator('#rdBody h1')).to_have_text('doc1')
+    page.evaluate("""() => {
+      readerModule.closeReader(); testJob.documents[1].size++;
+      openTestDoc(1);
+      window.staleView = {title: document.querySelector('#rdBody h1')?.textContent,
+        marker: document.querySelector('#rdMeta').textContent, skeleton: !!document.querySelector('.rd-skel')};
+    }""")
+    result = page.evaluate('staleView')
+    assert result['title'] == 'doc1' and not result['skeleton']
+    assert 'updating live' in result['marker']
+    cached_reader.shot('stale-refresh')
+    page.evaluate("finishRead('doc1', true)")
+    expect(page.locator('#rdMeta')).to_contain_text('couldn’t refresh')
+    page.evaluate('openTestDoc(1)')
+    assert page.evaluate("reads.filter(id => id === 'doc1').length") == 3
+    page.evaluate("finishRead('doc1')")
+    expect(page.locator('#rdMeta')).not_to_contain_text('updating live')
+    expect(page.locator('#rdMeta')).not_to_contain_text('couldn’t refresh')
+
+
+def test_prefetch_image_decodes_and_skips_oversized_images(cached_reader: Reader) -> None:
+    page = cached_reader.page
+    page.evaluate("""() => {
+      window.decoded = [];
+      window.Image = class { decode() { decoded.push(this.src); return Promise.resolve(); } };
+      testJob.documents[2].media = 'image';
+      testJob.documents[3].media = 'image'; testJob.documents[3].size = 16 * 1024 * 1024 + 1;
+      finishRead('doc1');
+    }""")
+    expect(page.locator('#rdBody h1')).to_have_text('doc1')
+    assert page.evaluate('reads') == ['doc1', 'doc2', 'doc0']
+    page.evaluate("finishRead('doc2', false, true)")
+    page.wait_for_function('decoded.length === 1')
+    assert 'v=8-100' in page.evaluate('decoded[0]')
+    page.evaluate('openTestDoc(3)')
+    assert page.evaluate('reads').count('doc3') == 1  # the cap applies only to speculation
+
+
+def test_failed_prefetch_retries_and_lru_evicts(cached_reader: Reader) -> None:
+    page = cached_reader.page
+    page.evaluate("finishRead('doc1')")
+    expect(page.locator('#rdBody h1')).to_have_text('doc1')
+    page.evaluate("finishRead('doc2', true)")
+    page.evaluate('openTestDoc(2)')
+    assert page.evaluate('reads').count('doc2') == 2
+    page.evaluate("finishRead('doc2')")
+    expect(page.locator('#rdBody h1')).to_have_text('doc2')
+    page.evaluate("""async () => {
+      for (let i = 0; i < 13; i++) {
+        const doc = {id: 'evict' + i, name: 'evict' + i, kind: 'report', mtime: i, size: 1};
+        readerModule.openReader({host: 'home', job: {id: 'eviction', documents: [doc]}}, doc);
+        finishRead(doc.id);
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+      openTestDoc(1);
+    }""")
+    assert page.evaluate('reads').count('doc1') == 2
+
+
+def test_library_cache_and_immutable_stored_copies(reader: Reader) -> None:
+    page = reader.page
+    page.evaluate("""async () => {
+      const module = await import('/js/reader.js');
+      const {libraryDocs} = await import('/js/library.js');
+      const doc = libraryDocs.find(d => d.id === 'docs/rich.md');
+      window.sourceReads = [];
+      const originalFetch = window.fetch;
+      window.fetch = (url, ...args) => {
+        if (String(url).startsWith('/api/library/doc?')) {
+          sourceReads.push(url);
+          return new Promise(resolve => window.finishLibrary = () => resolve({ok: true,
+            json: async () => ({name: doc.name, html: '<h1>Updated library</h1>', toc: []})}));
+        }
+        if (String(url).startsWith('/api/library/job?') || String(url).startsWith('/api/library/working?')) {
+          sourceReads.push(url);
+          return Promise.resolve({ok: true, json: async () => ({name: 'Stored copy', html: '<h1>Stored copy</h1>', toc: []})});
+        }
+        return originalFetch(url, ...args);
+      };
+      module.closeReader(); module.openLibraryReader(doc);
+      window.libraryInstant = !!document.querySelector('#rdBody h1') && !document.querySelector('.rd-skel');
+      module.closeReader(); module.openLibraryReader({...doc, mtime: doc.mtime + 1});
+      window.libraryStale = document.querySelector('#rdMeta').textContent;
+      window.libraryModule = module;
+    }""")
+    assert page.evaluate('libraryInstant') is True
+    assert len(page.evaluate('sourceReads')) == 1
+    assert 'updating live' in page.evaluate('libraryStale')
+    page.evaluate('finishLibrary()')
+    expect(page.locator('#rdBody h1')).to_have_text('Updated library')
+    for endpoint in ('job', 'working'):
+        page.evaluate("""async endpoint => {
+          const url = '/api/library/' + endpoint + '?project=notes&id=copy';
+          const doc = {id: 'copy', name: 'Stored copy', kind: 'report', mtime: 1, size: 1};
+          libraryModule.openStoredReader(url, doc);
+          await new Promise(resolve => setTimeout(resolve, 0));
+          libraryModule.closeReader();
+          libraryModule.openStoredReader(url, {...doc, mtime: 2, size: 2});
+          window.storedInstant = document.querySelector('#rdBody h1')?.textContent === 'Stored copy'
+            && !document.querySelector('.rd-skel');
+        }""", endpoint)
+        assert page.evaluate('storedInstant') is True
+        assert len([url for url in page.evaluate('sourceReads') if f'/api/library/{endpoint}?' in url]) == 1
+
+
+def test_follow_doc_catches_updates_during_pending_read(cached_reader: Reader) -> None:
+    page = cached_reader.page
+    page.evaluate("""() => {
+      testJob.documents[1] = {...testJob.documents[1], mtime: 20, size: 101};
+      readerModule.followDoc({host: 'home', job: testJob});
+      finishRead('doc1');
+    }""")
+    expect(page.locator('#rdBody h1')).to_have_text('doc1')
+    expect(page.locator('#rdMeta')).to_contain_text('updating live')
+    assert page.evaluate('reads').count('doc1') == 2
+    page.evaluate("""() => {
+      testJob.documents[1] = {...testJob.documents[1], size: 102};
+      readerModule.followDoc({host: 'home', job: testJob});
+      finishRead('doc1');
+    }""")
+    page.wait_for_function("reads.filter(id => id === 'doc1').length === 3")
+    page.evaluate("finishRead('doc1')")
+    expect(page.locator('#rdMeta')).not_to_contain_text('updating live')
+    page.evaluate('openTestDoc(1)')
+    assert page.evaluate('reads').count('doc1') == 3

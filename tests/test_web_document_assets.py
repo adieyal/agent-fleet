@@ -17,7 +17,7 @@ import pytest
 
 from fleet.remote import fleetd
 from fleet.transport import FleetError, Host
-from fleet.web.documents import ASSET_READ_LIMIT, fetch_asset, render_markdown
+from fleet.web.documents import ASSET_READ_LIMIT, fetch_asset, fetch_document, render_markdown
 from fleet.web.library import ProjectLibrary
 from fleet.web.server import make_handler
 
@@ -27,6 +27,9 @@ SVG = b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><script>a
 class JobState:
     def host_names(self) -> list[str]:
         return ["host"]
+
+    def read_document(self, host_name: str, job_id: str, document_id: str) -> dict:
+        return fetch_document(Host(host_name, None), job_id, document_id)
 
     def read_asset(self, host_name: str, job_id: str, document_id: str, asset_path: str) -> tuple[str, bytes]:
         return fetch_asset(Host(host_name, None), job_id, document_id, asset_path)
@@ -136,3 +139,20 @@ def test_an_absolute_image_path_inside_the_job_is_served(job_server: str, tmp_pa
     status, headers, body = get(job_server, str(tmp_path / "fleet" / "jobs" / "job1" / "outbox" / "img" / "diagram.svg"))
     assert status == 200
     assert body == SVG
+
+
+@pytest.mark.parametrize("server", ["job_server", "library_server"])
+def test_asset_cache_policy_depends_on_document_version(server: str, request: pytest.FixtureRequest) -> None:
+    url = request.getfixturevalue(server)
+    assert get(url, "img/diagram.svg")[1]["Cache-Control"] == "max-age=60"
+    assert get(url + "&v=123-456", "img/diagram.svg")[1]["Cache-Control"] == "private, max-age=86400"
+    assert get(url + "&v=123-456", "img/missing.png")[1]["Cache-Control"] == "no-store"
+
+
+@pytest.mark.parametrize("server", ["job_server", "library_server"])
+def test_document_json_is_not_cached_even_with_a_version(server: str, request: pytest.FixtureRequest) -> None:
+    url = request.getfixturevalue(server).replace("/api/library/asset?", "/api/library/doc?").replace("/api/doc/asset?", "/api/doc?")
+    status, headers, body = get(url + "&v=123-456", "img/diagram.svg")
+    assert status == 200
+    assert headers["Cache-Control"] == "no-store"
+    assert "html" in json.loads(body)

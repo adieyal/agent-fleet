@@ -20,6 +20,76 @@ const rdProgress = document.getElementById('rdProgress');
 const rd = { key: null, source: 'job', host: null, job: null, doc: null, data: null, req: 0, raf: 0, lastFocus: null, tocLinks: [], tocCurrent: null };
 // Unsent answers stay per attention item until submitted or this page is closed.
 const answerDrafts = new Map();
+// Versioned entries share both completed reads and reads still on the wire.
+const docCache = new Map();
+const CACHE_LIMIT = 12;
+function target(doc = rd.doc) {
+  const source = rd.source, host = rd.host, job = rd.job?.id, url = rd.url;
+  const identity = JSON.stringify([source, source === 'stored' ? url : source === 'library' ? doc.project : host,
+    source === 'job' ? job : null, doc.id]);
+  const version = source === 'stored' ? 'immutable' : `${doc.mtime}-${doc.size}`;
+  return { source, host, job, url, doc: { ...doc }, identity, key: `${identity}:${version}` };
+}
+function touchEntry(key, entry) {
+  docCache.delete(key);
+  docCache.set(key, entry);
+  while (docCache.size > CACHE_LIMIT) docCache.delete(docCache.keys().next().value);
+  return entry;
+}
+function cachedRead(t) {
+  const cached = docCache.get(t.key);
+  if (cached) return touchEntry(t.key, cached).promise;
+  const entry = { key: t.key, identity: t.identity, data: null };
+  entry.promise = (t.source === 'library' ? fetchLibraryDoc(t.doc.project, t.doc.id)
+    : t.source === 'stored' ? fetchJson(t.url)
+    : DEMO ? demoDoc(t.host, t.job, t.doc.id) : fetchDoc(t.host, t.job, t.doc.id))
+    .then(data => { entry.data = data; return data; }, error => {
+      if (docCache.get(t.key) === entry) docCache.delete(t.key);
+      throw error;
+    });
+  touchEntry(t.key, entry);
+  return entry.promise;
+}
+function openDoc() {
+  rd.stale = false; rd.refreshError = null;
+  const t = target(), current = docCache.get(t.key);
+  const old = current?.data ? current : [...docCache.values()].reverse().find(e => e.identity === t.identity && e.data);
+  if (old) {
+    rd.data = old.data;
+    rd.stale = !current?.data;
+    touchEntry(old.key, old);
+    renderReaderHead();
+    renderReaderBody();
+    if (rd.stale) refreshDoc(rd.req);
+  } else {
+    renderReaderHead();
+    renderReaderLoading();
+    loadDoc(rd.req);
+  }
+  rdSheet.focus();
+}
+function prefetchNeighbors() {
+  if (rd.source === 'attention' || rd.source === 'stored') return;
+  const { list, at, left } = readerPlace();
+  const next = at >= 0 ? at + 1 : left;
+  if (next == null) return;
+  const indices = [next, next + 1, at >= 0 ? at - 1 : left - 1];
+  for (const index of indices) {
+    const doc = list[index];
+    if (!doc || (doc.media === 'image' && doc.size > 16 * 1024 * 1024)) continue;
+    const t = target(doc);
+    cachedRead(t).then(data => {
+      if (data.media !== 'image') return;
+      const entry = docCache.get(t.key);
+      if (!entry || entry.image) return;
+      const image = new Image();
+      entry.image = image;
+      image.src = documentAssetUrl(t, data.path.split('/').pop(), data);
+      image.decode().catch(() => { if (entry.image === image) entry.image = null; });
+    }).catch(() => {}); // speculative errors are retried when the document is opened
+  }
+}
+
 function saveAnswerDraft() {
   const form = rdBody.querySelector('.decision-answer');
   if (rd.source !== 'attention' || !form?.elements.answer || form.elements.answer.disabled) return;
@@ -55,10 +125,7 @@ export function openReader(e, doc) {
   rd.host = e.host; rd.job = e.job; rd.doc = doc; rd.data = null; rd.stale = false; rd.refreshError = null;
   if (reader.hidden) rd.lastFocus = document.activeElement;
   reader.hidden = false;
-  renderReaderHead();
-  renderReaderLoading();
-  rdSheet.focus();
-  loadDoc(rd.req);
+  openDoc();
 }
 export function openLibraryReader(doc) {
   saveAnswerDraft();
@@ -69,10 +136,7 @@ export function openLibraryReader(doc) {
   rd.host = null; rd.job = { id: 'library', description: doc.project }; rd.doc = doc; rd.data = null;
   if (reader.hidden) rd.lastFocus = document.activeElement;
   reader.hidden = false;
-  renderReaderHead();
-  renderReaderLoading();
-  rdSheet.focus();
-  loadDoc(rd.req);
+  openDoc();
 }
 // A copy from a project's document store: a job's document (shown as from the job panel, though the job may have
 // left the floor or its host) or one of the project's working documents (no job).
@@ -87,10 +151,7 @@ export function openStoredReader(url, doc, job) {
   rd.doc = doc; rd.data = null;
   if (reader.hidden) rd.lastFocus = document.activeElement;
   reader.hidden = false;
-  renderReaderHead();
-  renderReaderLoading();
-  rdSheet.focus();
-  loadDoc(rd.req);
+  openDoc();
 }
 export function closeReader() {
   if (reader.hidden) return;
@@ -104,7 +165,7 @@ export function openAttentionReader(item) {
   saveAnswerDraft();
   rd.req++;
   rd.key = `attention:${item.id}`;
-  rd.source = 'attention';
+  rd.source = 'attention'; rd.stale = false; rd.refreshError = null;
   rd.doc = { id: item.id, name: item.summary, kind: 'file', attentionKind: item.kind, terminal: item.context_reference?.startsWith('session:') && item.source?.startsWith('stream:'), recipient: `${item.source}: ${item.source_reference || item.context_reference}`, seen: item.last_seen };
   const lines = [item.summary, `Source: ${item.source}`, `Context: ${item.context_reference}`,
     `State: ${item.state}`, `Last seen: ${new Date(item.last_seen * 1000).toISOString()}`];
@@ -273,14 +334,12 @@ function renderRefusals(prose, id, detail) {
 }
 async function loadDoc(req) {
   try {
-    const data = rd.source === 'library' ? await fetchLibraryDoc(rd.doc.project, rd.doc.id)
-      : rd.source === 'stored' ? await fetchJson(rd.url)
-      : DEMO ? await demoDoc(rd.host, rd.job.id, rd.doc.id) : await fetchDoc(rd.host, rd.job.id, rd.doc.id);
+    const data = await cachedRead(target());
     if (req !== rd.req) return;
     rd.data = data;
     renderReaderHead();
     renderReaderBody();
-    if (rd.stale && rd.source === 'job') refreshDoc(req);
+    if (rd.stale) refreshDoc(req);
   } catch (err) {
     if (req === rd.req) renderReaderError(err.message || String(err));
   }
@@ -302,8 +361,9 @@ export function followDoc(e) {
 }
 async function refreshDoc(req) {
   rd.refreshing = req; rd.stale = false;
+  renderReaderHead();
   try {
-    const data = DEMO ? await demoDoc(rd.host, rd.job.id, rd.doc.id) : await fetchDoc(rd.host, rd.job.id, rd.doc.id);
+    const data = await cachedRead(target());
     if (req !== rd.req) return;
     rd.data = data; rd.refreshError = null;
     const max = rdBody.scrollHeight - rdBody.clientHeight;
@@ -351,8 +411,8 @@ function renderReaderHead() {
     step != null ? `<span>step ${step + 1}</span>` : '',
     d.minutes && d.media !== 'image' ? `<span>${d.minutes} min read</span>` : '',
     (d.mtime || doc.mtime) ? `<span>updated ${age(d.mtime || doc.mtime)} ago</span>` : '',
-    rd.source === 'job' && isUpdating(rd.job, doc) ? '<span class="rd-live">updating live</span>' : '',
-    rd.source === 'job' && rd.refreshError ? `<span class="rd-stale" title="${esc(rd.refreshError)}">couldn’t refresh: showing an older version</span>` : '',
+    (rd.stale || rd.refreshing === rd.req || (rd.source === 'job' && isUpdating(rd.job, doc))) ? '<span class="rd-live">updating live</span>' : '',
+    rd.refreshError ? `<span class="rd-stale" title="${esc(rd.refreshError)}">couldn’t refresh: showing an older version</span>` : '',
   ].join('');
   const image = d.media === 'image' || doc.media === 'image';
   document.getElementById('rdCopy').hidden = image;
@@ -398,10 +458,10 @@ function stepDoc(delta) {
   if (!next) return;
   const fullscreen = !!document.fullscreenElement && rdBody.contains(document.fullscreenElement);
   saveReaderScroll();
+  rd.fullscreenNext = fullscreen;
   if (rd.source === 'library') openLibraryReader(next);
   else if (rd.source === 'attention') openAttentionReader(next);
   else openReader({ host: rd.host, job: rd.job }, next);
-  rd.fullscreenNext = fullscreen;   // an image stepped to from a fullscreen one opens fullscreen when it renders
 }
 function renderReaderLoading() {
   document.getElementById('rdProgress').style.transform = 'scaleX(0)';
@@ -463,6 +523,7 @@ function renderReaderBody(scrollTop) {
   rdBody.scrollTop = scrollTop === Infinity ? rdBody.scrollHeight
     : scrollTop ?? (Number(store('sessionStorage','fleet.reader.scroll.' + rd.key)) || 0);
   onReaderScroll();
+  prefetchNeighbors();
   if (rd.fullscreenNext) {
     rd.fullscreenNext = false;
     const img = d.media === 'image' && prose.querySelector('img');
@@ -470,10 +531,17 @@ function renderReaderBody(scrollTop) {
   }
 }
 // images resolve beside the document, under the same roots the document was read from
-function assetUrl(path) {
-  if (rd.source === 'library') return '/api/library/asset?' + new URLSearchParams({ project: rd.doc.project, id: rd.doc.id, path });
-  if (rd.source === 'job') return '/api/doc/asset?' + new URLSearchParams({ host: rd.host, job: rd.job.id, id: rd.doc.id, path });
+function documentAssetUrl(t, path, data) {
+  const params = new URLSearchParams(t.source === 'library'
+    ? { project: t.doc.project, id: t.doc.id, path }
+    : { host: t.host, job: t.job, id: t.doc.id, path });
+  if (data?.media === 'image') params.set('v', `${data.mtime ?? t.doc.mtime}-${data.size ?? t.doc.size}`);
+  if (t.source === 'library') return '/api/library/asset?' + params;
+  if (t.source === 'job') return '/api/doc/asset?' + params;
   return null;
+}
+function assetUrl(path) {
+  return documentAssetUrl(target(), path, rd.data);
 }
 // heading ids are prefixed so a heading called "panel" or "legend" can't collide with the page's own ids
 function tidyProse(prose) {
