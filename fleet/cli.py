@@ -638,6 +638,10 @@ def command_show(arguments: argparse.Namespace) -> None:
     console.print(tree)
     console.print(f"[dim]cwd {job['cwd']} · {job['permission']} · session {job.get('session_id')}[/]")
     console.print(workspace_line(job), highlight=False)
+    decisions = job.get("decisions_since_dispatch", [])
+    console.print(f"Decisions since dispatch: {len(decisions)}", highlight=False)
+    for decision in decisions:
+        console.print(f"{decision['id']} · {decision['question']}\nAnswer: {decision['answer']}\nActor: {decision['actor']}\nPrinciple: {decision['principle']}", highlight=False, markup=False)
     for event in job["events"]:
         stamp = time.strftime("%H:%M:%S", time.localtime(event["ts"]))
         kind = event.get("tool") or event["kind"]

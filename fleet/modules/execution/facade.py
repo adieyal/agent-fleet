@@ -26,10 +26,11 @@ class ExecutionFacade:
                  prepare_dispatch: Callable[[], object] | None = None, *, send: InputSender | None = None,
                  grant: GrantSender | None = None, answer: AnswerSender | None = None,
                  authority=None, clock: Callable[[], datetime] | None = None,
-                 step: StepSender | None = None) -> None:
+                 step: StepSender | None = None, decision_source=None) -> None:
         self.repository, self.work = repository, work
         self.send, self.grant, self.answer = send, grant, answer
         self.step = step
+        self.decision_source = decision_source
         self.prepare_dispatch = prepare_dispatch
         self.authority = authority
         self.clock = clock if clock is not None else lambda: datetime.now(timezone.utc)
@@ -202,9 +203,23 @@ class ExecutionFacade:
         return self.repository.deliveries()
 
     def retry_deliveries(self, host: str | None = None, *, decision: str | None = None) -> None:
+        self._retry_deliveries(host, decision, context_only=False)
+
+    def retry_decisions(self, host: str | None = None) -> None:
+        """Reconcile decision inboxes on heartbeats without changing blocked-answer retries."""
+        self._retry_deliveries(host, None, context_only=True)
+
+    def reconcile_decisions(self) -> None:
+        """Persist new decision intents; never contact a host while ingesting its stream."""
+        if self.decision_source is not None:
+            from .application.decision_delivery import reconcile
+            reconcile(self, self.decision_source())
+
+    def _retry_deliveries(self, host: str | None, decision: str | None, *, context_only: bool) -> None:
+        self.reconcile_decisions()
         if self.send is None:
             raise RuntimeError("input transport is not configured")
-        retry_delivery(self.repository, self.work, self.send, host, decision)
+        retry_delivery(self.repository, self.work, self.send, host, decision, context_only=context_only)
 
     def link(self, host: str, job: str, work_item: str, *, actor: str, runtime: str | None = None) -> Run:
         return link(self.repository, self.work, host, job, work_item, actor, runtime)

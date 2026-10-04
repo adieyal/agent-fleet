@@ -25,13 +25,17 @@ class DecisionsFacade:
     def record(self, work_item: str, *, actor: str, activation: str, source_run: str,
                question: str, answer: str, context: str, principle: str | None = None) -> Decision:
         authorization = self.authority().require('record_decision', work_item, actor=actor, activation=activation)
-        return record_decision(self.repository, self.clock, self.records, authorization,
+        decision = record_decision(self.repository, self.clock, self.records, authorization,
                                source_run, question, answer, context, principle)
+        self._deliver()
+        return decision
 
     def record_guided(self, work_item: str, *, actor: str, question: str, answer: str, principle: str,
                       context: str = "", source_run: str | None = None) -> Decision:
-        return record_guided(self.repository, self.clock, work_item, actor=actor, question=question,
+        decision = record_guided(self.repository, self.clock, work_item, actor=actor, question=question,
                              answer=answer, principle=principle, context=context, source_run=source_run)
+        self._deliver()
+        return decision
 
     def escalation_snapshot(self, item: AttentionItem, activation: str) -> AttentionItem:
         return escalation_snapshot(self.repository, item, activation)
@@ -41,10 +45,12 @@ class DecisionsFacade:
                          effect: str | None = None, completed_item: AttentionItem | None = None,
                          retry_run: str | None = None) -> Decision:
         """Record an activation-bound triage command and its attention effect in one transaction."""
-        return record_attention(self.repository, self.clock, self.records, self.authority(), item_id,
+        decision = record_attention(self.repository, self.clock, self.records, self.authority(), item_id,
             actor=actor, activation=activation, source_run=source_run, command=command, answer=answer,
             principle=principle, context=context, question=question, effect=effect,
             completed_item=completed_item, retry_run=retry_run)
+        self._deliver()
+        return decision
 
     def escalate_triage_guard(self, item_id: str, *, reason: str, mandate_version: str,
                               source_run: str | None = None) -> Decision:
@@ -86,14 +92,22 @@ class DecisionsFacade:
 
     def record_streamed(self, identity: str, time: datetime, work_item: str, *, actor: str, question: str,
                         answer: str, principle: str, context: str, source_run: str | None) -> Decision:
-        return record_streamed(self.repository, identity, time, work_item, actor=actor, question=question,
+        decision = record_streamed(self.repository, identity, time, work_item, actor=actor, question=question,
                                answer=answer, principle=principle, context=context, source_run=source_run)
+        if getattr(self.repository, 'unit', None) is None:
+            self.execution.reconcile_decisions()
+        return decision
 
     def answer(self, identity: str, answer: str, *, actor: str,
                next_step: str | None = None) -> Decision:
         decision = answer_question(self.repository, self.clock, identity, answer, actor, next_step)
         self.execution.retry_deliveries(decision=decision.id)
         return decision
+
+    def _deliver(self) -> None:
+        # Bound facades belong to an outer controller transaction; host reconciliation follows its commit.
+        if getattr(self.repository, 'unit', None) is None:
+            self.execution.retry_decisions()
 
     def get(self, identity: str) -> Decision:
         return self.repository.get(identity)

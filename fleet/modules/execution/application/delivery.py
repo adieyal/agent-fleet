@@ -24,9 +24,11 @@ def queue(repository: ExecutionRepository, item: AttentionItem, decision: "Decis
 
 
 def retry(repository: ExecutionRepository, work: WorkFacade, send: InputSender,
-          host: str | None, decision: str | None) -> None:
+          host: str | None, decision: str | None, *, context_only: bool = False) -> None:
     runs = {run.id: run for run in repository.runs()}
     for delivery in repository.deliveries():
+        if context_only and not delivery.key.startswith("context-decision:"):
+            continue
         run = runs[delivery.run]
         if delivery.status == "applied" or (host is not None and run.host != host):
             continue
@@ -48,7 +50,7 @@ def retry(repository: ExecutionRepository, work: WorkFacade, send: InputSender,
                 item = work.get(action.work_item)
                 transaction.attention.raise_item(project=item.project, work_item=item.id, run=run.id,
                     kind="alert", owner="user", subject=f"run:{run.id}", source="input-delivery",
-                    source_reference=delivery.key, headline="Answer delivery keeps failing",
+                    source_reference=delivery.key, headline="Decision delivery keeps failing" if delivery.key.startswith("context-decision:") else "Answer delivery keeps failing",
                     context_reference=f"decision:{delivery.decision}", actor="delivery")
             if result.status == "applied":
                 for item in transaction.attention.list():

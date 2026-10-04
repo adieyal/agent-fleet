@@ -118,6 +118,12 @@ class ExecutionRepository(Repository):
             query += " AND host = ?"
         return [(row["host"], row["remote_job_id"]) for row in self.rows(query, parameters)]
 
+    def decision_runs(self) -> list[Run]:
+        """Only worker runs that can still consume a new decision."""
+        return [decode_run(row) for row in self.rows(RUN_ROWS +
+            " WHERE json_extract(r.record, '$.status') IN ('running', 'unknown outcome')"
+            " AND COALESCE(json_extract(r.record, '$.kind'), 'job') = 'job'")]
+
     def runs(self) -> list[Run]:
         return [decode_run(row) for row in self.rows(RUN_ROWS + " ORDER BY r.rowid")]
 

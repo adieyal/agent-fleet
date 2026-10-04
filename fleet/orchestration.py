@@ -13,6 +13,19 @@ import json
 def guide(records, work_item: str | None, payload: dict) -> tuple[dict, dict | None]:
     """A dispatch payload whose first step opens with the guidance paragraph, and the constitution and charter
     versions for the action to pin; unchanged with None when the work has no recorded guidance."""
+    from datetime import datetime, timezone
+    from fleet.modules.execution import decision_applies
+    source = getattr(records, 'decision_source', None)
+    if source is not None and work_item is not None:
+        boundary = datetime.now(timezone.utc)
+        snapshot = source()
+        decisions = [decision for decision in snapshot if decision_applies(records.work, work_item, decision)]
+        payload = dict(payload, decisions_dispatch_at=boundary.isoformat(),
+                       decisions_dispatch_ids=[decision.id for decision in snapshot])
+        if decisions and payload.get('steps'):
+            text = '\n\n'.join(f"Question: {d.question}\nAnswer: {d.answer}\nActor: {d.actor}\nPrinciple: {d.principle}" for d in decisions)
+            first, *rest = payload['steps']
+            payload['steps'] = [dict(first, prompt=f"## Decisions in force at dispatch\n\n{text}\n\n{first['prompt']}"), *rest]
     guidance = None if work_item is None else records.dispatch_guidance(work_item)
     if guidance is None:
         return payload, None

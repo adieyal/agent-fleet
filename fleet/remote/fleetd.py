@@ -962,6 +962,19 @@ def _run_step_with_retries(job: JsonObject, step: JsonObject) -> JsonObject:
                                  "summary": f"resuming after {reason}, retry {retries}/{len(delays)}"})
 
 
+def inject_decisions(job: JsonObject, step: JsonObject) -> None:
+    shown = set(job.get("shown_decisions", []))
+    pending = [d for d in job.get("decisions_since_dispatch", []) if d["id"] not in shown]
+    if not pending:
+        return
+    text = "\n\n".join(f"Question: {d['question']}\nAnswer: {d['answer']}\nActor: {d['actor']}\nPrinciple: {d['principle']}" for d in pending)
+    step["prompt"] = f"## Decisions recorded since this job started\n\n{text}\n\n{step['prompt']}"
+    step["shown_decisions"] = [d["id"] for d in pending]
+    job.setdefault("shown_decisions", []).extend(step["shown_decisions"])
+    # Use the same document path as dispatch and appended steps.
+    (JOBS_DIRECTORY / job["id"] / f"brief-{step['index']}.md").write_text(step["prompt"])
+
+
 def run_step(job: JsonObject, step: JsonObject) -> JsonObject:
     # The git evidence spans the entire step, including work before a provider failure.
     step_git = begin_step_git(job["cwd"])
@@ -1003,6 +1016,7 @@ def run_job(job_id: str) -> None:
                 step = next_step(job)
                 if step is None:
                     break
+                inject_decisions(job, step)
                 step["status"] = "running"
                 step["started_at"] = now()
                 job["todos"] = []
@@ -1096,6 +1110,8 @@ def job_summary(job: JsonObject, event_count: int) -> JsonObject:
         "todos": job.get("todos", []),
         # Decisions the job's agent recorded here, for the controller to take into its store (see command_decision).
         "decisions": job.get("decisions", []),
+        "decisions_since_dispatch": job.get("decisions_since_dispatch", []),
+        "shown_decisions": job.get("shown_decisions", []),
         "activity": activity,
         "events": events[-event_count:] if event_count else [],
         "session_id": job.get("session_id"),
@@ -2392,6 +2408,25 @@ def command_grant(arguments: argparse.Namespace) -> None:
 DECISION_FIELDS = ("id", "work_item", "question", "answer", "principle", "actor", "context")
 
 
+def command_receive_decision(arguments: argparse.Namespace) -> None:
+    if arguments.schema_version != 1:
+        fail("unsupported decision schema version")
+    decision = json.loads(sys.stdin.read())
+    if not isinstance(decision, dict) or not all(isinstance(decision.get(k), str) and decision[k].strip()
+                                              for k in ("id", "question", "answer", "actor")):
+        fail("decision needs id, question, answer and actor")
+    if "principle" not in decision or not (decision["principle"] is None or isinstance(decision["principle"], str)):
+        fail("decision needs principle (null when unknown)")
+    with locked_job(arguments.job) as job:
+        inbox = job.setdefault("decisions_since_dispatch", [])
+        held = next((d for d in inbox if d["id"] == decision["id"]), None)
+        if held is not None and held != decision:
+            fail("decision id has changed payload")
+        if held is None:
+            inbox.append(decision)
+    emit({"schema_version": 1, "key": arguments.key, "status": "applied"})
+
+
 def command_decision(arguments: argparse.Namespace) -> None:
     """Keep a decision an agent recorded in this job (JSON object on stdin) for the controller to take from the stream.
 
@@ -2818,6 +2853,11 @@ def main() -> None:
     grant.add_argument("--schema-version", type=int, required=True)
     grant.set_defaults(handler=command_grant)
 
+    receive = commands.add_parser("receive-decision", help="receive a controller decision for the next step")
+    receive.add_argument("job")
+    receive.add_argument("--schema-version", type=int, required=True)
+    receive.add_argument("--key", required=True)
+    receive.set_defaults(handler=command_receive_decision)
     decision = commands.add_parser("decision", help="hold an agent's decision (JSON object on stdin) on its job")
     decision.add_argument("job")
     decision.add_argument("--schema-version", type=int, required=True)

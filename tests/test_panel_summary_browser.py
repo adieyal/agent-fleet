@@ -293,3 +293,24 @@ def test_the_summary_keeps_to_its_text_budget(deck: Page, base_url: str, fixture
     total = deck.evaluate("fleetDeck.textBudget(document.querySelector('#panelBody [data-tab=summary]'))")
     assert total <= budget["total"]
     assert deck.evaluate("fleetDeck.textBudget(document.querySelector('#panelBody [data-tab=activity]'))") == 0   # hidden
+
+
+def test_decisions_since_dispatch_in_job_panel(deck: Page, base_url: str, request) -> None:
+    doc = state(base_url)
+    for host in doc['hosts']:
+        for job in host['jobs']:
+            if f"{host['name']}:{job['id']}" == RUNNING:
+                job['decisions_since_dispatch'] = [dict(id='decision-example', question='Which colour?',
+                    answer='Use blue', actor='user', principle='Brief: clear choices')]
+    deck.evaluate('doc => fleetDeck.apply(doc)', doc)
+    open_panel(deck, RUNNING)
+    deck.get_by_role('tab', name='Activity', exact=True).click()
+    expect(activity(deck)).to_contain_text('Decisions since dispatch · 1')
+    expect(activity(deck)).to_contain_text('Which colour?')
+    expect(activity(deck)).to_contain_text('Use blue')
+    expect(activity(deck)).to_contain_text('Brief: clear choices')
+    shots = request.config.getoption('--shots')
+    if shots:
+        from pathlib import Path
+        Path(shots).mkdir(parents=True, exist_ok=True)
+        deck.screenshot(path=str(Path(shots) / 'decisions-since-dispatch.png'))
