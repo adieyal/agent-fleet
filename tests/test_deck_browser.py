@@ -2708,17 +2708,27 @@ def test_previous_and_next_step_through_open_attention_items(changed_deck: Deck,
     # each decision's detail, as the server would answer it
     page.route("**/api/decision?**", lambda route: route.fulfill(json={
         "question": "Which way?", "context": "", "proposal": None, "options": [], "state": "open"}))
+    # opened from a room's lantern, Previous and Next stay in that room
+    in_room = len(document["attention_display"]["rooms"]["restoke"]["listed"])
     total = len(document["attention"])
+    assert in_room < total, "the fixture should have open items in other rooms too"
     page.locator('.lantern[data-room="restoke"]').dispatch_event("click")
     page.locator('#attnPanel .attn-item[data-id="step2"] [data-context]').first.click()   # the newest
     expect(page.locator("#rdTitle")).to_have_text("Question 2")
-    expect(page.locator("#rdPos")).to_have_text(f"1 / {total} · All rooms and owners")
+    room_label = page.locator('.lantern[data-room="restoke"]').evaluate("el => el.room.label")
+    expect(page.locator("#rdPos")).to_have_text(f"1 / {in_room} · {room_label}")
     expect(page.locator("#rdPrev")).to_be_disabled()
     page.locator("#rdNext").click()
     expect(page.locator("#rdTitle")).to_have_text("Question 1")
-    expect(page.locator("#rdPos")).to_have_text(f"2 / {total} · All rooms and owners")
+    expect(page.locator("#rdPos")).to_have_text(f"2 / {in_room} · {room_label}")
     page.keyboard.press("ArrowLeft")
     expect(page.locator("#rdTitle")).to_have_text("Question 2")
+    page.keyboard.press("Escape")
+
+    # opened from the all-rooms list, they go through every room
+    page.locator('#needYou').click()
+    page.locator('#attnPanel .attn-item[data-id="step2"] [data-context]').first.click()
+    expect(page.locator("#rdPos")).to_have_text(f"1 / {total} · All rooms and owners")
     assert changed_deck.errors == []
 
 
@@ -3022,6 +3032,33 @@ def test_triage_policy_room(changed_deck: Deck, route_migration, request, viewpo
     shoot(request, page, f'triage-policy-{viewport}')
     page.locator('[data-room-policy] [data-open-constitution]').click()
     expect(page.locator('[data-constitution-page] [data-triage-policy]')).to_contain_text('version 1')
+
+
+def test_a_question_shows_the_job_document_it_refers_to(changed_deck: Deck) -> None:
+    page = changed_deck.page
+    page.route('**/api/decision?*', lambda route: route.fulfill(json={
+        'question': 'Verification of next: Merge', 'context': '', 'options': [], 'proposal': None}))
+    requested = []
+    def doc(route):
+        requested.append(route.request.url)
+        route.fulfill(json={'name': 'VERIFICATION.md', 'markdown': 'x', 'toc': [],
+                            'html': '<p><strong>Verdict: Merge.</strong> Branch next does what it claims.</p>'})
+    page.route('**/api/doc?*', doc)
+    item = dict(project='transactions', owned_by='user', owner=None, age=0, id='verify-1', kind='decision',
+                summary='Verification of next: Merge', source='claude', source_reference='next-verification',
+                context_reference='fleet://carbon/home/adi/.fleet/jobs/25bf075a/outbox/VERIFICATION.md',
+                state='open', last_seen=9e9)
+    page.evaluate("async item => (await import('/js/reader.js')).openAttentionReader(item)", item)
+    expect(page.locator('#rdBody .rd-context-doc')).to_contain_text('Verdict: Merge.')
+    expect(page.locator('#rdBody .rd-context-doc h2')).to_have_text('VERIFICATION.md')
+    assert 'host=carbon' in requested[0] and 'job=25bf075a' in requested[0] and 'id=outbox-VERIFICATION.md' in requested[0]
+
+    # a reference the deck can't open stays text, and nothing is fetched
+    page.evaluate("async item => (await import('/js/reader.js')).openAttentionReader(item)",
+                  {**item, 'id': 'verify-2', 'context_reference': 'outbox/VERIFICATION.md'})
+    expect(page.locator('#rdBody')).to_contain_text('Context: outbox/VERIFICATION.md')
+    expect(page.locator('#rdBody .rd-context-doc')).to_have_count(0)
+    assert len(requested) == 1
 
 
 def test_reader_pages_on_after_the_open_item_is_resolved(changed_deck: Deck) -> None:

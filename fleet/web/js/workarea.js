@@ -113,7 +113,9 @@ el.addEventListener('click', ev => {
   const slip = ev.target.closest('[data-item]');
   if (slip) {
     const item = (doc.attention || []).find(i => i.id === slip.dataset.item);
-    if (item) openAttentionReader(item);
+    // a slip pages through this room's desk, not every room's
+    const name = room;
+    if (item) openAttentionReader(item, { name, ids: () => new Set([...el.querySelectorAll('.desk-top [data-item]')].map(s => s.dataset.item)) });
     return;
   }
   const tray = ev.target.closest('[data-tray]');

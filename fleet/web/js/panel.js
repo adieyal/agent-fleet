@@ -434,7 +434,12 @@ panel.addEventListener('click', ev => {
     return;
   }
   const answer = ev.target.closest('[data-answer]');
-  if (answer) { const item = attentionFor(selectedKey).find(i => i.id === answer.dataset.answer); if (item) openAttentionReader(item); return; }
+  if (answer) {
+    const key = selectedKey, item = attentionFor(key).find(i => i.id === answer.dataset.answer);
+    // the job's own questions: Previous and Next stay with this job
+    if (item) openAttentionReader(item, { name: `job ${key.split(':').pop().slice(0, 8)}`, ids: () => new Set(attentionFor(key).map(i => i.id)) });
+    return;
+  }
   const workarea = ev.target.closest('[data-workarea]');
   if (workarea) { if (!workarea.disabled) openWorkarea(workarea.dataset.workarea); return; }
   const crumb = ev.target.closest('[data-work-epic]');

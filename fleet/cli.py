@@ -1510,6 +1510,29 @@ def work_cli_id(reference: str) -> str:
     return resolve_cli_id(reference, [item.id for item in open_work().list()], "work item")
 
 
+def located_context(reference: str) -> str:
+    """A context reference naming a local file, addressed as fleet://<this host>/<absolute path> so the deck can open
+    it from any machine. Relative paths resolve against the working directory, then the calling job's directory.
+    Anything else (a URL, a session, prose) is kept as given; a path-like reference that resolves nowhere is kept and
+    warned about, since the deck will show it only as text."""
+    if "://" in reference or reference.startswith(("session:", "job:")) or not reference.strip():
+        return reference
+    candidates = [Path(reference).expanduser()]
+    if not candidates[0].is_absolute():
+        candidates = [Path.cwd() / reference]
+        if os.environ.get("FLEET_JOB_ID"):
+            candidates.append(Path("~/.fleet/jobs").expanduser() / os.environ["FLEET_JOB_ID"] / reference)
+    local = next((host for host in transport.configured_hosts() if host.is_local), None)
+    for candidate in candidates:
+        if candidate.is_file() and local is not None:
+            return f"fleet://{local.name}{candidate.resolve()}"
+    if "/" in reference or reference.endswith((".md", ".json", ".txt", ".png")):
+        error_console.print(f"fleet: context reference '{reference}' is not a file here; the deck will show it as "
+                            "text only. Give an absolute path or fleet://<host>/<path>.", style="yellow", markup=False,
+                            soft_wrap=True)
+    return reference
+
+
 def attention_cli_id(reference: str) -> str:
     return resolve_cli_id(reference, [item.id for item in open_attention().list()], "attention item")
 
@@ -1805,7 +1828,7 @@ def command_attention(arguments: argparse.Namespace) -> None:
             item = attention.raise_item(
                 project=arguments.project, kind=arguments.kind, owner=arguments.owner,
                 source=arguments.source, source_reference=arguments.source_reference,
-                headline=arguments.headline, context_reference=arguments.context_reference,
+                headline=arguments.headline, context_reference=located_context(arguments.context_reference),
                 work_item=arguments.work_item, run=arguments.run, actor=arguments.actor,
                 owner_reason=arguments.reason)
         elif command == "list":

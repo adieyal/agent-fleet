@@ -246,7 +246,13 @@ panel.addEventListener('click', async ev => {
   if (history) { const i = items.find(i => i.id === history.dataset.itemAttentionHistory); openItemHistory({ id: i.id, title: i.summary, kind: 'attention', status: i.state, project: i.project_id || i.project }); return; }
   if (ev.target.closest('[data-close]')) { closePanel(true); return; }
   const context = ev.target.closest('[data-context]');
-  if (context) { openAttentionReader(items.find(item => item.id === context.dataset.context)); return; }
+  if (context) {
+    const room = listRoom;   // a room's list pages within that room; the all-rooms list pages through everything
+    const scope = room === ALL_ROOMS ? null
+      : { name: lanterns.get(room)?.room?.label ?? room, ids: () => new Set(display.rooms[room]?.listed ?? []) };
+    openAttentionReader(items.find(item => item.id === context.dataset.context), scope);
+    return;
+  }
   const owner = ev.target.closest('[data-owner]');
   if (owner) {
     if (listRoom === ALL_ROOMS) { closePanel(); showView('deck'); }

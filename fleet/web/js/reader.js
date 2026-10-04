@@ -161,9 +161,12 @@ export function closeReader() {
   reader.hidden = true;
   if (rd.lastFocus && rd.lastFocus.focus) rd.lastFocus.focus();
 }
-export function openAttentionReader(item) {
+// `scope` limits Previous and Next to where the item was opened from: { name, ids: () => Set of item ids } for a room
+// or a job; none (the all-rooms list, the front desk) pages through every unresolved item.
+export function openAttentionReader(item, scope = null) {
   saveAnswerDraft();
   rd.req++;
+  rd.attentionScope = scope;
   rd.key = `attention:${item.id}`;
   rd.source = 'attention'; rd.stale = false; rd.refreshError = null;
   rd.doc = { id: item.id, name: item.summary, kind: 'file', attentionKind: item.kind, terminal: item.context_reference?.startsWith('session:') && item.source?.startsWith('stream:'), recipient: `${item.source}: ${item.source_reference || item.context_reference}`, seen: item.last_seen };
@@ -179,6 +182,34 @@ export function openAttentionReader(item) {
     rdBody.querySelector('.prose').insertAdjacentHTML('beforeend', `<p role="note">Read-only: this attention item is resolved. Reading changes no stored state.</p><p>${esc(item.resolution_details || 'Resolution details not recorded')}</p>`);
   } else if (item.kind === 'decision' || item.blocked) loadDecision(item.id, rd.req);
   else if (item.kind === 'blocker') renderBlockerHelp(rdBody.querySelector('.prose'));
+  showContextDocument(item.context_reference, rd.req);
+}
+// An item whose context is a job document (fleet://host/…/jobs/<job>/outbox/<file>, a step report or brief) shows that
+// document below its question: often the question itself is written there. Anything else stays the plain reference.
+function jobDocAt(location) {
+  const m = /^fleet:\/\/([^/]+)\/(?:.*\/)?jobs\/([^/]+)\/((?:result|brief)-\d+\.md|(?:outbox|context)\/.+)$/.exec(location || '');
+  if (!m) return null;
+  const doc = m[3].replace(/^result-(\d+)\.md$/, 'report-$1').replace(/^brief-(\d+)\.md$/, 'brief-$1').replace(/^(outbox|context)\//, '$1-');
+  return { host: decodeURIComponent(m[1]), job: m[2], doc: decodeURIComponent(doc), name: m[3].split('/').pop() };
+}
+async function showContextDocument(location, req) {
+  const at = jobDocAt(location);
+  if (!at) return;
+  const section = document.createElement('section');
+  section.className = 'rd-context-doc';
+  section.innerHTML = `<h2>${esc(at.name)}</h2><p class="rd-note">Loading the document this item refers to (${esc(at.host)} · job ${esc(at.job.slice(0, 8))})…</p>`;
+  rdBody.querySelector('.prose')?.append(section);
+  try {
+    const data = DEMO ? await demoDoc(at.host, at.job, at.doc) : await fetchDoc(at.host, at.job, at.doc);
+    if (req !== rd.req) return;
+    const html = document.createElement('template');
+    html.innerHTML = data.html;
+    linkImages(html.content, path => '/api/doc/asset?' + new URLSearchParams({ host: at.host, job: at.job, id: at.doc, path }));
+    section.querySelector('.rd-note').replaceWith(html.content);
+    enrichProse(section, rdSheet.dataset.theme, new Map());
+  } catch (error) {
+    if (req === rd.req) section.querySelector('.rd-note').textContent = `Couldn’t open ${at.name} on ${at.host}: ${error.message}`;
+  }
 }
 async function loadDecision(id, req) {
   try {
@@ -425,11 +456,12 @@ function renderReaderHead() {
   download.querySelector('.lb').textContent = image ? 'Image' : '.md';
   const { list, at, left } = readerPlace();
   document.getElementById('rdStep').hidden = at < 0 ? left == null || !list.length : list.length < 2;
-  document.getElementById('rdPos').textContent = at >= 0 ? `${at + 1} / ${list.length}${rd.source === 'attention' ? ' · All rooms and owners' : ''}`
-    : left != null ? `Resolved · ${list.length} left · All rooms and owners` : '';
+  const where = rd.attentionScope ? rd.attentionScope.name : 'All rooms and owners';
+  document.getElementById('rdPos').textContent = at >= 0 ? `${at + 1} / ${list.length}${rd.source === 'attention' ? ` · ${where}` : ''}`
+    : left != null ? `Resolved · ${list.length} left · ${where}` : '';
   for (const [id, direction] of [['rdPrev', 'Previous'], ['rdNext', 'Next']]) {
     const button = document.getElementById(id);
-    button.title = rd.source === 'attention' ? `${direction} unresolved attention item across all rooms and owners; unsent answers are kept until this page closes` : `${direction} document`;
+    button.title = rd.source === 'attention' ? `${direction} unresolved attention item ${rd.attentionScope ? `in ${rd.attentionScope.name}` : 'across all rooms and owners'}; unsent answers are kept until this page closes` : `${direction} document`;
     button.setAttribute('aria-label', button.title);
   }
   document.getElementById('rdPrev').disabled = at < 0 ? left == null || left <= 0 : at <= 0;
@@ -448,7 +480,10 @@ function readerPlace() {
 function siblings() {
   if (rd.source === 'job' && rd.job) return jobDocSequence(rd.job);
   if (rd.source === 'library') return libraryDocs.filter(x => x.project === rd.doc.project);
-  if (rd.source === 'attention') return openAttention();
+  if (rd.source === 'attention') {
+    const ids = rd.attentionScope?.ids();
+    return ids ? openAttention().filter(item => ids.has(item.id)) : openAttention();
+  }
   return [];
 }
 function stepDoc(delta) {
@@ -460,7 +495,7 @@ function stepDoc(delta) {
   saveReaderScroll();
   rd.fullscreenNext = fullscreen;
   if (rd.source === 'library') openLibraryReader(next);
-  else if (rd.source === 'attention') openAttentionReader(next);
+  else if (rd.source === 'attention') openAttentionReader(next, rd.attentionScope);
   else openReader({ host: rd.host, job: rd.job }, next);
 }
 function renderReaderLoading() {
