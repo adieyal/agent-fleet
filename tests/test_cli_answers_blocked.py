@@ -14,7 +14,7 @@ from fleet.remote import fleetd
 
 
 @pytest.fixture
-def worker(tmp_path, monkeypatch):
+def worker(tmp_path, monkeypatch, override_cli_method, cli_container):
     """A job "job" on host "h" whose first of three steps ended blocked; fleetd runs in-process, holding runners."""
     monkeypatch.setattr(fleetd, "JOBS_DIRECTORY", tmp_path / "jobs")
     monkeypatch.setattr(fleetd, "launch_runner", lambda job_id: None)
@@ -45,7 +45,7 @@ def worker(tmp_path, monkeypatch):
         return reply
     monkeypatch.setattr(transport, "call", call)
     monkeypatch.setattr(transport, "host_by_name", lambda name: host)
-    monkeypatch.setattr(cli, "resolve", lambda reference: (host, "job"))
+    override_cli_method('references', 'job', lambda reference: (host, "job"))
     return calls
 
 
@@ -78,9 +78,9 @@ def test_fleet_add_answers_the_waiting_step(worker, capsys):
     assert "answered" not in capsys.readouterr().out
 
 
-def test_a_retried_answer_is_added_once(worker, capsys):
+def test_a_retried_answer_is_added_once(worker, capsys, *, cli_container):
     for _ in range(2):   # the second is a retry after a lost reply
-        cli.answer_waiting_step(SimpleNamespace(name="h"), "job", 0, [{"prompt": "Use the second."}], "user")
+        cli.answer_waiting_step(SimpleNamespace(name="h"), "job", 0, [{"prompt": "Use the second."}], "user", container=cli_container)
         assert "answered; step 1 continues as step 4" in capsys.readouterr().out
     assert len(steps()) == 4
 

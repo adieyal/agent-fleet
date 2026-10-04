@@ -51,7 +51,7 @@ def test_send_refuses_before_transport_or_run(monkeypatch, capsys, case):
     assert composition.open_execution().runs() == []
 
 
-def test_listing_matches_each_hosts_link(monkeypatch):
+def test_listing_matches_each_hosts_link(monkeypatch, *, cli_container):
     workspace = composition.open_workspace()
     project = workspace.edit_registry(lambda registry: registry.create('Demo'))
     for host, label in [('a', 'alpha'), ('b', 'beta')]:
@@ -63,22 +63,22 @@ def test_listing_matches_each_hosts_link(monkeypatch):
     monkeypatch.setattr(cli.transport, 'gather_sessions', lambda *args: {
         'a': [{'project': 'alpha'}, {'project': 'beta'}], 'b': [{'project': 'beta'}]})
     arguments = cli.build_parser().parse_args(['ls', '-p', project.id[:6]])
-    result, sessions = cli.gather_listing(hosts, arguments)
+    result, sessions = cli.gather_listing(hosts, arguments, container=cli_container)
     assert [report.jobs for report in result] == [[{'project': 'alpha'}], [{'project': 'beta'}]]
     assert sessions == {'a': [{'project': 'alpha'}], 'b': [{'project': 'beta'}]}
 
 
-def test_move_validates_all_hosts_before_writes(monkeypatch):
+def test_move_validates_all_hosts_before_writes(monkeypatch, override_cli_method, cli_container):
     workspace = composition.open_workspace()
     project = workspace.edit_registry(lambda registry: registry.create('Demo'))
     workspace.edit_registry(lambda registry: registry.link(project.id, 'a', 'alpha'))
-    monkeypatch.setattr(cli, 'resolve_job_or_session', lambda reference: (SimpleNamespace(name=reference), 'job'))
+    override_cli_method('references', 'job_or_session', lambda reference: (SimpleNamespace(name=reference), 'job'))
     calls = []
     monkeypatch.setattr(cli.transport, 'call', lambda *args: calls.append(args))
     with pytest.raises(SystemExit):
-        cli.main(['mv', 'a', 'b', 'Demo'])
+        cli.main(['mv', 'a', 'b', 'Demo'], container=cli_container)
     assert calls == []
-    cli.main(['mv', 'a', project.id[:6]])
+    cli.main(['mv', 'a', project.id[:6]], container=cli_container)
     assert calls[0][1] == ['mv', 'job', 'alpha']
 
 

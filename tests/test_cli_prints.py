@@ -151,7 +151,7 @@ def test_send_hold_help_says_how_to_start(capsys):
     assert "fleet start" in " ".join(capsys.readouterr().out.split())
 
 
-def test_start_starts_a_held_run(monkeypatch, capsys, project_id):
+def test_start_starts_a_held_run(monkeypatch, capsys, project_id, override_cli_method, cli_container):
     composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, "fake", "worker-p"))
     calls = []
 
@@ -164,9 +164,9 @@ def test_start_starts_a_held_run(monkeypatch, capsys, project_id):
                 "description": "Task", "permission": "acceptEdits"}
 
     monkeypatch.setattr(cli.transport, "host_by_name", lambda name: SimpleNamespace(name=name))
-    monkeypatch.setattr(cli, "resolve", lambda reference: (SimpleNamespace(name="fake"), reference.split(":")[1]))
+    override_cli_method('references', 'job', lambda reference: (SimpleNamespace(name="fake"), reference.split(":")[1]))
     monkeypatch.setattr(cli.transport, "call", call)
-    cli.main(["send", "-p", "p", "-d", "Task", "-s", "Ship", "-H", "fake", "-C", "/repo", "--hold", "--json"])
+    cli.main(["send", "-p", "p", "-d", "Task", "-s", "Ship", "-H", "fake", "-C", "/repo", "--hold", "--json"], container=cli_container)
     job = json.loads(capsys.readouterr().out)["job"]
     out, _ = run(capsys, "start", job)
     start = calls[-1]

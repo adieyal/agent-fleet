@@ -203,8 +203,8 @@ def test_cli_process_change_refreshes_sse(tmp_path: Path, monkeypatch: pytest.Mo
             assert stream.readline().startswith(b"data: ")
             assert stream.readline() == b"\n"
             baseline = state.version
-            script = ("from fleet.cli import open_store\n"
-                      "store = open_store()\n"
+            script = ("from fleet.container import Container\n"
+                      "store = Container().store()\n"
                       "with store.unit_of_work() as work:\n"
                       "    work.record_change('work:1', 'ready', 'active', 'cli')\n")
             subprocess.run([sys.executable, "-c", script], env=os.environ.copy(), check=True, timeout=20)

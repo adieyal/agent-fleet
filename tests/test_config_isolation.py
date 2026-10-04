@@ -35,7 +35,7 @@ def snapshot(directory):
 
 
 @pytest.mark.parametrize("command", ["attention", "status"])
-def test_attention_import_and_status_leave_real_config_untouched(monkeypatch, tmp_path, capsys, command):
+def test_attention_import_and_status_leave_real_config_untouched(monkeypatch, tmp_path, capsys, command, *, cli_container):
     # A populated stand-in for the original HOME, never the user's live files.
     original_home = tmp_path / "original-home"
     original_config = original_home / ".config" / "fleet"
@@ -55,8 +55,8 @@ def test_attention_import_and_status_leave_real_config_untouched(monkeypatch, tm
     if command == "attention":
         open_attention()
     else:
-        identity = cli.open_workspace().edit_registry(lambda registry: registry.create('p')).id
-        cli.main(["status", "p", "--json"])
+        identity = cli_container.initialized_workspace().edit_registry(lambda registry: registry.create('p')).id
+        cli.main(["status", "p", "--json"], container=cli_container)
         assert f'"project": "{identity}"' in capsys.readouterr().out
     assert snapshot(original_config) == before
     assert not home.exists()

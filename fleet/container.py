@@ -38,7 +38,8 @@ from fleet.infrastructure.sqlite.triage import TriageRepository
 from fleet.infrastructure.documents.job_store import ProjectDocuments, fleet_home
 from fleet.services.documents import DocumentKeeper, STATUS_LINE, is_private
 from fleet.ingestion import observe_runs, observe_sessions, record_decisions
-from fleet.orchestration import ControllerCommands
+from fleet.orchestration import ControllerCommands, promote_decision
+from fleet.services.storage import usage
 from fleet.triage import TriageCommands
 from fleet.triage_scheduler import TriageScheduler
 from fleet.projections.attention import attention_items
@@ -305,6 +306,12 @@ def stored_run_detail(identity, store, documents=None):
     return kept_run_detail(identity, services.execution, services.work, services.library, documents or services.container.project_documents())
 
 
+def resolved_work_detail(services, reference):
+    identity = services.container.references().work(reference)
+    initialize_attention(services)
+    return services.container.work_detail(identity=identity)
+
+
 def work_detail(reference, store=None):
     from fleet.projections.project import work_detail
     services = facades(store)
@@ -396,3 +403,8 @@ class Container(containers.DeclarativeContainer):
     annotate_workspace = providers.Factory(annotate, workspace=workspace)
     documents = providers.Factory(ProjectDocuments, root=_document_root)
     document_keeper = providers.Factory(DocumentKeeper)
+    initialized_workspace = providers.Callable(initialize_workspace, services)
+    initialized_attention = providers.Callable(initialize_attention, services)
+    storage_usage = providers.Factory(usage, store=store, root=settings.provided['home'])
+    resolved_work_detail = providers.Factory(resolved_work_detail, services)
+    promote_decision = providers.Factory(promote_decision, services)

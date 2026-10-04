@@ -210,3 +210,27 @@ def browser_type_launch_args(browser_type_launch_args: dict[str, Any]) -> dict[s
     fail to start, and the 3D views then never become ready."""
     env = {k: v for k, v in os.environ.items() if k not in ("DISPLAY", "WAYLAND_DISPLAY")}
     return {**browser_type_launch_args, "env": env}
+
+
+@pytest.fixture
+def cli_container():
+    from fleet.container import Container
+    return Container()
+
+
+@pytest.fixture
+def override_cli_method(cli_container):
+    from dependency_injector import providers
+
+    def override(name, method, replacement):
+        provider = getattr(cli_container, name)
+        original = providers.Factory(provider.provides, *provider.args, **provider.kwargs)
+
+        def create():
+            service = original()
+            setattr(service, method, replacement)
+            return service
+
+        provider.override(providers.Factory(create))
+
+    return override

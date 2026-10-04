@@ -37,22 +37,22 @@ def test_a_json_steps_file_names_work_per_step(tmp_path):
     assert cli.read_steps(parsed("-f", str(path))) == [{"prompt": "plain"}, {"prompt": "named", "work_item": "w-2"}]
 
 
-def test_fleet_add_refuses_work_outside_the_jobs_project(project_id, monkeypatch):
+def test_fleet_add_refuses_work_outside_the_jobs_project(project_id, monkeypatch, *, cli_container, override_cli_method):
     work = open_work()
     own = work.add(project=project_id, title="Own", goal="Here", actor="user")
     other = work.add(project="elsewhere", title="Other", goal="There", actor="user")
     open_execution().link("h", "job", own.id, actor="user")
     sent = []
-    monkeypatch.setattr(cli, "resolve", lambda reference: (SimpleNamespace(name="h"), "job"))
+    override_cli_method('references', 'job', lambda reference: (SimpleNamespace(name="h"), "job"))
     monkeypatch.setattr(cli.transport, "call", lambda host, arguments, stdin_text=None: {
         "status": "queued", "steps": [{"index": 0, "status": "done"}]} if arguments[0] == "show" else sent.append(
         json.loads(stdin_text)) or {"status": "queued", "steps": [{}]})
     with pytest.raises(FleetError, match="another project"):
-        cli.command_add(parsed("-s", "go", "--step-work-item", other.id))
+        cli.command_add(parsed("-s", "go", "--step-work-item", other.id), container=cli_container)
     with pytest.raises(FleetError):
-        cli.command_add(parsed("-s", "go", "--step-work-item", "w-missing"))
+        cli.command_add(parsed("-s", "go", "--step-work-item", "w-missing"), container=cli_container)
     assert sent == []
-    cli.command_add(parsed("-s", "go", "--step-work-item", own.id))
+    cli.command_add(parsed("-s", "go", "--step-work-item", own.id), container=cli_container)
     assert sent == [[{"prompt": "go", "work_item": own.id}]]
 
 

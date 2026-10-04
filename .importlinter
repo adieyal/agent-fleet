@@ -167,3 +167,10 @@ forbidden_modules =
     fleet.cli
     fleet.web
     fleet.composition
+
+[importlinter:contract:cli-container]
+name = CLI uses the container instead of composition
+type = forbidden
+source_modules = fleet.cli
+forbidden_modules = fleet.composition
+allow_indirect_imports = True

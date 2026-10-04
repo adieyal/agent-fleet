@@ -165,12 +165,12 @@ def test_nonlocal_host_rejects_without_consuming_budget(triage):
     assert engine.status(a.project)['budget_left'] == 12
 
 
-def test_cli_status_resolves_registered_project_name(triage, capsys):
+def test_cli_status_resolves_registered_project_name(triage, capsys, *, cli_container):
     from fleet import cli
     services, activation, *_ = triage
     a = item(triage)
     project = next(p for p in services.workspace.registry().projects.values() if p.id == activation.project)
-    cli.command_triage_status(SimpleNamespace(project=project.name, json=True))
+    cli.command_triage_status(SimpleNamespace(project=project.name, json=True), container=cli_container)
     result = json.loads(capsys.readouterr().out)
     assert result['project'] == activation.project and result['queue'] == [a.id]
     assert result['live_run'] is None and result['budget_left'] == 12

@@ -79,15 +79,15 @@ def test_offline_restart_retains_work_until_first_heartbeat(monkeypatch):
     assert len(transitions) == 3
 
 
-def test_notify_reports_each_outage_once_and_recovery(monkeypatch, capsys):
+def test_notify_reports_each_outage_once_and_recovery(monkeypatch, capsys, *, cli_container, override_cli_method):
     host = Host("carbon", None)
     reports = iter([[HostReport(host, [], "ssh unavailable")], [HostReport(host, [], "ssh unavailable")],
                     [HostReport(host, [], None)]])
-    monkeypatch.setattr(cli, "selected_hosts", lambda args: [host])
+    override_cli_method('jobs', 'selected_hosts', lambda args: [host])
     monkeypatch.setattr(transport, "gather", lambda *args: next(reports))
     monkeypatch.setattr(cli.time, "sleep", lambda seconds: None)
     with pytest.raises(StopIteration):
-        cli.command_notify(cli.argparse.Namespace(interval=1))
+        cli.command_notify(cli.argparse.Namespace(interval=1), container=cli_container)
     lines = capsys.readouterr().out.splitlines()
     assert len(lines) == 2
     assert lines[0].startswith("HOST DOWN carbon since ") and lines[0].endswith(": ssh unavailable")

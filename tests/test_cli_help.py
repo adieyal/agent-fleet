@@ -117,7 +117,7 @@ def test_send_inside_a_fleet_job_records_the_job_as_actor(monkeypatch, project_i
     assert action.actor == "job:27563ec6-a70f"
 
 
-def test_run_retry_and_resolve_unknown_pass_the_actor(monkeypatch, project_id):
+def test_run_retry_and_resolve_unknown_pass_the_actor(monkeypatch, project_id, cli_container):
     composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, "fake", "worker-p"))
     seen = {}
 
@@ -130,16 +130,10 @@ def test_run_retry_and_resolve_unknown_pass_the_actor(monkeypatch, project_id):
             seen["resolve"] = actor
             return SimpleNamespace(id=run)
 
-    monkeypatch.setattr(cli, "open_execution", Execution)
-    original_dispatch = composition.open_dispatch
-    def dispatch():
-        service = original_dispatch()
-        service.services.execution = Execution()
-        return service
-    monkeypatch.setattr(cli, "open_dispatch", dispatch)
+    cli_container.execution.override(Execution())
     monkeypatch.setattr(cli, "asdict", lambda value: vars(value))
-    cli.main(["run", "retry", "r1", "--actor", "orchestrator"])
-    cli.main(["run", "resolve-unknown", "r1", "--actor", "orchestrator"])
+    cli.main(["run", "retry", "r1", "--actor", "orchestrator"], container=cli_container)
+    cli.main(["run", "resolve-unknown", "r1", "--actor", "orchestrator"], container=cli_container)
     assert seen == {"retry": "orchestrator", "resolve": "orchestrator"}
 
 

@@ -9,7 +9,7 @@ from fleet import cli
 
 
 @pytest.mark.parametrize("arguments", [["project", "ls"], ["host", "add", "demo", "--local"], ["web"]])
-def test_missing_config_fails_before_creating_store(tmp_path, monkeypatch, arguments):
+def test_missing_config_fails_before_creating_store(tmp_path, monkeypatch, arguments, override_cli_method, cli_container):
     root = tmp_path / "deleted-preview"
     config = root / "config.json"
     monkeypatch.setenv("FLEET_CONFIG", str(config))
@@ -17,10 +17,10 @@ def test_missing_config_fails_before_creating_store(tmp_path, monkeypatch, argum
     errors = Console(record=True, width=300, no_color=True)
     monkeypatch.setattr(cli, "error_console", errors)
     monkeypatch.setattr(cli, "serve", lambda *args, **kwargs: None)
-    monkeypatch.setattr(cli, "selected_hosts", lambda arguments: [])
+    override_cli_method('jobs', 'selected_hosts', lambda arguments: [])
 
     with pytest.raises(SystemExit) as exited:
-        cli.main(arguments)
+        cli.main(arguments, container=cli_container)
 
     assert exited.value.code == 2
     assert "FLEET_CONFIG" in errors.export_text(clear=False)

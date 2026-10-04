@@ -98,15 +98,15 @@ def test_worker_receipt_and_step_boundary(tmp_path, monkeypatch, capsys):
     assert 'shown_decisions' not in third
 
 
-def test_fleet_show_lists_received_decisions(monkeypatch, capsys):
+def test_fleet_show_lists_received_decisions(monkeypatch, capsys, *, cli_container, override_cli_method):
     from fleet import cli
     job = dict(id='j', project='p', description='Build', agent='codex', status='running',
                steps=[], cwd='/repo', permission='default', events=[],
                decisions_since_dispatch=[dict(id='d1', question='Colour?', answer='Blue',
                                               actor='user', principle='Brief')])
-    monkeypatch.setattr(cli, 'resolve', lambda ref: (transport.Host('fake', None), 'j'))
+    override_cli_method('references', 'job', lambda ref: (transport.Host('fake', None), 'j'))
     monkeypatch.setattr(transport, 'call', lambda *args, **kwargs: job)
-    cli.command_show(argparse.Namespace(job='fake:j', events=0, json=False))
+    cli.command_show(argparse.Namespace(job='fake:j', events=0, json=False), container=cli_container)
     output = capsys.readouterr().out
     for text in ('Decisions since dispatch: 1', 'Colour?', 'Blue', 'Actor: user', 'Principle: Brief'):
         assert text in output

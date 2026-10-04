@@ -19,24 +19,15 @@ from rich.text import Text
 from rich.tree import Tree
 
 from fleet import transport
+from fleet.container import Container
 from fleet.modules import workspace as projects
-from fleet.composition import open_attention, open_decisions, open_execution, open_library, open_records, open_store, open_work, open_workspace
 from fleet.modules.attention import ItemResolved
-from fleet.projections.history import parse_moment, parse_since, subject_history
-from fleet.projections.project import project_status, filter_status
-from fleet.projections.run_history import history_runs
-from fleet.composition import storage_usage
+from fleet.projections.history import parse_moment, parse_since
+from fleet.projections.project import filter_status
 from fleet.modules import attention as attention_module
 from fleet.modules.work import CONDITIONS, KINDS, RELATION_TYPES
 from fleet.modules.execution import Run
 from fleet.transport import FleetError, Host, HostReport
-from fleet.orchestration import promote_decision
-from fleet.composition import facades
-from fleet.composition import (open_references, open_context, open_jobs, open_hosts, open_dispatch,
-                               open_projects, open_configuration, open_work_commands, open_triage_policy)
-from fleet.composition import (open_attention_commands, open_decision_commands, open_history,
-    stored_run_detail as compose_run_detail, work_detail as compose_work_detail)
-from fleet.projections.notifications import Notifications
 from fleet.services.dispatch import DispatchRequest
 from fleet.services.jobs import listing_arguments
 from fleet.services.hosts import merge_detected as parse_detected
@@ -64,8 +55,8 @@ LIST_ITEM = re.compile(r"^\s*(?:[-*]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+)(.+)$")
 # ------------------------------------------------------------- job refs
 
 
-def resolve(reference: str) -> tuple[Host, str]:
-    return open_references().job(reference)
+def resolve(reference: str, *, container) -> tuple[Host, str]:
+    return container.references().job(reference)
 
 
 def age(timestamp: float | None) -> str:
@@ -176,20 +167,20 @@ def list_arguments(arguments: argparse.Namespace) -> list[str]:
     return listing_arguments(since=arguments.since, all_jobs=arguments.all)
 
 
-def selected_hosts(arguments: argparse.Namespace) -> list[Host]:
-    return open_jobs().selected_hosts(getattr(arguments, "host", None))
+def selected_hosts(arguments: argparse.Namespace, *, container) -> list[Host]:
+    return container.jobs().selected_hosts(getattr(arguments, "host", None))
 
 
-def gather_listing(hosts: list[Host], arguments: argparse.Namespace) -> tuple[list[HostReport], dict[str, list[dict[str, Any]]]]:
-    return open_jobs().listing(hosts, since=arguments.since, all_jobs=arguments.all,
+def gather_listing(hosts: list[Host], arguments: argparse.Namespace, *, container) -> tuple[list[HostReport], dict[str, list[dict[str, Any]]]]:
+    return container.jobs().listing(hosts, since=arguments.since, all_jobs=arguments.all,
                                sessions=arguments.sessions, project=arguments.project)
 
 
 # ------------------------------------------------------------- commands
 
 
-def command_list(arguments: argparse.Namespace) -> None:
-    reports, sessions = gather_listing(selected_hosts(arguments), arguments)
+def command_list(arguments: argparse.Namespace, *, container) -> None:
+    reports, sessions = gather_listing(selected_hosts(arguments, container=container), arguments, container=container)
     if arguments.json:
         print(json.dumps([{"host": report.host.name, "error": report.error, "jobs": report.jobs,
                            "sessions": sessions.get(report.host.name, [])} for report in reports]))
@@ -197,11 +188,11 @@ def command_list(arguments: argparse.Namespace) -> None:
     console.print(render(reports, group_by=arguments.group_by, brief=arguments.brief, sessions=sessions))
 
 
-def command_watch(arguments: argparse.Namespace) -> None:
-    hosts = selected_hosts(arguments)
+def command_watch(arguments: argparse.Namespace, *, container) -> None:
+    hosts = selected_hosts(arguments, container=container)
     with Live(console=console, screen=True, auto_refresh=False) as live:
         while True:
-            reports, sessions = gather_listing(hosts, arguments)
+            reports, sessions = gather_listing(hosts, arguments, container=container)
             header = Text(f"fleet · {time.strftime('%H:%M:%S')} · every {arguments.interval}s · ctrl-c to quit\n", "dim")
             live.update(Group(header, render(reports, group_by=arguments.group_by, brief=arguments.brief,
                                              sessions=sessions)), refresh=True)
@@ -222,18 +213,18 @@ def read_steps(arguments: argparse.Namespace) -> list[dict[str, Any]]:
     return steps
 
 
-def push_context(host: Host, job_id: str, paths: list[str]) -> None:
-    open_context().push(host, job_id, paths)
+def push_context(host: Host, job_id: str, paths: list[str], *, container) -> None:
+    container.context().push(host, job_id, paths)
 
 
-def command_send(arguments: argparse.Namespace) -> None:
-    command_dispatch(arguments)
+def command_send(arguments: argparse.Namespace, *, container) -> None:
+    command_dispatch(arguments, container=container)
 
 
-def command_dispatch(arguments: argparse.Namespace) -> None:
+def command_dispatch(arguments: argparse.Namespace, *, container) -> None:
     steps = read_steps(arguments)
     request = DispatchRequest(**{field.name: getattr(arguments, field.name) for field in fields(DispatchRequest)})
-    result = open_dispatch().send(request, steps)
+    result = container.dispatch().send(request, steps)
     intent, guidance, current, job = (result[name] for name in ('intent', 'guidance', 'current', 'job'))
     if not intent.created:
         reference = f"{intent.run.host}:{intent.run.remote_job_id}"
@@ -254,20 +245,20 @@ def command_dispatch(arguments: argparse.Namespace) -> None:
         console.print(f"  run {intent.run.id[:8]} · {arguments.agent} · permission "
                       f"{job.get('permission') or 'not reported by the host'} · {sent}", markup=False)
     if arguments.wait:
-        wait_for([reference], step=None, timeout=None, as_json=arguments.json)
+        wait_for([reference], step=None, timeout=None, as_json=arguments.json, container=container)
 
 
-def deliver_dispatch(run: Run, *, reconcile: bool = False) -> dict:
-    return open_dispatch().deliver(run, reconcile=reconcile)
+def deliver_dispatch(run: Run, *, reconcile: bool = False, container) -> dict:
+    return container.dispatch().deliver(run, reconcile=reconcile)
 
 
-def push_guided_context(host: Host, job_id: str, paths: list[str], guidance: dict | None) -> None:
-    open_context().push_guided(host, job_id, paths, guidance)
+def push_guided_context(host: Host, job_id: str, paths: list[str], guidance: dict | None, *, container) -> None:
+    container.context().push_guided(host, job_id, paths, guidance)
 
 
-def command_triage_policy(arguments: argparse.Namespace) -> None:
+def command_triage_policy(arguments: argparse.Namespace, *, container) -> None:
     try:
-        policy_service = open_triage_policy()
+        policy_service = container.triage_policy()
         project, before = policy_service.show(arguments.project)
         if arguments.policy_command == 'set':
             body = Path(arguments.file).read_text()
@@ -301,8 +292,8 @@ def command_triage_policy(arguments: argparse.Namespace) -> None:
         raise FleetError(str(error)) from error
 
 
-def command_triage_status(arguments: argparse.Namespace) -> None:
-    project, result = open_triage_policy().status(arguments.project)
+def command_triage_status(arguments: argparse.Namespace, *, container) -> None:
+    project, result = container.triage_policy().status(arguments.project)
     if getattr(arguments, 'json', False):
         print(json.dumps(result))
         return
@@ -328,64 +319,64 @@ def command_triage_status(arguments: argparse.Namespace) -> None:
         print(f"Inspect run: fleet run show {run['id']}; do not launch a duplicate while its outcome is unknown.")
 
 
-def command_orchestrate(arguments: argparse.Namespace) -> None:
-    activation, intent = open_dispatch().orchestrate(host=arguments.host, work_item=arguments.work_item,
+def command_orchestrate(arguments: argparse.Namespace, *, container) -> None:
+    activation, intent = container.dispatch().orchestrate(host=arguments.host, work_item=arguments.work_item,
         mandate=arguments.mandate, agent=arguments.agent, cwd=arguments.cwd, permission=arguments.permission)
     print(json.dumps(dict(activation=activation.id, run=intent.run.id, mandate_version=activation.mandate_version)))
 
 
-def command_control(arguments: argparse.Namespace) -> None:
+def command_control(arguments: argparse.Namespace, *, container) -> None:
     try:
         payload = json.loads(arguments.payload)
     except (ValueError, TypeError) as error:
         raise FleetError(str(error)) from error
-    result = open_dispatch().control(arguments.activation, arguments.operation, payload)
+    result = container.dispatch().control(arguments.activation, arguments.operation, payload)
     print(json.dumps(result if isinstance(result, dict) else asdict(result), default=str))
 
 
-def command_run_retry(arguments: argparse.Namespace) -> None:
-    run = open_dispatch().retry(arguments.run, actor=arguments.actor)
+def command_run_retry(arguments: argparse.Namespace, *, container) -> None:
+    run = container.dispatch().retry(arguments.run, actor=arguments.actor)
     print(json.dumps(asdict(run), default=str))
 
 
-def command_dispatch_work(arguments: argparse.Namespace) -> None:
-    arguments.project = open_dispatch().project_for_work(arguments.work_item)
+def command_dispatch_work(arguments: argparse.Namespace, *, container) -> None:
+    arguments.project = container.dispatch().project_for_work(arguments.work_item)
     arguments.description = arguments.instruction
     arguments.step = [arguments.instruction]
-    command_dispatch(arguments)
+    command_dispatch(arguments, container=container)
 
 
-def command_resolve_unknown(arguments: argparse.Namespace) -> None:
+def command_resolve_unknown(arguments: argparse.Namespace, *, container) -> None:
     try:
-        run = open_execution().resolve_unknown(arguments.run, actor=arguments.actor)
+        run = container.execution().resolve_unknown(arguments.run, actor=arguments.actor)
     except (ValueError, LookupError) as error:
         raise FleetError(str(error)) from error
     print(json.dumps(asdict(run), default=str))
 
 
-def command_run_link(arguments: argparse.Namespace) -> None:
+def command_run_link(arguments: argparse.Namespace, *, container) -> None:
     try:
-        run = open_execution().link(arguments.host, arguments.job, arguments.work_item, actor=arguments.actor)
+        run = container.execution().link(arguments.host, arguments.job, arguments.work_item, actor=arguments.actor)
     except (ValueError, LookupError) as error:
         raise FleetError(str(error)) from error
     print(json.dumps(asdict(run), default=str))
 
 
-def command_library_link(arguments: argparse.Namespace) -> None:
+def command_library_link(arguments: argparse.Namespace, *, container) -> None:
     if arguments.project is not None:
-        arguments.project = open_workspace().resolve_project(arguments.project)
+        arguments.project = container.initialized_workspace().resolve_project(arguments.project)
     try:
-        entry = open_library().link(arguments.url, project=arguments.project, work_item=arguments.work_item,
+        entry = container.library().link(arguments.url, project=arguments.project, work_item=arguments.work_item,
                                     title=arguments.title, actor=arguments.actor)
     except (ValueError, LookupError) as error:
         raise FleetError(str(error)) from error
     print(json.dumps(asdict(entry)))
 
 
-def command_add(arguments: argparse.Namespace) -> None:
-    host, job_id = resolve(arguments.job)
+def command_add(arguments: argparse.Namespace, *, container) -> None:
+    host, job_id = resolve(arguments.job, container=container)
     steps = read_steps(arguments)
-    job, details = open_jobs().add(host, job_id, steps, context=arguments.context, retry=arguments.retry,
+    job, details = container.jobs().add(host, job_id, steps, context=arguments.context, retry=arguments.retry,
                                  no_answer=arguments.no_answer, actor=arguments.actor)
     if details is not None:
         console.print(f"[bold]{host.name}:{job_id}[/] {details} (--no-answer appends instead)")
@@ -393,37 +384,37 @@ def command_add(arguments: argparse.Namespace) -> None:
         console.print(f"[bold]{host.name}:{job_id}[/] {job['status']} · now {len(job['steps'])} step(s)")
 
 
-def waiting_step(host: Host, job_id: str) -> int | None:
-    return open_jobs().waiting_step(host, job_id)
+def waiting_step(host: Host, job_id: str, *, container) -> int | None:
+    return container.jobs().waiting_step(host, job_id)
 
 
-def answer_waiting_step(host: Host, job_id: str, step: int, steps: list[dict[str, Any]], actor: str) -> None:
-    details = open_jobs().answer_waiting_step(host, job_id, step, steps, actor)
+def answer_waiting_step(host: Host, job_id: str, step: int, steps: list[dict[str, Any]], actor: str, *, container) -> None:
+    details = container.jobs().answer_waiting_step(host, job_id, step, steps, actor)
     console.print(f"[bold]{host.name}:{job_id}[/] {details} (--no-answer appends instead)")
 
 
-def command_start(arguments: argparse.Namespace) -> None:
-    host, job_id = resolve(arguments.job)
-    job = open_jobs().start(host, job_id)
+def command_start(arguments: argparse.Namespace, *, container) -> None:
+    host, job_id = resolve(arguments.job, container=container)
+    job = container.jobs().start(host, job_id)
     console.print(f"started {host.name}:{job_id}: its agent works through the job's pending steps "
                   f"({job['status']})", markup=False)
 
 
-def command_push(arguments: argparse.Namespace) -> None:
-    host, job_id = resolve(arguments.job)
-    push_context(host, job_id, arguments.paths)
+def command_push(arguments: argparse.Namespace, *, container) -> None:
+    host, job_id = resolve(arguments.job, container=container)
+    push_context(host, job_id, arguments.paths, container=container)
     console.print(f"pushed {len(arguments.paths)} path(s) to {host.name}:~/.fleet/jobs/{job_id}/context/")
 
 
-def command_pull(arguments: argparse.Namespace) -> None:
-    host, job_id = resolve(arguments.job)
-    destination = open_context().pull(host, job_id, arguments.destination)
+def command_pull(arguments: argparse.Namespace, *, container) -> None:
+    host, job_id = resolve(arguments.job, container=container)
+    destination = container.context().pull(host, job_id, arguments.destination)
     console.print(f"outbox of {host.name}:{job_id} → {destination}")
 
 
-def command_show(arguments: argparse.Namespace) -> None:
-    host, job_id = resolve(arguments.job)
-    job = open_jobs().show(host, job_id, events=arguments.events)
+def command_show(arguments: argparse.Namespace, *, container) -> None:
+    host, job_id = resolve(arguments.job, container=container)
+    job = container.jobs().show(host, job_id, events=arguments.events)
     if arguments.json:
         print(json.dumps(job))
         return
@@ -462,24 +453,24 @@ def workspace_line(job: dict[str, Any]) -> Text:
     return line
 
 
-def command_tail(arguments: argparse.Namespace) -> None:
-    host, job_id = resolve(arguments.job)
-    for event in open_jobs().events(host, job_id, lines=arguments.lines, follow=arguments.follow):
+def command_tail(arguments: argparse.Namespace, *, container) -> None:
+    host, job_id = resolve(arguments.job, container=container)
+    for event in container.jobs().events(host, job_id, lines=arguments.lines, follow=arguments.follow):
         stamp = time.strftime("%H:%M:%S", time.localtime(event["ts"]))
         kind = event.get("tool") or event["kind"]
         print(f"{stamp} [{event.get('step', '-')}] {TOOL_ICON.get(kind, kind)} {event.get('summary', '')}", flush=True)
 
 
-def command_attach(arguments: argparse.Namespace) -> None:
-    host, job_id = resolve(arguments.job)
-    open_jobs().attach(host, job_id)
+def command_attach(arguments: argparse.Namespace, *, container) -> None:
+    host, job_id = resolve(arguments.job, container=container)
+    container.jobs().attach(host, job_id)
 
 
 def wait_for(references: list[str], *, step: int | None, timeout: float | None, as_json: bool,
-             any_job: bool = False) -> None:
-    pending = {reference: resolve(reference) for reference in references}
+             any_job: bool = False, container) -> None:
+    pending = {reference: resolve(reference, container=container) for reference in references}
     finished = {}
-    for reference, job in open_jobs().wait(pending, step=step, timeout=timeout, any_job=any_job):
+    for reference, job in container.jobs().wait(pending, step=step, timeout=timeout, any_job=any_job):
         finished[reference] = job
         report_finished(reference, job, as_json=as_json)
     sys.exit(0 if all(job.get("status") == "done" for job in finished.values()) else 1)
@@ -501,14 +492,14 @@ def report_finished(reference: str, job: dict[str, Any], *, as_json: bool) -> No
             console.print(f"     {result['result']}", style="dim", markup=False, highlight=False)
 
 
-def command_wait(arguments: argparse.Namespace) -> None:
+def command_wait(arguments: argparse.Namespace, *, container) -> None:
     wait_for(arguments.jobs, step=arguments.step, timeout=arguments.timeout, as_json=arguments.json,
-             any_job=arguments.any)
+             any_job=arguments.any, container=container)
 
 
-def command_result(arguments: argparse.Namespace) -> None:
-    host, job_id = resolve(arguments.job)
-    document = open_jobs().result(host, job_id, step=arguments.step)
+def command_result(arguments: argparse.Namespace, *, container) -> None:
+    host, job_id = resolve(arguments.job, container=container)
+    document = container.jobs().result(host, job_id, step=arguments.step)
     if arguments.json:
         print(json.dumps(document))
         return
@@ -518,24 +509,24 @@ def command_result(arguments: argparse.Namespace) -> None:
         print("Outbox (fetch with `fleet pull`):\n" + "\n".join(f"- {path}" for path in document["outbox"]))
 
 
-def command_cancel(arguments: argparse.Namespace) -> None:
-    host, job_id = resolve(arguments.job)
-    job = open_jobs().cancel(host, job_id, all_steps=arguments.all_steps)
+def command_cancel(arguments: argparse.Namespace, *, container) -> None:
+    host, job_id = resolve(arguments.job, container=container)
+    job = container.jobs().cancel(host, job_id, all_steps=arguments.all_steps)
     console.print(f"{host.name}:{job_id} {job['status']}")
 
-def resolve_job_or_session(reference: str) -> tuple[Host, str]:
-    return open_references().job_or_session(reference)
+def resolve_job_or_session(reference: str, *, container) -> tuple[Host, str]:
+    return container.references().job_or_session(reference)
 
 
-def command_move(arguments: argparse.Namespace) -> None:
-    targets = [resolve_job_or_session(reference) for reference in arguments.jobs]
-    for host, job_id, identity, label in open_jobs().move(arguments.project, targets):
+def command_move(arguments: argparse.Namespace, *, container) -> None:
+    targets = [resolve_job_or_session(reference, container=container) for reference in arguments.jobs]
+    for host, job_id, identity, label in container.jobs().move(arguments.project, targets):
         console.print(f"{host.name}:{job_id} → {identity} ({label})")
 
 
-def command_remove(arguments: argparse.Namespace) -> None:
-    host, job_id = resolve(arguments.job)
-    removed = open_jobs().remove(host, job_id, force=arguments.force)
+def command_remove(arguments: argparse.Namespace, *, container) -> None:
+    host, job_id = resolve(arguments.job, container=container)
+    removed = container.jobs().remove(host, job_id, force=arguments.force)
     if "outbox_files" not in removed:   # fleetd before audit 1 reports only the id
         console.print(f"removed {host.name}:{job_id} for good (this host's fleetd does not count what it deleted)")
         return
@@ -559,10 +550,10 @@ def history_duration(seconds: float | None) -> str:
     return f'{hours}h{minutes:02d}m' if hours else f'{minutes}m'
 
 
-def command_history_runs(arguments: argparse.Namespace) -> None:
-    store = open_store()
+def command_history_runs(arguments: argparse.Namespace, *, container) -> None:
     try:
-        result = history_runs(open_execution(store), open_work(store), open_workspace(store),
+        container.initialized_workspace()
+        result = container.history_runs(
             **{key: getattr(arguments, key) for key in ("project", "work_item", "descendants", "host", "status",
                 "kind", "unlinked", "since", "until", "limit")})
     except (ValueError, LookupError) as error:
@@ -590,13 +581,13 @@ def command_history_runs(arguments: argparse.Namespace) -> None:
     print(f"{len(result['runs'])} of {result['total']} runs; --limit to see more")
 
 
-def stored_run_detail(identity: str, store, documents=None) -> dict:
-    return compose_run_detail(identity, store, documents)
+def stored_run_detail(identity: str, documents=None, *, container) -> dict:
+    return container.kept_run_detail(identity=identity, **({} if documents is None else {'documents': documents}))
 
 
-def command_run_show(arguments: argparse.Namespace) -> None:
+def command_run_show(arguments: argparse.Namespace, *, container) -> None:
     try:
-        detail = stored_run_detail(arguments.id, open_store())
+        detail = stored_run_detail(arguments.id, container=container)
     except (ValueError, LookupError) as error:
         raise FleetError(str(error)) from error
     if arguments.json:
@@ -632,8 +623,8 @@ def command_run_show(arguments: argparse.Namespace) -> None:
             print(f"Raw: {run['host']}:{raw['path']} ({raw['availability']}{removed})")
 
 
-def command_store_usage(arguments: argparse.Namespace) -> None:
-    result = storage_usage()
+def command_store_usage(arguments: argparse.Namespace, *, container) -> None:
+    result = container.storage_usage()
     if arguments.json:
         print(json.dumps(result))
         return
@@ -644,11 +635,11 @@ def command_store_usage(arguments: argparse.Namespace) -> None:
         print(f"{name}: {result[name]['files']} files, {result[name]['bytes']} bytes at {result[name]['path']}")
 
 
-def command_notify(arguments: argparse.Namespace) -> None:
-    hosts = selected_hosts(arguments)
-    notifications = Notifications()
+def command_notify(arguments: argparse.Namespace, *, container) -> None:
+    hosts = selected_hosts(arguments, container=container)
+    notifications = container.notifications()
     while True:
-        for event in notifications.update(open_jobs().notification_reports(hosts)):
+        for event in notifications.update(container.jobs().notification_reports(hosts)):
             if event['kind'] == 'host_down':
                 print(f"HOST DOWN {event['host']} since {event['since']}: {event['error']}", flush=True)
             elif event['kind'] == 'host_up':
@@ -663,8 +654,8 @@ def command_notify(arguments: argparse.Namespace) -> None:
         time.sleep(arguments.interval)
 
 
-def command_host_add(arguments: argparse.Namespace) -> None:
-    entry, previous = open_configuration().host_add(arguments.name, local=arguments.local, ssh=arguments.ssh, python=arguments.python)
+def command_host_add(arguments: argparse.Namespace, *, container) -> None:
+    entry, previous = container.configuration().host_add(arguments.name, local=arguments.local, ssh=arguments.ssh, python=arguments.python)
     if previous is None:
         console.print(f"added {arguments.name} ({describe_host(entry)}); now run: fleet install {arguments.name}",
                       markup=False)
@@ -677,16 +668,16 @@ def describe_host(entry: dict) -> str:
     return "local" if entry.get("ssh") is None else f"ssh {entry['ssh']}"
 
 
-def command_host_remove(arguments: argparse.Namespace) -> None:
-    entry, links = open_configuration().host_remove(arguments.name)
+def command_host_remove(arguments: argparse.Namespace, *, container) -> None:
+    entry, links = container.configuration().host_remove(arguments.name)
     console.print(f"removed host {arguments.name} ({describe_host(entry)}) from the config; "
                   f"its jobs stay on the host", markup=False)
     if links:
         console.print(f"projects still link it: {', '.join(links)} (fleet project unlink HOST:LABEL)", markup=False)
 
 
-def command_hosts(arguments: argparse.Namespace) -> None:
-    reports = open_jobs().host_reports()
+def command_hosts(arguments: argparse.Namespace, *, container) -> None:
+    reports = container.jobs().host_reports()
     if not reports:
         print("No hosts configured; add one with: fleet host add NAME --ssh TARGET (or --local)")
         return
@@ -696,22 +687,22 @@ def command_hosts(arguments: argparse.Namespace) -> None:
         console.print(f"[bold]{report.host.name}[/] {target} · {state}")
 
 
-def local_library_key(project: str, libraries: dict[str, Any]) -> str:
-    return open_configuration().library_key(project, libraries)
+def local_library_key(project: str, libraries: dict[str, Any], *, container) -> str:
+    return container.configuration().library_key(project, libraries)
 
 
-def command_library_add(arguments: argparse.Namespace) -> None:
-    arguments.project, root = open_configuration().library_add(arguments.project, arguments.path, recursive=arguments.recursive)
+def command_library_add(arguments: argparse.Namespace, *, container) -> None:
+    arguments.project, root = container.configuration().library_add(arguments.project, arguments.path, recursive=arguments.recursive)
     console.print(f"added library {arguments.project}: {root}{' (every folder)' if arguments.recursive else ''}")
 
 
-def command_library_remove(arguments: argparse.Namespace) -> None:
-    arguments.project, path = open_configuration().library_remove(arguments.project)
+def command_library_remove(arguments: argparse.Namespace, *, container) -> None:
+    arguments.project, path = container.configuration().library_remove(arguments.project)
     console.print(f"removed library {arguments.project} ({path}) from the config; its files stay", markup=False)
 
 
-def command_libraries(arguments: argparse.Namespace) -> None:
-    libraries = open_configuration().libraries()
+def command_libraries(arguments: argparse.Namespace, *, container) -> None:
+    libraries = container.configuration().libraries()
     if not libraries:
         print("No libraries configured; add one with: fleet library add PROJECT PATH")
     for project, entry in sorted(libraries.items()):
@@ -721,33 +712,33 @@ def command_libraries(arguments: argparse.Namespace) -> None:
             console.print(f"[bold]{project}[/] {entry['path']}{' (every folder)' if entry.get('recursive') else ''}")
 
 
-def parse_link(text: str) -> tuple[str, str]:
-    return open_projects().parse_link(text)
+def parse_link(text: str, *, container) -> tuple[str, str]:
+    return container.projects().parse_link(text)
 
 
-def command_project_add(arguments: argparse.Namespace) -> None:
-    project = open_projects().add(arguments.name, arguments.repo or [], arguments.link or [])
+def command_project_add(arguments: argparse.Namespace, *, container) -> None:
+    project = container.projects().add(arguments.name, arguments.repo or [], arguments.link or [])
     console.print(f"added project [bold]{project.id}[/] {escape(project.name)}")
 
 
-def command_project_rename(arguments: argparse.Namespace) -> None:
-    project = open_projects().rename(arguments.id, arguments.name)
+def command_project_rename(arguments: argparse.Namespace, *, container) -> None:
+    project = container.projects().rename(arguments.id, arguments.name)
     console.print(f"{project.id} → {escape(project.name)}")
 
 
-def command_project_link(arguments: argparse.Namespace) -> None:
-    arguments.id, link, count, documents = open_projects().link(arguments.id, arguments.link)
+def command_project_link(arguments: argparse.Namespace, *, container) -> None:
+    arguments.id, link, count, documents = container.projects().link(arguments.id, arguments.link)
     console.print(f"linked {escape(link.host)}:{escape(link.label)} → {arguments.id}; "
                   f"{count} earlier runs assigned; {documents} retained jobs moved")
 
 
-def command_project_unlink(arguments: argparse.Namespace) -> None:
-    host, label, project_id = open_projects().unlink(arguments.link)
+def command_project_unlink(arguments: argparse.Namespace, *, container) -> None:
+    host, label, project_id = container.projects().unlink(arguments.link)
     console.print(f"unlinked {escape(host)}:{escape(label)} from {project_id}")
 
 
-def command_project_merge(arguments: argparse.Namespace) -> None:
-    other, keep, result = open_projects().merge(arguments.keep, arguments.other)
+def command_project_merge(arguments: argparse.Namespace, *, container) -> None:
+    other, keep, result = container.projects().merge(arguments.keep, arguments.other)
     arguments.other = other.id
     console.print(f"merged {arguments.other} {escape(other.name)} into [bold]{keep.id}[/] {escape(keep.name)}")
     console.print("  moved " + ", ".join(f"{count} {kind.replace('_', ' ')}" for kind, count in result.counts.items()))
@@ -757,14 +748,14 @@ def command_project_merge(arguments: argparse.Namespace) -> None:
         console.print(f"  {escape(link.host)}:{escape(link.label)}")
 
 
-def command_project_management(arguments: argparse.Namespace) -> None:
-    arguments.id, path, moved = open_projects().management(arguments.id, arguments.path, actor=arguments.actor)
+def command_project_management(arguments: argparse.Namespace, *, container) -> None:
+    arguments.id, path, moved = container.projects().management(arguments.id, arguments.path, actor=arguments.actor)
     console.print(f"registered {path} as the management repository of {arguments.id}; {moved} summaries moved "
                   f"out of the store into it. This is permanent.", markup=False)
 
 
-def guidance_subject(reference: str) -> tuple[str, str | None]:
-    return open_references().guidance(reference)
+def guidance_subject(reference: str, *, container) -> tuple[str, str | None]:
+    return container.references().guidance(reference)
 
 
 def describe_version(version) -> str:
@@ -772,10 +763,10 @@ def describe_version(version) -> str:
     return f"version {version.number} by {version.actor} at {version.time}{run} ({version.revision[:12]})"
 
 
-def command_guidance_show(arguments: argparse.Namespace) -> None:
-    project, epic = guidance_subject(arguments.subject)
+def command_guidance_show(arguments: argparse.Namespace, *, container) -> None:
+    project, epic = guidance_subject(arguments.subject, container=container)
     try:
-        guidance = open_records().guidance(project, epic, number=arguments.version)
+        guidance = container.records().guidance(project, epic, number=arguments.version)
     except (ValueError, LookupError) as error:
         raise FleetError(str(error)) from error
     name = f"charter of epic {epic}" if epic else f"constitution of {project}"
@@ -796,31 +787,31 @@ def command_guidance_show(arguments: argparse.Namespace) -> None:
     print(guidance.body, end="" if guidance.body.endswith("\n") else "\n")
 
 
-def command_guidance_edit(arguments: argparse.Namespace) -> None:
-    project, epic = guidance_subject(arguments.subject)
+def command_guidance_edit(arguments: argparse.Namespace, *, container) -> None:
+    project, epic = guidance_subject(arguments.subject, container=container)
     if arguments.file is None and sys.stdin.isatty():
         error_console.print("Reading Markdown from stdin; end with Ctrl-D (or pass --file).", markup=False)
     try:
         body = sys.stdin.read() if arguments.file is None else Path(arguments.file).read_text()
-        guidance = open_records().write_guidance(project, body, epic=epic, actor=arguments.actor,
+        guidance = container.records().write_guidance(project, body, epic=epic, actor=arguments.actor,
                                                  source_run=arguments.run)
     except (ValueError, LookupError, OSError) as error:
         raise FleetError(str(error)) from error
     print(f"recorded {guidance.path} {describe_version(guidance.version)}")
 
 
-def command_guidance_promote(arguments: argparse.Namespace) -> None:
+def command_guidance_promote(arguments: argparse.Namespace, *, container) -> None:
     try:
-        guidance = promote_decision(facades(open_store()), arguments.epic, arguments.decision, actor=arguments.actor)
+        guidance = container.promote_decision(epic=arguments.epic, decision=arguments.decision, actor=arguments.actor)
     except (ValueError, LookupError) as error:
         raise FleetError(str(error)) from error
     print(f"recorded {guidance.path} {describe_version(guidance.version)}")
 
 
-def command_guidance_history(arguments: argparse.Namespace) -> None:
-    project, epic = guidance_subject(arguments.subject)
+def command_guidance_history(arguments: argparse.Namespace, *, container) -> None:
+    project, epic = guidance_subject(arguments.subject, container=container)
     try:
-        versions = open_records().guidance_history(project, epic)
+        versions = container.records().guidance_history(project, epic)
     except (ValueError, LookupError) as error:
         raise FleetError(str(error)) from error
     if arguments.json:
@@ -832,28 +823,28 @@ def command_guidance_history(arguments: argparse.Namespace) -> None:
         print(describe_version(version))
 
 
-def command_project_repo_add(arguments: argparse.Namespace) -> None:
-    arguments.id = open_projects().repository(arguments.id, arguments.url, remove=False)
+def command_project_repo_add(arguments: argparse.Namespace, *, container) -> None:
+    arguments.id = container.projects().repository(arguments.id, arguments.url, remove=False)
     console.print(f"added repository {arguments.url} to {arguments.id}", markup=False)
 
 
-def command_project_repo_remove(arguments: argparse.Namespace) -> None:
-    arguments.id = open_projects().repository(arguments.id, arguments.url, remove=True)
+def command_project_repo_remove(arguments: argparse.Namespace, *, container) -> None:
+    arguments.id = container.projects().repository(arguments.id, arguments.url, remove=True)
     console.print(f"removed repository {arguments.url} from {arguments.id}", markup=False)
 
 
-def command_project_restore(arguments: argparse.Namespace) -> None:
-    placement, name, arguments.shutter = open_projects().restore(arguments.id, arguments.shutter)
+def command_project_restore(arguments: argparse.Namespace, *, container) -> None:
+    placement, name, arguments.shutter = container.projects().restore(arguments.id, arguments.shutter)
     cleared = f"; {arguments.shutter} moved to the storehouse" if arguments.shutter else ""
     console.print(f"restored {placement.project_id} {name} to floor {placement.floor}{cleared}", markup=False)
 
 
-def observed_labels(registry: projects.Registry, hosts: list[Host]) -> tuple[list[tuple[str, str, str]], list[str]]:
-    return open_projects().observed_labels(registry, hosts)
+def observed_labels(registry: projects.Registry, hosts: list[Host], *, container) -> tuple[list[tuple[str, str, str]], list[str]]:
+    return container.projects().observed_labels(registry, hosts)
 
 
-def command_project_list(arguments: argparse.Namespace) -> None:
-    registry = open_workspace().registry()
+def command_project_list(arguments: argparse.Namespace, *, container) -> None:
+    registry = container.initialized_workspace().registry()
     if not registry.projects:
         console.print("no registered projects — add one with: fleet project add <name> --link host:label")
     for project in sorted(registry.projects.values(), key=lambda project: (project.name.lower(), project.id)):
@@ -864,7 +855,7 @@ def command_project_list(arguments: argparse.Namespace) -> None:
             console.print(f"  [dim]repo[/] {escape(repository)}")
     if not arguments.suggest or not any(project.repositories for project in registry.projects.values()):
         return
-    suggestions, errors = open_projects().suggestions(registry)
+    suggestions, errors = container.projects().suggestions(registry)
     if suggestions:
         console.print("\n[bold]suggested links[/] (repository matches)")
     for link, project_id in suggestions:
@@ -874,9 +865,9 @@ def command_project_list(arguments: argparse.Namespace) -> None:
     for error in errors:
         console.print(f"[yellow]no suggestions from {escape(error)}[/]")
 
-def command_building_capacity(arguments: argparse.Namespace) -> None:
+def command_building_capacity(arguments: argparse.Namespace, *, container) -> None:
     """The building's floors: a deliberate setting, never raised as a side effect of starting work (ADR 0005)."""
-    workspace = open_workspace()
+    workspace = container.initialized_workspace()
     if arguments.floors is None:
         console.print(f"{workspace.capacity()} floors")
         return
@@ -888,8 +879,8 @@ def merge_detected(output: str) -> dict[str, str | None]:
     return parse_detected(output)
 
 
-def command_install(arguments: argparse.Namespace) -> None:
-    host, report, agent_socket = open_hosts().install(arguments.name)
+def command_install(arguments: argparse.Namespace, *, container) -> None:
+    host, report, agent_socket = container.hosts().install(arguments.name)
     console.print(f"[bold]{host.name}[/] ({report['host']}) installed")
     for name in ("claude", "codex"):
         console.print(f"  {name}: {report['config'].get(name) or '[red]not found[/]'}")
@@ -898,26 +889,26 @@ def command_install(arguments: argparse.Namespace) -> None:
         console.print("  [red]tmux not found — jobs cannot start[/]")
 
 
-def command_hooks(arguments: argparse.Namespace) -> None:
-    host, report = open_hosts().hooks(arguments.name, arguments.action)
+def command_hooks(arguments: argparse.Namespace, *, container) -> None:
+    host, report = container.hosts().hooks(arguments.name, arguments.action)
     events = ", ".join(report["events"]) or "none"
     console.print(f"[bold]{host.name}[/] ({report['host']}): {report['settings']} — fleet hooks now on: {events}")
 
 
-def command_unlock(arguments: argparse.Namespace) -> None:
+def command_unlock(arguments: argparse.Namespace, *, container) -> None:
     """Add the host's key to its fleet ssh-agent; prompts for the passphrase once per boot."""
     if not sys.stdin.isatty():
         raise FleetError("unlock needs a real terminal to read the passphrase — run it in your own shell, "
                          "not via Claude Code's ! prefix")
-    sys.exit(open_hosts().unlock(arguments.name, arguments.key))
+    sys.exit(container.hosts().unlock(arguments.name, arguments.key))
 
 
-def command_web(arguments: argparse.Namespace) -> None:
+def command_web(arguments: argparse.Namespace, *, container) -> None:
     if arguments.fixture:
         serve_fixture(arguments.fixture, port=arguments.port, bind=arguments.bind, open_browser=arguments.open)
         return
-    serve(selected_hosts(arguments), port=arguments.port, bind=arguments.bind, open_browser=arguments.open,
-          **open_configuration().web_settings())
+    serve(selected_hosts(arguments, container=container), port=arguments.port, bind=arguments.bind, open_browser=arguments.open,
+          **container.configuration().web_settings())
 
 
 # --------------------------------------------------------------- parser
@@ -930,8 +921,8 @@ def nonnegative_depth(value: str) -> int:
     return depth
 
 
-def command_work_show(arguments: argparse.Namespace) -> None:
-    item = compose_work_detail(arguments.id)
+def command_work_show(arguments: argparse.Namespace, *, container) -> None:
+    item = container.resolved_work_detail(reference=arguments.id)
     parents = item["parents"]
     if arguments.json:
         print(json.dumps({**item, "parents": parents}, default=str))
@@ -946,13 +937,12 @@ def command_work_show(arguments: argparse.Namespace) -> None:
         print(f"  {child['kind']} {child['id']}: {child['title']} ({child['condition']})")
 
 
-def command_status(arguments: argparse.Namespace) -> None:
-    store = open_store()
-    project = open_workspace(store).resolve_project(arguments.project)
-    projection = project_status(project, open_work(store), open_attention(store),
-                                open_execution(store), open_library(store), open_decisions(store))
+def command_status(arguments: argparse.Namespace, *, container) -> None:
+    project = container.initialized_workspace().resolve_project(arguments.project)
+    container.initialized_attention()
+    projection = container.project_status(project=project)
     try:
-        projection = filter_status(projection, item=work_cli_id(arguments.item) if arguments.item is not None else None,
+        projection = filter_status(projection, item=work_cli_id(arguments.item, container=container) if arguments.item is not None else None,
                                    depth=arguments.depth, only_open=arguments.open)
     except LookupError as error:
         raise FleetError(str(error)) from error
@@ -1028,12 +1018,12 @@ def resolve_cli_id(reference: str, identities: list[str], kind: str) -> str:
     return resolve_prefix(reference, identities, kind)
 
 
-def work_cli_id(reference: str) -> str:
-    return open_references().work(reference)
+def work_cli_id(reference: str, *, container) -> str:
+    return container.references().work(reference)
 
 
-def located_context(reference: str) -> str:
-    value, warn = open_context().locate(reference)
+def located_context(reference: str, *, container) -> str:
+    value, warn = container.context().locate(reference)
     if warn:
         error_console.print(f"fleet: context reference '{reference}' is not a file here; the deck will show it as "
                             "text only. Give an absolute path or fleet://<host>/<path>.", style="yellow", markup=False,
@@ -1041,20 +1031,20 @@ def located_context(reference: str) -> str:
     return value
 
 
-def attention_cli_id(reference: str) -> str:
-    return open_references().attention_item(reference)
+def attention_cli_id(reference: str, *, container) -> str:
+    return container.references().attention_item(reference)
 
 
-def resolve_step_work_ids(steps: list[dict[str, Any]]) -> None:
-    open_references().step_work(steps)
+def resolve_step_work_ids(steps: list[dict[str, Any]], *, container) -> None:
+    container.references().step_work(steps)
 
 
-def command_work(arguments: argparse.Namespace) -> None:
+def command_work(arguments: argparse.Namespace, *, container) -> None:
     data = vars(arguments).copy()
     command = data.pop('work_operation')
     for name in ('handler', 'command'):
         data.pop(name, None)
-    item, known = open_work_commands().execute(command, data)
+    item, known = container.work_commands().execute(command, data)
     console.print_json(json.dumps(asdict(item), default=str))
     if command in ("add", "set") and known is not None and item.kind not in known:
         error_console.print(f"new kind '{item.kind}' added to project {item.project}'s kinds "
@@ -1126,17 +1116,17 @@ def describe_guidance(guidance: dict) -> str:
                      if guidance[name] is not None)
 
 
-def job_run(job: str) -> str | None:
-    return open_decision_commands().job_run(job)
+def job_run(job: str, *, container) -> str | None:
+    return container.decision_commands().job_run(job)
 
 
-def hand_decision_to_job(job: str, arguments: argparse.Namespace) -> str:
-    return open_decision_commands().hand_to_job(job, {name: getattr(arguments, name)
+def hand_decision_to_job(job: str, arguments: argparse.Namespace, *, container) -> str:
+    return container.decision_commands().hand_to_job(job, {name: getattr(arguments, name)
         for name in ('work_item', 'question', 'answer', 'principle', 'actor', 'context')})
 
 
-def command_decision_record(arguments: argparse.Namespace) -> None:
-    decision, identity, job = open_decision_commands().record(**{name: getattr(arguments, name)
+def command_decision_record(arguments: argparse.Namespace, *, container) -> None:
+    decision, identity, job = container.decision_commands().record(**{name: getattr(arguments, name)
         for name in ('work_item', 'question', 'answer', 'principle', 'actor', 'context', 'run')})
     if decision is None:
         print(f"Decision {identity} handed to the controller via job {job}'s stream; "
@@ -1145,8 +1135,8 @@ def command_decision_record(arguments: argparse.Namespace) -> None:
         print(json.dumps(asdict(decision), default=lambda value: value.isoformat()))
 
 
-def command_decision_list(arguments: argparse.Namespace) -> None:
-    log = open_decision_commands().listing(epic=arguments.epic, project=arguments.project)
+def command_decision_list(arguments: argparse.Namespace, *, container) -> None:
+    log = container.decision_commands().listing(epic=arguments.epic, project=arguments.project)
     if arguments.json:
         print(json.dumps(log, default=str))
         return
@@ -1192,12 +1182,12 @@ def history_source(entry: dict[str, Any]) -> str:
     return "no recorded run"
 
 
-def command_history(arguments: argparse.Namespace) -> None:
+def command_history(arguments: argparse.Namespace, *, container) -> None:
     if arguments.subject is None:
         raise FleetError("give --subject (a work item, attention item, project, run or other id or id prefix), "
                          "or a subcommand such as prune")
     try:
-        history = subject_history(open_store(), arguments.subject, arguments.since)
+        history = container.subject_history(reference=arguments.subject, since=arguments.since)
     except LookupError as error:
         raise FleetError(str(error)) from error
     if arguments.json:
@@ -1217,8 +1207,8 @@ def command_history(arguments: argparse.Namespace) -> None:
             print(f"  {change['field']}: {history_value(change['before'])} → {history_value(change['after'])}")
 
 
-def command_history_prune(arguments: argparse.Namespace) -> None:
-    history = open_history(open_store())
+def command_history_prune(arguments: argparse.Namespace, *, container) -> None:
+    history = container.history()
     count, oldest, newest = history.span_before(arguments.before)
     if not count:
         print(f"No history entries before {arguments.before.isoformat()}; nothing to delete.")
@@ -1232,8 +1222,8 @@ def command_history_prune(arguments: argparse.Namespace) -> None:
           f"one entry by {arguments.actor} records the pruning.")
 
 
-def command_answer(arguments: argparse.Namespace) -> None:
-    result = open_attention_commands().answer(arguments.id, arguments.answer, actor=arguments.actor,
+def command_answer(arguments: argparse.Namespace, *, container) -> None:
+    result = container.attention_commands().answer(arguments.id, arguments.answer, actor=arguments.actor,
                                                next_step=arguments.next_step)
     console.print_json(json.dumps(result if isinstance(result, dict) else asdict(result),
                                   default=lambda value: value.isoformat()))
@@ -1242,19 +1232,19 @@ def command_answer(arguments: argparse.Namespace) -> None:
 UNTIL_EXAMPLE = "2026-10-02T09:00:00+00:00"
 
 
-def command_attention(arguments: argparse.Namespace) -> None:
+def command_attention(arguments: argparse.Namespace, *, container) -> None:
     command = arguments.attention_command
     data = vars(arguments).copy()
     for name in ('handler', 'command', 'attention_command', 'json'):
         data.pop(name, None)
     if command == 'add':
-        data['context_reference'] = located_context(data['context_reference'])
+        data['context_reference'] = located_context(data['context_reference'], container=container)
     if command == 'snooze':
         try:
             data['until'] = datetime.fromisoformat(data['until'])
         except ValueError:
             raise FleetError(f"--until takes a timezone-aware ISO timestamp, e.g. {UNTIL_EXAMPLE}") from None
-    item = open_attention_commands().execute(command, data)
+    item = container.attention_commands().execute(command, data)
     if command == 'list':
         console.print_json(json.dumps([asdict(entry) for entry in item], default=str))
     elif command in ('delegate', 'take') and not getattr(arguments, 'json', False):
@@ -1813,20 +1803,21 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> None:
+def main(argv: list[str] | None = None, *, container=None) -> None:
     arguments = build_parser().parse_args(argv)
+    container = Container() if container is None else container
     try:
         for message in validate_paths(arguments.command):
             error_console.print(message, markup=False)
-        open_store()
+        container.store()
         # Worker decisions may belong to a controller's store, so resolve those only
         # after command_decision_record has determined where the write belongs.
         if (getattr(arguments, "work_item", None) is not None
                 and arguments.handler not in (command_decision_record, command_orchestrate)):
-            arguments.work_item = work_cli_id(arguments.work_item)
+            arguments.work_item = work_cli_id(arguments.work_item, container=container)
         if getattr(arguments, "epic", None) is not None:
-            arguments.epic = work_cli_id(arguments.epic)
-        arguments.handler(arguments)
+            arguments.epic = work_cli_id(arguments.epic, container=container)
+        arguments.handler(arguments, container=container)
     except FleetError as error:
         error_console.print(f"fleet: {error}", style="red", markup=False,
                             soft_wrap=isinstance(error.__cause__, ItemResolved))

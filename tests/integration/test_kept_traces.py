@@ -19,7 +19,7 @@ def job(status="done"):
                       "raw": [{"path": "/worker/raw-0.jsonl", "availability": "available"}]}}
 
 
-def test_terminal_trace_is_complete_idempotent_and_survives_rm(monkeypatch, tmp_path, capsys):
+def test_terminal_trace_is_complete_idempotent_and_survives_rm(monkeypatch, tmp_path, capsys, *, cli_container, override_cli_method):
     monkeypatch.setattr(transport, "keep_run_trace", KEEP_TRACE)
     content = ''.join(json.dumps({"kind": "tool", "summary": str(index)}) + '\n' for index in range(100))
     calls = []
@@ -46,15 +46,15 @@ def test_terminal_trace_is_complete_idempotent_and_survives_rm(monkeypatch, tmp_
     apply_message(state, host, {"type": "job", "job": job()})
     assert state.keeper.settle(5)
     assert store.latest_sequence() == sequence and calls == [["read-trace", "job"]]
-    monkeypatch.setattr(cli, "resolve", lambda reference: (host, "job"))
-    cli.command_remove(argparse.Namespace(job="carbon:job", force=False))
+    override_cli_method('references', 'job', lambda reference: (host, "job"))
+    cli.command_remove(argparse.Namespace(job="carbon:job", force=False), container=cli_container)
     kept = composition.open_execution(composition.open_store(store.path)).trace(run.id)
     assert kept["events"]["content"] == content
     assert kept["source"]["availability"] == "removed by fleet rm"
     assert kept["source"]["raw"][0]["availability"] == "removed by fleet rm"
-    cli.main(["run", "show", run.id, "--json"])
+    cli.main(["run", "show", run.id, "--json"], container=cli_container)
     capsys.readouterr()
-    cli.main(["store", "usage", "--json"])
+    cli.main(["store", "usage", "--json"], container=cli_container)
     usage = json.loads(capsys.readouterr().out)
     assert usage["traces"]["files"] == 1 and usage["traces"]["bytes"] == len(content.encode())
     assert usage["tables"]["execution_run"] == 1
