@@ -1359,19 +1359,91 @@ def command_web(arguments: argparse.Namespace) -> None:
 # --------------------------------------------------------------- parser
 
 
+def nonnegative_depth(value: str) -> int:
+    depth = int(value)
+    if depth < 0:
+        raise argparse.ArgumentTypeError("depth must be nonnegative")
+    return depth
+
+
+def status_node(items: list[dict[str, Any]], identity: str) -> dict[str, Any]:
+    for item in items:
+        if item["id"] == identity:
+            return item
+        try:
+            return status_node(item["children"], identity)
+        except LookupError:
+            pass
+    raise LookupError(f"work item '{identity}' is not in this project")
+
+
+def filter_status_items(items: list[dict[str, Any]], depth: int | None,
+                        only_open: bool) -> list[dict[str, Any]]:
+    if depth is not None and depth < 0:
+        return []
+    result = []
+    for item in items:
+        children = filter_status_items(item["children"], None if depth is None else depth - 1, only_open)
+        if only_open and item["condition"] == "complete":
+            result.extend(children)
+            continue
+        result.append({**item, "children": children})
+    return result
+
+
+def command_work_show(arguments: argparse.Namespace) -> None:
+    store = open_store()
+    work = open_work(store)
+    identity = work_cli_id(arguments.id)
+    record = work.get(identity)
+    projection = project_status(record.project, work, open_attention(store), open_execution(store),
+                                open_library(store), open_decisions(store))
+    item = status_node(projection["work_items"], identity)
+    parents = []
+    parent = record.parent
+    while parent is not None:
+        ancestor = work.get(parent)
+        parents.insert(0, asdict(ancestor))
+        parent = ancestor.parent
+    # A detail read includes historical attention as well as the open queue.
+    item["attention"] = [asdict(entry) for entry in open_attention(store).list()
+                         if entry.work_item == identity]
+    if arguments.json:
+        print(json.dumps({**item, "parents": parents}, default=str))
+        return
+    print("Parent chain: " + (" > ".join(f"{p['title']} ({p['id']})" for p in parents)
+                              if parents else "none (root item)"))
+    print_status_item({**item, "children": []})
+    print("Children:")
+    if not item["children"]:
+        print("  None recorded.")
+    for child in item["children"]:
+        print(f"  {child['kind']} {child['id']}: {child['title']} ({child['condition']})")
+
+
 def command_status(arguments: argparse.Namespace) -> None:
     store = open_store()
     project = open_workspace(store).resolve_project(arguments.project)
     projection = project_status(project, open_work(store), open_attention(store),
                                 open_execution(store), open_library(store), open_decisions(store))
+    if arguments.item is not None:
+        try:
+            projection["work_items"] = [status_node(projection["work_items"], work_cli_id(arguments.item))]
+        except LookupError as error:
+            raise FleetError(str(error)) from error
+        projection["attention"] = []
+    projection["work_items"] = filter_status_items(projection["work_items"], arguments.depth, arguments.open)
     if arguments.json:
         print(json.dumps(projection))
         return
     print(f"Project: {projection['project']}")
     if not projection["work_items"]:
-        print("No work items recorded.")
+        print("No work items match the filters." if arguments.item or arguments.open
+              else "No work items recorded.")
     for item in projection["work_items"]:
         print_status_item(item)
+    if projection["attention"]:
+        print("Unlinked attention:")
     for entry in projection["attention"]:
         print(f"  Attention {entry['id'][:8]} ({entry['kind']}): {entry['headline']}")
 
@@ -1496,6 +1568,10 @@ KIND_HELP = (f"{', '.join(KINDS)}, or a new label, which becomes one of the proj
 
 def add_work_parsers(commands) -> None:
     work = commands.add_parser("work", help="persistent work items").add_subparsers(required=True)
+    show = work.add_parser("show", help="read a work item and its linked records")
+    show.add_argument("id", help="work item ID or unique prefix")
+    show.add_argument("--json", action="store_true", help="emit the full detail record")
+    show.set_defaults(handler=command_work_show)
     work_help = {"add": "record a new work item in a project", "set": "change a work item's fields",
                  "move": "put a work item under another parent, or at the root",
                  "relate": "record that a work item depends on or relates to another",
@@ -1733,6 +1809,8 @@ def command_attention(arguments: argparse.Namespace) -> None:
                 owner_reason=arguments.reason)
         elif command == "list":
             items = attention.list(project=arguments.project, state=arguments.state, owner=arguments.owner)
+            if arguments.state is None and not arguments.all:
+                items = [item for item in items if item.state != "resolved"]
             console.print_json(json.dumps([asdict(item) for item in items], default=str))
             return
         elif command == "delegate":
@@ -2170,6 +2248,9 @@ def build_parser() -> argparse.ArgumentParser:
     status = commands.add_parser("status", help="persisted project work and open attention")
     add_project_argument(status, "project")
     status.add_argument("--json", action="store_true", help="emit the project projection")
+    status.add_argument("--item", help="only this work item (ID or unique prefix) and descendants")
+    status.add_argument("--depth", type=nonnegative_depth, help="maximum child depth; 0 shows roots only")
+    status.add_argument("--open", action="store_true", help="hide complete work and resolved attention")
     status.set_defaults(handler=command_status)
 
     decision = commands.add_parser("decision", help="decisions agents made under guidance").add_subparsers(
@@ -2243,6 +2324,7 @@ def build_parser() -> argparse.ArgumentParser:
     attention_add.set_defaults(handler=command_attention)
     attention_list = attention.add_parser("list", help="attention items as JSON, with their IDs")
     add_project_argument(attention_list, "--project")
+    attention_list.add_argument("--all", action="store_true", help="include resolved items (default: unresolved)")
     attention_list.add_argument("--state", choices=("open", "acknowledged", "snoozed", "resolved"))
     attention_list.add_argument("--owner", choices=("agent", "user"), help="only items this owner must act on")
     attention_list.set_defaults(handler=command_attention)

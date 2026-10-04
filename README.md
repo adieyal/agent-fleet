@@ -260,7 +260,8 @@ assert result["state"] == "confirmed", result
 
 ```bash
 fleet attention add "Review the guide" --project PROJECT_ID --work-item WORK_ID --kind decision --owner user --source manual --source-reference guide-review --context-reference README.md --actor user
-fleet attention list --project PROJECT_ID
+fleet attention list --project PROJECT_ID           # open, acknowledged and snoozed
+fleet attention list --project PROJECT_ID --all     # include resolved history
 fleet attention delegate ATTENTION_ID --actor user --note "inspect under the confirmed policy"   # stays open, listed as the agent's
 fleet attention list --owner agent                  # items an agent must act on; --owner user: yours
 fleet attention escalate ATTENTION_ID --actor triage --reason "needs a push to GitHub"   # agent to user
@@ -515,3 +516,6 @@ Playwright browsers they skip with the reason "Playwright browsers not installed
 here; browser tests run on home". Browser tests also skip on other hosts even
 if executables are installed. Tests use temporary Fleet paths; pytest rejects
 access to the real `~/.config/fleet` store and config before opening them.
+
+CLI work reads: `fleet work show WORK_ID` accepts a unique prefix; `--json` includes the full record and linked records.
+Use `fleet status PROJECT --item WORK_ID --depth 1 --open` to scope a tree, limit child depth (0 = roots), and hide complete work. Incomplete descendants remain visible. Unlinked attention has its own heading; an item scope excludes it.
