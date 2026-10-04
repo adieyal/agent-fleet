@@ -1,4 +1,5 @@
 """Smoke checks for the dashboard's HTTP boundary."""
+from tests.container_support import override_container
 
 import json
 import threading
@@ -10,7 +11,8 @@ from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
-from fleet.composition import open_store, open_workspace
+
+from fleet.container import configured_container
 from fleet.web.documents import renderer
 from fleet.web.library import ProjectLibrary
 from fleet.web.server import FleetState, make_handler
@@ -21,13 +23,13 @@ def test_a_recursive_library_reads_every_folder_but_hidden_and_tool_ones(tmp_pat
                  "a/.hidden/y.md", "node_modules/pkg/README.md"):
         (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / name).write_text(f"# {name}\n")
-    recursive = ProjectLibrary({"p": {"path": str(tmp_path), "recursive": True}})
+    recursive = ProjectLibrary({'p': {'path': str(tmp_path), 'recursive': True}}, container=configured_container())
     assert sorted(document["id"] for document in recursive.list()) == [
         "slice/notes/format.md", "top.md", "v2-review/REVIEW.md"]
     assert recursive.read("p", "v2-review/REVIEW.md")["name"] == "REVIEW.md"
     assert recursive.read("p", ".git/x.md") is None
     assert recursive.read("p", "node_modules/pkg/README.md") is None
-    shallow = ProjectLibrary({"p": str(tmp_path)})
+    shallow = ProjectLibrary({'p': str(tmp_path)}, container=configured_container())
     assert [document["id"] for document in shallow.list()] == ["top.md"]
     assert shallow.read("p", "v2-review/REVIEW.md") is None
 
@@ -38,7 +40,7 @@ class DashboardHTTPTests(unittest.TestCase):
         directory = TemporaryDirectory(prefix="fleet-http-test-")
         cls.addClassCleanup(directory.cleanup)
         root = Path(directory.name)
-        state = FleetState([], store=open_store(root / "fleet.db"), workspace=open_workspace(open_store(root / "fleet.db"), initial={}))
+        state = FleetState([], container=override_container(configured_container(store=configured_container(path=root / 'fleet.db').store()), workspace=configured_container(configured_container(path=root / 'fleet.db').store()).initialized_workspace(initial={})))
         cls.server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(state))
         cls.thread = threading.Thread(target=cls.server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
         cls.thread.start()
@@ -57,7 +59,7 @@ class DashboardHTTPTests(unittest.TestCase):
             self.assertEqual(json.load(response)["hosts"], [])
 
     def test_project_room_label_is_separate_from_project_identity(self) -> None:
-        state = FleetState([], {"restoke-analytics": "Bang bang!"})
+        state = FleetState([], {'restoke-analytics': 'Bang bang!'}, container=configured_container())
         self.assertEqual(state.document()["project_labels"], {"restoke-analytics": "Bang bang!"})
 
     def test_assets_are_served_but_paths_cannot_escape(self) -> None:
@@ -81,7 +83,7 @@ class DashboardHTTPTests(unittest.TestCase):
             (root / "docs" / "plan.md").write_text("# Plan\n<script>bad()</script>\n")
             (root / "private.md").symlink_to(base / "private.md")
             (base / "private.md").write_text("# Secret\n")
-            server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(FleetState([]), ProjectLibrary({"example": str(root)})))
+            server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(FleetState([], container=configured_container()), ProjectLibrary({'example': str(root)}, container=configured_container())))
             thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
             thread.start()
             base_url = f"http://127.0.0.1:{server.server_port}"

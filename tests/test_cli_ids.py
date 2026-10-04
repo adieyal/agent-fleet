@@ -2,8 +2,8 @@ import json
 
 import pytest
 
+from fleet.container import configured_container
 from fleet.cli import main
-from fleet.composition import open_attention, open_work
 
 
 def test_prefix_resolution_rejects_ambiguity_and_prefers_exact():
@@ -15,12 +15,10 @@ def test_prefix_resolution_rejects_ambiguity_and_prefers_exact():
 
 
 def test_status_ids_can_be_used_for_work_criterion_and_attention(project_id, capsys):
-    work = open_work()
+    work = configured_container().work()
     item = work.add(project=project_id, title='Ship', goal='Release', actor='test')
     criterion = work.add_criterion(item.id, text='Reviewed', verification='judged', actor='test')
-    attention = open_attention().raise_item(project=project_id, kind='decision', owner='user',
-        source='manual', source_reference='choice', headline='Choose', context_reference='doc',
-        work_item=item.id, actor='test')
+    attention = configured_container().initialized_attention().raise_item(project=project_id, kind='decision', owner='user', source='manual', source_reference='choice', headline='Choose', context_reference='doc', work_item=item.id, actor='test')
     main(['status', project_id])
     output = capsys.readouterr().out
     for identity in (item.id, criterion.id, attention.id):
@@ -41,7 +39,7 @@ def test_missing_work_item_names_status(capsys):
 
 
 def test_work_references_and_answer_expand_before_writing(project_id, capsys):
-    work = open_work()
+    work = configured_container().work()
     parent = work.add(project=project_id, title='Parent', goal='Ship', actor='test')
     main(['work', 'add', 'Child', '--project', project_id, '--goal', 'Test',
           '--parent', parent.id[:8], '--actor', 'test'])
@@ -49,8 +47,6 @@ def test_work_references_and_answer_expand_before_writing(project_id, capsys):
     assert child['parent'] == parent.id
     main(['work', 'relate', child['id'][:8], parent.id[:8], '--actor', 'test'])
     capsys.readouterr()
-    attention = open_attention().raise_item(project=project_id, kind='decision', owner='user',
-        source='manual', source_reference='answer', headline='Choose', context_reference='doc',
-        work_item=child['id'], actor='test')
+    attention = configured_container().initialized_attention().raise_item(project=project_id, kind='decision', owner='user', source='manual', source_reference='answer', headline='Choose', context_reference='doc', work_item=child['id'], actor='test')
     main(['answer', attention.id[:8], 'Proceed', '--actor', 'test'])
     assert json.loads(capsys.readouterr().out)['attention_item'] == attention.id

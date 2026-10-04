@@ -6,6 +6,9 @@ Here the fake stream writes 1 MB after hello and then a marker file; handling he
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
+from fleet import transport
+
 import json
 import sys
 import time
@@ -47,9 +50,9 @@ def test_the_stream_is_drained_while_a_message_is_handled(tmp_path: Path, monkey
             waited.append(time.monotonic() - start)
         handled.append(message["type"])
 
-    monkeypatch.setattr(server.transport, "ensure_master", lambda host: None)
+    monkeypatch.setattr(transport, "ensure_master", lambda host: None)
     monkeypatch.setattr(server, "apply_message", apply)
-    reason = server.run_stream(None, FakeHost(script))
+    reason = server.run_stream(SimpleNamespace(transport=transport), FakeHost(script))
 
     assert marker.exists() and waited[0] < 5, "the stream's writer was blocked while hello was handled"
     assert handled == ["hello"] + (["heartbeat"] * 1000 if pipe == "stdout" else [])

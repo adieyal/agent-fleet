@@ -5,14 +5,15 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from fleet import cli, composition
+from fleet.container import configured_container
+from fleet import cli
 
 NOW = datetime(2026, 9, 27, 12, tzinfo=timezone.utc)
 
 
 @pytest.fixture
 def store(cli_container):
-    store = composition.open_store()
+    store = configured_container().store()
     store.clock = lambda: NOW
     cli_container.store.override(store)
     return store
@@ -74,7 +75,7 @@ def show(capsys, *arguments: str) -> str:
 
 
 def test_a_work_item_reads_newest_first_with_field_changes_and_its_criteria(project_id, outside_a_job, capsys):
-    work = composition.open_work()
+    work = configured_container().work()
     item = work.add(project=project_id, title="Audit", goal="Keep history", actor="user")
     work.set(item.id, actor="claude", next_step="Write the reader")
     criterion = work.add_criterion(item.id, text="Prune asks first", verification="judged", actor="claude")
@@ -91,15 +92,13 @@ def test_a_work_item_reads_newest_first_with_field_changes_and_its_criteria(proj
 
 def test_history_names_the_run_whose_job_made_the_change(project_id, monkeypatch, capsys):
     monkeypatch.delenv("FLEET_JOB_ID", raising=False)
-    work = composition.open_work()
+    work = configured_container().work()
     item = work.add(project=project_id, title="Audit", goal="Keep history", actor="user")
-    run = composition.open_execution().dispatch(item.id, host="h", runtime="codex", actor="user", reason="Go",
-        idempotency_key="job-1", remote_job_id="job-1", guidance=None,
-        payload=dict(cwd="/repo", arguments=[], steps=[dict(prompt="Go")], context=None, hold=False)).run
+    run = configured_container().execution().dispatch(item.id, host='h', runtime='codex', actor='user', reason='Go', idempotency_key='job-1', remote_job_id='job-1', guidance=None, payload=dict(cwd='/repo', arguments=[], steps=[dict(prompt='Go')], context=None, hold=False)).run
     monkeypatch.setenv("FLEET_JOB_ID", "job-1")
-    composition.open_work().set(item.id, actor="claude", condition="ready for review")
+    configured_container().work().set(item.id, actor='claude', condition='ready for review')
     monkeypatch.setenv("FLEET_JOB_ID", "job-unknown-here")
-    composition.open_work().set(item.id, actor="claude", next_step="Ship")
+    configured_container().work().set(item.id, actor='claude', next_step='Ship')
     capsys.readouterr()
     cli.main(["history", "--subject", f"work:item:{item.id}", "--json"])
     entries = json.loads(capsys.readouterr().out)["entries"]
@@ -110,7 +109,7 @@ def test_history_names_the_run_whose_job_made_the_change(project_id, monkeypatch
 
 
 def test_an_attention_item_shows_its_state_changes(project_id, outside_a_job, capsys):
-    attention = composition.open_attention()
+    attention = configured_container().initialized_attention()
     item = attention.raise_item(project=project_id, kind="decision", owner="user", source="claude",
                                 source_reference="ref-1", headline="Pick one", context_reference="x", actor="claude")
     attention.acknowledge(item.id, actor="adi")
@@ -121,7 +120,7 @@ def test_an_attention_item_shows_its_state_changes(project_id, outside_a_job, ca
 
 
 def test_a_project_shows_only_its_own_workspace_changes(project_id, outside_a_job, capsys):
-    composition.open_workspace().edit_registry(lambda registry: registry.create("other"))
+    configured_container().initialized_workspace().edit_registry(lambda registry: registry.create('other'))
     cli.main(["project", "rename", project_id, "renamed"])
     lines = show(capsys, "--subject", project_id).splitlines()
     assert lines[0] == f"History of project {project_id}, newest first"
@@ -130,13 +129,13 @@ def test_a_project_shows_only_its_own_workspace_changes(project_id, outside_a_jo
 
 
 def test_since_hides_older_changes(project_id, outside_a_job, capsys):
-    item = composition.open_work().add(project=project_id, title="Audit", goal="Keep history", actor="user")
+    item = configured_container().work().add(project=project_id, title='Audit', goal='Keep history', actor='user')
     assert "No changes recorded in that period." in show(capsys, "--subject", item.id, "--since", "2999-01-01")
     assert "title: — → Audit" in show(capsys, "--subject", item.id, "--since", "1h")
 
 
 def test_an_ambiguous_or_unknown_subject_is_refused(project_id, outside_a_job, capsys):
-    work = composition.open_work()
+    work = configured_container().work()
     work.add(project=project_id, title="One", goal="G", actor="user")
     work.add(project=project_id, title="Two", goal="G", actor="user")
     for reference, message in (("", "give a subject"), ("zzzz", "no history for 'zzzz'"),

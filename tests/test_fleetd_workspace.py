@@ -1,4 +1,5 @@
 """fleetd reports each job's workspace: the git checkout its cwd is in, read from git and never invented."""
+from fleet import transport
 import json
 import subprocess
 import time
@@ -160,7 +161,7 @@ def test_a_running_step_is_refreshed_periodically(jobs, tmp_path, monkeypatch):
 def shown(monkeypatch, capsys, job, override_cli_method, cli_container):
     from fleet import cli
     override_cli_method('references', 'job', lambda reference: (SimpleNamespace(name="carbon"), "job"))
-    monkeypatch.setattr(cli.transport, "call", lambda host, arguments, **kwargs: job)
+    monkeypatch.setattr(transport, "call", lambda host, arguments, **kwargs: job)
     monkeypatch.setattr(cli.console, "width", 200)
     cli.main(["show", "carbon:job"], container=cli_container)
     return capsys.readouterr().out

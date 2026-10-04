@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from fleet import cli, composition
+from fleet.container import configured_container
+from fleet import cli
 
 FIXTURES = Path(__file__).parent / "fixtures" / "guidance"
 CONSTITUTION = (FIXTURES / "invoice-training.constitution.md").read_text()
@@ -29,8 +30,7 @@ def registered(tmp_path, project_id):
 
 @pytest.fixture
 def epic(project_id):
-    return composition.open_work().add(project=project_id, title="Positional transcriber", goal="Read by position",
-                                       kind="epic", actor="user")
+    return configured_container().work().add(project=project_id, title='Positional transcriber', goal='Read by position', kind='epic', actor='user')
 
 
 def edit(subject: str, body: str, tmp_path: Path, *extra: str) -> None:
@@ -119,7 +119,7 @@ def test_empty_or_unchanged_edits_are_refused(registered, tmp_path, capsys, body
 
 
 def test_missing_guidance_and_non_epics_are_reported(registered, project_id, tmp_path, capsys):
-    task = composition.open_work().add(project=project_id, title="Task", goal="Do", actor="user")
+    task = configured_container().work().add(project=project_id, title='Task', goal='Do', actor='user')
     with pytest.raises(SystemExit):
         cli.main(["guidance", "show", project_id])
     assert "no constitution of" in capsys.readouterr().err
@@ -136,8 +136,7 @@ def test_missing_guidance_and_non_epics_are_reported(registered, project_id, tmp
 def test_promote_adds_a_decision_to_the_charter(registered, epic, tmp_path, capsys, monkeypatch):
     monkeypatch.delenv("FLEET_JOB_ID", raising=False)
     project, repo = registered
-    decision = composition.open_decisions().record_guided(epic.id, actor="codex", question="Fees as freight?",
-                                                          answer="No", principle="Charter: decision 3")
+    decision = configured_container().decisions().record_guided(epic.id, actor='codex', question='Fees as freight?', answer='No', principle='Charter: decision 3')
     with pytest.raises(SystemExit):
         cli.main(["guidance", "promote", decision.id, "--epic", epic.id, "--actor", "user"])
     assert "no charter recorded" in capsys.readouterr().err

@@ -6,7 +6,8 @@ from uuid import uuid4
 
 import pytest
 
-from fleet import cli, composition
+from fleet.container import configured_container
+from fleet import cli
 from fleet.modules.work.domain import EvidenceSpecification
 
 
@@ -17,7 +18,7 @@ def read(capsys, *args):
 
 @pytest.fixture
 def tree(project_id):
-    work = composition.open_work()
+    work = configured_container().work()
     root = work.add(project=project_id, title="Root", goal="Deliver", kind="epic", actor="test")
     child = work.add(project=project_id, title="Child", goal="Read", parent=root.id, actor="test")
     leaf = work.add(project=project_id, title="Leaf", goal="Verify", parent=child.id, actor="test")
@@ -27,18 +28,15 @@ def tree(project_id):
 
 
 def raise_attention(project, work_item=None):
-    return composition.open_attention().raise_item(project=project, work_item=work_item, kind="decision",
-        owner="agent", source="manual", source_reference=str(uuid4()), headline="Review", context_reference="test",
-        actor="test")
+    return configured_container().initialized_attention().raise_item(project=project, work_item=work_item, kind='decision', owner='agent', source='manual', source_reference=str(uuid4()), headline='Review', context_reference='test', actor='test')
 
 
 def test_work_show_detail_and_json(capsys, tree):
     root, child, leaf = tree
-    run = composition.open_execution().link("home", "sample-job", child.id, actor="test", runtime="codex")
-    composition.open_decisions().record_guided(child.id, actor="test", question="Which read?",
-        answer="Full details", principle="Nothing is hidden")
+    run = configured_container().execution().link('home', 'sample-job', child.id, actor='test', runtime='codex')
+    configured_container().decisions().record_guided(child.id, actor='test', question='Which read?', answer='Full details', principle='Nothing is hidden')
     entry = raise_attention(root.project, child.id)
-    composition.open_attention().resolve(entry.id, details="handled", actor="test")
+    configured_container().initialized_attention().resolve(entry.id, details='handled', actor='test')
     output = read(capsys, "work", "show", child.id[:8])
     assert "Parent chain: Root" in output
     assert "Goal: Read" in output and "condition: none" in output
@@ -66,7 +64,7 @@ def test_status_scope_depth_and_open(capsys, tree):
                                "--depth", "0", "--open", "--json"))
     assert combined["work_items"][0]["id"] == child.id
     assert combined["work_items"][0]["children"] == []
-    composition.open_work().set(child.id, actor="test", condition="complete")
+    configured_container().work().set(child.id, actor='test', condition='complete')
     opened = json.loads(read(capsys, "status", root.project, "--open", "--json"))
     assert opened["work_items"][0]["children"][0]["id"] == leaf.id
     assert child.id not in [item["id"] for item in opened["work_items"][0]["children"]]
@@ -84,7 +82,7 @@ def test_status_unlinked_heading(capsys, tree):
 
 
 def test_attention_list_default_all_and_state(capsys, project_id):
-    attention = composition.open_attention()
+    attention = configured_container().initialized_attention()
     entries = [raise_attention(project_id) for _ in range(4)]
     attention.acknowledge(entries[1].id, actor="test")
     attention.snooze(entries[2].id, until=datetime(2099, 1, 1, tzinfo=timezone.utc), actor="test")
@@ -95,7 +93,7 @@ def test_attention_list_default_all_and_state(capsys, project_id):
 
 
 def test_invalid_scope_and_depth(capsys, tree, project_id):
-    other = composition.open_workspace().edit_registry(lambda r: r.create("Other"))
+    other = configured_container().initialized_workspace().edit_registry(lambda r: r.create('Other'))
     for args in [("status", other.id, "--item", tree[0].id),
                  ("status", project_id, "--depth", "-1"), ("work", "show", "missing")]:
         with pytest.raises(SystemExit) as raised:
@@ -106,5 +104,5 @@ def test_invalid_scope_and_depth(capsys, tree, project_id):
 def test_filtered_empty_state(capsys, tree):
     root, child, leaf = tree
     for item in (root, child, leaf):
-        composition.open_work().set(item.id, actor="test", condition="complete")
+        configured_container().work().set(item.id, actor='test', condition='complete')
     assert "No work items match the filters." in read(capsys, "status", root.project, "--open")

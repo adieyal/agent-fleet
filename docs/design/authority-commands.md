@@ -1,6 +1,6 @@
 # Activation commands
 
-`open_authority()` composes the activation command facade. `activate` records
+`Container().authority()` composes the activation command facade. `activate` records
 the actor, orchestrator role, exact work item scope, mandate path and confirmed
 Git commit. Later mandate edits affect new activations; existing activations
 continue to read their recorded commit through Records.

@@ -1,21 +1,23 @@
+from fleet.container import configured_container
+from fleet import transport
 import json
 import threading
 from http.server import ThreadingHTTPServer
 from types import SimpleNamespace
 from urllib.request import urlopen
 
-from fleet import composition
+
 from fleet.transport import Host
 from fleet.web import server
 
 
 def test_unscoped_dispatch_observations_keep_deck_available():
-    store = composition.open_store()
-    execution = composition.open_execution(store)
+    store = configured_container().store()
+    execution = configured_container(store).execution()
     run = execution.dispatch(None, project="p", host="worker", runtime="codex", payload={"cwd": "/repo"},
                              actor="user", reason="manual", idempotency_key="request").run
     host = Host("worker", None)
-    state = server.FleetState([host], store=store)
+    state = server.FleetState([host], container=configured_container(store=store))
     state.keeper.fetch = lambda *args: {"content": "Report"}
     message = {"type": "job", "job": {
         "id": run.remote_job_id, "project": "p", "description": "Task", "status": "done", "agent": "codex",
@@ -42,12 +44,12 @@ def test_unscoped_dispatch_observations_keep_deck_available():
 
 
 def test_silence_deadline_marks_linked_run_unknown(monkeypatch):
-    store = composition.open_store()
-    work = composition.open_work(store).add(project="p", title="Task", goal="Ship", actor="user")
-    execution = composition.open_execution(store)
+    store = configured_container().store()
+    work = configured_container(store).work().add(project='p', title='Task', goal='Ship', actor='user')
+    execution = configured_container(store).execution()
     execution.link("worker", "job", work.id, actor="user")
     host = Host("worker", None)
-    state = server.FleetState([host], store=store)
+    state = server.FleetState([host], container=configured_container(store=store))
     server.apply_message(state, host, {"type": "hello"})
     server.apply_message(state, host, {"type": "job", "job": {
         "id": "job", "project": "p", "description": "Task", "status": "running", "agent": "codex",
@@ -61,11 +63,11 @@ def test_silence_deadline_marks_linked_run_unknown(monkeypatch):
 
         def get(self, *, timeout):
             waits.append(timeout)
-            raise server.transport.queue.Empty
+            raise transport.queue.Empty
 
-    monkeypatch.setattr(server.transport.queue, "Queue", Silent)
-    monkeypatch.setattr(server.transport, "ensure_master", lambda host: None)
-    monkeypatch.setattr(server.transport.subprocess, "Popen", lambda command, **kwargs: commands.append(command) or process)
+    monkeypatch.setattr(transport.queue, "Queue", Silent)
+    monkeypatch.setattr(transport, "ensure_master", lambda host: None)
+    monkeypatch.setattr(transport.subprocess, "Popen", lambda command, **kwargs: commands.append(command) or process)
 
     class Finished(Exception):
         pass
@@ -100,7 +102,7 @@ def test_silence_deadline_marks_linked_run_unknown(monkeypatch):
 
 def test_batch12_reconnect_keeps_stale_work_until_complete_snapshot():
     host = Host('worker', None)
-    state = server.FleetState([host], store=composition.open_store())
+    state = server.FleetState([host], container=configured_container(store=configured_container().store()))
     server.apply_message(state, host, {'type': 'hello'})
     job = {'id': 'one', 'project': 'p', 'description': 'Work', 'agent': 'codex', 'status': 'running',
            'created_at': 1, 'updated_at': 2, 'steps': []}

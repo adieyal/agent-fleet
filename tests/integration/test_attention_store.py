@@ -2,8 +2,7 @@ import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
-
-from fleet.composition import open_attention, open_store
+from fleet.container import configured_container
 
 
 def raise_item(facade, reference="q1"):
@@ -14,15 +13,15 @@ def raise_item(facade, reference="q1"):
 
 @pytest.mark.parametrize("state", ["acknowledged", "snoozed", "resolved"])
 def test_items_states_and_history_survive_reopening(tmp_path, state):
-    store = open_store(tmp_path / "store.db")
-    facade = open_attention(store, workspace_path=tmp_path / "missing.json")
+    store = configured_container(path=tmp_path / 'store.db').store()
+    facade = configured_container(store).initialized_attention(workspace_path=tmp_path / 'missing.json')
     item = raise_item(facade)
     facade.acknowledge(item.id, actor="reader")
     if state == "snoozed":
         facade.snooze(item.id, until=datetime(2099, 1, 1, tzinfo=timezone.utc), actor="reader")
     elif state == "resolved":
         facade.resolve(item.id, details="Handled", actor="reader")
-    facade = open_attention(open_store(store.path), workspace_path=tmp_path / "missing.json")
+    facade = configured_container(configured_container(path=store.path).store()).initialized_attention(workspace_path=tmp_path / 'missing.json')
     assert facade.get(item.id).state == state
     assert facade.get(item.id).work_item == "w1"
     assert facade.get(item.id).run == "r1"
@@ -44,8 +43,8 @@ def test_workspace_actions_import_once_and_keep_file(tmp_path):
         "old-snooze": {"state": "snoozed", "at": now.timestamp(),
                        "until": (now + timedelta(hours=1)).timestamp()}}})
     path.write_text(original)
-    store = open_store(tmp_path / "store.db", clock=lambda: now)
-    facade = open_attention(store, workspace_path=path)
+    store = configured_container(path=tmp_path / 'store.db', clock=lambda : now).store()
+    facade = configured_container(store).initialized_attention(workspace_path=path)
     assert path.read_text() == original
     assert path.with_suffix(".json.bak").read_text() == original
     ack = raise_item(facade, "old-ack")
@@ -54,7 +53,7 @@ def test_workspace_actions_import_once_and_keep_file(tmp_path):
     assert snooze.state == "snoozed"
     facade.resolve(ack.id, details="Handled", actor="user")
     history = store.history_after(0)
-    facade = open_attention(store, workspace_path=path)
+    facade = configured_container(store).initialized_attention(workspace_path=path)
     assert facade.get(ack.id).state == "resolved"
     assert store.history_after(0) == history
     assert path.read_text() == original
@@ -62,8 +61,8 @@ def test_workspace_actions_import_once_and_keep_file(tmp_path):
 
 def test_sqlite_dedupe_and_expired_reads_do_not_write(tmp_path):
     now = [datetime(2026, 9, 27, tzinfo=timezone.utc)]
-    store = open_store(tmp_path / "store.db", clock=lambda: now[0])
-    facade = open_attention(store, workspace_path=tmp_path / "missing.json")
+    store = configured_container(path=tmp_path / 'store.db', clock=lambda : now[0]).store()
+    facade = configured_container(store).initialized_attention(workspace_path=tmp_path / 'missing.json')
     for _ in range(10):
         item = raise_item(facade)
     assert len(facade.list()) == 1

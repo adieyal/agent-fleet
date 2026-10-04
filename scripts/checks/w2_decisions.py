@@ -48,9 +48,9 @@ print(json.dumps(dict(type='result', subtype='success', result='Verified. FLEET_
 
     seed = subprocess.run([sys.executable, '-c', '''
 import json
-from fleet.composition import facades, open_workspace
-s = facades()
-open_workspace(s.store)
+from fleet.container import configured_container
+s = configured_container().services()
+configured_container(s.store).initialized_workspace()
 p = s.workspace.edit_registry(lambda r: r.create('W2 isolated check'))
 s.workspace.edit_registry(lambda r: r.link(p.id, 'local', 'w2-check'))
 w = s.work.add(project=p.id, title='Decision delivery', goal='Receive mid-job decision', actor='check')
@@ -114,7 +114,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True, help='directory for collected evidence')
     arguments = parser.parse_args()
-    directory = Path(tempfile.mkdtemp(prefix='w2-decisions-', dir='/dev/shm'))
+    directory = Path(tempfile.mkdtemp(prefix='w2-decisions-', dir=os.environ["TMPDIR"]))
     evidence = run_check(directory)
     arguments.output.mkdir(parents=True, exist_ok=True)
     for name in ('evidence.json', 'agent-step-1.md', 'agent-step-2.md', 'runner.log'):

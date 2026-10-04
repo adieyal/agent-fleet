@@ -3,8 +3,9 @@ from pathlib import Path
 
 import pytest
 
+from fleet.container import configured_container
 from fleet import cli, transport
-from fleet.composition import open_attention, store_path
+from fleet.container import store_path
 
 
 def test_fleet_environment_is_private_to_each_test(tmp_path):
@@ -53,7 +54,7 @@ def test_attention_import_and_status_leave_real_config_untouched(monkeypatch, tm
     monkeypatch.setenv("FLEET_CONFIG", str(config))
     monkeypatch.setenv("FLEET_STORE", str(config.with_name("fleet.db")))
     if command == "attention":
-        open_attention()
+        configured_container().initialized_attention()
     else:
         identity = cli_container.initialized_workspace().edit_registry(lambda registry: registry.create('p')).id
         cli.main(["status", "p", "--json"], container=cli_container)

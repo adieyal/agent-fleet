@@ -2,14 +2,13 @@ import json
 import os
 import subprocess
 import sys
-
-from fleet.composition import open_store
+from fleet.container import configured_container
 
 
 def test_attention_commands_end_to_end(tmp_path):
     env = {**os.environ, "FLEET_CONFIG": str(tmp_path / "config.json"), "FLEET_STORE": str(tmp_path / "store.db")}
     (tmp_path / 'config.json').write_text(json.dumps({'projects': {'p-00000001': {'name': 'p1'}}}))
-    open_store(tmp_path / "store.db")
+    configured_container(path=tmp_path / 'store.db').store()
 
     def run(*args):
         result = subprocess.run([sys.executable, "-m", "fleet.cli", "attention", *args],
@@ -29,7 +28,7 @@ def test_attention_commands_end_to_end(tmp_path):
 def test_attention_owner_commands_end_to_end(tmp_path):
     env = {**os.environ, "FLEET_CONFIG": str(tmp_path / "config.json"), "FLEET_STORE": str(tmp_path / "store.db")}
     (tmp_path / 'config.json').write_text(json.dumps({'projects': {'p-00000001': {'name': 'p1'}}}))
-    open_store(tmp_path / "store.db")
+    configured_container(path=tmp_path / 'store.db').store()
 
     def run(*args, code=0):
         if args[0] in ('delegate', 'take'):
@@ -48,15 +47,14 @@ def test_attention_owner_commands_end_to_end(tmp_path):
         "manual", "--source-reference", "q2", "--context-reference", "doc:2", "--actor", "user", code=2)
 
     assert "no confirmed triage mandate" in run("delegate", item["id"], "--actor", "user", code=2)
-    from fleet.composition import open_records
+
     from fleet.modules.records import TRIAGE_PATH
     policy = dict(goal='Inspect attention', constraints=['Do not complete work or judge criteria'],
                   decision_authority=['record_decision', 'escalate'], escalation_conditions=['Outside policy'],
                   criteria_it_may_judge=[], host='home', runtime='codex', cwd=str(tmp_path),
                   permission='workspace-write', routing={}, permissions={'allow': [], 'escalate': []},
                   limits={'retries_per_step': 1, 'runs_per_day': 3, 'unclaimed_minutes': 30})
-    open_records(open_store(tmp_path / 'store.db')).write_mandate(
-        'p-00000001', TRIAGE_PATH, json.dumps(policy), key='owner-test', actor='user')
+    configured_container(configured_container(path=tmp_path / 'store.db').store()).records().write_mandate('p-00000001', TRIAGE_PATH, json.dumps(policy), key='owner-test', actor='user')
 
     delegated = run("delegate", item["id"], "--actor", "user", "--note", "decide under the charter")
     assert (delegated["owner"], delegated["owner_reason"], delegated["state"]) == (

@@ -6,8 +6,9 @@ from urllib.request import urlopen
 
 import pytest
 
+from fleet.container import configured_container
 from fleet import transport
-from fleet.composition import open_workspace
+
 from workspace_support import persist_registry
 from fleet.transport import Host
 from fleet.web.server import FleetState, make_handler
@@ -26,7 +27,7 @@ def config_path(tmp_path, monkeypatch):
 @pytest.fixture
 def deck(config_path):
     """A running deck whose hosts each have one job and one session labelled `agent-fleet`."""
-    state = FleetState(HOSTS, {"agent-fleet": "Room sign"}, open_workspace().registry)
+    state = FleetState(HOSTS, {'agent-fleet': 'Room sign'}, configured_container().initialized_workspace().registry, container=configured_container())
     for index, host in enumerate(HOSTS):
         def fill(entry, index=index, host=host):
             entry["ok"], entry["error"] = True, None
@@ -55,7 +56,7 @@ def ids(document, host_name, kind="jobs"):
 
 
 def register(name, *links):
-    registry = open_workspace().registry()
+    registry = configured_container().initialized_workspace().registry()
     project = registry.create(name)
     for host, label in links:
         registry.link(project.id, host, label)
@@ -92,7 +93,7 @@ def test_same_label_on_two_hosts_merges_only_when_both_link_one_id(deck):
     assert ids(document, "home")["j0"][1] == first
     assert ids(document, "gpu")["j1"][1] == second
 
-    registry = open_workspace().registry()
+    registry = configured_container().initialized_workspace().registry()
     registry.unlink("gpu", "agent-fleet")
     registry.link(first, "gpu", "agent-fleet")
     persist_registry(registry)
@@ -102,7 +103,7 @@ def test_same_label_on_two_hosts_merges_only_when_both_link_one_id(deck):
 
 def test_rename_keeps_the_id(deck):
     project_id = register("Agent Fleet", ("home", "agent-fleet"))
-    registry = open_workspace().registry()
+    registry = configured_container().initialized_workspace().registry()
     registry.rename(project_id, "Fleet")
     persist_registry(registry)
     document = fetch_state(deck)

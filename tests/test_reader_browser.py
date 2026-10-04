@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import Browser, Page, expect
 
+from fleet.container import configured_container
 from fleet.web.fixture import FixtureState
 from fleet.web.library import ProjectLibrary
 from fleet.web.server import make_handler
@@ -75,7 +76,7 @@ def library_url(tmp_path_factory: pytest.TempPathFactory, deck_state: FixtureSta
     (root / "docs" / "img").mkdir(parents=True)
     (root / "docs" / "rich.md").write_text(DOCUMENT)
     (root / "docs" / "img" / "architecture.svg").write_text(SVG)
-    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(deck_state, ProjectLibrary({"notes": str(root)})))
+    server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(deck_state, ProjectLibrary({'notes': str(root)}, container=configured_container())))
     server.daemon_threads = True
     thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     thread.start()

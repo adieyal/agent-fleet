@@ -18,7 +18,8 @@ from urllib.parse import unquote, urlsplit
 
 import pytest
 
-from fleet.composition import open_store
+
+from fleet.container import configured_container
 from fleet.web.fixture import FixtureLibrary, FixtureState
 from fleet.web.server import make_handler
 from fleet.transport import FleetError
@@ -99,7 +100,7 @@ def browser_type_launch_args(browser_type_launch_args: dict[str, Any]) -> dict[s
 @pytest.fixture(scope="session")
 def empty_store(tmp_path_factory: pytest.TempPathFactory) -> Path:
     path = tmp_path_factory.mktemp("store-template") / "fleet.db"
-    open_store(path)
+    configured_container(path=path).store()
     return path
 
 
@@ -153,9 +154,9 @@ def isolated_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, empty_store:
 
 @pytest.fixture
 def project_id():
-    from fleet.composition import open_workspace
 
-    return open_workspace().edit_registry(lambda registry: registry.create('p')).id
+
+    return configured_container().initialized_workspace().edit_registry(lambda registry: registry.create('p')).id
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -180,8 +181,8 @@ def fixture_data() -> dict[str, Any]:
 @contextmanager
 def serve_fixture(path: Path | FixtureState) -> Iterator[str]:
     """A deck server over a recorded fleet; what the browser changes stays in this server's memory."""
-    state = path if isinstance(path, FixtureState) else FixtureState.load(path)
-    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(state, FixtureLibrary(state.fixture)))
+    state = path if isinstance(path, FixtureState) else FixtureState.load(path, container=configured_container())
+    server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(state, FixtureLibrary(state.fixture, container=state.container)))
     server.daemon_threads = True
     thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     thread.start()
@@ -195,7 +196,7 @@ def serve_fixture(path: Path | FixtureState) -> Iterator[str]:
 
 @pytest.fixture(scope="session")
 def deck_state() -> FixtureState:
-    return FixtureState.load(FIXTURE)
+    return FixtureState.load(FIXTURE, container=configured_container())
 
 
 @pytest.fixture(scope="session")
@@ -233,4 +234,21 @@ def override_cli_method(cli_container):
 
         provider.override(providers.Factory(create))
 
+    return override
+
+
+@pytest.fixture
+def override_web_store(request, monkeypatch):
+    """Rebind a session deck's providers to a test store, restoring them after the test."""
+    def override(state, store):
+        replacement = configured_container(store)
+        keep = {'settings', 'unit', 'transport', 'documents', 'project_documents',
+                'project_library', 'overview_cache', 'overview', 'fixture_scope'}
+        overridden = []
+        for name, provider in state.container.providers.items():
+            if name not in keep:
+                provider.override(getattr(replacement, name))
+                overridden.append(provider)
+        request.addfinalizer(lambda: [provider.reset_last_overriding() for provider in reversed(overridden)])
+        monkeypatch.setattr(state, 'store', store)
     return override

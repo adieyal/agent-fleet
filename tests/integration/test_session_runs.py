@@ -2,7 +2,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from fleet import cli, composition, transport
+from fleet.container import configured_container
+from fleet import cli, transport
 from fleet.transport import Host, HostReport
 from fleet.web.server import FleetState, apply_message
 
@@ -13,8 +14,8 @@ def session(identity="session", status="working", updated=200):
 
 
 def test_sessions_stop_reopen_and_keep_identity_without_claims():
-    store = composition.open_store()
-    execution = composition.open_execution(store)
+    store = configured_container().store()
+    execution = configured_container(store).execution()
     first = execution.observe_session("carbon", session())
     assert first.kind == "session" and first.status == "running"
     assert execution.repository.get_action(first.action).source == "session"
@@ -27,15 +28,15 @@ def test_sessions_stop_reopen_and_keep_identity_without_claims():
     reopened = execution.observe_session("carbon", session(updated=1500))
     assert reopened.id == first.id and reopened.status == "running" and reopened.end is None
     assert execution.observe_session("home", session()).id != first.id
-    restarted = composition.open_execution(composition.open_store(store.path))
+    restarted = configured_container(configured_container(path=store.path).store()).execution()
     assert restarted.repository.find("carbon", "session") == reopened
 
 
 def test_linking_a_session_attaches_existing_action_and_survives_moves():
-    store = composition.open_store()
-    work = composition.open_work(store)
+    store = configured_container().store()
+    work = configured_container(store).work()
     item = work.add(project="p", title="Task", goal="Ship", actor="user")
-    execution = composition.open_execution(store)
+    execution = configured_container(store).execution()
     run = execution.observe_session("carbon", session(), "p")
     linked = execution.link("carbon", "session", item.id, actor="user")
     assert linked.id == run.id and execution.repository.get_action(run.action).work_item == item.id
@@ -46,9 +47,9 @@ def test_linking_a_session_attaches_existing_action_and_survives_moves():
 
 def test_offline_restart_retains_work_until_first_heartbeat(monkeypatch):
     now = [datetime(2026, 10, 1, tzinfo=timezone.utc)]
-    store = composition.open_store(clock=lambda: now[0])
+    store = configured_container(clock=lambda : now[0]).store()
     host = Host("carbon", None)
-    state = FleetState([host], store=store)
+    state = FleetState([host], container=configured_container(store=store))
     apply_message(state, host, {"type": "hello"})
     apply_message(state, host, {"type": "session", "session": session()})
     apply_message(state, host, {"type": "job", "job": {"id": "job", "status": "running", "steps": [], "created_at": 100}})
@@ -60,7 +61,7 @@ def test_offline_restart_retains_work_until_first_heartbeat(monkeypatch):
     apply_message(state, host, {"type": "error", "error": "ssh unavailable"})
     original = state.document()["hosts"][0]
     assert original["jobs"][0]["stale"] and original["sessions"][0]["stale"]
-    restarted = FleetState([host], store=composition.open_store(store.path, clock=lambda: now[0]))
+    restarted = FleetState([host], container=configured_container(store=configured_container(path=store.path, clock=lambda : now[0]).store()))
     offline = restarted.document()["hosts"][0]
     assert offline["down_since"] == original["down_since"]
     assert {item["id"] for item in offline["jobs"]} == {"job"}

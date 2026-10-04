@@ -24,15 +24,12 @@ from __future__ import annotations
 import json
 import threading
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from typing import Any, Callable
 
-from fleet.composition import open_attention, open_execution, open_store, open_workspace, open_work
 from fleet.modules.workspace import Registry
 from fleet.projections.workspace import annotate, resolve, registry_config
-from fleet.transport import FleetError
+from fleet.container import FleetError
 from fleet.web.documents import STATUS_LINE, render_markdown
-from fleet.composition import open_documents
 from fleet.web.library import ProjectLibrary, is_private
 from fleet.web.live import LiveWorkspace
 
@@ -40,15 +37,17 @@ from fleet.web.live import LiveWorkspace
 class FixtureState(LiveWorkspace):
     """Same surface the HTTP handler uses on FleetState; only the user's choices ever change."""
 
-    def __init__(self, fixture: dict[str, Any]) -> None:
+    def __init__(self, fixture: dict[str, Any], *, container) -> None:
         self.fixture = fixture
         self.project_labels = fixture.get("project_labels", {})
-        self.attention_directory = TemporaryDirectory(prefix="fleet-fixture-")
-        store = open_store(Path(self.attention_directory.name) / "fleet.db")
+        scope = container.fixture_scope()
+        self.container = container = scope.container
+        self.attention_directory = scope.directory
+        store = container.store()
         self.store = store
-        self.execution = open_execution(store)
-        self.workspace = open_workspace(store, initial=fixture, actor="fixture-user")
-        work = open_work(store)
+        self.execution = container.execution()
+        self.workspace = container.initialized_workspace(initial=fixture, actor="fixture-user")
+        work = container.work()
         identities = {}
         for item in fixture.get("work_items", []):
             parent = identities[item["parent"]] if item["parent"] is not None else None
@@ -56,7 +55,7 @@ class FixtureState(LiveWorkspace):
                 goal=item["goal"], kind=item["kind"], parent=parent, actor="fixture-user").id
         self.registry = self.workspace.registry()
         self.capacity = self.workspace.capacity()
-        self.attention = open_attention(store,
+        self.attention = container.initialized_attention(
                                         workspace_path=Path(self.attention_directory.name) / "workspace.json")
         self.woken_until = 0.0
         for host in fixture["hosts"]:
@@ -70,7 +69,7 @@ class FixtureState(LiveWorkspace):
                                                                      "baseline": report.get("baseline"), "seq": 1}
                               for report in fixture.get("pipeline_reports", [])}
         self.pipeline_seq = 1 if self.pipeline_runs else 0
-        self.documents = open_documents(Path(self.attention_directory.name) / "projects")
+        self.documents = container.project_documents()
         self.keep_recorded_documents()
 
     def keep_recorded_documents(self) -> None:
@@ -95,13 +94,13 @@ class FixtureState(LiveWorkspace):
         return {host["name"]: (bool(host.get("ok")), {job["id"] for job in host["jobs"]}) for host in self.fixture["hosts"]}
 
     @classmethod
-    def load(cls, path: str | Path) -> FixtureState:
+    def load(cls, path: str | Path, *, container) -> FixtureState:
         fixture = json.loads(Path(path).read_text())
         # each a folder relative to the fixture file, or {"path": folder, "recursive": true} as in the Fleet config
         fixture["library_roots"] = {project: str(Path(path).parent / entry) if isinstance(entry, str)
                                     else {**entry, "path": str(Path(path).parent / entry["path"])}
                                     for project, entry in fixture.get("library_roots", {}).items()}
-        return cls(fixture)
+        return cls(fixture, container=container)
 
     def host_names(self) -> list[str]:
         return [host["name"] for host in self.fixture["hosts"]]
@@ -167,9 +166,9 @@ class FixtureLibrary:
     """Same surface as ProjectLibrary, over the fixture's `library` section and any real `library_roots`
     (folders, relative to the fixture file), which are read as a ProjectLibrary reads them."""
 
-    def __init__(self, fixture: dict[str, Any]) -> None:
+    def __init__(self, fixture: dict[str, Any], *, container) -> None:
         self.projects: dict[str, list[dict[str, Any]]] = fixture.get("library", {})
-        self.files = ProjectLibrary(fixture.get("library_roots", {}))
+        self.files = ProjectLibrary(fixture.get("library_roots", {}), container=container)
         self.roots = {**{project: None for project in self.projects}, **self.files.roots}
 
     def root(self, project: str) -> Path | None:

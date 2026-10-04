@@ -18,7 +18,6 @@ from rich.markup import escape
 from rich.text import Text
 from rich.tree import Tree
 
-from fleet import transport
 from fleet.container import Container
 from fleet.modules import workspace as projects
 from fleet.modules.attention import ItemResolved
@@ -27,11 +26,11 @@ from fleet.projections.project import filter_status
 from fleet.modules import attention as attention_module
 from fleet.modules.work import CONDITIONS, KINDS, RELATION_TYPES
 from fleet.modules.execution import Run
-from fleet.transport import FleetError, Host, HostReport
-from fleet.services.dispatch import DispatchRequest
-from fleet.services.jobs import listing_arguments
-from fleet.services.hosts import merge_detected as parse_detected
-from fleet.services.configuration import validate_paths, default_actor as actor_identity
+from fleet.container import FleetError, Host, HostReport, TimeoutExpired
+from fleet.container import DispatchRequest
+from fleet.container import listing_arguments
+from fleet.container import merge_detected as parse_detected
+from fleet.container import validate_paths, default_actor as actor_identity
 from fleet.web.server import serve, serve_fixture
 
 console = Console()
@@ -905,9 +904,9 @@ def command_unlock(arguments: argparse.Namespace, *, container) -> None:
 
 def command_web(arguments: argparse.Namespace, *, container) -> None:
     if arguments.fixture:
-        serve_fixture(arguments.fixture, port=arguments.port, bind=arguments.bind, open_browser=arguments.open)
+        serve_fixture(arguments.fixture, container=container, port=arguments.port, bind=arguments.bind, open_browser=arguments.open)
         return
-    serve(selected_hosts(arguments, container=container), port=arguments.port, bind=arguments.bind, open_browser=arguments.open,
+    serve(selected_hosts(arguments, container=container), container=container, port=arguments.port, bind=arguments.bind, open_browser=arguments.open,
           **container.configuration().web_settings())
 
 
@@ -1822,7 +1821,7 @@ def main(argv: list[str] | None = None, *, container=None) -> None:
         error_console.print(f"fleet: {error}", style="red", markup=False,
                             soft_wrap=isinstance(error.__cause__, ItemResolved))
         sys.exit(2)
-    except transport.TimeoutExpired as error:
+    except TimeoutExpired as error:
         error_console.print(f"fleet: {arguments.command} timed out after {error.timeout}s", style="red", markup=False)
         sys.exit(2)
     except KeyboardInterrupt:

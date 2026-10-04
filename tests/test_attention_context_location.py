@@ -1,5 +1,6 @@
 """fleet attention add addresses a file context as fleet://<host>/<absolute path>, so the deck can open it."""
 from __future__ import annotations
+from fleet import transport
 
 from pathlib import Path
 
@@ -8,7 +9,7 @@ from fleet.transport import Host
 
 
 def local_hosts(monkeypatch) -> None:
-    monkeypatch.setattr(cli.transport, "configured_hosts", lambda: [Host("home", "home"), Host("carbon", None)])
+    monkeypatch.setattr(transport, "configured_hosts", lambda: [Host("home", "home"), Host("carbon", None)])
 
 
 def test_a_relative_file_becomes_an_address_on_this_host(tmp_path: Path, monkeypatch, *, cli_container) -> None:

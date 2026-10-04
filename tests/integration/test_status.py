@@ -1,17 +1,18 @@
 import json
 import subprocess
 
+from fleet.container import configured_container
 from fleet import cli, transport
-from fleet.composition import open_attention, open_decisions, open_execution, open_library, open_records, open_store, open_work
+
 from fleet.projections.project import project_status
 
 
 def test_phase1_status_after_reopening_store_without_hosts(monkeypatch, capsys, tmp_path, project_id):
-    store = open_store()
+    store = configured_container().store()
     repo = tmp_path / 'management'
     subprocess.run(['git', 'init', str(repo)], check=True, capture_output=True, timeout=10)
-    open_records(store).register(project_id, repo, actor='user')
-    work, attention = open_work(store), open_attention(store)
+    configured_container(store).records().register(project_id, repo, actor='user')
+    work, attention = configured_container(store).work(), configured_container(store).initialized_attention()
     epic = work.add(project=project_id, title="Supplier slice", goal="Migrate suppliers", kind="epic",
                     next_step="Choose mapping", actor="user")
     milestone = work.add(project=project_id, title="Mapping", goal="Map fields", kind="milestone",
@@ -31,9 +32,8 @@ def test_phase1_status_after_reopening_store_without_hosts(monkeypatch, capsys, 
 
     monkeypatch.setattr(transport, "load_config", no_hosts)
     monkeypatch.setattr(transport, "call", no_hosts)
-    reopened = open_store()
-    expected = project_status(project_id, open_work(reopened), open_attention(reopened),
-                              open_execution(reopened), open_library(reopened), open_decisions(reopened))
+    reopened = configured_container().store()
+    expected = project_status(project_id, configured_container(reopened).work(), configured_container(reopened).initialized_attention(), configured_container(reopened).execution(), configured_container(reopened).library(), configured_container(reopened).decisions())
     cli.main(["status", "p", "--json"])
     assert json.loads(capsys.readouterr().out) == expected
     cli.main(["status", "p"])

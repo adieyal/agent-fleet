@@ -5,7 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from fleet import composition
+
+from fleet.container import configured_container
 from fleet.errors import FleetError
 from fleet.modules.attention import StreamContext
 from fleet.modules.execution import JobObservation
@@ -109,7 +110,7 @@ def test_unreachable_unknown_retains_reservation_and_escalates(triage):
 
 
 def test_no_mandate_means_no_dispatch(project_id):
-    services = composition.facades(composition.open_store())
+    services = configured_container(configured_container().store()).services()
     services.attention.raise_item(project=project_id, owner='agent', kind='blocker', source='test',
         source_reference='a', headline='a', context_reference='a', actor='user')
     engine = TriageScheduler(services, lambda *a: pytest.fail('dispatch'), None)

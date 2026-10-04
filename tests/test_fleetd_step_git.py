@@ -10,6 +10,7 @@ import signal
 
 import pytest
 
+from fleet.container import configured_container
 from fleet.remote import fleetd
 
 
@@ -148,12 +149,12 @@ def test_runner_records_commit_and_push_in_streamed_step(repository, tmp_path, m
     assert record["commit_count"] == 1 and record["commits"][0]["subject"] == "Agent commit"
     assert record["pushes"][0]["new"] == record["head"] == git(repository, "rev-parse", "HEAD")
     assert "_reflog_offsets" not in record
-    from fleet import composition
-    from fleet.composition import observe_runs
 
-    store = composition.open_store()
-    execution = composition.open_execution(store)
-    observe_runs(execution, composition.open_library(store), {"name": "carbon", "ok": True, "jobs": {"job": summary}})
+    from fleet.ingestion import observe_runs
+
+    store = configured_container().store()
+    execution = configured_container(store).execution()
+    observe_runs(execution, configured_container(store).library(), {'name': 'carbon', 'ok': True, 'jobs': {'job': summary}})
     run, = execution.runs()
     assert execution.steps(run.id)[0]["git"] == record
 

@@ -10,14 +10,15 @@ import sys
 
 import pytest
 
-from fleet import composition
+
+from fleet.container import configured_container
 from fleet.errors import FleetError
 from fleet.remote import fleetd
 
 
 CONTROLLER = '''
 import sys
-from fleet import composition
+from fleet.container import configured_container
 from fleet.infrastructure.sqlite.execution import ExecutionRepository
 from fleet.remote import fleetd
 
@@ -34,7 +35,7 @@ if point.startswith("transaction:"):
         original(self, *args)
         stop()
     setattr(ExecutionRepository, name, write)
-execution = composition.open_execution()
+execution = configured_container().execution()
 run = execution.dispatch(item, host="local", runtime="codex", payload=payload,
     actor="user", reason="crash test", idempotency_key="crash").run
 if point == "claim":
@@ -77,9 +78,9 @@ def worker_call(arguments, stdin):
                                    "transaction:save_run", "transaction:save_claim",
                                    "transaction:save_request"])
 def test_killed_dispatch_reconciles_one_job_and_claim(tmp_path, point):
-    store = composition.open_store()
-    composition.open_workspace(store)
-    item = composition.open_work(store).add(project="p", title="Epic", goal="Ship", actor="user")
+    store = configured_container().store()
+    configured_container(store).initialized_workspace()
+    item = configured_container(store).work().add(project='p', title='Epic', goal='Ship', actor='user')
     payload = {"cwd": str(tmp_path), "arguments": ["create", "--project", "p", "--description", "Crash test",
         "--agent", "codex", "--cwd", str(tmp_path), "--permission", "read-only",
         "--steps-file", "/dev/stdin", "--hold"], "steps": ["Ship"], "context": [], "hold": False}
@@ -97,7 +98,7 @@ def test_killed_dispatch_reconciles_one_job_and_claim(tmp_path, point):
             process.kill()
         process.wait(timeout=10)
 
-    execution = composition.open_execution(composition.open_store())
+    execution = configured_container(configured_container().store()).execution()
     if point.startswith("transaction:"):
         assert execution.actions() == execution.runs() == execution.claims() == []
         assert store.latest_sequence() == sequence
@@ -163,10 +164,10 @@ def test_absent_reconcile_is_versioned():
 
 @pytest.mark.parametrize("fault", ["disconnect", "schema_version", "run_id", "fingerprint"])
 def test_uncertain_or_mismatched_absence_never_creates(fault):
-    execution = composition.open_execution()
+    execution = configured_container().execution()
     run = execution.dispatch(None, project="p", host="local", runtime="codex",
         payload={"cwd": "/repo"}, actor="user", reason="test", idempotency_key="request").run
-    store = composition.open_store()
+    store = configured_container().store()
     sequence = store.latest_sequence()
     calls = []
 

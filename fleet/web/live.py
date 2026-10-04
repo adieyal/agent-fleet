@@ -18,14 +18,9 @@ from typing import Any, Callable, Container, TypeVar
 from uuid import uuid4
 
 from fleet.modules.attention import AttentionFacade
-from fleet.projections.attention import attention_display, attention_items
-from fleet.projections.building import building_state
+from fleet.projections.attention import attention_display
 from fleet.modules.workspace import Registry, WorkspaceFacade, AlreadyHoused
-from fleet.transport import FleetError
-from fleet.composition import open_work, open_execution, open_records, facades
-from fleet.projections.project import run_work
-from fleet.composition import ProjectDocuments
-from fleet.web.overview import Overview
+from fleet.container import FleetError
 T = TypeVar("T")
 
 
@@ -42,7 +37,7 @@ class LiveWorkspace:
     pipeline_runs: dict[tuple[str, str], dict[str, Any]]  # (host, name) → {"run", "baseline", "seq"} as last reported
     work_links: tuple[tuple[Any, int], dict[tuple[str, str], dict[str, Any]], dict[tuple[str, str], str]] | None = None  # revision, links, run ids
     pipeline_seq: int
-    documents: ProjectDocuments   # each project's document store (see fleet.composition.open_documents)
+    documents: Any   # each project's injected document store
 
     def known_projects(self) -> Container[str]:
         raise NotImplementedError
@@ -160,7 +155,7 @@ class LiveWorkspace:
         storehouse, and the live projects that have no floor. Project work is not sent with every update: the plan
         panel reads it from /api/bench when it is open."""
         self.workspace.settle()
-        building = building_state(self.workspace, registry, self.capacity)
+        building = self.container.building_state(workspace=self.workspace, registry=registry, capacity=self.capacity)
         return {**document, "building": building,
                 "attention_display": attention_display(document["attention"], building, document["projects"])}
 
@@ -198,10 +193,10 @@ class LiveWorkspace:
         return time.time()
 
     def library_overview(self, library: Any) -> list[dict[str, Any]]:
-        """Each project's overview (see fleet.web.overview): every project with a library root or a document store."""
-        overview = self.__dict__.setdefault("overview", Overview())
+        """Each project's overview (see fleet.projections.overview): every project with a library root or a document store."""
+        overview = self.__dict__.setdefault("overview", self.container.overview())
         registry, hosts = self.registry, self.job_hosts()
-        attention = attention_items(self.attention, [{"name": name, "ok": ok} for name, (ok, _) in hosts.items()])
+        attention = self.container.attention_items(attention=self.attention, hosts=[{"name": name, "ok": ok} for name, (ok, _) in hosts.items()])
         documents = library.list()
         projects: dict[str, dict[str, Any]] = {}
         for key in sorted(library.roots):
@@ -277,10 +272,9 @@ class LiveWorkspace:
 
     def with_attention(self, document: dict[str, Any]) -> dict[str, Any]:
         """Add stored focus choices and the Attention projection."""
-        from fleet.triage_scheduler import TriageScheduler
-        services = facades(self.store)
-        items = attention_items(self.attention, document["hosts"])
-        triage = {project: TriageScheduler(services, None, None).status(project)
+        services = self.container.services()
+        items = self.container.attention_items(attention=self.attention, hosts=document["hosts"])
+        triage = {project: self.container.triage_scheduler(deliver=None, host=None).status(project)
                   for project in {item["project_id"] for item in items if item["project_id"]}}
         for status in triage.values():
             if status["live_run"]:
@@ -306,11 +300,11 @@ class LiveWorkspace:
         revision = (self.store, self.store.latest_sequence())
         cached = self.work_links
         if cached is None or cached[0] != revision:
-            execution = open_execution(self.store)
-            cached = self.work_links = (revision, run_work(open_work(self.store), execution),
+            execution = self.container.execution()
+            cached = self.work_links = (revision, self.container.run_work(execution=execution),
                                        {(run.host, run.remote_job_id): run.id for run in execution.runs()})
         links = cached[1]
-        deliveries = open_execution(self.store).deliveries()
+        deliveries = self.container.execution().deliveries()
 
         def decisions(item, run_id):
             entries = {decision['id']: decision for decision in item.get('decisions_since_dispatch', [])}

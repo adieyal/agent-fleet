@@ -3,7 +3,8 @@ from dataclasses import replace
 
 import pytest
 
-from fleet.composition import facades, open_store, open_workspace
+
+from fleet.container import configured_container
 from fleet.modules.attention import InputObservation, Refusal, StreamContext
 from fleet.modules.attention.domain.routing import RoutingHistory, route
 from fleet.modules.records import TRIAGE_PATH, TriageMandate
@@ -85,16 +86,16 @@ def test_escalate_overrides_allow_and_every_refusal_needs_rules(mandate):
 
 
 def test_invalid_recorded_policy_is_visible(project_id):
-    services = facades(open_store())
-    open_workspace(services.store)
+    services = configured_container(configured_container().store()).services()
+    configured_container(services.store).initialized_workspace()
     services.records.write(project_id, TRIAGE_PATH, '{"bad": true}', key='bad', actor='test')
     with pytest.raises(ValueError, match='valid keys:'):
         services.attention.route(project_id, 'blocker', context())
 
 
 def test_recorded_mandate_routes_only_new_occurrences(project_id):
-    services = facades(open_store())
-    open_workspace(services.store)
+    services = configured_container(configured_container().store()).services()
+    configured_container(services.store).initialized_workspace()
     host = dict(name='carbon', ok=True, sessions=[], jobs=[dict(id='j', project='p', project_id=project_id,
                 status='failed', steps=[dict(index=0, status='failed', title='test', started_at=1,
                 message=None, answered_by=None)], updated_at=1)])
@@ -117,8 +118,8 @@ def test_recorded_mandate_routes_only_new_occurrences(project_id):
 
 
 def test_input_batch_routed_once_and_session_stays_user(project_id):
-    services = facades(open_store())
-    open_workspace(services.store)
+    services = configured_container(configured_container().store()).services()
+    configured_container(services.store).initialized_workspace()
     services.records.write_mandate(project_id, TRIAGE_PATH, json.dumps(body()), key='triage', actor='test')
     observation = InputObservation(1, 'claude', 'job', 'j', 's', 0, 'p', 'input_requested',
         'permission', 'PreToolUse', 'r1', 1, 'ctx', request={'tool': 'Read', 'rules': ['Read']})

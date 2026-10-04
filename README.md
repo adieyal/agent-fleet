@@ -241,7 +241,7 @@ your project before recording it:
 
 ```python
 import json
-from fleet.composition import open_records
+from fleet.container import Container
 from fleet.modules.records import TRIAGE_PATH
 
 policy = dict(goal="Inspect delegated attention and record findings or escalate",
@@ -252,7 +252,7 @@ policy = dict(goal="Inspect delegated attention and record findings or escalate"
               cwd="WORKING_DIRECTORY", permission="workspace-write", routing={},
               permissions={"allow": [], "escalate": ["Bash"]},
               limits={"retries_per_step": 1, "runs_per_day": 3, "unclaimed_minutes": 30})
-result = open_records().write_mandate(
+result = Container().records().write_mandate(
     "PROJECT_ID", TRIAGE_PATH, json.dumps(policy), key="guide-triage-v1", actor="user"
 )
 assert result["state"] == "confirmed", result
@@ -314,7 +314,7 @@ ID. `write_mandate` validates and commits it; use a new key when changing the bo
 
 ```python
 import json
-from fleet.composition import open_records
+from fleet.container import Container
 
 mandate = {
     "goal": "Review the guide and report the next step",
@@ -323,7 +323,7 @@ mandate = {
     "escalation_conditions": ["Ask the user before publishing"],
     "criteria_it_may_judge": []
 }
-result = open_records().write_mandate(
+result = Container().records().write_mandate(
     "PROJECT_ID", "mandate.json", json.dumps(mandate), key="guide-mandate-v1", actor="user"
 )
 assert result["state"] == "confirmed", result

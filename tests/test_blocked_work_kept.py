@@ -1,4 +1,5 @@
 """Audit 1 batch 1: blocked or failed work stays visible after the horizon, and `fleet rm` won't delete it unasked."""
+from fleet import transport
 import argparse
 import json
 import time
@@ -76,7 +77,7 @@ def worker(tmp_path, monkeypatch):
     monkeypatch.setenv("FLEET_FLEETD_PATH", fleetd.__file__)
     monkeypatch.setenv("FLEET_REMOTE_HOME", str(tmp_path / "worker"))
     host = Host("worker", None)
-    monkeypatch.setattr(cli.transport, "host_by_name", lambda name: host)
+    monkeypatch.setattr(transport, "host_by_name", lambda name: host)
     return tmp_path / "worker" / "jobs"
 
 

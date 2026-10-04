@@ -7,8 +7,9 @@ from types import SimpleNamespace
 
 import pytest
 
+from fleet.container import configured_container
 from fleet import cli, transport
-from fleet.composition import open_attention, open_decisions
+
 from fleet.modules.attention.domain import BLOCKED_SOURCE, StreamContext
 from fleet.remote import fleetd
 
@@ -59,11 +60,7 @@ def steps():
 
 
 def blocked_item(project_id):
-    return open_attention().raise_item(project=project_id, kind="blocker", owner="user", source=BLOCKED_SOURCE,
-        source_reference="h:job:0", headline="step 1 asks: which one?", context_reference="job:h:job",
-        actor="fleet", stream_context=StreamContext(owner_type="job", owner_id="job", host="h", project="p",
-                                                    project_id=project_id, source=BLOCKED_SOURCE, summary="blocked",
-                                                    since=None, step=0))
+    return configured_container().initialized_attention().raise_item(project=project_id, kind='blocker', owner='user', source=BLOCKED_SOURCE, source_reference='h:job:0', headline='step 1 asks: which one?', context_reference='job:h:job', actor='fleet', stream_context=StreamContext(owner_type='job', owner_id='job', host='h', project='p', project_id=project_id, source=BLOCKED_SOURCE, summary='blocked', since=None, step=0))
 
 
 def test_fleet_add_answers_the_waiting_step(worker, capsys):
@@ -95,7 +92,7 @@ def test_fleet_add_resolves_the_steps_attention_item_with_the_decks_key(worker, 
     item = blocked_item(project_id)
     add("-s", "Use the second.")
     assert f"--key {item.id}:answer" in " ".join(worker[-1])
-    resolved = open_attention().get(item.id)
+    resolved = configured_container().initialized_attention().get(item.id)
     assert (resolved.state, resolved.resolution_details) == ("resolved", "answered; step 1 continues as step 4")
 
 
@@ -105,7 +102,7 @@ def test_fleet_answer_on_a_blocked_step_takes_the_decks_path(worker, project_id,
     assert json.loads(capsys.readouterr().out) == {"id": item.id,
                                                    "resolution": "answered; step 1 continues as step 4"}
     assert steps()[0][3] == 3 and steps()[-1] == ("Answer to step 1", "Use the second.", "pending", None)
-    assert open_attention().get(item.id).state == "resolved"
-    [record] = open_decisions().list()
+    assert configured_container().initialized_attention().get(item.id).state == "resolved"
+    [record] = configured_container().decisions().list()
     assert (record.attention_item, record.answer, record.actor) == (item.id, 'Use the second.', 'user')
     assert fleetd.derive_status(fleetd.read_job("job")) == "queued"

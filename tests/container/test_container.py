@@ -4,7 +4,8 @@ from datetime import datetime, timezone
 import pytest
 from dependency_injector import providers
 
-from fleet import composition
+
+from fleet.container import configured_container
 from fleet.container import Container
 
 
@@ -18,7 +19,7 @@ def test_store_is_lazy_shared_concurrently_and_local_to_container(tmp_path):
         stores = list(executor.map(lambda _: first.store(), range(12)))
     assert all(store is stores[0] for store in stores)
     assert second.store() is not stores[0]
-    assert composition.facades(stores[0]) is first.services()
+    assert configured_container(stores[0]).services() is first.services()
 
 
 def test_settings_clock_job_and_management_are_injected(tmp_path):
@@ -63,7 +64,7 @@ def test_bound_facades_share_unit_and_roll_back():
         with container.unit_of_work() as unit:
             bound = root.bound(unit)
             assert bound is root.bound(unit) is container.bound_services(unit)
-            assert composition.facades(root.store, unit) is bound
+            assert configured_container(root.store, unit).services() is bound
             for name in ('attention', 'workspace', 'records', 'work', 'execution', 'decisions', 'authority', 'library'):
                 facade = getattr(bound, name)
                 assert facade is getattr(bound, name)

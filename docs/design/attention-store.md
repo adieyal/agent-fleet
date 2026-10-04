@@ -1,6 +1,6 @@
 # Stored attention (FS-004)
 
-`fleet.composition.open_attention()` constructs the public `AttentionFacade`.
+`fleet.container.Container().initialized_attention()` constructs the public `AttentionFacade`.
 Commands are `raise_item`, `acknowledge`, `snooze`, `reopen`, and `resolve`; queries are
 `get` and `list`. Records are immutable typed values. Commands require an actor.
 Source and source reference identify one item; repeating a signal refreshes

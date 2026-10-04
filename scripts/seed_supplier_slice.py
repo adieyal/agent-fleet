@@ -10,7 +10,8 @@ import argparse
 import json
 from pathlib import Path
 
-from fleet.composition import open_work, open_workspace
+
+from fleet.container import configured_container
 from fleet.errors import FleetError
 from fleet.modules.work import EvidenceSpecification, WorkFacade
 
@@ -72,7 +73,7 @@ if __name__ == "__main__":
     parser.add_argument("--project", default="Restoke V2", help="registered project (ID, prefix or name)")
     args = parser.parse_args()
     try:
-        project = open_workspace().resolve_project(args.project)
+        project = configured_container().initialized_workspace().resolve_project(args.project)
     except FleetError as error:
         parser.error(str(error))
-    seed(open_work(), args.prd, project=project)
+    seed(configured_container().work(), args.prd, project=project)

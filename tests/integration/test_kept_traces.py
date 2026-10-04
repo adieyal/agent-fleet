@@ -4,7 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from fleet import cli, composition, transport
+from fleet.container import configured_container
+from fleet import cli, transport
 from fleet.remote import fleetd
 from fleet.transport import FleetError, Host
 from fleet.web.server import FleetState, apply_message
@@ -33,8 +34,8 @@ def test_terminal_trace_is_complete_idempotent_and_survives_rm(monkeypatch, tmp_
         return {"removed": "job"}
     monkeypatch.setattr(transport, "call", worker)
     host = Host("carbon", None)
-    store = composition.open_store()
-    state = FleetState([host], store=store)
+    store = configured_container().store()
+    state = FleetState([host], container=configured_container(store=store))
     apply_message(state, host, {"type": "hello"})
     apply_message(state, host, {"type": "job", "job": job()})
     assert state.keeper.settle(5)
@@ -48,7 +49,7 @@ def test_terminal_trace_is_complete_idempotent_and_survives_rm(monkeypatch, tmp_
     assert store.latest_sequence() == sequence and calls == [["read-trace", "job"]]
     override_cli_method('references', 'job', lambda reference: (host, "job"))
     cli.command_remove(argparse.Namespace(job="carbon:job", force=False), container=cli_container)
-    kept = composition.open_execution(composition.open_store(store.path)).trace(run.id)
+    kept = configured_container(configured_container(path=store.path).store()).execution().trace(run.id)
     assert kept["events"]["content"] == content
     assert kept["source"]["availability"] == "removed by fleet rm"
     assert kept["source"]["raw"][0]["availability"] == "removed by fleet rm"
@@ -61,7 +62,7 @@ def test_terminal_trace_is_complete_idempotent_and_survives_rm(monkeypatch, tmp_
 
 
 def test_missing_trace_retry_and_running_trace_is_not_fetched(monkeypatch):
-    execution = composition.open_execution()
+    execution = configured_container().execution()
     host = Host("carbon", None)
     calls = []
     def fail(host, arguments, **kwargs):
@@ -99,8 +100,8 @@ def test_worker_removal_provenance_updates_streamed_run_without_deleting_history
     assert message["id"] == "job" and message["reason"] == "removed by fleet rm"
     assert list(fleetd.removal_messages(observed)) == []
     assert list(fleetd.removal_messages({})) == [message]  # a fresh stream catches up removals while offline
-    store = composition.open_store()
-    state = FleetState([Host("carbon", None)], store=store)
+    store = configured_container().store()
+    state = FleetState([Host('carbon', None)], container=configured_container(store=store))
     run = state.execution.record_observed("carbon", job())
     state.execution.record_trace(run.id, job()["trace"], content="kept\n")
     apply_message(state, state.hosts[0], message)
@@ -139,7 +140,7 @@ def test_worker_read_trace_reads_every_event_and_refuses_path_escape(tmp_path, m
 
 
 def test_changed_terminal_trace_replaces_snapshot_and_keeps_old_copy(monkeypatch):
-    execution = composition.open_execution()
+    execution = configured_container().execution()
     host = Host("carbon", None)
     current = ["one\n"]
     monkeypatch.setattr(transport, "call", lambda *args, **kwargs: {"content": current[0], "reason": None})
@@ -156,8 +157,8 @@ def test_changed_terminal_trace_replaces_snapshot_and_keeps_old_copy(monkeypatch
 
 
 def test_new_copy_failure_keeps_old_content_and_pending_reports_preserve_removal(monkeypatch):
-    store = composition.open_store()
-    execution = composition.open_execution(store)
+    store = configured_container().store()
+    execution = configured_container(store).execution()
     host = Host("carbon", None)
     monkeypatch.setattr(transport, "call", lambda *args, **kwargs: {"content": "old\n", "reason": None})
     KEEP_TRACE(execution, host, job())

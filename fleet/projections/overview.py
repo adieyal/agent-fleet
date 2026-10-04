@@ -18,7 +18,6 @@ Parsed files are cached by mtime and size, so a large library (hundreds of docum
 from __future__ import annotations
 
 import json
-import os
 import re
 import time
 from datetime import datetime, timedelta
@@ -35,34 +34,6 @@ QUESTION = re.compile(r"(?m)^(?=\d+\. \*\*)")
 ANSWER = re.compile(r"(?m)^\s*(\*\*Answer[:*]|-?\s*Answer\b)")
 STATUS_LINE = re.compile(r"^\*\*Status\.?\*\*\s*(.+)$")
 
-
-class OverviewCache:
-    """Parsed library files and job texts, kept while their mtime and size stay the same."""
-
-    def __init__(self) -> None:
-        self.files: dict[Path, tuple[tuple[int, int], Any]] = {}
-        self.texts: dict[tuple[str, str, Any], str | None] = {}
-
-    def parsed(self, path: Path, parse: Callable[[str], Any]) -> Any:
-        try:
-            stat = path.stat()
-        except OSError:
-            return None
-        signature = (stat.st_mtime_ns, stat.st_size)
-        cached = self.files.get(path)
-        if cached is None or cached[0] != signature:
-            try:
-                value = parse(path.read_text(encoding="utf-8", errors="replace"))
-            except ValueError:
-                value = None
-            self.files[path] = cached = (signature, value)
-        return cached[1]
-
-    def job_text(self, key: str, document: dict[str, Any], read: Callable[[str, str], str | None]) -> str | None:
-        identity = (key, document["id"], (document.get("mtime"), document.get("size")))
-        if identity not in self.texts:
-            self.texts[identity] = read(key, document["id"]) if document.get("stored") else None
-        return self.texts[identity]
 
 
 def readme(text: str) -> dict[str, str | None]:
@@ -106,8 +77,9 @@ def week_of(timestamp: float | None) -> str:
 
 
 class Overview:
-    def __init__(self, cache: OverviewCache | None = None) -> None:
-        self.cache = cache or OverviewCache()
+    def __init__(self, cache, files_changed) -> None:
+        self.cache = cache
+        self.files_changed = files_changed
 
     def build(self, *, name: str, project_id: str | None, library: str | None, root: Path | None,
               documents: list[dict[str, Any]], jobs: list[dict[str, Any]],
@@ -182,7 +154,7 @@ class Overview:
                           "questions": (self.cache.parsed(root / folder / "questions.md", questions)
                                         if f"{folder}/questions.md" in names else None),
                           "path": str(root / folder),
-                          "updated": max([document.get("mtime") or 0 for document in inside] + files_changed(root / folder))})
+                          "updated": max([document.get("mtime") or 0 for document in inside] + self.files_changed(root / folder))})
         return found
 
     def homes(self, job: dict[str, Any], folders: list[dict[str, Any]], root: Path | None,
@@ -328,14 +300,6 @@ def derive_state(stories: list[dict[str, Any]], asked: dict[str, int] | None, jo
         return "blocked" if latest in FAILED else "done" if latest in FINISHED else "unknown"
     return "in progress" if recent else "paused"
 
-
-def files_changed(folder: Path) -> list[float]:
-    """The mtimes of the files directly in a folder, listed or not (a loop's progress.txt counts as activity)."""
-    try:
-        with os.scandir(folder) as entries:
-            return [entry.stat().st_mtime for entry in entries if entry.is_file()]
-    except OSError:
-        return []
 
 
 def summary(streams: list[dict[str, Any]], counts: dict[str, int]) -> str:

@@ -1,4 +1,5 @@
 """A project's document store on the fleet web machine: filled live from the hosts, read by the library."""
+from tests.container_support import override_container
 
 import json
 import os
@@ -16,10 +17,11 @@ from urllib.request import urlopen
 
 import pytest
 
-from fleet.composition import open_workspace
+
+from fleet.container import configured_container
 from fleet.remote import fleetd
 from fleet.transport import Host
-from fleet.composition import ProjectDocuments
+
 from fleet.web.server import FleetState, follow_host, make_handler
 
 real_fetch_raw = FleetState.fetch_raw
@@ -41,7 +43,7 @@ def project_id() -> str:
         project = registry.create("Restoke")
         registry.link(project.id, "worker", "restoke")
         return project.id
-    return open_workspace().edit_registry(create)
+    return configured_container().initialized_workspace().edit_registry(create)
 
 
 def worker_fleetd(home: Path, *arguments: str) -> dict:
@@ -96,7 +98,7 @@ def test_documents_are_copied_live_and_outlive_the_job_and_the_host(
     steps.write_text(json.dumps(["Review the suppliers route and write findings to the outbox"]))
     job_id = worker_fleetd(worker, "create", "--project", "restoke", "--description", "Review suppliers",
                            "--agent", "claude", "--cwd", str(work), "--steps-file", str(steps), "--hold")["id"]
-    state = FleetState([Host("worker", None)])
+    state = FleetState([Host('worker', None)], container=configured_container())
     threading.Thread(target=follow_host, args=(state, state.hosts[0]), daemon=True).start()
     with deck(state) as url:
         # the brief is stored from the moment the job is listed
@@ -134,7 +136,7 @@ def test_documents_are_copied_live_and_outlive_the_job_and_the_host(
         reads("outbox-findings.md", "Second pass")
 
     # a fleet web started while the host is unreachable still lists and reads the store
-    offline = FleetState([Host("worker", "nobody@unreachable.invalid")])
+    offline = FleetState([Host('worker', 'nobody@unreachable.invalid')], container=configured_container())
     with deck(offline) as url:
         job = stored_job(url, project_id)
         assert job["availability"] == "host offline"
@@ -147,7 +149,7 @@ def test_documents_are_copied_live_and_outlive_the_job_and_the_host(
 
 
 def test_reading_stays_inside_the_projects_store(tmp_path: Path) -> None:
-    store = ProjectDocuments(tmp_path / "projects")
+    store = configured_container().documents(root=tmp_path / 'projects')
     job = {"id": "../../escape", "project": "restoke", "description": "d", "status": "done", "created_at": 1,
            "steps": [], "documents": [{"id": "outbox-../../../x.md", "kind": "outbox", "name": "x.md",
                                        "step": None, "path": "/p", "size": 3, "mtime": 1}]}
@@ -180,7 +182,7 @@ def test_reading_stays_inside_the_projects_store(tmp_path: Path) -> None:
 
 
 def test_an_older_hosts_local_notes_are_never_stored(tmp_path: Path) -> None:
-    store = ProjectDocuments(tmp_path / "projects")
+    store = configured_container().documents(root=tmp_path / 'projects')
     listed = [{"id": "file-0", "kind": "file", "name": "CLAUDE.local.md", "step": 0, "path": "/w/CLAUDE.local.md",
                "size": 5, "mtime": 1},
               {"id": "outbox-report.md", "kind": "outbox", "name": "report.md", "step": None, "path": "/j/outbox/report.md",
@@ -193,12 +195,12 @@ def test_an_older_hosts_local_notes_are_never_stored(tmp_path: Path) -> None:
 
 
 def test_working_documents_keep_the_reader_response_fields(tmp_path: Path) -> None:
-    store = ProjectDocuments(tmp_path / "projects")
+    store = configured_container().documents(root=tmp_path / 'projects')
     working = store.root / "p-1" / "working"
     working.mkdir(parents=True)
     markdown = "# Working\n\nFLEET_STATUS: done\n\nText."
     (working / "note.md").write_text(markdown)
-    state = FleetState([], documents=store)
+    state = FleetState([], container=override_container(configured_container(), documents=store))
     with deck(state) as url:
         status, body = get(url, "/api/library/working", project="p-1", id="note.md")
     assert status == 200

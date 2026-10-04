@@ -8,8 +8,9 @@ from tempfile import TemporaryDirectory
 
 import pytest
 
+from fleet.container import configured_container
 from fleet import transport
-from fleet.composition import open_store, open_workspace
+
 from fleet.transport import FleetError
 from fleet.modules.workspace import Registry
 
@@ -25,7 +26,7 @@ def test_import_and_backup(tmp_path, monkeypatch):
     config.write_text(json.dumps(original))
     legacy = tmp_path / "workspace.json"
     legacy.write_text(json.dumps(choices))
-    workspace = open_workspace()
+    workspace = configured_container().initialized_workspace()
     assert workspace.registry().project_for("home", "one").id == "p-00000001"
     assert workspace.capacity() == 10
     assert workspace.floors_snapshot() == choices["floors"]
@@ -34,7 +35,7 @@ def test_import_and_backup(tmp_path, monkeypatch):
     for path in (config, legacy):
         assert path.with_suffix(path.suffix + ".workspace.bak").read_bytes() == path.read_bytes()
     workspace.set_capacity(6)
-    assert open_workspace().capacity() == 6
+    assert configured_container().initialized_workspace().capacity() == 6
     assert json.loads(config.read_text()) == original
     transport.save_config({**original, "hosts": {"other": {}}})
     assert json.loads(config.read_text()) == {"hosts": {"other": {}}}
@@ -43,20 +44,20 @@ def test_import_and_backup(tmp_path, monkeypatch):
 
 
 def test_units_roll_back_and_stable_floors():
-    workspace = open_workspace()
+    workspace = configured_container().initialized_workspace()
     assert workspace.capacity() == 6
     with pytest.raises(FleetError):
         workspace.set_capacity(11)
     first = workspace.move_in(["home"], "one")
     second = workspace.move_in(["home"], "two")
     before = workspace.snapshot()
-    sequence = open_store().latest_sequence()
+    sequence = configured_container().store().latest_sequence()
     with pytest.raises(FleetError):
         workspace.move_in(["home"], "one", shutter=second.project_id)
     with pytest.raises(FleetError):
         workspace.merge(second.project_id, first.project_id)
     assert workspace.snapshot() == before
-    assert open_store().latest_sequence() == sequence
+    assert configured_container().store().latest_sequence() == sequence
     workspace.shutter(first.project_id)
     workspace.restore(first.project_id)
     assert workspace.floors_snapshot() == before.floors
@@ -65,20 +66,20 @@ def test_units_roll_back_and_stable_floors():
 
 
 def test_unchanged_settle_is_read_only():
-    workspace = open_workspace()
+    workspace = configured_container().initialized_workspace()
     workspace.move_in(["home"], "one")
-    sequence = open_store().latest_sequence()
+    sequence = configured_container().store().latest_sequence()
     workspace.settle()
     workspace.settle()
-    assert open_store().latest_sequence() == sequence
+    assert configured_container().store().latest_sequence() == sequence
 
 
 def test_failure_after_partial_move_or_merge_rolls_back(monkeypatch):
-    workspace = open_workspace()
+    workspace = configured_container().initialized_workspace()
     first = workspace.move_in(["home"], "one").project_id
     second = workspace.move_in(["home"], "two").project_id
     before = workspace.snapshot()
-    sequence = open_store().latest_sequence()
+    sequence = configured_container().store().latest_sequence()
     original_link = Registry.link
     def fail_link(registry, project_id, host, label):
         original_link(registry, project_id, host, label)
@@ -96,7 +97,7 @@ def test_failure_after_partial_move_or_merge_rolls_back(monkeypatch):
     with pytest.raises(RuntimeError, match="merge failed"):
         workspace.merge(first, second)
     assert workspace.snapshot() == before
-    assert open_store().latest_sequence() == sequence
+    assert configured_container().store().latest_sequence() == sequence
 
 
 WRITER = """
@@ -105,12 +106,14 @@ import os
 import sqlite3
 import sys
 from fleet import cli
-from fleet.composition import open_workspace
+from fleet.container import configured_container
 from fleet.web.server import FleetState
 role, project = sys.argv[1:]
-state = FleetState([]) if role == 'web' else None
-workspace = open_workspace()
-cli.open_workspace = lambda: workspace
+container = configured_container()
+state = FleetState([], container=container) if role == 'web' else None
+container = configured_container()
+workspace = container.initialized_workspace()
+container.initialized_workspace.override(workspace)
 print('ready', flush=True)
 sys.stdin.readline()
 if role == 'cli':
@@ -137,7 +140,7 @@ for index in range(24):
     if role == 'cli':
         # stdout carries this protocol; the command's own report goes to stderr
         with contextlib.redirect_stdout(sys.stderr):
-            cli.main(['project', 'repo', 'add', project, url])
+            cli.main(['project', 'repo', 'add', project, url], container=container)
     else:
         state.edit_registry(lambda registry: registry.add_repository(project, url))
     print('written', flush=True)
@@ -147,15 +150,15 @@ for index in range(24):
 @pytest.fixture
 def contention_store(monkeypatch):
     # SQLite locking is real; volatile storage keeps 48 durable commits fast under disk contention.
-    with TemporaryDirectory(prefix="fleet-workspace-", dir="/dev/shm") as directory:
+    with TemporaryDirectory(prefix="fleet-workspace-", dir=os.environ["TMPDIR"]) as directory:
         monkeypatch.setenv("FLEET_STORE", str(Path(directory) / "fleet.db"))
         yield
 
 
 def test_cli_and_web_processes_preserve_overlapping_edits(contention_store):
-    workspace = open_workspace()
+    workspace = configured_container().initialized_workspace()
     project = workspace.edit_registry(lambda registry: registry.create("Shared"))
-    store = open_store()
+    store = configured_container().store()
     sequence = store.latest_sequence()
     processes = [subprocess.Popen([sys.executable, "-c", WRITER, role, project.id],
                  stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,

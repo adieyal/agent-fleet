@@ -2,7 +2,8 @@ import json
 
 import pytest
 
-from fleet import cli, composition
+from fleet.container import configured_container
+from fleet import cli
 from fleet.modules.attention import InputObservation, StreamContext
 from fleet.modules.authority import Activation, AuthorityRejected
 from fleet.modules.execution import GrantResult, JobObservation
@@ -12,8 +13,8 @@ from fleet.orchestration import ControllerCommands, triage_prompt
 
 @pytest.fixture
 def triage(project_id, tmp_path):
-    services = composition.facades(composition.open_store())
-    composition.open_workspace(services.store)
+    services = configured_container(configured_container().store()).services()
+    configured_container(services.store).initialized_workspace()
     body = dict(goal='Triage', constraints=[], escalation_conditions=[], criteria_it_may_judge=[],
                 decision_authority=['retry', 'add_step', 'grant', 'resolve_attention', 'escalate', 'record_decision'],
                 host='carbon', runtime='codex', cwd=str(tmp_path), permission='acceptEdits', routing={},
@@ -454,6 +455,7 @@ def test_readonly_writer_lock_keeps_decision_pending_and_controller_publishes(tr
                for entry in history['entries'] for change in entry['changes'])
     server = FleetState.__new__(FleetState)
     server.store = services.store
+    server.container = services.container
     monkeypatch.setattr(TriageScheduler, 'schedule', lambda self: None)
     server.schedule_triage()  # Still sandboxed: pending intent survives repeated reconciliation.
     assert next(entry for entry in services.records.intents() if entry['key'] == decision.id)['state'] == 'pending'
@@ -559,7 +561,7 @@ def test_audit3_unavailable_policy_keeps_deck_state_readable(triage, tmp_path, m
         return require_delegable(*args, **kwargs)
     monkeypatch.setattr(type(services.attention), 'require_delegable', check_delegation)
     try:
-        state = FleetState([], store=services.store)
+        state = FleetState([], container=configured_container(store=services.store))
         document = state.document()
         status = document['triage'][activation.project]
         assert str(root) in status['policy_error']

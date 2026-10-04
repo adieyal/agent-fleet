@@ -1,4 +1,6 @@
 """A job dispatched on work gets the project constitution and nearest epic charter, pinned to the versions it saw."""
+from fleet.container import configured_container
+from fleet import transport
 
 import json
 import subprocess
@@ -7,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from fleet import cli, composition
+from fleet import cli
 from fleet.orchestration import ControllerCommands
 from fleet.transport import Host
 
@@ -22,7 +24,7 @@ def worker(monkeypatch):
     calls, pushes = [], []
 
     def call(host, arguments, stdin_text=None, **kwargs):
-        run = composition.open_execution().runs()[-1]
+        run = configured_container().execution().runs()[-1]
         calls.append((arguments, stdin_text))
         return {"id": run.remote_job_id, "run_id": run.id, "schema_version": 4,
                 "fingerprint": arguments[arguments.index("--fingerprint") + 1],
@@ -32,8 +34,8 @@ def worker(monkeypatch):
     def push(host, job, paths):
         pushes.append({Path(path).name: Path(path).read_text() for path in paths})
 
-    monkeypatch.setattr(cli.transport, "host_by_name", lambda name: SimpleNamespace(name=name))
-    monkeypatch.setattr(cli.transport, "call", call)
+    monkeypatch.setattr(transport, "host_by_name", lambda name: SimpleNamespace(name=name))
+    monkeypatch.setattr(transport, "call", call)
     from fleet.services.context import Context
     monkeypatch.setattr(Context, "push", lambda self, host, job, paths: push(host, job, paths))
     return SimpleNamespace(calls=calls, pushes=pushes,
@@ -44,8 +46,8 @@ def worker(monkeypatch):
 @pytest.fixture
 def tree(project_id):
     for host in ("fake", "controller"):
-        composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, host, "worker-p"))
-    work = composition.open_work()
+        configured_container().initialized_workspace().edit_registry(lambda registry: registry.link(project_id, host, 'worker-p'))
+    work = configured_container().work()
     epic = work.add(project=project_id, title="Transcriber", goal="Read", kind="epic", actor="user")
     milestone = work.add(project=project_id, title="M1", goal="Read", kind="milestone", parent=epic.id, actor="user")
     task = work.add(project=project_id, title="Task", goal="Ship", parent=milestone.id, actor="user")
@@ -56,7 +58,7 @@ def register(tmp_path, project):
     repo = tmp_path / "management"
     repo.mkdir()
     subprocess.run(["git", "-C", str(repo), "init"], check=True, capture_output=True, timeout=10)
-    records = composition.open_records()
+    records = configured_container().records()
     records.register(project, repo, actor="user")
     return records
 
@@ -66,7 +68,7 @@ def dispatch(item: str, *extra: str) -> None:
 
 
 def action_guidance():
-    return composition.open_execution().actions()[-1].guidance
+    return configured_container().execution().actions()[-1].guidance
 
 
 def test_dispatch_attaches_constitution_and_nearest_charter(tmp_path, tree, worker, capsys):
@@ -94,7 +96,7 @@ def test_retry_delivers_the_pinned_versions(tmp_path, tree, worker):
     records.write_guidance(tree.project, CONSTITUTION, actor="user")
     dispatch(tree.task.id)
     records.write_guidance(tree.project, CONSTITUTION + "\nRevised.\n", actor="user")
-    run, = composition.open_execution().runs()
+    run, = configured_container().execution().runs()
     cli.main(["run", "resolve-unknown", run.id])
     cli.main(["run", "retry", run.id])
     assert worker.pushes == [{"CONSTITUTION.md": CONSTITUTION}] * 2
@@ -144,16 +146,14 @@ def test_orchestrate_and_its_dispatches_are_guided(tmp_path, tree, worker, capsy
     records.write_mandate(tree.project, "mandate.json", json.dumps(dict(
         goal="Ship", constraints=[], escalation_conditions=[], criteria_it_may_judge=[],
         decision_authority=["dispatch"])), key="mandate", actor="user")
-    monkeypatch.setattr(cli.transport, "host_by_name", lambda name: Host(name, None))
+    monkeypatch.setattr(transport, "host_by_name", lambda name: Host(name, None))
     cli.main(["orchestrate", tree.task.id, "--mandate", "mandate.json", "--host", "controller",
               "--runtime", "codex", "--cwd", str(tmp_path)])
     activation = json.loads(capsys.readouterr().out)["activation"]
     prompt, = worker.prompts()
     assert prompt.startswith("Guidance: your context directory has CONSTITUTION.md") and f"orchestrator for work item {tree.task.id}" in prompt
     assert worker.pushes == [{"CONSTITUTION.md": CONSTITUTION}]
-    result = ControllerCommands(composition.facades(), activation).execute("dispatch", dict(
-        host="worker", runtime="codex", reason="Go", idempotency_key="child",
-        payload=dict(cwd="/repo", arguments=["create"], steps=[dict(prompt="Child")], context=None, hold=False)))
-    action = composition.open_execution().get_action(result.run.action)
+    result = ControllerCommands(configured_container().services(), activation).execute('dispatch', dict(host='worker', runtime='codex', reason='Go', idempotency_key='child', payload=dict(cwd='/repo', arguments=['create'], steps=[dict(prompt='Child')], context=None, hold=False)))
+    action = configured_container().execution().get_action(result.run.action)
     assert action.guidance["constitution"]["version"] == 1
     assert action.payload["steps"][0]["prompt"].startswith("Guidance: ")

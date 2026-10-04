@@ -2,13 +2,14 @@ import json
 from types import SimpleNamespace
 
 import pytest
-from fleet import cli, composition
+from fleet.container import configured_container
+from fleet import cli
 from tests.integration.test_triage_commands import triage, item
 from tests.integration.test_triage_scheduler import scheduler, finish
 
 
 def test_no_policy_delegation_rejected_without_owner_write(project_id, capsys):
-    services = composition.facades(composition.open_store())
+    services = configured_container(configured_container().store()).services()
     a = services.attention.raise_item(project=project_id, owner='user', kind='blocker', source='test',
         source_reference='a', headline='a', context_reference='a', actor='user')
     before = services.store.history_after(0)

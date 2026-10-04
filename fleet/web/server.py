@@ -21,30 +21,21 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from fleet import transport
-from fleet.composition import (Store, facades, open_attention, open_execution, open_library, open_store,
-                               open_workspace, open_work, open_decisions)
+from fleet.container import Container
 from fleet.modules.records import GuidanceConflict
-from fleet.orchestration import promote_decision
-from fleet.triage_scheduler import TriageScheduler
-from fleet.composition import deliver_triage
 from fleet.modules.attention import InputObservation, ItemResolved, refusal_rules
 from fleet.modules.workspace import (NoVacancy, FOCUSES, AlreadyShuttered, NotShuttered,
                                      WorkspaceFacade, Registry)
 from fleet.projections.workspace import annotate, resolve, registry_config
-from fleet.projections.project import project_status
-from fleet.projections.run_history import history_runs, run_detail
 from fleet.projections.bench import bench_rooms, bench_state
-from fleet.projections.history import parse_since, subject_history
-from fleet.transport import FleetError, Host
+from fleet.projections.history import parse_since
+from fleet.container import FleetError, Host
 from fleet.web.documents import (AssetNotImage, AssetTooLarge, DocumentAccessDenied, fetch_asset,
                                  fetch_document, render_markdown)
 from fleet.web.fixture import FixtureLibrary, FixtureState
 from fleet.web.guidance import epic_decisions, project_decisions, guidance_view
-from fleet.composition import ProjectDocuments, open_documents, open_document_keeper
 from fleet.web.library import ProjectLibrary
 from fleet.web.live import AlreadyHoused, LiveWorkspace
-from fleet.composition import observe_runs, observe_sessions, record_decisions
 
 WEB_ROOT = Path(__file__).parent.resolve()
 INDEX_PATH = WEB_ROOT / "index.html"
@@ -118,21 +109,23 @@ class FleetState(LiveWorkspace):
                  workspace: WorkspaceFacade | None = None,
                  load_capacity: Callable[[], int] | None = None,
                  pipelines: dict[str, dict[str, str]] | None = None,
-                 store: Store | None = None, documents: ProjectDocuments | None = None) -> None:
+                 *, container) -> None:
         self.hosts = hosts
         self.project_labels = project_labels or {}
-        self.store = store if store is not None else open_store()
+        self.container = container
+        self.transport = container.transport()
+        self.store = container.store()
         self.indexed: dict = {}   # library entries as last indexed (see observe_runs)
         self.taken_decisions: set = set()   # streamed decision ids already handled (see record_decisions)
-        self.workspace = workspace if workspace is not None else open_workspace(self.store, actor="web-user")
+        self.workspace = workspace if workspace is not None else container.initialized_workspace(actor="web-user")
         self.load_registry = load_registry or self.workspace.registry
         self.registry = self.load_registry()
         self.load_capacity = load_capacity or self.workspace.capacity
         self.capacity = self.load_capacity()
-        self.attention = open_attention(self.store)
-        self.execution = open_execution(self.store)
-        self.run_library = open_library(self.store)
-        self.decisions = open_decisions(self.store)
+        self.attention = container.initialized_attention()
+        self.execution = container.execution()
+        self.run_library = container.library()
+        self.decisions = container.decisions()
         self.woken_until = 0.0
         self.changed = threading.Condition()
         self.version = 0
@@ -143,9 +136,9 @@ class FleetState(LiveWorkspace):
         self.pipeline_config = pipelines or {}
         self.pipeline_runs = {}
         self.pipeline_seq = 0
-        self.documents = documents if documents is not None else open_documents()
-        self.trace_retainer = transport.keep_run_trace
-        self.keeper = open_document_keeper(self.documents, self.fetch_raw, keep_trace=self.keep_trace)
+        self.documents = container.project_documents()
+        self.trace_retainer = self.transport.keep_run_trace
+        self.keeper = container.document_keeper(self.documents, self.fetch_raw, keep_trace=self.keep_trace)
         for observed in self.execution.hosts():
             if observed["name"] in self.by_host and not observed["reachable"]:
                 entry = self.by_host[observed["name"]]
@@ -170,7 +163,7 @@ class FleetState(LiveWorkspace):
     def fetch_raw(self, host_name: str, job_id: str, document_id: str) -> dict[str, Any]:
         """A job document's Markdown as its host serves it, before rendering."""
         host = next(host for host in self.hosts if host.name == host_name)
-        return transport.call(host, ["read", job_id, document_id], timeout=30)
+        return self.transport.call(host, ["read", job_id, document_id], timeout=30)
 
     def keep_documents(self, host_name: str, job: dict[str, Any]) -> None:
         """Keep job documents in its project or under its unregistered host label."""
@@ -188,7 +181,7 @@ class FleetState(LiveWorkspace):
             return {name: (bool(entry["ok"]), set(entry["jobs"])) for name, entry in self.by_host.items()}
 
     def schedule_triage(self) -> None:
-        services = facades(self.store)
+        services = self.container.services()
         bodies = {intent['id']: json.dumps(asdict(services.decisions.get(intent['key'])), default=str)
                   for intent in services.records.intents()
                   if intent['state'] == 'pending' and intent['path'] == f"decisions/{intent['key']}.json"}
@@ -196,8 +189,7 @@ class FleetState(LiveWorkspace):
             services.records.reconcile(bodies)
         except OSError:
             logging.getLogger(__name__).exception('Records publication remains pending')
-        TriageScheduler(services, lambda run, **options: deliver_triage(services, run, **options),
-                        transport.host_by_name).schedule()
+        self.container.triage_scheduler(deliver=lambda run, **options: self.container.deliver_triage(run, **options)).schedule()
 
     def follow_history(self, stop: threading.Event) -> None:
         while not stop.is_set():
@@ -233,10 +225,10 @@ class FleetState(LiveWorkspace):
                 entry = self.by_host[host_name]
                 host = {**entry, **{kind: {identity: item for identity, item in entry[kind].items()
                                           if not item.get("stale")} for kind in ("jobs", "sessions")}}
-                observe_runs(self.execution, self.run_library, host, self.indexed,
+                self.container.observe_runs(host, self.indexed,
                              lambda job: resolve(self.registry, host_name, job)["project_id"])
-                observe_sessions(self.execution, host, lambda session: resolve(self.registry, host_name, session)["project_id"])
-                record_decisions(self.decisions, self.execution, self.attention, host,
+                self.container.observe_sessions(host, lambda session: resolve(self.registry, host_name, session)["project_id"])
+                self.container.record_decisions(host,
                                  lambda job: resolve(self.registry, host_name, job)["project_id"], self.taken_decisions)
                 reconciled = self.attention.observe({**host,
                     "jobs": [resolve(self.registry, host_name, job) for job in host["jobs"].values()],
@@ -279,7 +271,7 @@ class FleetState(LiveWorkspace):
         return result
 
     def repository_remotes(self, host: str, directories: list[str]) -> dict[str, list[str]]:
-        return transport.repository_remotes(next(known for known in self.hosts if known.name == host), directories)
+        return self.transport.repository_remotes(next(known for known in self.hosts if known.name == host), directories)
 
     def live_jobs(self) -> dict[tuple[str, str], dict[str, Any]]:
         """Each host's job summaries as last streamed, by (host, job id)."""
@@ -314,7 +306,7 @@ class FleetState(LiveWorkspace):
 
     def move_on_host(self, host_name: str, identity: str, label: str) -> None:
         host = next(host for host in self.hosts if host.name == host_name)
-        moved = transport.call(host, ["mv", identity, label], timeout=30)
+        moved = self.transport.call(host, ["mv", identity, label], timeout=30)
 
         def relabel(state: dict[str, Any]) -> None:   # shown at once, before fleetd's stream reports it
             for kind in ("jobs", "sessions"):
@@ -324,11 +316,11 @@ class FleetState(LiveWorkspace):
 
     def read_document(self, host_name: str, job_id: str, document_id: str) -> dict[str, Any]:
         host = next(host for host in self.hosts if host.name == host_name)
-        return fetch_document(host, job_id, document_id)
+        return fetch_document(host, job_id, document_id, container=self.container)
 
     def read_asset(self, host_name: str, job_id: str, document_id: str, asset_path: str) -> tuple[str, bytes]:
         host = next(host for host in self.hosts if host.name == host_name)
-        return fetch_asset(host, job_id, document_id, asset_path)
+        return fetch_asset(host, job_id, document_id, asset_path, container=self.container)
 
 
 def stale_work(host: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
@@ -351,7 +343,7 @@ def follow_host(state: FleetState, host: Host) -> None:
 
 def run_stream(state: FleetState, host: Host) -> str:
     """Apply stream messages until the stream ends; return why it ended."""
-    return transport.follow_stream(host, lambda message: apply_message(state, host, message),
+    return state.transport.follow_stream(host, lambda message: apply_message(state, host, message),
                                   events=EVENTS_PER_JOB, silence_limit=STREAM_SILENCE_LIMIT)
 
 
@@ -372,7 +364,7 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
             entry.update(ok=True, error=None, _syncing=True, _seen_jobs=set(), _seen_sessions=set())
         state.update(host.name, hello, ingest=False)
         try:
-            jobs = transport.catch_up_jobs(host)
+            jobs = state.transport.catch_up_jobs(host)
             def catch_jobs(entry):
                 entry["jobs"].update({job["id"]: job for job in jobs})
                 entry["_seen_jobs"].update(job["id"] for job in jobs)
@@ -387,7 +379,7 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
         if known and known["last_observed"]:
             lower = max(lower, datetime.fromisoformat(known["last_observed"]))
         try:
-            sessions = transport.catch_up_sessions(host, lower.isoformat())
+            sessions = state.transport.catch_up_sessions(host, lower.isoformat())
             for session in sessions:
                 state.execution.observe_session(host.name, session, resolve(state.registry, host.name, session)["project_id"])
             def catch_sessions(entry):
@@ -473,7 +465,8 @@ def make_handler(state: FleetState | FixtureState,
     app_files = {"/" + path.relative_to(WEB_ROOT).as_posix(): path.read_bytes()
                  for directory in APP_DIRECTORIES for path in sorted((WEB_ROOT / directory).rglob("*"))
                  if path.is_file()}
-    library = library or ProjectLibrary({})
+    container = state.container
+    library = library or ProjectLibrary({}, container=container)
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802 — http.server naming
@@ -520,7 +513,7 @@ def make_handler(state: FleetState | FixtureState,
                     return
                 try:
                     item = state.attention.get(query["id"][0])
-                    proposal = open_decisions(state.store).proposal_for_attention(
+                    proposal = container.decisions().proposal_for_attention(
                         item.source, item.source_reference)
                     detail = {"id": item.id, "question": item.headline,
                               "context": item.context_reference, "options": item.options,
@@ -541,8 +534,7 @@ def make_handler(state: FleetState | FixtureState,
                 if "project" not in query:
                     self.error(400, "project is required")
                     return
-                projection = project_status(query["project"][0], open_work(state.store), state.attention,
-                    open_execution(state.store), open_library(state.store), open_decisions(state.store))
+                projection = container.project_status(project=query["project"][0])
                 try:
                     result = (bench_state(projection, query["slice"][0]) if "slice" in query
                               else bench_rooms(projection, state.live_jobs()))
@@ -570,7 +562,6 @@ def make_handler(state: FleetState | FixtureState,
                 self.respond(404, "text/plain", b"not found")
 
         def run_history(self, path: str) -> None:
-            services = facades(state.store)
             try:
                 if path == "/api/history/runs":
                     query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
@@ -585,7 +576,7 @@ def make_handler(state: FleetState | FixtureState,
                             filters[key] = filters[key] == "true"
                     if "limit" in filters:
                         filters["limit"] = int(filters["limit"])
-                    result = history_runs(services.execution, services.work, services.workspace, **filters)
+                    result = container.history_runs(**filters)
                     jobs_cache = {}
                     for run in result["runs"]:
                         run["document_count"] = len(state.documents.run_documents(run, jobs_cache=jobs_cache))
@@ -593,7 +584,7 @@ def make_handler(state: FleetState | FixtureState,
                     identity = path.removeprefix("/api/runs/")
                     if not identity or "/" in identity:
                         raise LookupError("a stored run ID is required")
-                    result = run_detail(identity, services.execution, services.work, services.library)
+                    result = container.run_detail(identity=identity)
                     result["kept_documents"] = state.documents.run_documents(result["run"])
             except LookupError as error:
                 self.error(404, str(error))
@@ -681,7 +672,7 @@ def make_handler(state: FleetState | FixtureState,
                 self.error(400, str(error))
                 return
             try:
-                result = subject_history(state.store, query["subject"], since)
+                result = container.subject_history(reference=query["subject"], since=since)
             except LookupError as error:
                 self.error(404, str(error))
                 return
@@ -697,7 +688,7 @@ def make_handler(state: FleetState | FixtureState,
                     return
 
                 def promote(services):
-                    promote_decision(services, body["epic"], body["decision"], actor="web-user")
+                    container.promote_decision(epic=body["epic"], decision=body["decision"], actor="web-user")
                     return guidance_view(services, services.work.get(body["epic"]).project, body["epic"])
                 self.guidance_result(promote)
                 return
@@ -715,7 +706,7 @@ def make_handler(state: FleetState | FixtureState,
 
         def guidance_result(self, produce: Callable[[Any], dict[str, Any]]) -> None:
             try:
-                result = produce(facades(state.store))
+                result = produce(container.services())
             except GuidanceConflict as error:
                 self.error(409, str(error))
             except LookupError as error:
@@ -813,7 +804,7 @@ def make_handler(state: FleetState | FixtureState,
                 self.error(400, "item id and answer are required")
                 return
             try:
-                decision = open_decisions(state.store).answer(body["id"], body["answer"], actor="user")
+                decision = container.decisions().answer(body["id"], body["answer"], actor="user")
             except LookupError as error:
                 self.error(404, str(error))
                 return
@@ -832,7 +823,7 @@ def make_handler(state: FleetState | FixtureState,
                 return
             try:
                 if action == "allow":
-                    details = open_execution(state.store).grant_permissions(body["id"], body["scope"], actor="web-user")
+                    details = container.execution().grant_permissions(body["id"], body["scope"], actor="web-user")
                 else:
                     details = state.attention.dismiss_refusals(body["id"], actor="web-user").resolution_details
             except LookupError as error:
@@ -858,7 +849,7 @@ def make_handler(state: FleetState | FixtureState,
                 self.error(400, "work_item must be a work item ID")
                 return
             try:
-                details = open_execution(state.store).answer_blocked(body["id"], body["answer"], actor="web-user",
+                details = container.execution().answer_blocked(body["id"], body["answer"], actor="web-user",
                                                                      work_item=body.get("work_item"))
             except LookupError as error:
                 self.error(404, str(error.args[0]))
@@ -1033,18 +1024,20 @@ def make_handler(state: FleetState | FixtureState,
 
 def serve(hosts: list[Host], *, port: int, bind: str, open_browser: bool = False,
           libraries: dict[str, Any] | None = None, project_labels: dict[str, str] | None = None,
-          pipelines: dict[str, dict[str, str]] | None = None) -> None:
-    state = FleetState(hosts, project_labels, pipelines=pipelines)
+          pipelines: dict[str, dict[str, str]] | None = None, container=None) -> None:
+    container = Container() if container is None else container
+    state = FleetState(hosts, project_labels, pipelines=pipelines, container=container)
     threading.Thread(target=state.follow_history, args=(threading.Event(),), daemon=True).start()
     for host in hosts:
         threading.Thread(target=follow_host, args=(state, host), daemon=True).start()
-    run_server(make_handler(state, ProjectLibrary(libraries or {})), port=port, bind=bind, open_browser=open_browser)
+    run_server(make_handler(state, ProjectLibrary(libraries or {}, container=container)), port=port, bind=bind, open_browser=open_browser)
 
 
-def serve_fixture(path: str, *, port: int, bind: str, open_browser: bool = False) -> None:
+def serve_fixture(path: str, *, port: int, bind: str, open_browser: bool = False, container=None) -> None:
     """Serve a recorded fleet from JSON (see fleet.web.fixture); no hosts are contacted."""
-    state = FixtureState.load(path)
-    run_server(make_handler(state, FixtureLibrary(state.fixture)), port=port, bind=bind, open_browser=open_browser)
+    container = Container() if container is None else container
+    state = FixtureState.load(path, container=container)
+    run_server(make_handler(state, FixtureLibrary(state.fixture, container=state.container)), port=port, bind=bind, open_browser=open_browser)
 
 
 def run_server(handler: type[BaseHTTPRequestHandler], *, port: int, bind: str, open_browser: bool) -> None:

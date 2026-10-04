@@ -2,6 +2,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
+from fleet.container import configured_container
 from fleet.modules.execution import ExecutionFacade, Run
 from fleet.projections.bench import bench_state
 
@@ -27,10 +28,10 @@ def test_bench_records_unknown_and_expired_actions_with_pinned_clock():
 
 
 def test_live_host_keeps_old_action_current(tmp_path):
-    from fleet import composition
+
     now = datetime(2026, 9, 28, tzinfo=timezone.utc)
-    store = composition.open_store(tmp_path / 'clock.db', clock=lambda: now)
-    execution = composition.open_execution(store)
+    store = configured_container(path=tmp_path / 'clock.db', clock=lambda : now).store()
+    execution = configured_container(store).execution()
     run = Run('r', 'a', 'worker', 'j', 'codex', 'running', None, None, None, now,
               current_action='test', action_observed_at=now - timedelta(seconds=30))
     before = store.latest_sequence()

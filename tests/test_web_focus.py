@@ -8,8 +8,9 @@ from urllib.request import Request, urlopen
 
 import pytest
 
+from fleet.container import configured_container
 from fleet import transport
-from fleet.composition import open_workspace
+
 from workspace_support import persist_registry
 
 from fleet.transport import FleetError, Host
@@ -29,7 +30,7 @@ def config_path(tmp_path, monkeypatch):
 
 def start_deck():
     """A deck as `fleet web` builds it; each host has a job and a session labelled `agent-fleet`."""
-    state = FleetState(HOSTS, {}, open_workspace().registry, open_workspace())
+    state = FleetState(HOSTS, {}, configured_container().initialized_workspace().registry, configured_container().initialized_workspace(), container=configured_container())
     for index, host in enumerate(HOSTS):
         def fill(entry, index=index):
             entry["ok"], entry["error"] = True, None
@@ -76,7 +77,7 @@ def focus_by_host(document):
 
 
 def register(name, *links):
-    registry = open_workspace().registry()
+    registry = configured_container().initialized_workspace().registry()
     project = registry.create(name)
     for host, label in links:
         registry.link(project.id, host, label)
@@ -102,7 +103,7 @@ def test_linked_work_follows_its_project_and_unlinked_work_its_label(deck, confi
     post_focus(deck, {"focus": "priority", "projects": [project_id]})
     assert focus_by_host(fetch_state(deck)) == {"home": "priority", "gpu": "background"}
 
-    stored = open_workspace().snapshot()
+    stored = configured_container().initialized_workspace().snapshot()
     assert asdict(stored.focus) == {"projects": {project_id: "priority"}, "labels": {"agent-fleet": "background"}}
     config = json.loads(config_path.read_text())
     assert "focus" not in config and "projects" not in config
@@ -151,4 +152,4 @@ def test_refused_writes_change_nothing(deck, config_path, body, headers, status)
 def test_a_broken_focus_file_is_reported_not_ignored(config_path):
     (config_path.parent / "workspace.json").write_text(json.dumps({"focus": {"labels": {"agent-fleet": "parked"}}}))
     with pytest.raises(FleetError, match="priority or background"):
-        open_workspace()
+        configured_container().initialized_workspace()

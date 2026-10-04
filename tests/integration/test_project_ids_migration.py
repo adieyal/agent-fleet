@@ -1,21 +1,22 @@
-from fleet.composition import open_attention, open_execution, open_library, open_store, open_work, open_workspace
+
+from fleet.container import configured_container
 from fleet.infrastructure.sqlite.migrations.project_ids import migrate_project_ids
 
 
 def test_migrate_unique_and_report_ambiguous():
-    store = open_store()
-    workspace = open_workspace(store)
+    store = configured_container().store()
+    workspace = configured_container(store).initialized_workspace()
     identity = workspace.edit_registry(lambda registry: registry.create('Unique')).id
     candidates = [workspace.edit_registry(lambda registry: registry.create('Repeated')).id for _ in range(2)]
-    work, attention = open_work(store), open_attention(store)
+    work, attention = configured_container(store).work(), configured_container(store).initialized_attention()
     unique = work.add(project='Unique', title='One', goal='Ship', actor='user')
     ambiguous = work.add(project='Repeated', title='Two', goal='Ship', actor='user')
     unknown = work.add(project='Missing', title='Three', goal='Ship', actor='user')
     question = attention.raise_item(project='Unique', kind='decision', owner='user', source='manual',
         source_reference='q', headline='Choose', context_reference='doc', actor='user')
-    library = open_library(store)
+    library = configured_container(store).library()
     library.link('https://example.org/report', project='Unique', actor='user')
-    execution = open_execution(store)
+    execution = configured_container(store).execution()
     run = execution.dispatch(unique.id, host='worker', runtime='codex', payload={'cwd': '/repo'},
                              actor='user', reason='Ship', idempotency_key='request').run
     before = store.history_after(0)

@@ -4,13 +4,17 @@ from __future__ import annotations
 import os
 from datetime import datetime
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from threading import RLock
 from typing import Callable
 
 from dependency_injector import containers, providers
 
 from fleet import transport
+from fleet.transport import FleetError, Host, HostReport, TimeoutExpired
 from fleet.infrastructure.sqlite import Store
+from fleet.infrastructure.sqlite.migrations.project_ids import migrate_project_ids
 from fleet.infrastructure.sqlite.attention import AttentionRepository
 from fleet.infrastructure.sqlite.attention_import import import_workspace
 from fleet.modules.attention import AttentionFacade
@@ -36,10 +40,17 @@ from fleet.modules.authority import AuthorityFacade
 from fleet.infrastructure.sqlite.authority import AuthorityRepository
 from fleet.infrastructure.sqlite.triage import TriageRepository
 from fleet.infrastructure.documents.job_store import ProjectDocuments, fleet_home
-from fleet.services.documents import DocumentKeeper, STATUS_LINE, is_private
+from fleet.services.documents import DocumentKeeper, STATUS_LINE, is_private, read_document, read_asset, ASSET_READ_LIMIT, IMAGE_TYPES, AssetNotImage, AssetTooLarge, DocumentAccessDenied
+from fleet.infrastructure.documents.library import ProjectLibrary
+from fleet.infrastructure.documents.overview import OverviewCache, files_changed
+from fleet.projections.overview import Overview
 from fleet.ingestion import observe_runs, observe_sessions, record_decisions
 from fleet.orchestration import ControllerCommands, promote_decision
 from fleet.services.storage import usage
+from fleet.services.dispatch import DispatchRequest
+from fleet.services.jobs import listing_arguments
+from fleet.services.hosts import merge_detected
+from fleet.services.configuration import validate_paths, default_actor
 from fleet.triage import TriageCommands
 from fleet.triage_scheduler import TriageScheduler
 from fleet.projections.attention import attention_items
@@ -47,8 +58,8 @@ from fleet.projections.building import building_state
 from fleet.projections.decisions import decision_log
 from fleet.projections.history import subject_history
 from fleet.projections.notifications import Notifications
-from fleet.projections.project import project_status, work_detail as project_work_detail
-from fleet.projections.run_history import history_runs, kept_run_detail
+from fleet.projections.project import project_status, run_work, work_detail as project_work_detail
+from fleet.projections.run_history import history_runs, run_detail, kept_run_detail
 from fleet.projections.workspace import annotate
 
 
@@ -130,16 +141,41 @@ def bound_services(container, unit):
         return unit._facades
 
 
-def facades(store=None, unit=None):
-    if store is None:
-        return Container().services()
-    with _scope_lock:
-        if not hasattr(store, '_facades'):
-            container = Container()
-            container.store.override(providers.Object(store))
-            store._facades = container.services()
-        services = store._facades
-        return services if unit is None else services.bound(unit)
+def configured_container(store=None, unit=None, *, path=None, clock=None, job=None):
+    if store is not None:
+        with _scope_lock:
+            if not hasattr(store, '_facades'):
+                container = Container()
+                container.store.override(providers.Object(store))
+                store._facades = container.services()
+            services = store._facades
+            return services.container if unit is None else services.bound(unit).container
+    container = Container()
+    if path is not None or clock is not None or job is not None:
+        values = dict(container.settings())
+        if path is not None:
+            values['store_path'] = path
+        if clock is not None:
+            values['clock'] = clock
+        if job is not None:
+            values['job'] = job
+        container.settings.override(values)
+    return container
+
+
+def fixture_scope(parent):
+    directory = TemporaryDirectory(prefix='fleet-fixture-')
+    root = Path(directory.name)
+    container = Container()
+    values = dict(parent.settings(), store_path=root / 'fleet.db', config_path=root / 'config.json',
+                  home=root, management_home=root / 'management')
+    (root / 'config.json').write_text('{"hosts": {}}')
+    container.settings.override(values)
+    container.transport.override(parent.transport)
+    for name, provider in parent.providers.items():
+        if name not in ('settings', 'store', 'unit', 'transport') and provider.overridden:
+            getattr(container, name).override(provider.last_overriding)
+    return SimpleNamespace(container=container, directory=directory)
 
 
 def make_store(container, settings):
@@ -175,26 +211,9 @@ def prepare_dispatch(services):
     return None if services.unit is not None else lambda: initialize_workspace(services)
 
 
-def open_attention(store: Store | None = None, *, workspace_path: Path | None = None) -> AttentionFacade:
-    return initialize_attention(facades(store), workspace_path=workspace_path)
-
-
 def initialize_attention(services, *, workspace_path=None):
     import_workspace(services.store, workspace_path if workspace_path is not None else services.container.settings()['config_path'].parent / 'workspace.json')
     return services.attention
-
-
-def open_work(store: Store | None = None) -> WorkFacade:
-    return facades(store).work
-
-
-def open_records(store: Store | None = None) -> RecordsFacade:
-    return facades(store).records
-
-
-def open_workspace(store: Store | None = None, *, initial: dict | None = None,
-                   actor: str = 'user') -> WorkspaceFacade:
-    return initialize_workspace(facades(store), initial=initial, actor=actor)
 
 
 def initialize_workspace(services, *, initial=None, actor="user"):
@@ -205,28 +224,6 @@ def initialize_workspace(services, *, initial=None, actor="user"):
     return services.container.workspace_actor(actor=actor)
 
 
-def open_execution(store: Store | None = None) -> ExecutionFacade:
-    return facades(store).execution
-
-
-def storage_usage(store: Store | None = None) -> dict:
-    from fleet.services.storage import usage
-    root = Path(os.environ.get("FLEET_HOME") or "~/.fleet").expanduser()
-    return usage(store if store is not None else Container().store(), root)
-
-
-def open_library(store: Store | None = None) -> LibraryFacade:
-    return facades(store).library
-
-
-def open_decisions(store: Store | None = None) -> DecisionsFacade:
-    return facades(store).decisions
-
-
-def open_authority(store: Store | None = None) -> AuthorityFacade:
-    return facades(store).authority
-
-
 def deliver_triage(services, run, *, reconcile=False):
     adapter = services.container.transport()
     host = adapter.host_by_name(run.host)
@@ -235,88 +232,74 @@ def deliver_triage(services, run, *, reconcile=False):
         lambda job, paths, guidance: None, reconcile=reconcile)
 
 
-
-def open_references(services):
+def _make_references(services):
     from fleet.services.references import References
     return References(services, services.container.transport(), lambda: initialize_workspace(services), lambda: initialize_attention(services))
 
 
-def open_context(services):
+def _make_context(services):
     from fleet.services.context import Context
     return Context(services.records, services.container.transport())
 
 
-def open_jobs(services):
+def _make_jobs(services):
     from fleet.services.jobs import Jobs
     return Jobs(services, services.container.transport(), lambda: initialize_workspace(services), lambda: initialize_attention(services),
                 services.container.references(), services.container.context())
 
 
-def open_hosts(services):
+def _make_hosts(services):
     from fleet.services.hosts import HostSetup
     return HostSetup(services.container.transport())
 
 
-def open_dispatch(services):
+def _make_dispatch(services):
     from fleet.services.dispatch import Dispatch
     return Dispatch(services, services.container.transport(), lambda: initialize_workspace(services), services.container.references(),
                     services.container.context(), lambda activation: services.container.controller_commands(activation))
 
 
-def open_projects(services):
+def _make_projects(services):
     from fleet.services.projects import Projects
     return Projects(lambda: initialize_workspace(services), services.execution, services.records, services.container.documents, services.container.transport())
 
 
-def open_configuration(services):
+def _make_configuration(services):
     from fleet.services.configuration import Configuration
     return Configuration(services.container.transport(), lambda: initialize_workspace(services))
 
 
-def open_work_commands(services):
+def _make_work_commands(services):
     from fleet.services.work import WorkCommands
     return WorkCommands(services.work, lambda: initialize_workspace(services), services.container.references())
 
 
-def open_triage_policy(services):
+def _make_triage_policy(services):
     from fleet.services.triage import TriagePolicy
     return TriagePolicy(services, lambda: initialize_workspace(services),
                         services.container.triage_scheduler)
 
 
-def open_attention_commands(services):
+def _make_attention_commands(services):
     from fleet.services.attention import AttentionCommands
     return AttentionCommands(services, lambda: initialize_workspace(services), lambda: initialize_attention(services),
                              services.container.references())
 
 
-def open_decision_commands(services):
+def _make_decision_commands(services):
     from fleet.services.decisions import DecisionCommands
     return DecisionCommands(services, lambda: initialize_workspace(services), services.container.references(), services.container.transport())
 
 
-def open_history(services):
+def _make_history(services):
     from fleet.services.history import History
     return History(services.store)
-
-
-def stored_run_detail(identity, store, documents=None):
-    from fleet.projections.run_history import kept_run_detail
-    services = facades(store)
-    return kept_run_detail(identity, services.execution, services.work, services.library, documents or services.container.project_documents())
 
 
 def resolved_work_detail(services, reference):
     identity = services.container.references().work(reference)
     initialize_attention(services)
     return services.container.work_detail(identity=identity)
-
-
-def work_detail(reference, store=None):
-    from fleet.projections.project import work_detail
-    services = facades(store)
-    identity = services.container.references().work(reference)
-    return work_detail(identity, services.work, open_attention(services.store), services.execution, services.library, services.decisions)
 
 
 class Container(containers.DeclarativeContainer):
@@ -372,18 +355,18 @@ class Container(containers.DeclarativeContainer):
     authority = providers.ThreadSafeSingleton(AuthorityFacade, _authority_repository,
         records, work, decisions, attention, execution)
     library = providers.ThreadSafeSingleton(LibraryFacade, _library_repository, work)
-    references = providers.Factory(open_references, services)
-    context = providers.Factory(open_context, services)
-    jobs = providers.Factory(open_jobs, services)
-    dispatch = providers.Factory(open_dispatch, services)
-    projects = providers.Factory(open_projects, services)
-    configuration = providers.Factory(open_configuration, services)
-    work_commands = providers.Factory(open_work_commands, services)
-    triage_policy = providers.Factory(open_triage_policy, services)
-    attention_commands = providers.Factory(open_attention_commands, services)
-    decision_commands = providers.Factory(open_decision_commands, services)
-    history = providers.Factory(open_history, services)
-    hosts = providers.Factory(open_hosts, services)
+    references = providers.Factory(_make_references, services)
+    context = providers.Factory(_make_context, services)
+    jobs = providers.Factory(_make_jobs, services)
+    dispatch = providers.Factory(_make_dispatch, services)
+    projects = providers.Factory(_make_projects, services)
+    configuration = providers.Factory(_make_configuration, services)
+    work_commands = providers.Factory(_make_work_commands, services)
+    triage_policy = providers.Factory(_make_triage_policy, services)
+    attention_commands = providers.Factory(_make_attention_commands, services)
+    decision_commands = providers.Factory(_make_decision_commands, services)
+    history = providers.Factory(_make_history, services)
+    hosts = providers.Factory(_make_hosts, services)
     controller_commands = providers.Factory(ControllerCommands, services)
     triage_commands = providers.Factory(TriageCommands, services)
     triage_scheduler = providers.Factory(TriageScheduler, services, deliver=None,
@@ -393,11 +376,13 @@ class Container(containers.DeclarativeContainer):
     building_state = providers.Factory(building_state, workspace=workspace)
     decision_log = providers.Factory(decision_log, work=work, decisions=decisions)
     subject_history = providers.Factory(subject_history, store=store)
+    run_work = providers.Factory(run_work, work=work, execution=execution)
     project_status = providers.Factory(project_status, work=work, attention=attention,
         execution=execution, library=library, decisions=decisions)
     work_detail = providers.Factory(project_work_detail, work=work, attention=attention,
         execution=execution, library=library, decisions=decisions)
     history_runs = providers.Factory(history_runs, execution=execution, work=work, workspace=workspace)
+    run_detail = providers.Factory(run_detail, execution=execution, work=work, library=library)
     kept_run_detail = providers.Factory(kept_run_detail, execution=execution, work=work,
         library=library, documents=project_documents)
     annotate_workspace = providers.Factory(annotate, workspace=workspace)
@@ -405,6 +390,17 @@ class Container(containers.DeclarativeContainer):
     document_keeper = providers.Factory(DocumentKeeper)
     initialized_workspace = providers.Callable(initialize_workspace, services)
     initialized_attention = providers.Callable(initialize_attention, services)
+    migrate_project_ids = providers.Callable(migrate_project_ids, store=store, workspace=initialized_workspace)
     storage_usage = providers.Factory(usage, store=store, root=settings.provided['home'])
     resolved_work_detail = providers.Factory(resolved_work_detail, services)
     promote_decision = providers.Factory(promote_decision, services)
+    fixture_scope = providers.Callable(fixture_scope, __self__)
+    project_library = providers.Factory(ProjectLibrary)
+    overview_cache = providers.ThreadSafeSingleton(OverviewCache)
+    overview = providers.Factory(Overview, cache=overview_cache, files_changed=files_changed)
+    read_document = providers.Callable(read_document, adapter=transport)
+    read_asset = providers.Callable(read_asset, adapter=transport)
+    deliver_triage = providers.Callable(deliver_triage, services)
+    observe_runs = providers.Callable(observe_runs, execution, library)
+    observe_sessions = providers.Callable(observe_sessions, execution)
+    record_decisions = providers.Callable(record_decisions, decisions, execution, attention)

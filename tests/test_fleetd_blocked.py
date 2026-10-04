@@ -1,4 +1,5 @@
 """A step whose agent ends with `FLEET_STATUS: blocked` is blocked, not failed, from the runner to the CLI."""
+from fleet import transport
 import argparse
 import json
 from io import StringIO
@@ -220,7 +221,7 @@ def test_fleet_wait_exits_1_and_says_blocked(monkeypatch, capsys, *, cli_contain
                 "results": [{"index": 0, "title": "Gather", "status": "blocked", "result": "no access"}]}
     host = SimpleNamespace(name="h", is_local=True, fleetd_command=lambda arguments: arguments)
     override_cli_method('references', 'job', lambda reference: (host, "job"))
-    monkeypatch.setattr(cli.transport.subprocess, "Popen", lambda command, **kwargs: SimpleNamespace(
+    monkeypatch.setattr(transport.subprocess, "Popen", lambda command, **kwargs: SimpleNamespace(
         poll=lambda: 0, stdout=StringIO(json.dumps(finished) + "\n"), terminate=lambda: None))
     with pytest.raises(SystemExit) as exit_info:
         cli.wait_for(["h:job"], step=None, timeout=None, as_json=False, container=cli_container)
@@ -236,7 +237,7 @@ def test_fleet_notify_says_blocked(monkeypatch, capsys, *, cli_container, overri
                "steps": [{"index": 0, "title": "Gather", "status": "blocked", "result": "no access"}]}
     reports = [[SimpleNamespace(host=SimpleNamespace(name="h"), jobs=[job], error=None)] for job in (running, blocked)]
     override_cli_method('jobs', 'selected_hosts', lambda arguments: [])
-    monkeypatch.setattr(cli.transport, "gather", lambda hosts, arguments: reports.pop(0))
+    monkeypatch.setattr(transport, "gather", lambda hosts, arguments: reports.pop(0))
 
     def sleep(seconds):
         if not reports:
@@ -257,7 +258,7 @@ def test_batch12_notify_reports_host_transitions_once(monkeypatch, capsys, *, cl
     reports = [[SimpleNamespace(host=SimpleNamespace(name='h'), jobs=[], error=error)]
                for error in ('connection refused', 'connection refused', None, None, 'timed out')]
     override_cli_method('jobs', 'selected_hosts', lambda arguments: [])
-    monkeypatch.setattr(cli.transport, 'gather', lambda *_args: reports.pop(0))
+    monkeypatch.setattr(transport, 'gather', lambda *_args: reports.pop(0))
 
     def sleep(_seconds):
         if not reports:

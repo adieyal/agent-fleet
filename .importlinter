@@ -7,7 +7,6 @@ name = Controller layers
 type = layers
 layers =
     fleet.cli | fleet.web
-    fleet.composition
     fleet.container
     fleet.services : fleet.orchestration : fleet.triage : fleet.triage_scheduler : fleet.ingestion
     fleet.transport
@@ -31,7 +30,6 @@ forbidden_modules =
     fleet.infrastructure
     fleet.web
     fleet.cli
-    fleet.composition
     fleet.container
     fleet.projections
     fleet.services
@@ -120,7 +118,6 @@ source_modules =
 forbidden_modules =
     fleet.cli
     fleet.web
-    fleet.composition
     fleet.container
 
 [importlinter:contract:service-infrastructure]
@@ -166,11 +163,19 @@ source_modules = fleet.container
 forbidden_modules =
     fleet.cli
     fleet.web
-    fleet.composition
 
-[importlinter:contract:cli-container]
-name = CLI uses the container instead of composition
+[importlinter:contract:controller-internals]
+name = Controllers use public providers and module surfaces
 type = forbidden
-source_modules = fleet.cli
-forbidden_modules = fleet.composition
+source_modules =
+    fleet.cli
+    fleet.web
+forbidden_modules =
+    fleet.infrastructure
+    fleet.services
+    fleet.orchestration
+    fleet.triage
+    fleet.triage_scheduler
+    fleet.ingestion
+    fleet.transport
 allow_indirect_imports = True

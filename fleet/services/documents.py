@@ -1,11 +1,13 @@
 """Retain worker documents without blocking observation ingestion."""
 from __future__ import annotations
 
+import base64
 import re
+from pathlib import PurePosixPath
 import threading
 from typing import Any, Callable, Protocol
 
-from fleet.transport import FleetError
+from fleet.transport import FleetError, Host
 
 STATUS_LINE = re.compile(r"^\s*\**FLEET_STATUS:.*$", re.MULTILINE)
 
@@ -75,3 +77,47 @@ class DocumentKeeper:
         """Wait until nothing is pending (tests and shutdown); true when settled."""
         with self.wake:
             return self.wake.wait_for(lambda: not self.pending and not self.busy, timeout=timeout)
+
+
+IMAGE_TYPES = {".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+               ".gif": "image/gif", ".webp": "image/webp"}
+ASSET_READ_LIMIT = 32 * 1024 * 1024  # fleetd's cap for the same images: room for full-resolution contact sheets
+
+class DocumentAccessDenied(FleetError):
+    pass
+
+class AssetNotImage(FleetError):
+    pass
+
+class AssetTooLarge(FleetError):
+    pass
+
+def read_asset(adapter, host: Host, job_id: str, document_id: str, asset_path: str) -> tuple[str, bytes]:
+    """An image a job document links to, as (content type, bytes); fleetd applies the document's roots."""
+    document = PurePosixPath(document_id)
+    if document.is_absolute() or ".." in document.parts or "\x00" in asset_path:
+        raise DocumentAccessDenied(f"asset path outside approved document roots: {asset_path}")
+    try:
+        result = adapter.call(host, ["read-asset", job_id, document_id, asset_path], timeout=30)
+    except FleetError as error:
+        message = str(error)
+        if "outside approved document roots" in message:
+            raise DocumentAccessDenied(message) from error
+        if "not a supported image type" in message:
+            raise AssetNotImage(message) from error
+        if "asset larger than" in message:
+            raise AssetTooLarge(message) from error
+        raise
+    return result["type"], base64.b64decode(result["content"])
+
+def read_document(adapter, host: Host, job_id: str, document_id: str) -> dict[str, Any]:
+    path = PurePosixPath(document_id)
+    if path.is_absolute() or ".." in path.parts:
+        raise DocumentAccessDenied(f"document path outside approved document roots: {document_id}")
+    try:
+        document = adapter.call(host, ["read", job_id, document_id], timeout=30)
+    except FleetError as error:
+        if "document path outside approved document roots" in str(error):
+            raise DocumentAccessDenied(str(error)) from error
+        raise
+    return document

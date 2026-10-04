@@ -16,11 +16,11 @@ from PIL import Image, ImageStat
 from playwright.sync_api import Browser, Page, expect
 
 from browser_clock import advance_until
-from fleet.composition import (open_attention, open_decisions, open_execution, open_library, open_records,
-                               open_store, open_work)
+
+from fleet.container import configured_container
 from fleet.modules.execution import JobObservation
 from fleet.modules.work import EvidenceSpecification
-from fleet.composition import observe_runs
+from fleet.ingestion import observe_runs
 
 VIEWPORTS = {"desktop": {"width": 1440, "height": 900}, "narrow": {"width": 390, "height": 844}}
 # The deck ages jobs against the browser clock; pin it to the moment the fixture was recorded.
@@ -135,22 +135,22 @@ def test_every_project_gets_a_room(deck: Deck, fixture_data: dict[str, Any]) -> 
     assert deck.errors == []
 
 
-def test_seeded_project_bench_by_floor_id(changed_deck: Deck, deck_state, monkeypatch) -> None:
+def test_seeded_project_bench_by_floor_id(changed_deck: Deck, deck_state, monkeypatch, override_web_store) -> None:
     import runpy
     import sys
     from pathlib import Path
-    from fleet.composition import open_workspace
 
-    store = open_store()
-    workspace = open_workspace(store)
+
+    store = configured_container().store()
+    workspace = configured_container(store).initialized_workspace()
     workspace.move_in(['worker'], 'restoke', name='Restoke V2')
     project = workspace.resolve_project('Restoke V2')
     assert project in workspace.floors_snapshot()
     script = Path(__file__).parents[1] / 'scripts/seed_supplier_slice.py'
     monkeypatch.setattr(sys, 'argv', [str(script), '--project', project])
     runpy.run_path(str(script), run_name='__main__')
-    monkeypatch.setattr(deck_state, 'store', store)
-    monkeypatch.setattr(deck_state, 'attention', open_attention(store))
+    override_web_store(deck_state, store)
+    monkeypatch.setattr(deck_state, 'attention', configured_container(store).initialized_attention())
     page = changed_deck.page
     page.evaluate('(project) => fleetDeck.enterFloor(project)', project)
     expect(page.get_by_role('button', name='V2 frontend overhaul', exact=True)).to_be_visible()
@@ -161,11 +161,11 @@ def test_seeded_project_bench_by_floor_id(changed_deck: Deck, deck_state, monkey
     page.evaluate('fleetDeck.enterFloor(null)')
 
 
-def test_bench_real_endpoint(changed_deck: Deck, deck_state, monkeypatch, tmp_path) -> None:
-    store = open_store()
-    work = open_work(store)
-    monkeypatch.setattr(deck_state, 'store', store)
-    monkeypatch.setattr(deck_state, 'attention', open_attention(store))
+def test_bench_real_endpoint(changed_deck: Deck, deck_state, monkeypatch, tmp_path, override_web_store) -> None:
+    store = configured_container().store()
+    work = configured_container(store).work()
+    override_web_store(deck_state, store)
+    monkeypatch.setattr(deck_state, 'attention', configured_container(store).initialized_attention())
     epic = work.add(project='bench-contract', title='Contract room', goal='Deliver', kind='epic', actor='user')
     milestone = work.add(project='bench-contract', title='Contract slice', goal='Deliver',
                          kind='milestone', parent=epic.id, actor='user')
@@ -176,7 +176,7 @@ def test_bench_real_endpoint(changed_deck: Deck, deck_state, monkeypatch, tmp_pa
     for kind in ['judged', 'accepted']:
         criterion = work.add_criterion(milestone.id, text=f'{kind} evidence', verification=kind, actor='user')
     work.meet(criterion.id, actor='user')
-    execution = open_execution(store)
+    execution = configured_container(store).execution()
     run = execution.link('worker', 'bench-job', task.id, actor='user')
     now = store.clock()
     execution.observe('worker', JobObservation('bench-job', 'running', 'codex', now, None, now,
@@ -184,13 +184,11 @@ def test_bench_real_endpoint(changed_deck: Deck, deck_state, monkeypatch, tmp_pa
     deck_state.attention.raise_item(project='bench-contract', work_item=milestone.id, kind='decision',
         owner='user', source='manual', source_reference='bench-question', headline='Accept evidence?',
         context_reference='work:' + milestone.id, actor='user')
-    open_library(store).index_run(run=run.id, work_item=task.id, kind='report', title='Contract report',
-                                location='fleet://worker/bench-job/report', availability='available')
-    open_library(store).index_run(run=run.id, work_item=task.id, kind='report', title='Step 1 report',
-                                location='fleet://worker/home/u/.fleet/jobs/bench-job/result-0.md', availability='available')
+    configured_container(store).library().index_run(run=run.id, work_item=task.id, kind='report', title='Contract report', location='fleet://worker/bench-job/report', availability='available')
+    configured_container(store).library().index_run(run=run.id, work_item=task.id, kind='report', title='Step 1 report', location='fleet://worker/home/u/.fleet/jobs/bench-job/result-0.md', availability='available')
     repo = tmp_path / 'management'
     subprocess.run(['git', 'init', str(repo)], check=True, capture_output=True, timeout=10)
-    open_records(store).register('bench-contract', repo, actor='user')
+    configured_container(store).records().register('bench-contract', repo, actor='user')
     work.set_summary(milestone.id, purpose='Find suppliers', done='Evidence gathered', doing='Review results',
                      next='Accept results', authoring_role='user', actor='user')
 
@@ -236,12 +234,12 @@ def test_bench_real_endpoint(changed_deck: Deck, deck_state, monkeypatch, tmp_pa
 
 
 @pytest.fixture
-def route_migration(deck_state, monkeypatch) -> dict[str, Any]:
+def route_migration(deck_state, monkeypatch, override_web_store) -> dict[str, Any]:
     """Restoke V2's shape: epic Route migration inside epic V2 frontend overhaul, six milestones, three complete."""
-    store = open_store()
-    work = open_work(store)
-    monkeypatch.setattr(deck_state, 'store', store)
-    monkeypatch.setattr(deck_state, 'attention', open_attention(store))
+    store = configured_container().store()
+    work = configured_container(store).work()
+    override_web_store(deck_state, store)
+    monkeypatch.setattr(deck_state, 'attention', configured_container(store).initialized_attention())
     add = lambda title, goal, **fields: work.add(project='restoke-v2', title=title, goal=goal, actor='user', **fields)
     overhaul = add('V2 frontend overhaul', 'Rebuild the V2 frontend on one design system.', kind='epic')
     routes = add('Route migration', 'Move every page to the new router. Legacy routes go last.',
@@ -257,7 +255,7 @@ def route_migration(deck_state, monkeypatch) -> dict[str, Any]:
     redirect = add('Fix redirect loop', 'Fix it', parent=routes.id)
     parked = add('Tidy styles', 'Tidy them', parent=routes.id, next_step='Wait for tokens')
     work.set(parked.id, condition='on hold', actor='user')
-    execution = open_execution(store)
+    execution = configured_container(store).execution()
     execution.link('home', 'route-job', task.id, actor='user')
     now = store.clock()
     execution.observe('home', JobObservation('route-job', 'running', 'codex', now, None, now))
@@ -365,7 +363,7 @@ def test_epic_rows_and_cards_show_the_jobs_serving_them(changed_deck: Deck, rout
     """Each plan line shows its jobs as chips: host:id, a status glyph, the step and the branch; a chip opens its
     job's panel, and a finished line's latest job shows quieter."""
     store, milestones = route_migration['store'], route_migration['milestones']
-    execution = open_execution(store)
+    execution = configured_container(store).execution()
     now = store.clock()
     # home:a1c3e9 is on the deck, step 2 of 2 running; its host reports a linked worktree.
     live = next(job for host in deck_state.fixture['hosts'] for job in host['jobs'] if job['id'] == 'a1c3e9')
@@ -437,11 +435,11 @@ def test_epic_rows_and_cards_show_the_jobs_serving_them(changed_deck: Deck, rout
 
 
 @pytest.fixture
-def supplier_migration(deck_state, monkeypatch) -> None:
+def supplier_migration(deck_state, monkeypatch, override_web_store) -> None:
     """V2 frontend overhaul with a milestone of its own and workstream Supplier migration at 6 of 7."""
-    store = open_store()
-    work = open_work(store)
-    monkeypatch.setattr(deck_state, 'store', store)
+    store = configured_container().store()
+    work = configured_container(store).work()
+    override_web_store(deck_state, store)
     add = lambda title, **fields: work.add(project='v2-overhaul', title=title, goal=f'{title}.', actor='user', **fields)
     overhaul = add('V2 frontend overhaul', kind='epic')
     add('Design tokens', kind='milestone', parent=overhaul.id)
@@ -484,7 +482,7 @@ def test_epic_card_and_page_name_each_workstream(changed_deck: Deck, supplier_mi
 def test_panel_breadcrumb_names_the_linked_work_and_opens_it(changed_deck: Deck, route_migration,
                                                               base_url: str) -> None:
     milestone = route_migration['milestones'][2]
-    open_execution(open_store()).link('home', 'a1c3e9', milestone.id, actor='user')
+    configured_container(configured_container().store()).execution().link('home', 'a1c3e9', milestone.id, actor='user')
     with urlopen(base_url + '/api/state', timeout=5) as response:
         doc = json.load(response)
     jobs = {(host['name'], item['id']): item for host in doc['hosts'] for item in host['jobs'] + host['sessions']}
@@ -586,10 +584,10 @@ def test_a_job_with_no_workspace_says_why(changed_deck: Deck, base_url: str, req
 def test_each_step_names_the_work_it_serves_and_opens_it(changed_deck: Deck, route_migration, base_url: str,
                                                          request: pytest.FixtureRequest) -> None:
     routes, milestones, store = route_migration['routes'], route_migration['milestones'], route_migration['store']
-    open_execution(store).link('home', 'a1c3e9', routes.id, actor='user')
+    configured_container(store).execution().link('home', 'a1c3e9', routes.id, actor='user')
     job, = [job for host in finish_jobs(base_url, {})["hosts"] for job in host["jobs"] if job["id"] == 'a1c3e9']
     job["steps"][0]["work_item"], job["steps"][1]["work_item"] = milestones[2].id, milestones[3].id
-    observe_runs(open_execution(store), open_library(store), {"name": "home", "ok": True, "jobs": {"a1c3e9": job}})
+    observe_runs(configured_container(store).execution(), configured_container(store).library(), {'name': 'home', 'ok': True, 'jobs': {'a1c3e9': job}})
     # two more steps fleetd would carry: one for the job's own item, one for an item this deck's plan lacks
     steps = job["steps"] + [{"index": 2, "title": "Tidy up", "status": "pending", "work_item": routes.id},
                             {"index": 3, "title": "Elsewhere", "status": "pending", "work_item": "0198aaaa-gone"}]
@@ -621,13 +619,13 @@ def test_each_step_names_the_work_it_serves_and_opens_it(changed_deck: Deck, rou
     assert changed_deck.errors == []
 
 
-def test_lone_milestone_steps_back_to_the_floor(changed_deck: Deck, deck_state, monkeypatch, base_url: str) -> None:
-    store = open_store()
-    monkeypatch.setattr(deck_state, 'store', store)
-    work = open_work(store)
+def test_lone_milestone_steps_back_to_the_floor(changed_deck: Deck, deck_state, monkeypatch, base_url: str, override_web_store) -> None:
+    store = configured_container().store()
+    override_web_store(deck_state, store)
+    work = configured_container(store).work()
     milestone = work.add(project='lone', title='Lone slice', goal='Deliver', kind='milestone', actor='user')
     work.add(project='lone', title='Solo', goal='Deliver', kind='epic', actor='user')
-    open_execution(store).link('home', 'a1c3e9', milestone.id, actor='user')
+    configured_container(store).execution().link('home', 'a1c3e9', milestone.id, actor='user')
     with urlopen(base_url + '/api/state', timeout=5) as response:
         doc = json.load(response)
     page = changed_deck.page
@@ -655,13 +653,12 @@ def test_lone_milestone_steps_back_to_the_floor(changed_deck: Deck, deck_state, 
 def test_a_tasks_title_opens_its_latest_report_and_its_documents_list_by_icon(
         changed_deck: Deck, route_migration, request: pytest.FixtureRequest) -> None:
     store, task = route_migration['store'], route_migration['redirect']
-    run = open_execution(store).link('home', 'docs-job', task.id, actor='user')
+    run = configured_container(store).execution().link('home', 'docs-job', task.id, actor='user')
     jobs = 'fleet://home/home/u/.fleet/jobs/docs-job'
     for kind, title, path in [('brief', 'Step 1 brief', 'brief-0.md'), ('report', 'Step 1: fix it', 'result-0.md'),
                               ('report', 'Step 2: prove it', 'result-1.md'), ('outbox', 'H0-report.md', 'outbox/H0-report.md'),
                               ('trace', 'Run trace', 'events.jsonl')]:
-        open_library(store).index_run(run=run.id, work_item=task.id, kind=kind, title=title,
-                                      location=f'{jobs}/{path}', availability='available')
+        configured_container(store).library().index_run(run=run.id, work_item=task.id, kind=kind, title=title, location=f'{jobs}/{path}', availability='available')
     page = changed_deck.page
     page.evaluate("fleetDeck.enterFloor('restoke-v2')")
     page.get_by_role('button', name='Route migration', exact=True).click()
@@ -681,21 +678,20 @@ def test_a_tasks_title_opens_its_latest_report_and_its_documents_list_by_icon(
 
 
 def test_room_guidance_edit_history_decisions_and_promote(changed_deck: Deck, deck_state, monkeypatch, tmp_path,
-                                                         request: pytest.FixtureRequest) -> None:
+                                                         request: pytest.FixtureRequest, override_web_store) -> None:
     """The floor's constitution and an epic's charter are written and edited in place, their versions open in the
     reader, and a decision on the epic's work is promoted into the charter's decisions in force."""
-    store = open_store()
-    monkeypatch.setattr(deck_state, 'store', store)
-    monkeypatch.setattr(deck_state, 'attention', open_attention(store))
-    work = open_work(store)
+    store = configured_container().store()
+    override_web_store(deck_state, store)
+    monkeypatch.setattr(deck_state, 'attention', configured_container(store).initialized_attention())
+    work = configured_container(store).work()
     epic = work.add(project='restoke-v2', title='Transcriber', goal='Read by position.', kind='epic', actor='user')
     task = work.add(project='restoke-v2', title='Liquid Mix', goal='Map it.', parent=epic.id, actor='user')
     repo = tmp_path / 'management'
     repo.mkdir()
     subprocess.run(['git', '-C', str(repo), 'init'], check=True, capture_output=True, timeout=10)
-    open_records(store).register('restoke-v2', repo, actor='user')
-    decision = open_decisions(store).record_guided(task.id, actor='codex', question='Store fees as freight?',
-                                                   answer='No, as charge lines', principle='Charter: anti-goal 1')
+    configured_container(store).records().register('restoke-v2', repo, actor='user')
+    decision = configured_container(store).decisions().record_guided(task.id, actor='codex', question='Store fees as freight?', answer='No, as charge lines', principle='Charter: anti-goal 1')
     page = changed_deck.page
     route = page.locator('#benchRoute')
     page.evaluate("fleetDeck.enterFloor('restoke-v2')")
@@ -749,7 +745,7 @@ def test_room_guidance_edit_history_decisions_and_promote(changed_deck: Deck, de
 
     charter.get_by_role('button', name='Edit the charter').click()
     page.locator('[data-guidance-text]').fill('Edited elsewhere first.')
-    open_records(store).write_guidance('restoke-v2', '# Charter\n\nNewer.\n', epic=epic.id, actor='claude')
+    configured_container(store).records().write_guidance('restoke-v2', '# Charter\n\nNewer.\n', epic=epic.id, actor='claude')
     page.get_by_role('button', name='Save version 3', exact=True).click()
     expect(charter.locator('[role="alert"]')).to_contain_text('it is now version 3')
     alert, panel = charter.locator('[role="alert"]').bounding_box(), route.bounding_box()
@@ -1527,7 +1523,7 @@ def attention_on_server(base_url: str) -> dict[str, str]:
 @pytest.mark.parametrize("answer", ["Scenic", "3"])
 def test_decision_reader_choices_and_submission(changed_deck: Deck, answer: str, base_url: str) -> None:
     from test_web_attention import Deck as ServerDeck
-    from fleet.composition import open_decisions
+
     from fleet.projections.attention import attention_display
 
     server = ServerDeck()
@@ -1569,7 +1565,7 @@ def test_decision_reader_choices_and_submission(changed_deck: Deck, answer: str,
         page.get_by_role("button", name="Submit answer", exact=True).click()
         if answer == "Scenic":
             expect(page.locator('#rdBody')).to_contain_text("Answer recorded")
-            decision, = open_decisions(server.state.store).list()
+            decision, = configured_container(server.state.store).decisions().list()
             assert (decision.actor, decision.answer) == ("user", "Scenic")
             assert server.state.attention.get(question.id).state == "resolved"
             assert server.state.attention.get(other.id).state == "open"
@@ -1839,7 +1835,7 @@ def test_the_attention_list_closes_on_escape_or_a_click_away(changed_deck: Deck,
 def running_state(base_url: str, route_migration: dict[str, Any]) -> dict[str, Any]:
     """The fleet with two jobs linked to Route migration's work, one on a step serving a milestone of its own, a
     blocked job, and workspaces as a current fleetd reports them (or the reason it could not)."""
-    execution = open_execution(open_store())
+    execution = configured_container(configured_container().store()).execution()
     milestones = route_migration["milestones"]
     execution.link("home", "a1c3e9", milestones[2].id, actor="user")
     execution.link("worker", "c90e11", route_migration["redirect"].id, actor="user")
@@ -2320,17 +2316,13 @@ def test_audit1_batch6_hidden_restore_says_and_confirms_its_effect(changed_deck:
 
 
 def test_batch11_project_decisions_and_room_alerts(changed_deck: Deck, route_migration, request) -> None:
-    from fleet.composition import open_decisions, open_attention
+
     store = route_migration['store']
     task = route_migration['redirect']
-    decision = open_decisions(store).record_guided(task.id, actor='reviewer', question='Keep redirects?',
-        answer='Keep them for old bookmarks.', principle='Compatibility')
-    alert = open_attention(store).raise_item(project='restoke-v2', work_item=task.id, kind='alert', owner='user',
-        source='manual', source_reference='batch11', headline='Redirect audit complete', context_reference='audit.md', actor='agent')
-    question = open_attention(store).raise_item(project='restoke-v2', kind='decision', owner='user',
-        source='manual', source_reference='batch11-unlinked', headline='Ship the banner?',
-        context_reference='banner.md', actor='agent')
-    unlinked = open_decisions(store).answer(question.id, 'Wait for review.', actor='user')
+    decision = configured_container(store).decisions().record_guided(task.id, actor='reviewer', question='Keep redirects?', answer='Keep them for old bookmarks.', principle='Compatibility')
+    alert = configured_container(store).initialized_attention().raise_item(project='restoke-v2', work_item=task.id, kind='alert', owner='user', source='manual', source_reference='batch11', headline='Redirect audit complete', context_reference='audit.md', actor='agent')
+    question = configured_container(store).initialized_attention().raise_item(project='restoke-v2', kind='decision', owner='user', source='manual', source_reference='batch11-unlinked', headline='Ship the banner?', context_reference='banner.md', actor='agent')
+    unlinked = configured_container(store).decisions().answer(question.id, 'Wait for review.', actor='user')
     page = changed_deck.page
     page.evaluate("fleetDeck.enterFloor('restoke-v2')")
     page.get_by_role('button', name='Project decisions', exact=True).click()
@@ -2358,16 +2350,16 @@ def test_batch11_project_decisions_and_room_alerts(changed_deck: Deck, route_mig
 @pytest.mark.parametrize('kind', ['constitution', 'charter'])
 @pytest.mark.parametrize('viewport', ['desktop', 'narrow'])
 def test_batch7_guidance_draft_exits(changed_deck: Deck, deck_state, monkeypatch, tmp_path,
-                                    request: pytest.FixtureRequest, kind: str, viewport: str) -> None:
+                                    request: pytest.FixtureRequest, kind: str, viewport: str, override_web_store) -> None:
     """Rejecting any discard preserves the draft and route; accepting never writes guidance."""
-    store = open_store()
-    monkeypatch.setattr(deck_state, 'store', store)
-    monkeypatch.setattr(deck_state, 'attention', open_attention(store))
-    epic = open_work(store).add(project='restoke-v2', title='Guidance test', goal='Keep guidance safe.', kind='epic', actor='user')
+    store = configured_container().store()
+    override_web_store(deck_state, store)
+    monkeypatch.setattr(deck_state, 'attention', configured_container(store).initialized_attention())
+    epic = configured_container(store).work().add(project='restoke-v2', title='Guidance test', goal='Keep guidance safe.', kind='epic', actor='user')
     repo = tmp_path / 'management'
     repo.mkdir()
     subprocess.run(['git', '-C', str(repo), 'init'], check=True, capture_output=True, timeout=10)
-    records = open_records(store)
+    records = configured_container(store).records()
     records.register('restoke-v2', repo, actor='user')
     page = changed_deck.page
     page.set_viewport_size(VIEWPORTS[viewport])
@@ -2646,14 +2638,14 @@ def test_p8_keyboard_help_preserves_context_and_focus(deck: Deck, request: pytes
 
 
 def test_p8_help_keeps_unsaved_guidance(changed_deck: Deck, deck_state, monkeypatch, tmp_path,
-                                        request: pytest.FixtureRequest) -> None:
-    store = open_store()
-    monkeypatch.setattr(deck_state, 'store', store)
-    monkeypatch.setattr(deck_state, 'attention', open_attention(store))
+                                        request: pytest.FixtureRequest, override_web_store) -> None:
+    store = configured_container().store()
+    override_web_store(deck_state, store)
+    monkeypatch.setattr(deck_state, 'attention', configured_container(store).initialized_attention())
     repo = tmp_path / 'management'
     repo.mkdir()
     subprocess.run(['git', '-C', str(repo), 'init'], check=True, capture_output=True, timeout=10)
-    open_records(store).register('restoke-v2', repo, actor='user')
+    configured_container(store).records().register('restoke-v2', repo, actor='user')
     page = changed_deck.page
     page.locator('#viewToggle [data-view="building"]').click()
     page.evaluate('fleetDeck.advanceTime(0)')
@@ -3011,7 +3003,7 @@ def test_p3_work_entrypoint_reads_real_audit(changed_deck: Deck, route_migration
 
 @pytest.mark.parametrize('viewport', ['desktop', 'narrow'])
 def test_triage_policy_room(changed_deck: Deck, route_migration, request, viewport):
-    from fleet import composition
+
     from fleet.modules.records import TRIAGE_PATH
     page = changed_deck.page
     page.set_viewport_size({'width': 390 if viewport == 'narrow' else 1440, 'height': 844 if viewport == 'narrow' else 900})
@@ -3020,7 +3012,7 @@ def test_triage_policy_room(changed_deck: Deck, route_migration, request, viewpo
                 cwd='/workspace', permission='acceptEdits', routing={'failed': 'agent'},
                 permissions={'allow': ['Read'], 'escalate': ['Bash(git push:*)']},
                 limits={'retries_per_step': 2, 'runs_per_day': 12, 'unclaimed_minutes': 30})
-    composition.open_records().write_mandate('restoke-v2', TRIAGE_PATH, json.dumps(body), key='policy-browser', actor='policy-author')
+    configured_container().records().write_mandate('restoke-v2', TRIAGE_PATH, json.dumps(body), key='policy-browser', actor='policy-author')
     page.evaluate("fleetDeck.enterFloor('restoke-v2')")
     page.locator('[data-epic-card] button[data-epic]').first.click()
     policy = page.locator('[data-room-policy] [data-triage-policy]')
@@ -3177,20 +3169,20 @@ def test_audit2_batch1_reader_drafts_and_legacy_session(changed_deck: Deck, requ
 
 @pytest.mark.parametrize('viewport', VIEWPORTS)
 def test_audit2_batch2_resolved_context_and_real_history(changed_deck: Deck, deck_state, monkeypatch,
-                                                       request, viewport) -> None:
+                                                       request, viewport, override_web_store) -> None:
     from fleet.projections.attention import attention_display, attention_items
-    store = open_store()
-    attention = open_attention(store)
-    monkeypatch.setattr(deck_state, 'store', store)
+    store = configured_container().store()
+    attention = configured_container(store).initialized_attention()
+    override_web_store(deck_state, store)
     monkeypatch.setattr(deck_state, 'attention', attention)
     # delegation needs the project's confirmed triage policy
-    from fleet.composition import facades
+
     from fleet.modules.records import TRIAGE_PATH
     policy = dict(goal='Triage', constraints=[], escalation_conditions=[], criteria_it_may_judge=[],
                   decision_authority=['retry', 'escalate', 'record_decision'], host='carbon', runtime='codex',
                   cwd='/tmp', permission='acceptEdits', routing={}, permissions={'allow': ['Read'], 'escalate': []},
                   limits={'retries_per_step': 2, 'runs_per_day': 12, 'unclaimed_minutes': 30})
-    facades(store).records.write_mandate('restoke', TRIAGE_PATH, json.dumps(policy), key='policy', actor='user')
+    configured_container(store).services().records.write_mandate('restoke', TRIAGE_PATH, json.dumps(policy), key='policy', actor='user')
     item = attention.raise_item(project='restoke', kind='decision', owner='user', source='manual',
         source_reference='batch2-resolved', headline='Which recovery?', context_reference='report:failure', actor='reporter')
     attention.delegate(item.id, actor='adi', note='Review under the charter')
@@ -3459,13 +3451,13 @@ def test_a2_batch4_history_status_and_http_prefixes(changed_deck: Deck, history,
 def test_resolved_answer_explains_itself(changed_deck: Deck, base_url: str, project_id: str,
                                        request: pytest.FixtureRequest) -> None:
     from test_web_attention import Deck as ServerDeck
-    from fleet.composition import open_decisions
+
     from fleet.projections.attention import attention_display
-    from fleet.composition import open_work
+
 
     server = ServerDeck()
     page = changed_deck.page
-    work = open_work(server.state.store).add(project=project_id, title="Build", goal="Ship", actor="user")
+    work = configured_container(server.state.store).work().add(project=project_id, title='Build', goal='Ship', actor='user')
     question = server.state.attention.raise_item(project=project_id, work_item=work.id, kind="decision", owner="user",
         source="manual", source_reference="reader", headline="Which route?",
         context_reference="Review the route", actor="author", options=("Direct", "Scenic"))
@@ -3505,7 +3497,7 @@ def test_resolved_answer_explains_itself(changed_deck: Deck, base_url: str, proj
         assert alert.evaluate("element => getComputedStyle(element).whiteSpace") == "pre-wrap"
         expect(alert).to_contain_text("fleet decision record --work-item " + work.id)
         expect(page.get_by_label("Your answer", exact=True)).to_have_value("Deck first")
-        assert open_decisions(server.state.store).list() == []
+        assert configured_container(server.state.store).decisions().list() == []
         if request.config.getoption("--shots"):
             page.screenshot(path=f"{request.config.getoption('--shots')}/resolved-answer.png")
     finally:
@@ -3541,7 +3533,7 @@ def prefetch_deck(browser: Browser, fixture_data: dict[str, Any], monkeypatch) -
     for index, doc in enumerate(job['documents']):
         fixture['job_documents'][f"home/{job['id']}/{doc['id']}"] = (
             '![Chart](chart.svg)' if doc.get('media') == 'image' else f'# Cached document {index}\n\nOld text {index}.')
-    state = FixtureState(fixture)
+    state = FixtureState(fixture, container=configured_container())
     monkeypatch.setattr(state, 'read_asset', lambda *_args: ('image/svg+xml',
         b'<svg xmlns="http://www.w3.org/2000/svg" width="240" height="80"><rect width="240" height="80" fill="#e2b56d"/></svg>'))
     with serve_fixture(state) as url:
