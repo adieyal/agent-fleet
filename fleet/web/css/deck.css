@@ -709,7 +709,7 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 .decision-answer textarea,.decision-answer button,.decision-answer fieldset{border:1px solid var(--rd-rule);border-radius:6px;background:var(--rd-bg2);color:var(--rd-text)}
 .decision-answer button{padding:10px 16px;justify-self:start;cursor:pointer}
 .decision-answer button:disabled{opacity:.6;cursor:default}
-.decision-answer [role="alert"]{color:var(--rd-bad)}
+.decision-answer [role="alert"]{color:var(--rd-bad);white-space:pre-wrap;overflow-wrap:anywhere}
 .blocked-message{margin:0;padding:10px 14px;border-left:3px solid var(--rd-accent);white-space:pre-wrap;overflow-wrap:anywhere}
 /* no scroll anchoring: a live refresh restores the reading position itself, and anchoring would nudge it after */
 .rd-body{flex:1;min-height:0;overflow:auto;overflow-anchor:none;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--rd-rule) transparent}

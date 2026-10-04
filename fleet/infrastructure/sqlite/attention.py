@@ -37,6 +37,11 @@ class AttentionRepository(Repository):
             raise LookupError(f"no attention item '{item_id}'")
         return decode(rows[0])
 
+    def resolving_actor(self, item_id: str) -> str | None:
+        rows = self.rows('SELECT actor FROM state_history WHERE subject = ? AND "to" = ? AND "from" != ? '
+                         'ORDER BY sequence DESC LIMIT 1', (f"attention:{item_id}", "resolved", "resolved"))
+        return rows[0]["actor"] if rows else None
+
     def find(self, source: str, source_reference: str) -> AttentionItem | None:
         rows = self.rows("SELECT * FROM attention_item WHERE source = ? AND source_reference = ?",
                          (source, source_reference))

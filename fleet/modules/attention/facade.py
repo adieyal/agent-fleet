@@ -1,6 +1,7 @@
 """Public attention commands and read-only queries."""
 
-from datetime import datetime
+from datetime import datetime, timezone
+from shlex import join
 from typing import Callable
 
 from .application import Commands
@@ -115,6 +116,24 @@ class AttentionFacade:
 
     def resolve(self, item_id: str, *, details: str, actor: str) -> AttentionItem:
         return self.commands.change(item_id, "resolved", actor, details=details)
+
+    def resolved_answer_error(self, item: AttentionItem, answer: str, actor: str) -> ItemResolved:
+        """Explain a refused answer using recorded resolution facts, with a follow-up command."""
+        resolver = self.repository.resolving_actor(item.id)
+        who = resolver if resolver else "actor not recorded"
+        when = (item.resolved_at.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+                if item.resolved_at is not None else "time not recorded")
+        details = item.resolution_details or "details not recorded"
+        message = f"attention item {item.id[:8]} was resolved by {who} at {when}: {details}"
+        if item.work_item is None:
+            message += "\nCannot suggest a follow-up decision: work item not recorded."
+        else:
+            command = join(["fleet", "decision", "record", "--work-item", item.work_item,
+                            "--question", item.headline, "--answer", answer,
+                            "--principle", "Follow-up to resolved attention item", "--actor", actor,
+                            "--context", f"attention:{item.id}"])
+            message += "\nRecord this answer as a new decision on the same work item:\n" + command
+        return ItemResolved(message)
 
     def get(self, item_id: str) -> AttentionItem:
         return self.repository.get(item_id).effective(self.clock())

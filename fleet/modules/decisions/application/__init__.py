@@ -186,7 +186,7 @@ def answer_question(repository: DecisionRepository, clock: Callable[[], datetime
     with repository.transaction() as transaction:
         item = transaction.attention.get(identity)
         if item.state == "resolved":
-            raise ValueError("attention item is resolved")
+            raise transaction.attention.resolved_answer_error(item, answer, actor)
         if item.refusals:
             raise ValueError("a job's permission refusals are answered by allowing or dismissing them")
         if item.questions or item.at_terminal:

@@ -3410,3 +3410,60 @@ def test_a2_batch4_history_status_and_http_prefixes(changed_deck: Deck, history,
         page.unroute('**/api/runs/*', proxy)
         page.unroute('**/api/bench?*')
         page.locator('#viewToggle [data-view="deck"]').click()
+
+
+def test_resolved_answer_explains_itself(changed_deck: Deck, base_url: str, project_id: str,
+                                       request: pytest.FixtureRequest) -> None:
+    from test_web_attention import Deck as ServerDeck
+    from fleet.composition import open_decisions
+    from fleet.projections.attention import attention_display
+    from fleet.composition import open_work
+
+    server = ServerDeck()
+    page = changed_deck.page
+    work = open_work(server.state.store).add(project=project_id, title="Build", goal="Ship", actor="user")
+    question = server.state.attention.raise_item(project=project_id, work_item=work.id, kind="decision", owner="user",
+        source="manual", source_reference="reader", headline="Which route?",
+        context_reference="Review the route", actor="author", options=("Direct", "Scenic"))
+    other = server.state.attention.raise_item(project="p", kind="decision", owner="user",
+        source="manual", source_reference="other", headline="When?",
+        context_reference="Schedule", actor="author")
+    def proxy(route):
+        response = route.fetch(url=server.url + "/api/" + route.request.url.split("/api/", 1)[1],
+                               headers={"Content-Type": "application/json"})
+        route.fulfill(response=response)
+    page.route("**/api/decision**", proxy)
+    try:
+        item = server.state.document()["attention"][0]
+        with urlopen(base_url + "/api/state", timeout=5) as response:
+            document = json.load(response)
+        item["project"] = "restoke"
+        document["attention"].append(item)
+        document["attention_display"] = attention_display(document["attention"], document["building"], document["projects"])
+        page.evaluate("doc => fleetDeck.apply(doc)", document)
+        before = page.evaluate("fleetDeck.rooms()")
+        sequence = server.state.store.latest_sequence()
+        page.locator('.lantern[data-room="restoke"]').dispatch_event("click")
+        row = page.locator(f'#attnPanel .attn-item[data-id="{question.id}"]')
+        expect(row.get_by_role("button", name="Open context", exact=True)).to_be_visible()
+        row.get_by_role("button", name="Answer question", exact=True).click()
+        expect(page.locator('#reader')).to_be_visible()
+        expect(page.locator('#rdBody')).to_contain_text("Review the route")
+        expect(page.get_by_role("radio", name="Scenic", exact=True)).to_be_visible()
+        assert page.evaluate("fleetDeck.rooms()") == before
+        assert server.state.store.latest_sequence() == sequence
+        server.state.attention.resolve(question.id, details="Build API first", actor="resolver")
+        page.get_by_label("Your answer", exact=True).fill("Deck first")
+        page.get_by_role("button", name="Submit answer", exact=True).click()
+        alert = page.locator('#rdBody [role="alert"]')
+        expect(alert).to_contain_text("was resolved by resolver at")
+        expect(alert).to_contain_text("Build API first")
+        assert alert.evaluate("element => getComputedStyle(element).whiteSpace") == "pre-wrap"
+        expect(alert).to_contain_text("fleet decision record --work-item " + work.id)
+        expect(page.get_by_label("Your answer", exact=True)).to_have_value("Deck first")
+        assert open_decisions(server.state.store).list() == []
+        if request.config.getoption("--shots"):
+            page.screenshot(path=f"{request.config.getoption('--shots')}/resolved-answer.png")
+    finally:
+        page.unroute("**/api/decision**", proxy)
+        server.close()
