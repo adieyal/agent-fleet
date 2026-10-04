@@ -180,9 +180,12 @@ export function openAttentionReader(item, scope = null) {
   rdSheet.focus();
   if (item.state === 'resolved') {
     rdBody.querySelector('.prose').insertAdjacentHTML('beforeend', `<p role="note">Read-only: this attention item is resolved. Reading changes no stored state.</p><p>${esc(item.resolution_details || 'Resolution details not recorded')}</p>`);
-  } else if (item.kind === 'decision' || item.blocked) loadDecision(item.id, rd.req);
-  else if (item.kind === 'blocker') renderBlockerHelp(rdBody.querySelector('.prose'));
-  showContextDocument(item.context_reference, rd.req);
+  }
+  // the question's form rewrites the prose when it loads, so the referenced document goes in after it
+  const req = rd.req;
+  const question = item.state !== 'resolved' && (item.kind === 'decision' || item.blocked) ? loadDecision(item.id, req) : null;
+  if (item.state !== 'resolved' && !question && item.kind === 'blocker') renderBlockerHelp(rdBody.querySelector('.prose'));
+  Promise.resolve(question).then(() => showContextDocument(item.context_reference, req));
 }
 // An item whose context is a job document (fleet://host/…/jobs/<job>/outbox/<file>, a step report or brief) shows that
 // document below its question: often the question itself is written there. Anything else stays the plain reference.
@@ -194,11 +197,13 @@ function jobDocAt(location) {
 }
 async function showContextDocument(location, req) {
   const at = jobDocAt(location);
-  if (!at) return;
+  if (!at || req !== rd.req) return;
   const section = document.createElement('section');
   section.className = 'rd-context-doc';
   section.innerHTML = `<h2>${esc(at.name)}</h2><p class="rd-note">Loading the document this item refers to (${esc(at.host)} · job ${esc(at.job.slice(0, 8))})…</p>`;
-  rdBody.querySelector('.prose')?.append(section);
+  // above the answer box, so it is read before answering
+  const prose = rdBody.querySelector('.prose'), form = prose?.querySelector('form');
+  if (form) form.before(section); else prose?.append(section);
   try {
     const data = DEMO ? await demoDoc(at.host, at.job, at.doc) : await fetchDoc(at.host, at.job, at.doc);
     if (req !== rd.req) return;
