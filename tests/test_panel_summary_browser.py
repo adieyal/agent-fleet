@@ -153,7 +153,7 @@ def test_the_trace_grows_as_the_window_slides(page: Page) -> None:
 def test_a_job_opens_on_its_summary(deck: Page, base_url: str, fixture_data: dict[str, Any]) -> None:
     deck.evaluate("doc => fleetDeck.apply(doc)", with_trace(state(base_url), RUNNING, trace(fixture_data["time"] - 700)))
     open_panel(deck, RUNNING)
-    expect(deck.locator('#panelTabs [role="tab"]')).to_have_text(["Summary", "Activity"])
+    expect(deck.locator('#panelTabs [role="tab"]')).to_have_text(["Summary", "Activity", "History"])
     expect(deck.locator('#panelTabs [aria-selected="true"]')).to_have_text("Summary")
     expect(summary(deck)).to_be_visible()
     expect(activity(deck)).to_be_hidden()
@@ -190,7 +190,7 @@ def test_the_chosen_tab_is_remembered_per_browser(deck: Page) -> None:
 
 def test_a_job_with_documents_has_a_documents_tab(deck: Page) -> None:
     open_panel(deck, FAILED)
-    expect(deck.locator('#panelTabs [role="tab"]')).to_have_text(["Summary", "Activity", "Documents"])
+    expect(deck.locator('#panelTabs [role="tab"]')).to_have_text(["Summary", "Activity", "Documents", "History"])
     deck.locator('#panelTabs [data-tab="documents"]').click()
     expect(deck.locator('#panelBody [data-tab="documents"] .docs li')).to_have_count(1)
     deck.locator("#panel #close").click()
@@ -241,7 +241,7 @@ def test_the_summary_updates_live_keeping_scroll_and_expanded_lines(deck: Page, 
 
 def test_an_interactive_session_has_the_same_summary(deck: Page) -> None:
     open_panel(deck, ASKING)
-    expect(deck.locator('#panelTabs [role="tab"]')).to_have_text(["Summary", "Activity"])
+    expect(deck.locator('#panelTabs [role="tab"]')).to_have_text(["Summary", "Activity", "History"])
     now = summary(deck).locator('[data-part="now"]')
     expect(now.locator(".sm-wait b")).to_have_text("Waiting for you")
     expect(now.locator(".sm-wait")).to_contain_text("Keep the double fetch behind a flag")
