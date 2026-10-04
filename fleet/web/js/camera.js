@@ -247,7 +247,7 @@ document.getElementById('zoom').addEventListener('click', ev => {
   else if (z === 'fit') fit(false);
 });
 document.addEventListener('keydown', ev => {
-  if (ev.target.closest && ev.target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])')) return;
+  if (ev.key !== 'Escape' && ev.target.closest && ev.target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])')) return;
   if (!reader.hidden) { if (ev.key === 'Escape') closeReader(); return; }
   if (!sankeyPane.hidden) return;   // the Sankey handles its own keys
   if (ev.key === 'Escape') { if (!libraryPane.hidden) closeLibrary(); else closePanel(); }

@@ -839,6 +839,26 @@ def test_audit3_floor_navigation_keeps_keyboard_focus(page, restoke_url):
 
 
 @pytest.mark.browser
+@pytest.mark.parametrize('sheet,opener', [('libraryPane','libraryOpen'), ('attnPanel','needYou')])
+def test_audit3_escape_closes_sheet_above_history(page, restoke_url, sheet, opener):
+    open_building(page, restoke_url)
+    page.locator('[data-enter="1"]').click()
+    page.locator('#benchRoute [data-open-history]').click()
+    page.locator('#' + opener).click()
+    expect(page.locator('#' + sheet)).to_be_visible()
+    page.locator('#' + sheet + ' button').first.focus()
+    page.keyboard.press('?')
+    expect(page.locator('[data-help-context]')).to_have_text('Project library' if sheet == 'libraryPane' else 'Attention')
+    page.keyboard.press('Escape')
+    if sheet == 'libraryPane':
+        page.locator('[data-lib-view=all]').click()
+        page.locator('#libSearch').fill('plan')
+    page.keyboard.press('Escape')
+    expect(page.locator('#' + sheet)).to_be_hidden()
+    expect(page.locator('#benchRoute')).to_have_attribute('data-level','history')
+
+
+@pytest.mark.browser
 def test_audit3_stored_job_image_uses_known_origin(page, restoke_url):
     import base64
     open_building(page, restoke_url)

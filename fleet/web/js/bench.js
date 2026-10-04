@@ -519,7 +519,7 @@ el.addEventListener('click', async ev => {
 // Capture at window so the building cannot consume this same Escape.
 window.addEventListener('keydown', ev => {
   if (ev.key !== 'Escape' || el.hidden) return;
-  if (!document.getElementById('reader').hidden || document.getElementById('panel').hasAttribute('data-archived')) return;
+  if (overlayOpen()) return;
   // A milestone with no epic above it opens with no room; stepping back from it lands on the floor list.
   if (!room && !bench && !page) { enterFloor(null); return; }
   ev.stopImmediatePropagation();

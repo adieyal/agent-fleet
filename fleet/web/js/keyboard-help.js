@@ -7,17 +7,16 @@ const visible = id => !document.getElementById(id).hidden;
 function context() {
   if (visible('reader')) return ['Document reader', 'Close the document reader.', [['← / →', 'Previous / next document']]];
   const bench = document.getElementById('benchRoute');
-  // The floor route captures Escape before document-level sheets, except the reader.
-  if (bench && !bench.hidden && bench.dataset.level !== 'floor') {
-    if (bench.hasAttribute('data-editing')) return ['Guidance editor', 'Ask before discarding an unsaved edit; stay here while saving.', []];
-    return ['Floor route', 'Step back one level in the floor.', []];
-  }
   if (visible('sankey')) return ['Pipeline', 'Close the pipeline diagram.', [['Enter / Space', 'Open the focused node']]];
   if (visible('libraryPane')) return ['Project library', 'Close the project library.', []];
   if (visible('workarea')) return ['Workarea', 'Close the workarea; keep the job panel open.', []];
   if (visible('runPanel')) return ['Running', 'Close the Running list.', [['Enter / Space', 'Open the focused job']]];
   if (visible('attnPanel')) return ['Attention', 'Close the attention list.', []];
   if (document.getElementById('panel').classList.contains('open')) return ['Job or session panel', 'Close the job or session panel.', []];
+  if (bench && !bench.hidden && bench.dataset.level !== 'floor') {
+    if (bench.hasAttribute('data-editing')) return ['Guidance editor', 'Ask before discarding an unsaved edit; stay here while saving.', []];
+    return ['Floor route', 'Step back one level in the floor.', []];
+  }
   const view = document.body.dataset.view;
   if (view === 'building') return ['Building', document.querySelector('#buildingUi [role="dialog"]') ? 'Close the building dialog.' : 'No open dialog to close.', []];
   if (view === 'world') return ['World', 'Frame the whole project floor.', []];
