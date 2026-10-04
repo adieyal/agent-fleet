@@ -11,7 +11,7 @@ import logging
 from dataclasses import asdict
 import pickle
 import os
-import selectors
+import queue
 import subprocess
 import threading
 import sys
@@ -356,25 +356,38 @@ def run_stream(state: FleetState, host: Host) -> str:
     process = subprocess.Popen(host.fleetd_command(["stream", "--events", EVENTS_PER_JOB]),
                                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     assert process.stdout is not None and process.stderr is not None
-    selector = selectors.DefaultSelector()
-    selector.register(process.stdout, selectors.EVENT_READ)
-    buffer = b""
+    # Both pipes are drained on their own threads. Applying a message may call the host again over the same ssh
+    # master (the catch-up after hello); the master writes the stream into these pipes and, once one is full,
+    # blocks every channel to the host, the catch-up's included, so reading here alone deadlocked.
+    lines: queue.Queue[bytes | None] = queue.Queue()
+    stderr_lines: list[str] = []
+
+    def pump_stdout() -> None:
+        for line in process.stdout:
+            lines.put(line)
+        lines.put(None)
+
+    def pump_stderr() -> None:
+        for line in process.stderr:
+            stderr_lines.append(line.decode(errors="replace").rstrip())
+            del stderr_lines[:-20]
+
+    pumps = [threading.Thread(target=pump, daemon=True) for pump in (pump_stdout, pump_stderr)]
+    for pump in pumps:
+        pump.start()
     try:
         while True:
-            if not selector.select(timeout=STREAM_SILENCE_LIMIT):
+            try:
+                line = lines.get(timeout=STREAM_SILENCE_LIMIT)
+            except queue.Empty:
                 return f"no heartbeat for {STREAM_SILENCE_LIMIT}s"
-            chunk = os.read(process.stdout.fileno(), 65536)
-            if not chunk:
+            if line is None:
                 process.wait(timeout=5)
-                stderr_lines = process.stderr.read().decode(errors="replace").strip().splitlines()
+                pumps[1].join(timeout=5)
                 return stderr_lines[-1] if stderr_lines else f"stream ended (exit {process.returncode})"
-            buffer += chunk
-            *lines, buffer = buffer.split(b"\n")
-            for line in lines:
-                if line.strip():
-                    apply_message(state, host, json.loads(line))
+            if line.strip():
+                apply_message(state, host, json.loads(line))
     finally:
-        selector.close()
         if process.poll() is None:
             process.kill()
 

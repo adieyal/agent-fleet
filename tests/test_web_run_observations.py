@@ -53,10 +53,17 @@ def test_silence_deadline_marks_linked_run_unknown(monkeypatch):
         "id": "job", "project": "p", "description": "Task", "status": "running", "agent": "codex",
         "created_at": 1, "updated_at": 2, "steps": [], "documents": []}})
     waits, commands = [], []
-    process = SimpleNamespace(stdout=object(), stderr=object(), poll=lambda: None, kill=lambda: None)
-    selector = SimpleNamespace(register=lambda *args: None, close=lambda: None,
-                               select=lambda *, timeout: waits.append(timeout) or [])
-    monkeypatch.setattr(server.selectors, "DefaultSelector", lambda: selector)
+    process = SimpleNamespace(stdout=iter(()), stderr=iter(()), poll=lambda: None, kill=lambda: None)
+
+    class Silent:   # the stream sends nothing before the deadline
+        def put(self, line):
+            pass
+
+        def get(self, *, timeout):
+            waits.append(timeout)
+            raise server.queue.Empty
+
+    monkeypatch.setattr(server.queue, "Queue", Silent)
     monkeypatch.setattr(server.transport, "ensure_master", lambda host: None)
     monkeypatch.setattr(server.subprocess, "Popen", lambda command, **kwargs: commands.append(command) or process)
 
