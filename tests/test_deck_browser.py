@@ -3011,7 +3011,6 @@ def test_triage_policy_room(changed_deck: Deck, route_migration, request, viewpo
     expect(page.locator('[data-constitution-page] [data-triage-policy]')).to_contain_text('version 1')
 
 
-@pytest.mark.parametrize('viewport', VIEWPORTS)
 def test_reader_pages_on_after_the_open_item_is_resolved(changed_deck: Deck) -> None:
     page = changed_deck.page
     page.route('**/api/decision?*', lambda route: route.fulfill(json={
@@ -3040,6 +3039,7 @@ def test_reader_pages_on_after_the_open_item_is_resolved(changed_deck: Deck) -> 
     expect(page.locator('#rdPos')).to_have_text('1 / 2 · All rooms and owners')
 
 
+@pytest.mark.parametrize('viewport', VIEWPORTS)
 def test_audit2_batch1_reader_drafts_and_legacy_session(changed_deck: Deck, request, viewport) -> None:
     page = changed_deck.page
     page.set_viewport_size(VIEWPORTS[viewport])
