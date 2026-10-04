@@ -190,7 +190,7 @@ def test_the_chosen_tab_is_remembered_per_browser(deck: Page) -> None:
 
 def test_a_job_with_documents_has_a_documents_tab(deck: Page) -> None:
     open_panel(deck, FAILED)
-    expect(deck.locator('#panelTabs [role="tab"]')).to_have_text(["Summary", "Activity", "Documents", "History"])
+    expect(deck.locator('#panelTabs [role="tab"]')).to_have_text(["Summary", "Activity", "History", "Documents"])
     deck.locator('#panelTabs [data-tab="documents"]').click()
     expect(deck.locator('#panelBody [data-tab="documents"] .docs li')).to_have_count(1)
     deck.locator("#panel #close").click()
