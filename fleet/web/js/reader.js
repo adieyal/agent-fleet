@@ -356,6 +356,8 @@ function renderReaderHead() {
   ].join('');
   const image = d.media === 'image' || doc.media === 'image';
   document.getElementById('rdCopy').hidden = image;
+  document.getElementById('rdFull').hidden = !image || !document.fullscreenEnabled;
+  document.getElementById('rdFull').disabled = !rd.data;
   document.getElementById('rdCopy').disabled = !rd.data;
   const download = document.getElementById('rdDownload');
   download.disabled = !rd.data;
@@ -557,6 +559,8 @@ rdBody.addEventListener('click', ev => {
     if (doc) openLibraryReader(doc);
     return;
   }
+  const img = ev.target.closest('.prose img');
+  if (img && !img.closest('a')) { showFullscreen(img); return; }
   const a = ev.target.closest('a[href^="#"]');
   if (!a) return;
   const target = document.getElementById(a.getAttribute('href').slice(1));
@@ -567,6 +571,16 @@ rdBody.addEventListener('click', ev => {
   if (toc && !WIDE.matches) toc.open = false;
 });
 reader.addEventListener('click', ev => { if (ev.target.closest('[data-close]')) closeReader(); });
+// An image fills the screen at its own proportions; Esc or a click on it comes back to the reader.
+function showFullscreen(img) {
+  if (!document.fullscreenEnabled) return;
+  if (document.fullscreenElement === img) { document.exitFullscreen(); return; }
+  img.requestFullscreen().catch(() => {});
+}
+document.getElementById('rdFull').addEventListener('click', () => {
+  const img = rdBody.querySelector('.prose img');
+  if (img) showFullscreen(img);
+});
 document.getElementById('rdTheme').addEventListener('click', () => {
   const theme = rdSheet.dataset.theme === 'dark' ? 'paper' : 'dark';
   setReaderTheme(theme);
@@ -601,6 +615,20 @@ reader.addEventListener('keydown', ev => {
   if (ev.target.closest('input,textarea,select,[contenteditable="true"]')) return;
   ev.preventDefault();
   stepDoc(ev.key === 'ArrowLeft' ? -1 : 1);
+});
+// The arrow, page, space, Home and End keys scroll the document wherever focus sits in the reader (the sheet or a
+// header button); inside the body, and in fields and buttons that use the key themselves, the browser has them.
+const SCROLL_KEYS = new Set(['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', ' ', 'Home', 'End']);
+reader.addEventListener('keydown', ev => {
+  if (!SCROLL_KEYS.has(ev.key) || ev.altKey || ev.ctrlKey || ev.metaKey || ev.defaultPrevented) return;
+  if (rdBody.contains(ev.target) || ev.target.closest('input,textarea,select,[contenteditable="true"],summary')) return;
+  if (ev.key === ' ' && ev.target.closest('button')) return;
+  ev.preventDefault();
+  const page = rdBody.clientHeight * 0.9, line = 40;
+  const top = { ArrowDown: line, ArrowUp: -line, PageDown: page, PageUp: -page, ' ': ev.shiftKey ? -page : page }[ev.key];
+  if (ev.key === 'Home') rdBody.scrollTo({ top: 0 });
+  else if (ev.key === 'End') rdBody.scrollTo({ top: rdBody.scrollHeight });
+  else rdBody.scrollBy({ top });
 });
 // keep Tab inside the open reader
 reader.addEventListener('keydown', ev => {

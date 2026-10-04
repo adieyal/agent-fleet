@@ -831,6 +831,8 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
 .prose tbody tr:nth-child(even){background:var(--rd-zebra)}
 .prose td code,.prose th code{font-size:.86em;overflow-wrap:normal;word-break:normal}
 .prose img{max-width:100%;height:auto;border-radius:8px}
+.prose img:not(a img){cursor:zoom-in}
+.prose img:fullscreen{width:100%;height:100%;max-width:none;object-fit:contain;border-radius:0;background:#000;cursor:zoom-out}
 .prose sup{line-height:0}
 .prose .footnote-ref a{text-decoration:none;font:600 .72em var(--sans);padding:0 .1em}
 .prose .footnotes-sep{margin:3em 0 1.2em}

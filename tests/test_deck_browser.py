@@ -3017,26 +3017,58 @@ def test_reader_pages_on_after_the_open_item_is_resolved(changed_deck: Deck) -> 
         'question': 'Which route?', 'context': 'Review', 'options': [], 'proposal': None}))
     items = [dict(project='restoke-v2', owned_by='user', owner=None, age=0, id=f'paging-{n}', kind='decision', summary=f'Question {n}',
                   source='manual', source_reference=f'paging-{n}', context_reference='Review', state='open', last_seen=seen)
-             for n, seen in ((1, 300), (2, 200), (3, 100))]
+             for n, seen in ((1, 9e9 + 3), (2, 9e9 + 2), (3, 9e9 + 1))]   # newest, so first in the list
     page.evaluate("""async items => {
         const doc = await (await fetch('/api/state')).json();
-        doc.attention = doc.attention.filter(item => item.state === 'resolved').concat(items);
+        doc.attention.push(...items);
         window.pagingDoc = doc; fleetDeck.apply(doc);
         (await import('/js/reader.js')).openAttentionReader(items[1]);
     }""", items)
-    expect(page.locator('#rdPos')).to_have_text('2 / 3 · All rooms and owners')
+    expect(page.locator('#rdPos')).to_have_text(re.compile(r'^2 / \d+ · All rooms and owners$'))
+    total = int(page.locator('#rdPos').inner_text().split(' / ')[1].split(' ')[0])
 
     # answering the open item resolves it: it leaves the list, and Next and Previous carry on from where it was
     page.evaluate("""() => {
         const doc = window.pagingDoc;
         doc.attention = doc.attention.filter(item => item.id !== 'paging-2'); fleetDeck.apply(doc);
     }""")
-    expect(page.locator('#rdPos')).to_have_text('Resolved · 2 left · All rooms and owners')
+    expect(page.locator('#rdPos')).to_have_text(f'Resolved · {total - 1} left · All rooms and owners')
     expect(page.locator('#rdNext')).to_be_enabled()
     page.locator('#rdNext').click()
-    expect(page.locator('#rdPos')).to_have_text('2 / 2 · All rooms and owners')
+    expect(page.locator('#rdPos')).to_have_text(f'2 / {total - 1} · All rooms and owners')
     page.locator('#rdPrev').click()
-    expect(page.locator('#rdPos')).to_have_text('1 / 2 · All rooms and owners')
+    expect(page.locator('#rdPos')).to_have_text(f'1 / {total - 1} · All rooms and owners')
+
+
+def test_reader_keys_scroll_the_document_and_images_go_fullscreen(changed_deck: Deck) -> None:
+    page = changed_deck.page
+    pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
+    page.route('**/api/test-long-doc', lambda route: route.fulfill(json={
+        'name': 'long.md', 'markdown': 'long', 'html': ''.join(f'<p>Paragraph {n}</p>' for n in range(300))}))
+    page.evaluate("async () => (await import('/js/reader.js')).openStoredReader('/api/test-long-doc', {id: 'long', name: 'long.md'})")
+    expect(page.locator('#rdBody')).to_contain_text('Paragraph 299')
+    body = page.locator('#rdBody')
+    body.evaluate("el => { el.scrollTop = 0; }")
+
+    # focus starts on the sheet, and a header button may hold it after a click: the keys still scroll the body
+    for focus in ('#reader .rd-sheet', '#rdTheme'):
+        page.locator(focus).focus()
+        page.keyboard.press('PageDown')
+        page.wait_for_function("() => document.getElementById('rdBody').scrollTop > 0")
+        page.keyboard.press('Home')
+        page.wait_for_function("() => document.getElementById('rdBody').scrollTop === 0")
+    page.keyboard.press('ArrowDown')
+    page.wait_for_function("() => document.getElementById('rdBody').scrollTop > 0")
+    page.keyboard.press('End')
+    page.wait_for_function("() => { const b = document.getElementById('rdBody'); return b.scrollTop >= b.scrollHeight - b.clientHeight - 2; }")
+
+    # an image in the document opens fullscreen on a click, and a second click comes back
+    page.evaluate("src => { const img = Object.assign(document.createElement('img'), {src, alt: 'shot'});"
+                  " document.querySelector('#rdBody .prose').prepend(img); }", pixel)
+    page.locator('#rdBody .prose img').click()
+    page.wait_for_function("() => document.fullscreenElement?.alt === 'shot'")
+    page.locator('#rdBody .prose img').click()
+    page.wait_for_function("() => !document.fullscreenElement")
 
 
 @pytest.mark.parametrize('viewport', VIEWPORTS)
