@@ -3012,6 +3012,34 @@ def test_triage_policy_room(changed_deck: Deck, route_migration, request, viewpo
 
 
 @pytest.mark.parametrize('viewport', VIEWPORTS)
+def test_reader_pages_on_after_the_open_item_is_resolved(changed_deck: Deck) -> None:
+    page = changed_deck.page
+    page.route('**/api/decision?*', lambda route: route.fulfill(json={
+        'question': 'Which route?', 'context': 'Review', 'options': [], 'proposal': None}))
+    items = [dict(project='restoke-v2', owned_by='user', owner=None, age=0, id=f'paging-{n}', kind='decision', summary=f'Question {n}',
+                  source='manual', source_reference=f'paging-{n}', context_reference='Review', state='open', last_seen=seen)
+             for n, seen in ((1, 300), (2, 200), (3, 100))]
+    page.evaluate("""async items => {
+        const doc = await (await fetch('/api/state')).json();
+        doc.attention = doc.attention.filter(item => item.state === 'resolved').concat(items);
+        window.pagingDoc = doc; fleetDeck.apply(doc);
+        (await import('/js/reader.js')).openAttentionReader(items[1]);
+    }""", items)
+    expect(page.locator('#rdPos')).to_have_text('2 / 3 · All rooms and owners')
+
+    # answering the open item resolves it: it leaves the list, and Next and Previous carry on from where it was
+    page.evaluate("""() => {
+        const doc = window.pagingDoc;
+        doc.attention = doc.attention.filter(item => item.id !== 'paging-2'); fleetDeck.apply(doc);
+    }""")
+    expect(page.locator('#rdPos')).to_have_text('Resolved · 2 left · All rooms and owners')
+    expect(page.locator('#rdNext')).to_be_enabled()
+    page.locator('#rdNext').click()
+    expect(page.locator('#rdPos')).to_have_text('2 / 2 · All rooms and owners')
+    page.locator('#rdPrev').click()
+    expect(page.locator('#rdPos')).to_have_text('1 / 2 · All rooms and owners')
+
+
 def test_audit2_batch1_reader_drafts_and_legacy_session(changed_deck: Deck, request, viewport) -> None:
     page = changed_deck.page
     page.set_viewport_size(VIEWPORTS[viewport])

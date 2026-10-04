@@ -169,6 +169,7 @@ async function loadDecision(id, req) {
         answerDrafts.delete(id);
         form.querySelector('[role="status"]').textContent = 'Answer recorded; request resolved';
         for (const input of form.querySelectorAll('input, textarea')) input.disabled = true;
+        if (req === rd.req) renderReaderHead();
       } catch (error) {
         form.querySelector('[role="alert"]').textContent = error.message;
         button.disabled = false;
@@ -284,6 +285,8 @@ async function loadDoc(req) {
     if (req === rd.req) renderReaderError(err.message || String(err));
   }
 }
+// An attention item open in the reader: a state update may resolve it or add others, so the position and Next follow.
+document.addEventListener('fleet:state', () => { if (!reader.hidden && rd.source === 'attention') renderReaderHead(); });
 // A job document the agent is still writing: when a state update brings it a new mtime or size, fetch it again and
 // swap the text in place, keeping the reading position, or the bottom for someone following along.
 export function readerTarget() { return reader.hidden || rd.source !== 'job' ? null : `${rd.host}:${rd.job.id}`; }
@@ -358,16 +361,25 @@ function renderReaderHead() {
   download.disabled = !rd.data;
   download.title = image ? 'Download the image' : 'Download as .md';
   download.querySelector('.lb').textContent = image ? 'Image' : '.md';
-  const list = siblings(), at = list.findIndex(x => x.id === doc.id);
-  document.getElementById('rdStep').hidden = list.length < 2 || at < 0;
-  document.getElementById('rdPos').textContent = at < 0 ? '' : `${at + 1} / ${list.length}${rd.source === 'attention' ? ' · All rooms and owners' : ''}`;
+  const { list, at, left } = readerPlace();
+  document.getElementById('rdStep').hidden = at < 0 ? left == null || !list.length : list.length < 2;
+  document.getElementById('rdPos').textContent = at >= 0 ? `${at + 1} / ${list.length}${rd.source === 'attention' ? ' · All rooms and owners' : ''}`
+    : left != null ? `Resolved · ${list.length} left · All rooms and owners` : '';
   for (const [id, direction] of [['rdPrev', 'Previous'], ['rdNext', 'Next']]) {
     const button = document.getElementById(id);
     button.title = rd.source === 'attention' ? `${direction} unresolved attention item across all rooms and owners; unsent answers are kept until this page closes` : `${direction} document`;
     button.setAttribute('aria-label', button.title);
   }
-  document.getElementById('rdPrev').disabled = at <= 0;
-  document.getElementById('rdNext').disabled = at < 0 || at >= list.length - 1;
+  document.getElementById('rdPrev').disabled = at < 0 ? left == null || left <= 0 : at <= 0;
+  document.getElementById('rdNext').disabled = at < 0 ? left == null || left >= list.length : at >= list.length - 1;
+}
+// Where the open document sits among its siblings. An attention item resolved while open (answered here, or elsewhere)
+// leaves the list; `left` is the place it held, so Next goes on to the item now there and Previous to the one before.
+function readerPlace() {
+  const list = siblings(), at = list.findIndex(x => x.id === rd.doc.id);
+  if (at >= 0) rd.place = { id: rd.doc.id, at };
+  const left = at < 0 && rd.source === 'attention' && rd.place?.id === rd.doc.id ? rd.place.at : null;
+  return { list, at, left };
 }
 // What Previous and Next step through: a job's documents, in the panel's order; the same project's in the library; or
 // every attention item not yet resolved, newest first.
@@ -379,8 +391,9 @@ function siblings() {
 }
 function stepDoc(delta) {
   if (reader.hidden) return;
-  const list = siblings(), at = list.findIndex(x => x.id === rd.doc.id), next = list[at + delta];
-  if (at < 0 || !next) return;
+  const { list, at, left } = readerPlace();
+  const next = at >= 0 ? list[at + delta] : left != null ? list[delta > 0 ? left : left - 1] : undefined;
+  if (!next) return;
   saveReaderScroll();
   if (rd.source === 'library') openLibraryReader(next);
   else if (rd.source === 'attention') openAttentionReader(next);
