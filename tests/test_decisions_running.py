@@ -5,12 +5,15 @@ import sys
 from datetime import datetime, timezone
 from io import StringIO
 
+import pytest
+
 from fleet import composition, transport
 from fleet.orchestration import guide
 from fleet.remote import fleetd
 
 
-def test_ancestor_decision_retries_after_restart_and_dispatch_excludes_history(project_id, monkeypatch):
+@pytest.mark.parametrize('scope', ['linked', 'ancestor'])
+def test_decision_retries_after_restart_and_dispatch_excludes_history(project_id, monkeypatch, scope):
     services = composition.facades()
     epic = services.work.add(project=project_id, title='Epic', goal='Ship', actor='user', kind='epic')
     task = services.work.add(project=project_id, title='Task', goal='Ship', actor='user', parent=epic.id)
@@ -29,7 +32,7 @@ def test_ancestor_decision_retries_after_restart_and_dispatch_excludes_history(p
         raise transport.FleetError('offline')
     monkeypatch.setattr(transport, 'call', offline)
     recent = services.decisions.record_streamed('late-stream', datetime(2020, 1, 1, tzinfo=timezone.utc),
-        epic.id, actor='user', question='Now?', answer='Use blue', principle='Brief', context='', source_run=None)
+        task.id if scope == 'linked' else epic.id, actor='user', question='Now?', answer='Use blue', principle='Brief', context='', source_run=None)
     assert calls == []  # Stream ingestion persists intent without transport under the state lock.
     services.decisions.record_guided(other.id, actor='user', question='Unrelated?', answer='No', principle='Brief')
     services.execution.retry_decisions()
@@ -44,7 +47,9 @@ def test_ancestor_decision_retries_after_restart_and_dispatch_excludes_history(p
     assert received['id'] == recent.id
     assert received['delivery_status'] == 'pending'
     assert received['delivery_error'] == 'offline'
+    received_keys = []
     def online(host, arguments, **kwargs):
+        received_keys.append(arguments[-1])
         return {'schema_version': 1, 'key': arguments[-1], 'status': 'applied'}
     monkeypatch.setattr(transport, 'call', online)
     restarted = composition.facades(composition.open_store())
@@ -53,6 +58,7 @@ def test_ancestor_decision_retries_after_restart_and_dispatch_excludes_history(p
     sequence = restarted.store.latest_sequence()
     restarted.execution.retry_deliveries()
     assert restarted.store.latest_sequence() == sequence
+    assert received_keys == [delivery.key]
 
 
 def test_worker_receipt_and_step_boundary(tmp_path, monkeypatch, capsys):
@@ -83,6 +89,13 @@ def test_worker_receipt_and_step_boundary(tmp_path, monkeypatch, capsys):
     job = fleetd.read_job('j')
     assert job['steps'][1]['shown_decisions'] == ['d2']
     assert job['shown_decisions'] == ['d1', 'd2']
+    with fleetd.locked_job('j') as job:
+        third = fleetd.make_step(2, 'Finish', 'Finish')
+        job['steps'].append(third)
+        fleetd.inject_decisions(job, third)
+    third = fleetd.read_job('j')['steps'][2]
+    assert third['prompt'] == 'Finish'
+    assert 'shown_decisions' not in third
 
 
 def test_fleet_show_lists_received_decisions(monkeypatch, capsys):
