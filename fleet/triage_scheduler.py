@@ -28,8 +28,13 @@ class TriageScheduler:
 
     def status(self, project: str) -> dict:
         state = self.services.triage_repository.get(project)
-        mandate = self.services.records.triage_mandate(project)
-        version = None if mandate is None else self.services.records.mandate_version(project, TRIAGE_PATH)[0]
+        policy_error = None
+        try:
+            mandate = self.services.records.triage_mandate(project)
+            version = None if mandate is None else self.services.records.mandate_version(project, TRIAGE_PATH)[0]
+        except (FleetError, ValueError, LookupError, OSError) as error:
+            mandate = version = None
+            policy_error = str(error)
         used = state.get('used', 0) if state.get('day') == self.services.store.clock().date().isoformat() else 0
         run = state.get('run')
         now = self.services.store.clock()
@@ -38,7 +43,7 @@ class TriageScheduler:
         starts = [datetime.fromisoformat(state['waiting'][i.id])
                   if i.id in state.get('waiting', {}) else i.owner_at for i in queued]
         oldest = None if not starts or any(start is None for start in starts) else min(starts)
-        return dict(project=project, mandate_version=version,
+        return dict(project=project, mandate_version=version, policy_error=policy_error,
                     queue=[i.id for i in queued],
                     live_run=None if run is None else dict(id=run, status=self.services.execution.get_run(run).status),
                     budget_left=None if mandate is None else max(0, mandate.limits['runs_per_day'] - used),

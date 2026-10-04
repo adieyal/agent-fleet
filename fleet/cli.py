@@ -434,19 +434,22 @@ def command_triage_status(arguments: argparse.Namespace) -> None:
         print(json.dumps(result))
         return
     print(f"Triage for {project}")
-    print(f"Mandate: {result['mandate_version'] or 'No confirmed triage policy'}")
+    policy_error = result.get('policy_error')
+    print(f"Mandate: {result['mandate_version'] or ('unreadable' if policy_error else 'No confirmed triage policy')}")
+    if policy_error:
+        print(f"Policy error: {policy_error}; delegation unavailable")
     print(f"Queue: {len(result['queue'])} agent-owned items")
     for identity in result['queue']:
         print(f"  {identity} — take back: fleet attention take {identity} --actor ACTOR")
     run = result['live_run']
     print(f"Live run: {run['id'] + ' (' + run['status'] + ')' if run else 'none'}")
-    print(f"Budget: {result['budget_left']} runs left; resets at {result['budget_resets_at']}" if result['budget_left'] is not None else 'Budget: unavailable; no confirmed triage policy')
+    print(f"Budget: {result['budget_left']} runs left; resets at {result['budget_resets_at']}" if result['budget_left'] is not None else 'Budget: unavailable; policy unreadable' if policy_error else 'Budget: unavailable; no confirmed triage policy')
     wait = result['oldest_wait_seconds']
     print(f"Oldest queue wait: {int(wait)} seconds" if wait is not None else 'Oldest queue wait: not recorded' if result['queue'] else 'Oldest queue wait: no queued items')
     print(f"Delivery error: {result['delivery_error'] or 'none recorded'}")
     print(f"Pending publications: {len(result['pending_publications'])}")
     if result['mandate_version'] is None and result['queue']:
-        print(f"{len(result['queue'])} agent-owned items cannot be serviced; take them back or record a policy.")
+        print(f"{len(result['queue'])} agent-owned items cannot be serviced; take them back or {'restore access to the policy' if policy_error else 'record a policy'}.")
     print(f"Inspect policy: fleet triage policy show {project}; setup example: docs/triage-policy.md")
     if run:
         print(f"Inspect run: fleet run show {run['id']}; do not launch a duplicate while its outcome is unknown.")

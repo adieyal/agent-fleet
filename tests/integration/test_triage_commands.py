@@ -540,3 +540,24 @@ def test_reopened_escalation_insert_failure_preserves_prior_resolution(triage, m
         commands.execute('escalate', dict(item=attention.id, reason='unconfirmed', principle='mandate'))
     assert services.attention.get(attention.id) == previous
     assert services.store.latest_sequence() == before
+
+
+def test_audit3_unavailable_policy_keeps_deck_state_readable(triage, tmp_path):
+    from pathlib import Path
+    from fleet.triage_scheduler import TriageScheduler
+    from fleet.web.server import FleetState
+    services, activation, *_ = triage
+    attention = item(triage, owner='user')
+    root = Path(services.workspace.management_repository(activation.project))
+    moved = root.with_name(root.name + '-unavailable')
+    root.rename(moved)
+    try:
+        state = FleetState([], store=services.store)
+        document = state.document()
+        status = document['triage'][activation.project]
+        assert str(root) in status['policy_error']
+        assert status['budget_left'] is None
+        assert not next(i for i in document['attention'] if i['id'] == attention.id)['delegable']
+    finally:
+        moved.rename(root)
+    assert TriageScheduler(services, None, None).status(activation.project)['policy_error'] is None
