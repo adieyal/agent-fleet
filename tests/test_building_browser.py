@@ -807,3 +807,18 @@ def test_batch5_building_write_consequences(page: Page, tmp_path: Path, request:
         page.locator('#toast [data-undo]').click()
         expect(page.locator('.plate[data-floor="10"] b')).to_have_text("Research notes")
         assert list(state(url)["building"]["shuttered"]) == [incoming]
+
+
+@pytest.mark.browser
+def test_audit3_storehouse_keyboard_focus(page, restoke_url):
+    open_building(page, restoke_url)
+    opener = page.locator('[data-storehouse]')
+    opener.focus(); page.keyboard.press('Enter')
+    expect(page.locator('.storehouse')).to_be_visible()
+    assert page.evaluate('!!document.activeElement.closest(".storehouse")')
+    for _ in range(12):
+        page.keyboard.press('Tab')
+        assert page.evaluate('!!document.activeElement.closest(".storehouse")')
+    page.keyboard.press('Escape')
+    expect(page.locator('.storehouse')).to_have_count(0)
+    expect(opener).to_be_focused()

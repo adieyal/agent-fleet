@@ -1,3 +1,4 @@
+import { focusIdentity, restoreFocus, overlayOpen } from './keyboard-focus.js';
 import { focusTitle, focusFeedback } from './focus-copy.js';
 // The building (L0): every registered project on its own floor of a building seen in cross-section, with the lobby on
 // the ground floor. A view beside the deck, chosen with the header's deck | building switch and remembered.
@@ -86,7 +87,7 @@ function enter(floor) {
 // Esc steps out one level: a dialog over the building closes; inside, once nothing is open over the deck (a reader,
 // the library, a panel or a list closes first), a floor goes back to the building and an open crate to the storehouse.
 document.addEventListener('keydown', ev => {
-  if (ev.key !== 'Escape') return;
+  if (ev.key !== 'Escape' || overlayOpen()) return;
   if (buildingShown) { if (vacancy || storehouseOpen || moving || merging) { closeDialogs(); renderUi(); } return; }
   if (current === null) return;
   const open = !document.getElementById('reader').hidden || !document.getElementById('libraryPane').hidden
@@ -417,6 +418,9 @@ const RING = `<svg class="ring" viewBox="0 0 24 24" aria-hidden="true"><circle c
 const SWITCH = { priority: 'priority', background: 'background' };   // the switch's two positions, as the floor shows them
 function renderUi() {
   const frontDeskOpen = ui.querySelector('.front-desk')?.open;
+  const hadDialog = !!ui.querySelector('[role=dialog]');
+  const focus = focusIdentity(ui);
+  if (!hadDialog && (storehouseOpen || vacancy || moving || merging)) dialogOpener = focus;
   const plates = floors.map(f => {
     if (!f.projectId) return `<div class="plate" data-floor="${f.floor}" data-mode="to-let"><span class="fn">${f.floor}</span><b>To let</b></div>`;
     const error = focusErrors.get(f.projectId);
@@ -466,8 +470,29 @@ function renderUi() {
   // (an unchanged document leaves the controls alone: no flicker, and hover and keyboard focus stay where they were)
   if (html !== uiHtml) { ui.innerHTML = html; uiHtml = html; }
   placeUi();
+  const dialogs = [...ui.querySelectorAll('[role=dialog]')], dialog = dialogs.at(-1);
+  dialogs.forEach(el => el.setAttribute('aria-modal', String(el === dialog)));
+  if (!buildingShown || overlayOpen()) return;
+  if (dialog) {
+    if (!restoreFocus(ui, focus) || !dialog.contains(document.activeElement)) {
+      dialog.querySelector('button:not(:disabled),input:not(:disabled),select:not(:disabled)')?.focus({ preventScroll: true });
+    }
+  } else if (hadDialog) {
+    if (!restoreFocus(ui, dialogOpener)) toggle.querySelector('[data-view=building]').focus({ preventScroll: true });
+    dialogOpener = null;
+  } else if (focus) restoreFocus(ui, focus);
 }
-let uiHtml = '';
+let uiHtml = '', dialogOpener = null;
+ui.addEventListener('keydown', ev => {
+  if (ev.key !== 'Tab' || overlayOpen()) return;
+  const dialog = [...ui.querySelectorAll('[role=dialog]')].at(-1);
+  if (!dialog) return;
+  const controls = [...dialog.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),a[href]')]
+    .filter(el => el.getClientRects().length);
+  const first = controls[0], last = controls.at(-1);
+  if (ev.shiftKey && document.activeElement === first) { ev.preventDefault(); last.focus(); }
+  else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first.focus(); }
+});
 async function post(path, body) {
   const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const reply = await res.json().catch(() => ({}));
