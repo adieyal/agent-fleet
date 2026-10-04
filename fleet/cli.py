@@ -29,6 +29,7 @@ from fleet import transport
 from fleet.modules import workspace as projects
 from fleet.composition import open_attention, open_decisions, open_execution, open_library, open_records, open_store, open_work, open_workspace
 from fleet.projections.decisions import decision_log
+from fleet.modules.attention import ItemResolved
 from fleet.projections.history import parse_moment, parse_since, subject_history
 from fleet.projections.project import project_status
 from fleet.projections.run_history import history_runs, run_detail
@@ -2335,7 +2336,8 @@ def main(argv: list[str] | None = None) -> None:
             arguments.epic = work_cli_id(arguments.epic)
         arguments.handler(arguments)
     except FleetError as error:
-        error_console.print(f"fleet: {error}", style="red", markup=False)
+        error_console.print(f"fleet: {error}", style="red", markup=False,
+                            soft_wrap=isinstance(error.__cause__, ItemResolved))
         sys.exit(2)
     except subprocess.TimeoutExpired as error:
         error_console.print(f"fleet: {arguments.command} timed out after {error.timeout}s", style="red", markup=False)

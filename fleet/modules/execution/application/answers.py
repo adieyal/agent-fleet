@@ -4,8 +4,6 @@ from typing import Callable
 from datetime import datetime
 from uuid import uuid4
 
-from fleet.modules.attention import ItemResolved
-
 from .dtos import AnswerRequest
 from .ports import AnswerSender, ExecutionRepository
 
@@ -21,11 +19,11 @@ def answer(repository: ExecutionRepository, send: AnswerSender, item_id: str, re
         raise ValueError("an answer is required")
     with repository.transaction() as transaction:
         item = transaction.attention.get(item_id)
+        if item.state == "resolved":
+            raise transaction.attention.resolved_answer_error(item, reply, actor)
     context = item.stream_context
     if context is None or not context.blocked_step:
         raise ValueError("only a blocked job step can be answered here")
-    if item.state == "resolved":
-        raise ItemResolved("attention item is resolved")
     if work_item is not None:
         if require_step_work is None:
             raise RuntimeError("step work items cannot be checked here")
@@ -37,7 +35,7 @@ def answer(repository: ExecutionRepository, send: AnswerSender, item_id: str, re
     with repository.transaction() as transaction:
         current = transaction.attention.get(item.id)
         if current.state == 'resolved':
-            raise ItemResolved("attention item is resolved")
+            raise transaction.attention.resolved_answer_error(current, reply, actor)
         run = transaction.find(context.host, context.owner_id)
         affected = work_item or item.work_item
         if affected is None and run is not None:
