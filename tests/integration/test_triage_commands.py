@@ -542,7 +542,7 @@ def test_reopened_escalation_insert_failure_preserves_prior_resolution(triage, m
     assert services.store.latest_sequence() == before
 
 
-def test_audit3_unavailable_policy_keeps_deck_state_readable(triage, tmp_path):
+def test_audit3_unavailable_policy_keeps_deck_state_readable(triage, tmp_path, monkeypatch):
     from pathlib import Path
     from fleet.triage_scheduler import TriageScheduler
     from fleet.web.server import FleetState
@@ -551,12 +551,19 @@ def test_audit3_unavailable_policy_keeps_deck_state_readable(triage, tmp_path):
     root = Path(services.workspace.management_repository(activation.project))
     moved = root.with_name(root.name + '-unavailable')
     root.rename(moved)
+    delegation_checks = []
+    require_delegable = type(services.attention).require_delegable
+    def check_delegation(*args, **kwargs):
+        delegation_checks.append(args[1])
+        return require_delegable(*args, **kwargs)
+    monkeypatch.setattr(type(services.attention), 'require_delegable', check_delegation)
     try:
         state = FleetState([], store=services.store)
         document = state.document()
         status = document['triage'][activation.project]
         assert str(root) in status['policy_error']
         assert status['budget_left'] is None
+        assert delegation_checks == []
         assert not next(i for i in document['attention'] if i['id'] == attention.id)['delegable']
     finally:
         moved.rename(root)

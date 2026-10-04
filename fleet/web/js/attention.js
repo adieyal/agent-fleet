@@ -191,9 +191,10 @@ function renderItem(i, global) {
       </div></li>`;
   }
   const state = i.state === 'snoozed' ? `snoozed until ${esc(clock(i.snoozed_until).slice(0, 5))}` : i.state;
+  const policyError = triage[i.project_id]?.policy_error;
   const ownership = i.owned_by === 'agent'
     ? '<button data-act="take" title="Take this item back; revokes agent authority for this item. The triage process may continue for other items">Take back</button>'
-    : `<button data-act="delegate" ${i.delegable ? '' : 'disabled'} title="${esc(i.questions ? 'Session questions can only be answered at the terminal' : !i.delegable ? 'This project has no confirmed triage mandate' : `Hand this to the triage agent for ${placeName(i)}. It stays listed under With agent; you can take it back`)}">Delegate to agent</button>`;
+    : `<button data-act="delegate" ${i.delegable ? '' : 'disabled'} title="${esc(i.questions ? 'Session questions can only be answered at the terminal' : policyError ? `Triage policy unreadable; delegation unavailable: ${policyError}` : !i.delegable ? 'This project has no confirmed triage mandate' : `Hand this to the triage agent for ${placeName(i)}. It stays listed under With agent; you can take it back`)}">Delegate to agent</button>`;
   const actions = ownership + (i.state === 'open' ? `<button data-act="acknowledge" title="Mark as seen: dims the lantern when all items are acknowledged; keeps the item open. Reopen restores attention; work is unchanged">Acknowledge</button><button data-act="snooze" title="Hide from the lantern for 1 hour, then return automatically; Reopen restores it sooner. Work is unchanged">Snooze 1h</button>`
     : i.state === 'acknowledged' ? `<button data-act="snooze" title="Hide for 1 hour; Reopen restores it sooner. Work is unchanged">Snooze 1h</button><button data-act="reopen" title="Return this item to open attention and light its lantern; acknowledge or snooze it again to undo">Reopen</button>`
     : `<button data-act="reopen" title="Return this item to open attention and light its lantern; acknowledge or snooze it again to undo">Reopen</button>`)

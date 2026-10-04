@@ -287,6 +287,9 @@ class LiveWorkspace:
                 run = services.execution.get_run(status["live_run"]["id"])
                 status["live_run"].update(host=run.host, remote_job_id=run.remote_job_id)
         for item in items:
+            if triage.get(item['project_id'], {}).get('policy_error'):
+                item['delegable'] = False
+                continue
             try:
                 self.attention.require_delegable(item['id'])
             except (ValueError, LookupError):

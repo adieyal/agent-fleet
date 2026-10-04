@@ -917,3 +917,19 @@ def test_audit3_unlabelled_job_keeps_deck_updates_visible(page, restoke_url):
     page.evaluate('d => fleetDeck.apply(d)', document)
     page.evaluate("async key => (await import('/js/panel.js')).select(key)", host['name'] + ':unlabelled-job')
     expect(page.locator('#panel')).to_contain_text('failed')
+
+
+@pytest.mark.browser
+def test_audit3_unreadable_policy_explains_disabled_delegation(page, restoke_url):
+    open_building(page, restoke_url)
+    document = state(restoke_url)
+    attention = next(i for i in document['attention'] if i['project_id'] and i['state'] != 'resolved' and not i.get('questions'))
+    error = 'fatal: missing /temporary/management/repository'
+    document['triage'][attention['project_id']]['policy_error'] = error
+    attention['delegable'] = False
+    page.evaluate('d => fleetDeck.apply(d)', document)
+    page.locator('#needYou').click()
+    button = page.locator(f'.attn-item[data-id="{attention["id"]}"] [data-act=delegate]')
+    expect(button).to_be_disabled()
+    assert 'Triage policy unreadable' in button.get_attribute('title')
+    assert error in button.get_attribute('title')
