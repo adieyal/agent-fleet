@@ -56,6 +56,9 @@ def test_production_import_contracts(tmp_path):
 
 
 @pytest.mark.parametrize(("filename", "statement", "contract"), [
+    ("fleet/container.py", "import fleet.web.server", "Container has no presentation dependencies"),
+    ("fleet/services/jobs.py", "import fleet.container", "Document library independence"),
+    ("fleet/composition.py", "import fleet.infrastructure.sqlite", "Infrastructure construction"),
     ("fleet/projections/project.py", "import fleet.composition", "Controller layers"),
     ("fleet/composition.py", "import fleet.cli", "Controller layers"),
     ("fleet/cli.py", "import fleet.infrastructure.sqlite", "Infrastructure construction"),

@@ -8,6 +8,7 @@ type = layers
 layers =
     fleet.cli | fleet.web
     fleet.composition
+    fleet.container
     fleet.services : fleet.orchestration : fleet.triage : fleet.triage_scheduler : fleet.ingestion
     fleet.transport
     fleet.projections
@@ -20,7 +21,7 @@ ignore_imports =
 name = Infrastructure construction
 type = protected
 protected_modules = fleet.infrastructure
-allowed_importers = fleet.composition
+allowed_importers = fleet.container
 
 [importlinter:contract:module-independence]
 name = Module independence
@@ -31,6 +32,7 @@ forbidden_modules =
     fleet.web
     fleet.cli
     fleet.composition
+    fleet.container
     fleet.projections
     fleet.services
     fleet.ingestion
@@ -119,6 +121,7 @@ forbidden_modules =
     fleet.cli
     fleet.web
     fleet.composition
+    fleet.container
 
 [importlinter:contract:service-infrastructure]
 name = Service infrastructure separation
@@ -155,3 +158,12 @@ source_modules =
 forbidden_modules =
     argparse
     rich
+
+[importlinter:contract:container-presentation]
+name = Container has no presentation dependencies
+type = forbidden
+source_modules = fleet.container
+forbidden_modules =
+    fleet.cli
+    fleet.web
+    fleet.composition
