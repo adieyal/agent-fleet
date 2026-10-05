@@ -168,6 +168,7 @@ class FleetState(LiveWorkspace):
         self.container = container
         self.transport = container.transport()
         self.store = container.store()
+        self.observed_runs: dict = {}  # successful job ingestion, including persisted link context
         self.indexed: dict = {}   # library entries as last indexed (see observe_runs)
         self.taken_decisions: set = set()   # streamed decision ids already handled (see record_decisions)
         self.workspace = workspace if workspace is not None else container.initialized_workspace(actor="web-user")
@@ -287,7 +288,8 @@ class FleetState(LiveWorkspace):
                 host = {**entry, **{kind: {identity: item for identity, item in entry[kind].items()
                                           if not item.get("stale")} for kind in ("jobs", "sessions")}}
                 self.container.observe_runs(host, self.indexed,
-                             lambda job: resolve(self.registry, host_name, job)["project_id"])
+                             lambda job: resolve(self.registry, host_name, job)["project_id"],
+                             observed=self.observed_runs)
                 self.container.observe_sessions(host, lambda session: resolve(self.registry, host_name, session)["project_id"])
                 self.container.record_decisions(host,
                                  lambda job: resolve(self.registry, host_name, job)["project_id"], self.taken_decisions)
