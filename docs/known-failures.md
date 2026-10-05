@@ -9,11 +9,8 @@
 | `tests/test_deck_browser.py::test_p2_history_archive_and_offline[chromium-desktop]` (`tests/test_deck_browser.py:2817`) | Verified on `4641086`, 2026-10-05 | `20956ae8-2762-4887-8297-62cbfab21b22` (extraction evidence) | History report tiles count is 0; expected 2. |
 | `tests/test_deck_browser.py::test_p3_work_entrypoint_reads_real_audit[chromium]` (`tests/test_deck_browser.py:3001`) | Verified on `4641086`, 2026-10-05 | `20956ae8-2762-4887-8297-62cbfab21b22` (extraction evidence) | Clicking the first epic card times out. |
 | `tests/test_deck_browser.py::test_triage_policy_room[chromium-desktop]` (`tests/test_deck_browser.py:3025`) | Verified on `4641086`, 2026-10-05 | `20956ae8-2762-4887-8297-62cbfab21b22` (extraction evidence) | Clicking the first epic card times out. |
-| `tests/test_deck_browser.py::test_a2_batch4_world_hit_consequences[chromium-desktop]` (`tests/test_deck_browser.py:3341`) | Verified on `4641086`, 2026-10-05 | `20956ae8-2762-4887-8297-62cbfab21b22` (extraction evidence) | Project selection times out in module order; passes in isolation on base and extraction branch. |
-| `tests/test_deck_browser.py::test_a2_batch4_history_status_and_http_prefixes[chromium-desktop]` (`tests/test_deck_browser.py:3425`) | Verified on `4641086`, 2026-10-05 | `20956ae8-2762-4887-8297-62cbfab21b22` (extraction evidence) | History does not show `queued (not started)` in module order; passes in isolation on both branches. |
-| `tests/test_live_documents_browser.py::test_a_departed_jobs_report_opens_from_the_library[chromium]` (`tests/test_live_documents_browser.py:194`) | Verified on `4641086`, 2026-10-05 | `20956ae8-2762-4887-8297-62cbfab21b22` (extraction evidence) | Reader metadata lacks the expected space before `claude`: `worker · 0ld5ob ·claude…`. |
 
-These browser failures reproduce on the extraction base `4641086`; they are recorded without changing presentation behavior or assertions. The deck tests reuse one page per viewport (`tests/test_deck_browser.py:75–127`), so isolation and module-order results differ for the two batch-4 cases. For example:
+The remaining browser failures reproduce on the extraction base `4641086`; they are recorded without changing presentation behavior or assertions. Historical runs reused one page per viewport, so isolation and module-order results differed for the two batch-4 cases. Mutating deck tests now own independent browser contexts; the two batch-4 failures and the departed-report metadata spacing failure have been repaired. For example:
 
 ```python
 # tests/test_deck_browser.py:617

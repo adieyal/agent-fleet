@@ -102,29 +102,22 @@ def deck(request: pytest.FixtureRequest, loaded_decks: Callable[[str, str], Deck
 
 
 @pytest.fixture
-def changed_deck(request: pytest.FixtureRequest, loaded_decks: Callable[[str, str], Deck],
-                 base_url: str) -> Iterator[Deck]:
-    deck = loaded_decks("desktop", getattr(request, "param", "reduce"))
-    original = finish_jobs(base_url, {})
-    # A prior test may leave a nested floor route or another view on the shared page.
-    deck.page.evaluate('fleetDeck.enterFloor(null)')
-    deck.page.locator('#viewToggle [data-view="deck"]').click()
+def changed_deck(request: pytest.FixtureRequest, browser: Browser,
+                 base_url: str, fixture_data: dict[str, Any]) -> Iterator[Deck]:
+    """Mutating tests own their context: routes, storage, drafts and overlays die with it."""
+    context = browser.new_context(viewport=VIEWPORTS["desktop"],
+                                  reduced_motion=getattr(request, "param", "reduce"))
+    context.add_init_script(PIN_CLOCK % (fixture_data["time"], fixture_data["time"]))
+    page = context.new_page()
+    deck = Deck(page)
+    page.on("console", lambda message: message.type == "error" and deck.errors.append(message.text))
+    page.on("pageerror", lambda error: deck.errors.append(str(error)))
     try:
+        page.goto(base_url + "/")
+        page.wait_for_function(f"window.fleetDeck && (fleetDeck.advanceTime(0), fleetDeck.agents().length === {len(on_the_floor(fixture_data))})")
         yield deck
     finally:
-        # the test has asserted on its own errors; a failed one must not fail every later test on this page
-        deck.errors.clear()
-        deck.page.set_viewport_size(VIEWPORTS["desktop"])
-        deck.page.keyboard.press("Escape")
-        deck.page.keyboard.press("Escape")
-        deck.page.evaluate("""doc => {
-            resetClock();
-            fleetDeck.apply(doc);
-            fleetDeck.enterFloor(null);
-            fleetDeck.lookAtRoom(null);
-            fleetDeck.advanceTime(0);
-        }""", original)
-        deck.page.locator('#viewToggle [data-view="deck"]').click()
+        context.close()
 
 
 def test_every_project_gets_a_room(deck: Deck, fixture_data: dict[str, Any]) -> None:
