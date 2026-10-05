@@ -84,6 +84,7 @@ document.getElementById('panelBody').addEventListener('scroll', () => {
 export function select(key) {
   archived = null; ++archiveRequest; delete panel.dataset.archived; document.getElementById('panelBody').archiveHtml = null;
   if (key !== selectedKey) {
+    completeDocs = null; docsRequest = null; docsError = null;
     document.getElementById('panelBody').scrollTop = 0;
     shownTab = chosenTab; jumped = null;
     for (const k of Object.keys(tabScroll)) delete tabScroll[k];
@@ -173,7 +174,34 @@ function renderArchived() {
   if (body.archiveHtml !== content) { body.archiveHtml = content; body.innerHTML = content; if (show === 'history') mountAuditHistory(body.querySelector('[data-run-audit]'), `execution:run:${archived.run.id}`); }
 }
 const staleChip = job => job.stale ? `<span class="chip" data-stale title="${esc(job.stale_reason || 'host offline')}; current status unknown">stale · ${esc(offlineLabel(job))} · last known</span>` : '';
+// Retain only the selected job's detail. Content and runtime generation invalidate it.
+let completeDocs = null, docsRequest = null, docsError = null;
+function applyCompleteDetail(e, detail) {
+  // Status, routing and staleness stay authoritative in the live snapshot.
+  for (const field of ['documents', 'steps', 'decisions_since_dispatch']) e.job[field] = detail[field] || [];
+  e.job.documents_truncated = false; e.job.details_truncated = false;
+}
+function loadCompleteDocs(e) {
+  if (!e || isSession(e) || !e.job.details_truncated) return;
+  const signature = `${e.key}:${lastDoc?.runtime?.generation}:${e.job.details_revision}`;
+  if (completeDocs?.signature === signature) { applyCompleteDetail(e, completeDocs.detail); return; }
+  if (docsRequest === signature || docsError?.signature === signature) return;
+  docsRequest = signature;
+  fetch(`/api/job-detail?${new URLSearchParams({ host: e.host, job: e.job.id })}`)
+    .then(async response => { if (!response.ok) throw new Error(await response.text()); return response.json(); })
+    .then(detail => {
+      if (selectedKey !== e.key || docsRequest !== signature) return;
+      completeDocs = { signature, detail }; docsRequest = null; docsError = null;
+      applyCompleteDetail(e, detail);
+      renderPanel();
+    }).catch(error => {
+      if (docsRequest !== signature) return;
+      docsRequest = null; docsError = { signature, message: error.message }; renderPanel();
+    });
+}
+
 export function renderPanel() {
+  loadCompleteDocs(workOf(selectedKey));
   if (archived) { renderArchived(); return; }
   // mid-scroll, updates wait until the scroll settles rather than rewriting content under it
   const wait = panelScrollUntil - performance.now();
@@ -210,7 +238,8 @@ export function renderPanel() {
       ${j.permission ? `<dt>perms</dt><dd>${esc(j.permission)}</dd>` : ''}
       <dt>updated</dt><dd>${esc(age(j.updated_at))} ago</dd>
     </dl>`, `
-    <h3>Decisions since dispatch · ${(j.decisions_since_dispatch || []).length}</h3>
+    <h3>Decisions since dispatch · ${j.details_truncated ? j.decisions_count : (j.decisions_since_dispatch || []).length}</h3>
+    ${j.details_truncated ? `<p>${docsError ? `Complete job details unavailable: ${esc(docsError.message)}` : 'Loading complete job details…'}</p>` : ''}
     ${(j.decisions_since_dispatch || []).map(d => `<dl class="meta"><dt>question</dt><dd>${esc(d.question)}</dd><dt>answer</dt><dd>${esc(d.answer)}</dd><dt>actor</dt><dd>${esc(d.actor)}</dd><dt>principle</dt><dd>${esc(d.principle ?? 'unknown')}</dd>${d.delivery_status ? `<dt>delivery</dt><dd>${esc(d.delivery_status === 'applied' ? 'received by host' : 'pending receipt')}${d.delivery_error ? ` · ${esc(d.delivery_error)}` : ''}</dd>` : ''}</dl>`).join('')}
     <h3>Steps · ${steps.filter(s => s.status === 'done').length}/${steps.length}</h3>
     <ol class="steps"${j.work ? ` data-work-project="${esc(j.work.project)}"` : ''}>${steps.map(s => `<li class="${esc(s.status)}"${s.status === 'running' ? ' aria-current="step"' : ''}><span class="si">${stepIcon[s.status] || '?'}</span>
@@ -407,13 +436,14 @@ function renderSessionPanel(e) {
 let docsExpiry = 0;
 function docsPanelHtml(e) {
   const docs = jobDocSequence(e.job);
-  if (!docs.length) return '';
+  const notice = e.job.documents_truncated ? `<p>${docsError ? `Complete document list unavailable: ${esc(docsError.message)}` : `Loading all ${e.job.documents_count} documents…`}</p>` : '';
+  if (!docs.length) return notice;
   const updating = docs.filter(d => isUpdating(e.job, d));
   if (updating.length) {
     const next = Math.min(...updating.map(d => d.mtime)) + DOC_UPDATING_SECONDS;
     if (next !== docsExpiry) { docsExpiry = next; setTimeout(renderPanel, Math.max(0, next * 1000 - Date.now()) + 50); }
   }
-  return `<h3>Documents · ${docs.length}</h3><ul class="docs" style="--hc:${e.look.color}">${docs.map(d => {
+  return `${notice}<h3>Documents · ${docs.length}</h3><ul class="docs" style="--hc:${e.look.color}">${docs.map(d => {
     const kind = kindOf(d), live = updating.includes(d);
     return `<li${live ? ' class="updating"' : ''}><button data-doc="${esc(d.id)}" title="${d.media === 'file' ? 'View collection instructions for' : 'Read'} ${esc(d.name)}"><span class="dk ${kind}" aria-hidden="true">${DOC_KIND[kind].glyph}</span>
       <span class="dn">${esc(d.name)}</span><span class="dm">${live ? '<span class="upd">updating</span> · ' : ''}${DOC_KIND[kind].label.toLowerCase()} · ${esc(docMeta(d))}</span><span class="go">${d.media === 'file' ? 'Collect' : 'Read'} →</span></button></li>`;
@@ -559,6 +589,7 @@ export function renderLive() {
   }
   if (runtime && !runtime.available) { el.className = 'live bad'; el.innerHTML = '<i></i><span>runtime unavailable</span>'; }
   else if (runtime && !runtime.healthy) { el.className = 'live bad'; el.innerHTML = '<i></i><span>runtime worker failed</span>'; }
+  else if (runtime?.connection === 'lagging') { el.className = 'live'; el.innerHTML = '<i></i><span>runtime lagging · rebuilding snapshot</span>'; }
   else if (live.ok) { el.className = 'live'; el.innerHTML = `<i></i><span>live · ${clock(Date.now() / 1000)}</span>`; }
   else { el.className = 'live bad'; el.innerHTML = `<i></i><span>${everLoaded ? 'server lost · retrying' : 'no server'}</span>`; }
 }

@@ -220,6 +220,10 @@ class FleetState(LiveWorkspace):
                                             for step in self.execution.steps(run.id)])
                         entry["jobs"][run.remote_job_id] = value
 
+    def job_documents(self, host, job):
+        with self.changed:
+            return snapshot(self.by_host[host]['jobs'][job].get('documents', []))
+
     def fetch_raw(self, host_name: str, job_id: str, document_id: str) -> dict[str, Any]:
         """A job document's Markdown as its host serves it, before rendering."""
         host = next(host for host in self.hosts if host.name == host_name)
@@ -257,6 +261,8 @@ class FleetState(LiveWorkspace):
             if changes:
                 self.history_cursor = int(changes[-1]["sequence"])
                 self.bump()
+            if hasattr(self, "_runtime_worker_success"):
+                self._runtime_worker_success("history-scheduler")
             stop.wait(0.25)
 
     def update(self, host_name: str, mutate: Any, *, subjects: set[str] | None = None,
@@ -410,7 +416,11 @@ def follow_host(state: FleetState, host: Host, stop: threading.Event | None = No
 
 def run_stream(state: FleetState, host: Host, stop: threading.Event | None = None) -> str:
     """Apply stream messages until the stream ends; return why it ended."""
-    return state.transport.follow_stream(host, lambda message: apply_message(state, host, message),
+    def receive(message):
+        apply_message(state, host, message)
+        if hasattr(state, '_runtime_worker_success'):
+            state._runtime_worker_success('host:' + host.name)
+    return state.transport.follow_stream(host, receive,
                                   events=EVENTS_PER_JOB, silence_limit=STREAM_SILENCE_LIMIT, stop=stop)
 
 def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> None:
@@ -510,6 +520,8 @@ class LiveRuntime:
         self.stop = threading.Event()
         self.lock = None
         self.errors = {}
+        self.recoveries = {}
+        state._runtime_worker_success = self.worker_recovered
         if hasattr(state, "container"):
             path = Path(state.container.settings()['store_path']).resolve()
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -525,17 +537,39 @@ class LiveRuntime:
 
     def worker(self, name, target, *args):
         def run():
-            try:
-                target(*args)
-                if not self.stop.is_set():
-                    self.errors[name] = 'worker exited unexpectedly'
-            except BaseException as error:
-                self.errors[name] = f'{type(error).__name__}: {error}'
-                logging.getLogger(__name__).exception('Runtime worker %s failed', name)
+            delay = 0.25
+            while not self.stop.is_set():
+                if name in self.errors:
+                    self.recoveries[name]['restarts'] += 1
+                    self.recoveries[name]['retrying'] = True
+                started = time.monotonic()
+                try:
+                    target(*args)
+                    if self.stop.is_set():
+                        return
+                    error = 'worker exited unexpectedly'
+                except BaseException as failure:
+                    error = f'{type(failure).__name__}: {failure}'
+                    logging.getLogger(__name__).exception('Runtime worker %s failed; retrying', name)
+                self.errors[name] = error
+                previous = self.recoveries.get(name, {})
+                self.recoveries[name] = {'last_error': error, 'failed_at': time.time(),
+                                        'recovered_at': None, 'retrying': False, 'restarts': previous.get('restarts', 0)}
+                if time.monotonic() - started >= 30:
+                    delay = 0.25
+                if self.stop.wait(delay):
+                    return
+                delay = min(delay * 2, 30)
         return threading.Thread(name=name, target=run, daemon=True)
 
+    def worker_recovered(self, name):
+        if name in self.errors:
+            self.recoveries[name] = {**self.recoveries[name], 'recovered_at': time.time(), 'retrying': False}
+            self.errors.pop(name, None)
+
     def health(self):
-        workers = {thread.name: {'alive': thread.is_alive(), 'error': self.errors.get(thread.name)}
+        workers = {thread.name: {'alive': thread.is_alive(), 'error': self.errors.get(thread.name),
+                                **self.recoveries.get(thread.name, {})}
                    for thread in self.threads}
         return {'healthy': all(worker['alive'] and not worker['error'] for worker in workers.values()),
                 'stopping': self.stop.is_set(), 'workers': workers}
