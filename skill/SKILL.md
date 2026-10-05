@@ -104,7 +104,7 @@ An agent in a job records its own decisions with `fleet decision record
 --work-item W --question Q --answer A --principle P --actor A`. On the
 controller it writes the store directly; on a worker host (whose store does not
 hold the job's run) it prints `Decision <id> handed to the controller via job
-<job>'s stream`, and `fleet web` records it once it hears from that host (an
+<job>'s stream`, and `fleet serve` records it once it hears from that host (an
 unrecordable one, e.g. an unknown work item, becomes an alert). Check with
 `fleet decision list --project P`.
 
@@ -115,6 +115,23 @@ user asks.
 
 The user watches the same jobs with `fleet watch` and `fleet web` (the
 kitchen dashboard), so keep descriptions and step titles meaningful.
+
+## Independent observer and deck
+
+`fleet serve` owns host observation, retained traces and existing authorized
+triage scheduling. Keep it running on the controller independently of the deck.
+`fleet web` subscribes; it starts no followers/scheduler and shows “Runtime
+unavailable — start fleet serve” when the observer is absent. Fixture/demo mode
+needs no observer. `fleet serve status` prints owner PID, uptime, named worker
+health and per-host stream state; an offline host is distinct from a dead worker.
+A second owner for the same canonical store is refused before workers start.
+
+For supervised controller installation, use the repository README's
+“Controller deployment with systemd user services” section and
+`scripts/systemd/fleet-serve.service` / `fleet-web.service`: install all four wheels,
+stop the old web owner, then start serve, verify status and start web. Restarting
+web alone leaves ingestion running. Installing units or changing a live controller
+still needs authorization from the task; these instructions supply none.
 
 ## Attention and project triage
 
