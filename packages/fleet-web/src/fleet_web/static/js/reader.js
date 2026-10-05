@@ -443,7 +443,7 @@ function renderReaderHead() {
     rd.source === 'attention' ? `<span>Attention item · ${idChip(doc.id)}</span><span title="${esc(new Date(doc.seen * 1000).toLocaleString())}">${stamp(doc.seen)} · ${age(doc.seen)} ago</span>`
       : rd.source === 'library' ? `<span>${esc(doc.project)} · ${esc(doc.id)}</span>`
       : rd.source === 'stored' && !rd.host ? `<span>working · ${esc(doc.id)}</span>`
-      : `<span title="${esc(d.job_description || rd.job.description)}"><i class="hd" style="background:${hostLook(rd.host).color}"></i>${esc(rd.host)} · ${idChip(rd.job.id)} ·${esc(d.agent || rd.job.agent)}</span>`,
+      : `<span title="${esc(d.job_description || rd.job.description)}"><i class="hd" style="background:${hostLook(rd.host).color}"></i>${esc(rd.host)} · ${idChip(rd.job.id)} · ${esc(d.agent || rd.job.agent)}</span>`,
     rd.source === 'stored' && rd.host ? `<span>Document copy on controller · images read from ${esc(rd.host)}</span>` : '',
     step != null ? `<span>step ${step + 1}</span>` : '',
     d.minutes && d.media !== 'image' ? `<span>${d.minutes} min read</span>` : '',
