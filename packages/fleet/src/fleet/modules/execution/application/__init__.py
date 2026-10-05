@@ -38,12 +38,15 @@ def link(repository: ExecutionRepository, work: WorkFacade, host: str, job: str,
 def record_observed(repository: ExecutionRepository, host: str, job: dict,
                     project: str | None) -> Run:
     """Record an externally observed job once, without reserving a claim."""
+    fields = {field: job[key] for field, key in (
+        ("label", "project"), ("title", "description"), ("cwd", "cwd"),
+        ("workspace", "workspace"), ("workspace_reason", "workspace_reason")) if key in job}
+    existing = repository.find(host, job["id"])
+    if existing is not None and all(getattr(existing, field) == value for field, value in fields.items()):
+        return existing
     with repository.transaction() as transaction:
         existing = transaction.find(host, job["id"])
         if existing is not None:
-            fields = {field: job[key] for field, key in (
-                ("label", "project"), ("title", "description"), ("cwd", "cwd"),
-                ("workspace", "workspace"), ("workspace_reason", "workspace_reason")) if key in job}
             updated = replace(existing, **fields)
             if updated != existing:
                 transaction.update(updated, "fleetd")

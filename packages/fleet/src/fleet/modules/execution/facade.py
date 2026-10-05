@@ -331,6 +331,12 @@ class ExecutionFacade:
         return self.repository.steps(run)
 
     def observe_steps(self, run: str, steps: list[dict]) -> None:
+        if steps:
+            self.repository.get_run(run)
+            valid_indices = all(isinstance(step.get("index"), int) and not isinstance(step.get("index"), bool)
+                                and step["index"] >= 0 for step in steps)
+            if valid_indices and self.repository.steps(run) == steps:
+                return
         with self.repository.transaction() as transaction:
             transaction.get_run(run)
             for step in steps:

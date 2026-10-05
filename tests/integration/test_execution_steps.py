@@ -54,3 +54,32 @@ def test_step_writes_validate_run_and_roll_back_an_invalid_index():
     with pytest.raises(ValueError, match="nonnegative integer"):
         execution.observe_steps(run.id, [{"index": 0, "title": "Valid"}, {"index": -1}])
     assert execution.steps(run.id) == [] and store.latest_sequence() == sequence
+
+
+def test_noop_observation_reads_external_changes_before_skipping_transaction(monkeypatch):
+    store = configured_container().store()
+    execution = configured_container(store).execution()
+    job = {'id': 'job', 'workspace': {'head': 'original'}}
+    run = execution.record_observed('carbon', job)
+    steps = [{'index': 1, 'title': 'Original'}]
+    execution.observe_steps(run.id, steps)
+    transaction = execution.repository.transaction
+    calls = []
+
+    def counted(*args, **kwargs):
+        calls.append(True)
+        return transaction(*args, **kwargs)
+
+    monkeypatch.setattr(execution.repository, 'transaction', counted)
+    assert execution.record_observed('carbon', job) == run
+    execution.observe_steps(run.id, steps)
+    assert calls == []
+    other = configured_container(configured_container(path=store.path).store()).execution()
+    other.record_observed('carbon', {**job, 'workspace': {'head': 'external'}})
+    other.observe_steps(run.id, [{'index': 1, 'title': 'External'}])
+    assert execution.record_observed('carbon', job).workspace == {'head': 'original'}
+    execution.observe_steps(run.id, steps)
+    assert len(calls) == 2
+    assert other.steps(run.id) == steps
+    with pytest.raises(ValueError, match='nonnegative integer'):
+        execution.observe_steps(run.id, [{'index': True, 'title': 'Original'}])

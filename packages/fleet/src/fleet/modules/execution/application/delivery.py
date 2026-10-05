@@ -25,7 +25,7 @@ def queue(repository: ExecutionRepository, item: AttentionItem, decision: "Decis
 
 def retry(repository: ExecutionRepository, work: WorkFacade, send: InputSender,
           host: str | None, decision: str | None, *, context_only: bool = False) -> None:
-    for delivery in repository.pending_deliveries():
+    for delivery in repository.pending_deliveries(host=host, decision=decision, context_only=context_only):
         if context_only and not delivery.key.startswith("context-decision:"):
             continue
         run = repository.get_run(delivery.run)
