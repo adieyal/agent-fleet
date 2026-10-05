@@ -513,7 +513,10 @@ def test_agent_replies_to_page_thread_through_runtime_and_sse(page, demo_page, d
         page.get_by_label('Who must respond?').select_option('agent')
         page.locator('#comment-form').get_by_role('button', name='Comment', exact=True).click()
         thread = page.locator('.thread').filter(has_text='Can you verify the supplier contract evidence?')
-        expect(thread.get_by_text('Agent replying…', exact=True)).to_be_visible(timeout=15000)
+        # No serve-owned responder here: the request escalates to a fleetd job, and the page says why.
+        status = thread.locator('[data-agent-status]')
+        expect(status).to_contain_text('Agent replying…', timeout=15000)
+        expect(status).to_contain_text('responder unavailable')
         assert len(calls) == 1
         destination = os.environ.get('FLEET_PAGE_SHOTS')
         if destination:
@@ -523,7 +526,7 @@ def test_agent_replies_to_page_thread_through_runtime_and_sse(page, demo_page, d
         reply_to_run(services, calls[0], attention, 'All active suppliers match the signed contract mapping.')
         services.execution.observe('home', JobObservation(calls[0].remote_job_id, 'done', 'codex', None, None, None))
         expect(thread.get_by_text('All active suppliers match the signed contract mapping.', exact=True)).to_be_visible(timeout=10000)
-        expect(thread.get_by_text('Agent replied · thread remains open', exact=True)).to_be_visible()
+        expect(status).to_contain_text('Agent replied · thread remains open')
         author = thread.locator('[data-message-type="reply"] strong').last
         expect(author).to_have_text('agent ⧉')
         assert author.get_attribute('title').startswith('triage:')
@@ -532,7 +535,7 @@ def test_agent_replies_to_page_thread_through_runtime_and_sse(page, demo_page, d
             page.screenshot(path=str(Path(destination) / 'M4-agent-replied.png'), full_page=True)
         thread.get_by_label('Reply', exact=True).fill('Which contracts did you compare?')
         thread.get_by_role('button', name='Reply', exact=True).click()
-        expect(thread.get_by_text('Agent replying…', exact=True)).to_be_visible(timeout=15000)
+        expect(status).to_contain_text('Agent replying…', timeout=15000)
         assert len(calls) == 2
         assert 'Which contracts did you compare?' in services.execution.get_action(calls[1].action).payload['steps'][0]['prompt']
         reply_to_run(services, calls[1], attention, 'The signed contracts for the active supplier list.')
