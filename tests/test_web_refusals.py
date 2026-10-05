@@ -239,7 +239,9 @@ def test_allowing_reaches_the_job_through_fleetd(deck, tmp_path, monkeypatch, ca
         assert job_file["steps"][1]["status"] == "done"
         first, continued = [json.loads(line) for line in (tmp_path / "worker" / "argv.jsonl").read_text().splitlines()]
         allowed = continued[continued.index("--allowedTools") + 1:continued.index("--resume")]
-        assert allowed == job_file["allowed_tools"]
+        assert allowed == list(dict.fromkeys([*job_file["allowed_tools"], *worker.FLEET_READ_TOOLS]))
+        assert 'Bash(fleet:*)' not in allowed
+        assert 'Bash(fleet decision record:*)' not in allowed
         assert continued[continued.index("--resume") + 1] == "s1"
         # The same grant again (a lost reply retried) queues nothing more.
         capsys.readouterr()

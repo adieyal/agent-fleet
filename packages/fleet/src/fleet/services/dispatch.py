@@ -8,6 +8,7 @@ from uuid import uuid4
 from fleet.api import DispatchRequest
 from fleet.orchestration import guide, orchestrator_prompt
 from fleet.transport import FleetError
+from fleet.services.permission_profiles import dispatch_rules
 
 
 class Dispatch:
@@ -21,6 +22,7 @@ class Dispatch:
         return workspace.floor_warning(workspace.resolve_project(request.project))
 
     def prepare(self, arguments: DispatchRequest, steps: list[dict]):
+        rules = dispatch_rules(arguments.allow_profile, arguments.allow, agent=arguments.agent)
         if arguments.work_item is not None:
             try:
                 self.services.work.get(arguments.work_item)
@@ -43,8 +45,8 @@ class Dispatch:
         for flag, value in (("--model", arguments.model), ("--id", arguments.id)):
             if value:
                 fleetd_arguments += [flag, value]
-        if arguments.allow:
-            fleetd_arguments += ["--allowed-tools", json.dumps(arguments.allow)]
+        if rules:
+            fleetd_arguments += ["--allowed-tools", json.dumps(rules)]
         for directory in arguments.add_dir or []:
             fleetd_arguments += ["--add-dir", directory]
         for pair in arguments.env or []:

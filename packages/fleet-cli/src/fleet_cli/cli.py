@@ -1437,6 +1437,9 @@ def build_parser(*, container=None) -> argparse.ArgumentParser:
     send.add_argument("--model", "-m")
     send.add_argument("--allow", action="append",
                       help="claude permission rule to pre-approve, e.g. 'Bash(ss:*)' (repeatable)")
+    send.add_argument('--allow-profile', choices=('review',),
+                      help='opt-in Claude inspection/test rules; tests execute repository code; '
+                           'adds to --allow and persists on the job')
     send.add_argument("--add-dir", action="append", help="extra directory on the host the claude agent may use (repeatable)")
     send.add_argument("--env", action="append", help="NAME=value set in the agent's environment (repeatable)")
     send.add_argument("--id")
@@ -1460,6 +1463,8 @@ def build_parser(*, container=None) -> argparse.ArgumentParser:
     dispatch.add_argument("--permission", help="runtime permission, as for fleet send; "
                                                "default acceptEdits / workspace-write")
     dispatch.add_argument("--id")
+    dispatch.add_argument('--allow-profile', choices=('review',),
+                          help='opt-in Claude inspection/test rules, as for fleet send')
     dispatch.add_argument("--json", action="store_true")
     add_actor_option(dispatch, container=container)
     dispatch.set_defaults(handler=command_dispatch_work, permission=None, model=None, allow=None,
@@ -1930,6 +1935,11 @@ def main(argv: list[str] | None = None, *, container=None) -> None:
     container = bootstrap_container(container)
     arguments = build_parser(container=container).parse_args(argv)
     try:
+        worker = container.worker_job(run=arguments.run if arguments.handler is command_decision_record else None)
+        if container.validate_worker_command(worker, arguments.command,
+                stream_decision=arguments.handler is command_decision_record and arguments.run is None):
+            command_decision_record(arguments, container=container)
+            return
         if arguments.handler is command_serve and arguments.serve_action == "status":
             arguments.handler(arguments, container=container)
             return

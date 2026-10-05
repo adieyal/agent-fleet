@@ -2,6 +2,17 @@
 from fleet_worker import fleetd
 
 
+def test_claude_allowlist_includes_fleet_read_commands(monkeypatch):
+    monkeypatch.setattr(fleetd, 'load_config', lambda: {})
+    command = fleetd.agent_command(job('claude', allowed_tools=['Bash(git status:*)']),
+                                  {'index': 0, 'prompt': 'Review'}, None)
+    assert 'Bash(fleet status:*)' in command
+    assert 'Bash(fleet decision list:*)' in command
+    assert 'Bash(fleet decision record --help:*)' in command
+    assert 'Bash(fleet decision record:*)' not in command
+    assert 'Bash(fleet:*)' not in command
+
+
 def job(agent, **extra):
     return {"id": "job1", "agent": agent, "project": "example", "description": "probe",
             "permission": "danger-full-access" if agent == "codex" else "default", "cwd": "/tmp", **extra}

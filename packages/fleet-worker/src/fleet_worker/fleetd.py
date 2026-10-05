@@ -386,6 +386,14 @@ class CodexParser:
 
 
 # The user reads job documents in the Fleet reader, which renders fenced code and Mermaid inline.
+FLEET_READ_TOOLS = [
+    'Bash(fleet --help:*)', 'Bash(fleet status:*)', 'Bash(fleet project ls:*)',
+    'Bash(fleet work show:*)', 'Bash(fleet run show:*)',
+    'Bash(fleet attention list:*)', 'Bash(fleet decision list:*)',
+    'Bash(fleet decision record --help:*)', 'Bash(fleet attention add --help:*)',
+]
+
+
 WRITING_GUIDE = (
     "Markdown documents you write (reports, reviews, plans, notes) are read by a person in a reader that "
     "shows fenced code and ```mermaid diagrams inline. Lead with the conclusion, then the evidence. Make every "
@@ -411,6 +419,12 @@ def job_preamble(job: JsonObject) -> str:
         "the user must act. Delegate existing items only within a confirmed project triage mandate; "
         "fleet attention delegate keeps them open and visible, and fleet attention take revokes agent ownership. "
         "Triage must not complete work or judge criteria.\n"
+        "The controller store may be on another host. fleet decision record --work-item FULL_ID hands "
+        "decisions to the controller through this job's stream. If a store command says to use the controller "
+        "host, write the exact attention or progress request in the outbox and name it in your summary; "
+        "the controller must apply it. Do not register duplicate projects or create a worker store.\n"
+        "If runtime permissions deny a Fleet write, put the exact request in the outbox too; "
+        "read-only Fleet tool allowances do not authorize writes.\n"
         f"{WRITING_GUIDE}"
         "Finish each step with a short plain summary of what you did and anything left open, then a final line "
         "`FLEET_STATUS: done`, `FLEET_STATUS: blocked — <reason>` (you could not do the work, e.g. tools or "
@@ -433,7 +447,7 @@ def _runtime_command(job: JsonObject, step: JsonObject, session_id: Optional[str
             command += ["--effort", job["effort"]]
         # No --bare for claude: it would also skip the input hook passed with --settings below.
         if job.get("allowed_tools"):
-            command += ["--allowedTools", *job["allowed_tools"]]
+            command += ["--allowedTools", *dict.fromkeys([*job["allowed_tools"], *FLEET_READ_TOOLS])]
         if session_id:
             command += ["--resume", session_id]
         command += ["--add-dir", str(JOBS_DIRECTORY / job["id"])]

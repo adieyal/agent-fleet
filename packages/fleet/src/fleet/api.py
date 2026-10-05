@@ -77,6 +77,7 @@ class DispatchRequest:
     context: list[str] | None
     hold: bool
     actor: str
+    allow_profile: str | None = None
 
 
 __all__ = [

@@ -510,6 +510,33 @@ runtime errors such as HTTP 401 are not retried.
 Claude jobs default to `acceptEdits`; Codex jobs default to `workspace-write`. Use
 `fleet send --permission` when a job needs a different mode.
 
+Claude review jobs can opt into common inspection and test commands with
+`--allow-profile review`, on either `send` or `dispatch`:
+
+```sh
+fleet dispatch WORK_ITEM "Inspect changes and run tests" --host home \
+  --runtime claude --cwd /path/to/repo --allow-profile review
+```
+
+The profile includes common file inspection commands, Git status/diff/log/show,
+pytest and lint-imports runners, `make test|lint|check`, Docker
+ps/images/inspect/logs/version/info, and Fleet reads/help. It includes `cd` so a
+chain such as `cd /path/to/repo && uv run pytest -q` can use those rules. Every
+component of a chained command still needs its own permission.
+
+This is an opt-in command allowlist, not a read-only sandbox. Tests and Make
+targets execute repository code and can write files; command-prefix rules do not
+constrain every argument. General Bash, arbitrary Python or shell scripts, Git
+writes, Docker builds/runs and Fleet writes are not included. Add an intentional
+extra rule with `fleet send --allow 'Bash(docker build:*)'` when needed. Existing
+runtime deny rules still apply.
+
+Fleet expands the profile before dispatch, merges and deduplicates explicit
+`--allow` rules, and stores the exact rules on the job. Later steps and retries use
+that snapshot, including on workers that know only `--allowed-tools`. No profile
+is selected by default; without the flag existing permissions are unchanged.
+The profile applies only to Claude. Codex jobs use their existing sandbox modes.
+
 ### Dashboard access
 
 `fleet web` binds to `127.0.0.1` by default. Its `/api/state`, `/api/stream`, and

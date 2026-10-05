@@ -37,6 +37,7 @@ from fleet.infrastructure.job_steps import send_step as _send_step
 from fleet.infrastructure.permission_grants import send_grant as _send_grant
 from fleet.infrastructure.resources import PackageResources as _PackageResources
 from fleet.infrastructure.sqlite import Store as _Store
+from fleet.infrastructure.sqlite.job_ownership import owns_job as _owns_job
 from fleet.infrastructure.sqlite.attention import (
     AttentionRepository as _AttentionRepository,
 )
@@ -99,6 +100,7 @@ from fleet.projections.run_history import run_detail as _run_detail
 from fleet.projections.workspace import annotate as _annotate
 from fleet.services.configuration import default_actor as _default_actor
 from fleet.services.configuration import validate_paths as _validate_paths
+from fleet.services.configuration import validate_worker_command as _validate_worker_command
 from fleet.services.documents import DocumentKeeper as _DocumentKeeper
 from fleet.services.documents import read_asset as _read_asset
 from fleet.services.documents import read_document as _read_document
@@ -138,6 +140,11 @@ def settings():
     return dict(store_path=store_path(), management_home=management_home(),
                 config_path=_transport.config_path(), home=_fleet_home(),
                 clock=None, job=_os.environ.get("FLEET_JOB_ID") or None)
+
+
+def worker_job(run: str | None = None) -> str | None:
+    job = _os.environ.get('FLEET_JOB_ID')
+    return job if job and not _owns_job(store_path(), job, run) else None
 
 
 _scope_lock = _RLock()
@@ -467,7 +474,8 @@ def _make_attention_commands(container):
 def _make_decision_commands(container):
     services = container.services()
     from fleet.services.decisions import DecisionCommands
-    return DecisionCommands(services, lambda: initialize_workspace(container), container.references(), container.transport())
+    return DecisionCommands(services, lambda: initialize_workspace(container), container.references(),
+                            container.transport(), container.worker_job)
 
 
 def _make_history(services):
@@ -525,6 +533,8 @@ def page_change(container, project, slug, operation, **fields):
 class Container(_containers.DeclarativeContainer):
     resolve_prefix = _providers.Callable(_resolve_prefix)
     validate_paths = _providers.Callable(_validate_paths)
+    worker_job = _providers.Callable(worker_job)
+    validate_worker_command = _providers.Callable(_validate_worker_command)
     default_actor = _providers.Callable(_default_actor)
     listing_arguments = _providers.Callable(_listing_arguments)
     merge_detected = _providers.Callable(_merge_detected)

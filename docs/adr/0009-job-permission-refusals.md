@@ -20,6 +20,21 @@ Claude in `-p` mode does not always run the `PermissionRequest` hook before refu
 
 An untouched item stays answerable after its step ends, since that is usually when a refused step is noticed and allowing it queues a continuation. It resolves as `refused; the job went on to step N` once a later step of the job starts, and a job the worker no longer reports once it has sent a full pass (finished more than a day ago, or removed) resolves it as `refused; job finished or removed`. Per-request job items recorded before this change fold into their step's item when fleetd replays their observation, and any left over after the first full pass resolve as superseded.
 
+## Named rules at dispatch
+
+`fleet send` and `fleet dispatch` accept the opt-in `--allow-profile review` for
+Claude jobs. The controller library expands its inspection/test rules into the
+existing explicit `allowed_tools` list before recording and delivering the
+dispatch. Explicit `--allow` rules are merged and deduplicated. The worker stores
+the exact list and uses it on later steps; workers need no profile registry or new
+transport fields. Profile changes affect new dispatches only.
+
+There is no project or global default, and no implicit test/build grant.
+The profile is a command approval set, not a read-only sandbox: tests and Make
+targets execute repository code, and prefix rules can admit other arguments.
+Docker builds, general Make/Bash, Git writes and Fleet writes need explicit
+grants. Existing refusal batching and job-specific grants continue to apply.
+
 ## Interactive sessions
 
 Interactive sessions get the same hooks from the host's Claude user settings: `fleet hooks install <host>` has fleetd merge `PermissionRequest`, `PreToolUse` (matcher `AskUserQuestion`) and `PostToolUse` entries into `~/.claude/settings.json`, each marked `# fleet-session-hook` so `fleet hooks uninstall <host>` removes only them. The installed command does nothing, and succeeds, once fleetd or its FLEET_HOME is gone, and ignores processes with `FLEET_JOB_ID` set, because a job's own `--settings` hook records its events. A session's `AskUserQuestion` becomes one attention item headed by the question's header and the start of the question; the reader shows the questions, their options, the host, working directory and project, and says it is answered in that terminal. Fleet cannot type into a terminal, so the item has no answer box and closes on `PostToolUse`.
