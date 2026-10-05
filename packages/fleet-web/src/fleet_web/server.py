@@ -208,7 +208,8 @@ def make_handler(state: Any,
 
         def do_POST(self) -> None:  # noqa: N802 — http.server naming
             path = self.path.split("?", 1)[0]
-            if path.startswith('/api/pages/') and path.rsplit('/', 1)[-1] in ('comments', 'comment-text', 'answer', 'resolve'):
+            if path.startswith('/api/pages/') and path.rsplit('/', 1)[-1] in (
+                    'comments', 'comment-text', 'answer', 'resolve', 'reply', 'reopen'):
                 self.page_write(path)
                 return
             action = path.removeprefix("/api/attention/") if path.startswith("/api/attention/") else None
@@ -268,7 +269,9 @@ def make_handler(state: Any,
                            if operation == 'comment' else {'item_id', 'answer'})
                 if operation == 'comment_text':
                     allowed = {'revision', 'comment_id', 'body', 'selector', 'owner', 'parent'}
-                elif operation == 'resolve':
+                elif operation == 'reply':
+                    allowed = {'item_id', 'body'}
+                elif operation in ('resolve', 'reopen'):
                     allowed = {'item_id'}
                 required = allowed - {'owner', 'parent'} if operation in ('comment', 'comment_text') else allowed
                 if body.keys() - allowed or required - body.keys():

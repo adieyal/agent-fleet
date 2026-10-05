@@ -145,7 +145,8 @@ class PageService:
                     attached = dict(state='unavailable', block=block,
                                     reason=f'Anchor unavailable: block {block}: {failed["error"]}')
                 threads.append(dict(id=item.id, headline=item.headline, owner=item.owner, state=item.state,
-                    created=item.last_seen, annotation=asdict(annotation),
+                    created=item.last_seen, annotation=asdict(annotation), kind=item.kind,
+                    replies=[asdict(reply) for reply in item.replies],
                     attachment=attached,
                     answers=[asdict(answer) for answer in answers if answer.attention_item == item.id]))
         threads.sort(key=lambda thread: (str(thread['created']), thread['id']))
@@ -221,6 +222,14 @@ class PageService:
         if item.page_annotation is None or item.page_annotation.page != f'fleet://projects/{project}/pages/{slug}':
             raise ValueError('answer item does not belong to this page')
         return item
+
+    def reply(self, project, slug, *, item_id, body, actor):
+        self.page_item(project, slug, item_id)
+        return asdict(self.services.attention.reply(item_id, body, actor=actor))
+
+    def reopen(self, project, slug, *, item_id, actor):
+        self.page_item(project, slug, item_id)
+        return asdict(self.services.attention.reopen(item_id, actor=actor))
 
     def answer(self, project, slug, *, item_id, answer, actor):
         self.page_item(project, slug, item_id)

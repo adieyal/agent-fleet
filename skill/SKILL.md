@@ -204,3 +204,11 @@ fleet page show PROJECT SLUG --version 1 --json
 Write prints the page URL path and confirmed Git revision. Reuse a key only for the same payload.
 Version numbers start at 1; JSON resolves the selected revision's blocks against current Fleet records.
 Worker jobs without the controller store must put the Markdown in their outbox and report it.
+
+Page thread replies are messages, not decisions; they preserve the attention item's state and owner.
+Use `fleet attention reply ID "text" --actor codex` for as many replies as needed. Messages include actor/time,
+appear live on pages, and are included by `fleet attention list` and `fleet attention show ID`.
+Close a thread explicitly with `fleet attention resolve ID --details "reason" --actor codex`;
+re-open it with `fleet attention reopen ID --actor codex`. A reply to a resolved thread keeps it resolved.
+`fleet answer ID "answer" --actor codex` still records a decision and resolves a decision item
+(or answers a blocked step). The page offers this as the secondary **Answer & resolve** action.

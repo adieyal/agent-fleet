@@ -1797,10 +1797,19 @@ def build_parser(*, container=None) -> argparse.ArgumentParser:
     delegate.add_argument("--note", help="what you want the agent to do, kept with the item")
     take.add_argument("--reason", help="why you are taking it back, kept with the item")
     escalate.add_argument("--reason", required=True, help="why the user must decide it")
-    attention_help = {"ack": "acknowledge an item; it stays open",
+    show = attention.add_parser('show', help='show an item and its replies as JSON')
+    show.add_argument('id')
+    show.set_defaults(handler=command_attention)
+    reply = attention.add_parser('reply', help='append a message; preserves thread state and records no decision')
+    reply.add_argument('id')
+    reply.add_argument('body')
+    reply.add_argument('--actor', required=True)
+    reply.set_defaults(handler=command_attention)
+    attention_help = {"reopen": "re-open a resolved page comment",
+                      "ack": "acknowledge an item; it stays open",
                       "snooze": "hide an item until a time; it stays open",
-                      "resolve": "close an item for good; does not answer it or unblock its job"}
-    for name in ("ack", "snooze", "resolve"):
+                      "resolve": "close an item; does not answer it or unblock its job"}
+    for name in ("ack", "snooze", "resolve", "reopen"):
         action = attention.add_parser(name, help=attention_help[name])
         action.add_argument("id")
         action.add_argument("--actor", required=True)

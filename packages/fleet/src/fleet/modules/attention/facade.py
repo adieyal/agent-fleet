@@ -73,6 +73,10 @@ class AttentionFacade:
             raise ValueError("an escalation needs a reason: why the user must decide")
         return self.commands.hand_over(item_id, "user", actor, reason=reason, expected="agent")
 
+    def reply(self, item_id: str, body: str, *, actor: str) -> AttentionItem:
+        """Append a message without changing lifecycle, ownership or recording a decision."""
+        return self.commands.reply(item_id, body, actor)
+
     def acknowledge(self, item_id: str, *, actor: str) -> AttentionItem:
         return self.commands.change(item_id, "acknowledged", actor)
 

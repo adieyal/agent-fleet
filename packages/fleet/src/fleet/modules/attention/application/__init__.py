@@ -6,13 +6,27 @@ from typing import Callable
 from uuid import uuid4
 
 from .ports import AttentionRepository
-from ..domain import AttentionItem, PageAnnotation, ItemResolved, StreamContext, required
+from ..domain import AttentionReply, AttentionItem, PageAnnotation, ItemResolved, StreamContext, required
 
 
 class Commands:
     def __init__(self, repository: AttentionRepository, clock: Callable[[], datetime]) -> None:
         self.repository = repository
         self.clock = clock
+
+    def reply(self, item_id: str, body: str, actor: str) -> AttentionItem:
+        if not isinstance(body, str) or not body.strip():
+            raise ValueError('reply body is required')
+        if not isinstance(actor, str) or not actor.strip():
+            raise ValueError('actor is required')
+        if len(body.encode()) > 8 * 1024:
+            raise ValueError('reply exceeds 8 KiB')
+        with self.repository.transaction() as repository:
+            previous = repository.get(item_id)
+            message = AttentionReply(str(uuid4()), body, actor, self.clock())
+            item = replace(previous, replies=previous.replies + (message,))
+            repository.save_reply(item, message)
+            return item.effective(self.clock())
 
     def raise_item(self, *, project: str, kind: str, owner: str, source: str, source_reference: str,
                    headline: str, context_reference: str, actor: str,
@@ -39,7 +53,8 @@ class Commands:
                            owner_at=previous.owner_at) if previous else dict(owner=owner, owner_reason=owner_reason,
                            owner_at=now, owner_actor=actor))
             item = AttentionItem(
-                id=previous.id if previous else str(uuid4()), project=project, kind=kind, subject=subject, **handed,
+                id=previous.id if previous else str(uuid4()), replies=previous.replies if previous else (),
+                project=project, kind=kind, subject=subject, **handed,
                 source=source, source_reference=source_reference, headline=headline,
                 context_reference=context_reference, work_item=work_item, run=run,
                 state=previous.state if previous else "open",

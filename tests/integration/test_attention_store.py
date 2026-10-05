@@ -72,3 +72,86 @@ def test_sqlite_dedupe_and_expired_reads_do_not_write(tmp_path):
     assert facade.list(state="open")[0].id == item.id
     assert facade.get(item.id).state == "open"
     assert store.history_after(0) == history
+
+
+@pytest.mark.parametrize('state', ['open', 'acknowledged', 'snoozed', 'resolved'])
+def test_replies_persist_in_order_with_history_and_preserve_lifecycle(tmp_path, state):
+    from dataclasses import replace
+    now = [datetime(2026, 10, 5, tzinfo=timezone.utc)]
+    store = configured_container(path=tmp_path / 'replies.db', clock=lambda: now[0]).store()
+    facade = configured_container(store).attention()
+    item = raise_item(facade)
+    if state == 'acknowledged':
+        item = facade.acknowledge(item.id, actor='user')
+    elif state == 'snoozed':
+        item = facade.snooze(item.id, until=now[0] + timedelta(days=1), actor='user')
+    elif state == 'resolved':
+        item = facade.resolve(item.id, details='Checked', actor='user')
+    sequence = store.latest_sequence()
+    for index, actor in enumerate(['user', 'agent', 'user']):
+        now[0] += timedelta(seconds=1)
+        updated = facade.reply(item.id, f'Message {index}', actor=actor)
+        assert replace(updated, replies=()) == item
+    reopened = configured_container(path=store.path).attention()
+    messages = reopened.get(item.id).replies
+    assert [message.body for message in messages] == ['Message 0', 'Message 1', 'Message 2']
+    assert [message.actor for message in messages] == ['user', 'agent', 'user']
+    assert [message.time for message in messages] == sorted(message.time for message in messages)
+    assert len({message.id for message in messages}) == 3
+    history = store.history_after(sequence)
+    assert [row['subject'] for row in history] == [f'attention:{item.id}:reply:{message.id}' for message in messages]
+    assert [json.loads(row['to'])['body'] for row in history] == [message.body for message in messages]
+    assert configured_container(store).decisions().list() == []
+    facade.resolve(item.id, details='Done', actor='user')
+    assert facade.get(item.id).state == 'resolved'
+    with pytest.raises(ValueError, match='resolved'):
+        facade.reopen(item.id, actor='user')
+    assert facade.get(item.id).replies == messages
+
+
+@pytest.mark.parametrize('body,actor,error', [('', 'user', 'body is required'), ('hello', '', 'actor is required'),
+                                           ('x' * 8193, 'user', 'exceeds 8 KiB')])
+def test_invalid_reply_does_not_write(tmp_path, body, actor, error):
+    container = configured_container(path=tmp_path / 'replies.db')
+    item = raise_item(container.attention())
+    sequence = container.store().latest_sequence()
+    with pytest.raises(ValueError, match=error):
+        container.attention().reply(item.id, body, actor=actor)
+    assert container.store().latest_sequence() == sequence
+
+
+def test_schema_18_upgrade_preserves_annotation_history_and_adds_empty_replies(tmp_path):
+    import sqlite3
+    from contextlib import closing
+    from dataclasses import asdict
+    from fleet.infrastructure.sqlite.migrations import MIGRATIONS
+    from fleet.modules.attention import PageAnnotation
+
+    path = tmp_path / 'old.db'
+    annotation = PageAnnotation('comment', 'fleet://projects/p1/pages/evidence', 'revision', 'Check evidence',
+                               {'type': 'FragmentSelector', 'value': 'evidence'}, 'user', 'user',
+                               'User must review', 'Check evidence')
+    with closing(sqlite3.connect(path)) as connection:
+        for statements in MIGRATIONS[:18]:
+            for statement in statements:
+                connection.execute(statement)
+        connection.execute("INSERT INTO attention_item (id, project, kind, owner, source, source_reference, "
+            "headline, context_reference, state, last_seen, page_annotation) "
+            "VALUES ('old', 'p1', 'decision', 'user', 'page', 'comment', 'Check evidence', ?, 'open', ?, ?)",
+            (annotation.page, '2026-10-05T09:00:00+00:00', json.dumps(asdict(annotation))))
+        connection.execute('INSERT INTO state_history (subject, "from", "to", actor, time) '
+                           "VALUES ('attention:old', '', 'open', 'user', '2026-10-05T09:00:00+00:00')")
+        connection.execute('PRAGMA user_version = 18')
+        connection.commit()
+    container = configured_container(path=path)
+    assert container.store().schema_version() == 19
+    item = container.attention().get('old')
+    assert item.page_annotation == annotation
+    assert item.replies == () and item.state == 'open'
+    assert len(container.store().history_after(0)) == 1
+    container.attention().reply('old', 'Verified after upgrade', actor='agent')
+    assert container.attention().get('old').page_annotation == annotation
+    assert len(container.store().history_after(0)) == 2
+    container.attention().resolve('old', details='Reviewed', actor='user')
+    assert container.attention().reopen('old', actor='user').state == 'open'
+    assert container.attention().get('old').replies[0].body == 'Verified after upgrade'

@@ -4,14 +4,16 @@ from dataclasses import asdict
 from datetime import datetime
 import json
 
-from fleet.modules.attention import (AttentionItem, PageAnnotation, ImportedAction, Question, QuestionOption, Refusal,
-                                    StreamContext)
+from fleet.modules.attention import (AttentionReply, AttentionItem, PageAnnotation, ImportedAction, Question, QuestionOption,
+                                    Refusal, StreamContext)
 
 from .repository import Repository
 
 
 def decode(row) -> AttentionItem:
     values = dict(row)
+    values["replies"] = tuple(AttentionReply(**{**reply, 'time': datetime.fromisoformat(reply['time'])})
+                              for reply in json.loads(values['replies']))
     values["options"] = tuple(json.loads(values["options"]))
     values["refusals"] = tuple(Refusal(**{**refusal, "rules": None if refusal["rules"] is None else tuple(refusal["rules"]),
                                           "denied_by": tuple(refusal.get("denied_by", ()))})
@@ -64,6 +66,11 @@ class AttentionRepository(Repository):
         self.write(item)
         self.unit.record_change(f"attention:{item.id}", previous if previous is not None else "", item.state, actor)
 
+    def save_reply(self, item: AttentionItem, reply: AttentionReply) -> None:
+        self.write(item)
+        self.unit.record_change(f"attention:{item.id}:reply:{reply.id}", "",
+                                json.dumps(asdict(reply), default=str), reply.actor)
+
     def save_owner(self, item: AttentionItem, previous: str, actor: str) -> None:
         """Save an item handed to a new owner; its history row says from whom, to whom and why."""
         self.write(item)
@@ -74,6 +81,7 @@ class AttentionRepository(Repository):
         if self.unit is None:
             raise RuntimeError("attention writes require a transaction")
         values = asdict(item)
+        values["replies"] = json.dumps(values["replies"], default=str)
         values["options"] = json.dumps(values["options"])
         values["refusals"] = json.dumps(values["refusals"])
         values["questions"] = json.dumps(values["questions"])

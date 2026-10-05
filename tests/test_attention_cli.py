@@ -19,6 +19,12 @@ def test_attention_commands_end_to_end(tmp_path):
     item = run("add", "Choose a direction", "--project", "p1", "--kind", "decision", "--owner", "user",
                "--source", "manual", "--source-reference", "q1", "--context-reference", "doc:1", "--actor", "user")
     assert run("list")[0]["id"] == item["id"]
+    for actor, text in [('user', 'First'), ('agent', 'Second'), ('user', 'Third')]:
+        reply = run('reply', item['id'], text, '--actor', actor)
+        assert reply['state'] == 'open'
+    assert [reply['body'] for reply in run('show', item['id'])['replies']] == ['First', 'Second', 'Third']
+    assert [reply['actor'] for reply in run('list')[0]['replies']] == ['user', 'agent', 'user']
+
     assert run("ack", item["id"], "--actor", "user")["state"] == "acknowledged"
     assert run("snooze", item["id"], "--until", "2099-01-01T00:00:00+00:00", "--actor", "user")["state"] == "snoozed"
     assert run("resolve", item["id"], "--details", "Handled", "--actor", "user")["state"] == "resolved"
