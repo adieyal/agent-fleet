@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from fleet.container import configured_container
-from fleet import cli
+from fleet_cli import cli
 
 FIXTURES = Path(__file__).parent / "fixtures" / "guidance"
 CONSTITUTION = (FIXTURES / "invoice-training.constitution.md").read_text()

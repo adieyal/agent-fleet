@@ -2,7 +2,7 @@ import json
 from datetime import datetime, timedelta, timezone
 
 from fleet.container import configured_container
-from fleet import cli
+from fleet_cli import cli
 
 from fleet.modules.execution import JobObservation
 from fleet.infrastructure.sqlite.migrations import MIGRATIONS

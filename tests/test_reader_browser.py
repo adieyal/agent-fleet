@@ -10,9 +10,9 @@ import pytest
 from playwright.sync_api import Browser, Page, expect
 
 from fleet.container import configured_container
-from fleet.web.fixture import FixtureState
-from fleet.web.library import ProjectLibrary
-from fleet.web.server import make_handler
+from fleet_web.fixture import FixtureState
+from fleet_web.library import ProjectLibrary
+from fleet_web.server import make_handler
 
 SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="240" height="80" viewBox="0 0 240 80">
 <script>document.title = 'svg script ran'</script>

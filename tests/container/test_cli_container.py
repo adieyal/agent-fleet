@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 from dependency_injector import providers
 
-from fleet import cli
+from fleet_cli import cli
 from fleet.container import Container
 
 

@@ -1,20 +1,20 @@
 [importlinter]
-root_package = fleet
+root_packages =
+    fleet
+    fleet_cli
+    fleet_web
 include_external_packages = True
 
 [importlinter:contract:layers]
 name = Controller layers
 type = layers
 layers =
-    fleet.cli | fleet.web
+    fleet_cli | fleet_web
     fleet.container
     fleet.services : fleet.orchestration : fleet.triage : fleet.triage_scheduler : fleet.ingestion
     fleet.transport
     fleet.projections
     fleet.modules
-# Temporary fleet web entrypoint; M3 replaces this exact crossing with plugin discovery.
-ignore_imports =
-    fleet.cli -> fleet.web.server
 
 [importlinter:contract:infrastructure]
 name = Infrastructure construction
@@ -28,8 +28,8 @@ type = forbidden
 source_modules = fleet.modules
 forbidden_modules =
     fleet.infrastructure
-    fleet.web
-    fleet.cli
+    fleet_web
+    fleet_cli
     fleet.container
     fleet.projections
     fleet.services
@@ -116,8 +116,8 @@ source_modules =
     fleet.triage_scheduler
     fleet.ingestion
 forbidden_modules =
-    fleet.cli
-    fleet.web
+    fleet_cli
+    fleet_web
     fleet.container
 
 [importlinter:contract:service-infrastructure]
@@ -133,14 +133,14 @@ forbidden_modules = fleet.infrastructure
 [importlinter:contract:web-processes]
 name = Web processes use transport
 type = forbidden
-source_modules = fleet.web
+source_modules = fleet_web
 forbidden_modules = subprocess
 allow_indirect_imports = True
 
 [importlinter:contract:cli-processes]
 name = CLI processes use transport
 type = forbidden
-source_modules = fleet.cli
+source_modules = fleet_cli
 forbidden_modules = subprocess
 allow_indirect_imports = True
 
@@ -161,15 +161,15 @@ name = Container has no presentation dependencies
 type = forbidden
 source_modules = fleet.container
 forbidden_modules =
-    fleet.cli
-    fleet.web
+    fleet_cli
+    fleet_web
 
 [importlinter:contract:controller-internals]
 name = Controllers use public providers and module surfaces
 type = forbidden
 source_modules =
-    fleet.cli
-    fleet.web
+    fleet_cli
+    fleet_web
 forbidden_modules =
     fleet.infrastructure
     fleet.services
@@ -179,3 +179,18 @@ forbidden_modules =
     fleet.ingestion
     fleet.transport
 allow_indirect_imports = True
+
+[importlinter:contract:library-presentation]
+name = Library has no presentation dependencies
+type = forbidden
+source_modules = fleet
+forbidden_modules =
+    fleet_cli
+    fleet_web
+
+[importlinter:contract:presentation-independence]
+name = Presentation packages are independent
+type = independence
+modules =
+    fleet_cli
+    fleet_web

@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from fleet import cli
+from fleet_cli import cli
 from fleet.remote import fleetd
 from fleet.transport import Host
 

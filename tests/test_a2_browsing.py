@@ -2,7 +2,7 @@ import json
 
 import pytest
 from fleet.container import configured_container
-from fleet import cli
+from fleet_cli import cli
 from fleet.modules.execution import JobObservation
 from tests.test_run_history import history, api, filters, get
 

@@ -12,7 +12,7 @@ from fleet.container import configured_container
 from fleet import transport
 from fleet.ingestion import observe_runs
 
-from fleet.web.server import FleetState, apply_message
+from fleet_web.server import FleetState, apply_message
 
 real_catch_up_jobs = transport.catch_up_jobs
 real_fetch_raw = FleetState.fetch_raw
@@ -107,7 +107,7 @@ def test_mismatched_projects_are_named_and_link_is_unchanged(project_id):
 
 
 def test_project_link_assigns_only_matching_label_and_moves_retained_documents(project_id, tmp_path, capsys):
-    from fleet import cli
+    from fleet_cli import cli
     config = os.environ["FLEET_CONFIG"]
     with open(config, "w") as handle:
         json.dump({"hosts": {"carbon": {"ssh": None}}}, handle)

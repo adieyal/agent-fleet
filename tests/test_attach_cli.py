@@ -4,7 +4,7 @@ import shlex
 import subprocess
 import sys
 
-from fleet import cli
+from fleet_cli import cli
 from fleet.transport import Host, LOCAL_FLEETD_SOURCE
 
 

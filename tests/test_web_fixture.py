@@ -10,9 +10,9 @@ import pytest
 
 from conftest import FIXTURE
 from fleet.container import configured_container
-from fleet.cli import build_parser
+from fleet_cli.cli import build_parser
 from fleet.modules.execution import ExecutionFacade
-from fleet.web.server import WEB_ROOT
+from fleet_web.server import WEB_ROOT
 
 
 def get(base_url: str, path: str, **query: str) -> dict:

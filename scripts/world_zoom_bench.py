@@ -22,8 +22,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT), str(ROOT / "tests")]
 
 from fleet.container import configured_container
-from fleet.web.fixture import FixtureLibrary, FixtureState  # noqa: E402
-from fleet.web.server import make_handler  # noqa: E402
+from fleet_web.fixture import FixtureLibrary, FixtureState  # noqa: E402
+from fleet_web.server import make_handler  # noqa: E402
 from world_zoom import PROBE, TIMER, blur, jumps, percentile, rest, time_to_sharp, zoom  # noqa: E402
 
 FIXTURE = ROOT / "tests" / "fixtures" / "restoke.json"

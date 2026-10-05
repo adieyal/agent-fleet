@@ -6,6 +6,8 @@ happen and are fanned out to every connected browser.
 from __future__ import annotations
 
 import hashlib
+import atexit
+from contextlib import ExitStack
 import json
 import logging
 from dataclasses import asdict
@@ -30,14 +32,18 @@ from fleet.projections.workspace import annotate, resolve, registry_config
 from fleet.projections.bench import bench_rooms, bench_state
 from fleet.projections.history import parse_since
 from fleet.container import FleetError, Host
-from fleet.web.documents import (AssetNotImage, AssetTooLarge, DocumentAccessDenied, fetch_asset,
+from fleet_web.documents import (AssetNotImage, AssetTooLarge, DocumentAccessDenied, fetch_asset,
                                  fetch_document, render_markdown)
-from fleet.web.fixture import FixtureLibrary, FixtureState
-from fleet.web.guidance import epic_decisions, project_decisions, guidance_view
-from fleet.web.library import ProjectLibrary
-from fleet.web.live import AlreadyHoused, LiveWorkspace
+from fleet_web.fixture import FixtureLibrary, FixtureState
+from fleet_web.guidance import epic_decisions, project_decisions, guidance_view
+from fleet_web.library import ProjectLibrary
+from fleet_web.live import AlreadyHoused, LiveWorkspace
 
-WEB_ROOT = Path(__file__).parent.resolve()
+from fleet_web.resources import static_directory, read_static, checkout_folders
+
+_resource_stack = ExitStack()
+atexit.register(_resource_stack.close)
+WEB_ROOT = _resource_stack.enter_context(static_directory())
 INDEX_PATH = WEB_ROOT / "index.html"
 APP_DIRECTORIES = ("css", "js")  # the deck's own code, read at startup together with the page
 STATIC_PREFIXES = ("/vendor/", "/assets/", "/prototype/")
@@ -47,7 +53,6 @@ PROTOTYPES = {"/prototype/bakeoff": "/prototype/bakeoff.html",  # art prototypes
               "/prototype/kit": "/prototype/kit.html",
               "/prototype/floor": "/prototype/floor.html",
               "/prototype/robot": "/prototype/robot.html"}
-REPO_ROOT = WEB_ROOT.parent.parent
 
 
 def build_id(root: Path = WEB_ROOT) -> str:
@@ -62,7 +67,7 @@ def build_id(root: Path = WEB_ROOT) -> str:
 
 BUILD = build_id()
 # Source-checkout folders the art prototypes read; absent from an installed package, so they 404 there.
-CHECKOUT_FOLDERS = {"/art/bakeoff/": REPO_ROOT / "art" / "bakeoff", "/concept/": REPO_ROOT / "docs" / "images" / "concept"}
+CHECKOUT_FOLDERS = checkout_folders()
 STATIC_TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
                 ".html": "text/html; charset=utf-8", ".hdr": "image/vnd.radiance",
                 ".glb": "model/gltf-binary", ".gltf": "model/gltf+json",
@@ -461,8 +466,8 @@ def blocked_detail(item) -> dict[str, Any]:
 def make_handler(state: FleetState | FixtureState,
                  library: ProjectLibrary | FixtureLibrary | None = None) -> type[BaseHTTPRequestHandler]:
     # Read once so a running server keeps serving the page and code that match its API.
-    index_page = INDEX_PATH.read_bytes()
-    app_files = {"/" + path.relative_to(WEB_ROOT).as_posix(): path.read_bytes()
+    index_page = read_static("index.html")
+    app_files = {"/" + path.relative_to(WEB_ROOT).as_posix(): read_static(path.relative_to(WEB_ROOT).as_posix())
                  for directory in APP_DIRECTORIES for path in sorted((WEB_ROOT / directory).rglob("*"))
                  if path.is_file()}
     container = state.container
@@ -889,7 +894,7 @@ def make_handler(state: FleetState | FixtureState,
                 self.respond(404, "text/plain", b"not found")
                 return
             content_type = STATIC_TYPES.get(target.suffix.lower(), "application/octet-stream")
-            self.respond(200, content_type, target.read_bytes(), cache_seconds=3600)
+            self.respond(200, content_type, read_static(target.relative_to(WEB_ROOT).as_posix()), cache_seconds=3600)
 
         def checkout_file(self, path: str) -> None:
             """Art and concept files from a source checkout, for the prototypes; nothing outside those folders."""
@@ -1034,7 +1039,7 @@ def serve(hosts: list[Host], *, port: int, bind: str, open_browser: bool = False
 
 
 def serve_fixture(path: str, *, port: int, bind: str, open_browser: bool = False, container=None) -> None:
-    """Serve a recorded fleet from JSON (see fleet.web.fixture); no hosts are contacted."""
+    """Serve a recorded fleet from JSON (see fleet_web.fixture); no hosts are contacted."""
     container = Container() if container is None else container
     state = FixtureState.load(path, container=container)
     run_server(make_handler(state, FixtureLibrary(state.fixture, container=state.container)), port=port, bind=bind, open_browser=open_browser)

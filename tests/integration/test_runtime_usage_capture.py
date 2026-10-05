@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from fleet.container import configured_container
-from fleet import cli
+from fleet_cli import cli
 from fleet.remote import fleetd
 from fleet.ingestion import observe_runs
 

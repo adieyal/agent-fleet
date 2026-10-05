@@ -167,7 +167,7 @@ def test_nonlocal_host_rejects_without_consuming_budget(triage):
 
 
 def test_cli_status_resolves_registered_project_name(triage, capsys, *, cli_container):
-    from fleet import cli
+    from fleet_cli import cli
     services, activation, *_ = triage
     a = item(triage)
     project = next(p for p in services.workspace.registry().projects.values() if p.id == activation.project)

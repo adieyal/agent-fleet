@@ -6,7 +6,8 @@ import pytest
 from rich.console import Console
 
 from fleet.container import configured_container
-from fleet import cli, transport
+from fleet_cli import cli
+from fleet import transport
 
 from fleet.projections.workspace import registry_config
 from fleet.transport import HostReport

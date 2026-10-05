@@ -4,7 +4,7 @@ from fleet import transport
 
 from pathlib import Path
 
-import fleet.cli as cli
+import fleet_cli.cli as cli
 from fleet.transport import Host
 
 

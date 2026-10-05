@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from fleet.container import configured_container
-from fleet import cli
+from fleet_cli import cli
 
 NOW = datetime(2026, 9, 27, 12, tzinfo=timezone.utc)
 

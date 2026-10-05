@@ -105,9 +105,9 @@ import contextlib
 import os
 import sqlite3
 import sys
-from fleet import cli
+from fleet_cli import cli
 from fleet.container import configured_container
-from fleet.web.server import FleetState
+from fleet_web.server import FleetState
 role, project = sys.argv[1:]
 container = configured_container()
 state = FleetState([], container=container) if role == 'web' else None

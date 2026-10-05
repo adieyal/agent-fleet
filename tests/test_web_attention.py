@@ -14,7 +14,7 @@ from fleet import transport
 
 
 from fleet.transport import Host
-from fleet.web.server import FleetState, apply_message, make_handler
+from fleet_web.server import FleetState, apply_message, make_handler
 
 HOSTS = [Host("home", None), Host("gpu", "gpu.example")]
 
@@ -458,7 +458,7 @@ def test_restreamed_resolved_failure_remains_visible(deck, resolution):
     document = deck.state.document()
     assert document["hosts"][0]["jobs"][0]["status"] == "failed"
     assert deck.state.execution.runs()[0].status == "failed"
-    result = subprocess.run([sys.executable, "-m", "fleet.cli", "attention", "list", "--state", "resolved"],
+    result = subprocess.run([sys.executable, "-m", "fleet_cli.cli", "attention", "list", "--state", "resolved"],
                             env=dict(os.environ), capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stderr
     listed, = json.loads(result.stdout)

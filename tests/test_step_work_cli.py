@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from fleet import cli
+from fleet_cli import cli
 
 from fleet.errors import FleetError
 from fleet.remote import fleetd

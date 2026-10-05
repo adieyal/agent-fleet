@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-import fleet.web.server as server
+import fleet_web.server as server
 
 
 class FakeHost:

@@ -29,9 +29,9 @@ from typing import Any, Callable
 from fleet.modules.workspace import Registry
 from fleet.projections.workspace import annotate, resolve, registry_config
 from fleet.container import FleetError
-from fleet.web.documents import STATUS_LINE, render_markdown
-from fleet.web.library import ProjectLibrary, is_private
-from fleet.web.live import LiveWorkspace
+from fleet_web.documents import STATUS_LINE, render_markdown
+from fleet_web.library import ProjectLibrary, is_private
+from fleet_web.live import LiveWorkspace
 
 
 class FixtureState(LiveWorkspace):

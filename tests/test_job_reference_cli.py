@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from fleet import cli
+from fleet_cli import cli
 from fleet.errors import FleetError
 
 JOBS = {"jobs": [{"id": "6b0dbd89-d087-4d48-a20f-9a47af709c32"}, {"id": "6b1f00aa-0000-0000-0000-000000000000"},

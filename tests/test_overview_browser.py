@@ -9,7 +9,7 @@ from playwright.sync_api import Browser, Page, expect
 
 from conftest import serve_fixture
 from fleet.container import configured_container
-from fleet.web.fixture import FixtureState
+from fleet_web.fixture import FixtureState
 from overview_fixture import overview_fixture, repository
 from test_deck_browser import PIN_CLOCK, VIEWPORTS
 

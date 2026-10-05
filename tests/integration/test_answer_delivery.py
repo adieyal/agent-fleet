@@ -1,7 +1,7 @@
 from fleet.container import configured_container
 from fleet import transport
 
-from fleet.web.server import FleetState, apply_message
+from fleet_web.server import FleetState, apply_message
 from fleet.modules.attention import StreamContext
 from fleet.infrastructure.sqlite.execution import ExecutionRepository
 import pytest

@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from fleet import cli
+from fleet_cli import cli
 
 
 def test_run_and_library_link_fetch_nothing(monkeypatch, capsys, project_id):

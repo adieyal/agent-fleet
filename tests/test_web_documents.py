@@ -17,8 +17,8 @@ from types import SimpleNamespace
 from fleet.container import configured_container
 from fleet.transport import FleetError, Host
 from fleet.remote import fleetd
-from fleet.web.documents import fetch_document
-from fleet.web.server import make_handler
+from fleet_web.documents import fetch_document
+from fleet_web.server import make_handler
 
 
 class DocumentState:

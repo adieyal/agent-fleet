@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 
 from fleet.container import configured_container
-from fleet.web.fixture import FixtureLibrary, FixtureState
-from fleet.web.library import ProjectLibrary
+from fleet_web.fixture import FixtureLibrary, FixtureState
+from fleet_web.library import ProjectLibrary
 from fleet.infrastructure.documents.library import library_paths
 from fleet.projections.overview import Overview
 from overview_fixture import AGENT_FLEET, RALPH, overview_fixture, repository

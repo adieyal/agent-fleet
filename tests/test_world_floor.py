@@ -11,7 +11,7 @@ from urllib.request import urlopen
 import pytest
 from playwright.sync_api import Browser, Page
 
-ASSETS = Path(__file__).parent.parent / "fleet" / "web" / "assets" / "world"
+ASSETS = Path(__file__).parent.parent / "packages" / "fleet-web" / "src" / "fleet_web" / "static" / "assets" / "world"
 KIT = json.loads((ASSETS / "kit" / "manifest.json").read_text())
 SEAT = json.loads((ASSETS / "robot" / "sprites" / "sprites.json").read_text())["seat_furniture"]
 

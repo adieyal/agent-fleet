@@ -214,7 +214,7 @@ def test_complete_requires_separate_accept_authority(orchestration):
 def test_real_scripted_orchestrator_process(orchestration, tmp_path, monkeypatch, capsys):
     import os
     import sys
-    from fleet import cli
+    from fleet_cli import cli
     from fleet.remote import fleetd
     from fleet.transport import Host
 
@@ -236,7 +236,7 @@ def test_real_scripted_orchestrator_process(orchestration, tmp_path, monkeypatch
     agent = tmp_path / 'scripted-agent'
     agent.write_text(f'''#!{sys.executable}
 import contextlib, io, json, re, sys
-from fleet import cli
+from fleet_cli import cli
 activation = re.search(r"fleet control ([a-f0-9-]+) COMMAND", sys.argv[2]).group(1)
 with contextlib.redirect_stdout(io.StringIO()):
     cli.main(['control', activation, 'progress', json.dumps(dict(next_step='User review'))])

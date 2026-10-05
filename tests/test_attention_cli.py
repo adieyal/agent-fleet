@@ -11,7 +11,7 @@ def test_attention_commands_end_to_end(tmp_path):
     configured_container(path=tmp_path / 'store.db').store()
 
     def run(*args):
-        result = subprocess.run([sys.executable, "-m", "fleet.cli", "attention", *args],
+        result = subprocess.run([sys.executable, "-m", "fleet_cli.cli", "attention", *args],
                                 env=env, capture_output=True, text=True, timeout=30)
         assert result.returncode == 0, result.stderr
         return json.loads(result.stdout)
@@ -33,7 +33,7 @@ def test_attention_owner_commands_end_to_end(tmp_path):
     def run(*args, code=0):
         if args[0] in ('delegate', 'take'):
             args = (*args, '--json')
-        result = subprocess.run([sys.executable, "-m", "fleet.cli", "attention", *args],
+        result = subprocess.run([sys.executable, "-m", "fleet_cli.cli", "attention", *args],
                                 env=env, capture_output=True, text=True, timeout=30)
         assert result.returncode == code, result.stderr
         return json.loads(result.stdout) if code == 0 else result.stderr

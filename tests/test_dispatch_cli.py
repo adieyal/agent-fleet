@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from fleet import cli
+from fleet_cli import cli
 
 
 @pytest.mark.parametrize("legacy", [False, True])

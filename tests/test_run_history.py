@@ -9,12 +9,12 @@ from urllib.request import urlopen
 import pytest
 
 from fleet.container import configured_container
-from fleet import cli
+from fleet_cli import cli
 from fleet.errors import FleetError
 from fleet.modules.execution import JobObservation
 from fleet.projections.run_history import history_runs, run_detail
-from fleet.web.fixture import FixtureLibrary
-from fleet.web.server import FleetState, make_handler
+from fleet_web.fixture import FixtureLibrary
+from fleet_web.server import FleetState, make_handler
 
 
 @pytest.fixture

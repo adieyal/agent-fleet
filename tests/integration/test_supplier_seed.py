@@ -6,7 +6,7 @@ import sys
 import pytest
 
 from fleet.container import configured_container
-from fleet import cli
+from fleet_cli import cli
 
 
 SCRIPT = Path(__file__).parents[2] / "scripts/seed_supplier_slice.py"

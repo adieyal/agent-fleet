@@ -6,7 +6,7 @@ import shlex
 import pytest
 
 from fleet.container import configured_container
-from fleet import cli
+from fleet_cli import cli
 from fleet.modules.attention import ItemResolved
 
 

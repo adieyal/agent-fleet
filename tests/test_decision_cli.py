@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from fleet.container import configured_container
-from fleet import cli
+from fleet_cli import cli
 from fleet.transport import LOCAL_FLEETD_SOURCE
 
 GUIDANCE = dict(project="p", epic=None, constitution=dict(path="constitution.md", revision="abc", version=3),

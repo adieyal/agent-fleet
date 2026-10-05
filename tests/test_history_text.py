@@ -1,7 +1,7 @@
 import time
 import pytest
 from dependency_injector import providers
-from fleet import cli
+from fleet_cli import cli
 
 
 @pytest.mark.parametrize('seconds, expected', [(None, 'unknown'), (0, '0m'), (20, '<1m'), (180, '3m'), (3840, '1h04m'), (7200, '2h00m')])

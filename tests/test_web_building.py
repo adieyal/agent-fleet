@@ -15,7 +15,7 @@ from fleet.modules.workspace import Registry
 from fleet.infrastructure.config.workspace import decode_workspace
 from workspace_support import persist_registry
 from fleet.transport import FleetError, Host
-from fleet.web.server import FleetState, make_handler
+from fleet_web.server import FleetState, make_handler
 
 
 HOSTS = [Host("home", None), Host("gpu", "gpu.example")]
@@ -470,7 +470,7 @@ def test_the_storehouse_survives_a_restart(deck, config_path):
 
 # ------------------------------------------------------------------ capacity from the CLI
 def test_capacity_is_set_from_the_cli_only_within_limits(deck, config_path, capsys):
-    from fleet import cli
+    from fleet_cli import cli
     cli.main(["building", "capacity", "8"])
     assert configured_container().initialized_workspace().capacity() == 8
     assert building_of(deck)["capacity"] == 8

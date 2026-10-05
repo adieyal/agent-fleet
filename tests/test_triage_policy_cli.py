@@ -1,7 +1,7 @@
 import json
 import pytest
 from fleet.container import configured_container
-from fleet import cli
+from fleet_cli import cli
 from tests.integration.test_triage_commands import triage
 
 

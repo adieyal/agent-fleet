@@ -3,11 +3,11 @@ import json
 import pytest
 
 from fleet.container import configured_container
-from fleet.cli import main
+from fleet_cli.cli import main
 
 
 def test_prefix_resolution_rejects_ambiguity_and_prefers_exact():
-    from fleet.cli import FleetError, resolve_cli_id
+    from fleet_cli.cli import FleetError, resolve_cli_id
     assert resolve_cli_id('abc', ['abc', 'abcdef'], 'work item') == 'abc'
     assert resolve_cli_id('abcd', ['abcdef'], 'work item') == 'abcdef'
     with pytest.raises(FleetError, match='ambiguous.*abcdef.*abcxyz'):

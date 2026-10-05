@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from fleet import cli
+from fleet_cli import cli
 from fleet.orchestration import ControllerCommands
 from fleet.transport import Host
 

@@ -1597,7 +1597,7 @@ def refusing_server(changed_deck: Deck, base_url: str, tmp_path, monkeypatch):
     from test_web_attention import Deck as ServerDeck, HOSTS
     from test_web_refusals import REQUESTS, refusal
     from fleet.projections.attention import attention_display
-    from fleet.web.server import apply_message
+    from fleet_web.server import apply_message
 
     config = tmp_path / "hosts.json"
     config.write_text(json.dumps({"hosts": {"home": {}}}))
@@ -1686,7 +1686,7 @@ def test_a_session_question_is_shown_with_where_to_answer_it(changed_deck: Deck,
     from test_web_attention import Deck as ServerDeck, HOSTS
     from test_web_session_questions import asked
     from fleet.projections.attention import attention_display
-    from fleet.web.server import apply_message
+    from fleet_web.server import apply_message
 
     config = tmp_path / "hosts.json"
     config.write_text(json.dumps({"hosts": {"home": {}}}))
@@ -1733,7 +1733,7 @@ def test_a_blocked_job_is_answered_from_the_deck(changed_deck: Deck, base_url: s
     from test_answer_blocked import QUESTION, blocked
     from fleet import transport
     from fleet.projections.attention import attention_display
-    from fleet.web.server import apply_message
+    from fleet_web.server import apply_message
 
     config = tmp_path / "hosts.json"
     config.write_text(json.dumps({"hosts": {"home": {}}}))
@@ -3520,7 +3520,7 @@ class PrefetchDeck:
 @pytest.fixture
 def prefetch_deck(browser: Browser, fixture_data: dict[str, Any], monkeypatch) -> Iterator[PrefetchDeck]:
     from conftest import serve_fixture
-    from fleet.web.fixture import FixtureState
+    from fleet_web.fixture import FixtureState
 
     fixture = json.loads(json.dumps(fixture_data))
     host = next(host for host in fixture['hosts'] if host['name'] == 'home')

@@ -4,7 +4,7 @@ from dataclasses import asdict
 from typing import Any
 
 from fleet.projections.decisions import decision_log, promotion_marker
-from fleet.web.documents import render_markdown
+from fleet_web.documents import render_markdown
 
 
 def guidance_view(services, project: str, epic: str | None = None, number: int | None = None) -> dict[str, Any]:

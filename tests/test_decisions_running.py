@@ -41,7 +41,7 @@ def test_decision_retries_after_restart_and_dispatch_excludes_history(project_id
     assert delivery.decision == recent.id
     assert delivery.status == 'pending'
     assert calls[0][0] == 'receive-decision'
-    from fleet.web.server import FleetState
+    from fleet_web.server import FleetState
     state = FleetState([transport.Host('fake', None)], container=configured_container(store=services.store))
     view = state.with_work({'hosts': [dict(name='fake', jobs=[dict(id=run.remote_job_id)], sessions=[])]})
     received, = view['hosts'][0]['jobs'][0]['decisions_since_dispatch']
@@ -100,7 +100,7 @@ def test_worker_receipt_and_step_boundary(tmp_path, monkeypatch, capsys):
 
 
 def test_fleet_show_lists_received_decisions(monkeypatch, capsys, *, cli_container, override_cli_method):
-    from fleet import cli
+    from fleet_cli import cli
     job = dict(id='j', project='p', description='Build', agent='codex', status='running',
                steps=[], cwd='/repo', permission='default', events=[],
                decisions_since_dispatch=[dict(id='d1', question='Colour?', answer='Blue',

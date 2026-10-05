@@ -4,7 +4,8 @@ from pathlib import Path
 import pytest
 
 from fleet.container import configured_container
-from fleet import cli, transport
+from fleet_cli import cli
+from fleet import transport
 from fleet.container import store_path
 
 

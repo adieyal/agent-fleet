@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from fleet import cli
+from fleet_cli import cli
 
 
 def help_text(capsys, *arguments: str) -> str:

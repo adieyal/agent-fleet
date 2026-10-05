@@ -10,9 +10,9 @@ from urllib.request import urlopen
 from dependency_injector import providers
 
 from fleet.container import Host
-from fleet.web.documents import fetch_document
-from fleet.web.library import ProjectLibrary
-from fleet.web.server import FleetState, make_handler
+from fleet_web.documents import fetch_document
+from fleet_web.library import ProjectLibrary
+from fleet_web.server import FleetState, make_handler
 
 
 def test_live_state_resolves_overridden_adapters_once(cli_container):

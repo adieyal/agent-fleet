@@ -19,9 +19,9 @@ from types import SimpleNamespace
 from fleet.container import configured_container
 from fleet.remote import fleetd
 from fleet.transport import FleetError, Host
-from fleet.web.documents import ASSET_READ_LIMIT, fetch_asset, fetch_document, render_markdown
-from fleet.web.library import ProjectLibrary
-from fleet.web.server import make_handler
+from fleet_web.documents import ASSET_READ_LIMIT, fetch_asset, fetch_document, render_markdown
+from fleet_web.library import ProjectLibrary
+from fleet_web.server import make_handler
 
 SVG = b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><script>alert(1)</script></svg>'
 

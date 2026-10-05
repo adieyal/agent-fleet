@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from fleet import cli
+from fleet_cli import cli
 from fleet.transport import Host
 
 

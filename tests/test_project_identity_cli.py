@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from fleet.container import configured_container
-from fleet.cli import main
+from fleet_cli.cli import main
 
 
 def register(name):

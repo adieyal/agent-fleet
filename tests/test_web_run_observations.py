@@ -8,7 +8,7 @@ from urllib.request import urlopen
 
 
 from fleet.transport import Host
-from fleet.web import server
+from fleet_web import server
 
 
 def test_unscoped_dispatch_observations_keep_deck_available():

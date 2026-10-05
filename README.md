@@ -33,11 +33,20 @@ Claude Code or Codex CLI.
 ```bash
 git clone https://github.com/adieyal/agent-fleet.git
 cd agent-fleet
-uv tool install .
+uv build --all-packages --wheel
+uv tool install --find-links dist dist/fleet_cli-0.1.0-py3-none-any.whl
 
 fleet host add worker --ssh worker  # any SSH target you can already reach
 fleet install worker                # copy the runner and locate agent CLIs
 ```
+
+The checkout is a uv workspace with `fleet` (library), `fleet-cli` (terminal) and
+`fleet-web` (dashboard) distributions. For development, use `uv sync` and
+`uv run fleet ...`. Build all three wheels together for local installation: the
+CLI requires matching library and web distributions. Installing
+`packages/fleet-cli` alone cannot resolve unpublished sibling packages; provide
+the wheel directory as shown above. The dashboard supplies `fleet web` through
+distribution entry points and also has a standalone `fleet-web` command.
 
 Use `fleet host add laptop --local` for this machine. **After upgrading, reinstall
 fleetd on every host with `fleet install <host>`: the wire protocol changed.**
@@ -498,8 +507,8 @@ uv build
 ```
 
 The project code is licensed under [Apache-2.0](LICENSE). Bundled assets have
-their own terms in [asset credits](fleet/web/assets/CREDITS.md) and the
-[three.js license](fleet/web/vendor/three/LICENSE).
+their own terms in [asset credits](packages/fleet-web/src/fleet_web/static/assets/CREDITS.md) and the
+[three.js license](packages/fleet-web/src/fleet_web/static/vendor/three/LICENSE).
 
 
 ## Test suite

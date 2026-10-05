@@ -43,7 +43,7 @@ print(json.dumps(dict(type='result', subtype='success', result='Verified. FLEET_
     (worker / 'config.json').write_text(json.dumps({'claude': str(agent)}))
 
     def command(*arguments: str) -> str:
-        return subprocess.run([sys.executable, '-m', 'fleet.cli', *arguments], cwd=ROOT,
+        return subprocess.run([sys.executable, '-m', 'fleet_cli.cli', *arguments], cwd=ROOT,
             env=environment, check=True, capture_output=True, text=True, timeout=30).stdout
 
     seed = subprocess.run([sys.executable, '-c', '''

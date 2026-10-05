@@ -2,7 +2,7 @@ import json
 
 from dependency_injector import providers
 
-from fleet import cli
+from fleet_cli import cli
 
 
 def test_json_emits_projection_unchanged(cli_container, capsys, project_id):

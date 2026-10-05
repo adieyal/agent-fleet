@@ -159,7 +159,7 @@ def test_a_running_step_is_refreshed_periodically(jobs, tmp_path, monkeypatch):
 
 
 def shown(monkeypatch, capsys, job, override_cli_method, cli_container):
-    from fleet import cli
+    from fleet_cli import cli
     override_cli_method('references', 'job', lambda reference: (SimpleNamespace(name="carbon"), "job"))
     monkeypatch.setattr(transport, "call", lambda host, arguments, **kwargs: job)
     monkeypatch.setattr(cli.console, "width", 200)

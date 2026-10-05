@@ -10,8 +10,8 @@ from playwright.sync_api import Browser, Page, Route, expect
 
 from conftest import FIXTURE, serve_fixture
 from fleet.container import configured_container
-from fleet.web.documents import render_markdown
-from fleet.web.fixture import FixtureState
+from fleet_web.documents import render_markdown
+from fleet_web.fixture import FixtureState
 from test_deck_browser import PIN_CLOCK, VIEWPORTS, finish_jobs
 
 

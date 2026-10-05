@@ -15,7 +15,7 @@ from fleet import transport
 from fleet.projections.decisions import decision_log
 from fleet.remote import fleetd
 from fleet.ingestion import record_decisions
-from fleet.web.server import FleetState, apply_message
+from fleet_web.server import FleetState, apply_message
 
 GUIDANCE = dict(project="p", epic=None, constitution=dict(path="constitution.md", revision="abc", version=3),
                 charter=dict(path="charters/e.md", revision="def", version=2))

@@ -1,7 +1,7 @@
 import json
 
 from fleet.container import configured_container
-from fleet import cli
+from fleet_cli import cli
 
 
 def test_options_and_answer_and_status(capsys, project_id):

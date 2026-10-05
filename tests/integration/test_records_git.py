@@ -184,7 +184,7 @@ def test_recovery_cannot_replace_a_newer_document_revision(tmp_path, monkeypatch
 
 
 def test_management_registration_cli_and_summary_command(tmp_path, capsys, project_id):
-    from fleet import cli
+    from fleet_cli import cli
     repo = tmp_path / 'management'
     repo.mkdir()
     git(repo, 'init')

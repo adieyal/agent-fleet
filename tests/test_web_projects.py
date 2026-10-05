@@ -11,7 +11,7 @@ from fleet import transport
 
 from workspace_support import persist_registry
 from fleet.transport import Host
-from fleet.web.server import FleetState, make_handler
+from fleet_web.server import FleetState, make_handler
 
 HOSTS = [Host("home", None), Host("gpu", "gpu.example")]
 

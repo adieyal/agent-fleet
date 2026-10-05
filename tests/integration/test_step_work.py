@@ -116,7 +116,7 @@ def test_a_steps_documents_belong_to_the_work_it_served(plan):
 
 def test_the_deck_state_carries_each_jobs_workspace_and_current_step_work(plan):
     from fleet.transport import Host
-    from fleet.web import server
+    from fleet_web import server
 
     store, project, epic, milestones = plan
     run = dispatch(store, project, epic, milestones).run

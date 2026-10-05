@@ -31,7 +31,7 @@ from fleet.container import DispatchRequest
 from fleet.container import listing_arguments
 from fleet.container import merge_detected as parse_detected
 from fleet.container import validate_paths, default_actor as actor_identity
-from fleet.web.server import serve, serve_fixture
+from fleet_cli.plugins import load_command
 
 console = Console()
 error_console = Console(stderr=True)
@@ -903,14 +903,7 @@ def command_unlock(arguments: argparse.Namespace, *, container) -> None:
 
 
 def command_web(arguments: argparse.Namespace, *, container) -> None:
-    if arguments.fixture:
-        serve_fixture(arguments.fixture, container=container, port=arguments.port, bind=arguments.bind, open_browser=arguments.open)
-        return
-    serve(selected_hosts(arguments, container=container), container=container, port=arguments.port, bind=arguments.bind, open_browser=arguments.open,
-          **container.configuration().web_settings())
-
-
-# --------------------------------------------------------------- parser
+    load_command('web')(arguments, container)
 
 
 def nonnegative_depth(value: str) -> int:

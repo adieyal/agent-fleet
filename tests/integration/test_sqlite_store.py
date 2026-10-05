@@ -15,7 +15,7 @@ import pytest
 
 from fleet.container import configured_container
 from fleet.infrastructure.sqlite import store as sqlite_store
-from fleet.web.server import FleetState, make_handler
+from fleet_web.server import FleetState, make_handler
 
 
 def test_migrations_are_ordered_and_idempotent(tmp_path: Path) -> None:

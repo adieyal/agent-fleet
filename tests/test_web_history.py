@@ -9,7 +9,7 @@ import pytest
 
 from fleet.container import configured_container
 from fleet.modules.records import TRIAGE_PATH
-from fleet import cli
+from fleet_cli import cli
 
 
 @pytest.fixture

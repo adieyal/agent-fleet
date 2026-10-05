@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from rich.console import Console
 
-from fleet import cli
+from fleet_cli import cli
 
 
 @pytest.mark.parametrize("arguments", [["project", "ls"], ["host", "add", "demo", "--local"], ["web"]])

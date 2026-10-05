@@ -5,7 +5,7 @@ from pathlib import Path
 
 from fleet.container import configured_container
 from fleet.transport import Host
-from fleet.web.server import FleetState, apply_message
+from fleet_web.server import FleetState, apply_message
 
 
 def test_stream_records_actions_without_duplicate_history_or_push():

@@ -2,7 +2,8 @@ import json
 import subprocess
 
 from fleet.container import configured_container
-from fleet import cli, transport
+from fleet_cli import cli
+from fleet import transport
 
 
 def test_phase3_gate_from_persisted_slice(tmp_path, monkeypatch, capsys, project_id):

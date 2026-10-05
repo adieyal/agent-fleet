@@ -8,7 +8,8 @@ from types import SimpleNamespace
 import pytest
 
 from fleet.container import configured_container
-from fleet import cli, transport
+from fleet_cli import cli
+from fleet import transport
 
 from fleet.modules.attention.domain import BLOCKED_SOURCE, StreamContext
 from fleet.remote import fleetd
