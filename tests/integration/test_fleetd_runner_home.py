@@ -74,3 +74,24 @@ def test_missing_runner_job_records_failure(worker, tmp_path, monkeypatch):
         assert log_path.read_text().startswith("previous launch output\n")
     finally:
         tmux(worker.TMUX_COMMAND, "kill-session", "-t", "fleet-job")
+
+
+def test_runner_bypasses_tmux_default_shell(worker, tmp_path):
+    """A user's shell startup must not run before the fleet runner."""
+    marker = tmp_path / "shell-started"
+    shell = tmp_path / "user-shell"
+    shell.write_text(f'#!/bin/sh\n: > "{marker}"\nexec /bin/sh "$@"\n')
+    shell.chmod(0o755)
+    command = worker.TMUX_COMMAND
+    tmux(command, "new-session", "-d", "-s", "keeper", "/bin/sleep", "60", check=True)
+    tmux(command, "set-option", "-g", "default-shell", str(shell), check=True)
+    try:
+        worker.launch_runner("job")
+        deadline = time.monotonic() + 10
+        while worker.derive_status(worker.read_job("job")) not in worker.TERMINAL_STATUSES:
+            assert time.monotonic() < deadline, "runner did not finish"
+            time.sleep(.01)
+        assert worker.derive_status(worker.read_job("job")) == "done"
+        assert not marker.exists(), "tmux ran the user's shell startup"
+    finally:
+        tmux(command, "kill-server")
