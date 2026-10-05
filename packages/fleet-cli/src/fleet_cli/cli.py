@@ -1898,6 +1898,11 @@ def main(argv: list[str] | None = None, *, container=None) -> None:
     container = bootstrap_container(container)
     arguments = build_parser(container=container).parse_args(argv)
     try:
+        worker = container.worker_job(run=arguments.run if arguments.handler is command_decision_record else None)
+        if container.validate_worker_command(worker, arguments.command,
+                stream_decision=arguments.handler is command_decision_record and arguments.run is None):
+            command_decision_record(arguments, container=container)
+            return
         if arguments.handler is command_serve and arguments.serve_action == "status":
             arguments.handler(arguments, container=container)
             return

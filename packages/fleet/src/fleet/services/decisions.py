@@ -11,8 +11,9 @@ from fleet.transport import FleetError, Host
 
 
 class DecisionCommands:
-    def __init__(self, services, workspace, references, transport):
+    def __init__(self, services, workspace, references, transport, worker_job):
         self.services, self.workspace, self.references, self.transport = services, workspace, references, transport
+        self.worker_job = worker_job
 
     def job_run(self, job: str) -> str | None:
         """The run this machine's store holds for the fleet job, or None when it holds none."""
@@ -35,7 +36,7 @@ class DecisionCommands:
     def record(self, *, work_item: str, question: str, answer: str, principle: str,
                actor: str, context: str, run: str | None):
         job = os.environ.get("FLEET_JOB_ID")
-        run = run if run is not None or job is None else self.job_run(job)
+        run = run if run is not None or job is None or self.worker_job() else self.job_run(job)
         if run is None and job is not None:
             identity = self.hand_to_job(job, dict(work_item=work_item, question=question, answer=answer,
                                                  principle=principle, actor=actor, context=context))

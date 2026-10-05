@@ -93,6 +93,15 @@ def test_a_resent_decision_is_a_new_decision_from_the_cli(tree, host_job, capsys
     assert first["id"] != second["id"]
 
 
+def test_worker_decision_never_opens_or_creates_controller_store(host_job, tmp_path, monkeypatch, capsys):
+    store = tmp_path / 'unavailable-controller' / 'fleet.db'
+    monkeypatch.setenv('FLEET_STORE', str(store))
+    hand(capsys, 'full-controller-work-item-id')
+    [held] = json.loads(host_job.read_text())['decisions']
+    assert held['work_item'] == 'full-controller-work-item-id'
+    assert not store.parent.exists()
+
+
 def test_a_named_run_is_recorded_here_even_inside_a_job(tree, host_job, capsys):
     run = run_for(tree.task.id, GUIDANCE)
     assert record(capsys, tree.task.id, "--run", run.id)["source_run"] == run.id
