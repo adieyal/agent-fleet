@@ -71,9 +71,15 @@ class RuntimeServer:
                     self.end_headers()
                     try:
                         while not runtime.stop.is_set():
+                            typing = state.typing_update()
+                            if typing['typing_sequence'] != getattr(self, 'typing_cursor', None):
+                                typing['generation'] = owner.generation
+                                self.wfile.write(b'event: responder\ndata: ' + json.dumps(typing).encode() + b'\n\n')
+                                self.typing_cursor = typing['typing_sequence']
+                            self.wfile.flush()
                             future = owner.subscription_snapshot()
                             try:
-                                value, body = future.result(timeout=1)
+                                value, body = future.result(timeout=0.1)
                             except TimeoutError:
                                 self.wfile.write(b': rebuilding snapshot\n\n')
                                 self.wfile.flush()
@@ -86,7 +92,7 @@ class RuntimeServer:
                             else:
                                 self.wfile.write(b': heartbeat\n\n')
                             self.wfile.flush()
-                            state.wait_for_change(value['sequence'], 1, value['pipeline_sequence'])
+                            state.wait_for_change(value['sequence'], 1, value['pipeline_sequence'], self.typing_cursor)
                     except (OSError, ConnectionError):
                         pass
                 else:

@@ -189,7 +189,11 @@ def test_close_terminates_wrapper_descendants_and_pipe_readers(tmp_path):
     assert not any(reader.is_alive() for reader in server.readers)
     # An adopted child can briefly remain a zombie before init reaps it.
     stat = Path(f'/proc/{child_pid}/stat')
-    assert not stat.exists() or stat.read_text().split()[2] == 'Z'
+    try:
+        state = stat.read_text().split()[2]
+    except FileNotFoundError:
+        state = None  # Reaped between close and the read: the required dead-child outcome.
+    assert state is None or state == 'Z'
 
 
 def test_concurrent_close_waits_for_uncooperative_process_exit(tmp_path):

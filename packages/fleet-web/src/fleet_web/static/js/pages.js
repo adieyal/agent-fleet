@@ -19,6 +19,7 @@
   const annotators = new Map();
   const unavailable = [];
   let view = initial, pending = null, connected = true, generation = 0, activeId = null, selectionDraft = null;
+  let typing = {};
   let canonical = '';
   const offsets = new Map();
   for (const [index, node] of initial.nodes.entries()) {
@@ -332,6 +333,7 @@
         link.addEventListener('click', () => focusThread(thread.annotation.parent)); card.querySelector('.thread-body').append(link);
       }
     }
+    renderTyping();
     renderHighlights(); renderBadges();
     if (activeId) focusThread(activeId, false, false);
     layoutThreads();
@@ -405,7 +407,40 @@
   addEventListener('resize', layoutThreads);
   const observer = new ResizeObserver(layoutThreads); observer.observe(threads); observer.observe(composer);
   renderThreads();
+  function renderTyping() {
+    for (const thread of view.threads) {
+      const card = document.getElementById(`thread-${thread.id}`);
+      if (!card) continue;
+      const progress = typing[thread.id];
+      // A confirmed reply wins even if its store refresh beats the clear event.
+      const replied = progress && thread.replies.some(reply =>
+        reply.actor.startsWith('triage:') && !progress.reply_ids.includes(reply.id));
+      const active = connected && progress && thread.owner === 'agent' && thread.owner_at === progress.owner_at && thread.state !== 'resolved' && !replied;
+      let partial = card.querySelector('[data-agent-typing]');
+      if (active) {
+        if (!partial) {
+          partial = element('div', undefined, 'answer'); partial.dataset.agentTyping = '';
+          partial.append(element('strong', 'agent'), element('p'));
+          card.querySelector('[data-answers]').append(partial);
+        }
+        partial.lastElementChild.textContent = progress.text;
+        card.querySelector('[data-agent-status]').textContent = 'Agent typing…';
+        card.querySelector('[data-agent-status]').hidden = false;
+      } else {
+        partial?.remove();
+        const label = card.querySelector('[data-agent-status]');
+        label.textContent = thread.agent_status || ''; label.hidden = !thread.agent_status;
+      }
+    }
+    layoutThreads();
+  }
   const stream = new EventSource('/api/stream');
+  stream.addEventListener('responder', event => {
+    const update = JSON.parse(event.data);
+    typing = update.items;
+    renderTyping();
+    if (!Object.keys(typing).length) refresh(true);
+  });
   let seenVersion = null, seenGeneration = null;
   stream.addEventListener('open', () => { seenVersion = null; refresh(true); });
   stream.addEventListener('state', event => {
@@ -419,7 +454,8 @@
     }
   });
   stream.addEventListener('error', () => {
-    connected = false; status.textContent = 'Disconnected: drafts are kept; reconnect before submitting.';
+    connected = false; typing = {}; renderTyping();
+    status.textContent = 'Disconnected: drafts are kept; reconnect before submitting.';
     live('offline', 'Disconnected', 'Live stream lost; reconnecting');
   });
   // Reconcile time-window values between state events as well.

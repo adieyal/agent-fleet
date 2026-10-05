@@ -675,10 +675,10 @@ def make_handler(state: Any,
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Accel-Buffering", "no")
             self.end_headers()
-            version, pipeline_seq = -1, 0
+            version, pipeline_seq, typing_seq = -1, 0, -1
             try:
                 while not getattr(state, "subscription_closed", False):
-                    new_version = state.wait_for_change(version, timeout=SSE_PING_INTERVAL, seen_pipelines=pipeline_seq)
+                    new_version = state.wait_for_change(version, timeout=SSE_PING_INTERVAL, seen_pipelines=pipeline_seq, seen_typing=typing_seq)
                     # A reader may close while waiting. Detect its FIN before reading state again.
                     if select.select([self.connection], [], [], 0)[0] and not self.connection.recv(1, socket.MSG_PEEK):
                         return
@@ -694,6 +694,10 @@ def make_handler(state: Any,
                             self.wfile.write(f"event: pipeline\ndata: {json.dumps(update)}\n\n".encode())
                     else:
                         self.wfile.write(b"event: ping\ndata: {}\n\n")
+                    typing = state.typing_update()
+                    if typing['typing_sequence'] != typing_seq:
+                        typing_seq = typing['typing_sequence']
+                        self.wfile.write(f"event: responder\ndata: {json.dumps(typing)}\n\n".encode())
                     self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError, OSError):
                 return

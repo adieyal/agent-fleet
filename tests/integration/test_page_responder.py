@@ -29,7 +29,7 @@ class FakeResponder:
         self.started.append(identity)
         return identity
 
-    def turn(self, thread_id, prompt, *, output_schema, effort):
+    def turn(self, thread_id, prompt, *, output_schema, effort, on_delta=None):
         assert output_schema == REPLY_SCHEMA and effort == 'low'
         self.turns.append((thread_id, prompt))
         if self.during_turn:

@@ -105,6 +105,12 @@ its own budget slot; budget exhaustion returns the item to the user. Mixed
 page/job queues keep the fleetd route. `fleet history runs --kind responder`
 and `fleet run show <run-id> --json` expose the local attempts and measurements.
 
+While a responder turn is running, the page shows `Agent typing…` and partial
+reply text. These updates live only in serve memory and use small SSE events,
+throttled to roughly 100 ms, without rebuilding the deck snapshot. The recorded
+reply replaces the partial message. Disconnecting removes partial text;
+reconnecting receives the current transient state. Drafts stay intact.
+
 Use `fleet watch` for a live terminal view. When the job finishes, run
 `fleet result worker:<id>` for its reports or `fleet pull worker:<id> ./results`
 for outbox files. `fleet wait worker:<id>` blocks until it finishes.

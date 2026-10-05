@@ -5,6 +5,7 @@ import json
 import logging
 import queue
 import threading
+
 from collections.abc import Callable
 
 from fleet.errors import FleetError
@@ -12,6 +13,7 @@ from fleet.modules.authority import AuthorityRejected
 from fleet.modules.execution import Run, Usage
 from fleet.services.facades import Facades
 from fleet.services.page_requests import request_token
+from fleet.services.reply_stream import ReplyStream
 from fleet.services.responder import (
     AppServerPort,
     ResponderWorker,
@@ -53,6 +55,7 @@ class PageResponder:
         self.processing = threading.Lock()
         self.server: AppServerPort | None = None
         self.threads: dict[str, str] = {}
+        self.on_typing: Callable[[str, dict | None], None] = lambda item, value: None
 
     def submit(self, run: Run, *, reconcile: bool = False) -> None:
         if run.kind != 'responder':
@@ -103,6 +106,7 @@ class PageResponder:
         action = self.services.execution.get_action(run.action)
         captured = action.payload['responder']
         result = None
+        stream = None
         try:
             item = self.services.attention.get(captured['item'])
             self.authorized(self.services, action, item)
@@ -112,8 +116,19 @@ class PageResponder:
                 self.threads.clear()
             if item.id not in self.threads:
                 self.threads[item.id] = server.start_thread()
+            def publish(text: str) -> None:
+                current = self.services.attention.get(item.id)
+                try:
+                    self.authorized(self.services, action, current)
+                except AuthorityRejected:
+                    self.on_typing(item.id, None)
+                    return
+                self.on_typing(item.id, dict(run=run.id, project=item.project,
+                                            owner_at=item.owner_at.isoformat(), text=text,
+                                            reply_ids=[reply.id for reply in item.replies]))
+            stream = ReplyStream(publish)
             result = server.turn(self.threads[item.id], action.payload['steps'][0]['prompt'],
-                                 output_schema=REPLY_SCHEMA, effort='low')
+                                 output_schema=REPLY_SCHEMA, effort='low', on_delta=stream.delta)
             if result.status != 'completed':
                 raise FleetError('responder turn ' + result.status)
             response = parse_reply(result.text)
@@ -126,6 +141,10 @@ class PageResponder:
             if not reason.startswith('responder unavailable:'):
                 reason = 'responder unavailable: ' + reason
             self._finish(run, action, result=result, fallback=reason, failed=True)
+        finally:
+            if stream is not None:
+                stream.close()
+            self.on_typing(captured['item'], None)
 
     def _finish(self, run: Run, action, *, result: TurnResult | None = None, reply: str | None = None,
                 fallback: str | None = None, stopped: str | None = None, failed: bool = False) -> None:

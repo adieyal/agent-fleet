@@ -147,6 +147,7 @@ class PageService:
                     attached = dict(state='unavailable', block=block,
                                     reason=f'Anchor unavailable: block {block}: {failed["error"]}')
                 threads.append(dict(id=item.id, headline=item.headline, owner=item.owner, state=item.state,
+                    owner_at=None if item.owner_at is None else item.owner_at.isoformat(),
                     created=item.last_seen, annotation=asdict(annotation), kind=item.kind,
                     replies=[asdict(reply) for reply in item.replies],
                     attachment=attached, agent_status=self.agent_status(item, triage),

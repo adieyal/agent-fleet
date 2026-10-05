@@ -75,6 +75,24 @@ class LiveWorkspace(LiveProjects, LiveAttention, LiveProjection, LibraryProjecti
         self.workspace.settle()
         return building_document(self, document, registry)
 
+    def set_typing(self, item: str, value: dict | None) -> None:
+        """Transient stream state has its own cursor; never invalidates full snapshots."""
+        with self.changed:
+            if value is None:
+                if item not in self.typing:
+                    return
+                self.typing.pop(item)
+            else:
+                if self.typing.get(item) == value:
+                    return
+                self.typing[item] = value
+            self.typing_seq += 1
+            self.changed.notify_all()
+
+    def typing_update(self) -> dict:
+        with self.changed:
+            return {'typing_sequence': self.typing_seq, 'items': snapshot(self.typing)}
+
     def bump(self) -> None:
         """Push a new document to every browser."""
         with self.changed:
@@ -117,7 +135,7 @@ class LiveWorkspace(LiveProjects, LiveAttention, LiveProjection, LibraryProjecti
             self.changed.notify_all()
 
 
-    def wait_for_change(self, seen_version: int, timeout: float, seen_pipelines: int | None = None) -> int:
+    def wait_for_change(self, seen_version: int, timeout: float, seen_pipelines: int | None = None, seen_typing: int | None = None) -> int:
         """Also wakes when a snooze ends, so the item comes back on every deck without a reload, and when a pipeline
         report arrives if `seen_pipelines` is given (compare `pipeline_seq` to tell)."""
         now = self.attention.clock().timestamp()
@@ -125,7 +143,8 @@ class LiveWorkspace(LiveProjects, LiveAttention, LiveProjection, LibraryProjecti
         wait = timeout if ending is None else max(0.0, min(timeout, ending - now))
         with self.changed:
             self.changed.wait_for(lambda: self.version != seen_version or (
-                seen_pipelines is not None and self.pipeline_seq != seen_pipelines), timeout=wait)
+                seen_pipelines is not None and self.pipeline_seq != seen_pipelines) or (
+                seen_typing is not None and self.typing_seq != seen_typing), timeout=wait)
             if self.version == seen_version and ending is not None and self.attention.clock().timestamp() >= ending:
                 self.woken_until = max(self.woken_until, ending)
                 self.version += 1
@@ -192,6 +211,9 @@ class FleetState(LiveWorkspace):
         self.woken_until = 0.0
         self.changed = threading.Condition()
         self.version = 0
+        self.typing_seq = 0
+        self.typing = {}
+        self.page_responder.on_typing = self.set_typing
         self.history_cursor = self.store.latest_sequence()
         self.by_host: dict[str, dict[str, Any]] = {
             host.name: {"name": host.name, "ok": False, "error": "connecting…", "jobs": {}, "sessions": {}}
