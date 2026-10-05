@@ -13,6 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+      - run: uv run --no-project --python 3.8 python scripts/checks/worker_python38.py
       - run: uv python install 3.10
       - run: uv run --locked --python 3.10 playwright install --with-deps chromium
       - run: uv run --locked --python 3.10 pytest -v tests

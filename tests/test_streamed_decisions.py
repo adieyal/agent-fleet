@@ -13,7 +13,7 @@ from fleet.container import configured_container
 from fleet import transport
 
 from fleet.projections.decisions import decision_log
-from fleet.remote import fleetd
+from fleet_worker import fleetd
 from fleet.ingestion import record_decisions
 from fleet.services.live import FleetState, apply_message
 

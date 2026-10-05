@@ -7,7 +7,7 @@ import time
 import pytest
 
 from fleet_cli import cli
-from fleet.remote import fleetd
+from fleet_worker import fleetd
 from fleet.transport import Host
 
 DAY = 24 * 3600

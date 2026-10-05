@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from fleet.remote import fleetd
+from fleet_worker import fleetd
 from fleet.services.hosts import DETECT_SCRIPT
 
 

@@ -14,10 +14,12 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
+from fleet_worker import WIRE_PROTOCOL_VERSION
+
 from fleet.errors import FleetError
 from fleet.host_values import REMOTE_FLEETD_PATH, SSH_OPTIONS, Host, HostReport
 
-LOCAL_FLEETD_SOURCE = files("fleet.remote").joinpath("fleetd.py")
+LOCAL_FLEETD_SOURCE = files("fleet_worker").joinpath("fleetd.py")
 
 
 def config_path() -> Path:
@@ -79,7 +81,7 @@ def ensure_master(host: Host) -> None:
             raise FleetError(f"{host.name}: SSH connection setup timed out after 15s") from error
 
 
-def call(host: Host, arguments: list[str], *, stdin_text: str | None = None, timeout: float | None = 30) -> Any:
+def _call(host: Host, arguments: list[str], *, stdin_text: str | None = None, timeout: float | None = 30) -> Any:
     """Run a fleetd command and return its parsed JSON output."""
     ensure_master(host)
     try:
@@ -95,6 +97,37 @@ def call(host: Host, arguments: list[str], *, stdin_text: str | None = None, tim
     if isinstance(document, dict) and "error" in document:
         raise FleetError(f"{host.name}: {document['error']}")
     return document
+
+
+class ProtocolMismatch(FleetError):
+    """A worker requires an explicit installation before it can be used."""
+
+
+def check_protocol(host: Host, document: Any) -> None:
+    version = document.get("wire_protocol_version") if isinstance(document, dict) else None
+    if type(version) is not int or version != WIRE_PROTOCOL_VERSION:
+        raise ProtocolMismatch(f"{host.name}: wire protocol mismatch: controller {WIRE_PROTOCOL_VERSION}, "
+                               f"worker {version if version is not None else 'unreported'}; "
+                               f"run fleet install {host.name}")
+
+
+def worker_version(host: Host) -> dict[str, Any]:
+    """Checked worker metadata for installation/deployment version reporting."""
+    try:
+        document = _call(host, ["version"])
+    except (FleetError, ValueError) as error:
+        raise ProtocolMismatch(f"{host.name}: wire protocol mismatch: controller {WIRE_PROTOCOL_VERSION}, "
+                               f"worker unreported ({error}); run fleet install {host.name}") from error
+    check_protocol(host, document)
+    return document
+
+
+def call(host: Host, arguments: list[str], *, stdin_text: str | None = None,
+         timeout: float | None = 30) -> Any:
+    version = worker_version(host)
+    if arguments == ["version"]:
+        return version
+    return _call(host, arguments, stdin_text=stdin_text, timeout=timeout)
 
 
 def gather(hosts: list[Host], arguments: list[str]) -> list[HostReport]:
@@ -142,12 +175,13 @@ def keep_run_trace(execution, host: Host, job: dict) -> None:
 def gather_sessions(hosts: list[Host]) -> dict[str, list[dict[str, Any]]]:
     """Live interactive CLI sessions per host name, from `fleetd sessions`.
 
-    A host whose fleetd predates the command (or that is unreachable, which `gather`
-    already reports) contributes no sessions.
+    Unreachable hosts contribute no sessions; incompatible workers fail explicitly.
     """
     def one(host: Host) -> list[dict[str, Any]]:
         try:
             return call(host, ["sessions"], timeout=20).get("sessions", [])
+        except ProtocolMismatch:
+            raise
         except (FleetError, ValueError, AttributeError):
             return []
 
@@ -193,7 +227,9 @@ def follow_stream(host: Host, receive: Callable[[dict[str, Any]], None], *,
     if stop is not None and stop.is_set():
         return "stream cancelled"
     try:
-        ensure_master(host)
+        worker_version(host)
+    except FleetError as error:
+        return str(error)
     except subprocess.TimeoutExpired:
         return "ssh connect timed out"
     if stop is not None and stop.is_set():
@@ -236,7 +272,13 @@ def follow_stream(host: Host, receive: Callable[[dict[str, Any]], None], *,
                 pumps[1].join(timeout=5)
                 return stderr_lines[-1] if stderr_lines else f"stream ended (exit {process.returncode})"
             if line.strip():
-                receive(json.loads(line))
+                document = json.loads(line)
+                if document.get("type") == "hello":
+                    try:
+                        check_protocol(host, document)
+                    except FleetError as error:
+                        return str(error)
+                receive(document)
         return "stream cancelled"
     finally:
         if process.poll() is None:
@@ -261,7 +303,7 @@ def exec_shell(host: Host, command: str) -> None:
 
 
 def events(host: Host, job_id: str, *, lines: int, follow: bool):
-    ensure_master(host)
+    worker_version(host)
     command = host.fleetd_command(["events", job_id, "--lines", str(lines)] + (["-f"] if follow else []))
     process = subprocess.Popen(command, stdout=subprocess.PIPE, text=True)
     assert process.stdout is not None
@@ -276,7 +318,7 @@ def wait_jobs(pending: dict[str, tuple[Host, str]], *, step: int | None,
               timeout: float | None, any_job: bool):
     # Prepare every connection before opening a pipe, so setup failure cannot orphan another waiter.
     for host, _ in pending.values():
-        ensure_master(host)
+        worker_version(host)
     processes = {}
     for reference, (host, job_id) in pending.items():
         arguments = ["wait", job_id] + (["--step", str(step)] if step is not None else [])

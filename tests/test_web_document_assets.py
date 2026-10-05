@@ -17,7 +17,7 @@ import pytest
 from types import SimpleNamespace
 
 from fleet.container import configured_container
-from fleet.remote import fleetd
+from fleet_worker import fleetd
 from fleet.transport import FleetError, Host
 from fleet_web.documents import ASSET_READ_LIMIT, fetch_asset, render_markdown
 from fleet_web.library import ProjectLibrary

@@ -4,7 +4,7 @@ Recommend keeping carbon as the sole writer of shared state, first serving contr
 
 This is a findings-only proposal dated 2026-10-04 for milestone `4d907b1f-bed9-41d5-9b12-49118c25ef5d`, epic `98b407bb`, and the shared sandboxed-worker requirement `2cd44e27`. No product implementation, deployment, merge or push is authorized by this study. Source line references describe this checkout; protocol examples below are proposed, not current capabilities. Cadences are configured defaults and call counts are derived from code, not measured production traffic. The brief supplies the topology: carbon owns SQLite, the deck and the controlling session; home cannot initiate a connection to carbon.
 
-The source excerpts below are historical observations from before ADR 0010's workspace split. Current paths are `packages/fleet-cli/src/fleet_cli/cli.py`, `packages/fleet-web/src/fleet_web/server.py`, `packages/fleet/src/fleet/remote/fleetd.py`, and `packages/fleet/src/fleet/ingestion.py`; stream process handling now lives in library transport/services. Keep the dated excerpts as evidence rather than treating their line numbers as current navigation.
+The source excerpts below are historical observations from before ADR 0010's workspace split. Current paths are `packages/fleet-cli/src/fleet_cli/cli.py`, `packages/fleet-web/src/fleet_web/server.py`, `packages/fleet-worker/src/fleet_worker/fleetd.py`, and `packages/fleet/src/fleet/ingestion.py`; stream process handling now lives in library transport/services. Keep the dated excerpts as evidence rather than treating their line numbers as current navigation.
 
 ## Comparison and recommendation
 
@@ -56,7 +56,7 @@ flowchart LR
 
 The study's main commands are mapped above; ancillary transfer/control paths remain real SSH users even after option 1. Repository discovery also uses a shell channel (`fleet/transport.py:233–251`); attach does `show` then interactive SSH (`fleet/cli.py:684–688`), and tail follows worker events (`fleet/cli.py:671–680`). They are not subscriptions to the deck today.
 
-Stream defaults in `fleet/remote/fleetd.py:2874–2880` are a 0.3-second scan and five-second heartbeat; sessions scan every two seconds (`:1272`), pipelines every second (`:1693`). Changed file signatures or runner liveness cause job emission (`:2573–2597`), not a full job message every scan. Aged terminal jobs are excluded beyond the default 24-hour horizon (`:2587–2590`); hello catch-up includes still-retained jobs. Deleted jobs without retained controller evidence cannot be reconstructed by reconnecting.
+Stream defaults in `fleet/fleet_worker/fleetd.py:2874–2880` are a 0.3-second scan and five-second heartbeat; sessions scan every two seconds (`:1272`), pipelines every second (`:1693`). Changed file signatures or runner liveness cause job emission (`:2573–2597`), not a full job message every scan. Aged terminal jobs are excluded beyond the default 24-hour horizon (`:2587–2590`); hello catch-up includes still-retained jobs. Deleted jobs without retained controller evidence cannot be reconstructed by reconnecting.
 
 ### The deadlock and the remaining pressure
 
@@ -85,10 +85,10 @@ Example: hello applies `catch_up_jobs`; its command channel waits while stdout c
 
 ## 2. Controller CLI reads and waits from streamed state
 
-Already streamed (`fleet/remote/fleetd.py:1078–1104`): job/run IDs, fingerprint, label, runtime/model, description, cwd, permission, workspace with freshness/reason, timestamps, job and step statuses, short step result, step Git evidence, todos, recent events, activity, usage, decisions, document descriptors and trace descriptors. Sessions, input observations and removal provenance arrive as separate messages. Hello/heartbeat provide a snapshot boundary; they are not durable replay cursors.
+Already streamed (`fleet/fleet_worker/fleetd.py:1078–1104`): job/run IDs, fingerprint, label, runtime/model, description, cwd, permission, workspace with freshness/reason, timestamps, job and step statuses, short step result, step Git evidence, todos, recent events, activity, usage, decisions, document descriptors and trace descriptors. Sessions, input observations and removal provenance arrive as separate messages. Hello/heartbeat provide a snapshot boundary; they are not durable replay cursors.
 
 ```python
-# fleet/remote/fleetd.py:1017–1021
+# fleet/fleet_worker/fleetd.py:1017–1021
 live_step["result"] = outcome["summary"]
 (JOBS_DIRECTORY / job_id / f"result-{step['index']}.md").write_text(outcome.get("text") or outcome["summary"])
 ```
@@ -100,7 +100,7 @@ Proposed implementation:
 1. Persist a sourced job read projection with host, job/run ID, observation revision/time, complete-snapshot generation, freshness, removal provenance and explicit missing-field reasons. Persist the bounded event tail with retained count/truncation metadata. Do not read the mutable `FleetState.by_host` dictionary directly from another process.
 2. Serve `ls`, supported `show` fields and wait conditions through a local controller read/subscription endpoint (Unix socket or loopback API); reuse projections in CLI and deck. When the ingester is absent, return retained data labelled stale and tell the caller that live updates are unavailable. Offer an explicit direct-worker mode; do not silently fall back to SSH.
 3. Retain every step result body, including short/empty results, with hash, size, availability and completeness. Initially fetch changed bodies with the keeper; later transfer bounded/chunked bodies on the shared channel. Binary assets remain separate approved reads. Outbox needs an authoritative manifest, including non-Markdown files, rather than inferring it from copied documents.
-4. Preserve CLI options, prefix ambiguity, host/project filters, step numbering, exit behavior and `--any`. Unsupported event counts or unretained full step fields say what is missing. The current wait's unstarted-queued special case (`fleet/remote/fleetd.py:2698–2702`) requires streaming an explicit wait-readiness/runner-state fact; `start_requested` alone cannot reproduce it.
+4. Preserve CLI options, prefix ambiguity, host/project filters, step numbering, exit behavior and `--any`. Unsupported event counts or unretained full step fields say what is missing. The current wait's unstarted-queued special case (`fleet/fleet_worker/fleetd.py:2698–2702`) requires streaming an explicit wait-readiness/runner-state fact; `start_requested` alone cannot reproduce it.
 
 Wait reads a snapshot at revision R and subscribes from R atomically, preventing a finish between read and subscription from being missed. On disconnect it reconnects with the controller cursor, reads replay then current state, and deduplicates by revision. If replay is unavailable, perform a new complete snapshot and continue with a named gap; require confirmed current state before deciding an unresolved wait. Keep the original deadline across reconnects. Unknown/offline is not success or failure; timeout is a wait outcome, never a released action claim. A retained confirmed terminal outcome remains usable after its host goes offline.
 
@@ -193,7 +193,7 @@ Routine decisions stay visible without attention. Unresolvable rejection or exce
 
 Show a persistent orchestrator role on its work scope, current activation/run/host, mandate revision, local activity, controller receipt status, pending/rejected commands and accepted outcomes. “Tests passed locally; acceptance pending” is distinct from complete. Each work update and decision links to the originating run and evidence; an imported worker run is an observation, never an implicit claimed dispatch.
 
-Provide two explicit controls: **Stop orchestrator** revokes this activation's authority, prevents new commands/dispatch and asks fleetd to terminate its process; **Stop orchestrator and its runs** additionally cancels the listed descendants. Say which runs are affected before execution. Record requested, controller-revoked and worker-confirmed separately. Existing `fleetd cancel` sets the job cancellation flag and signals its agent PID (`fleet/remote/fleetd.py:2711–2722`); that alone does not revoke queued controller writes or cancel all descendants.
+Provide two explicit controls: **Stop orchestrator** revokes this activation's authority, prevents new commands/dispatch and asks fleetd to terminate its process; **Stop orchestrator and its runs** additionally cancels the listed descendants. Say which runs are affected before execution. Record requested, controller-revoked and worker-confirmed separately. Existing `fleetd cancel` sets the job cancellation flag and signals its agent PID (`fleet/fleet_worker/fleetd.py:2711–2722`); that alone does not revoke queued controller writes or cancel all descendants.
 
 Add one controller-owned orchestration reservation/epoch per overlapping scope; reject a second activation until the first is stopped and its execution state reconciled. Do not rely on existing action claims to prevent two orchestration loops: distinct actions can both be claimed. Overlapping parent/child scopes need an explicit exclusion rule; first release refuse overlap. Controller validates epoch at command ingestion and worker validates it at start. A replacement never takes over solely on timeout.
 
@@ -253,11 +253,11 @@ Inspection commands and relevant results:
 ```console
 $ git branch --show-current
 design/worker-orchestrator
-$ rg -n 'RECONNECT_DELAY|EVENTS_PER_JOB|PIPELINE_SCAN_INTERVAL' fleet/web/server.py fleet/remote/fleetd.py
+$ rg -n 'RECONNECT_DELAY|EVENTS_PER_JOB|PIPELINE_SCAN_INTERVAL' fleet/web/server.py fleet/fleet_worker/fleetd.py
 fleet/web/server.py:87:EVENTS_PER_JOB = "15"
 fleet/web/server.py:89:RECONNECT_DELAY = 3
-fleet/remote/fleetd.py:1693:PIPELINE_SCAN_INTERVAL = 1.0
-$ rg -n 'step\["result"\]|result-' fleet/remote/fleetd.py
+fleet/fleet_worker/fleetd.py:1693:PIPELINE_SCAN_INTERVAL = 1.0
+$ rg -n 'step\["result"\]|result-' fleet/fleet_worker/fleetd.py
 1017:                live_step["result"] = outcome["summary"]
 1021:                (JOBS_DIRECTORY / job_id / f"result-{step['index']}.md").write_text(outcome.get("text") or outcome["summary"])
 2730:        path = JOBS_DIRECTORY / job["id"] / f"result-{index}.md"

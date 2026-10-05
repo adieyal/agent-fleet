@@ -67,7 +67,8 @@ def test_custom_control_path_reaches_all_ssh_commands(tmp_path, monkeypatch):
 
     def run(command, **kwargs):
         commands.append(command)
-        return subprocess.CompletedProcess(command, 1 if "check" in command else 0, '{"jobs": []}', "")
+        reply = '{"wire_protocol_version": 1}' if command[-1].endswith(' version') else '{"jobs": []}'
+        return subprocess.CompletedProcess(command, 1 if "check" in command else 0, reply, "")
 
     monkeypatch.setattr(transport.subprocess, "run", run)
     assert transport.call(host, ["ls"]) == {"jobs": []}

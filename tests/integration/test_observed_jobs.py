@@ -159,7 +159,7 @@ def test_hello_catches_up_old_finish_and_registered_project(monkeypatch, project
 
 
 def test_real_worker_catch_up_keeps_a_finish_older_than_stream_horizon(monkeypatch, tmp_path):
-    from fleet.remote import fleetd
+    from fleet_worker import fleetd
 
     monkeypatch.setenv("FLEET_FLEETD_PATH", fleetd.__file__)
     monkeypatch.delenv("FLEET_REMOTE_HOME", raising=False)

@@ -7,7 +7,7 @@ import pytest
 from fleet.container import configured_container
 from fleet import transport
 from fleet.modules.execution import StepRequest
-from fleet.remote import fleetd
+from fleet_worker import fleetd
 
 
 @pytest.fixture

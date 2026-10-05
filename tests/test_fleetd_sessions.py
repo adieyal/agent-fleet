@@ -3,7 +3,7 @@ import json
 import os
 import time
 
-from fleet.remote import fleetd
+from fleet_worker import fleetd
 
 
 def test_session_base_survives_restart_and_working_workspace_refreshes(tmp_path, monkeypatch):

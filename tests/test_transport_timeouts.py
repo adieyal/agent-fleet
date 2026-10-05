@@ -44,14 +44,15 @@ def test_remote_command_timeout_is_translated(monkeypatch):
 
 def test_stream_process_is_killed_when_message_handling_fails(monkeypatch):
     host = transport.Host("worker", None)
+    monkeypatch.setattr(transport, "worker_version", lambda host: {"wire_protocol_version": 1})
     killed = []
-    process = SimpleNamespace(stdout=io.BytesIO(b'{"type": "hello"}\n'), stderr=io.BytesIO(),
+    process = SimpleNamespace(stdout=io.BytesIO(b'{"type": "hello", "wire_protocol_version": 1}\n'), stderr=io.BytesIO(),
                               wait=lambda **kwargs: None, poll=lambda: None, kill=lambda: killed.append(True))
     monkeypatch.setattr(transport, "ensure_master", lambda host: None)
     monkeypatch.setattr(transport.subprocess, "Popen", lambda *args, **kwargs: process)
 
     def receive(message):
-        assert message == {"type": "hello"}
+        assert message == {"type": "hello", "wire_protocol_version": 1}
         raise RuntimeError("message rejected")
 
     with pytest.raises(RuntimeError, match="message rejected"):

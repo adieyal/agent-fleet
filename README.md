@@ -34,7 +34,7 @@ Claude Code or Codex CLI.
 git clone https://github.com/adieyal/agent-fleet.git
 cd agent-fleet
 uv build --all-packages --wheel
-uv tool install --find-links dist dist/fleet_cli-0.1.0-py3-none-any.whl
+uv tool install --force --reinstall --no-cache --find-links dist dist/fleet_cli-*.whl
 
 fleet host add worker --ssh worker  # any SSH target you can already reach
 fleet install worker                # copy the runner and locate agent CLIs
@@ -495,7 +495,8 @@ The root `pyproject.toml` is a non-built uv workspace; each distribution has its
 own Hatchling project and src package:
 
 ```text
-packages/fleet/src/fleet/          # library, container, adapters, standalone fleetd
+packages/fleet/src/fleet/          # library, container, adapters
+packages/fleet-worker/src/fleet_worker/ # independently versioned stdlib host worker (Python 3.8+)
 packages/fleet-cli/src/fleet_cli/  # terminal entrypoint and metadata plugin loader
 packages/fleet-web/src/fleet_web/  # HTTP entrypoint, rendering and static/ assets
 ```
@@ -509,11 +510,11 @@ install them together; `--force` replaces the existing tool environment:
 
 ```bash
 uv build --all-packages --wheel
-uv tool install --force --find-links dist dist/fleet_cli-0.1.0-py3-none-any.whl
+uv tool install --force --reinstall --no-cache --find-links dist dist/fleet_cli-*.whl
 fleet install HOST  # repeat for each configured host to update its standalone worker
 ```
 
-`fleet install` reads the worker from the installed library's package resources,
+`fleet install` reads the worker from the installed fleet-worker distribution's package resources,
 materializes it during rsync, then configures the worker and checks for tmux.
 It copies only `fleetd.py` to `~/.local/share/fleet/fleetd.py`; workers do not need
 the workspace packages or dependency-injector. Install the tool on the controller
@@ -523,7 +524,7 @@ and restart its `fleet web` process after an upgrade to serve the new static fil
 To try a branch alongside the installed fleetd, set `FLEET_FLEETD_PATH` to a
 separate worker script path (for example `~/.local/share/fleet-branch/fleetd.py`)
 and `FLEET_REMOTE_HOME` to a separate worker state directory (for example
-`~/.fleet-branch`). Copy the branch's `packages/fleet/src/fleet/remote/fleetd.py` to that script path
+`~/.fleet-branch`). Copy the branch's `packages/fleet-worker/src/fleet_worker/fleetd.py` to that script path
 on each target host yourself: `fleet install` updates the normal installation.
 For a local host, `FLEET_FLEETD_PATH` can point directly into the checkout.
 Both variables are controller-side overrides applied to worker invocations; also
@@ -566,3 +567,12 @@ access to the real `~/.config/fleet` store and config before opening them.
 
 CLI work reads: `fleet work show WORK_ID` accepts a unique prefix; `--json` includes the full record and linked records.
 Use `fleet status PROJECT --item WORK_ID --depth 1 --open` to scope a tree, limit child depth (0 = roots), and hide complete work. Incomplete descendants remain visible. Unlinked attention has its own heading; an item scope excludes it.
+
+The library checks wire protocol version 1 before each host command, event tail,
+wait and stream, and validates the stream hello. Mismatches report both versions
+and require `fleet install HOST`. `fleetd.py version` reports the worker release,
+wire, stream and dispatch schema versions for deployment tooling. Build all four
+wheels, including `fleet-worker`, when upgrading the controller.
+When incompatible host command or stream semantics change, bump the wire version
+in both `fleet_worker/__init__.py` and standalone `fleetd.py`; their agreement
+is tested. Worker release versions remain independent of controller releases.

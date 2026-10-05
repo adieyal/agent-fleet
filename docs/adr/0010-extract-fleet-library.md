@@ -15,7 +15,7 @@ flowchart TD
   DI --> TX["fleet.transport: calls / streams / shell / rsync"]
   API --> PORTS["module application ports"]
   INF --> PORTS
-  TX --> WORKER["fleet.remote.fleetd: stdlib only"]
+  TX --> WORKER["fleet_worker.fleetd: stdlib only"]
   PLUGIN["fleet.commands entry-point metadata: web"] -. "CLI loads callable; no source import" .-> WEB
 ```
 
@@ -193,13 +193,13 @@ web = "fleet_web.entrypoint:run"
 
 The CLI parser retains current web flags/help. Handler uses `importlib.metadata.entry_points(group="fleet.commands")` to select exactly one `web`; zero or multiple registrations produce explicit FleetError (no direct-import fallback). `run(arguments, container)` is a structural callable protocol: namespace contains existing fixture/bind/port/open/host options; plugin requests configuration/hosts/runtime from supplied library container. fleet-web imports neither fleet_cli nor its parser. Plugin loading is deferred until invoking web so ordinary CLI imports stay independent.
 
-`fleet-cli` declares mandatory fleet-web and fleet distribution dependencies; registry availability is not assumed. In development use `uv run fleet ...`; for local install build all three wheels with `uv build --all-packages --wheel` and use `uv tool install --find-links dist dist/fleet_cli-0.1.0-py3-none-any.whl` (the resolver also obtains third-party dependencies from its configured index). `uv tool install packages/fleet-cli` alone cannot resolve unpublished sibling wheels from workspace source metadata: document that limitation, do not promise otherwise. Wheel-install test verifies `fleet --help`, `fleet web --help`, plugin discovery and fixture HTTP/assets without repository PYTHONPATH. Publishing package names/registry availability is not needed to decide the local split; reserve/verify names before a later release.
+`fleet-cli` declares mandatory fleet-web and fleet distribution dependencies; registry availability is not assumed. In development use `uv run fleet ...`; for local install build all four wheels (including fleet-worker) with `uv build --all-packages --wheel` and use `uv tool install --force --reinstall --no-cache --find-links dist dist/fleet_cli-*.whl` (the resolver also obtains third-party dependencies from its configured index). `uv tool install packages/fleet-cli` alone cannot resolve unpublished sibling wheels from workspace source metadata: document that limitation, do not promise otherwise. Wheel-install test verifies `fleet --help`, `fleet web --help`, plugin discovery and fixture HTTP/assets without repository PYTHONPATH. Publishing package names/registry availability is not needed to decide the local split; reserve/verify names before a later release.
 
 Move `css`, `js`, `vendor`, `assets`, `index.html`, and **all** `prototype` files together under `fleet_web/static/`, preserving URL-relative paths and CREDITS/license files. Explicitly include the entire static tree in wheel and sdist (Hatch artifacts/force-include if ignore patterns would exclude generated assets). Use `importlib.resources.files('fleet_web').joinpath('static')` and read Traversable bytes with explicit path containment. This supports Python 3.10 without assuming directory `as_file` support. If an existing filesystem adapter requires a directory, explicitly materialize its tree in a temporary directory owned for the server lifetime. No cwd/repository dependency. Preserve startup index/css/js snapshot and existing build fingerprint semantics; exclude Python caches and refer only to served static resources after split. Test installed build-id change detection and static containment.
 
 Development-only `/art/bakeoff/` and `/concept/` remain explicit optional checkout mounts and 404 when unavailable, exactly as server.py:77 says today. Never guess REPO_ROOT by parent depth in src layout. Prototype static assets themselves are always packaged; checkout external prototype images/models retain existing installed absence. Verify prototype routes against installed wheel as well as source.
 
-`fleet.remote.fleetd` moves unchanged to `packages/fleet/src/fleet/remote/fleetd.py`: stdlib only, no library/DI imports. `fleet install <host>` obtains it via importlib.resources, materializes for rsync for the copy duration, and sends the same target `~/.local/share/fleet/fleetd.py`; DETECT_SCRIPT, configuration, tmux check and agent-socket behavior stay intact. Compile/run the copied file in an isolated worker home using stdlib Python without installed fleet. Controller transport still uses remote configured Python/path overrides.
+As of 2026-10-05, the separately versioned `fleet-worker` owns `fleet_worker.fleetd`, moved to `packages/fleet-worker/src/fleet_worker/fleetd.py`: stdlib only, no library/DI imports. `fleet install <host>` obtains it via importlib.resources, materializes for rsync for the copy duration, and sends the same target `~/.local/share/fleet/fleetd.py`; DETECT_SCRIPT, configuration, tmux check and agent-socket behavior stay intact. Compile/run the copied file in an isolated worker home using stdlib Python without installed fleet. Controller transport still uses remote configured Python/path overrides.
 
 ### File moves (implementation steps use git mv)
 
@@ -231,7 +231,7 @@ Set `root_packages = fleet, fleet_cli, fleet_web` (multiline configuration). Ret
 Enforce explicit contracts, not only directories:
 
 1. `fleet` forbidden from importing fleet_cli/fleet_web; the two presentation roots forbidden from importing each other in either direction, including indirect imports. Metadata strings are the runtime plugin seam; packaging test exercises it.
-2. CLI/web forbidden from importing fleet.infrastructure, facade implementation descendants or fleet.remote.fleetd. Container/public API access allowed. They never instantiate adapters; add an AST construction check for known infrastructure constructors because import-linter alone cannot detect construction through a re-export. No Store re-export from container.
+2. CLI/web forbidden from importing fleet.infrastructure, facade implementation descendants or fleet_worker.fleetd. Container/public API access allowed. They never instantiate adapters; add an AST construction check for known infrastructure constructors because import-linter alone cannot detect construction through a re-export. No Store re-export from container.
 3. Layer graph: presentation → services/orchestration/triage_scheduler/triage/ingestion → transport → projections → modules → module application → domain. Container is an external composition root, excluded from that layered container because it legitimately imports every implementation. No service imports container (move existing composition imports out of orchestration); Services/ports types live outside container.
 4. Infrastructure protected, allowed importer fleet.container only (infrastructure may import its own descendants). Private per-module protected contracts retained. Transport may access public config ports, not infrastructure construction.
 5. Projections forbidden from services/ingestion/orchestration/triage_scheduler/triage/container/infrastructure/transport and presentation. Inject read ports for filesystem/history instead of import cycles. Read-only triage status calculation extracted from scheduler. Separate command settle from building projection.
@@ -354,7 +354,7 @@ uv run --locked fleet web --help
 uv run --locked pytest -q -m "not browser"
 uv run --locked lint-imports
 uv build --all-packages --wheel
-uv tool install --force --find-links dist dist/fleet_cli-0.1.0-py3-none-any.whl
+uv tool install --force --reinstall --no-cache --find-links dist dist/fleet_cli-*.whl
 fleet install HOST
 ```
 

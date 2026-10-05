@@ -13,6 +13,7 @@ members = [
     "fleet",
     "fleet-cli",
     "fleet-web",
+    "fleet-worker",
 ]
 
 [[package]]
@@ -284,10 +285,14 @@ version = "0.1.0"
 source = { editable = "packages/fleet" }
 dependencies = [
     { name = "dependency-injector" },
+    { name = "fleet-worker" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "dependency-injector", specifier = ">=4.49.1" }]
+requires-dist = [
+    { name = "dependency-injector", specifier = ">=4.49.1" },
+    { name = "fleet-worker", editable = "packages/fleet-worker" },
+]
 
 [[package]]
 name = "fleet-cli"
@@ -322,6 +327,11 @@ requires-dist = [
     { name = "markdown-it-py", specifier = ">=3" },
     { name = "mdit-py-plugins", specifier = ">=0.4" },
 ]
+
+[[package]]
+name = "fleet-worker"
+version = "0.1.0"
+source = { editable = "packages/fleet-worker" }
 
 [[package]]
 name = "greenlet"

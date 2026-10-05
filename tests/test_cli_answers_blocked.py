@@ -12,7 +12,7 @@ from fleet_cli import cli
 from fleet import transport
 
 from fleet.modules.attention.domain import BLOCKED_SOURCE, StreamContext
-from fleet.remote import fleetd
+from fleet_worker import fleetd
 
 
 @pytest.fixture

@@ -14,6 +14,7 @@ members = ["packages/*"]
 
 [tool.uv.sources]
 fleet = { workspace = true }
+fleet-worker = { workspace = true }
 fleet-cli = { workspace = true }
 fleet-web = { workspace = true }
 

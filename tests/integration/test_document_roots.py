@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from fleet.remote import fleetd
+from fleet_worker import fleetd
 
 
 def test_recorded_documents_outside_roots_are_refused(tmp_path: Path, monkeypatch, capsys) -> None:
