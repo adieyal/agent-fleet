@@ -813,6 +813,9 @@ class WorkspaceWatch:
 def _run_step_attempt(job: JsonObject, step: JsonObject) -> JsonObject:
     job_id = job["id"]
     config = load_config()
+    if job["agent"] in config and not executable_path(config[job["agent"]]):
+        reason = f"{job['agent']} runtime binary is missing or not executable: {config[job['agent']]!r}; set it with fleet install HOST --{job['agent']} PATH"
+        return {"ok": False, "summary": reason, "reason": reason, "text": "", "usage": None}
     environment = dict(os.environ)
     if config.get("path"):
         environment["PATH"] = config["path"]
@@ -833,8 +836,12 @@ def _run_step_attempt(job: JsonObject, step: JsonObject) -> JsonObject:
     refusals = StreamRefusals(job, step["index"]) if job["agent"] == "claude" else None
     refresh_workspace(job_id, job["cwd"])
     with open(raw_path, "a") as raw_file, WorkspaceWatch(job_id, job["cwd"]):
-        process = subprocess.Popen(command, cwd=job["cwd"], env=environment, stdin=subprocess.DEVNULL,
-                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+        try:
+            process = subprocess.Popen(command, cwd=job["cwd"], env=environment, stdin=subprocess.DEVNULL,
+                                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+        except OSError as error:
+            reason = f"cannot launch {job['agent']} runtime binary {command[0]!r}: {error}"
+            return {**outcome, "summary": reason, "reason": reason}
         with locked_job(job_id) as live_job:
             live_job["agent_pid"] = process.pid
         assert process.stdout is not None
@@ -2825,11 +2832,32 @@ def command_remove(arguments: argparse.Namespace) -> None:
     emit({"removed": arguments.job, "status": status, "outbox_files": outbox_files, "results": results, **details})
 
 
+def executable_path(value: Any) -> bool:
+    return isinstance(value, str) and bool(value) and os.path.isfile(value) and os.access(value, os.X_OK)
+
+
 def command_configure(arguments: argparse.Namespace) -> None:
     FLEET_HOME.mkdir(parents=True, exist_ok=True)
     JOBS_DIRECTORY.mkdir(exist_ok=True)
     config = load_config()
-    config.update(json.loads(arguments.json))
+    incoming = json.loads(arguments.json)
+    overrides = incoming.pop("runtime_overrides", {})
+    for name in ("claude", "codex"):
+        guess = incoming.pop(name, None)
+        if name in overrides:
+            selected = str(Path(overrides[name]).expanduser())
+            if not executable_path(selected):
+                fail(f"{name} runtime binary is not executable: {selected}; configuration unchanged")
+            config[name] = selected
+        elif executable_path(config.get(name)):
+            pass  # An executable configured path wins over every discovery guess.
+        elif executable_path(guess):
+            config[name] = guess
+        else:
+            config.pop(name, None)
+    config.update(incoming)
+    directories = [os.path.dirname(config[name]) for name in ("claude", "codex") if config.get(name)]
+    config["path"] = ":".join(dict.fromkeys(directories + [entry for entry in config.get("path", "").split(":") if entry]))
     CONFIG_PATH.write_text(json.dumps(config, indent=1))
     missing = [name for name in ("claude", "codex") if not config.get(name)]
     emit({"host": os.uname().nodename, "config": config, "missing": missing,

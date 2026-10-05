@@ -40,6 +40,14 @@ fleet host add worker --ssh worker  # any SSH target you can already reach
 fleet install worker                # copy the runner and locate agent CLIs
 ```
 
+Install preserves an executable agent path already configured on the worker. It
+checks interactive login shells, the current PATH, `~/.local/bin`, nvm versions
+in lexical order, and npm's global prefix. It prints the selected paths. To
+replace a configured path explicitly, run `fleet install worker --codex
+/absolute/path/to/codex` or use `--claude`. The worker checks that the replacement
+is executable. If discovery finds no executable, install leaves that runtime
+unset and prints the command needed to configure it.
+
 The checkout is a uv workspace with `fleet` (library), `fleet-cli` (terminal) and
 `fleet-web` (dashboard) distributions. For development, use `uv sync` and
 `uv run fleet ...`. Build all three wheels together for local installation: the

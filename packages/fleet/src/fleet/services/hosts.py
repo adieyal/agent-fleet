@@ -17,6 +17,15 @@ for shell in zsh bash; do
   $shell -lic "$probe" 2>/dev/null </dev/null | grep -E '^(PATH|claude|codex)='
 done
 eval "$probe"
+# Stable lexical order within nvm; shell PATH hits above take precedence.
+export LC_ALL=C
+prefix=$(npm prefix -g 2>/dev/null) || prefix=
+for directory in "$HOME/.local/bin" "$HOME"/.nvm/versions/node/*/bin "${prefix:+$prefix/bin}"; do
+  [ -d "$directory" ] || continue
+  for agent in claude codex; do
+    [ -f "$directory/$agent" ] && [ -x "$directory/$agent" ] && printf '%s=%s\n' "$agent" "$directory/$agent"
+  done
+done
 """
 
 
@@ -43,7 +52,7 @@ class HostSetup:
     def __init__(self, transport):
         self.transport = transport
 
-    def install(self, name: str) -> tuple[Host, dict, str]:
+    def install(self, name: str, *, claude: str | None = None, codex: str | None = None) -> tuple[Host, dict, str]:
         """Copy fleetd to the host and record where its agent binaries live."""
         host = self.transport.host_by_name(name)
         destination = self.transport.REMOTE_FLEETD_PATH
@@ -57,6 +66,9 @@ class HostSetup:
         if host.is_local and not agent_socket:
             agent_socket = os.environ.get("SSH_AUTH_SOCK", "")  # this machine's own agent already holds the keys
         settings = {**merge_detected(detected), "ssh_auth_sock": agent_socket or None}
+        overrides = {agent: value for agent, value in (("claude", claude), ("codex", codex)) if value is not None}
+        if overrides:
+            settings["runtime_overrides"] = overrides
         report = self.transport.call(host, ["configure", json.dumps(settings)])
         return host, report, agent_socket
 

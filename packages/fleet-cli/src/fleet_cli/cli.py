@@ -883,10 +883,10 @@ def merge_detected(output: str, *, container=None) -> dict[str, str | None]:
 
 
 def command_install(arguments: argparse.Namespace, *, container) -> None:
-    host, report, agent_socket = container.hosts().install(arguments.name)
+    host, report, agent_socket = container.hosts().install(arguments.name, claude=arguments.claude, codex=arguments.codex)
     console.print(f"[bold]{host.name}[/] ({report['host']}) installed")
     for name in ("claude", "codex"):
-        console.print(f"  {name}: {report['config'].get(name) or '[red]not found[/]'}")
+        console.print(f"  {name}: {report['config'].get(name) or f'[red]not found; set with fleet install {host.name} --{name} PATH[/]'}")
     console.print(f"  ssh-agent for jobs: {agent_socket or '[yellow]none — jobs get no SSH_AUTH_SOCK[/]'}")
     if not report["tmux"]:
         console.print("  [red]tmux not found — jobs cannot start[/]")
@@ -1775,6 +1775,8 @@ def build_parser(*, container=None) -> argparse.ArgumentParser:
 
     install = commands.add_parser("install", help="install/upgrade fleetd on a host")
     install.add_argument("name")
+    install.add_argument("--codex", metavar="PATH", help="set an executable Codex path on the host, replacing its configured path")
+    install.add_argument("--claude", metavar="PATH", help="set an executable Claude path on the host, replacing its configured path")
     install.set_defaults(handler=command_install)
 
     hooks = commands.add_parser("hooks", help="raise attention items from interactive Claude sessions on a host")
