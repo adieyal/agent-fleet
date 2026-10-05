@@ -31,5 +31,16 @@ def test_work_commands_end_to_end(tmp_path, capsys, project_id):
     assert error.value.code == 2
     assert "evidence" in capsys.readouterr().err
     assert run("criterion", "meet", criterion["id"], "--evidence", str(evidence), "--actor", "user")["state"] == "met"
+    with pytest.raises(SystemExit) as error:
+        main(["criterion", "add", task["id"], "Page replied", "--verification", "checked",
+              "--evidence-reference", "page:p/notes", "--actor", "user"])
+    assert error.value.code == 2
+    assert "absolute file path" in capsys.readouterr().err
+    stale = run("criterion", "add", task["id"], "Reviewed", "--verification", "judged", "--actor", "user")
+    withdrawn = run("criterion", "withdraw", stale["id"], "--reason", "superseded", "--actor", "user")
+    assert (withdrawn["state"], withdrawn["withdrawal_reason"]) == ("withdrawn", "superseded")
+    with pytest.raises(SystemExit):
+        main(["criterion", "withdraw", criterion["id"], "--reason", "late", "--actor", "user"])
+    assert "only an unmet criterion" in capsys.readouterr().err
     assert run("summary", "set", epic["id"], "--purpose", "Ship", "--done", "Checked", "--doing", "Review",
                "--next", "Accept", "--authoring-role", "user", "--actor", "user")["purpose"] == "Ship"

@@ -80,6 +80,8 @@ class Commands:
     def add_criterion(self, identity: str, *, actor: str, **fields) -> Criterion:
         required(actor, "actor")
         criterion = Criterion(id=str(uuid4()), work_item=identity, **fields)
+        if criterion.specification is not None:
+            self.evidence.check(criterion.specification.reference)
         with self.repository.transaction() as repository:
             repository.get("item", identity)
             repository.save("criterion", criterion, actor)
@@ -93,6 +95,12 @@ class Commands:
             criterion = criterion.meet(actor, evidence, records, self.clock())
             criterion = replace(criterion, activation=None if authorization is None else authorization.id,
                                 mandate_version=None if authorization is None else authorization.mandate_version)
+            repository.save("criterion", criterion, actor)
+        return criterion
+
+    def withdraw(self, identity: str, *, actor: str, reason: str) -> Criterion:
+        with self.repository.transaction() as repository:
+            criterion = repository.get("criterion", identity).withdraw(actor, reason, self.clock())
             repository.save("criterion", criterion, actor)
         return criterion
 
