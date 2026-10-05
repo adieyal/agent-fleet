@@ -350,7 +350,8 @@ def test_margin_interaction_and_evidence(page, demo_page):
     select_prose(page, 'the active supplier slice')
     page.get_by_role('button', name='Comment on selection').click()
     expect(page.locator('#comment-form textarea')).to_have_count(1)
-    expect(page.get_by_label('Who must respond?')).to_have_value('user')
+    # Page comments usually ask the agent; leaving the default must not strand them with the author.
+    expect(page.get_by_label('Who must respond?')).to_have_value('agent')
     page.get_by_label('Comment', exact=True).fill('Could we add the acceptance date?')
     shot('margin-composer.png')
     page.keyboard.press('Escape')
