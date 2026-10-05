@@ -247,7 +247,8 @@ def close_refusals(repository: AttentionRepository, host: "HostObservation", *, 
     source = f"runtime-input:{host['name']}"
     jobs = {job["id"]: job for job in host["jobs"]}
     closing = []
-    for item in repository.list():
+    subjects = None if complete else {f"job:{host['name']}:{identity}" for identity in jobs}
+    for item in repository.list(source=source, subjects=subjects):
         context = item.stream_context
         if item.source != source or item.state == "resolved" or context is None or context.owner_type != "job":
             continue

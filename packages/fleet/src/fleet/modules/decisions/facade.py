@@ -92,10 +92,11 @@ class DecisionsFacade:
                     raise RuntimeError('triage Decision archive not confirmed: ' + str(result['error']))
 
     def record_streamed(self, identity: str, time: datetime, work_item: str, *, actor: str, question: str,
-                        answer: str, principle: str, context: str, source_run: str | None) -> Decision:
+                        answer: str, principle: str, context: str, source_run: str | None,
+                        reconcile: bool = True) -> Decision:
         decision = record_streamed(self.repository, identity, time, work_item, actor=actor, question=question,
                                answer=answer, principle=principle, context=context, source_run=source_run)
-        if getattr(self.repository, 'unit', None) is None:
+        if reconcile and getattr(self.repository, 'unit', None) is None:
             self.execution.reconcile_decisions()
         return decision
 

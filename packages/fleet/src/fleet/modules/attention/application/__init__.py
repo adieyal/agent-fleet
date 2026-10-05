@@ -81,7 +81,7 @@ class Commands:
         """Resolve cleared items. With present_jobs, a job's item stays open while its job is absent
         (aged out of the stream, or not reported yet) unless the job is among deleted_jobs."""
         changed = False
-        for item in self.repository.list():
+        for item in self.repository.list(source=source, subjects=subjects):
             if (item.source == source and item.source_reference not in references
                     and item.state != "resolved" and (subjects is None or item.subject in subjects)):
                 if item.subject in deleted_jobs:

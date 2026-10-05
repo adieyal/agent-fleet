@@ -77,6 +77,14 @@ class ExecutionRepository(Repository):
     def deliveries(self) -> list[Delivery]:
         return [Delivery(**json.loads(row["record"])) for row in self.rows("SELECT record FROM execution_delivery ORDER BY rowid")]
 
+    def pending_deliveries(self) -> list[Delivery]:
+        return [Delivery(**json.loads(row["record"])) for row in self.rows(
+            "SELECT record FROM execution_delivery INDEXED BY execution_pending_deliveries WHERE json_extract(record, '$.status') != 'applied' ORDER BY rowid")]
+
+    def get_delivery(self, key: str) -> Delivery | None:
+        rows = self.rows("SELECT record FROM execution_delivery WHERE id = ?", (key,))
+        return Delivery(**json.loads(rows[0]["record"])) if rows else None
+
     def save_delivery(self, delivery: Delivery, actor: str) -> None:
         if self.unit is None:
             raise RuntimeError("delivery writes require a transaction")

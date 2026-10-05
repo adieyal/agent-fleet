@@ -182,3 +182,15 @@ def test_runtime_hook_question_finds_linked_run_and_rolls_back_delivery_intent(m
         {"schema_version": 1, "key": args[args.index("--key") + 1], "status": "applied"})
     configured_container(store).decisions().answer(hook.id, 'Proceed', actor='adi')
     assert configured_container(store).execution().deliveries()[0].run == run.id
+
+
+def test_pending_delivery_query_keeps_insertion_order_and_skips_applied(monkeypatch):
+    from fleet.modules.execution import Delivery
+
+    store, run, _ = question(monkeypatch)
+    repository = ExecutionRepository(store)
+    with repository.transaction() as transaction:
+        transaction.save_delivery(Delivery('z-first', 'one', run.id, 'First'), 'test')
+        transaction.save_delivery(Delivery('a-applied', 'two', run.id, 'Done', status='applied'), 'test')
+        transaction.save_delivery(Delivery('a-last', 'three', run.id, 'Last'), 'test')
+    assert [delivery.key for delivery in repository.pending_deliveries()] == ['z-first', 'a-last']

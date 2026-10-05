@@ -18,7 +18,7 @@ def test_stream_records_actions_without_duplicate_history_or_push():
     state = FleetState([Host('worker', None)], container=configured_container(store=store))
     transport_calls = []
 
-    def retry_deliveries(host):
+    def retry_deliveries(host, *, reconcile=True):
         assert not state.changed._is_owned()
         transport_calls.append(host)
 

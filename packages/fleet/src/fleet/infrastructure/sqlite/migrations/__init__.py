@@ -157,4 +157,9 @@ MIGRATIONS = (
         "CREATE INDEX records_pending_intents ON records_intent(id) "
         "WHERE json_extract(record, '$.state') = 'pending'",
     ),
+    (
+        "CREATE INDEX attention_source_subject ON attention_item(source, subject)",
+        "CREATE INDEX execution_pending_deliveries ON execution_delivery(id) "
+        "WHERE json_extract(record, '$.status') != 'applied'",
+    ),
 )
