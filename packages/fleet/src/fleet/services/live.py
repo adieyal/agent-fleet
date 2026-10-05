@@ -351,21 +351,26 @@ class FleetState(LiveWorkspace):
         host = next(host for host in self.hosts if host.name == host_name)
         return self.container.read_asset(host=host, job_id=job_id, document_id=document_id, asset_path=asset_path)
 
-def follow_host(state: FleetState, host: Host) -> None:
+def follow_host(state: FleetState, host: Host, stop: threading.Event | None = None) -> None:
     """Keep one `fleetd stream` running for the host, reconnecting when it dies or goes quiet."""
-    while True:
-        error = run_stream(state, host)
+    while stop is None or not stop.is_set():
+        error = run_stream(state, host, stop)
+        if stop is not None and stop.is_set():
+            return
 
         def mark_down(entry: dict[str, Any]) -> None:
             entry.update(ok=False, error=error, _syncing=False)
 
         state.update(host.name, mark_down)
-        time.sleep(RECONNECT_DELAY)
+        if stop is None:
+            time.sleep(RECONNECT_DELAY)
+        else:
+            stop.wait(RECONNECT_DELAY)
 
-def run_stream(state: FleetState, host: Host) -> str:
+def run_stream(state: FleetState, host: Host, stop: threading.Event | None = None) -> str:
     """Apply stream messages until the stream ends; return why it ended."""
     return state.transport.follow_stream(host, lambda message: apply_message(state, host, message),
-                                  events=EVENTS_PER_JOB, silence_limit=STREAM_SILENCE_LIMIT)
+                                  events=EVENTS_PER_JOB, silence_limit=STREAM_SILENCE_LIMIT, stop=stop)
 
 def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> None:
     kind = message.get("type")
@@ -451,8 +456,44 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
         state.update(host.name, lambda entry: entry.update(ok=False, error=message.get("error"), _syncing=False))
 
 
-def start_live(state):
-    threading.Thread(target=state.follow_history, args=(threading.Event(),), daemon=True).start()
-    for host in state.hosts:
-        threading.Thread(target=follow_host, args=(state, host), daemon=True).start()
-    return state
+class LiveRuntime:
+    """Own one state's live workers and wait for them to finish on close.
+
+    A closed runtime stays closed; create a new state for a new live session.
+    """
+
+    def __init__(self, state) -> None:
+        self.state = state
+        self.stop = threading.Event()
+        self.threads = [threading.Thread(target=state.follow_history, args=(self.stop,), daemon=True)]
+        self.threads.extend(threading.Thread(target=follow_host, args=(state, host, self.stop), daemon=True)
+                            for host in state.hosts)
+
+    def close(self) -> None:
+        self.stop.set()
+        for thread in self.threads:
+            thread.join()
+
+
+_start_lock = threading.Lock()
+
+
+def start_live(state) -> LiveRuntime:
+    """Start once per state and return the same owned runtime on repeated calls."""
+    with _start_lock:
+        runtime = getattr(state, "_live_runtime", None)
+        if runtime is not None:
+            return runtime
+        runtime = LiveRuntime(state)
+        started = []
+        try:
+            for thread in runtime.threads:
+                thread.start()
+                started.append(thread)
+        except BaseException:
+            runtime.stop.set()
+            for thread in started:
+                thread.join()
+            raise
+        state._live_runtime = runtime
+        return runtime

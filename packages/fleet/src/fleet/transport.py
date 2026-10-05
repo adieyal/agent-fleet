@@ -188,12 +188,16 @@ def rsync(sources: list[str], destination: str, host: Host) -> None:
 
 
 def follow_stream(host: Host, receive: Callable[[dict[str, Any]], None], *,
-                  events: str, silence_limit: int) -> str:
+                  events: str, silence_limit: int, stop: threading.Event | None = None) -> str:
     """Drain a worker stream while its messages are handled; return why it ended."""
+    if stop is not None and stop.is_set():
+        return "stream cancelled"
     try:
         ensure_master(host)
     except subprocess.TimeoutExpired:
         return "ssh connect timed out"
+    if stop is not None and stop.is_set():
+        return "stream cancelled"
     process = subprocess.Popen(host.fleetd_command(["stream", "--events", events]),
                                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     assert process.stdout is not None and process.stderr is not None
@@ -217,20 +221,31 @@ def follow_stream(host: Host, receive: Callable[[dict[str, Any]], None], *,
     for pump in pumps:
         pump.start()
     try:
-        while True:
+        deadline = time.monotonic() + silence_limit
+        while stop is None or not stop.is_set():
+            remaining = max(0.0, deadline - time.monotonic())
             try:
-                line = lines.get(timeout=silence_limit)
+                line = lines.get(timeout=min(remaining, 0.1) if stop is not None else silence_limit)
             except queue.Empty:
-                return f"no heartbeat for {silence_limit}s"
+                if stop is None or time.monotonic() >= deadline:
+                    return f"no heartbeat for {silence_limit}s"
+                continue
+            deadline = time.monotonic() + silence_limit
             if line is None:
                 process.wait(timeout=5)
                 pumps[1].join(timeout=5)
                 return stderr_lines[-1] if stderr_lines else f"stream ended (exit {process.returncode})"
             if line.strip():
                 receive(json.loads(line))
+        return "stream cancelled"
     finally:
         if process.poll() is None:
             process.kill()
+        process.wait()
+        for pump in pumps:
+            pump.join()
+        process.stdout.close()
+        process.stderr.close()
 
 
 TimeoutExpired = subprocess.TimeoutExpired
