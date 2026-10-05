@@ -84,6 +84,16 @@ Restarting web leaves observation running. If serve is absent, the deck shows
 “Runtime unavailable” and reconnects automatically. `fleet serve status` prints
 owner PID, uptime, worker health and host stream states.
 
+Serve also owns a persistent `codex app-server` for the page-comment responder.
+It requires `codex` on `PATH` and readable `auth.json` in the launching user's
+`CODEX_HOME`, or `~/.codex` when unset. It creates a lean profile and a separate
+HOME under `$FLEET_HOME/responder`, symlinking the source auth file. The
+`workers.responder` status reports child PID, Codex version, readiness, restart
+errors and last-turn timing and tokens. Missing binary or auth makes the worker
+unhealthy with its cause visible; serve retries with backoff. Startup initializes
+an ephemeral thread without making a model call. Page-comment routing remains
+on the existing triage path until the responder integration is delivered.
+
 Use `fleet watch` for a live terminal view. When the job finishes, run
 `fleet result worker:<id>` for its reports or `fleet pull worker:<id> ./results`
 for outbox files. `fleet wait worker:<id>` blocks until it finishes.

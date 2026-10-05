@@ -118,10 +118,13 @@ def test_snapshot_subscription_offline_health_and_generation(tmp_path):
 
 
 def test_cli_sigterm_status_and_duplicate_owner(tmp_path):
+    from tests.responder_support import fake_codex
+    binary, auth = fake_codex(tmp_path / 'fake-codex')
     config = tmp_path / 'config.json'
     config.write_text(json.dumps({'hosts': {'offline': {'ssh': None, 'python': '/bin/false'}}}))
     env = dict(os.environ, FLEET_CONFIG=str(config), FLEET_STORE=str(tmp_path / 'fleet.db'),
-               FLEET_HOME=str(tmp_path / 'home'), FLEET_MANAGEMENT=str(tmp_path / 'management'))
+               FLEET_HOME=str(tmp_path / 'home'), FLEET_MANAGEMENT=str(tmp_path / 'management'),
+               CODEX_HOME=str(auth.parent), PATH=str(binary.parent) + os.pathsep + os.environ['PATH'])
     command = [sys.executable, '-m', 'fleet_cli.cli', 'serve']
     process = subprocess.Popen(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
@@ -129,7 +132,10 @@ def test_cli_sigterm_status_and_duplicate_owner(tmp_path):
         while True:
             try:
                 health = runtime_status(tmp_path / 'fleet.db')
-                break
+                if health['workers']['responder'].get('ready'):
+                    break
+                if time.monotonic() > deadline:
+                    pytest.fail(f'responder failed: {health}')
             except FleetError:
                 if process.poll() is not None or time.monotonic() > deadline:
                     pytest.fail(f'serve failed: {process.communicate(timeout=1)}')

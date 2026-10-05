@@ -166,6 +166,7 @@ class FleetState(LiveWorkspace):
         self.hosts = hosts
         self.project_labels = project_labels or {}
         self.container = container
+        self.responder = container.responder_worker()
         self.transport = container.transport()
         self.store = container.store()
         self.observed_runs: dict = {}  # successful job ingestion, including persisted link context
@@ -534,6 +535,9 @@ class LiveRuntime:
         self.threads = [self.worker('history-scheduler', state.follow_history, self.stop)]
         self.threads.extend(self.worker('host:' + host.name, follow_host, state, host, self.stop)
                             for host in state.hosts)
+        self.responder = getattr(state, 'responder', None)
+        if self.responder is not None:
+            self.threads.append(self.worker('responder', self.responder.run, self.stop, self.worker_recovered))
 
     def worker(self, name, target, *args):
         def run():
@@ -571,11 +575,23 @@ class LiveRuntime:
         workers = {thread.name: {'alive': thread.is_alive(), 'error': self.errors.get(thread.name),
                                 **self.recoveries.get(thread.name, {})}
                    for thread in self.threads}
-        return {'healthy': all(worker['alive'] and not worker['error'] for worker in workers.values()),
+        if self.responder is not None:
+            # Worker liveness and child liveness are distinct. An initializing or
+            # dead child must never report a healthy responder.
+            worker = workers['responder']
+            worker['worker_alive'] = worker['alive']
+            child = self.responder.health()
+            worker.update(child)
+            worker['error'] = self.errors.get('responder') or child.get('error')
+            worker['alive'] = worker['worker_alive'] and child['alive']
+        return {'healthy': all(worker['alive'] and worker.get('ready', True) and not worker['error']
+                               for worker in workers.values()),
                 'stopping': self.stop.is_set(), 'workers': workers}
 
     def close(self, timeout=5.0) -> None:
         self.stop.set()
+        if self.responder is not None:
+            self.responder.close()
         deadline = time.monotonic() + timeout
         for thread in self.threads:
             if thread.ident is not None:
