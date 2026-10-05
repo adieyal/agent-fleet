@@ -320,6 +320,8 @@ def test_margin_interaction_and_evidence(page, demo_page):
     expect(page.locator('.thread')).to_have_count(3)
     assert page.get_by_text('Comments and answers', exact=True).count() == 0
     assert page.locator('#page-connection').inner_text() == ''
+    expect(page.locator('#page-live')).to_have_attribute('data-state', 'live')
+    expect(page.locator('#page-live')).to_have_text('Live')
     icon = page.locator('#supplier-work [data-comment-block]')
     expect(icon).to_have_css('opacity', '0')
     page.locator('#supplier-work').hover()
