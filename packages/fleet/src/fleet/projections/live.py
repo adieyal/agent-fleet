@@ -96,14 +96,15 @@ def stale_work(host: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
 
 def live_document(self, projects_error, capacity_error):
     registry = self.registry
+    focus_of = self.workspace.focus_lookup()
     with self.changed:
         document = self.with_attention({"time": time.time(), "project_labels": self.project_labels,
                 "projects": [{"id": project_id, **entry} for project_id, entry in registry_config(registry).items()],
                 "projects_error": projects_error, "hosts": [
             {**{key: value for key, value in self.by_host[host.name].items() if key not in ("jobs", "sessions") and not key.startswith("_")},
-             "jobs": [annotate(self.workspace, resolve(registry, host.name, stale_work(self.by_host[host.name], job))) for job in
+             "jobs": [annotate(focus_of, resolve(registry, host.name, stale_work(self.by_host[host.name], job))) for job in
                       sorted(self.by_host[host.name]["jobs"].values(), key=lambda job: job.get("created_at") or 0)],
-             "sessions": [annotate(self.workspace, resolve(registry, host.name, stale_work(self.by_host[host.name], session))) for session in
+             "sessions": [annotate(focus_of, resolve(registry, host.name, stale_work(self.by_host[host.name], session))) for session in
                           sorted(self.by_host[host.name]["sessions"].values(),
                                  key=lambda session: session.get("started_at") or 0)]}
             for host in self.hosts]})
@@ -114,12 +115,13 @@ def live_document(self, projects_error, capacity_error):
 
 
 def fixture_document(self):
+    focus_of = self.workspace.focus_lookup()
     with self.changed:
         document = self.with_attention({"time": self.fixture["time"], "project_labels": self.project_labels,
                 "projects": [{"id": project_id, **entry} for project_id, entry in registry_config(self.registry).items()],
                 "projects_error": None, "hosts": [
-            {**host, "jobs": [annotate(self.workspace, resolve(self.registry, host["name"], job)) for job in host["jobs"]],
-             "sessions": [annotate(self.workspace, resolve(self.registry, host["name"], session))
+            {**host, "jobs": [annotate(focus_of, resolve(self.registry, host["name"], job)) for job in host["jobs"]],
+             "sessions": [annotate(focus_of, resolve(self.registry, host["name"], session))
                           for session in host["sessions"]]}
             for host in self.fixture["hosts"]]})
     document = self.with_building(self.with_work(document), self.registry)

@@ -1,8 +1,9 @@
 """JSON shapes for workspace storage and existing delivery contracts."""
 
 from dataclasses import asdict
+from collections.abc import Callable
 
-from fleet.modules.workspace import ProjectReference, Registry, WorkspaceFacade
+from fleet.modules.workspace import ProjectReference, Registry
 from .activity import with_activity
 
 
@@ -22,6 +23,6 @@ def resolve(registry: Registry, host: str, item: dict) -> dict:
     return {**item, "project_id": project.id if project else None}
 
 
-def annotate(workspace: WorkspaceFacade, item: dict) -> dict:
+def annotate(focus_of: Callable[[ProjectReference], str], item: dict) -> dict:
     reference = ProjectReference(item.get("project"), item.get("project_id"))
-    return {**with_activity(item), "focus": workspace.focus_of(reference)}
+    return {**with_activity(item), "focus": focus_of(reference)}
