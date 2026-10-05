@@ -52,3 +52,26 @@ flowchart TD
   S -->|Guard reached| U[User escalation with recovery decision]
   Q --> T[Take back: item authority revoked]
 ```
+
+Page comments addressed to agent are queued for the page's project. The runtime history follower checks committed changes every 250 ms; a confirmed mandate must explicitly include `reply_attention` before the scheduler launches page reply work. A page without that authority shows the reason in its thread. The run receives the confirmed page revision, Markdown, selector, attachment, resolved block record and the complete thread. Page content is context to read, not controller instructions.
+
+A triage activation can append several messages with `reply`; each command checks the pinned authority, project, current ownership and unresolved lifecycle, and atomically records both the message and its audit Decision. For example:
+
+```sh
+fleet control ACTIVATION reply '{"item":"ATTENTION_ID","body":"The signed contracts match the active supplier list."}'
+```
+
+Replies leave the thread open. `resolve` is a separate command and should be used only when requested. A completed reply handles only the user request captured at dispatch: later user messages queue another bounded run, including messages sent during a live run. The page shows “Agent replying…” while the run is running, and shows failed delivery, unknown outcomes, missing mandate authority or exhausted budget explicitly. Failed page reply runs escalate with their run ID and a recovery reason; budget exhaustion uses the existing user escalation and reset timestamp.
+
+```mermaid
+flowchart LR
+  C[Agent-addressed page comment] --> Q[Project triage queue]
+  F[User follow-up on open thread] --> Q
+  Q --> M{Confirmed reply authority and budget?}
+  M -->|Yes| R[Bounded runtime run with page and thread context]
+  M -->|No| V[Visible thread reason]
+  R --> L[Agent replying… via SSE]
+  R --> A[Authorized reply: message and audit Decision]
+  A --> O[Open thread receives message via SSE]
+  R -->|Failed| E[User escalation with run ID and reason]
+```

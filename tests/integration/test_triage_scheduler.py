@@ -12,7 +12,9 @@ from fleet.modules.attention import StreamContext
 from fleet.modules.execution import JobObservation
 from fleet.modules.records import TRIAGE_PATH
 from fleet.triage_scheduler import TriageScheduler
-from tests.integration.test_triage_commands import triage, item
+from tests.integration.test_triage_commands import triage as triage_fixture, item
+
+triage = triage_fixture
 
 
 def scheduler(triage):

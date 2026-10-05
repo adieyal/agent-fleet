@@ -1,8 +1,9 @@
 import json
 import pytest
-from fleet.container import configured_container
 from fleet_cli import cli
-from tests.integration.test_triage_commands import triage
+from tests.integration.test_triage_commands import triage as triage_fixture
+
+triage = triage_fixture
 
 
 def test_policy_show_set_versions_and_rejects_invalid(triage, tmp_path, capsys):

@@ -1,11 +1,12 @@
 import json
-from types import SimpleNamespace
 
 import pytest
 from fleet.container import configured_container
 from fleet_cli import cli
-from tests.integration.test_triage_commands import triage, item
+from tests.integration.test_triage_commands import triage as triage_fixture, item
 from tests.integration.test_triage_scheduler import scheduler, finish
+
+triage = triage_fixture
 
 
 def test_no_policy_delegation_rejected_without_owner_write(project_id, capsys):

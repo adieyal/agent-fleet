@@ -6,6 +6,7 @@ import json
 import os
 
 from fleet.errors import FleetError
+from fleet.services.page_requests import request_token
 
 from fleet.modules.attention import PageAnnotation
 
@@ -128,6 +129,7 @@ class PageService:
         answers = self.services.decisions.list()
         threads = []
         originals = {revision: nodes}
+        triage = self.services.triage_repository.get(project)
         for item in attention.values():
             annotation = item.page_annotation
             if annotation is not None and annotation.page == address:
@@ -147,13 +149,53 @@ class PageService:
                 threads.append(dict(id=item.id, headline=item.headline, owner=item.owner, state=item.state,
                     created=item.last_seen, annotation=asdict(annotation), kind=item.kind,
                     replies=[asdict(reply) for reply in item.replies],
-                    attachment=attached,
-                    answers=[asdict(answer) for answer in answers if answer.attention_item == item.id]))
+                    attachment=attached, agent_status=self.agent_status(item, triage),
+                    answers=[asdict(answer) for answer in answers if answer.attention_item == item.id
+                             and not self.reply_audit(answer)]))
         threads.sort(key=lambda thread: (str(thread['created']), thread['id']))
         return dict(threads=threads, project=project, slug=slug, title=self.pages.title(nodes, slug), revision=revision,
                     historical=revision != record['revision'], markdown=markdown, nodes=resolved,
                     snapshot_time=now.isoformat(), state_version=self.services.store.latest_sequence(),
                     address=f'fleet://projects/{project}/pages/{slug}')
+
+    @staticmethod
+    def reply_audit(answer):
+        if not answer.activation:
+            return False
+        try:
+            context = json.loads(answer.context)
+        except ValueError:
+            return False
+        return isinstance(context, dict) and context.get('command') == 'reply_attention'
+
+    def agent_status(self, item, state):
+        if item.state == 'resolved':
+            return None
+        if item.owner == 'user':
+            return item.owner_reason if item.owner_actor and item.owner_actor.startswith('triage:') else None
+        if state.get('error'):
+            return 'Agent reply unavailable: ' + state['error']
+        if item.id in state.get('items', []) and state.get('run'):
+            run = self.services.execution.get_run(state['run'])
+            if run.status == 'running':
+                return 'Agent replying…'
+            if run.status != 'succeeded':
+                return f'Agent reply run {run.id}: {run.status}'
+        try:
+            mandate = self.services.records.triage_mandate(item.project)
+        except (ValueError, LookupError, OSError) as error:
+            return 'Agent reply unavailable: ' + str(error)
+        if mandate is None:
+            return 'Agent reply unavailable: no confirmed triage mandate'
+        if 'reply_attention' not in mandate.decision_authority:
+            return 'Agent reply unavailable: mandate does not authorize replies'
+        if state.get('handled', {}).get(item.id) == request_token(item):
+            return 'Agent replied · thread remains open'
+        used = state.get('used', 0) if state.get('day') == self.services.store.clock().date().isoformat() else 0
+        if used >= mandate.limits['runs_per_day']:
+            reset = (self.services.store.clock() + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+            return 'Agent reply budget exhausted; resets at ' + reset.isoformat()
+        return 'Agent reply queued'
 
     @staticmethod
     def check_project(actual, expected, identity):
