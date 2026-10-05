@@ -21,7 +21,6 @@ import threading
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterator
 
-from fleet.transport import FleetError
 from fleet.services.documents import STATUS_LINE, is_private
 
 UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")

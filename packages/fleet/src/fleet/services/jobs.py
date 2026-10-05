@@ -78,7 +78,10 @@ class Jobs:
     def start(self, host: Host, job_id: str) -> dict:
         execution = self.services.execution
         run = next((run for run in execution.runs() if (run.host, run.remote_job_id) == (host.name, job_id)), None)
-        call = lambda fleetd_arguments, stdin: self.transport.call(host, fleetd_arguments, stdin_text=stdin)
+
+        def call(fleetd_arguments, stdin):
+            return self.transport.call(host, fleetd_arguments, stdin_text=stdin)
+
         try:
             job = call(["start", job_id], None) if run is None else execution.start(run, call)
         except (ValueError, LookupError) as error:

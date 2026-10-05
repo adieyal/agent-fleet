@@ -9,7 +9,6 @@ from types import SimpleNamespace
 import pytest
 
 from fleet_cli import cli
-from fleet import transport
 
 
 def run(capsys, *arguments: str) -> tuple[str, str]:

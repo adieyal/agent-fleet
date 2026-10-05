@@ -1,9 +1,7 @@
 import json
 import os
-import shutil
 import subprocess
 import sys
-import tempfile
 from contextlib import closing
 from pathlib import Path
 

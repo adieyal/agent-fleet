@@ -103,6 +103,14 @@ from fleet.triage import TriageCommands as _TriageCommands
 from fleet.triage_scheduler import TriageScheduler as _TriageScheduler
 
 
+from fleet.identifiers import resolve_prefix as _resolve_prefix
+from fleet.projections.bench import bench_rooms as _bench_rooms
+from fleet.projections.bench import bench_state as _bench_state
+from fleet.projections.history import parse_moment as _parse_moment
+from fleet.projections.history import parse_since as _parse_since
+from fleet.projections.project import filter_status as _filter_status
+
+
 def store_path() -> _Path:
     return _Path(_os.environ["FLEET_STORE"]) if "FLEET_STORE" in _os.environ else _transport.config_path().parent / "fleet.db"
 
@@ -341,16 +349,6 @@ def resolved_work_detail(services, reference):
     identity = services.container.references().work(reference)
     initialize_attention(services)
     return services.container.work_detail(identity=identity)
-
-
-
-
-from fleet.identifiers import resolve_prefix as _resolve_prefix
-from fleet.projections.bench import bench_rooms as _bench_rooms
-from fleet.projections.bench import bench_state as _bench_state
-from fleet.projections.history import parse_moment as _parse_moment
-from fleet.projections.history import parse_since as _parse_since
-from fleet.projections.project import filter_status as _filter_status
 
 
 class Container(_containers.DeclarativeContainer):

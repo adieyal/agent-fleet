@@ -15,9 +15,9 @@ from pathlib import Path
 from typing import Any
 
 from fleet.errors import FleetError
+from fleet.host_values import REMOTE_FLEETD_PATH, SSH_OPTIONS, Host, HostReport
 
 LOCAL_FLEETD_SOURCE = files("fleet.remote").joinpath("fleetd.py")
-from fleet.host_values import REMOTE_FLEETD_PATH, SSH_OPTIONS, Host, HostReport
 
 
 def config_path() -> Path:

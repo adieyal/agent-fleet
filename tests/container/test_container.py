@@ -30,7 +30,7 @@ def test_settings_clock_job_and_management_are_injected(tmp_path):
                                      management_home=tmp_path / 'management'))
     assert container.store().clock() == now
     assert container.store().job == 'test-job'
-    item = container.work().add(project='p', title='Injected clock', goal='Test', actor='test')
+    container.work().add(project='p', title='Injected clock', goal='Test', actor='test')
     entry = container.store().history_after(0)[0]
     assert container.records().home == tmp_path / 'management'
     assert entry['time'] == now.isoformat()
@@ -95,7 +95,9 @@ def test_document_root_and_execution_adapters_are_injected(tmp_path):
     container.settings.override(dict(container.settings(), home=tmp_path / 'home'))
     assert container.documents().root == tmp_path / 'home/projects'
     assert container.project_documents().root == tmp_path / 'home/projects'
-    send = lambda request: 'sent'
+    def send(request):
+        return 'sent'
+
     container.send.override(providers.Object(send))
     assert container.execution().send is send
     with container.unit_of_work() as unit:

@@ -14,7 +14,6 @@ from urllib.request import urlopen
 import pytest
 from types import SimpleNamespace
 
-from fleet.container import configured_container
 from fleet.transport import FleetError, Host
 from fleet.remote import fleetd
 from fleet_web.documents import fetch_document

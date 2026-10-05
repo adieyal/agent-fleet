@@ -78,7 +78,9 @@ def test_renderers_accept_provider_overrides_without_storage(cli_container):
 
 def test_fixture_scopes_isolate_paths_and_inherit_overrides(cli_container):
     adapter, query = object(), object()
-    clock = lambda: datetime(2026, 10, 5, tzinfo=timezone.utc)
+    def clock():
+        return datetime(2026, 10, 5, tzinfo=timezone.utc)
+
     cli_container.settings.override(dict(cli_container.settings(), job='parent-job', clock=clock))
     cli_container.transport.override(adapter)
     cli_container.overview.override(query)

@@ -259,7 +259,10 @@ class FleetState(LiveWorkspace):
                 self.execution.record_host(host_name, reachable=entry["ok"], error=entry["error"])
             self.by_host[host_name] = snapshot(self.by_host[host_name])
             retry_deliveries = self.by_host[host_name]["ok"]
-            public = lambda value: {key: item for key, item in value.items() if not key.startswith("_")}
+
+            def public(value):
+                return {key: item for key, item in value.items() if not key.startswith("_")}
+
             context_only = public(previous) == public(self.by_host[host_name])
             reconciled = False
             if ingest:

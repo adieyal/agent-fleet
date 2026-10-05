@@ -18,7 +18,9 @@ def test_web_registration_must_be_unique(monkeypatch, count):
 
 def test_cli_passes_the_same_arguments_and_container_to_plugin(monkeypatch):
     calls = []
-    handler = lambda arguments, container: calls.append((arguments, container))
+    def handler(arguments, container):
+        calls.append((arguments, container))
+
     monkeypatch.setattr(plugins, 'entry_points', lambda **_: [SimpleNamespace(name='web', load=lambda: handler)])
     arguments, container = object(), object()
     command_web(arguments, container=container)
