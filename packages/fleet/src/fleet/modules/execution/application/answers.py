@@ -4,15 +4,13 @@ from typing import Callable
 from datetime import datetime
 from uuid import uuid4
 
-from .dtos import AnswerRequest
+from .dtos import AnswerDecision, AnswerRequest
 from .ports import AnswerSender, ExecutionRepository
 
 
 def answer(repository: ExecutionRepository, send: AnswerSender, item_id: str, reply: str, actor: str,
            clock: Callable[[], datetime], work_item: str | None = None,
            require_step_work: Callable[[str, str, str], None] | None = None) -> str:
-    from fleet.modules.decisions import Decision
-
     if not actor.strip():
         raise ValueError("actor is required")
     if not reply.strip():
@@ -41,7 +39,7 @@ def answer(repository: ExecutionRepository, send: AnswerSender, item_id: str, re
         if affected is None and run is not None:
             affected = next((step['work_item'] for step in run.step_work or [] if step['index'] == context.step), None)
             affected = affected or transaction.get_action(run.action).work_item
-        record = Decision(str(uuid4()), item.id, item.headline, reply, actor, item.context_reference,
+        record = AnswerDecision(str(uuid4()), item.id, item.headline, reply, actor, item.context_reference,
                           () if affected is None else (affected,), clock(), source_run=run.id if run else None)
         transaction.record_answer_decision(record)
         transaction.attention.resolve(item.id, details=details, actor=actor)

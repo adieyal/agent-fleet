@@ -9,13 +9,10 @@ from urllib.request import Request, urlopen
 import pytest
 
 from fleet.container import configured_container
-from fleet import transport
 
-from fleet.modules.workspace import Registry
-from fleet.infrastructure.config.workspace import decode_workspace
+from fleet.modules.workspace import Link, Project, Registry
 from workspace_support import persist_registry
-from fleet.transport import FleetError, Host
-from fleet.services.live import FleetState
+from fleet.api import FleetError, Host
 from fleet_web.server import make_handler
 
 
@@ -35,14 +32,20 @@ def set_config(path, **changes):
     if "capacity" in changes:
         configured_container().initialized_workspace().set_capacity(changes.pop('capacity'))
     if "projects" in changes:
-        persist_registry(Registry(decode_workspace({"projects": changes.pop("projects")}).projects))
+        persist_registry(Registry(
+            Project(identity, entry["name"], [Link(**link) for link in entry["links"]],
+                    entry["repositories"], entry.get("created_at"))
+            for identity, entry in changes.pop("projects").items()))
     if changes:
         path.write_text(json.dumps({**json.loads(path.read_text()), **changes}))
 
 
 def start_deck():
     """A deck as `fleet web` builds it; home has a job for each label, gpu one `agent-fleet` session."""
-    state = FleetState(HOSTS, {'invoices': 'Invoice analysis'}, configured_container().initialized_workspace().registry, configured_container().initialized_workspace(), configured_container().initialized_workspace().capacity, container=configured_container())
+    container = configured_container()
+    workspace = container.initialized_workspace()
+    state = container.live_state(HOSTS, {'invoices': 'Invoice analysis'}, workspace.registry,
+                                 workspace, workspace.capacity)
 
     def fill_home(entry):
         entry["ok"], entry["error"] = True, None
@@ -240,7 +243,7 @@ def options(base_url, label, *hosts):
 
 
 def test_move_in_offers_the_project_a_label_is_linked_to_on_another_host(deck, monkeypatch):
-    monkeypatch.setattr(transport, "repository_remotes", lambda host, directories: {directory: [] for directory in directories})
+    monkeypatch.setattr(configured_container().transport(), "repository_remotes", lambda host, directories: {directory: [] for directory in directories})
     (agent_fleet,) = housed(deck, "agent-fleet")          # "Agent-Fleet", linked on home, floor 1
     register("Unrelated", ("home", "restoke"))
     offered = options(deck, "agent-fleet", "gpu")
@@ -268,7 +271,7 @@ def test_move_in_offers_a_matching_repository(deck, monkeypatch):
         asked.append((host.name, directories))
         return {directory: ["https://github.com/adieyal/agent-fleet"] for directory in directories}
 
-    monkeypatch.setattr(transport, "repository_remotes", remotes)
+    monkeypatch.setattr(configured_container().transport(), "repository_remotes", remotes)
     offered = options(deck, "agent-fleet", "gpu")
     assert asked == [("gpu", ["/src/agent-fleet"])]
     assert [(c["project_id"], c["reasons"]) for c in offered["candidates"]] == [(fleet, ["repository"])]
@@ -276,7 +279,7 @@ def test_move_in_offers_a_matching_repository(deck, monkeypatch):
     def unreachable(host, directories):
         raise FleetError(f"{host.name}: could not read repository remotes")
 
-    monkeypatch.setattr(transport, "repository_remotes", unreachable)
+    monkeypatch.setattr(configured_container().transport(), "repository_remotes", unreachable)
     offered = options(deck, "agent-fleet", "gpu")
     assert offered["candidates"] == [] and offered["errors"] == ["gpu: could not read repository remotes"]
 
@@ -484,7 +487,7 @@ def test_capacity_is_set_from_the_cli_only_within_limits(deck, config_path, caps
 
 def test_an_agent_moves_to_a_project_under_its_label_on_that_host(deck, monkeypatch):
     calls = []
-    monkeypatch.setattr(transport, "call", lambda host, arguments, **_: calls.append((host.name, arguments)) or {"id": arguments[1]})
+    monkeypatch.setattr(configured_container().transport(), "call", lambda host, arguments, **_: calls.append((host.name, arguments)) or {"id": arguments[1]})
     invoices = register("Invoice training", ("home", "invoice-training"))
     status, moved = post(deck, "/api/agent/move", {"host": "home", "id": "j0", "project": invoices})
     assert (status, moved["project"], calls) == (200, "invoice-training", [("home", ["mv", "j0", "invoice-training"])])

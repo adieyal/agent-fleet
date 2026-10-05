@@ -622,8 +622,11 @@ def serve(hosts: list[Host], *, port: int, bind: str, open_browser: bool = False
           pipelines: dict[str, dict[str, str]] | None = None, container=None) -> None:
     container = Container() if container is None else container
     state = container.live_state(hosts=hosts, project_labels=project_labels, pipelines=pipelines)
-    container.start_live(state=state)
-    run_server(make_handler(state, ProjectLibrary(libraries or {}, container=container)), port=port, bind=bind, open_browser=open_browser)
+    runtime = container.start_live(state=state)
+    try:
+        run_server(make_handler(state, ProjectLibrary(libraries or {}, container=container)), port=port, bind=bind, open_browser=open_browser)
+    finally:
+        runtime.close()
 
 
 def serve_fixture(path: str, *, port: int, bind: str, open_browser: bool = False, container=None) -> None:
@@ -640,7 +643,10 @@ def run_server(handler: type[BaseHTTPRequestHandler], *, port: int, bind: str, o
     print(f"fleet deck at {url}  (demo: {url}?demo)", flush=True)
     if open_browser:
         webbrowser.open(url)
-    server.serve_forever()
+    try:
+        server.serve_forever()
+    finally:
+        server.server_close()
 
 
 def build_id(root: Path = WEB_ROOT) -> str:

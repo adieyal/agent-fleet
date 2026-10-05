@@ -8,6 +8,7 @@ Registry in use), `project_labels`, `capacity`, `known_projects()`, `host_names(
 from __future__ import annotations
 
 from fleet.projections.live import live_document, building_document
+from fleet.projections.attention import attention_items
 
 import json
 import logging
@@ -43,7 +44,7 @@ class LiveWorkspace(LiveProjects, LiveAttention, LiveProjection, LibraryProjecti
     capacity: int
     pipeline_config: dict[str, dict[str, str]]           # name → {"host", "project": room label}, as configured
     pipeline_runs: dict[tuple[str, str], dict[str, Any]]  # (host, name) → {"run", "baseline", "seq"} as last reported
-    work_links: tuple[tuple[Any, int], dict[tuple[str, str], dict[str, Any]], dict[tuple[str, str], str]] | None = None  # revision, links, run ids
+    work_links: tuple[object, dict[tuple[str, str], dict[str, Any]], dict[tuple[str, str], str]] | None = None  # revision, links, run ids
     pipeline_seq: int
     documents: Any   # each project's injected document store
 
@@ -77,6 +78,16 @@ class LiveWorkspace(LiveProjects, LiveAttention, LiveProjection, LibraryProjecti
             self.version += 1
             self.changed.notify_all()
 
+
+    def triage_statuses(self, items: list[dict]) -> dict[str, dict]:
+        """Compute scheduler reads in the service layer before projecting a document."""
+        projects = {item["project_id"] for item in items if item["project_id"]}
+        statuses = {project: self.triage_status(project) for project in projects}
+        for status in statuses.values():
+            if status["live_run"]:
+                run = self.execution.get_run(status["live_run"]["id"])
+                status["live_run"].update(host=run.host, remote_job_id=run.remote_job_id)
+        return statuses
 
     def focus_snapshot(self):
         return asdict(self.workspace.focus_snapshot())
@@ -167,6 +178,10 @@ class FleetState(LiveWorkspace):
         self.execution = container.execution()
         self.run_library = container.library()
         self.decisions = container.decisions()
+        self.records = container.records()
+        self.reads = container.live_readers(workspace=self.workspace, attention=self.attention)
+        self.triage_status = container.triage_scheduler(deliver=None, host=None).status
+        self.schedule = container.schedule_triage
         self.woken_until = 0.0
         self.changed = threading.Condition()
         self.version = 0
@@ -222,15 +237,14 @@ class FleetState(LiveWorkspace):
             return {name: (bool(entry["ok"]), set(entry["jobs"])) for name, entry in self.by_host.items()}
 
     def schedule_triage(self) -> None:
-        services = self.container.services()
-        bodies = {intent['id']: json.dumps(asdict(services.decisions.get(intent['key'])), default=str)
-                  for intent in services.records.intents()
+        bodies = {intent['id']: json.dumps(asdict(self.decisions.get(intent['key'])), default=str)
+                  for intent in self.records.intents()
                   if intent['state'] == 'pending' and intent['path'] == f"decisions/{intent['key']}.json"}
         try:
-            services.records.reconcile(bodies)
+            self.records.reconcile(bodies)
         except OSError:
             logging.getLogger(__name__).exception('Records publication remains pending')
-        self.container.triage_scheduler(deliver=lambda run, **options: self.container.deliver_triage(run, **options)).schedule()
+        self.schedule()
 
     def follow_history(self, stop: threading.Event) -> None:
         while not stop.is_set():
@@ -325,7 +339,9 @@ class FleetState(LiveWorkspace):
     def document(self) -> dict[str, Any]:
         projects_error = self.refresh_registry()
         capacity_error = self.refresh_capacity()
-        return live_document(self, projects_error, capacity_error)
+        with self.changed:
+            items = attention_items(self.reads.attention, [self.by_host[host.name] for host in self.hosts])
+            return live_document(self, projects_error, capacity_error, self.triage_statuses(items), items)
 
     def pipeline_updates(self, after: int) -> list[dict[str, Any]]:
         return self.pipelines(self.registry, self.by_host, after)
@@ -351,21 +367,26 @@ class FleetState(LiveWorkspace):
         host = next(host for host in self.hosts if host.name == host_name)
         return self.container.read_asset(host=host, job_id=job_id, document_id=document_id, asset_path=asset_path)
 
-def follow_host(state: FleetState, host: Host) -> None:
+def follow_host(state: FleetState, host: Host, stop: threading.Event | None = None) -> None:
     """Keep one `fleetd stream` running for the host, reconnecting when it dies or goes quiet."""
-    while True:
-        error = run_stream(state, host)
+    while stop is None or not stop.is_set():
+        error = run_stream(state, host, stop)
+        if stop is not None and stop.is_set():
+            return
 
         def mark_down(entry: dict[str, Any]) -> None:
             entry.update(ok=False, error=error, _syncing=False)
 
         state.update(host.name, mark_down)
-        time.sleep(RECONNECT_DELAY)
+        if stop is None:
+            time.sleep(RECONNECT_DELAY)
+        else:
+            stop.wait(RECONNECT_DELAY)
 
-def run_stream(state: FleetState, host: Host) -> str:
+def run_stream(state: FleetState, host: Host, stop: threading.Event | None = None) -> str:
     """Apply stream messages until the stream ends; return why it ended."""
     return state.transport.follow_stream(host, lambda message: apply_message(state, host, message),
-                                  events=EVENTS_PER_JOB, silence_limit=STREAM_SILENCE_LIMIT)
+                                  events=EVENTS_PER_JOB, silence_limit=STREAM_SILENCE_LIMIT, stop=stop)
 
 def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> None:
     kind = message.get("type")
@@ -451,8 +472,44 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
         state.update(host.name, lambda entry: entry.update(ok=False, error=message.get("error"), _syncing=False))
 
 
-def start_live(state):
-    threading.Thread(target=state.follow_history, args=(threading.Event(),), daemon=True).start()
-    for host in state.hosts:
-        threading.Thread(target=follow_host, args=(state, host), daemon=True).start()
-    return state
+class LiveRuntime:
+    """Own one state's live workers and wait for them to finish on close.
+
+    A closed runtime stays closed; create a new state for a new live session.
+    """
+
+    def __init__(self, state) -> None:
+        self.state = state
+        self.stop = threading.Event()
+        self.threads = [threading.Thread(target=state.follow_history, args=(self.stop,), daemon=True)]
+        self.threads.extend(threading.Thread(target=follow_host, args=(state, host, self.stop), daemon=True)
+                            for host in state.hosts)
+
+    def close(self) -> None:
+        self.stop.set()
+        for thread in self.threads:
+            thread.join()
+
+
+_start_lock = threading.Lock()
+
+
+def start_live(state) -> LiveRuntime:
+    """Start once per state and return the same owned runtime on repeated calls."""
+    with _start_lock:
+        runtime = getattr(state, "_live_runtime", None)
+        if runtime is not None:
+            return runtime
+        runtime = LiveRuntime(state)
+        started = []
+        try:
+            for thread in runtime.threads:
+                thread.start()
+                started.append(thread)
+        except BaseException:
+            runtime.stop.set()
+            for thread in started:
+                thread.join()
+            raise
+        state._live_runtime = runtime
+        return runtime

@@ -8,6 +8,15 @@ from pathlib import Path
 
 
 class RepositoryWriter:
+    def create(self, root: Path) -> None:
+        root.mkdir(parents=True, exist_ok=True)
+        if not (root / '.git').exists():
+            self.git(root, 'init', '-q')
+
+    def export(self, root: str, path: str, revision: str, target: Path) -> str:
+        target.write_text(self.read(root, path, revision))
+        return str(target)
+
     def git(self, root, *args: str) -> str:
         result = subprocess.run(['git', '-C', str(root), *args], capture_output=True, text=True, timeout=10)
         if result.returncode:

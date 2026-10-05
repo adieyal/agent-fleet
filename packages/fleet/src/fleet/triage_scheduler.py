@@ -79,15 +79,17 @@ class TriageScheduler:
                 self.delivery_error(project, None)
 
     def delivery_error(self, project: str, error: str | None) -> None:
-        with self.services.triage_repository.transaction() as repository:
+        with self.services.triage_repository.transaction() as scope:
+            repository = scope.records
             state = repository.get(project)
             state['error'] = error
             repository.save(project, state)
 
     def reserve(self, project: str) -> tuple[Run, bool] | None:
         now = self.services.store.clock()
-        with self.services.triage_repository.transaction(prepare=self.services.bound) as repository:
-            services = self.services.bound(repository.unit)
+        with self.services.triage_repository.transaction() as scope:
+            repository = scope.records
+            services = scope.services
             state = repository.get(project)
             mandate = services.records.triage_mandate(project)
             if mandate is None:

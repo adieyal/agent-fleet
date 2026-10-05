@@ -46,7 +46,7 @@ def test_stream_process_is_killed_when_message_handling_fails(monkeypatch):
     host = transport.Host("worker", None)
     killed = []
     process = SimpleNamespace(stdout=io.BytesIO(b'{"type": "hello"}\n'), stderr=io.BytesIO(),
-                              poll=lambda: None, kill=lambda: killed.append(True))
+                              wait=lambda **kwargs: None, poll=lambda: None, kill=lambda: killed.append(True))
     monkeypatch.setattr(transport, "ensure_master", lambda host: None)
     monkeypatch.setattr(transport.subprocess, "Popen", lambda *args, **kwargs: process)
 

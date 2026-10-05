@@ -455,7 +455,8 @@ def test_readonly_writer_lock_keeps_decision_pending_and_controller_publishes(tr
                for entry in history['entries'] for change in entry['changes'])
     server = FleetState.__new__(FleetState)
     server.store = services.store
-    server.container = services.container
+    server.records, server.decisions = services.records, services.decisions
+    server.schedule = lambda: None
     monkeypatch.setattr(TriageScheduler, 'schedule', lambda self: None)
     server.schedule_triage()  # Still sandboxed: pending intent survives repeated reconciliation.
     assert next(entry for entry in services.records.intents() if entry['key'] == decision.id)['state'] == 'pending'

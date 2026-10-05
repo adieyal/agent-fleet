@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from fleet.projections.live import fixture_document
+from fleet.projections.attention import attention_items
 import threading
 from pathlib import Path
 from typing import Any, Callable
@@ -23,6 +24,8 @@ class FixtureState(LiveWorkspace):
         store = container.store()
         self.store = store
         self.execution = container.execution()
+        self.decisions = container.decisions()
+        self.triage_status = container.triage_scheduler(deliver=None, host=None).status
         self.workspace = container.initialized_workspace(initial=fixture, actor="fixture-user")
         work = container.work()
         identities = {}
@@ -34,6 +37,7 @@ class FixtureState(LiveWorkspace):
         self.capacity = self.workspace.capacity()
         self.attention = container.initialized_attention(
                                         workspace_path=Path(self.attention_directory.name) / "workspace.json")
+        self.reads = container.live_readers(workspace=self.workspace, attention=self.attention)
         self.woken_until = 0.0
         for host in fixture["hosts"]:
             self.attention.observe({**host,
@@ -98,7 +102,9 @@ class FixtureState(LiveWorkspace):
 
     def document(self) -> dict[str, Any]:
         self.registry = self.workspace.registry()
-        return fixture_document(self)
+        with self.changed:
+            items = attention_items(self.reads.attention, self.fixture["hosts"])
+            return fixture_document(self, self.triage_statuses(items), items)
 
     def pipeline_updates(self, after: int) -> list[dict[str, Any]]:
         return self.pipelines(self.registry, {host["name"]: host for host in self.fixture["hosts"]}, after)

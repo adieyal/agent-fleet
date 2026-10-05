@@ -1,5 +1,6 @@
 from fleet.container import configured_container
 from fleet import transport
+import io
 import json
 import threading
 from http.server import ThreadingHTTPServer
@@ -56,7 +57,7 @@ def test_silence_deadline_marks_linked_run_unknown(monkeypatch):
         "id": "job", "project": "p", "description": "Task", "status": "running", "agent": "codex",
         "created_at": 1, "updated_at": 2, "steps": [], "documents": []}})
     waits, commands = [], []
-    process = SimpleNamespace(stdout=iter(()), stderr=iter(()), poll=lambda: None, kill=lambda: None)
+    process = SimpleNamespace(stdout=io.BytesIO(), stderr=io.BytesIO(), wait=lambda **kwargs: None, poll=lambda: None, kill=lambda: None)
 
     class Silent:   # the stream sends nothing before the deadline
         def put(self, line):

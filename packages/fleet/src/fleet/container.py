@@ -6,6 +6,11 @@ from pathlib import Path as _Path
 from tempfile import TemporaryDirectory as _TemporaryDirectory
 from threading import RLock as _RLock
 from types import SimpleNamespace as _SimpleNamespace
+from contextlib import contextmanager as _contextmanager
+from typing import Callable as _Callable, Iterator as _Iterator
+
+from fleet.services.facades import Facades as _Facades, StorePort as _StorePort, Transaction as _Transaction
+from fleet.services.facades import TriagePersistence as _TriagePersistencePort, TriageScope as _TriageScope
 
 from dependency_injector import containers as _containers
 from dependency_injector import providers as _providers
@@ -22,6 +27,7 @@ from fleet.infrastructure.documents.job_store import fleet_home as _fleet_home
 from fleet.infrastructure.documents.library import ProjectLibrary as _ProjectLibrary
 from fleet.infrastructure.documents.overview import OverviewCache as _OverviewCache
 from fleet.infrastructure.documents.overview import files_changed as _files_changed
+from fleet.infrastructure.files import LocalFiles as _LocalFiles
 from fleet.infrastructure.fixtures import FixtureLibraryReader as _FixtureLibraryReader
 from fleet.infrastructure.fixtures import load_fixture as _load_fixture
 from fleet.infrastructure.git import RepositoryWriter as _RepositoryWriter
@@ -79,6 +85,7 @@ from fleet.projections.guidance import project_decisions as _project_decisions
 from fleet.projections.history import subject_history as _subject_history
 from fleet.projections.notifications import Notifications as _Notifications
 from fleet.projections.overview import Overview as _Overview
+from fleet.projections.ports import LiveReaders as _LiveReaders
 from fleet.projections.project import project_status as _project_status
 from fleet.projections.project import run_work as _run_work
 from fleet.projections.project import work_detail as _project_work_detail
@@ -129,22 +136,80 @@ _scope_lock = _RLock()
 
 
 class Services:
-    def __init__(self, container):
-        self.container = container
+    """Lazy, typed capabilities assembled only by the composition root."""
+
+    def __init__(self, *,
+                 store: _Callable[[], _StorePort],
+                 unit: _Callable[[], _Transaction | None],
+                 attention: _Callable[[], _AttentionFacade],
+                 authority: _Callable[[], _AuthorityFacade],
+                 decisions: _Callable[[], _DecisionsFacade],
+                 execution: _Callable[[], _ExecutionFacade],
+                 library: _Callable[[], _LibraryFacade],
+                 records: _Callable[[], _RecordsFacade],
+                 work: _Callable[[], _WorkFacade],
+                 workspace: _Callable[[], _WorkspaceFacade],
+                 triage_repository: _Callable[[], _TriagePersistencePort],
+                 bind: _Callable[[_Transaction], _Facades]) -> None:
+        self._store = store
+        self._unit = unit
+        self._attention = attention
+        self._authority = authority
+        self._decisions = decisions
+        self._execution = execution
+        self._library = library
+        self._records = records
+        self._work = work
+        self._workspace = workspace
+        self._triage_repository = triage_repository
+        self._bind = bind
 
     @property
-    def store(self):
-        return self.container.store()
+    def store(self) -> _StorePort:
+        return self._store()
 
     @property
-    def unit(self):
-        return self.container.unit()
+    def unit(self) -> _Transaction | None:
+        return self._unit()
 
-    def __getattr__(self, name):
-        return getattr(self.container, name)()
+    @property
+    def attention(self) -> _AttentionFacade:
+        return self._attention()
 
-    def bound(self, unit):
-        return bound_services(self.container, unit)
+    @property
+    def authority(self) -> _AuthorityFacade:
+        return self._authority()
+
+    @property
+    def decisions(self) -> _DecisionsFacade:
+        return self._decisions()
+
+    @property
+    def execution(self) -> _ExecutionFacade:
+        return self._execution()
+
+    @property
+    def library(self) -> _LibraryFacade:
+        return self._library()
+
+    @property
+    def records(self) -> _RecordsFacade:
+        return self._records()
+
+    @property
+    def work(self) -> _WorkFacade:
+        return self._work()
+
+    @property
+    def workspace(self) -> _WorkspaceFacade:
+        return self._workspace()
+
+    @property
+    def triage_repository(self) -> _TriagePersistencePort:
+        return self._triage_repository()
+
+    def bound(self, unit: _Transaction) -> _Facades:
+        return self._bind(unit)
 
     def routing_history(self, context):
         import json
@@ -173,6 +238,34 @@ class Services:
         return RoutingHistory(is_triage, tuple(retries))
 
 
+def make_services(container) -> Services:
+    return Services(store=container.store, unit=container.unit,
+                    attention=container.attention, authority=container.authority,
+                    decisions=container.decisions, execution=container.execution,
+                    library=container.library, records=container.records,
+                    work=container.work, workspace=container.workspace,
+                    triage_repository=container.triage_persistence,
+                    bind=lambda unit: bound_services(container, unit))
+
+
+class TriagePersistence:
+    """Bind triage records and facade capabilities within one atomic scope."""
+
+    def __init__(self, repository: _TriageRepository, bind: _Callable[[_Transaction], _Facades]) -> None:
+        self.repository, self.bind = repository, bind
+
+    def get(self, project: str) -> dict:
+        return self.repository.get(project)
+
+    def projects(self) -> list[str]:
+        return self.repository.projects()
+
+    @_contextmanager
+    def transaction(self) -> _Iterator[_TriageScope]:
+        with self.repository.transaction(prepare=self.bind) as repository:
+            yield _TriageScope(records=repository, services=self.bind(repository.unit))
+
+
 def bound_services(container, unit):
     if hasattr(unit, '_facades'):
         if unit.store is not container.store():
@@ -190,6 +283,7 @@ def bound_services(container, unit):
                 if name != 'unit' and provider.overridden and not getattr(scope, name).overridden:
                     getattr(scope, name).override(provider.last_overriding)
             scope.unit.override(_providers.Object(unit))
+            unit._container = scope
             unit._facades = scope.services()
         return unit._facades
 
@@ -200,9 +294,13 @@ def configured_container(store=None, unit=None, *, path=None, clock=None, job=No
             if not hasattr(store, '_facades'):
                 container = Container()
                 container.store.override(_providers.Object(store))
+                store._container = container
                 store._facades = container.services()
-            services = store._facades
-            return services.container if unit is None else services.bound(unit).container
+            container = store._container
+            if unit is None:
+                return container
+            bound_services(container, unit)
+            return unit._container
     container = Container()
     if path is not None or clock is not None or job is not None:
         values = dict(container.settings())
@@ -233,6 +331,7 @@ def fixture_scope(parent):
 
 def make_store(container, settings):
     store = _Store(settings['store_path'], settings['clock'], settings['job'])
+    store._container = container
     store._facades = container.services()
     return store
 
@@ -260,88 +359,105 @@ def collaborators(services, unit):
     return bound.work, bound.workspace
 
 
-def prepare_dispatch(services):
-    return None if services.unit is not None else lambda: initialize_workspace(services)
+def prepare_dispatch(container):
+    services = container.services()
+    return None if services.unit is not None else lambda: initialize_workspace(container)
 
 
-def initialize_attention(services, *, workspace_path=None):
-    _import_workspace(services.store, workspace_path if workspace_path is not None else services.container.settings()['config_path'].parent / 'workspace.json')
+def initialize_attention(container, *, workspace_path=None):
+    services = container.services()
+    _import_workspace(services.store, workspace_path if workspace_path is not None else container.settings()['config_path'].parent / 'workspace.json')
     return services.attention
 
 
-def initialize_workspace(services, *, initial=None, actor="user"):
-    path = services.container.settings()['config_path']
-    services.workspace_repository.initialize(path, path.parent / 'workspace.json', initial)
+def initialize_workspace(container, *, initial=None, actor="user"):
+    services = container.services()
+    path = container.settings()['config_path']
+    container.workspace_repository().initialize(path, path.parent / 'workspace.json', initial)
     if actor == 'user':
         return services.workspace
-    return services.container.workspace_actor(actor=actor)
+    return container.workspace_actor(actor=actor)
 
 
-def deliver_triage(services, run, *, reconcile=False):
-    adapter = services.container.transport()
+def deliver_triage(container, run, *, reconcile=False):
+    services = container.services()
+    adapter = container.transport()
     host = adapter.host_by_name(run.host)
     return services.execution.deliver(run,
         lambda arguments, stdin: adapter.call(host, arguments, stdin_text=stdin),
         lambda job, paths, guidance: None, reconcile=reconcile)
 
 
-def _make_references(services):
+def schedule_triage(container):
+    container.triage_scheduler(deliver=container.deliver_triage).schedule()
+
+
+def _make_references(container):
+    services = container.services()
     from fleet.services.references import References
-    return References(services, services.container.transport(), lambda: initialize_workspace(services), lambda: initialize_attention(services))
+    return References(services, container.transport(), lambda: initialize_workspace(container), lambda: initialize_attention(container))
 
 
-def _make_context(services):
+def _make_context(container):
+    services = container.services()
     from fleet.services.context import Context
-    return Context(services.records, services.container.transport())
+    return Context(services.records, container.transport(), container.files())
 
 
-def _make_jobs(services):
+def _make_jobs(container):
+    services = container.services()
     from fleet.services.jobs import Jobs
-    return Jobs(services, services.container.transport(), lambda: initialize_workspace(services), lambda: initialize_attention(services),
-                services.container.references(), services.container.context())
+    return Jobs(services, container.transport(), lambda: initialize_workspace(container), lambda: initialize_attention(container),
+                container.references(), container.context())
 
 
-def _make_hosts(services):
+def _make_hosts(container):
     from fleet.services.hosts import HostSetup
-    return HostSetup(services.container.transport())
+    return HostSetup(container.transport())
 
 
-def _make_dispatch(services):
+def _make_dispatch(container):
+    services = container.services()
     from fleet.services.dispatch import Dispatch
-    return Dispatch(services, services.container.transport(), lambda: initialize_workspace(services), services.container.references(),
-                    services.container.context(), lambda activation: services.container.controller_commands(activation))
+    return Dispatch(services, container.transport(), lambda: initialize_workspace(container), container.references(),
+                    container.context(), lambda activation: container.controller_commands(activation))
 
 
-def _make_projects(services):
+def _make_projects(container):
+    services = container.services()
     from fleet.services.projects import Projects
-    return Projects(lambda: initialize_workspace(services), services.execution, services.records, services.container.documents, services.container.transport())
+    return Projects(lambda: initialize_workspace(container), services.execution, services.records, container.documents, container.transport())
 
 
-def _make_configuration(services):
+def _make_configuration(container):
     from fleet.services.configuration import Configuration
-    return Configuration(services.container.transport(), lambda: initialize_workspace(services))
+    return Configuration(container.transport(), lambda: initialize_workspace(container))
 
 
-def _make_work_commands(services):
+def _make_work_commands(container):
+    services = container.services()
     from fleet.services.work import WorkCommands
-    return WorkCommands(services.work, lambda: initialize_workspace(services), services.container.references())
+    return WorkCommands(services.work, lambda: initialize_workspace(container), container.references())
 
 
-def _make_triage_policy(services):
+def _make_triage_policy(container):
+    services = container.services()
     from fleet.services.triage import TriagePolicy
-    return TriagePolicy(services, lambda: initialize_workspace(services),
-                        services.container.triage_scheduler)
+    return TriagePolicy(services, lambda: initialize_workspace(container),
+                        container.triage_scheduler)
 
 
-def _make_attention_commands(services):
+def _make_attention_commands(container):
+    services = container.services()
     from fleet.services.attention import AttentionCommands
-    return AttentionCommands(services, lambda: initialize_workspace(services), lambda: initialize_attention(services),
-                             services.container.references())
+    return AttentionCommands(services, lambda: initialize_workspace(container), lambda: initialize_attention(container),
+                             container.references())
 
 
-def _make_decision_commands(services):
+def _make_decision_commands(container):
+    services = container.services()
     from fleet.services.decisions import DecisionCommands
-    return DecisionCommands(services, lambda: initialize_workspace(services), services.container.references(), services.container.transport())
+    return DecisionCommands(services, lambda: initialize_workspace(container), container.references(), container.transport())
 
 
 def _make_history(services):
@@ -349,10 +465,19 @@ def _make_history(services):
     return History(services.store)
 
 
-def resolved_work_detail(services, reference):
-    identity = services.container.references().work(reference)
-    initialize_attention(services)
-    return services.container.work_detail(identity=identity)
+def resolved_work_detail(container, reference):
+    identity = container.references().work(reference)
+    initialize_attention(container)
+    return container.work_detail(identity=identity)
+
+
+def make_live_readers(container, workspace: _WorkspaceFacade, attention: _AttentionFacade) -> _LiveReaders:
+    store = container.store()
+    return _LiveReaders(attention=attention, execution=container.execution(), workspace=workspace,
+                        revision=lambda: (store, store.latest_sequence()),
+                        run_work=container.run_work, building=container.building_state,
+                        history_runs=container.history_runs, run_detail=container.run_detail,
+                        overview=container.overview())
 
 
 class Container(_containers.DeclarativeContainer):
@@ -371,7 +496,7 @@ class Container(_containers.DeclarativeContainer):
     transport = _providers.Object(_transport)
     unit = _providers.Object(None)
     store = _providers.ThreadSafeSingleton(make_store, __self__, settings)
-    services = _providers.ThreadSafeSingleton(Services, __self__)
+    services = _providers.ThreadSafeSingleton(make_services, __self__)
     unit_of_work = _providers.Factory(lambda store: store.unit_of_work(), store)
     bound_services = _providers.Callable(bound_services, __self__)
     send = _providers.Object(_send_input)
@@ -380,11 +505,13 @@ class Container(_containers.DeclarativeContainer):
     step = _providers.Object(_send_step)
     evidence = _providers.ThreadSafeSingleton(_FileEvidenceReader)
     repository_writer = _providers.ThreadSafeSingleton(_RepositoryWriter)
+    files = _providers.ThreadSafeSingleton(_LocalFiles)
     _document_root = _providers.Callable(lambda settings: settings['home'] / 'projects', settings)
     project_documents = _providers.ThreadSafeSingleton(_ProjectDocuments, _document_root)
     _attention_repository = _providers.ThreadSafeSingleton(_AttentionRepository, store, unit)
     workspace_repository = _providers.ThreadSafeSingleton(_WorkspaceRepository, store, unit)
     triage_repository = _providers.ThreadSafeSingleton(_TriageRepository, store, unit)
+    triage_persistence = _providers.ThreadSafeSingleton(TriagePersistence, triage_repository, bound_services.provider)
     _records_repository = _providers.ThreadSafeSingleton(_RecordsRepository, store, unit)
     _authority_repository = _providers.ThreadSafeSingleton(_AuthorityRepository, store, unit)
     _library_repository = _providers.ThreadSafeSingleton(_LibraryRepository, store, unit)
@@ -411,25 +538,25 @@ class Container(_containers.DeclarativeContainer):
     execution = _providers.ThreadSafeSingleton(_ExecutionFacade, _execution_repository, work,
         decision_source=_providers.Callable(lambda services: lambda: services.decisions.list(), services),
         send=send, grant=grant, answer=answer, step=step,
-        prepare_dispatch=_providers.Callable(prepare_dispatch, services),
+        prepare_dispatch=_providers.Callable(prepare_dispatch, __self__),
         authority=_providers.Callable(callback, services, 'authority'), clock=store.provided.clock)
     decisions = _providers.ThreadSafeSingleton(_DecisionsFacade, _decisions_repository, store.provided.clock,
         execution, records=records, authority=_providers.Callable(callback, services, 'authority'))
     authority = _providers.ThreadSafeSingleton(_AuthorityFacade, _authority_repository,
         records, work, decisions, attention, execution)
     library = _providers.ThreadSafeSingleton(_LibraryFacade, _library_repository, work)
-    references = _providers.Factory(_make_references, services)
-    context = _providers.Factory(_make_context, services)
-    jobs = _providers.Factory(_make_jobs, services)
-    dispatch = _providers.Factory(_make_dispatch, services)
-    projects = _providers.Factory(_make_projects, services)
-    configuration = _providers.Factory(_make_configuration, services)
-    work_commands = _providers.Factory(_make_work_commands, services)
-    triage_policy = _providers.Factory(_make_triage_policy, services)
-    attention_commands = _providers.Factory(_make_attention_commands, services)
-    decision_commands = _providers.Factory(_make_decision_commands, services)
+    references = _providers.Factory(_make_references, __self__)
+    context = _providers.Factory(_make_context, __self__)
+    jobs = _providers.Factory(_make_jobs, __self__)
+    dispatch = _providers.Factory(_make_dispatch, __self__)
+    projects = _providers.Factory(_make_projects, __self__)
+    configuration = _providers.Factory(_make_configuration, __self__)
+    work_commands = _providers.Factory(_make_work_commands, __self__)
+    triage_policy = _providers.Factory(_make_triage_policy, __self__)
+    attention_commands = _providers.Factory(_make_attention_commands, __self__)
+    decision_commands = _providers.Factory(_make_decision_commands, __self__)
     history = _providers.Factory(_make_history, services)
-    hosts = _providers.Factory(_make_hosts, services)
+    hosts = _providers.Factory(_make_hosts, __self__)
     controller_commands = _providers.Factory(_ControllerCommands, services)
     triage_commands = _providers.Factory(_TriageCommands, services)
     triage_scheduler = _providers.Factory(_TriageScheduler, services, deliver=None,
@@ -451,11 +578,11 @@ class Container(_containers.DeclarativeContainer):
     annotate_workspace = _providers.Factory(_annotate, workspace=workspace)
     documents = _providers.Factory(_ProjectDocuments, root=_document_root)
     document_keeper = _providers.Factory(_DocumentKeeper)
-    initialized_workspace = _providers.Callable(initialize_workspace, services)
-    initialized_attention = _providers.Callable(initialize_attention, services)
+    initialized_workspace = _providers.Callable(initialize_workspace, __self__)
+    initialized_attention = _providers.Callable(initialize_attention, __self__)
     migrate_project_ids = _providers.Callable(_migrate_project_ids, store=store, workspace=initialized_workspace)
-    storage_usage = _providers.Factory(_usage, store=store, root=settings.provided['home'])
-    resolved_work_detail = _providers.Factory(resolved_work_detail, services)
+    storage_usage = _providers.Factory(_usage, store=store, root=settings.provided['home'], files=files)
+    resolved_work_detail = _providers.Factory(resolved_work_detail, __self__)
     promote_decision = _providers.Factory(_promote_decision, services)
     fixture_scope = _providers.Callable(fixture_scope, __self__)
     project_library = _providers.Factory(_ProjectLibrary)
@@ -463,7 +590,8 @@ class Container(_containers.DeclarativeContainer):
     overview = _providers.Factory(_Overview, cache=overview_cache, files_changed=_files_changed)
     read_document = _providers.Callable(_read_document, adapter=transport)
     read_asset = _providers.Callable(_read_asset, adapter=transport)
-    deliver_triage = _providers.Callable(deliver_triage, services)
+    deliver_triage = _providers.Callable(deliver_triage, __self__)
+    schedule_triage = _providers.Callable(schedule_triage, __self__)
     observe_runs = _providers.Callable(_observe_runs, execution, library)
     observe_sessions = _providers.Callable(_observe_sessions, execution)
     record_decisions = _providers.Callable(_record_decisions, decisions, execution, attention)
@@ -471,15 +599,16 @@ class Container(_containers.DeclarativeContainer):
     package_resources = _providers.Factory(_PackageResources)
     live_history_detail = _providers.Callable(_LibraryProjection.history_detail)
     live_history_runs = _providers.Callable(_LibraryProjection.history_runs)
+    live_readers = _providers.Factory(make_live_readers, __self__, workspace=workspace, attention=attention)
     live_state = _providers.Factory(_FleetState, container=__self__)
     start_live = _providers.Callable(_start_live)
     fixture_data = _providers.Callable(_load_fixture)
     fixture_state = _providers.Factory(_FixtureState, container=__self__)
     fixture_library = _providers.Factory(lambda fixture, project_library: _FixtureLibraryReader(
         fixture, project_library(roots=fixture.get('library_roots', {}))), project_library=project_library.provider)
-    guidance_view = _providers.Callable(_guidance_view, services=services)
-    epic_decisions = _providers.Callable(_epic_decisions, services=services)
-    project_decisions = _providers.Callable(_project_decisions, services=services)
+    guidance_view = _providers.Callable(_guidance_view, work=work, records=records)
+    epic_decisions = _providers.Callable(_epic_decisions, work=work, records=records, decisions=decisions)
+    project_decisions = _providers.Callable(_project_decisions, work=work, decisions=decisions)
     decision_detail = _providers.Callable(_decision_detail)
     write_guidance = _providers.Callable(_write_guidance, services=services)
     promote_guidance = _providers.Callable(_promote_guidance, services=services, promote=promote_decision.provider)

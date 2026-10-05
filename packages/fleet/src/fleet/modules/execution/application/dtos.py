@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal
 
 
@@ -42,3 +43,16 @@ class StepRequest:
     title: str | None = None
     answers: int | None = None
     retry: bool = False
+
+
+@dataclass(frozen=True)
+class AnswerDecision:
+    id: str
+    attention_item: str
+    headline: str
+    reply: str
+    actor: str
+    context_reference: str | None
+    work_items: tuple[str, ...]
+    recorded_at: datetime
+    source_run: str | None

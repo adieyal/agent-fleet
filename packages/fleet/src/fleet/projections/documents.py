@@ -2,10 +2,13 @@
 import contextlib
 from typing import Any
 from fleet.errors import FleetError
+from fleet.projections.attention import attention_items
+from fleet.projections.ports import LiveReaders
 
 
 
 class LibraryProjection:
+    reads: LiveReaders
     def library_projects(self) -> list[dict[str, Any]]:
         """Every project with a document store: its jobs newest first, each saying whether it is still on its
         host, and its working documents. Stored documents stay readable whatever the host's state."""
@@ -20,9 +23,9 @@ class LibraryProjection:
 
     def library_overview(self, library: Any) -> list[dict[str, Any]]:
         """Each project's overview (see fleet.projections.overview): every project with a library root or a document store."""
-        overview = self.__dict__.setdefault("overview", self.container.overview())
+        overview = self.reads.overview
         registry, hosts = self.registry, self.job_hosts()
-        attention = self.container.attention_items(attention=self.attention, hosts=[{"name": name, "ok": ok} for name, (ok, _) in hosts.items()])
+        attention = attention_items(attention=self.reads.attention, hosts=[{"name": name, "ok": ok} for name, (ok, _) in hosts.items()])
         documents = library.list()
         projects: dict[str, dict[str, Any]] = {}
         for key in sorted(library.roots):
@@ -66,14 +69,14 @@ class LibraryProjection:
         return {'documents': documents, 'projects': self.library_projects()}
 
     def history_runs(self, filters):
-        result = self.container.history_runs(**filters)
+        result = self.reads.history_runs(**filters)
         jobs_cache = {}
         for run in result['runs']:
             run['document_count'] = len(self.documents.run_documents(run, jobs_cache=jobs_cache))
         return result
 
     def history_detail(self, identity):
-        result = self.container.run_detail(identity=identity)
+        result = self.reads.run_detail(identity=identity)
         result['kept_documents'] = self.documents.run_documents(result['run'])
         return result
 
