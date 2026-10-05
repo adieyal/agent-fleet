@@ -31,6 +31,10 @@ class EvidenceReader:
         return {"test:pass": Evidence("test:pass", "passed"),
                 "test:fail": Evidence("test:fail", "failed")}.get(reference)
 
+    def check(self, reference):
+        if reference.startswith("page:"):
+            raise ValueError("unreadable evidence reference")
+
 
 @pytest.fixture
 def work():
@@ -78,6 +82,35 @@ def test_named_but_unrecorded_evidence_is_not_enough(work):
         specification=EvidenceSpecification("missing"), actor="user")
     with pytest.raises(ValueError, match="evidence"):
         facade.meet(criterion.id, actor="user", evidence=("missing",))
+
+
+def test_unreadable_evidence_reference_is_rejected_when_added(work):
+    facade, repo, _ = work
+    item = add(facade)
+    with pytest.raises(ValueError, match="unreadable"):
+        facade.add_criterion(item.id, text="Replied", verification="checked",
+                             specification=EvidenceSpecification("page:p/notes"), actor="user")
+    assert facade.criteria(item.id) == []
+
+
+def test_withdrawn_criteria_stop_counting_but_stay_on_record(work):
+    facade, _, _ = work
+    item = add(facade)
+    met = facade.add_criterion(item.id, text="Works", verification="judged", actor="user")
+    stale = facade.add_criterion(item.id, text="Unmeetable", verification="judged", actor="user")
+    facade.meet(met.id, actor="user")
+    assert (facade.progress(item.id).complete, facade.progress(item.id).total) == (1, 2)
+    with pytest.raises(ValueError, match="reason"):
+        facade.withdraw(stale.id, actor="user", reason="")
+    withdrawn = facade.withdraw(stale.id, actor="user", reason="evidence can never be recorded")
+    assert (withdrawn.state, withdrawn.withdrawn_by, withdrawn.withdrawn_at) == ("withdrawn", "user", facade.clock())
+    assert (facade.progress(item.id).complete, facade.progress(item.id).total) == (1, 1)
+    assert len(facade.criteria(item.id)) == 2
+    for identity in (met.id, stale.id):
+        with pytest.raises(ValueError, match="only an unmet"):
+            facade.withdraw(identity, actor="user", reason="again")
+    with pytest.raises(ValueError, match="withdrawn"):
+        facade.meet(stale.id, actor="user")
 
 
 def test_arbitrary_nesting_moves_and_project_labels(work):

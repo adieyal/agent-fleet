@@ -20,7 +20,7 @@ def context(tmp_path):
     judged = work.add_criterion(item.id, text='Review', verification='judged', actor='user')
     accepted = work.add_criterion(item.id, text='Accept', verification='accepted', actor='user')
     checked = work.add_criterion(item.id, text='Tests', verification='checked', actor='user',
-                                 specification=EvidenceSpecification('missing-result'))
+                                 specification=EvidenceSpecification(str(tmp_path / 'missing-result')))
     records = configured_container(store).records()
     records.register('p', root, actor='user')
     body = dict(goal='Ship', constraints=[], escalation_conditions=[],

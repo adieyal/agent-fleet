@@ -165,7 +165,7 @@ def test_bench_real_endpoint(changed_deck: Deck, deck_state, monkeypatch, tmp_pa
     for title in ['Gather evidence', 'Review results']:
         task = work.add(project='bench-contract', title=title, goal=title, parent=milestone.id, actor='user')
     work.add_criterion(milestone.id, text='checked evidence', verification='checked', actor='user',
-                       specification=EvidenceSpecification('test:bench', 'passed'))
+                       specification=EvidenceSpecification('/nonexistent/bench-evidence.json', 'passed'))
     for kind in ['judged', 'accepted']:
         criterion = work.add_criterion(milestone.id, text=f'{kind} evidence', verification=kind, actor='user')
     work.meet(criterion.id, actor='user')

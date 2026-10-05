@@ -20,6 +20,7 @@ def accepted_progress(children: list["WorkItem"], criteria: list["Criterion"]) -
     milestones = [item for item in children if item.kind == "milestone" and item.condition != "dropped"]
     if milestones:
         return Progress("milestones", sum(item.condition == "complete" for item in milestones), len(milestones))
+    criteria = standing(criteria)
     if criteria:
         return Progress("criteria", sum(item.state == "met" for item in criteria), len(criteria))
     return Progress("unknown", None, None)
@@ -93,6 +94,9 @@ class Criterion:
     met_at: datetime | None = None
     activation: str | None = None
     mandate_version: str | None = None
+    withdrawn_by: str | None = None
+    withdrawn_at: datetime | None = None
+    withdrawal_reason: str | None = None
 
     def __post_init__(self) -> None:
         required(self.text, "criterion text")
@@ -103,12 +107,26 @@ class Criterion:
 
     def meet(self, actor: str, references: tuple[str, ...], records: list[Evidence], now: datetime) -> "Criterion":
         required(actor, "actor")
+        if self.state == "withdrawn":
+            raise ValueError("criterion is withdrawn")
         if self.verification == "checked":
             spec = self.specification
             if not any(record.reference == spec.reference and record.reference in references
                        and (spec.result is None or record.result == spec.result) for record in records):
                 raise ValueError("evidence does not match the specification")
         return replace(self, state="met", met_by=actor, evidence=references, met_at=now)
+
+    def withdraw(self, actor: str, reason: str, now: datetime) -> "Criterion":
+        required(actor, "actor")
+        required(reason, "withdrawal reason")
+        if self.state != "unmet":
+            raise ValueError(f"only an unmet criterion can be withdrawn; this one is {self.state}")
+        return replace(self, state="withdrawn", withdrawn_by=actor, withdrawn_at=now, withdrawal_reason=reason)
+
+
+def standing(criteria: list[Criterion]) -> list[Criterion]:
+    """Criteria that still count towards completion: withdrawn ones are kept as history only."""
+    return [criterion for criterion in criteria if criterion.state != "withdrawn"]
 
 
 @dataclass(frozen=True)

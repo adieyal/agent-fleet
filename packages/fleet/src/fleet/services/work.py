@@ -15,7 +15,7 @@ class WorkCommands:
         fields = fields.copy()
         identity = fields.pop("id", None)
         if identity is not None:
-            if command == "meet":
+            if command in ("meet", "withdraw"):
                 identity = resolve_prefix(identity, [criterion.id for criteria in work.criteria_by_item().values()
                                                    for criterion in criteria], "criterion")
             else:
