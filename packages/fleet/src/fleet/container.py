@@ -27,6 +27,7 @@ from fleet.infrastructure.documents.job_store import fleet_home as _fleet_home
 from fleet.infrastructure.documents.library import ProjectLibrary as _ProjectLibrary
 from fleet.infrastructure.documents.overview import OverviewCache as _OverviewCache
 from fleet.infrastructure.documents.overview import files_changed as _files_changed
+from fleet.infrastructure.files import LocalFiles as _LocalFiles
 from fleet.infrastructure.fixtures import FixtureLibraryReader as _FixtureLibraryReader
 from fleet.infrastructure.fixtures import load_fixture as _load_fixture
 from fleet.infrastructure.git import RepositoryWriter as _RepositoryWriter
@@ -396,7 +397,7 @@ def _make_references(container):
 def _make_context(container):
     services = container.services()
     from fleet.services.context import Context
-    return Context(services.records, container.transport())
+    return Context(services.records, container.transport(), container.files())
 
 
 def _make_jobs(container):
@@ -500,6 +501,7 @@ class Container(_containers.DeclarativeContainer):
     step = _providers.Object(_send_step)
     evidence = _providers.ThreadSafeSingleton(_FileEvidenceReader)
     repository_writer = _providers.ThreadSafeSingleton(_RepositoryWriter)
+    files = _providers.ThreadSafeSingleton(_LocalFiles)
     _document_root = _providers.Callable(lambda settings: settings['home'] / 'projects', settings)
     project_documents = _providers.ThreadSafeSingleton(_ProjectDocuments, _document_root)
     _attention_repository = _providers.ThreadSafeSingleton(_AttentionRepository, store, unit)
@@ -575,7 +577,7 @@ class Container(_containers.DeclarativeContainer):
     initialized_workspace = _providers.Callable(initialize_workspace, __self__)
     initialized_attention = _providers.Callable(initialize_attention, __self__)
     migrate_project_ids = _providers.Callable(_migrate_project_ids, store=store, workspace=initialized_workspace)
-    storage_usage = _providers.Factory(_usage, store=store, root=settings.provided['home'])
+    storage_usage = _providers.Factory(_usage, store=store, root=settings.provided['home'], files=files)
     resolved_work_detail = _providers.Factory(resolved_work_detail, __self__)
     promote_decision = _providers.Factory(_promote_decision, services)
     fixture_scope = _providers.Callable(fixture_scope, __self__)

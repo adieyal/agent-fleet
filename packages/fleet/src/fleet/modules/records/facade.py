@@ -6,12 +6,13 @@ from pathlib import Path
 from uuid import uuid4
 
 from .application import Authoring
+from .application.ports import RecordWriter
 from .domain import CONSTITUTION, GUIDANCE_FILES, Guidance, GuidanceConflict, Mandate, Version, charter_path, in_force
 from .domain import TRIAGE_PATH, TriageMandate
 
 
 class RecordsFacade:
-    def __init__(self, repository, writer, workspace, work, home: Path | None = None):
+    def __init__(self, repository, writer: RecordWriter, workspace, work, home: Path | None = None):
         """home: where fleet keeps the management repositories it creates; None leaves creation to registration."""
         self.repository, self.writer, self.workspace = repository, writer, workspace
         self._work = work
@@ -49,9 +50,7 @@ class RecordsFacade:
         if self.registered(project) or self.home is None:
             return
         root = self.home / project
-        root.mkdir(parents=True, exist_ok=True)
-        if not (root / '.git').exists():
-            self.writer.git(root, 'init', '-q')
+        self.writer.create(root)
         self.register(project, root, actor=actor)
 
     def publish(self, intent: dict, body: str) -> dict:
@@ -193,8 +192,7 @@ class RecordsFacade:
         for name, file in GUIDANCE_FILES.items():
             if guidance[name] is not None:
                 target = Path(directory) / file
-                target.write_text(self.writer.read(root, guidance[name]['path'], guidance[name]['revision']))
-                written.append(str(target))
+                written.append(self.writer.export(root, guidance[name]['path'], guidance[name]['revision'], target))
         return written
 
     def guidance_path(self, project: str, epic: str | None) -> str:

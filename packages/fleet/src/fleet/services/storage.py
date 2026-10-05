@@ -1,10 +1,14 @@
 """Storage accounting for retained documents and traces."""
 from pathlib import Path
+from typing import Protocol
 
 
-def usage(store, root: Path) -> dict:
+class StorageFiles(Protocol):
+    def usage(self, directory: Path) -> dict: ...
+
+
+def usage(store, root: Path, files: StorageFiles) -> dict:
     value = store.usage()
     for name, directory in (("documents", root / "projects"), ("traces", root / "traces")):
-        files = [path for path in directory.rglob("*") if path.is_file() and not path.is_symlink()]
-        value[name] = {"path": str(directory), "files": len(files), "bytes": sum(path.stat().st_size for path in files)}
+        value[name] = files.usage(directory)
     return value

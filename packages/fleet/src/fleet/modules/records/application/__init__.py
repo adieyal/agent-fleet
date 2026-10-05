@@ -3,9 +3,11 @@
 import hashlib
 from uuid import uuid4
 
+from .ports import RecordWriter
+
 
 class Authoring:
-    def __init__(self, repository, writer, workspace):
+    def __init__(self, repository, writer: RecordWriter, workspace):
         self.repository, self.writer, self.workspace = repository, writer, workspace
 
     def prepare(self, project: str, path: str, body: str, *, key: str, actor: str,
