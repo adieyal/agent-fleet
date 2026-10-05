@@ -1,6 +1,6 @@
 # ADR 0010: Extract the Fleet library
 
-Status: implemented through workspace migration (steps 1–8); final packaging verification remains. Date: 2026-10-04; updated 2026-10-05. Branch: `extract/library`; base: `4641086`.
+Status: implemented; workspace verification completed (steps 1–9), with baseline failures recorded. Date: 2026-10-04; updated 2026-10-05. Branch: `extract/library`; base: `4641086`.
 
 Split into three distributions with a library-owned dependency-injector container. Extract workflows before moving the presentation packages. Preserve commands, JSON/HTTP shapes, actors, initialization, transactions, retention paths and standalone worker deployment. The layout and container below are implemented; historical evidence and the original move inventory remain dated to the base commit.
 
@@ -363,3 +363,32 @@ against live hosts during extraction. Restart the installed controller dashboard
 after upgrading. Local checks use temporary Fleet homes/config/store; installed
 and ZIP resource tests verify that the copied worker runs with isolated stdlib
 Python, without importing the library or dependency-injector.
+
+### Final verification and rendering regression (step 9)
+
+All three wheel and source distributions build from the workspace. A throwaway
+`uv tool install` outside the checkout discovers `fleet.commands`, runs both CLI
+help commands, and serves fixture `/` and `/api/state` plus static assets on
+port 18899. Every one of the 844 static files is byte-identical in the web wheel;
+the sdist contains all 844 as well. A separate library-only wheel environment
+uses public facades and unit binding without either presentation package, Rich
+or Markdown installed. Presentation-source grep and AST checks find no
+infrastructure imports or Store/repository/unit construction.
+
+The CI-pinned Ruff check found an extraction regression at
+`packages/fleet-cli/src/fleet_cli/cli.py:148`: listing rendering called
+`defaultdict` after its import was removed. Restoring the stdlib import fixes
+empty, project-grouped and host-grouped listings. All three regression cases in
+`tests/test_cli_listing_render.py` fail before the fix and pass afterwards;
+the same assertions pass on `4641086` with its original import path.
+
+```python
+from collections import defaultdict
+# render(...): preserve the existing listing grouping behavior
+groups: dict[str, list[tuple[str, dict[str, Any]]]] = defaultdict(list)
+```
+
+Final commands, suite summaries, fresh detached-base comparisons, distribution
+manifests, presentation audit and carbon/home upgrade instructions are in the
+extraction fleet job `d541a363-1e51-41e9-8fae-08d69ebd1b94`'s outbox `REPORT.md`.
+No publication, merge, live-store update or real-host deployment occurred.

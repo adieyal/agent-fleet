@@ -34,3 +34,47 @@ TMPDIR=/tmp /home/adi/Development/agent-fleet-extract/.venv/bin/python -m pytest
 ```
 
 The base module run also intermittently failed `test_a_tasks_title_opens_its_latest_report_and_its_documents_list_by_icon[chromium]` at `tests/test_deck_browser.py:672` because `bounding_box()` returned None. That case passed in the extraction branch's full browser run. Exact commands, failure output and the full extraction results are collected in the job outbox `M1.md` and `STEP3-BROWSER*.log`.
+
+## Workspace verification: 2026-10-05
+
+Step 9 reproduced a path-length-sensitive non-browser failure on both the
+extraction branch and a detached `4641086` worktree at
+`/tmp/fleet-m9-base-d541a363`:
+
+```text
+TMPDIR=/home/adi/models/fleet-tmp uv run --frozen pytest -q -m 'not browser' --basetemp=/home/adi/models/fleet-tmp/m9-nonbrowser
+1 failed, 1407 passed, 389 deselected in 132.25s
+# Base worktree, same basetemp and test:
+TMPDIR=/home/adi/models/fleet-tmp PYTHONPATH=/tmp/fleet-m9-base-d541a363 /home/adi/models/dev/agent-fleet-extract/.venv/bin/python -m pytest -q tests/test_cli_prints.py::test_project_management_prints_that_it_is_permanent_and_wraps_git_errors --basetemp=/home/adi/models/fleet-tmp/m9-nonbrowser
+1 failed in 0.27s
+```
+
+`tests/test_cli_prints.py:75` expects a management path as one string. Rich inserts
+a line wrap in `management`; the helper joins whitespace into `managem ent`.
+No assertion or formatter was changed. The full suite with a shorter disposable
+basetemp path passes. Logs and final browser/base comparisons are collected in
+fleet job `d541a363-1e51-41e9-8fae-08d69ebd1b94`'s outbox `REPORT.md` and `M9-*.log`.
+
+```python
+assert f"registered {repo} as the management repository of {project_id}" in out
+# Both branches, long path: .../managem ent as the management repository...
+```
+
+Fresh final full browser verification also reproduced every failure in the table
+on a real detached `4641086` worktree (not merely the earlier archive):
+
+```text
+# Current extraction, TMPDIR=/home/adi/models/fleet-tmp:
+uv run --frozen pytest -q -m browser --basetemp=/home/adi/models/fleet-tmp/m9-browser
+10 failed, 378 passed, 1 skipped, 1408 deselected in 1163.47s (0:19:23)
+# cwd=/tmp/fleet-m9-base-d541a363, same temporary-root discipline:
+PYTHONPATH=/tmp/fleet-m9-base-d541a363 /home/adi/models/dev/agent-fleet-extract/.venv/bin/python -m pytest -q -m browser --basetemp=/home/adi/models/fleet-tmp/m9-base-browser
+10 failed, 378 passed, 1 skipped, 1359 deselected in 1174.34s (0:19:34)
+```
+
+All ten failed node IDs and their first assertion/timeout messages match exactly;
+no current-only failure was observed. The two batch-4 cases retain their
+module-order context. `M9-BROWSER-COMPARISON.json` in the job outbox maps every
+case to current/base source lines and matching errors. The copied CLI rendering
+regression tests additionally passed on base and after the repaired import; the
+final non-browser suite passes (`1411 passed, 389 deselected`).

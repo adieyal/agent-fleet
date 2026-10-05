@@ -7,6 +7,7 @@ import re
 import shlex
 import sys
 import time
+from collections import defaultdict
 from dataclasses import asdict, fields
 from datetime import datetime
 from pathlib import Path
