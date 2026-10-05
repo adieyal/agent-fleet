@@ -523,6 +523,9 @@ def test_agent_replies_to_page_thread_through_runtime_and_sse(page, demo_page, d
         services.execution.observe('home', JobObservation(calls[0].remote_job_id, 'done', 'codex', None, None, None))
         expect(thread.get_by_text('All active suppliers match the signed contract mapping.', exact=True)).to_be_visible(timeout=10000)
         expect(thread.get_by_text('Agent replied · thread remains open', exact=True)).to_be_visible()
+        author = thread.locator('[data-message-type="reply"] strong').last
+        expect(author).to_have_text('agent ⧉')
+        assert author.get_attribute('title').startswith('triage:')
         assert services.attention.get(attention.id).state == 'open'
         if destination:
             page.screenshot(path=str(Path(destination) / 'M4-agent-replied.png'), full_page=True)

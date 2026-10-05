@@ -59,6 +59,7 @@ button:focus-visible,a:focus-visible,textarea:focus-visible,select:focus-visible
 .anchor-active{outline:1px solid #a8decc;outline-offset:3px}
 #page-snapshot{margin-top:28px;font-size:11px}
 .thread .meta{font-size:11px}
+.copy-actor{background:none;border:0;padding:0 2px;color:#a7b5af;font-size:12px;cursor:pointer}.copy-actor:hover{color:#e2e8e5}
 .annotation-active{background:#a8decc55!important}
 @media(min-width:900px){.anchor-badge,.detached-badge{display:none}
 }
