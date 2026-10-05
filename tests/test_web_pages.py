@@ -216,3 +216,65 @@ def test_detached_thread_and_followup_are_visible(page, demo_page):
     if destination:
         page.screenshot(path=str(Path(destination) / 'M2-detached-thread.png'), full_page=True)
     page.goto('about:blank')
+
+
+@pytest.mark.browser
+def test_sse_updates_directive_and_library_answer_without_reload(page, demo_page, deck_state, monkeypatch):
+    from threading import Event, Thread
+    from uuid import uuid4
+    from playwright.sync_api import expect
+    from fleet.services.live import FleetState
+
+    container = configured_container()
+    comment = container.page_change(project=demo_page['project'], slug='supplier-migration', operation='comment',
+        revision=demo_page['revision'], comment_id=str(uuid4()), headline='Live evidence',
+        body='Can we verify this while the page stays open?', reason='User must confirm evidence.', actor='fixture',
+        selector={'type': 'FragmentSelector', 'value': 'supplier-work'})
+    # Use the production history follower with the recorded HTTP fixture. No manual bump after writes.
+    monkeypatch.setattr(deck_state, 'history_cursor', container.store().latest_sequence(), raising=False)
+    monkeypatch.setattr(deck_state, 'schedule_triage', lambda: None, raising=False)
+    stop = Event()
+    watcher = Thread(target=FleetState.follow_history, args=(deck_state, stop), daemon=True)
+    watcher.start()
+    # Disable the supplementary page timer: this test must pass through SSE alone.
+    page.add_init_script('''const interval = window.setInterval;
+      window.setInterval = (fn, ms, ...args) => ms === 2000 ? 0 : interval(fn, ms, ...args);
+      window.documentIdentity = crypto.randomUUID();
+      window.liveVersions = [];
+      const Source = window.EventSource;
+      window.EventSource = class extends Source {
+        constructor(...args) { super(...args); this.addEventListener('state', e => liveVersions.push(JSON.parse(e.data).version)); }
+      };''')
+    errors = []
+    page.on('pageerror', lambda error: errors.append(str(error)))
+    try:
+        page.goto(demo_page['url'])
+        page.wait_for_function('() => window.liveVersions.length > 0')
+        identity = page.evaluate('documentIdentity')
+        version = page.evaluate('liveVersions.at(-1)')
+        thread = page.locator(f'#thread-{comment["id"]}')
+        expect(thread).to_be_visible()
+        page.locator('#supplier-work [data-comment-block]').click()
+        page.get_by_label('Comment', exact=True).fill('My unsent draft survives a live refresh.')
+        container.work().set(demo_page['work'], next_step='Accept the verified supplier mapping.', actor='fixture')
+        container.decisions().answer(comment['id'], 'Mapping verified through the library.', actor='fixture')
+        expect(page.locator('#supplier-work')).to_contain_text('Accept the verified supplier mapping.', timeout=10000)
+        expect(thread.locator('.answer')).to_contain_text('Mapping verified through the library.', timeout=10000)
+        expect(thread).to_contain_text('resolved')
+        expect(page.get_by_label('Comment', exact=True)).to_have_value('My unsent draft survives a live refresh.')
+        assert page.evaluate('documentIdentity') == identity
+        assert page.evaluate('liveVersions.at(-1)') > version
+        page.get_by_role('button', name='Cancel', exact=True).click()
+        # Replaced directive buttons still select their stable block.
+        page.locator('#supplier-work [data-comment-block]').click()
+        expect(page.locator('#comment-anchor')).to_contain_text('Block: supplier-work')
+        page.get_by_role('button', name='Cancel', exact=True).click()
+        destination = os.environ.get('FLEET_PAGE_SCREENSHOT_DIR')
+        if destination:
+            page.screenshot(path=str(Path(destination) / 'M3-live-updates.png'), full_page=True)
+        assert errors == []
+    finally:
+        page.goto('about:blank')
+        stop.set()
+        watcher.join(timeout=5)
+        assert not watcher.is_alive()

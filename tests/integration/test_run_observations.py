@@ -131,18 +131,23 @@ def test_migration_moves_observations_out_of_existing_runs(tmp_path: Path, monke
     assert store.latest_sequence() == sequence
 
 
-def test_store_already_migrated_through_main_17_reopens_without_replaying(tmp_path):
+def test_store_already_migrated_through_main_17_reopens_without_replaying(tmp_path, monkeypatch):
     """P2 integration uses main's 15/16/17 history, observations and ownership schema."""
     path = tmp_path / "main-17.db"
+    migrations = sqlite_store.MIGRATIONS
+    monkeypatch.setattr(sqlite_store, "MIGRATIONS", migrations[:17])
     store = configured_container(path=path).store()
     assert store.schema_version() == 17
     execution, run = dispatched(store)
     execution.observe(run.host, JobObservation(run.remote_job_id, "running", "codex", START, None, START))
     before = store.history_after(0)
+    monkeypatch.setattr(sqlite_store, "MIGRATIONS", migrations)
     reopened = configured_container(path=path).store()
-    assert reopened.schema_version() == 17
+    assert reopened.schema_version() == 18
     assert reopened.history_after(0) == before
     assert configured_container(reopened).execution().get_run(run.id).last_observed == START
     with sqlite3.connect(path) as connection:
         assert connection.execute("SELECT count(*) FROM execution_run_observation").fetchone()[0] == 1
-        assert "subject" in {row[1] for row in connection.execute("PRAGMA table_info(attention_item)")}
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(attention_item)")}
+        assert {"subject", "page_annotation"} <= columns
+        assert connection.execute("SELECT count(*) FROM attention_item WHERE page_annotation IS NOT NULL").fetchone()[0] == 0

@@ -39,7 +39,7 @@ from fleet_web.documents import (
     render_document,
     render_markdown,
 )
-from fleet_web.pages import page_document, page_index
+from fleet_web.pages import directive_html, page_document, page_index
 from fleet_web.fixture import FixtureLibrary
 from fleet_web.library import ProjectLibrary
 from fleet_web.resources import build_id as resource_build_id
@@ -300,6 +300,9 @@ def make_handler(state: Any,
                 self.error(400, str(error))
                 return
             if api:
+                if len(parts) == 3:
+                    view['directive_html'] = {str(index): directive_html(node)
+                        for index, node in enumerate(view['nodes']) if node['kind'] != 'prose'}
                 self.respond(200, 'application/json', json.dumps(view, default=str).encode())
             else:
                 html = page_document(view) if len(parts) == 3 else page_index(view)

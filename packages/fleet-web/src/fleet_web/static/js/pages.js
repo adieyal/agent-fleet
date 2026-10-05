@@ -69,9 +69,10 @@
     } catch (error) { document.getElementById('comment-error').textContent = error.message; }
     finally { submit.disabled = false; }
   });
-  document.querySelectorAll('[data-comment-block]').forEach(el => {
-    el.addEventListener('click', () => showComposer({type: 'FragmentSelector', value: el.dataset.commentBlock},
-      `Block: ${el.dataset.commentBlock}`));
+  document.getElementById('page-content').addEventListener('click', event => {
+    const el = event.target.closest('[data-comment-block]');
+    if (el) showComposer({type: 'FragmentSelector', value: el.dataset.commentBlock},
+      `Block: ${el.dataset.commentBlock}`);
   });
 
   function selected(annotation, container, index) {
@@ -189,7 +190,16 @@
       if (request !== generation) return;
       connected = true;
       status.textContent = unavailable.length ? `Commenting unavailable for prose blocks ${unavailable.join(', ')}: rendered text differs from canonical text.` : next.historical ? 'Page changed: reload for current prose. Comments refer to the displayed revision.' : 'Select prose to comment, or use Comment on block.';
-      if (force || next.state_version !== view.state_version) { view = next; renderThreads(); }
+      if (force || next.state_version !== view.state_version) {
+        for (const [index, html] of Object.entries(next.directive_html)) {
+          const wrapper = document.querySelector(`[data-directive-node="${index}"]`);
+          // Only trusted, escaped server templates enter this rendering surface.
+          if (wrapper && wrapper.innerHTML !== html) wrapper.innerHTML = html;
+        }
+        view = next; renderThreads();
+        document.getElementById('page-snapshot').textContent =
+          `Current records as of ${next.snapshot_time} · state sequence ${next.state_version}`;
+      }
     } catch (error) {
       if (request !== generation) return;
       connected = false; status.textContent = `Disconnected: ${error.message}. Drafts are kept; refresh before submitting.`;
@@ -212,8 +222,19 @@
   }
   renderThreads();
   const stream = new EventSource('/api/stream');
-  stream.addEventListener('state', () => refresh());
-  // CLI writes need not bump the web process's SSE counter; reconcile persisted thread state as well.
-  const timer = setInterval(() => refresh(), 2000);
+  let seenVersion = null;
+  stream.addEventListener('open', () => { seenVersion = null; refresh(true); });
+  stream.addEventListener('state', event => {
+    const {version} = JSON.parse(event.data);
+    if (!Number.isInteger(version)) {
+      connected = false; status.textContent = 'Live state version missing: refresh before submitting.'; return;
+    }
+    if (seenVersion === null || version > seenVersion) { seenVersion = version; refresh(true); }
+  });
+  stream.addEventListener('error', () => {
+    connected = false; status.textContent = 'Disconnected: drafts are kept; reconnect before submitting.';
+  });
+  // Reconcile time-window values between state events as well.
+  const timer = setInterval(() => refresh(true), 2000);
   addEventListener('pagehide', () => { clearInterval(timer); stream.close(); });
 })();

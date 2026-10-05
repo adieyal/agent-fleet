@@ -36,6 +36,49 @@ def page_index(view):
     return shell('Project pages', body)
 
 
+def directive_html(node):
+    body = ''
+    block = f' id="{text(node["block"])}"' if node['block'] and node['kind'] != 'error' else ''
+    if node['kind'] == 'error':
+        body += f'<section class="record error" role="alert"><strong>{text(node["error"])}</strong><p><code>{text(node["text"])}</code></p></section>'
+        return body
+    body += f'<section class="record"{block}><p class="label">{text(node["kind"])}</p>'
+    if node['kind'] == 'work':
+        record = node['record']
+        progress = record['progress']
+        body += f'<h3>{text(record["title"])}</h3><p>{text(record["goal"])}</p><dl>'
+        value = 'Progress unknown: no defined total' if progress['total'] is None else f'{progress["complete"]} / {progress["total"]} {progress["basis"]}'
+        body += f'<dt>Accepted</dt><dd>{text(value)}</dd><dt>Next step</dt><dd>{text(record["next_step"] or "No next step recorded")}</dd>'
+        body += f'<dt>Condition</dt><dd>{text(record["condition"])}</dd>'
+        if record['resume_condition']:
+            body += f'<dt>Resumes when</dt><dd>{text(record["resume_condition"])}</dd>'
+        body += '</dl>'
+    elif node['kind'] == 'attention':
+        record = node['record']
+        body += f'<h3>{text(record["headline"])}</h3><p>{text(record["owner"])} · {text(record["state"])}</p><p>Source: {text(record["source"])}</p><p>Context: {text(record["context_reference"])}</p>'
+        if record['resolution_details']:
+            body += f'<p>Resolution: {text(record["resolution_details"])}</p>'
+        else:
+            body += '<p class="meta">Read view · answer this item in Fleet.</p>'
+    elif node['kind'] == 'runs':
+        if node['excluded_reason']:
+            body += f'<p>{text(node["excluded_reason"])}</p>'
+        if node['empty_reason']:
+            body += f'<p>{text(node["empty_reason"])}</p>'
+        else:
+            body += '<ul class="runs">'
+            for run in node['records']:
+                availability = {True: 'reachable', False: 'unavailable', None: 'reachability unknown'}[run['host_reachable']]
+                body += f'<li><strong>{text(run["title"] or run["remote_job_id"])}</strong> · {text(run["status"])}<br><span class="meta">{text(run["host"])} · {availability} · started {text(run["start"])}<br>Run {text(run["id"])}</span></li>'
+            body += '</ul>'
+    if node['block']:
+        body += f'<button type="button" data-comment-block="{text(node["block"])}">Comment on block</button>'
+    if not node['block']:
+        body += '<p class="meta">Add a stable block ID to comment on this block.</p>'
+    body += '</section>'
+    return body
+
+
 def page_document(view):
     body = f'<nav><a href="/">Fleet</a><a href="/pages/{text(view["project"])}">Project pages</a></nav>'
     body += f'<header><p class="label">Live page · current records</p><p class="meta">{text(view["address"])}</p><p class="meta">Page revision <code>{text(view["revision"])}</code></p>'
@@ -46,48 +89,11 @@ def page_document(view):
     for index, node in enumerate(view['nodes']):
         if node['kind'] == 'prose':
             body += f'<div class="page-prose" data-prose-node="{index}">{prose_renderer.render(node["text"])}</div>'
-            continue
-        block = f' id="{text(node["block"])}"' if node['block'] and node['kind'] != 'error' else ''
-        if node['kind'] == 'error':
-            body += f'<section class="record error" role="alert"><strong>{text(node["error"])}</strong><p><code>{text(node["text"])}</code></p></section>'
-            continue
-        body += f'<section class="record"{block}><p class="label">{text(node["kind"])}</p>'
-        if node['kind'] == 'work':
-            record = node['record']
-            progress = record['progress']
-            body += f'<h3>{text(record["title"])}</h3><p>{text(record["goal"])}</p><dl>'
-            value = 'Progress unknown: no defined total' if progress['total'] is None else f'{progress["complete"]} / {progress["total"]} {progress["basis"]}'
-            body += f'<dt>Accepted</dt><dd>{text(value)}</dd><dt>Next step</dt><dd>{text(record["next_step"] or "No next step recorded")}</dd>'
-            body += f'<dt>Condition</dt><dd>{text(record["condition"])}</dd>'
-            if record['resume_condition']:
-                body += f'<dt>Resumes when</dt><dd>{text(record["resume_condition"])}</dd>'
-            body += '</dl>'
-        elif node['kind'] == 'attention':
-            record = node['record']
-            body += f'<h3>{text(record["headline"])}</h3><p>{text(record["owner"])} · {text(record["state"])}</p><p>Source: {text(record["source"])}</p><p>Context: {text(record["context_reference"])}</p>'
-            if record['resolution_details']:
-                body += f'<p>Resolution: {text(record["resolution_details"])}</p>'
-            else:
-                body += '<p class="meta">Read view · answer this item in Fleet.</p>'
-        elif node['kind'] == 'runs':
-            if node['excluded_reason']:
-                body += f'<p>{text(node["excluded_reason"])}</p>'
-            if node['empty_reason']:
-                body += f'<p>{text(node["empty_reason"])}</p>'
-            else:
-                body += '<ul class="runs">'
-                for run in node['records']:
-                    availability = {True: 'reachable', False: 'unavailable', None: 'reachability unknown'}[run['host_reachable']]
-                    body += f'<li><strong>{text(run["title"] or run["remote_job_id"])}</strong> · {text(run["status"])}<br><span class="meta">{text(run["host"])} · {availability} · started {text(run["start"])}<br>Run {text(run["id"])}</span></li>'
-                body += '</ul>'
-        if node['block']:
-            body += f'<button type="button" data-comment-block="{text(node["block"])}">Comment on block</button>'
-        if not node['block']:
-            body += '<p class="meta">Add a stable block ID to comment on this block.</p>'
-        body += '</section>'
+        else:
+            body += f'<div data-directive-node="{index}">{directive_html(node)}</div>'
     body += '</article>'
     body += '''<section id="comment-composer" hidden class="record" aria-label="New comment"><h2>New comment</h2><p id="comment-anchor"></p><form id="comment-form"><label>Headline <input name="headline" required maxlength="1024"></label><label>Comment <textarea name="body" required></textarea></label><label>Who must respond? <select name="owner"><option value="user">User</option><option value="agent">Agent</option></select></label><label>Why must this owner act? <textarea name="reason" required></textarea></label><p class="meta">Creates an open decision request for the selected owner. An agent choice does not start a run.</p><button type="submit">Create comment</button> <button type="button" id="cancel-comment">Cancel</button><p id="comment-error" role="alert"></p></form></section><section aria-label="Page threads"><h2>Comments and answers</h2><div id="page-threads"></div></section>'''
     payload = json.dumps(view, default=str).replace('<', r'\u003c').replace('>', r'\u003e').replace('&', r'\u0026')
     body += f'<script type="application/json" id="page-data">{payload}</script>'
-    body += f'<footer class="meta">Current records as of {text(view["snapshot_time"])} · state sequence {view["state_version"]}</footer>'
+    body += f'<footer class="meta" id="page-snapshot">Current records as of {text(view["snapshot_time"])} · state sequence {view["state_version"]}</footer>'
     return shell(view['title'], body, interactive=True)
