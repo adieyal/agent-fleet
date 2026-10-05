@@ -198,7 +198,7 @@ def isolated_worker(tmp_path, monkeypatch):
     steps.write_text('["Review the repository"]')
     module.command_create(argparse.Namespace(id="j1", run_id=None, fingerprint=None, schema_version=None,
         cwd=str(tmp_path), agent="claude", permission="default", steps_file=str(steps), project="restoke",
-        description="Restoke review", model=None, keep_going=False, allowed_tools='["Bash(ls:*)"]',
+        description="Restoke review", model=None, effort=None, bare=False, keep_going=False, allowed_tools='["Bash(ls:*)"]',
         add_dir=[], env=[], hold=True))
     return module
 

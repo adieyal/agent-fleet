@@ -23,7 +23,7 @@ def worker(tmp_path, monkeypatch):
     steps.write_text('["Reply done"]')
     module.command_create(argparse.Namespace(id="job", run_id=None, fingerprint=None,
         schema_version=None, cwd=str(tmp_path), agent="codex", permission="read-only",
-        steps_file=str(steps), project="p", description="test", model=None,
+        steps_file=str(steps), project="p", description="test", model=None, effort=None, bare=False,
         keep_going=False, allowed_tools=None, add_dir=[], env=[], hold=True))
     (tmp_path / "exec").write_text('print(\'{"type":"turn.completed","usage":{}}\')\n')
     (home / "config.json").write_text(json.dumps({"codex": sys.executable}))
