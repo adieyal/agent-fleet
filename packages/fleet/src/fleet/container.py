@@ -174,6 +174,10 @@ class Services:
 
 
 def bound_services(container, unit):
+    if hasattr(unit, '_facades'):
+        if unit.store is not container.store():
+            raise ValueError("unit belongs to a different store")
+        return unit._facades
     with _scope_lock:
         if unit.store is not container.store():
             raise ValueError("unit belongs to a different store")

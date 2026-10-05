@@ -2,6 +2,7 @@
 
 from contextlib import closing, contextmanager
 from copy import copy
+from typing import Callable
 
 from .store import Store, UnitOfWork, connect
 
@@ -11,14 +12,22 @@ class Repository:
         self.store, self.unit = store, unit
 
     @contextmanager
-    def transaction(self):
+    def transaction(self, *, prepare: Callable[[UnitOfWork], object] | None = None):
         if self.unit is not None:
+            if prepare is not None:
+                prepare(self.unit)
             yield self
             return
-        with self.store.unit_of_work() as unit:
-            bound = copy(self)
-            bound.unit = unit
-            bound.bind(unit)
+        unit = self.store.unit_of_work()
+        bound = copy(self)
+        bound.unit = unit
+        # Binding builds transaction-local collaborators, not database state. Do
+        # that before BEGIN IMMEDIATE so provider locks and graph copies cannot
+        # hold up every other writer.
+        bound.bind(unit)
+        if prepare is not None:
+            prepare(unit)
+        with unit:
             yield bound
 
     def bind(self, unit: UnitOfWork) -> None:

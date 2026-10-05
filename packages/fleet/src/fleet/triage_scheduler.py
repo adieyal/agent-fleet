@@ -86,7 +86,7 @@ class TriageScheduler:
 
     def reserve(self, project: str) -> tuple[Run, bool] | None:
         now = self.services.store.clock()
-        with self.services.triage_repository.transaction() as repository:
+        with self.services.triage_repository.transaction(prepare=self.services.bound) as repository:
             services = self.services.bound(repository.unit)
             state = repository.get(project)
             mandate = services.records.triage_mandate(project)
