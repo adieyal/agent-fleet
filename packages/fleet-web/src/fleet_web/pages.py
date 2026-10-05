@@ -30,10 +30,8 @@ header{padding-bottom:8px;margin-bottom:22px;border:0}
 .thread-top time{color:#a7b5af;font-size:11px}
 .thread-top button{margin-left:auto}
 .thread button{font-size:12px;padding:3px 6px;background:transparent;color:#a8decc}
-.thread textarea{min-height:32px;height:32px;resize:vertical;font-size:13px;border:0;border-bottom:1px solid #435852;padding:5px;background:transparent}
-.thread form:focus-within textarea{min-height:70px}
-.reply-actions{display:none}
-.thread form:focus-within .reply-actions{display:flex;gap:6px}
+.thread textarea{min-height:70px;height:70px;resize:vertical;font-size:13px;border:0;border-bottom:1px solid #435852;padding:5px;background:transparent}
+.reply-actions{display:flex;gap:6px}
 .thread.resolved .thread-body{display:none}
 .thread.resolved.expanded .thread-body{display:block}
 .thread.resolved{background:transparent;box-shadow:none;padding:4px 8px}

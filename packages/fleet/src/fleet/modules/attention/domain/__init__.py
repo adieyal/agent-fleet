@@ -106,6 +106,14 @@ class PageAnnotation:
 
 
 @dataclass(frozen=True)
+class AttentionReply:
+    id: str
+    body: str
+    actor: str
+    time: datetime
+
+
+@dataclass(frozen=True)
 class AttentionItem:
     id: str
     project: str
@@ -132,6 +140,7 @@ class AttentionItem:
     owner_actor: str | None = None   # who made the last hand-over; None while the item has its first owner
     owner_at: datetime | None = None
     page_annotation: PageAnnotation | None = None
+    replies: tuple[AttentionReply, ...] = ()
 
     def __post_init__(self) -> None:
         if self.page_annotation is not None and (self.source, self.kind, self.context_reference) != (
@@ -184,7 +193,7 @@ class AttentionItem:
             if details is None:
                 raise ValueError("resolution details are required")
             required(details, "resolution details")
-        elif self.state == "resolved":
+        elif self.state == "resolved" and (state != "open" or self.page_annotation is None):
             raise ItemResolved("attention item is resolved")
         return replace(self, state=state, snooze_until=until, resolution_details=details,
                        acknowledged_at=now if state == "acknowledged" else None,

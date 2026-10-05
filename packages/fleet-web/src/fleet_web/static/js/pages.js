@@ -238,17 +238,13 @@
         const field = element('textarea'); field.name = 'answer'; field.required = true;
         field.placeholder = 'Reply…'; field.setAttribute('aria-label', 'Reply');
         const actions = element('div', undefined, 'reply-actions');
-        const submit = element('button', 'Reply and resolve'); submit.type = 'submit'; actions.append(submit);
+        const submit = element('button', 'Reply'); submit.type = 'submit'; actions.append(submit);
         const error = element('p'); error.setAttribute('role', 'alert');
         reply.append(field, actions, error);
         reply.addEventListener('submit', async event => {
           event.preventDefault(); submit.disabled = true;
-          const current = view.threads.find(t => t.id === thread.id);
           try {
-            if (current.state === 'resolved') {
-              await post('comment-text', {revision: current.annotation.revision, comment_id: crypto.randomUUID(),
-                selector: current.annotation.selector, parent: current.id, body: field.value, owner: current.owner});
-            } else await post('answer', {item_id: thread.id, answer: field.value});
+            await post('reply', {item_id: thread.id, body: field.value});
             field.value = ''; card.classList.add('expanded'); await refresh(true);
           } catch (failure) { error.textContent = failure.message; }
           finally { submit.disabled = false; }
@@ -259,8 +255,24 @@
           catch (failure) { error.textContent = failure.message; }
           finally { resolve.disabled = false; }
         });
-        resolve.dataset.resolve = ''; resolve.title = 'Resolve this request without adding an answer';
-        body.append(reply, resolve); card.append(body);
+        resolve.dataset.resolve = ''; resolve.title = 'Close this thread without recording a decision';
+        const reopen = button('Re-open', async () => {
+          reopen.disabled = true;
+          try { await post('reopen', {item_id: thread.id}); await refresh(true); }
+          catch (failure) { error.textContent = failure.message; }
+          finally { reopen.disabled = false; }
+        });
+        reopen.dataset.reopen = '';
+        const answer = button('Answer & resolve', async () => {
+          if (!reply.reportValidity()) return;
+          answer.disabled = true;
+          try { await post('answer', {item_id: thread.id, answer: field.value}); field.value = ''; await refresh(true); }
+          catch (failure) { error.textContent = failure.message; }
+          finally { answer.disabled = false; }
+        });
+        answer.dataset.answerResolve = ''; answer.className = 'meta';
+        answer.title = 'Record a decision and close this thread'; actions.append(answer);
+        body.append(reply, resolve, reopen); card.append(body);
         card.addEventListener('click', () => focusThread(thread.id, false));
         card.addEventListener('focusin', () => focusThread(thread.id, false));
         threads.append(card);
@@ -270,8 +282,8 @@
       card.querySelector('[data-toggle]').hidden = thread.state !== 'resolved';
       card.querySelector('[data-toggle]').textContent = card.classList.contains('expanded') ? 'Resolved · Hide' : 'Resolved · Show';
       card.querySelector('[data-resolve]').hidden = thread.state === 'resolved';
-      const submit = card.querySelector('[type=submit]');
-      submit.textContent = thread.state === 'resolved' ? 'Reply as follow-up' : 'Reply and resolve';
+      card.querySelector('[data-reopen]').hidden = thread.state !== 'resolved';
+      card.querySelector('[data-answer-resolve]').hidden = thread.state === 'resolved' || thread.kind !== 'decision';
       const anchor = card.querySelector('[data-anchor]');
       anchor.textContent = thread.attachment.reason || '';
       anchor.classList.toggle('detached', thread.attachment.state !== 'attached');
@@ -281,10 +293,16 @@
         anchor.append(link);
       }
       const answers = card.querySelector('[data-answers]');
-      for (const answer of thread.answers) {
-        if (!answers.querySelector(`[data-decision-id="${CSS.escape(answer.id)}"]`)) {
-          const item = element('div', undefined, 'answer'); item.dataset.decisionId = answer.id;
-          item.append(element('strong', answer.actor), element('p', answer.answer), element('time', relative(answer.time), 'meta'));
+      const messages = [...thread.replies.map(reply => ({...reply, text: reply.body, type: 'reply'})),
+        ...thread.answers.map(answer => ({...answer, text: answer.answer, type: 'decision'}))]
+        .sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
+      for (const message of messages) {
+        if (!answers.querySelector(`[data-message-id="${CSS.escape(message.id)}"]`)) {
+          const item = element('div', undefined, 'answer'); item.dataset.messageId = message.id;
+          item.dataset.messageType = message.type;
+          const time = element('time', relative(message.time), 'meta'); time.title = message.time;
+          item.append(element('strong', message.actor), element('p', message.text), time);
+          if (message.type === 'decision') item.append(element('span', 'Decision · answered and resolved', 'meta'));
           answers.append(item);
         }
       }

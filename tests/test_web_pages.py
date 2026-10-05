@@ -168,10 +168,10 @@ def test_select_comment_answer_and_cli_reply_in_browser(page, demo_page):
     expect(thread).to_be_visible()
     expect(page.locator('.r6o-annotation')).to_be_visible()
     thread.get_by_label('Reply', exact=True).fill('Current suppliers only.')
-    thread.get_by_role('button', name='Reply and resolve', exact=True).click()
+    thread.get_by_role('button', name='Reply', exact=True).click()
     expect(thread.locator('.answer')).to_contain_text('Current suppliers only.')
     page.reload()
-    page.get_by_role('button', name='Resolved · Show').click()
+    expect(thread).not_to_have_class(re.compile(r'\bresolved\b'))
     expect(page.locator('.thread .answer')).to_contain_text('Current suppliers only.')
     page.locator('#supplier-work').get_by_role('button', name='Comment on block', exact=True).click()
     fill_comment(page, 'Contract evidence', 'Please verify the mapping evidence.')
@@ -212,11 +212,15 @@ def test_detached_thread_and_followup_are_visible(page, demo_page):
     expect(thread).to_contain_text('Anchor unavailable: quoted text changed')
     expect(thread.get_by_role('link', name='Open creation revision')).to_be_visible()
     thread.get_by_label('Reply').fill('Keep the old context visible.')
-    thread.get_by_role('button', name='Reply and resolve').click()
+    thread.get_by_role('button', name='Reply').click()
     expect(thread.locator('.answer')).to_contain_text('Keep the old context visible.')
     thread.get_by_label('Reply').fill('Follow-up after edit')
-    thread.get_by_role('button', name='Reply as follow-up').click()
-    followup = page.locator('.thread').filter(has_text='Follow-up after edit')
+    thread.get_by_role('button', name='Reply', exact=True).click()
+    expect(thread.locator('.answer')).to_have_count(2)
+    expect(thread).not_to_have_class(re.compile(r'\bresolved\b'))
+    page_post(demo_page, 'comment-text', dict(revision=demo_page['revision'], comment_id=str(uuid4()),
+        selector=fields['selector'], parent=result['id'], body='Linked follow-up after edit'))
+    followup = page.locator('.thread').filter(has_text='Linked follow-up after edit')
     expect(followup).to_be_visible()
     expect(followup.get_by_role('link', name='Parent comment')).to_have_attribute('href', f'#thread-{result["id"]}')
     destination = os.environ.get('FLEET_PAGE_SCREENSHOT_DIR')
@@ -378,3 +382,78 @@ def test_margin_interaction_and_evidence(page, demo_page):
     expect(page.locator('#page-margin')).to_be_hidden()
     assert errors == [], errors
     page.goto('about:blank')
+
+
+@pytest.mark.browser
+def test_cli_replies_stay_open_through_sse_and_explicit_resolution(page, demo_page, deck_state, monkeypatch):
+    from threading import Event, Thread
+    from uuid import uuid4
+    from playwright.sync_api import expect
+    from fleet.services.live import FleetState
+    from fleet_cli import cli
+
+    container = configured_container()
+    comment = container.page_change(project=demo_page['project'], slug='supplier-migration', operation='comment',
+        revision=demo_page['revision'], comment_id=str(uuid4()), headline='Contract evidence',
+        body='Please verify the supplier contract evidence.', reason='User must review evidence.', actor='user',
+        selector={'type': 'FragmentSelector', 'value': 'supplier-work'})
+    monkeypatch.setattr(deck_state, 'history_cursor', container.store().latest_sequence(), raising=False)
+    monkeypatch.setattr(deck_state, 'schedule_triage', lambda: None, raising=False)
+    stop = Event()
+    watcher = Thread(target=FleetState.follow_history, args=(deck_state, stop), daemon=True)
+    watcher.start()
+    page.add_init_script('''const interval = window.setInterval;
+      window.setInterval = (fn, ms, ...args) => ms === 2000 ? 0 : interval(fn, ms, ...args);
+      window.documentIdentity = crypto.randomUUID(); window.liveVersions = [];
+      const Source = window.EventSource;
+      window.EventSource = class extends Source {
+        constructor(...args) { super(...args); this.addEventListener('state', e => liveVersions.push(JSON.parse(e.data).version)); }
+      };''')
+    errors = []
+    page.on('pageerror', lambda error: errors.append(str(error)))
+    try:
+        page.set_viewport_size(dict(width=1440, height=1100))
+        page.goto(demo_page['url'])
+        page.wait_for_function('() => liveVersions.length > 0')
+        identity = page.evaluate('documentIdentity')
+        thread = page.locator(f'#thread-{comment["id"]}')
+        thread.click()
+        thread.get_by_label('Reply', exact=True).fill('I will compare the signed contracts.')
+        thread.get_by_role('button', name='Reply', exact=True).click()
+        expect(thread.locator('.answer')).to_have_count(1)
+        thread.get_by_label('Reply').fill('An unsent draft stays here.')
+        version = page.evaluate('liveVersions.at(-1)')
+        for actor, text in [('agent', 'All active suppliers match the signed mapping.'),
+                            ('user', 'Thanks. Keep this open until acceptance.')]:
+            cli.main(['attention', 'reply', comment['id'], text, '--actor', actor], container=container)
+        expect(thread.locator('.answer')).to_have_count(3, timeout=10000)
+        assert thread.locator('.answer p').all_text_contents() == [
+            'I will compare the signed contracts.', 'All active suppliers match the signed mapping.',
+            'Thanks. Keep this open until acceptance.']
+        expect(thread).not_to_have_class(re.compile(r'\bresolved\b'))
+        expect(thread.get_by_label('Reply')).to_have_value('An unsent draft stays here.')
+        assert container.attention().get(comment['id']).state == 'open'
+        assert container.decisions().list() == []
+        assert page.evaluate('documentIdentity') == identity
+        assert page.evaluate('liveVersions.at(-1)') > version
+        destination = os.environ.get('FLEET_PAGE_SCREENSHOT_DIR')
+        if destination:
+            page.screenshot(path=str(Path(destination) / 'thread-three-replies-open.png'), full_page=True)
+        thread.get_by_role('button', name='Resolve', exact=True).click()
+        expect(thread).to_have_class(re.compile(r'\bresolved\b'))
+        expect(thread.get_by_role('button', name='Resolved · Hide')).to_be_visible()
+        expect(thread.locator('.answer')).to_have_count(3)
+        if destination:
+            page.screenshot(path=str(Path(destination) / 'thread-resolved.png'), full_page=True)
+        thread.get_by_role('button', name='Re-open', exact=True).click()
+        expect(thread).not_to_have_class(re.compile(r'\bresolved\b'))
+        assert container.attention().get(comment['id']).state == 'open'
+        thread.get_by_label('Reply').fill('Accepted the verified mapping.')
+        thread.get_by_role('button', name='Answer & resolve', exact=True).click()
+        expect(thread).to_have_class(re.compile(r'\bresolved\b'))
+        assert container.decisions().list()[0].answer == 'Accepted the verified mapping.'
+        assert errors == []
+    finally:
+        page.goto('about:blank')
+        stop.set()
+        watcher.join(timeout=5)

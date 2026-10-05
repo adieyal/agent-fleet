@@ -143,4 +143,7 @@ MIGRATIONS = (
     (
         "ALTER TABLE attention_item ADD COLUMN page_annotation TEXT",
     ),
+    (
+        "ALTER TABLE attention_item ADD COLUMN replies TEXT NOT NULL DEFAULT '[]'",
+    ),
 )

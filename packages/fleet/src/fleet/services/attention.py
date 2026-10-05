@@ -43,11 +43,14 @@ class AttentionCommands:
                 items = attention.list(**data)
                 return [item for item in items if item.state != 'resolved'] if data['state'] is None and not all_items else items
             identity = data.pop('id')
+            if command == 'show':
+                return attention.get(identity)
             operation = {'ack': 'acknowledge'}.get(command, command)
             fields = {
                 'delegate': ('actor', 'note'), 'take': ('actor', 'reason'),
                 'escalate': ('actor', 'reason'), 'ack': ('actor',),
                 'snooze': ('actor', 'until'), 'resolve': ('actor', 'details'),
+                'reply': ('actor', 'body'), 'reopen': ('actor',),
             }[command]
             return getattr(attention, operation)(identity, **{name: data[name] for name in fields})
         except (ValueError, LookupError) as error:
