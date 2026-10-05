@@ -4,6 +4,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from fleet.projections.attention import attention_items
 from fleet.projections.live import LiveProjection, building_document
 from fleet.projections.ports import LiveReaders
 from fleet.modules.workspace import Focus
@@ -21,16 +22,16 @@ def test_attention_uses_precomputed_status_without_service_lookup():
     state = LiveProjection()
     state.reads = SimpleNamespace(attention=attention, workspace=workspace)
     triage = {'p': {'policy_error': 'invalid mandate', 'live_run': None}}
-    result = state.with_attention({'hosts': []}, triage)
+    result = state.with_attention({'hosts': []}, triage, attention_items(attention, []))
     assert result['triage'] is triage
     assert result['attention'][0]['delegable'] is False
     attention.require_delegable.assert_not_called()
     triage['p']['policy_error'] = None
-    result = state.with_attention({'hosts': []}, triage)
+    result = state.with_attention({'hosts': []}, triage, attention_items(attention, []))
     assert result['attention'][0]['delegable'] is True
     attention.require_delegable.assert_called_once_with('item')
     with pytest.raises(KeyError, match='p'):
-        state.with_attention({'hosts': []}, {})
+        state.with_attention({'hosts': []}, {}, attention_items(attention, []))
 
 
 def test_work_and_building_use_only_injected_readers():

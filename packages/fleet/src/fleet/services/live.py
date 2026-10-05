@@ -8,6 +8,7 @@ Registry in use), `project_labels`, `capacity`, `known_projects()`, `host_names(
 from __future__ import annotations
 
 from fleet.projections.live import live_document, building_document
+from fleet.projections.attention import attention_items
 
 import json
 import logging
@@ -78,11 +79,10 @@ class LiveWorkspace(LiveProjects, LiveAttention, LiveProjection, LibraryProjecti
             self.changed.notify_all()
 
 
-    def triage_statuses(self) -> dict[str, dict]:
+    def triage_statuses(self, items: list[dict]) -> dict[str, dict]:
         """Compute scheduler reads in the service layer before projecting a document."""
-        projects = {item.stream_context.project_id if item.stream_context is not None else item.project
-                    for item in self.attention.list()}
-        statuses = {project: self.triage_status(project) for project in projects if project}
+        projects = {item["project_id"] for item in items if item["project_id"]}
+        statuses = {project: self.triage_status(project) for project in projects}
         for status in statuses.values():
             if status["live_run"]:
                 run = self.execution.get_run(status["live_run"]["id"])
@@ -340,7 +340,8 @@ class FleetState(LiveWorkspace):
         projects_error = self.refresh_registry()
         capacity_error = self.refresh_capacity()
         with self.changed:
-            return live_document(self, projects_error, capacity_error, self.triage_statuses())
+            items = attention_items(self.reads.attention, [self.by_host[host.name] for host in self.hosts])
+            return live_document(self, projects_error, capacity_error, self.triage_statuses(items), items)
 
     def pipeline_updates(self, after: int) -> list[dict[str, Any]]:
         return self.pipelines(self.registry, self.by_host, after)

@@ -665,6 +665,7 @@ def test_a_tasks_title_opens_its_latest_report_and_its_documents_list_by_icon(
     line = page.locator(f'[data-plan-item="{task.id}"]')
     title = line.get_by_role('button', name='Fix redirect loop', exact=True)
     expect(title).to_have_attribute('data-doc', 'report-1')
+    expect(title).to_be_visible()
     box = title.bounding_box()
     assert box['height'] < 40 and box['width'] > 100, box   # one line, not squeezed into an icon button
     line.locator('[data-step-docs] summary').click()

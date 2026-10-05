@@ -5,7 +5,7 @@ from dataclasses import asdict
 from typing import Any
 from fleet.modules.workspace import Registry
 from fleet.projections.workspace import annotate, resolve, registry_config
-from fleet.projections.attention import attention_display, attention_items
+from fleet.projections.attention import attention_display
 from fleet.projections.ports import LiveReaders
 
 
@@ -13,9 +13,8 @@ from fleet.projections.ports import LiveReaders
 class LiveProjection:
     reads: LiveReaders
 
-    def with_attention(self, document: dict[str, Any], triage: dict[str, dict]) -> dict[str, Any]:
+    def with_attention(self, document: dict[str, Any], triage: dict[str, dict], items: list[dict]) -> dict[str, Any]:
         """Add stored focus choices and the Attention projection."""
-        items = attention_items(self.reads.attention, document["hosts"])
         for item in items:
             if item['project_id'] and triage[item['project_id']]['policy_error']:
                 item['delegable'] = False
@@ -90,7 +89,7 @@ def stale_work(host: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
 
 
 
-def live_document(self, projects_error, capacity_error, triage):
+def live_document(self, projects_error, capacity_error, triage, items):
     registry = self.registry
     with self.changed:
         document = self.with_attention({"time": time.time(), "project_labels": self.project_labels,
@@ -102,14 +101,14 @@ def live_document(self, projects_error, capacity_error, triage):
              "sessions": [annotate(self.workspace, resolve(registry, host.name, stale_work(self.by_host[host.name], session))) for session in
                           sorted(self.by_host[host.name]["sessions"].values(),
                                  key=lambda session: session.get("started_at") or 0)]}
-            for host in self.hosts]}, triage)
+            for host in self.hosts]}, triage, items)
     document = self.with_building(self.with_work(document), registry)
     document["building"]["capacity_error"] = capacity_error
     document["pipelines"] = self.pipelines(registry, self.by_host)
     return document
 
 
-def fixture_document(self, triage):
+def fixture_document(self, triage, items):
     with self.changed:
         document = self.with_attention({"time": self.fixture["time"], "project_labels": self.project_labels,
                 "projects": [{"id": project_id, **entry} for project_id, entry in registry_config(self.registry).items()],
@@ -117,7 +116,7 @@ def fixture_document(self, triage):
             {**host, "jobs": [annotate(self.workspace, resolve(self.registry, host["name"], job)) for job in host["jobs"]],
              "sessions": [annotate(self.workspace, resolve(self.registry, host["name"], session))
                           for session in host["sessions"]]}
-            for host in self.fixture["hosts"]]}, triage)
+            for host in self.fixture["hosts"]]}, triage, items)
     document = self.with_building(self.with_work(document), self.registry)
     document["building"]["capacity_error"] = None
     document["pipelines"] = self.pipelines(self.registry, {host["name"]: host for host in self.fixture["hosts"]})

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from fleet.projections.live import fixture_document
+from fleet.projections.attention import attention_items
 import threading
 from pathlib import Path
 from typing import Any, Callable
@@ -102,7 +103,8 @@ class FixtureState(LiveWorkspace):
     def document(self) -> dict[str, Any]:
         self.registry = self.workspace.registry()
         with self.changed:
-            return fixture_document(self, self.triage_statuses())
+            items = attention_items(self.reads.attention, self.fixture["hosts"])
+            return fixture_document(self, self.triage_statuses(items), items)
 
     def pipeline_updates(self, after: int) -> list[dict[str, Any]]:
         return self.pipelines(self.registry, {host["name"]: host for host in self.fixture["hosts"]}, after)
