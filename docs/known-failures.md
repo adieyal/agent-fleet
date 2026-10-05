@@ -2,10 +2,6 @@
 
 | Test id | Failing since | Work item | Note |
 | --- | --- | --- | --- |
-| `tests/test_deck_browser.py::test_panel_breadcrumb_names_the_linked_work_and_opens_it[chromium]` (`tests/test_deck_browser.py:511`) | Verified on `4641086`, 2026-10-05 | `20956ae8-2762-4887-8297-62cbfab21b22` (extraction evidence) | After Escape, route remains `bench`; expected `room`. |
-| `tests/test_deck_browser.py::test_each_step_names_the_work_it_serves_and_opens_it[chromium]` (`tests/test_deck_browser.py:617`) | Verified on `4641086`, 2026-10-05 | `20956ae8-2762-4887-8297-62cbfab21b22` (extraction evidence) | After Escape, route remains `bench`; expected `room`. |
-| `tests/test_deck_browser.py::test_lone_milestone_steps_back_to_the_floor[chromium]` (`tests/test_deck_browser.py:640`) | Verified on `4641086`, 2026-10-05 | `20956ae8-2762-4887-8297-62cbfab21b22` (extraction evidence) | After Escape, route remains `bench`; expected `floor`. |
-| `tests/test_deck_browser.py::test_p8_help_keeps_unsaved_guidance[chromium]` (`tests/test_deck_browser.py:2674`) | Verified on `4641086`, 2026-10-05 | `20956ae8-2762-4887-8297-62cbfab21b22` (extraction evidence) | Help names `Project library`; expected `Guidance editor`. |
 | `tests/test_deck_browser.py::test_p2_history_archive_and_offline[chromium-desktop]` (`tests/test_deck_browser.py:2817`) | Verified on `4641086`, 2026-10-05 | `20956ae8-2762-4887-8297-62cbfab21b22` (extraction evidence) | History report tiles count is 0; expected 2. |
 | `tests/test_deck_browser.py::test_p3_work_entrypoint_reads_real_audit[chromium]` (`tests/test_deck_browser.py:3001`) | Verified on `4641086`, 2026-10-05 | `20956ae8-2762-4887-8297-62cbfab21b22` (extraction evidence) | Clicking the first epic card times out. |
 | `tests/test_deck_browser.py::test_triage_policy_room[chromium-desktop]` (`tests/test_deck_browser.py:3025`) | Verified on `4641086`, 2026-10-05 | `20956ae8-2762-4887-8297-62cbfab21b22` (extraction evidence) | Clicking the first epic card times out. |
@@ -78,3 +74,22 @@ module-order context. `M9-BROWSER-COMPARISON.json` in the job outbox maps every
 case to current/base source lines and matching errors. The copied CLI rendering
 regression tests additionally passed on base and after the repaired import; the
 final non-browser suite passes (`1411 passed, 389 deselected`).
+
+## Escape and help expectations: 2026-10-05
+
+The four Escape/help rows were stale after intentional commit `04e8a13`
+("let visible sheets own Escape and keyboard help"). The tests now require
+Escape to close the visible job panel without changing the bench route, then
+step back on the next Escape. Help names the open library; after it closes,
+help names the guidance editor. Original navigation and draft assertions remain.
+
+```python
+# tests/test_deck_browser.py:510
+expect(route).to_have_attribute('data-level', 'bench')
+page.keyboard.press('Escape')
+expect(route).to_have_attribute('data-level', 'room')
+```
+
+Each original test failed alone on unchanged `53d66f6`; each updated test
+passes alone. Logs, full-suite results and screenshots are in fleet job
+`66b1dd33-fd49-4c97-82fa-eca20de27a8a`'s outbox `REPORT.md`.
