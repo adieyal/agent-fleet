@@ -56,8 +56,12 @@ class WorkspaceApplication:
     def shuttered_snapshot(self) -> dict[str, Shuttered]:
         return self.snapshot().shuttered
 
+    def focus_lookup(self) -> Callable[[ProjectReference], str]:
+        """Resolve a batch against one detached, current workspace snapshot."""
+        return Choices(self.snapshot()).focus_of
+
     def focus_of(self, item: ProjectReference) -> str:
-        return Choices(self.snapshot()).focus_of(item)
+        return self.focus_lookup()(item)
 
     def set_focus(self, focus: str, projects: list[str], labels: list[str]) -> None:
         with self.repository.transaction(self.actor) as state:

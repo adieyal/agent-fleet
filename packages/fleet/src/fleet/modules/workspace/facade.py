@@ -79,6 +79,10 @@ class WorkspaceFacade:
             raise ValueError(f"project '{project}' is shuttered (in the deck's storehouse), so no work can start in "
                              f"it; restore it with: fleet project restore {identity}, or from the deck")
 
+    def focus_lookup(self) -> Callable[[ProjectReference], str]:
+        """Read focus once for a batch; obtain a new lookup for each request."""
+        return self.application.focus_lookup()
+
     def focus_of(self, item: ProjectReference) -> str:
         return self.application.focus_of(item)
 
