@@ -167,6 +167,7 @@ class FleetState(LiveWorkspace):
         self.project_labels = project_labels or {}
         self.container = container
         self.responder = container.responder_worker()
+        self.page_responder = container.page_responder(worker=self.responder)
         self.transport = container.transport()
         self.store = container.store()
         self.observed_runs: dict = {}  # successful job ingestion, including persisted link context
@@ -184,7 +185,8 @@ class FleetState(LiveWorkspace):
         self.records = container.records()
         self.reads = container.live_readers(workspace=self.workspace, attention=self.attention)
         scheduler = container.triage_scheduler(deliver=container.deliver_triage,
-                                               host=lambda name: self.transport.host_by_name(name))
+                                               host=lambda name: self.transport.host_by_name(name),
+                                               responder=self.page_responder.submit)
         self.triage_status = scheduler.status
         self.schedule = scheduler.schedule
         self.woken_until = 0.0
@@ -205,7 +207,7 @@ class FleetState(LiveWorkspace):
                 entry = self.by_host[observed["name"]]
                 entry.update(error=observed["error"], down_since=datetime.fromisoformat(observed["since"]).timestamp())
                 for run in self.execution.runs():
-                    if run.host != observed["name"] or run.status not in ("running", "unknown outcome"):
+                    if run.kind == 'responder' or run.host != observed["name"] or run.status not in ("running", "unknown outcome"):
                         continue
                     value = {"id": run.remote_job_id, "project": run.label, "agent": run.runtime, "cwd": run.cwd,
                              "updated_at": run.last_observed.timestamp() if run.last_observed else None,
@@ -538,6 +540,8 @@ class LiveRuntime:
         self.responder = getattr(state, 'responder', None)
         if self.responder is not None:
             self.threads.append(self.worker('responder', self.responder.run, self.stop, self.worker_recovered))
+        if getattr(state, 'page_responder', None) is not None:
+            self.threads.append(self.worker('page-responder', state.page_responder.run, self.stop, self.worker_recovered))
 
     def worker(self, name, target, *args):
         def run():

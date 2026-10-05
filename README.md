@@ -91,8 +91,19 @@ HOME under `$FLEET_HOME/responder`, symlinking the source auth file. The
 `workers.responder` status reports child PID, Codex version, readiness, restart
 errors and last-turn timing and tokens. Missing binary or auth makes the worker
 unhealthy with its cause visible; serve retries with backoff. Startup initializes
-an ephemeral thread without making a model call. Page-comment routing remains
-on the existing triage path until the responder integration is delivered.
+an ephemeral thread without making a model call.
+
+Page-only triage queues use this responder when the confirmed triage mandate
+authorizes `reply_attention` and uses Codex. Each attempt reserves a run-budget
+slot and a pinned activation. Replies become Decisions linked to a stored
+`responder` run with timing and token usage, and leave the thread open. Follow-ups
+reuse the item's app-server thread; after a process restart a fresh thread gets
+the complete conversation. User take-back discards pending replies. A request
+that needs tools, or an unavailable responder, goes to the existing fleetd triage
+path with the reason visible in the page's agent status. That fallback reserves
+its own budget slot; budget exhaustion returns the item to the user. Mixed
+page/job queues keep the fleetd route. `fleet history runs --kind responder`
+and `fleet run show <run-id> --json` expose the local attempts and measurements.
 
 Use `fleet watch` for a live terminal view. When the job finishes, run
 `fleet result worker:<id>` for its reports or `fleet pull worker:<id> ./results`

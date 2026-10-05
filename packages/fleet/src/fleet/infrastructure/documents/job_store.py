@@ -237,6 +237,8 @@ class ProjectDocuments:
         return sorted(found, key=lambda job: job.get("created_at") or 0, reverse=True)
 
     def run_documents(self, run: dict, *, jobs_cache: dict | None = None) -> list[dict]:
+        if run.get('kind') == 'responder':
+            return []  # Responder attempts have no worker job document directory.
         scopes = {self.label_scope(run["host"], run.get("label") or "")}
         if run.get("project"):
             scopes.add(run["project"])

@@ -173,14 +173,17 @@ class PageService:
             return None
         if item.owner == 'user':
             return item.owner_reason if item.owner_actor and item.owner_actor.startswith('triage:') else None
+        fallback = state.get('fallback', {}).get(item.id)
+        prefix = ('Escalated to fleetd: ' + fallback['reason'] + ' · '
+                  if fallback and (fallback['request'] == request_token(item) or item.id in state.get('items', [])) else '')
         if state.get('error'):
-            return 'Agent reply unavailable: ' + state['error']
+            return prefix + 'Agent reply unavailable: ' + state['error']
         if item.id in state.get('items', []) and state.get('run'):
             run = self.services.execution.get_run(state['run'])
             if run.status == 'running':
-                return 'Agent replying…'
+                return prefix + 'Agent replying…'
             if run.status != 'succeeded':
-                return f'Agent reply run {run.id}: {run.status}'
+                return prefix + f'Agent reply run {run.id}: {run.status}'
         try:
             mandate = self.services.records.triage_mandate(item.project)
         except (ValueError, LookupError, OSError) as error:
@@ -195,7 +198,7 @@ class PageService:
         if used >= mandate.limits['runs_per_day']:
             reset = (self.services.store.clock() + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
             return 'Agent reply budget exhausted; resets at ' + reset.isoformat()
-        return 'Agent reply queued'
+        return prefix + 'Agent reply queued'
 
     @staticmethod
     def check_project(actual, expected, identity):

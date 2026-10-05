@@ -1,6 +1,7 @@
 import hashlib
 import json
 from dataclasses import replace
+from datetime import datetime
 from uuid import uuid4
 
 from ..domain import Action, Claim, DispatchResult, Run
@@ -33,7 +34,8 @@ def worker_label(payload: dict | None) -> str | None:
 
 
 def claim(transaction: ExecutionRepository, action: Action, host: str, runtime: str, actor: str,
-          key: str, digest: str, remote_job_id: str | None = None) -> DispatchResult:
+          key: str, digest: str, remote_job_id: str | None = None, *, kind: str = 'job',
+          started_at: datetime | None = None) -> DispatchResult:
     transaction.workspace.require_claims_allowed(action.project, host, worker_label(action.payload))
     active = next((claim for claim in transaction.claims() if claim.action == action.id and claim.active), None)
     if active is not None:
@@ -42,7 +44,10 @@ def claim(transaction: ExecutionRepository, action: Action, host: str, runtime: 
         return DispatchResult(run, False)
     identity = str(uuid4())
     run = Run(identity, action.id, host, identity if remote_job_id is None else remote_job_id,
-              runtime, "unknown outcome", None, None, None, None)
+              runtime, "running" if kind == 'responder' else "unknown outcome", None,
+              started_at, None, None, kind=kind,
+              title=action.dispatch_reason if kind == 'responder' else None,
+              cwd=action.payload['cwd'] if kind == 'responder' else None)
     transaction.save_run(run, actor)
     transaction.save_claim(Claim(action.id, run.id, True), actor)
     transaction.save_request(key, digest, run.id, actor)
@@ -51,7 +56,10 @@ def claim(transaction: ExecutionRepository, action: Action, host: str, runtime: 
 
 def dispatch(repository: ExecutionRepository, work_item: str | None, *, host: str, runtime: str, payload: dict,
              actor: str, reason: str, idempotency_key: str, project: str | None = None,
-             remote_job_id: str | None = None, authorization=None, guidance: dict | None = None) -> DispatchResult:
+             remote_job_id: str | None = None, authorization=None, guidance: dict | None = None,
+             kind: str = 'job', started_at: datetime | None = None) -> DispatchResult:
+    if kind not in ('job', 'responder'):
+        raise ValueError('dispatch kind must be job or responder')
     if not all(value.strip() for value in (host, runtime, actor, reason, idempotency_key)):
         raise ValueError("host, runtime, actor, reason and idempotency key are required")
     if not payload["cwd"].strip():
@@ -66,6 +74,8 @@ def dispatch(repository: ExecutionRepository, work_item: str | None, *, host: st
                 require_step_work(transaction.work, step["work_item"], project)
         # Fingerprints of unguided dispatches stay as they were.
         fingerprinted = payload if guidance is None else dict(payload, guidance=guidance)
+        if kind != 'job':
+            fingerprinted = dict(fingerprinted, run_kind=kind)
         digest = fingerprint(work_item, project, host, runtime, fingerprinted)
         existing = transaction.request(idempotency_key, digest)
         if existing is not None:
@@ -76,7 +86,8 @@ def dispatch(repository: ExecutionRepository, work_item: str | None, *, host: st
                         None if authorization is None else authorization.id,
                         None if authorization is None else authorization.mandate_version, guidance)
         transaction.save_action(action, actor)
-        return claim(transaction, action, host, runtime, actor, idempotency_key, digest, remote_job_id)
+        return claim(transaction, action, host, runtime, actor, idempotency_key, digest, remote_job_id,
+                     kind=kind, started_at=started_at)
 
 
 def retry(repository: ExecutionRepository, run_id: str, *, actor: str, idempotency_key: str) -> DispatchResult:
@@ -87,6 +98,8 @@ def retry(repository: ExecutionRepository, run_id: str, *, actor: str, idempoten
         if run is None:
             raise LookupError(f"no run '{run_id}'")
         action = next(action for action in transaction.actions() if action.id == run.action)
+        if run.kind != 'job':
+            raise ValueError('only fleetd job runs can be retried through dispatch')
         digest = hashlib.sha256(json.dumps(["retry", run_id]).encode()).hexdigest()
         existing = transaction.request(idempotency_key, digest)
         if existing is not None:

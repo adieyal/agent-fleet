@@ -117,7 +117,7 @@ def stop_session(repository: ExecutionRepository, host: str, identity: str) -> R
 def observe(repository: ExecutionRepository, host: str, observation: JobObservation) -> Run | None:
     with repository.transaction() as transaction:
         run = transaction.find(host, observation.job)
-        if run is None:
+        if run is None or run.kind != 'job':
             return None
         updated = replace(run, status=observation.run_status(), reason=observation.status if observation.status in ("lost", "blocked", "queued", "stalled") else None,
                           runtime=observation.runtime, start=observation.start, end=observation.end,
@@ -139,7 +139,7 @@ def unavailable(repository: ExecutionRepository, host: str) -> bool:
     changed = False
     with repository.transaction() as transaction:
         for run in transaction.runs():
-            if run.host == host and run.status == "running":
+            if run.host == host and run.kind != 'responder' and run.status == "running":
                 transaction.update(replace(run, status="unknown outcome", reason=None), "fleetd")
                 changed = True
     return changed

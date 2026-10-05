@@ -48,7 +48,8 @@ class DecisionsFacade:
         decision = record_attention(self.repository, self.clock, self.records, self.authority(), item_id,
             actor=actor, activation=activation, source_run=source_run, command=command, answer=answer,
             principle=principle, context=context, question=question, effect=effect,
-            completed_item=completed_item, retry_run=retry_run)
+            completed_item=completed_item, retry_run=retry_run,
+            publish=getattr(self.repository, 'unit', None) is None)
         self._deliver()
         return decision
 

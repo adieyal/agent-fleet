@@ -12,6 +12,8 @@ from ..domain import JobObservation, Run, Usage
 
 def dispatch_identity(repository: ExecutionRepository, run: Run) -> list[str]:
     """The arguments that let the worker check a request is for this run and its unchanged payload."""
+    if run.kind != 'job':
+        raise ValueError('only fleetd job runs can use worker transport')
     payload = repository.get_action(run.action).payload
     if payload is None:
         raise ValueError("linked run has no dispatch payload")
