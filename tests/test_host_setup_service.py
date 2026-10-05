@@ -42,6 +42,7 @@ def test_install_copies_standalone_worker_and_configures_detected_agents(monkeyp
     assert socket == ('/controller/agent.sock' if local else '')
     assert [options.get('timeout') for _, options in commands] == [None, 60, 20]
     assert commands[0][1] == {'check': True, 'capture_output': True}
+    assert commands[1][1]['check'] is True
 
 
 def test_unlock_uses_interactive_transport_and_quotes_key_path():
