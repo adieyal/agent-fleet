@@ -10,10 +10,28 @@ import json
 
 
 def guide(records, work_item: str | None, payload: dict) -> tuple[dict, dict | None]:
-    """A dispatch payload whose first step opens with the guidance paragraph, and the constitution and charter
-    versions for the action to pin; unchanged with None when the work has no recorded guidance."""
+    """Add each step's work-state handoff and the first step's recorded guidance.
+
+    Return constitution and charter versions for the action to pin, or None without guidance.
+    """
     from datetime import datetime, timezone
     from fleet.modules.execution import decision_applies
+    steps = []
+    for step in payload.get('steps') or []:
+        identity = step.get('work_item') or work_item
+        if identity is not None:
+            handoff = (
+                f"Work-state handoff for {identity}: finish with evidence, remaining work, a next step, "
+                "and a proposed work condition. When implementation is finished but acceptance is pending, "
+                "propose 'ready for review'; name the resume condition for 'waiting', or the required action "
+                "for 'blocked'. The controller must review the report and record the condition and next step "
+                "in its authoritative store. Do not create a worker-local store to record this handoff. "
+                "A successful run never completes work. Completion requires separate acceptance."
+            )
+            step = dict(step, prompt=f"{handoff}\n\n{step['prompt']}")
+        steps.append(step)
+    if steps:
+        payload = dict(payload, steps=steps)
     source = getattr(records, 'decision_source', None)
     if source is not None and work_item is not None:
         boundary = datetime.now(timezone.utc)
@@ -69,6 +87,14 @@ Read state first. Record routine decisions without attention. Rejected writes do
 not change state; explicitly propose changes requiring the user's authority.
 Leave a next step or named condition. A successful run never completes work.
 Completion needs all criteria met and explicit accept authority.
+After reviewing each worker report, record both condition and next_step on the
+work it serves, using the authorized command surface for that scope. Finished
+implementation awaiting acceptance is ready for review. Waiting needs a named
+resume condition; blocked needs the action beyond your authority. Do not leave
+condition unchanged merely because a commit or test result is in next_step.
+If you lack authority on that scope, report the handoff to its authorized owner.
+Progress is derived from accepted milestones or met criteria; without a known
+total it stays unknown. Never invent a percentage from runs, commits or prose.
 '''
 
 
