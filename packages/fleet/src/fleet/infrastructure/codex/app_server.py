@@ -84,7 +84,7 @@ class CodexAppServer:
             if process is None or process.poll() is not None or self.closed:
                 raise FleetError(self.error or "app-server is not running")
             try:
-                process.stdin.write(json.dumps({"jsonrpc": "2.0", **message}) + "\n")
+                process.stdin.write(json.dumps(message) + "\n")
                 process.stdin.flush()
             except (OSError, ValueError) as error:
                 self._fail(f"app-server write failed: {error}")
