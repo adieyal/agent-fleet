@@ -84,6 +84,33 @@ Restarting web leaves observation running. If serve is absent, the deck shows
 “Runtime unavailable” and reconnects automatically. `fleet serve status` prints
 owner PID, uptime, worker health and host stream states.
 
+Serve also owns a persistent `codex app-server` for the page-comment responder.
+It requires `codex` on `PATH` and readable `auth.json` in the launching user's
+`CODEX_HOME`, or `~/.codex` when unset. It creates a lean profile and a separate
+HOME under `$FLEET_HOME/responder`, symlinking the source auth file. The
+`workers.responder` status reports child PID, Codex version, readiness, restart
+errors and last-turn timing and tokens. Missing binary or auth makes the worker
+unhealthy with its cause visible; serve retries with backoff. Startup initializes
+an ephemeral thread without making a model call.
+
+Page-only triage queues use this responder when the confirmed triage mandate
+authorizes `reply_attention` and uses Codex. Each attempt reserves a run-budget
+slot and a pinned activation. Replies become Decisions linked to a stored
+`responder` run with timing and token usage, and leave the thread open. Follow-ups
+reuse the item's app-server thread; after a process restart a fresh thread gets
+the complete conversation. User take-back discards pending replies. A request
+that needs tools, or an unavailable responder, goes to the existing fleetd triage
+path with the reason visible in the page's agent status. That fallback reserves
+its own budget slot; budget exhaustion returns the item to the user. Mixed
+page/job queues keep the fleetd route. `fleet history runs --kind responder`
+and `fleet run show <run-id> --json` expose the local attempts and measurements.
+
+While a responder turn is running, the page shows `Agent typing…` and partial
+reply text. These updates live only in serve memory and use small SSE events,
+throttled to roughly 100 ms, without rebuilding the deck snapshot. The recorded
+reply replaces the partial message. Disconnecting removes partial text;
+reconnecting receives the current transient state. Drafts stay intact.
+
 Use `fleet watch` for a live terminal view. When the job finishes, run
 `fleet result worker:<id>` for its reports or `fleet pull worker:<id> ./results`
 for outbox files. `fleet wait worker:<id>` blocks until it finishes.

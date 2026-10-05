@@ -75,6 +75,24 @@ class LiveWorkspace(LiveProjects, LiveAttention, LiveProjection, LibraryProjecti
         self.workspace.settle()
         return building_document(self, document, registry)
 
+    def set_typing(self, item: str, value: dict | None) -> None:
+        """Transient stream state has its own cursor; never invalidates full snapshots."""
+        with self.changed:
+            if value is None:
+                if item not in self.typing:
+                    return
+                self.typing.pop(item)
+            else:
+                if self.typing.get(item) == value:
+                    return
+                self.typing[item] = value
+            self.typing_seq += 1
+            self.changed.notify_all()
+
+    def typing_update(self) -> dict:
+        with self.changed:
+            return {'typing_sequence': self.typing_seq, 'items': snapshot(self.typing)}
+
     def bump(self) -> None:
         """Push a new document to every browser."""
         with self.changed:
@@ -117,7 +135,7 @@ class LiveWorkspace(LiveProjects, LiveAttention, LiveProjection, LibraryProjecti
             self.changed.notify_all()
 
 
-    def wait_for_change(self, seen_version: int, timeout: float, seen_pipelines: int | None = None) -> int:
+    def wait_for_change(self, seen_version: int, timeout: float, seen_pipelines: int | None = None, seen_typing: int | None = None) -> int:
         """Also wakes when a snooze ends, so the item comes back on every deck without a reload, and when a pipeline
         report arrives if `seen_pipelines` is given (compare `pipeline_seq` to tell)."""
         now = self.attention.clock().timestamp()
@@ -125,7 +143,8 @@ class LiveWorkspace(LiveProjects, LiveAttention, LiveProjection, LibraryProjecti
         wait = timeout if ending is None else max(0.0, min(timeout, ending - now))
         with self.changed:
             self.changed.wait_for(lambda: self.version != seen_version or (
-                seen_pipelines is not None and self.pipeline_seq != seen_pipelines), timeout=wait)
+                seen_pipelines is not None and self.pipeline_seq != seen_pipelines) or (
+                seen_typing is not None and self.typing_seq != seen_typing), timeout=wait)
             if self.version == seen_version and ending is not None and self.attention.clock().timestamp() >= ending:
                 self.woken_until = max(self.woken_until, ending)
                 self.version += 1
@@ -166,6 +185,8 @@ class FleetState(LiveWorkspace):
         self.hosts = hosts
         self.project_labels = project_labels or {}
         self.container = container
+        self.responder = container.responder_worker()
+        self.page_responder = container.page_responder(worker=self.responder)
         self.transport = container.transport()
         self.store = container.store()
         self.observed_runs: dict = {}  # successful job ingestion, including persisted link context
@@ -183,12 +204,16 @@ class FleetState(LiveWorkspace):
         self.records = container.records()
         self.reads = container.live_readers(workspace=self.workspace, attention=self.attention)
         scheduler = container.triage_scheduler(deliver=container.deliver_triage,
-                                               host=lambda name: self.transport.host_by_name(name))
+                                               host=lambda name: self.transport.host_by_name(name),
+                                               responder=self.page_responder.submit)
         self.triage_status = scheduler.status
         self.schedule = scheduler.schedule
         self.woken_until = 0.0
         self.changed = threading.Condition()
         self.version = 0
+        self.typing_seq = 0
+        self.typing = {}
+        self.page_responder.on_typing = self.set_typing
         self.history_cursor = self.store.latest_sequence()
         self.by_host: dict[str, dict[str, Any]] = {
             host.name: {"name": host.name, "ok": False, "error": "connecting…", "jobs": {}, "sessions": {}}
@@ -204,7 +229,7 @@ class FleetState(LiveWorkspace):
                 entry = self.by_host[observed["name"]]
                 entry.update(error=observed["error"], down_since=datetime.fromisoformat(observed["since"]).timestamp())
                 for run in self.execution.runs():
-                    if run.host != observed["name"] or run.status not in ("running", "unknown outcome"):
+                    if run.kind == 'responder' or run.host != observed["name"] or run.status not in ("running", "unknown outcome"):
                         continue
                     value = {"id": run.remote_job_id, "project": run.label, "agent": run.runtime, "cwd": run.cwd,
                              "updated_at": run.last_observed.timestamp() if run.last_observed else None,
@@ -534,6 +559,11 @@ class LiveRuntime:
         self.threads = [self.worker('history-scheduler', state.follow_history, self.stop)]
         self.threads.extend(self.worker('host:' + host.name, follow_host, state, host, self.stop)
                             for host in state.hosts)
+        self.responder = getattr(state, 'responder', None)
+        if self.responder is not None:
+            self.threads.append(self.worker('responder', self.responder.run, self.stop, self.worker_recovered))
+        if getattr(state, 'page_responder', None) is not None:
+            self.threads.append(self.worker('page-responder', state.page_responder.run, self.stop, self.worker_recovered))
 
     def worker(self, name, target, *args):
         def run():
@@ -571,11 +601,23 @@ class LiveRuntime:
         workers = {thread.name: {'alive': thread.is_alive(), 'error': self.errors.get(thread.name),
                                 **self.recoveries.get(thread.name, {})}
                    for thread in self.threads}
-        return {'healthy': all(worker['alive'] and not worker['error'] for worker in workers.values()),
+        if self.responder is not None:
+            # Worker liveness and child liveness are distinct. An initializing or
+            # dead child must never report a healthy responder.
+            worker = workers['responder']
+            worker['worker_alive'] = worker['alive']
+            child = self.responder.health()
+            worker.update(child)
+            worker['error'] = self.errors.get('responder') or child.get('error')
+            worker['alive'] = worker['worker_alive'] and child['alive']
+        return {'healthy': all(worker['alive'] and worker.get('ready', True) and not worker['error']
+                               for worker in workers.values()),
                 'stopping': self.stop.is_set(), 'workers': workers}
 
     def close(self, timeout=5.0) -> None:
         self.stop.set()
+        if self.responder is not None:
+            self.responder.close()
         deadline = time.monotonic() + timeout
         for thread in self.threads:
             if thread.ident is not None:

@@ -16,7 +16,8 @@ from fleet.services.runtime import RuntimeServer, runtime_status
 
 def state_at(path, history=None):
     return SimpleNamespace(container=SimpleNamespace(settings=lambda: {'store_path': path}),
-                           hosts=[], follow_history=history or (lambda stop: stop.wait()))
+                           hosts=[], typing_update=lambda: {'typing_sequence': 0, 'items': {}},
+                           follow_history=history or (lambda stop: stop.wait()))
 
 
 def test_canonical_lock_refuses_other_state_and_other_process(tmp_path):
@@ -87,6 +88,10 @@ def test_snapshot_subscription_offline_health_and_generation(tmp_path):
         assert value['contract_version'] == 1 and value['sequence'] == 37
         assert value['pipelines'] == [{'name': 'build', 'seq': 4}]
         with urlopen(url + '/subscribe', timeout=2) as response:
+            assert response.readline() == b'event: responder\n'
+            typing = json.loads(response.readline().decode().removeprefix('data: '))
+            assert typing['items'] == {} and typing['typing_sequence'] == 0
+            assert response.readline() == b'\n'
             assert response.readline() == b'event: snapshot\n'
             data = json.loads(response.readline().decode().removeprefix('data: '))
             assert data['generation'] == value['generation']
@@ -94,10 +99,13 @@ def test_snapshot_subscription_offline_health_and_generation(tmp_path):
                 server.state.version = 38
                 server.state.pipeline_seq = 5
             deadline = time.monotonic() + 2
+            event = 'snapshot'
             while data['sequence'] != 38:
                 assert time.monotonic() < deadline
                 line = response.readline().decode()
-                if line.startswith('data: '):
+                if line.startswith('event: '):
+                    event = line.removeprefix('event: ').strip()
+                if event == 'snapshot' and line.startswith('data: '):
                     data = json.loads(line.removeprefix('data: '))
             assert data['pipeline_sequence'] == 5
     finally:
@@ -118,10 +126,13 @@ def test_snapshot_subscription_offline_health_and_generation(tmp_path):
 
 
 def test_cli_sigterm_status_and_duplicate_owner(tmp_path):
+    from tests.responder_support import fake_codex
+    binary, auth = fake_codex(tmp_path / 'fake-codex')
     config = tmp_path / 'config.json'
     config.write_text(json.dumps({'hosts': {'offline': {'ssh': None, 'python': '/bin/false'}}}))
     env = dict(os.environ, FLEET_CONFIG=str(config), FLEET_STORE=str(tmp_path / 'fleet.db'),
-               FLEET_HOME=str(tmp_path / 'home'), FLEET_MANAGEMENT=str(tmp_path / 'management'))
+               FLEET_HOME=str(tmp_path / 'home'), FLEET_MANAGEMENT=str(tmp_path / 'management'),
+               CODEX_HOME=str(auth.parent), PATH=str(binary.parent) + os.pathsep + os.environ['PATH'])
     command = [sys.executable, '-m', 'fleet_cli.cli', 'serve']
     process = subprocess.Popen(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
@@ -129,7 +140,10 @@ def test_cli_sigterm_status_and_duplicate_owner(tmp_path):
         while True:
             try:
                 health = runtime_status(tmp_path / 'fleet.db')
-                break
+                if health['workers']['responder'].get('ready'):
+                    break
+                if time.monotonic() > deadline:
+                    pytest.fail(f'responder failed: {health}')
             except FleetError:
                 if process.poll() is not None or time.monotonic() > deadline:
                     pytest.fail(f'serve failed: {process.communicate(timeout=1)}')

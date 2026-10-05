@@ -1,0 +1,34 @@
+model = "gpt-6.1-sol"
+model_reasoning_effort = "low"
+model_instructions_file = "__INSTRUCTIONS_PATH__"
+include_apply_patch_tool = false
+web_search = "disabled"
+include_environment_context = false
+[agents]
+enabled = false
+[skills]
+enabled = false
+[skills.bundled]
+enabled = false
+[features]
+skip_host_skill_discovery = true
+multi_agent = false
+apps = false
+plugins = false
+remote_plugin = false
+browser_use = false
+browser_use_external = false
+in_app_browser = false
+computer_use = false
+image_generation = false
+memories = false
+goals = false
+shell_tool = false
+unified_exec = false
+view_image = false
+sleep_tool = false
+tool_suggest = false
+skill_search = false
+code_mode_host = false
+realtime_conversation = false
+skill_mcp_dependency_install = false

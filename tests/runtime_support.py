@@ -4,11 +4,16 @@ import queue
 import threading
 import time
 from http.server import ThreadingHTTPServer
+from pathlib import Path
 from urllib.request import urlopen
 
+from dependency_injector import providers
 from fleet.container import Container
+from fleet.infrastructure.codex.app_server import CodexAppServer
 from fleet.transport import Host
 from fleet_web.server import make_handler
+
+from tests.responder_support import fake_codex
 
 
 def eventually(predicate, timeout=5):
@@ -24,6 +29,9 @@ def eventually(predicate, timeout=5):
 class RuntimeDeck:
     def __init__(self, monkeypatch):
         self.container = Container()
+        binary, auth = fake_codex(Path(self.container.settings()['home']) / 'fake-codex')
+        self.container.responder_server.override(providers.Factory(
+            CodexAppServer, fleet_home=self.container.settings()['home'], binary=str(binary), auth=auth))
         self.host = Host('worker', None)
         self.events = queue.Queue()
         self.follow_count = 0

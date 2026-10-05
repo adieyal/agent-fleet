@@ -40,7 +40,8 @@ def record_attention(repository: DecisionRepository, clock: Callable[[], datetim
                      authority: 'AuthorityFacade', item_id: str, *, actor: str,
                      activation: str, source_run: str, command: str, answer: str, principle: str,
                      context: str, question: str | None = None, effect: str | None = None,
-                     completed_item: AttentionItem | None = None, retry_run: str | None = None) -> Decision:
+                     completed_item: AttentionItem | None = None, retry_run: str | None = None,
+                     publish: bool = True) -> Decision:
     """Record triage and its local effect together; completed_item audits an already sent remote effect.
 
     If ownership or a refusal batch changed during transport, keep that current state while recording
@@ -114,7 +115,8 @@ def record_attention(repository: DecisionRepository, clock: Callable[[], datetim
         body = json.dumps(asdict(decision), default=str)
         intent = transaction.records.prepare(item.project, f'decisions/{decision.id}.json', body,
                                              key=decision.id, actor=actor, source_run=source_run)
-    records.publish(intent, body)
+    if publish:
+        records.publish(intent, body)
     return decision
 
 

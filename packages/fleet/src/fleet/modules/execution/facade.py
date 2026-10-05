@@ -9,7 +9,7 @@ from .application.answers import answer
 from .application.permissions import grant
 from .application.ports import AnswerSender, ExecutionRepository, GrantSender, InputSender, StepSender
 from .application.dtos import StepRequest
-from .domain import Action, Claim, Delivery, DispatchResult, JobObservation, Run
+from .domain import Action, Claim, Delivery, DispatchResult, JobObservation, Run, Usage
 from .domain.activity import HOST_FRESHNESS_SECONDS, classify_activity
 from fleet.modules.attention import AttentionItem, refusal_violation
 from .application.dispatch import dispatch, require_step_work, retry, resolve_unknown
@@ -250,6 +250,10 @@ class ExecutionFacade:
         return self.repository.activation_run(activation, idempotency_key)
 
     def dispatch(self, work_item: str | None, *, activation: str | None = None, **arguments) -> DispatchResult:
+        if arguments.get('kind') == 'responder':
+            if activation is None or arguments.get('runtime') != 'codex':
+                raise AuthorityRejected('responder runs require a pinned activation and codex runtime')
+            arguments['started_at'] = self.clock()
         if 'authorization' in arguments:
             raise AuthorityRejected('supply an activation ID')
         if activation is not None:
@@ -258,6 +262,8 @@ class ExecutionFacade:
             arguments['authorization'] = self.authority().require('dispatch', work_item,
                 actor=arguments['actor'], activation=activation)
             authorization = arguments['authorization']
+            if arguments.get('kind') == 'responder' and authorization.role != 'triage':
+                raise AuthorityRejected('responder runs require a triage activation')
             if authorization.role == 'triage':
                 mandate = self.authority().triage_mandate(activation)
                 if (arguments.get('project'), arguments.get('host'), arguments.get('runtime'),
@@ -267,6 +273,25 @@ class ExecutionFacade:
         if self.prepare_dispatch is not None:
             self.prepare_dispatch()
         return dispatch(self.repository, work_item, **arguments)
+
+    def finish_responder(self, run_id: str, *, actor: str, status: str, reason: str | None = None,
+                         timings: dict | None = None, usage: Usage | None = None) -> Run:
+        """Finish a local attempt and release its claim within the caller's transaction."""
+        if status not in ('succeeded', 'failed', 'stopped'):
+            raise ValueError('responder completion requires a terminal status')
+        with self.repository.transaction() as transaction:
+            run = transaction.get_run(run_id)
+            action = transaction.get_action(run.action)
+            if run.kind != 'responder' or action.actor != actor:
+                raise AuthorityRejected('actor does not own this responder run')
+            if run.status != 'running':
+                raise ValueError('responder run is no longer running')
+            now = self.clock()
+            updated = replace(run, status=status, reason=reason, end=now,
+                              last_observed=now, timings=timings, usage=usage)
+            transaction.update(updated, actor)
+            transaction.release_claim(run.id, actor)
+            return updated
 
     def deliver(self, run: Run, call: Callable, push: Callable, *, reconcile: bool = False) -> dict:
         return deliver(self.repository, run, call, push, reconcile=reconcile)

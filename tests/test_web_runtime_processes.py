@@ -7,8 +7,9 @@ import sys
 from urllib.request import urlopen
 
 from fleet.container import Container
-from tests.runtime_support import eventually
 
+from tests.responder_support import fake_codex
+from tests.runtime_support import eventually
 
 WORKER = '''import json, os, sys, time
 from pathlib import Path
@@ -45,6 +46,7 @@ else:
 
 
 def test_real_web_and_runtime_process_restarts(tmp_path):
+    binary, auth = fake_codex(tmp_path / 'fake-codex')
     config = tmp_path / 'config.json'
     config.write_text(json.dumps({'hosts': {'worker': {'ssh': None, 'python': sys.executable}}}))
     script = tmp_path / 'fake_fleetd.py'
@@ -56,6 +58,7 @@ def test_real_web_and_runtime_process_restarts(tmp_path):
                FLEET_HOME=str(tmp_path / 'home'), FLEET_MANAGEMENT=str(tmp_path / 'management'),
                FLEET_REMOTE_HOME=str(tmp_path / 'worker-home'), FLEET_FLEETD_PATH=str(script),
                TEST_WORKER_STATUS=str(status), TEST_WORKER_STARTS=str(starts))
+    env.update(CODEX_HOME=str(auth.parent), PATH=str(binary.parent) + os.pathsep + os.environ['PATH'])
     env.pop('FLEET_JOB_ID', None)
     with socket.socket() as reservation:
         reservation.bind(('127.0.0.1', 0))

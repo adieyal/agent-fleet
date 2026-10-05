@@ -17,6 +17,7 @@ from dependency_injector import providers as _providers
 
 from fleet import transport as _transport
 from fleet.infrastructure.answers import send_answer as _send_answer
+from fleet.infrastructure.codex.app_server import CodexAppServer as _CodexAppServer
 from fleet.infrastructure.documents.evidence import (
     FileEvidenceReader as _FileEvidenceReader,
 )
@@ -110,6 +111,8 @@ from fleet.services.live import FleetState as _FleetState
 from fleet.services.subscription import SubscribedState as _SubscribedState
 from fleet.services.runtime import RuntimeServer as _RuntimeServer, runtime_status as _runtime_status
 from fleet.services.live import start_live as _start_live
+from fleet.services.responder import ResponderWorker as _ResponderWorker
+from fleet.services.page_responder import PageResponder as _PageResponder
 from fleet.services.storage import usage as _usage
 from fleet.triage import TriageCommands as _TriageCommands
 from fleet.triage_scheduler import TriageScheduler as _TriageScheduler
@@ -603,7 +606,7 @@ class Container(_containers.DeclarativeContainer):
     controller_commands = _providers.Factory(_ControllerCommands, services)
     triage_commands = _providers.Factory(_TriageCommands, services)
     triage_scheduler = _providers.Factory(_TriageScheduler, services, deliver=None,
-        host=transport.provided.host_by_name)
+        host=transport.provided.host_by_name, responder=None)
     notifications = _providers.Factory(_Notifications)
     attention_items = _providers.Factory(_attention_items, attention=attention)
     building_state = _providers.Factory(_building_state, workspace=workspace)
@@ -647,6 +650,9 @@ class Container(_containers.DeclarativeContainer):
     runtime_server = _providers.Factory(_RuntimeServer)
     runtime_status = _providers.Callable(_runtime_status, store=settings.provided["store_path"])
     live_state = _providers.Factory(_FleetState, container=__self__)
+    responder_server = _providers.Factory(_CodexAppServer, fleet_home=settings.provided['home'])
+    responder_worker = _providers.Factory(_ResponderWorker, factory=responder_server.provider)
+    page_responder = _providers.Factory(_PageResponder, services=services)
     start_live = _providers.Callable(_start_live)
     fixture_data = _providers.Callable(_load_fixture)
     fixture_state = _providers.Factory(_FixtureState, container=__self__)
