@@ -1,10 +1,9 @@
 # Known failures
 
-| Test id | Failing since | Work item | Note |
-| --- | --- | --- | --- |
-| `tests/test_deck_browser.py::test_p2_history_archive_and_offline[chromium-desktop]` (`tests/test_deck_browser.py:2817`) | Verified on `4641086`, 2026-10-05 | `20956ae8-2762-4887-8297-62cbfab21b22` (extraction evidence) | History report tiles count is 0; expected 2. |
-| `tests/test_deck_browser.py::test_p3_work_entrypoint_reads_real_audit[chromium]` (`tests/test_deck_browser.py:3001`) | Verified on `4641086`, 2026-10-05 | `20956ae8-2762-4887-8297-62cbfab21b22` (extraction evidence) | Clicking the first epic card times out. |
-| `tests/test_deck_browser.py::test_triage_policy_room[chromium-desktop]` (`tests/test_deck_browser.py:3025`) | Verified on `4641086`, 2026-10-05 | `20956ae8-2762-4887-8297-62cbfab21b22` (extraction evidence) | Clicking the first epic card times out. |
+No browser test is currently known to fail. The full browser run on main `e29b990` on home (2026-10-05) passed
+388 tests with 1 skipped. The last three rows (epic card clicks and History tiles) were removed: they failed only
+after an earlier P8 failure left help, the library and a guidance draft open on the shared page, and the
+Escape/help fix below removed that cause. The history of earlier failures follows.
 
 The remaining browser failures reproduce on the extraction base `4641086`; they are recorded without changing presentation behavior or assertions. Historical runs reused one page per viewport, so isolation and module-order results differed for the two batch-4 cases. Mutating deck tests now own independent browser contexts; the two batch-4 failures and the departed-report metadata spacing failure have been repaired. For example:
 
