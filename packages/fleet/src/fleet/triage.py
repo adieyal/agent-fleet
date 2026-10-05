@@ -26,12 +26,15 @@ FIELDS = {
 AUTHORITY = {'reply': 'reply_attention', 'resolve': 'resolve_attention', 'decide': 'record_decision'}
 
 
-def triage_prompt(activation: Activation, mandate: TriageMandate, items: list[str]) -> str:
+def triage_prompt(activation: Activation, mandate: TriageMandate, items: list[str], *, pages_only: bool = False) -> str:
+    # The page comment context appended below is the whole thread, so a state read only costs a model turn.
+    first = ('The page comment context below is complete: reply directly, without reading state or skills first; '
+             'call state only if a command is rejected.' if pages_only else 'Read state first.')
     return f'''Act as the triage agent for project {activation.project}.
 Activation: {activation.id}. Pinned mandate version: {activation.mandate_version}.
 Mandate: {json.dumps(asdict(mandate))}
 Queued attention item IDs: {json.dumps(items)}
-Read state first. Use only fleet control {activation.id} COMMAND 'JSON' for controller writes.
+{first} Use only fleet control {activation.id} COMMAND 'JSON' for controller writes.
 Read each item's context and governing constitution/epic charter before acting.
 Commands and JSON fields:
 state: {{}} (returns this project's unresolved agent-owned items with their context)

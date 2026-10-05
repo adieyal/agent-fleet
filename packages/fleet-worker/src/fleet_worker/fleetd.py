@@ -428,6 +428,9 @@ def _runtime_command(job: JsonObject, step: JsonObject, session_id: Optional[str
                    "--verbose", "--permission-mode", job["permission"]]
         if job.get("model"):
             command += ["--model", job["model"]]
+        if job.get("effort"):
+            command += ["--effort", job["effort"]]
+        # No --bare for claude: it would also skip the input hook passed with --settings below.
         if job.get("allowed_tools"):
             command += ["--allowedTools", *job["allowed_tools"]]
         if session_id:
@@ -442,6 +445,10 @@ def _runtime_command(job: JsonObject, step: JsonObject, session_id: Optional[str
                      "workspace-write": ["--sandbox", "workspace-write"],
                      "danger-full-access": ["--dangerously-bypass-approvals-and-sandbox"]}[job["permission"]]
     model_flags = ["--model", job["model"]] if job.get("model") else []
+    if job.get("effort"):
+        model_flags += ["-c", f'model_reasoning_effort="{job["effort"]}"']
+    if job.get("bare"):
+        model_flags += ["--ignore-user-config"]
     writable_directories = [str(JOBS_DIRECTORY / job["id"]), *job.get("add_dirs", [])]
     if session_id:
         # `exec resume` has neither --sandbox nor --add-dir, so the job's sandbox and its job directory
@@ -2259,7 +2266,8 @@ def command_create(arguments: argparse.Namespace) -> None:
     if not steps:
         fail("a job needs at least one step")
     job = {"id": job_id, "project": arguments.project, "description": arguments.description,
-           "agent": arguments.agent, "model": arguments.model, "cwd": cwd, "permission": arguments.permission,
+           "agent": arguments.agent, "model": arguments.model, "effort": arguments.effort, "bare": arguments.bare,
+           "cwd": cwd, "permission": arguments.permission,
            "stop_on_failure": not arguments.keep_going, "created_at": now(), "updated_at": now(),
            "allowed_tools": json.loads(arguments.allowed_tools) if arguments.allowed_tools else [],
            "add_dirs": [os.path.abspath(os.path.expanduser(directory)) for directory in arguments.add_dir],
@@ -2912,6 +2920,9 @@ def main() -> None:
     create.add_argument("--description", required=True)
     create.add_argument("--agent", choices=("claude", "codex"), required=True)
     create.add_argument("--model")
+    create.add_argument("--effort", choices=("low", "medium", "high"), help="reasoning effort for the agent")
+    create.add_argument("--bare", action="store_true",
+                        help="codex: ignore the user's config (skills, plugins, project entries)")
     create.add_argument("--cwd", required=True)
     create.add_argument("--permission")
     create.add_argument("--steps-file", required=True)
