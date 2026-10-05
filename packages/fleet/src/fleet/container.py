@@ -494,8 +494,8 @@ def page_change(container, project, slug, operation, **fields):
         service = _PageService(container.bound_services(unit), container.pages())
         if operation == 'comment':
             return service.comment(project, slug, **fields)
-        if operation == 'answer':
-            return service.answer(project, slug, **fields)
+        if operation in ('answer', 'resolve', 'comment_text'):
+            return getattr(service, operation)(project, slug, **fields)
         raise ValueError('unknown page operation')
 
 

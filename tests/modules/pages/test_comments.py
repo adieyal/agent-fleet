@@ -188,3 +188,26 @@ def test_unresolved_directive_cannot_claim_an_attached_block(comments):
     container, ids, fields = comments
     with pytest.raises(ValueError, match='Cannot anchor unresolved directive: Unknown work item missing-work'):
         comment(container, ids, fields, selector={'type': 'FragmentSelector', 'value': 'missing-record'})
+
+
+def test_compact_comment_preserves_attention_payload_and_resolve_is_page_scoped(comments):
+    container, ids, fields = comments
+    compact = {key: fields[key] for key in ('revision', 'comment_id', 'body', 'selector', 'actor')}
+    result = container.page_change(project=ids['project'], slug='supplier-migration',
+                                   operation='comment_text', owner='agent', **compact)
+    item = container.attention().get(result['id'])
+    assert item.kind == 'decision' and item.owner == 'agent'
+    assert item.page_annotation.body == fields['body']
+    assert item.headline == fields['body']
+    assert item.page_annotation.reason == f'agent must respond to this page comment: {fields["body"]}'
+    assert container.page_change(project=ids['project'], slug='supplier-migration',
+                                 operation='comment_text', owner='agent', **compact)['id'] == result['id']
+    with pytest.raises(ValueError, match='does not belong to this page'):
+        container.page_change(project=ids['project'], slug='another-page', operation='resolve',
+                              item_id=result['id'], actor='user')
+    assert container.attention().get(result['id']).state == 'open'
+    container.page_change(project=ids['project'], slug='supplier-migration', operation='resolve',
+                          item_id=result['id'], actor='user')
+    thread = container.page_view(project=ids['project'], slug='supplier-migration')['threads'][0]
+    assert thread['state'] == 'resolved' and thread['answers'] == []
+    assert container.attention().get(result['id']).resolution_details == 'Resolved from the page margin without an answer.'

@@ -161,10 +161,28 @@ class PageService:
             owner_reason=reason, page_annotation=annotation)
         return dict(id=item.id, state=item.state)
 
-    def answer(self, project, slug, *, item_id, answer, actor):
+    def comment_text(self, project, slug, *, body, owner='user', **fields):
+        if not isinstance(body, str) or not body.strip():
+            raise ValueError('body is required')
+        # Presentation-only shorthand; the immutable attention request remains complete.
+        headline = ' '.join(body.split()[:12])[:240]
+        reason = f'{owner} must respond to this page comment: {headline}'
+        return self.comment(project, slug, body=body, owner=owner,
+                            headline=headline, reason=reason, **fields)
+
+    def resolve(self, project, slug, *, item_id, actor):
+        self.page_item(project, slug, item_id)
+        return asdict(self.services.attention.resolve(item_id, actor=actor,
+                       details='Resolved from the page margin without an answer.'))
+
+    def page_item(self, project, slug, item_id):
         self.pages.path(slug)
         project = self.services.workspace.resolve_project(project)
         item = self.services.attention.get(item_id)
         if item.page_annotation is None or item.page_annotation.page != f'fleet://projects/{project}/pages/{slug}':
             raise ValueError('answer item does not belong to this page')
+        return item
+
+    def answer(self, project, slug, *, item_id, answer, actor):
+        self.page_item(project, slug, item_id)
         return asdict(self.services.decisions.answer(item_id, answer, actor=actor))

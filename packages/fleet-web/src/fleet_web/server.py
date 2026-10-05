@@ -208,7 +208,7 @@ def make_handler(state: Any,
 
         def do_POST(self) -> None:  # noqa: N802 — http.server naming
             path = self.path.split("?", 1)[0]
-            if path.startswith('/api/pages/') and path.rsplit('/', 1)[-1] in ('comments', 'answer'):
+            if path.startswith('/api/pages/') and path.rsplit('/', 1)[-1] in ('comments', 'comment-text', 'answer', 'resolve'):
                 self.page_write(path)
                 return
             action = path.removeprefix("/api/attention/") if path.startswith("/api/attention/") else None
@@ -263,10 +263,14 @@ def make_handler(state: Any,
                 parts = path.strip('/').split('/')
                 if len(parts) != 5 or not isinstance(body, dict):
                     raise ValueError('project, slug and JSON object are required')
-                operation = 'comment' if parts[-1] == 'comments' else 'answer'
+                operation = 'comment' if parts[-1] == 'comments' else parts[-1].replace('-', '_')
                 allowed = ({'revision', 'comment_id', 'headline', 'body', 'selector', 'reason', 'owner', 'parent'}
                            if operation == 'comment' else {'item_id', 'answer'})
-                required = allowed - {'owner', 'parent'} if operation == 'comment' else allowed
+                if operation == 'comment_text':
+                    allowed = {'revision', 'comment_id', 'body', 'selector', 'owner', 'parent'}
+                elif operation == 'resolve':
+                    allowed = {'item_id'}
+                required = allowed - {'owner', 'parent'} if operation in ('comment', 'comment_text') else allowed
                 if body.keys() - allowed or required - body.keys():
                     raise ValueError('unknown or missing page write fields')
                 result = container.page_change(project=unquote(parts[2]), slug=unquote(parts[3]),

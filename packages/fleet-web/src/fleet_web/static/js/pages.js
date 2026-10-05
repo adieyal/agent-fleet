@@ -11,7 +11,7 @@
   const threads = document.getElementById('page-threads');
   const annotators = new Map();
   const unavailable = [];
-  let view = initial, pending = null, connected = true, generation = 0;
+  let view = initial, pending = null, connected = true, generation = 0, activeId = null, selectionDraft = null;
   let canonical = '';
   const offsets = new Map();
   for (const [index, node] of initial.nodes.entries()) {
@@ -38,13 +38,17 @@
     pending = {selector: selection, parent, revision, comment_id: crypto.randomUUID()};
     document.getElementById('comment-anchor').textContent = description;
     document.getElementById('comment-error').textContent = '';
+    if (!Array.isArray(selection) && selection.type === 'FragmentSelector') selectionDraft = null;
     form.reset(); composer.hidden = false;
-    form.elements.headline.focus();
+    document.getElementById('selection-comment').hidden = true;
+    document.body.classList.add('comments-open');
+    composer.style.top = `${Math.max(0, (selectionDraft?.top ?? anchorElement(selection)?.getBoundingClientRect().top ?? 100) - document.getElementById('page-content').getBoundingClientRect().top)}px`;
+    form.elements.body.focus(); layoutThreads();
   }
   function cancel() {
-    composer.hidden = true; pending = null;
+    composer.hidden = true; pending = null; selectionDraft = null; document.body.classList.remove('comments-open');
     for (const {anno} of annotators.values()) anno.cancelSelected();
-    renderHighlights();
+    renderHighlights(); layoutThreads();
   }
   document.getElementById('cancel-comment').addEventListener('click', cancel);
 
@@ -62,10 +66,8 @@
     if (!pending) return;
     const submit = form.querySelector('[type=submit]'); submit.disabled = true;
     try {
-      await post('comments', {...pending, headline: form.elements.headline.value,
-        body: form.elements.body.value, owner: form.elements.owner.value, reason: form.elements.reason.value});
+      await post('comment-text', {...pending, body: form.elements.body.value, owner: form.elements.owner.value});
       cancel(); await refresh(true);
-      threads.lastElementChild?.scrollIntoView({block: 'nearest'});
     } catch (error) { document.getElementById('comment-error').textContent = error.message; }
     finally { submit.disabled = false; }
   });
@@ -92,9 +94,14 @@
     if (!exact || chars.slice(start, end).join('') !== exact) {
       status.textContent = 'Select text without leading or trailing whitespace inside one prose block.'; return;
     }
-    showComposer([{type: 'TextQuoteSelector', exact,
+    const selector = [{type: 'TextQuoteSelector', exact,
       prefix: chars.slice(Math.max(0, start - 40), start).join(''), suffix: chars.slice(end, end + 40).join('')},
-      {type: 'TextPositionSelector', start, end}], `Selected: “${exact}”`);
+      {type: 'TextPositionSelector', start, end}];
+    const rect = range.getBoundingClientRect();
+    selectionDraft = {selector, description: `Selected: “${exact}”`, top: rect.top};
+    const trigger = document.getElementById('selection-comment');
+    trigger.style.left = `${Math.min(innerWidth - 46, rect.right + 8)}px`;
+    trigger.style.top = `${Math.max(8, rect.top - 4)}px`; trigger.hidden = false;
   }
 
   // Map canonical code point offsets back to DOM UTF-16 offsets for Recogito's highlighting.
@@ -126,41 +133,149 @@
       anno.setAnnotations(annotations);
     }
   }
+  function anchorElement(selector) {
+    const entries = Array.isArray(selector) ? selector : [selector];
+    if (entries[0]?.type === 'FragmentSelector') return document.getElementById(entries[0].value);
+    return null;
+  }
+  function anchorFor(thread) {
+    if (thread.attachment.state !== 'attached') return null;
+    if (thread.attachment.block) return document.getElementById(thread.attachment.block);
+    return document.querySelector(`[data-prose-node="${thread.attachment.node}"] .r6o-annotation[data-annotation="${thread.id}"]`)
+      || document.querySelector(`[data-prose-node="${thread.attachment.node}"]`);
+  }
+  function focusThread(id, moveFocus = true, open = true) {
+    activeId = id;
+    for (const card of threads.querySelectorAll('.thread')) card.classList.toggle('active', card.dataset.attentionId === id);
+    for (const el of document.querySelectorAll('.anchor-active')) el.classList.remove('anchor-active');
+    const thread = view.threads.find(t => t.id === id);
+    if (thread) anchorFor(thread)?.classList.add('anchor-active');
+    document.querySelectorAll('.r6o-annotation').forEach(el => el.classList.toggle('annotation-active', el.dataset.annotation === id));
+    for (const item of view.threads) {
+      const sameAnchor = item.attachment.state !== 'attached' && thread.attachment.state !== 'attached' ||
+        item.attachment.state === 'attached' && thread.attachment.state === 'attached' &&
+        (item.attachment.block ? item.attachment.block === thread.attachment.block : item.attachment.node === thread.attachment.node);
+      document.getElementById(`thread-${item.id}`).classList.toggle('sheet-visible', sameAnchor);
+    }
+    if (open) document.body.classList.add('comments-open');
+    if (moveFocus) document.getElementById(`thread-${id}`)?.focus({preventScroll: true});
+  }
+  function relative(value) {
+    const minutes = Math.max(0, Math.floor((Date.now() - Date.parse(value)) / 60000));
+    return minutes < 1 ? 'now' : minutes < 60 ? `${minutes}m ago` : minutes < 1440 ? `${Math.floor(minutes / 60)}h ago` : `${Math.floor(minutes / 1440)}d ago`;
+  }
+  function layoutThreads() {
+    const origin = document.getElementById('page-content').getBoundingClientRect().top;
+    let bottom = 0;
+    const ordered = [...view.threads].sort((a, b) => {
+      const ay = anchorFor(a)?.getBoundingClientRect().top ?? Infinity;
+      const by = anchorFor(b)?.getBoundingClientRect().top ?? Infinity;
+      return ay - by;
+    });
+    let detached = false;
+    for (const thread of ordered) {
+      const card = document.getElementById(`thread-${thread.id}`), anchor = anchorFor(thread);
+      if (!anchor && !detached) {
+        detached = true;
+        let heading = threads.querySelector('.detached-heading');
+        if (!heading) { heading = element('div', 'Detached', 'detached-heading'); threads.append(heading); }
+        bottom = Math.max(bottom, document.getElementById('page-content').offsetHeight);
+        heading.style.top = `${bottom}px`; bottom += 28;
+      }
+      const top = Math.max(bottom, anchor ? anchor.getBoundingClientRect().top - origin : bottom);
+      let placed = top;
+      if (!composer.hidden) {
+        const composerTop = parseFloat(composer.style.top) || 0;
+        if (placed < composerTop + composer.offsetHeight + 12 && placed + card.offsetHeight > composerTop)
+          placed = composerTop + composer.offsetHeight + 12;
+      }
+      card.style.top = `${placed}px`; bottom = placed + card.offsetHeight + 12;
+    }
+    if (!detached) threads.querySelector('.detached-heading')?.remove();
+    threads.style.height = `${bottom}px`;
+  }
+  function renderBadges() {
+    document.querySelectorAll('.anchor-badge').forEach(el => el.remove());
+    const groups = new Map();
+    for (const thread of view.threads) {
+      const anchor = thread.attachment.block ? anchorFor(thread) : document.querySelector(`[data-prose-node="${thread.attachment.node}"]`);
+      if (!anchor || thread.attachment.state !== 'attached') continue;
+      if (!groups.has(anchor)) groups.set(anchor, []);
+      groups.get(anchor).push(thread);
+    }
+    document.getElementById('detached-badge')?.remove();
+    const detached = view.threads.filter(t => t.attachment.state !== 'attached');
+    if (detached.length) {
+      const badge = button(`Detached (${detached.length})`, () => focusThread(detached[0].id));
+      badge.id = 'detached-badge'; badge.className = 'detached-badge'; document.getElementById('page-content').append(badge);
+    }
+    for (const [anchor, group] of groups) {
+      const badge = button(String(group.length), () => focusThread(group[0].id));
+      badge.className = 'anchor-badge'; badge.setAttribute('aria-label', `${group.length} comments`);
+      anchor.parentElement.style.position = 'relative'; anchor.insertAdjacentElement('afterend', badge); badge.style.top = `${anchorFor(group[0]).getBoundingClientRect().top - anchor.parentElement.getBoundingClientRect().top}px`;
+    }
+  }
   function renderThreads() {
-    const empty = threads.querySelector('[data-empty]');
-    if (!view.threads.length && !empty) {
-      const el = element('p', 'No comments on this page.'); el.dataset.empty = ''; threads.append(el);
-    } else if (view.threads.length) empty?.remove();
     for (const thread of view.threads) {
       let card = document.getElementById(`thread-${thread.id}`);
       if (!card) {
         card = element('section', undefined, 'thread'); card.id = `thread-${thread.id}`;
-        card.dataset.attentionId = thread.id;
-        card.append(element('h3', thread.headline), element('p', thread.annotation.body));
-        const meta = element('p', '', 'meta'); meta.dataset.meta = ''; card.append(meta);
-        const anchor = element('p', '', 'meta'); anchor.dataset.anchor = ''; card.append(anchor);
-        const answers = element('div'); answers.dataset.answers = ''; card.append(answers);
+        card.dataset.attentionId = thread.id; card.tabIndex = -1;
+        const top = element('div', undefined, 'thread-top');
+        top.append(element('strong', thread.annotation.creator));
+        const time = element('time'); time.dataset.time = ''; time.title = thread.created; top.append(time);
+        const toggle = button('Resolved · Show', () => {
+          card.classList.toggle('expanded');
+          toggle.textContent = card.classList.contains('expanded') ? 'Resolved · Hide' : 'Resolved · Show';
+          layoutThreads();
+        });
+        toggle.dataset.toggle = ''; top.append(toggle); card.append(top);
+        const body = element('div', undefined, 'thread-body');
+        body.append(element('p', thread.annotation.body));
+        const anchor = element('p', '', 'meta'); anchor.dataset.anchor = ''; body.append(anchor);
+        const answers = element('div'); answers.dataset.answers = ''; body.append(answers);
         const reply = element('form'); reply.dataset.reply = '';
-        const label = element('label', 'Answer');
-        const field = element('textarea'); field.name = 'answer'; field.required = true; label.append(field);
-        const submit = element('button', 'Answer and resolve'); submit.type = 'submit';
+        const field = element('textarea'); field.name = 'answer'; field.required = true;
+        field.placeholder = 'Reply…'; field.setAttribute('aria-label', 'Reply');
+        const actions = element('div', undefined, 'reply-actions');
+        const submit = element('button', 'Reply and resolve'); submit.type = 'submit'; actions.append(submit);
         const error = element('p'); error.setAttribute('role', 'alert');
-        reply.append(label, submit, error);
+        reply.append(field, actions, error);
         reply.addEventListener('submit', async event => {
           event.preventDefault(); submit.disabled = true;
-          try { await post('answer', {item_id: thread.id, answer: field.value}); field.value = ''; await refresh(true); }
-          catch (failure) { error.textContent = failure.message; }
+          const current = view.threads.find(t => t.id === thread.id);
+          try {
+            if (current.state === 'resolved') {
+              await post('comment-text', {revision: current.annotation.revision, comment_id: crypto.randomUUID(),
+                selector: current.annotation.selector, parent: current.id, body: field.value, owner: current.owner});
+            } else await post('answer', {item_id: thread.id, answer: field.value});
+            field.value = ''; card.classList.add('expanded'); await refresh(true);
+          } catch (failure) { error.textContent = failure.message; }
           finally { submit.disabled = false; }
         });
-        card.append(reply, button('Follow up', () => showComposer(thread.annotation.selector,
-          `Follow-up to: ${thread.headline}`, thread.id, thread.annotation.revision)));
+        const resolve = button('Resolve', async () => {
+          resolve.disabled = true;
+          try { await post('resolve', {item_id: thread.id}); await refresh(true); }
+          catch (failure) { error.textContent = failure.message; }
+          finally { resolve.disabled = false; }
+        });
+        resolve.dataset.resolve = ''; resolve.title = 'Resolve this request without adding an answer';
+        body.append(reply, resolve); card.append(body);
+        card.addEventListener('click', () => focusThread(thread.id, false));
+        card.addEventListener('focusin', () => focusThread(thread.id, false));
         threads.append(card);
       }
-      card.querySelector('[data-meta]').textContent = `${thread.owner} · ${thread.state} · ${thread.annotation.creator}`;
+      card.querySelector('[data-time]').textContent = relative(thread.created);
+      card.classList.toggle('resolved', thread.state === 'resolved');
+      card.querySelector('[data-toggle]').hidden = thread.state !== 'resolved';
+      card.querySelector('[data-toggle]').textContent = card.classList.contains('expanded') ? 'Resolved · Hide' : 'Resolved · Show';
+      card.querySelector('[data-resolve]').hidden = thread.state === 'resolved';
+      const submit = card.querySelector('[type=submit]');
+      submit.textContent = thread.state === 'resolved' ? 'Reply as follow-up' : 'Reply and resolve';
       const anchor = card.querySelector('[data-anchor]');
-      anchor.textContent = thread.attachment.reason || (thread.attachment.block ? `Block: ${thread.attachment.block}` : 'Attached to selected prose');
+      anchor.textContent = thread.attachment.reason || '';
       anchor.classList.toggle('detached', thread.attachment.state !== 'attached');
-      if (thread.attachment.state !== 'attached' && !anchor.querySelector('a')) {
+      if (thread.attachment.state !== 'attached') {
         const link = element('a', ' Open creation revision');
         link.href = `/pages/${encodeURIComponent(initial.project)}/${encodeURIComponent(initial.slug)}?revision=${encodeURIComponent(thread.annotation.revision)}`;
         anchor.append(link);
@@ -169,15 +284,23 @@
       for (const answer of thread.answers) {
         if (!answers.querySelector(`[data-decision-id="${CSS.escape(answer.id)}"]`)) {
           const item = element('div', undefined, 'answer'); item.dataset.decisionId = answer.id;
-          item.append(element('p', answer.answer), element('p', `${answer.actor} · ${answer.time}`, 'meta')); answers.append(item);
+          item.append(element('strong', answer.actor), element('p', answer.answer), element('time', relative(answer.time), 'meta'));
+          answers.append(item);
         }
       }
-      card.querySelector('[data-reply]').hidden = thread.state === 'resolved';
       if (thread.annotation.parent && !card.querySelector('[data-parent]')) {
-        const link = element('a', 'Parent comment'); link.dataset.parent = ''; link.href = `#thread-${thread.annotation.parent}`; card.append(link);
+        const link = element('a', 'Parent comment'); link.dataset.parent = ''; link.href = `#thread-${thread.annotation.parent}`;
+        link.addEventListener('click', () => focusThread(thread.annotation.parent)); card.querySelector('.thread-body').append(link);
       }
     }
-    renderHighlights();
+    renderHighlights(); renderBadges();
+    if (activeId) focusThread(activeId, false, false);
+    layoutThreads();
+    // Recogito paints its span layer on the next frame. Align to that exact quote.
+    requestAnimationFrame(() => {
+      layoutThreads();
+      document.querySelectorAll('.r6o-annotation').forEach(el => el.classList.toggle('annotation-active', el.dataset.annotation === activeId));
+    });
   }
 
   async function refresh(force = false) {
@@ -189,7 +312,7 @@
       if (!response.ok) throw new Error(next.error);
       if (request !== generation) return;
       connected = true;
-      status.textContent = unavailable.length ? `Commenting unavailable for prose blocks ${unavailable.join(', ')}: rendered text differs from canonical text.` : next.historical ? 'Page changed: reload for current prose. Comments refer to the displayed revision.' : 'Select prose to comment, or use Comment on block.';
+      status.textContent = unavailable.length ? `Commenting unavailable for prose blocks ${unavailable.join(', ')}: rendered text differs from canonical text.` : next.historical ? 'Page changed: reload for current prose. Comments refer to the displayed revision.' : '';
       if (force || next.state_version !== view.state_version) {
         for (const [index, html] of Object.entries(next.directive_html)) {
           const wrapper = document.querySelector(`[data-directive-node="${index}"]`);
@@ -216,10 +339,21 @@
     anno.on('createAnnotation', annotation => selected(annotation, container, index));
     anno.on('selectionChanged', selection => {
       const id = selection[0]?.id;
-      if (id && document.getElementById(`thread-${id}`)) document.getElementById(`thread-${id}`).scrollIntoView({block: 'nearest'});
+      if (id && document.getElementById(`thread-${id}`)) focusThread(id);
     });
     annotators.set(index, {anno, container});
   }
+  document.getElementById('selection-comment').addEventListener('click', () => {
+    if (selectionDraft) showComposer(selectionDraft.selector, selectionDraft.description);
+  });
+  document.getElementById('selection-comment').addEventListener('mousedown', event => event.preventDefault());
+  document.getElementById('close-threads').addEventListener('click', () => { cancel(); document.body.classList.remove('comments-open'); });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { cancel(); document.getElementById('selection-comment').hidden = true; }
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !composer.hidden) { event.preventDefault(); form.requestSubmit(); }
+  });
+  addEventListener('resize', layoutThreads);
+  const observer = new ResizeObserver(layoutThreads); observer.observe(threads); observer.observe(composer);
   renderThreads();
   const stream = new EventSource('/api/stream');
   let seenVersion = null;
