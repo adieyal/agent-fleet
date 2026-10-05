@@ -10,7 +10,8 @@ from . import Repository, WorkspaceState
 from ..domain.projects import Registry
 from ..domain.records import Focus, Shuttered, WorkspaceSnapshot, ProjectReference, Placement, MergeResult
 from ..domain.choices import Choices, NotShuttered, AlreadyHoused
-from ..domain.building import capacity_of
+from ..domain.building import capacity_of, NoVacancy
+from ..domain.placement import floor_warning
 
 T = TypeVar("T")
 
@@ -124,7 +125,10 @@ class WorkspaceApplication:
                 floor = state.choices.floors.get(project_id)
                 if floor is not None and floor <= state.capacity:
                     raise NotShuttered(f"{project_id} already has floor {floor}")
-            self._make_room(state, shutter)
+            try:
+                self._make_room(state, shutter)
+            except NoVacancy as error:
+                raise NoVacancy(f"{error}\n{floor_warning(state.snapshot(), project_id)}") from error
             if project_id in state.choices.shuttered:
                 return Placement(project_id, state.choices.restore(project_id, state.capacity))
             return Placement(project_id, state.choices.house(project_id, state.capacity))

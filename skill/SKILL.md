@@ -184,6 +184,25 @@ access to the real `~/.config/fleet` store and config before opening them.
 
 ## Persisted work reads
 
+After collecting a worker result, review its evidence and record the work state
+on the controller, not in a worker-local store. Update both condition and next
+step for each work item served by the job's steps. For example, implementation
+that passed its tests but still needs acceptance is ready for review:
+
+```sh
+fleet work set ITEM --condition 'ready for review' --next-step 'Review the report and accept the implementation' --actor codex
+```
+
+Waiting requires `--resume-condition`; blocked names the action needed beyond
+the agent's authority. A commit or a successful run does not accept work.
+Meet criteria with their required evidence and verification authority, then
+record complete only with acceptance authority. An activated orchestrator uses
+`fleet control ACTIVATION progress` within its mandate. Otherwise hand the
+recommendation to the authorized owner. Leave user-accepted criteria to the user.
+Read status again after recording. Progress counts accepted direct milestones
+or met criteria and remains unknown when neither supplies a total; never infer
+completion or a percentage from reports, commits or run status.
+
 `fleet work show ID_OR_PREFIX [--json]` reads work details, ancestors and linked records.
 `fleet status PROJECT [--item ID_OR_PREFIX] [--depth N] [--open] [--json]` scopes the work tree; depth 0 shows only roots. Incomplete descendants of complete items remain visible with `--open`. Item scopes exclude unlinked attention.
 `fleet attention list` includes open, acknowledged and snoozed items. Use `--all` when inspecting resolved history, or `--state resolved` for only resolved records.

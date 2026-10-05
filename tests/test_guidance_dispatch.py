@@ -114,14 +114,30 @@ def test_constitution_only_when_no_epic_has_a_charter(tmp_path, tree, worker):
 
 
 @pytest.mark.parametrize("registered", [False, True])
-def test_unguided_project_dispatches_as_before(tmp_path, tree, worker, capsys, registered):
+def test_unguided_project_still_receives_work_state_handoff(tmp_path, tree, worker, capsys, registered):
     if registered:
         register(tmp_path, tree.project)
     dispatch(tree.task.id)
-    assert worker.pushes == [] and worker.prompts() == ["Ship it"] and action_guidance() is None
+    assert worker.pushes == [] and action_guidance() is None
+    prompt, = worker.prompts()
+    assert f"Work-state handoff for {tree.task.id}" in prompt
+    assert "ready for review" in prompt and "controller" in prompt
+    assert "A successful run never completes work" in prompt
+    assert prompt.endswith("\n\nShip it")
     capsys.readouterr()
     cli.main(["status", tree.project])
     assert "Guidance: none attached" in capsys.readouterr().out
+
+
+def test_handoff_names_each_steps_work_without_changing_unlinked_jobs():
+    from fleet.orchestration import guide
+    records = SimpleNamespace(dispatch_guidance=lambda identity: None)
+    payload = {"steps": [{"prompt": "First"}, {"prompt": "Second", "work_item": "milestone"}]}
+    guided, _ = guide(records, "epic", payload)
+    assert "Work-state handoff for epic" in guided["steps"][0]["prompt"]
+    assert "Work-state handoff for milestone" in guided["steps"][1]["prompt"]
+    assert payload["steps"][0]["prompt"] == "First"
+    assert guide(records, None, {"steps": [{"prompt": "Unlinked"}]})[0] == {"steps": [{"prompt": "Unlinked"}]}
 
 
 def test_send_with_context_adds_guidance_and_refuses_a_name_clash(tmp_path, tree, worker, capsys):
