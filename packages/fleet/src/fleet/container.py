@@ -70,6 +70,8 @@ from fleet.modules.decisions import DecisionsFacade as _DecisionsFacade
 from fleet.modules.execution import ExecutionFacade as _ExecutionFacade
 from fleet.modules.library import LibraryFacade as _LibraryFacade
 from fleet.modules.records import RecordsFacade as _RecordsFacade
+from fleet.modules.pages import PagesFacade as _PagesFacade
+from fleet.services.pages import PageService as _PageService
 from fleet.modules.work import WorkFacade as _WorkFacade
 from fleet.modules.workspace import WorkspaceFacade as _WorkspaceFacade
 from fleet.orchestration import ControllerCommands as _ControllerCommands
@@ -480,6 +482,13 @@ def make_live_readers(container, workspace: _WorkspaceFacade, attention: _Attent
                         overview=container.overview())
 
 
+def page_query(container, project, slug=None, revision=None):
+    with container.unit_of_work() as unit:
+        services = container.bound_services(unit)
+        service = _PageService(services, container.pages())
+        return service.index(project) if slug is None else service.read(project, slug, revision)
+
+
 class Container(_containers.DeclarativeContainer):
     resolve_prefix = _providers.Callable(_resolve_prefix)
     validate_paths = _providers.Callable(_validate_paths)
@@ -545,6 +554,8 @@ class Container(_containers.DeclarativeContainer):
     authority = _providers.ThreadSafeSingleton(_AuthorityFacade, _authority_repository,
         records, work, decisions, attention, execution)
     library = _providers.ThreadSafeSingleton(_LibraryFacade, _library_repository, work)
+    pages = _providers.ThreadSafeSingleton(_PagesFacade)
+    page_view = _providers.Callable(page_query, __self__)
     references = _providers.Factory(_make_references, __self__)
     context = _providers.Factory(_make_context, __self__)
     jobs = _providers.Factory(_make_jobs, __self__)

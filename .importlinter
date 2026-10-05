@@ -235,3 +235,9 @@ name = Worker access through transport
 type = protected
 protected_modules = fleet_worker
 allowed_importers = fleet.transport
+
+[importlinter:contract:pages-public]
+name = Pages public surface
+type = protected
+protected_modules = fleet.modules.pages.*
+allowed_importers = fleet.modules.pages

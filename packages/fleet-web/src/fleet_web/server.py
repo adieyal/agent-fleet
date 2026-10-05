@@ -37,6 +37,7 @@ from fleet_web.documents import (
     render_document,
     render_markdown,
 )
+from fleet_web.pages import page_document, page_index
 from fleet_web.fixture import FixtureLibrary
 from fleet_web.library import ProjectLibrary
 from fleet_web.resources import build_id as resource_build_id
@@ -97,7 +98,9 @@ def make_handler(state: Any,
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802 — http.server naming
             path = self.path.split("?", 1)[0]
-            if path == "/api/stream":
+            if path.startswith("/pages/") or path.startswith("/api/pages/") or path == "/api/pages":
+                self.pages_view(path)
+            elif path == "/api/stream":
                 self.stream()
             elif path == "/api/history/runs" or path.startswith("/api/runs/"):
                 self.run_history(path)
@@ -237,6 +240,32 @@ def make_handler(state: Any,
                     self.storehouse(path.removeprefix("/api/"), body)
                 else:
                     self.focus(body)
+
+        def pages_view(self, path: str) -> None:
+            query = parse_qs(urlsplit(self.path).query)
+            api = path.startswith('/api/')
+            parts = path.removeprefix('/api').strip('/').split('/')
+            if path == '/api/pages':
+                parts = ['pages', query.get('project', [''])[0]]
+            if len(parts) not in (2, 3) or not parts[1]:
+                self.error(400, 'project and optional page slug are required')
+                return
+            try:
+                view = container.page_view(project=unquote(parts[1]),
+                    slug=unquote(parts[2]) if len(parts) == 3 else None,
+                    revision=query.get('revision', [None])[0])
+            except LookupError as error:
+                self.error(404, str(error))
+                return
+            except (ValueError, FleetError) as error:
+                self.error(400, str(error))
+                return
+            if api:
+                self.respond(200, 'application/json', json.dumps(view, default=str).encode())
+            else:
+                html = page_document(view) if len(parts) == 3 else page_index(view)
+                self.respond(200, 'text/html; charset=utf-8', html.encode(), headers={
+                    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'"})
 
         def same_origin(self) -> bool:
             """Browsers send Origin on every POST; a page from another site must not change anything."""

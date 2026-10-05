@@ -16,6 +16,7 @@ from fleet.modules.attention import (
 )
 from fleet.modules.execution import Run
 from fleet.modules.records import GuidanceConflict
+from fleet.modules.pages import PageInvalid as PageInvalid, PageNode as PageNode, PageNotFound as PageNotFound
 from fleet.modules.work import (
     CONDITIONS,
     KINDS,
@@ -96,6 +97,9 @@ __all__ = [
     "DocumentAccessDenied",
     "FleetError",
     "GuidanceConflict",
+    "PageInvalid",
+    "PageNotFound",
+    "PageNode",
     "Host",
     "HostReport",
     "ItemResolved",

@@ -1,5 +1,7 @@
 """Records metadata; narrative bodies never enter the store."""
 
+from __future__ import annotations
+
 import json
 
 from .repository import Repository
@@ -15,6 +17,11 @@ class RecordsRepository(Repository):
     def current(self, project: str, path: str) -> dict | None:
         rows = self.rows('SELECT record FROM records_document WHERE project = ? AND path = ?', (project, path))
         return json.loads(rows[0]['record']) if rows else None
+
+    def documents(self, project: str, prefix: str) -> list[dict]:
+        return [json.loads(row['record']) for row in self.rows(
+            'SELECT record FROM records_document WHERE project = ? ORDER BY path', (project,))
+            if json.loads(row['record'])['path'].startswith(prefix)]
 
     def save(self, record: dict) -> None:
         with self.transaction() as repository:

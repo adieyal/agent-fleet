@@ -68,6 +68,16 @@ class RecordsFacade:
             return None
         return self.writer.read(self.workspace.management_repository(project), path, revision or record['revision'])
 
+    def document(self, project: str, path: str) -> dict | None:
+        return self.repository.current(project, path)
+
+    def documents(self, project: str, *, prefix: str = '') -> list[dict]:
+        return self.repository.documents(project, prefix)
+
+    def revisions(self, project: str, path: str) -> set[str]:
+        return {intent['revision'] for intent in self.intents()
+                if intent['project'] == project and intent['path'] == path and intent['state'] == 'confirmed'}
+
     def write_summary(self, summary, project: str, *, actor: str, source_run: str | None = None) -> None:
         result = self.write(project, f'summaries/{summary.id}.json', json.dumps(asdict(summary), default=str),
                             key=str(uuid4()), actor=actor, source_run=source_run)
