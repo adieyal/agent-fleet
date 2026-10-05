@@ -6,6 +6,13 @@
   const normalize = s => s.replace(space, ' ').replace(/^ | $/g, '');
   const points = s => Array.from(s);
   const status = document.getElementById('page-connection');
+  const indicator = document.getElementById('page-live');
+  // Always-visible connection state; the status line only carries what needs action.
+  function live(state, label, detail = '') {
+    indicator.dataset.state = state;
+    indicator.lastElementChild.textContent = label;
+    indicator.title = detail || label;
+  }
   const composer = document.getElementById('comment-composer');
   const form = document.getElementById('comment-form');
   const threads = document.getElementById('page-threads');
@@ -341,6 +348,9 @@
         ? 'Runtime worker failed — check fleet serve status. Drafts are kept.'
         : runtime?.connection === 'reconnected'
         ? `Runtime reconnected — live updates resumed. ${instruction}`.trim() : instruction;
+      if (runtime && !runtime.available) live('offline', 'Runtime unavailable', runtime.error || '');
+      else if (runtime && !runtime.healthy) live('degraded', 'Degraded', 'A fleet serve worker failed; see fleet serve status');
+      else live('live', 'Live', `Updated ${new Date().toLocaleTimeString()}`);
       if (force || next.state_version !== view.state_version) {
         for (const [index, html] of Object.entries(next.directive_html)) {
           const wrapper = document.querySelector(`[data-directive-node="${index}"]`);
@@ -354,6 +364,7 @@
     } catch (error) {
       if (request !== generation) return;
       connected = false; status.textContent = `Disconnected: ${error.message}. Drafts are kept; refresh before submitting.`;
+      live('offline', 'Disconnected', error.message);
     }
   }
   for (const container of document.querySelectorAll('[data-prose-node]')) {
@@ -389,7 +400,8 @@
   stream.addEventListener('state', event => {
     const {version, runtime} = JSON.parse(event.data);
     if (!Number.isInteger(version)) {
-      connected = false; status.textContent = 'Live state version missing: refresh before submitting.'; return;
+      connected = false; status.textContent = 'Live state version missing: refresh before submitting.';
+      live('offline', 'Disconnected', 'Live state version missing'); return;
     }
     if (seenVersion === null || version !== seenVersion || runtime?.generation !== seenGeneration) {
       seenVersion = version; seenGeneration = runtime?.generation; refresh(true);
@@ -397,6 +409,7 @@
   });
   stream.addEventListener('error', () => {
     connected = false; status.textContent = 'Disconnected: drafts are kept; reconnect before submitting.';
+    live('offline', 'Disconnected', 'Live stream lost; reconnecting');
   });
   // Reconcile time-window values between state events as well.
   const timer = setInterval(() => refresh(true), 2000);

@@ -51,6 +51,10 @@ header{padding-bottom:8px;margin-bottom:22px;border:0}
 #selection-comment{position:fixed;z-index:10;border-radius:50%;box-shadow:0 2px 10px #0005}
 button:focus-visible,a:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid #a8decc;outline-offset:3px}
 #page-connection:empty{display:none}
+#page-live{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:#a7b5af;white-space:nowrap}
+#page-live i{width:8px;height:8px;border-radius:50%;background:#6b7a75}
+#page-live[data-state=live] i{background:#5fbf8a}#page-live[data-state=degraded] i{background:#d8b778}
+#page-live[data-state=offline] i{background:#e0605a}#page-live[data-state=offline]{color:#f0a19c}
 .anchor-badge{position:absolute;right:-24px;font-size:11px;padding:1px 5px;border-radius:12px}
 .anchor-active{outline:1px solid #a8decc;outline-offset:3px}
 #page-snapshot{margin-top:28px;font-size:11px}
@@ -141,7 +145,8 @@ def directive_html(node):
 
 def page_document(view):
     body = f'<nav><a href="/">Fleet</a><a href="/pages/{text(view["project"])}">Project pages</a></nav>'
-    body += f'<header><p class="meta page-address">{text(view["address"])} · revision <code>{text(view["revision"])}</code></p>'
+    body += f'<header><p class="meta page-address">{text(view["address"])} · revision <code>{text(view["revision"])}</code>'
+    body += ' · <span id="page-live" data-state="connecting"><i aria-hidden="true"></i><span>Connecting</span></span></p>'
     if view['historical']:
         body += '<p>Historical prose · directive values show current records.</p>'
     body += '</header>'
