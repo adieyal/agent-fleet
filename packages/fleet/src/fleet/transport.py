@@ -10,13 +10,14 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from importlib.resources import files
 from pathlib import Path
 from typing import Any, Callable
 
 from fleet.errors import FleetError
 
 REMOTE_FLEETD_PATH = "~/.local/share/fleet/fleetd.py"
-LOCAL_FLEETD_SOURCE = Path(__file__).parent / "remote" / "fleetd.py"
+LOCAL_FLEETD_SOURCE = files("fleet.remote").joinpath("fleetd.py")
 SSH_OPTIONS = [
     "-o", "BatchMode=yes",
     "-o", "ConnectTimeout=6",

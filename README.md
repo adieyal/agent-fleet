@@ -483,10 +483,39 @@ setup runs `ssh-agent -D -a %t/fleet-ssh-agent.sock` as
 
 ## Development
 
+The root `pyproject.toml` is a non-built uv workspace; each distribution has its
+own Hatchling project and src package:
+
+```text
+packages/fleet/src/fleet/          # library, container, adapters, standalone fleetd
+packages/fleet-cli/src/fleet_cli/  # terminal entrypoint and metadata plugin loader
+packages/fleet-web/src/fleet_web/  # HTTP entrypoint, rendering and static/ assets
+```
+
+`fleet` imports neither presentation package. `fleet_cli` and `fleet_web` do not
+import each other; the web distribution registers a `fleet.commands` entry point.
+The container owns infrastructure construction. Tests remain at the root.
+
+To upgrade a tool installation from this checkout, build all sibling wheels and
+install them together; `--force` replaces the existing tool environment:
+
+```bash
+uv build --all-packages --wheel
+uv tool install --force --find-links dist dist/fleet_cli-0.1.0-py3-none-any.whl
+fleet install HOST  # repeat for each configured host to update its standalone worker
+```
+
+`fleet install` reads the worker from the installed library's package resources,
+materializes it during rsync, then configures the worker and checks for tmux.
+It copies only `fleetd.py` to `~/.local/share/fleet/fleetd.py`; workers do not need
+the workspace packages or dependency-injector. Install the tool on the controller
+and restart its `fleet web` process after an upgrade to serve the new static files.
+
+
 To try a branch alongside the installed fleetd, set `FLEET_FLEETD_PATH` to a
 separate worker script path (for example `~/.local/share/fleet-branch/fleetd.py`)
 and `FLEET_REMOTE_HOME` to a separate worker state directory (for example
-`~/.fleet-branch`). Copy the branch's `fleet/remote/fleetd.py` to that script path
+`~/.fleet-branch`). Copy the branch's `packages/fleet/src/fleet/remote/fleetd.py` to that script path
 on each target host yourself: `fleet install` updates the normal installation.
 For a local host, `FLEET_FLEETD_PATH` can point directly into the checkout.
 Both variables are controller-side overrides applied to worker invocations; also
@@ -501,9 +530,10 @@ what to build next and what can wait.
 
 ```bash
 uv sync --locked
-uv run --locked python -m unittest discover -s tests -v
-uvx ruff@0.13.2 check fleet tests
-uv build
+uv run --locked pytest -q -m "not browser"
+uv run --locked lint-imports
+uvx ruff@0.13.2 check packages tests
+uv build --all-packages --wheel
 ```
 
 The project code is licensed under [Apache-2.0](LICENSE). Bundled assets have

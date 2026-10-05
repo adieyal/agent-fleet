@@ -1,5 +1,5 @@
 """The robot sprite preview at /prototype/robot: served but not linked from the deck, draws the paper-doll sprite
-atlases (fleet/web/assets/world/robot/sprites/) on a 2D canvas without WebGL, composites their layers, tints the
+atlases (packages/fleet-web/src/fleet_web/static/assets/world/robot/sprites/) on a 2D canvas without WebGL, composites their layers, tints the
 shell through the mask, keeps its anchors on the robot, and orders a walking robot around the bench."""
 
 from collections.abc import Iterator

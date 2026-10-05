@@ -49,7 +49,7 @@ STRIP = """(() => {
 
 def serve() -> str:
     state = FixtureState.load(FIXTURE, container=configured_container())
-    server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(state, FixtureLibrary(state.fixture, container=configured_container())))
+    server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(state, FixtureLibrary(state.fixture, container=state.container)))
     server.daemon_threads = True
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return f"http://127.0.0.1:{server.server_port}"

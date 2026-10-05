@@ -16,7 +16,7 @@ def test_missing_config_fails_before_creating_store(tmp_path, monkeypatch, argum
     monkeypatch.setenv("FLEET_STORE", str(root / "fleet.db"))
     errors = Console(record=True, width=300, no_color=True)
     monkeypatch.setattr(cli, "error_console", errors)
-    monkeypatch.setattr(cli, "serve", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cli, "load_command", lambda name: lambda *args, **kwargs: None)
     override_cli_method('jobs', 'selected_hosts', lambda arguments: [])
 
     with pytest.raises(SystemExit) as exited:
@@ -56,7 +56,7 @@ def test_web_announces_explicit_store_initialization(tmp_path, monkeypatch):
     monkeypatch.setenv("FLEET_STORE", str(store))
     errors = Console(record=True, width=300, no_color=True)
     monkeypatch.setattr(cli, "error_console", errors)
-    monkeypatch.setattr(cli, "serve", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cli, "load_command", lambda name: lambda *args, **kwargs: None)
 
     cli.main(["web", "--port", "0"])
 

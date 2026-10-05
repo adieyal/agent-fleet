@@ -103,6 +103,10 @@ source_modules = fleet.remote.fleetd
 forbidden_modules =
     fleet
     fleet.**
+    fleet_cli
+    fleet_cli.**
+    fleet_web
+    fleet_web.**
 as_packages = False
 
 [importlinter:contract:document-library]
@@ -180,6 +184,7 @@ forbidden_modules =
     fleet.transport
 allow_indirect_imports = True
 
+# Distribution boundaries apply to every module, including indirect imports.
 [importlinter:contract:library-presentation]
 name = Library has no presentation dependencies
 type = forbidden

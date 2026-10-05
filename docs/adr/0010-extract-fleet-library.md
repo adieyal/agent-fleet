@@ -1,8 +1,8 @@
 # ADR 0010: Extract the Fleet library
 
-Status: implementation plan. Date: 2026-10-04. Branch: `extract/library`; base: `4641086`.
+Status: implemented through workspace migration (steps 1–8); final packaging verification remains. Date: 2026-10-04; updated 2026-10-05. Branch: `extract/library`; base: `4641086`.
 
-Split into three distributions with a library-owned dependency-injector container. Extract workflows before moving the presentation packages. Preserve commands, JSON/HTTP shapes, actors, initialization, transactions, retention paths and standalone worker deployment. This step changes documentation only.
+Split into three distributions with a library-owned dependency-injector container. Extract workflows before moving the presentation packages. Preserve commands, JSON/HTTP shapes, actors, initialization, transactions, retention paths and standalone worker deployment. The layout and container below are implemented; historical evidence and the original move inventory remain dated to the base commit.
 
 ```mermaid
 flowchart TD
@@ -193,7 +193,7 @@ web = "fleet_web.entrypoint:run"
 
 The CLI parser retains current web flags/help. Handler uses `importlib.metadata.entry_points(group="fleet.commands")` to select exactly one `web`; zero or multiple registrations produce explicit FleetError (no direct-import fallback). `run(arguments, container)` is a structural callable protocol: namespace contains existing fixture/bind/port/open/host options; plugin requests configuration/hosts/runtime from supplied library container. fleet-web imports neither fleet_cli nor its parser. Plugin loading is deferred until invoking web so ordinary CLI imports stay independent.
 
-`uv tool install fleet-cli` pulls fleet-web and fleet via mandatory distribution dependencies. In development use `uv run fleet ...`; for offline/local install build all three wheels and use `uv tool install --no-index --find-links <wheel-dir> fleet-cli`. `uv tool install packages/fleet-cli` alone cannot resolve unpublished sibling wheels from workspace source metadata: document that limitation, do not promise otherwise. Wheel-install test verifies `fleet --help`, `fleet web --help`, plugin discovery and fixture HTTP/assets without repository PYTHONPATH. Publishing package names/registry availability is not needed to decide the local split; reserve/verify names before a later release.
+`fleet-cli` declares mandatory fleet-web and fleet distribution dependencies; registry availability is not assumed. In development use `uv run fleet ...`; for local install build all three wheels with `uv build --all-packages --wheel` and use `uv tool install --find-links dist dist/fleet_cli-0.1.0-py3-none-any.whl` (the resolver also obtains third-party dependencies from its configured index). `uv tool install packages/fleet-cli` alone cannot resolve unpublished sibling wheels from workspace source metadata: document that limitation, do not promise otherwise. Wheel-install test verifies `fleet --help`, `fleet web --help`, plugin discovery and fixture HTTP/assets without repository PYTHONPATH. Publishing package names/registry availability is not needed to decide the local split; reserve/verify names before a later release.
 
 Move `css`, `js`, `vendor`, `assets`, `index.html`, and **all** `prototype` files together under `fleet_web/static/`, preserving URL-relative paths and CREDITS/license files. Explicitly include the entire static tree in wheel and sdist (Hatch artifacts/force-include if ignore patterns would exclude generated assets). Use `importlib.resources.files('fleet_web').joinpath('static')` and read Traversable bytes with explicit path containment. This supports Python 3.10 without assuming directory `as_file` support. If an existing filesystem adapter requires a directory, explicitly materialize its tree in a temporary directory owned for the server lifetime. No cwd/repository dependency. Preserve startup index/css/js snapshot and existing build fingerprint semantics; exclude Python caches and refer only to served static resources after split. Test installed build-id change detection and static containment.
 
@@ -330,3 +330,36 @@ git diff --check
 ```
 
 The initial disk-backed `uv run pytest -q -m 'not browser'` was interrupted after 131 passed / 389 deselected in 482.02s: process state showed `jbd2_log_wait_commit` (SQLite filesystem-journal wait). The complete RAM-backed run above passed unchanged assertions. Installed uv is 0.4.6; its first non-frozen invocation rewrote uv.lock, which was restored. Final checks used --frozen, leaving the documentation-only scope intact. No failures required baseline reproduction. Browser tests were not run: this step has no visible UI/code change.
+
+### Implemented workspace verification (2026-10-05)
+
+The root is a non-built uv workspace; three Hatchling member projects use the src
+layout shown above. `fleet-cli` owns the `fleet` console script; `fleet-web` owns
+`fleet-web` and the `fleet.commands` registration. No `fleet.cli` or `fleet.web`
+compatibility modules remain. All internal contracts are retained; distribution
+contracts forbid the library from importing either presentation package and make
+those packages independent, including indirect imports.
+
+Root tests enumerate all three source roots and inject forbidden imports into
+isolated copies. Asset and art writers point to `packages/fleet-web/src/fleet_web/static`;
+W2's subprocess uses `fleet_cli.cli` and the moved standalone worker. HostSetup
+uses `importlib.resources.as_file` around rsync, preserving the materialized file
+until copying finishes. The phase-2 gate reads the same resource's text for its
+isolated worker copies. Neither deployment path depends on a root `fleet/` folder.
+
+```bash
+uv sync --locked
+uv run --locked fleet --help
+uv run --locked fleet web --help
+uv run --locked pytest -q -m "not browser"
+uv run --locked lint-imports
+uv build --all-packages --wheel
+uv tool install --force --find-links dist dist/fleet_cli-0.1.0-py3-none-any.whl
+fleet install HOST
+```
+
+The final two commands describe controller/worker upgrades, not actions executed
+against live hosts during extraction. Restart the installed controller dashboard
+after upgrading. Local checks use temporary Fleet homes/config/store; installed
+and ZIP resource tests verify that the copied worker runs with isolated stdlib
+Python, without importing the library or dependency-injector.

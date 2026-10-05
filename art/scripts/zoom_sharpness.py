@@ -23,8 +23,9 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 from playwright.sync_api import sync_playwright
 
-from fleet.web.fixture import FixtureLibrary, FixtureState
-from fleet.web.server import make_handler
+from fleet.container import Container
+from fleet_web.fixture import FixtureLibrary, FixtureState
+from fleet_web.server import make_handler
 from shoot_bench import FIXTURE, REPO, headless_env
 
 SIZE = {'width': 1672, 'height': 941}
@@ -36,10 +37,10 @@ CROP_M = 1.2              # world width of the compared crop
 def main() -> None:
     out = Path(sys.argv[1]) if len(sys.argv) > 1 else REPO / 'art' / 'build' / 'prototype'
     out.mkdir(parents=True, exist_ok=True)
-    manifest = json.loads((REPO / 'fleet/web/assets/world/workbench/manifest.json').read_text())
+    manifest = json.loads((REPO / 'packages/fleet-web/src/fleet_web/static/assets/world/workbench/manifest.json').read_text())
     texel = manifest['lightmap']['texel_m']
-    state = FixtureState.load(FIXTURE)
-    server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(state, FixtureLibrary(state.fixture)))
+    state = FixtureState.load(FIXTURE, container=Container())
+    server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(state, FixtureLibrary(state.fixture, container=state.container)))
     threading.Thread(target=server.serve_forever, daemon=True).start()
     rows, crops = [], []
     try:

@@ -2,7 +2,7 @@
 
     blender -b -P art/scripts/export.py -- <scene>
 
-Writes fleet/web/assets/world/<scene>/:
+Writes packages/fleet-web/src/fleet_web/static/assets/world/<scene>/:
 - <scene>.glb: geometry and materials, textures as WebP (EXT_texture_webp). Baked meshes carry
   their lightmap UVs in TEXCOORD_1; every node's `fleet` / `warm` custom properties are in extras.
 - lightmap-<layer>.webp: 8-bit sRGB-encoded irradiance, value = texel (decoded to linear) x scale.

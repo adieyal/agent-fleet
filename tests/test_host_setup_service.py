@@ -52,3 +52,48 @@ def test_unlock_uses_interactive_transport_and_quotes_key_path():
     assert HostSetup(adapter).unlock('worker', '/keys/key with spaces') == 7
     assert "ssh-add '/keys/key with spaces'" in calls[0][1]
     assert calls[0][0] == host and calls[0][2] == {'interactive': True}
+
+
+@pytest.mark.parametrize('archived', [False, True])
+def test_worker_resource_copy_and_standalone_execution(tmp_path, archived):
+    import os
+    from pathlib import Path
+    import shutil
+    import subprocess
+    import sys
+    from zipfile import ZipFile, Path as ZipPath
+
+    destination = tmp_path / 'worker' / 'fleetd.py'
+    destination.parent.mkdir()
+    copied_sources = []
+    with ZipFile(tmp_path / 'resources.zip', 'w') as archive:
+        archive.writestr('fleetd.py', transport.LOCAL_FLEETD_SOURCE.read_bytes())
+        source = (ZipPath(archive, 'fleetd.py') if archived
+                  else transport.LOCAL_FLEETD_SOURCE)
+        host = transport.Host('isolated', None)
+        responses = iter(['', 'PATH=/bin\n', ''])
+
+        def copy(sources, target, target_host):
+            materialized = Path(sources[0])
+            assert materialized.is_file()
+            assert target_host == host
+            assert target == str(destination)
+            copied_sources.append(materialized)
+            shutil.copyfile(materialized, target)
+
+        adapter = SimpleNamespace(host_by_name=lambda name: host,
+            LOCAL_FLEETD_SOURCE=source, REMOTE_FLEETD_PATH=str(destination), rsync=copy,
+            run_shell=lambda *args, **kwargs: SimpleNamespace(stdout=next(responses)),
+            call=lambda *args: {'tmux': True})
+        HostSetup(adapter).install('isolated')
+        assert destination.read_bytes() == transport.LOCAL_FLEETD_SOURCE.read_bytes()
+        if archived:
+            assert not copied_sources[0].exists(), 'resource must close after rsync'
+
+    environment = {**os.environ, 'HOME': str(tmp_path),
+                   'FLEET_HOME': str(tmp_path / 'state')}
+    environment.pop('PYTHONPATH', None)
+    result = subprocess.run([sys.executable, '-I', str(destination), 'ls', '--all'],
+        cwd=tmp_path, env=environment, check=True, capture_output=True,
+        text=True, timeout=10)
+    assert json.loads(result.stdout)['jobs'] == []

@@ -295,3 +295,39 @@ Playwright browsers they skip with the reason "Playwright browsers not installed
 here; browser tests run on home". Browser tests also skip on other hosts even
 if executables are installed. Tests use temporary Fleet paths; pytest rejects
 access to the real `~/.config/fleet` store and config before opening them.
+
+## Implementation layout and development
+
+The controller is a uv workspace of three distributions, each versioned together:
+
+```mermaid
+flowchart LR
+  CLI["packages/fleet-cli/src/fleet_cli"] --> Container["packages/fleet/src/fleet/container.py"]
+  Web["packages/fleet-web/src/fleet_web"] --> Container
+  Container --> Library["fleet: public facades, services, projections and adapters"]
+  CLI -. "fleet.commands metadata" .-> Web
+  Library --> Worker["remote/fleetd.py: standalone stdlib worker"]
+```
+
+The library never imports either presentation package, and their source imports
+are independent. Root `.importlinter` enforces these boundaries and the internal
+module contracts. Static assets live under `fleet_web/static/` and ship in its
+wheel. Tests and shared fixtures remain in root `tests/`.
+
+```bash
+uv sync --locked
+uv run --locked fleet --help
+uv run --locked fleet web --help
+uv run --locked pytest -q -m "not browser"
+uv run --locked lint-imports
+uv build --all-packages --wheel
+uv tool install --find-links dist dist/fleet_cli-0.1.0-py3-none-any.whl
+```
+
+Local tool installation must supply all workspace sibling wheels; installing
+`packages/fleet-cli` alone cannot resolve unpublished sibling distributions.
+After upgrading, run `fleet install HOST` on each configured host: the controller
+copies its library resource `remote/fleetd.py` to the worker's
+`~/.local/share/fleet/fleetd.py`. No library installation is needed on workers.
+Restart the controller's dashboard after replacing its tool environment. Keep
+experiments isolated with temporary Fleet state paths as described in README.

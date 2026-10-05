@@ -14,8 +14,9 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 from playwright.sync_api import sync_playwright
 
-from fleet.web.fixture import FixtureLibrary, FixtureState
-from fleet.web.server import make_handler
+from fleet.container import Container
+from fleet_web.fixture import FixtureLibrary, FixtureState
+from fleet_web.server import make_handler
 
 REPO = Path(__file__).resolve().parents[2]
 FIXTURE = REPO / 'tests' / 'fixtures' / 'restoke.json'
@@ -30,8 +31,8 @@ def headless_env() -> dict[str, str]:
 
 
 def shoot(out: Path) -> Path:
-    state = FixtureState.load(FIXTURE)
-    server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(state, FixtureLibrary(state.fixture)))
+    state = FixtureState.load(FIXTURE, container=Container())
+    server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(state, FixtureLibrary(state.fixture, container=state.container)))
     threading.Thread(target=server.serve_forever, daemon=True).start()
     errors: list[str] = []
     try:

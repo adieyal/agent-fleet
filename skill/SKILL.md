@@ -159,3 +159,17 @@ access to the real `~/.config/fleet` store and config before opening them.
 `fleet work show ID_OR_PREFIX [--json]` reads work details, ancestors and linked records.
 `fleet status PROJECT [--item ID_OR_PREFIX] [--depth N] [--open] [--json]` scopes the work tree; depth 0 shows only roots. Incomplete descendants of complete items remain visible with `--open`. Item scopes exclude unlinked attention.
 `fleet attention list` includes open, acknowledged and snoozed items. Use `--all` when inspecting resolved history, or `--state resolved` for only resolved records.
+
+## Checkout development
+
+Fleet now uses three uv workspace distributions: library `fleet` under
+`packages/fleet/src/fleet`, terminal `fleet_cli` under
+`packages/fleet-cli/src/fleet_cli`, and dashboard `fleet_web` under
+`packages/fleet-web/src/fleet_web` (assets in `static/`). Tests stay at root.
+Use `uv sync --locked`, `uv run fleet ...`, `uv run pytest -q -m "not browser"`
+and `uv run lint-imports` from the checkout. Build with
+`uv build --all-packages --wheel`; install the controller using
+`uv tool install --find-links dist dist/fleet_cli-0.1.0-py3-none-any.whl`.
+The CLI loads the web subcommand from distribution metadata. After upgrading,
+`fleet install HOST` copies the library's standalone `remote/fleetd.py` resource
+and configures the worker; workers do not install the three distributions.

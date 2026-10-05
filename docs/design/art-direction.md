@@ -123,7 +123,7 @@ Blender bakes in scene-linear values (view transform *Standard*, no look); three
   - `art/scripts/`: fetching, then the Blender steps (`build_<scene>.py`, `bake.py`, `export.py`, `preview.py`) run with `blender -b -P`.
   - `art/sources/` and `art/build/`: downloads and intermediates, gitignored.
   - The robot is modelled by `art/scripts/build_robot.py` on the deck's RobotExpressive rig (CC0): new meshes in the style of the B2 sprites, skinned to its bones, so its clips drive them. It gains arm-only seated clips. The scripted robot this replaced is gone.
-- `fleet/web/assets/world/<scene>/`: built output only, i.e. `<scene>.glb`, `lightmap-<layer>.webp`, and `manifest.json` naming the warm groups and dynamic nodes. Source credits are in `art/CREDITS.md`.
+- `packages/fleet-web/src/fleet_web/static/assets/world/<scene>/`: built output only, i.e. `<scene>.glb`, `lightmap-<layer>.webp`, and `manifest.json` naming the warm groups and dynamic nodes. Source credits are in `art/CREDITS.md`.
 
 **Sources.** All CC0.
 - Poly Haven: HDRIs, PBR textures and the occasional prop.
@@ -194,7 +194,7 @@ Iteration rounds, each committed as `style(art):`, with side-by-sides in the job
 
 The 60 fps target leaves about 4x headroom. The floor reflection roughly doubled frame cost (1.6 ms before round 1).
 
-**Camera controls.** The prototype zooms (wheel or pinch, about the pointer), pans (drag) and turns (right-drag or shift-drag). The turn is clamped to ±15° azimuth and ±4° tilt, so cut-away walls never show their backs. Movement is damped, and instant under reduced motion. The controller is `fleet/web/prototype/camera.js`.
+**Camera controls.** The prototype zooms (wheel or pinch, about the pointer), pans (drag) and turns (right-drag or shift-drag). The turn is clamped to ±15° azimuth and ±4° tilt, so cut-away walls never show their backs. Movement is damped, and instant under reduced motion. The controller is `packages/fleet-web/src/fleet_web/static/prototype/camera.js`.
 
 Zoom runs from 0.6× (the whole room) to 1.8×, where the baked lighting stops looking sharp:
 - The lightmaps bake 1.5 cm per texel, so at zoom z a texel spans 2.57 z CSS px on a 941 px tall view.

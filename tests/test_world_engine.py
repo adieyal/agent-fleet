@@ -1,4 +1,4 @@
-"""The sprite engine's pure parts (fleet/web/js/world/): depth sorting by footprint, hit testing and level-of-detail
+"""The sprite engine's pure parts (packages/fleet-web/src/fleet_web/static/js/world/): depth sorting by footprint, hit testing and level-of-detail
 selection, run in the browser against the modules the deck serves."""
 
 import math

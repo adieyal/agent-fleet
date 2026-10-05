@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
+from importlib.resources import as_file
 
 from fleet.transport import FleetError, Host
 
@@ -47,8 +48,9 @@ class HostSetup:
         host = self.transport.host_by_name(name)
         destination = self.transport.REMOTE_FLEETD_PATH
         self.transport.run_shell(host, "mkdir -p ~/.local/share/fleet", check=True, capture_output=True)
-        self.transport.rsync([str(self.transport.LOCAL_FLEETD_SOURCE)],
-                             host.rsync_target(os.path.expanduser(destination) if host.is_local else destination), host)
+        with as_file(self.transport.LOCAL_FLEETD_SOURCE) as source:
+            self.transport.rsync([str(source)],
+                                 host.rsync_target(os.path.expanduser(destination) if host.is_local else destination), host)
         detected = self.transport.run_shell(host, DETECT_SCRIPT, capture_output=True, text=True, timeout=60).stdout
         agent_socket = self.transport.run_shell(host, f"test -S {AGENT_SOCKET} && echo {AGENT_SOCKET}",
                                                capture_output=True, text=True, timeout=20).stdout.strip()

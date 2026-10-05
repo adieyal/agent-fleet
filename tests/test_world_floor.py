@@ -1,4 +1,4 @@
-"""The floor: routes (fleet/web/js/world/nav.js) and the layout (layout.js) as pure functions, run in the browser,
+"""The floor: routes (packages/fleet-web/src/fleet_web/static/js/world/nav.js) and the layout (layout.js) as pure functions, run in the browser,
 and the Restoke floor at /prototype/floor: robots walk from the lift to their desks and sit, lamps glow only at
 active runs, tiles follow steps, and a click on a bench zooms onto it."""
 

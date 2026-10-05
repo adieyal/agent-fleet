@@ -1,4 +1,4 @@
-"""The workarea model (fleet/web/js/workarea-model.js): a pure function over an /api/state document, run in the browser
+"""The workarea model (packages/fleet-web/src/fleet_web/static/js/workarea-model.js): a pure function over an /api/state document, run in the browser
 against the module the deck serves and the Restoke fixture's state."""
 
 import json

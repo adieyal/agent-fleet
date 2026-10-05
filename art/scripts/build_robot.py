@@ -3,7 +3,7 @@ deck robot's skeleton so every one of its clips drives them, plus seated arm act
 
     blender -b -P art/scripts/build_robot.py
 
-Source: fleet/web/assets/models/robot/RobotExpressive.glb (CC0; see art/CREDITS.md). Only its armature and
+Source: packages/fleet-web/src/fleet_web/static/assets/models/robot/RobotExpressive.glb (CC0; see art/CREDITS.md). Only its armature and
 actions are kept; its meshes are deleted.
 
 - Shape (art/bakeoff/B2/robot-*.webp): a near-spherical glossy helmet with ear discs, a large dark rounded
@@ -43,7 +43,7 @@ import bpy  # noqa: E402
 from mathutils import Euler, Matrix, Quaternion, Vector  # noqa: E402
 
 SCENE = 'robot'
-SOURCE = A.REPO / 'fleet' / 'web' / 'assets' / 'models' / 'robot' / 'RobotExpressive.glb'
+SOURCE = A.REPO / 'packages' / 'fleet-web' / 'src' / 'fleet_web' / 'static' / 'assets' / 'models' / 'robot' / 'RobotExpressive.glb'
 HEAD_M = 0.404  # helmet width in metres: B2's robots, fitted to l2 by head size (104 px at 257.3 px/m)
 FPS = 24
 SIT_END = 10  # last frame of Sitting: the seated pose
