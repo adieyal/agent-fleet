@@ -3,6 +3,7 @@ root_packages =
     fleet
     fleet_cli
     fleet_web
+    fleet_worker
 include_external_packages = True
 
 [importlinter:contract:layers]
@@ -99,7 +100,7 @@ layers =
 [importlinter:contract:worker]
 name = Standalone worker
 type = forbidden
-source_modules = fleet.remote.fleetd
+source_modules = fleet_worker
 forbidden_modules =
     fleet
     fleet.**
@@ -107,7 +108,7 @@ forbidden_modules =
     fleet_cli.**
     fleet_web
     fleet_web.**
-as_packages = False
+as_packages = True
 
 [importlinter:contract:document-library]
 name = Document library independence
@@ -228,3 +229,9 @@ forbidden_modules =
     fleet.orchestration
     fleet.triage
     fleet.triage_scheduler
+
+[importlinter:contract:worker-access]
+name = Worker access through transport
+type = protected
+protected_modules = fleet_worker
+allowed_importers = fleet.transport

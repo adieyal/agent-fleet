@@ -34,7 +34,7 @@ def test_the_stream_is_drained_while_a_message_is_handled(tmp_path: Path, monkey
     marker = tmp_path / "written"
     filler = json.dumps({"type": "heartbeat", "pad": "x" * 1000})
     script = (f"import sys, pathlib\n"
-              f"print({json.dumps(json.dumps({'type': 'hello'}))}, flush=True)\n"
+              f"print({json.dumps(json.dumps({'type': 'hello', 'wire_protocol_version': 1}))}, flush=True)\n"
               f"for _ in range(1000): print({filler!r}, file=sys.{pipe})\n"
               f"sys.{pipe}.flush()\n"
               f"pathlib.Path({str(marker)!r}).write_text('done')\n"
@@ -50,6 +50,7 @@ def test_the_stream_is_drained_while_a_message_is_handled(tmp_path: Path, monkey
             waited.append(time.monotonic() - start)
         handled.append(message["type"])
 
+    monkeypatch.setattr(transport, "worker_version", lambda host: {"wire_protocol_version": 1})
     monkeypatch.setattr(transport, "ensure_master", lambda host: None)
     monkeypatch.setattr(runtime, "apply_message", apply)
     reason = runtime.run_stream(SimpleNamespace(transport=transport), FakeHost(script))

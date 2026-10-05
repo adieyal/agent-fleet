@@ -298,7 +298,7 @@ access to the real `~/.config/fleet` store and config before opening them.
 
 ## Implementation layout and development
 
-The controller is a uv workspace of three distributions, each versioned together:
+The controller is a uv workspace of four distributions; fleet-worker has an independent version:
 
 ```mermaid
 flowchart LR
@@ -306,7 +306,7 @@ flowchart LR
   Web["packages/fleet-web/src/fleet_web"] --> Container
   Container --> Library["fleet: public facades, services, projections and adapters"]
   CLI -. "fleet.commands metadata" .-> Web
-  Library --> Worker["remote/fleetd.py: standalone stdlib worker"]
+  Library --> Worker["fleet_worker/fleetd.py: standalone stdlib worker"]
 ```
 
 The library never imports either presentation package, and their source imports
@@ -321,13 +321,13 @@ uv run --locked fleet web --help
 uv run --locked pytest -q -m "not browser"
 uv run --locked lint-imports
 uv build --all-packages --wheel
-uv tool install --find-links dist dist/fleet_cli-0.1.0-py3-none-any.whl
+uv tool install --force --reinstall --no-cache --find-links dist dist/fleet_cli-*.whl
 ```
 
 Local tool installation must supply all workspace sibling wheels; installing
 `packages/fleet-cli` alone cannot resolve unpublished sibling distributions.
 After upgrading, run `fleet install HOST` on each configured host: the controller
-copies its library resource `remote/fleetd.py` to the worker's
+copies the fleet-worker distribution resource `fleet_worker/fleetd.py` to the worker's
 `~/.local/share/fleet/fleetd.py`. No library installation is needed on workers.
 Restart the controller's dashboard after replacing its tool environment. Keep
 experiments isolated with temporary Fleet state paths as described in README.

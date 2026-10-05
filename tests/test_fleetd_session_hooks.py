@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from fleet.remote import fleetd
+from fleet_worker import fleetd
 
 FLEETD = str(Path(fleetd.__file__).resolve())
 QUESTION = {"questions": [{"header": "Probe run", "multiSelect": False,

@@ -32,8 +32,9 @@ packages/
 │   ├── services/                      # controller workflows
 │   ├── projections/                   # assembled read models
 │   ├── ingestion.py                   # applies worker observations
-│   ├── transport.py                   # worker calls, streams, shell and rsync
-│   └── remote/fleetd.py               # standalone stdlib-only worker
+│   └── transport.py                   # worker calls, streams, shell and rsync
+├── fleet-worker/src/fleet_worker/
+│   └── fleetd.py                      # standalone stdlib-only worker, Python 3.8+
 ├── fleet-cli/src/fleet_cli/
 │   ├── cli.py                         # installed fleet console script
 │   └── plugins.py                     # fleet.commands distribution metadata loader
@@ -103,6 +104,6 @@ The dispatch use case records intent before the SSH adapter sends a worker comma
 | `packages/fleet-web/src/fleet_web/live.py`, state logic in `packages/fleet-web/src/fleet_web/server.py` | Module-owned state and projections; stream handling goes to `web/ingester.py`. |
 | `packages/fleet-web/src/fleet_web/library.py`, `packages/fleet-web/src/fleet_web/documents.py` | Library indexing, constrained document-read adapter, and web Markdown renderer respectively. |
 | `packages/fleet-web/src/fleet_web/fixture.py` | Demo/test adapter outside business modules. |
-| `packages/fleet/src/fleet/remote/fleetd.py` | Preserve one standalone file and its installation path. |
+| `packages/fleet-worker/src/fleet_worker/fleetd.py` | Preserve one standalone file and its installation path. |
 
 Start with the first [workspace-plan](first-working-workspace-plan.md) increment: implement Workspace's domain, use cases, facade and SQLite port, wire both CLI and web to that facade, then retire the corresponding JSON writes. Add other modules when their records and commands arrive. Do not retain active forwarding aliases in old files once callers have moved.

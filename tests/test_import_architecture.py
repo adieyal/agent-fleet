@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCES = {
     name: ROOT / "packages" / distribution / "src" / name
     for name, distribution in (
-        ("fleet", "fleet"), ("fleet_cli", "fleet-cli"), ("fleet_web", "fleet-web"))
+        ("fleet_worker", "fleet-worker"), ("fleet", "fleet"), ("fleet_cli", "fleet-cli"), ("fleet_web", "fleet-web"))
 }
 
 
@@ -65,6 +65,9 @@ def test_production_import_contracts(tmp_path):
 
 
 @pytest.mark.parametrize(("filename", "statement", "contract"), [
+    ("fleet/services/jobs.py", "import fleet_worker.fleetd", "Worker access through transport"),
+    ("fleet_cli/cli.py", "import fleet_worker", "Worker access through transport"),
+    ("fleet_web/server.py", "import fleet_worker", "Worker access through transport"),
     ("fleet/projections/guidance.py", "import markdown_it", "Library returns raw documents"),
     ("fleet_web/server.py", "import fleet.transport", "Controllers use public providers and module surfaces"),
     ("fleet_web/server.py", "import fleet.services.jobs", "Controllers use public providers and module surfaces"),
@@ -81,9 +84,9 @@ def test_production_import_contracts(tmp_path):
     ("fleet/modules/library/facade.py", "import fleet.modules.work.application", "Work public surface"),
     ("fleet/container.py", "import fleet.modules.work.facade", "Work public surface"),
     ("fleet/modules/work/domain/__init__.py", "import fleet.modules.work.application", "Module domain layers"),
-    ("fleet/remote/fleetd.py", "import fleet_cli.cli", "Standalone worker"),
-    ("fleet/remote/fleetd.py", "import fleet", "Standalone worker"),
-    ("fleet/remote/fleetd.py", "import fleet.remote", "Standalone worker"),
+    ("fleet_worker/fleetd.py", "import fleet_cli.cli", "Standalone worker"),
+    ("fleet_worker/fleetd.py", "import fleet", "Standalone worker"),
+    ("fleet_worker/fleetd.py", "import fleet.remote", "Standalone worker"),
     ("fleet/infrastructure/documents/job_store.py", "import fleet_web.documents", "Document library independence"),
     ("fleet/services/documents.py", "import fleet.container", "Document library independence"),
     ("fleet/services/documents.py", "import fleet.infrastructure.documents.job_store", "Service infrastructure separation"),

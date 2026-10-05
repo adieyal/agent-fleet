@@ -11,7 +11,7 @@ import signal
 import pytest
 
 from fleet.container import configured_container
-from fleet.remote import fleetd
+from fleet_worker import fleetd
 
 
 def git(repository, *arguments):

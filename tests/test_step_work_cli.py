@@ -11,7 +11,7 @@ import pytest
 from fleet_cli import cli
 
 from fleet.errors import FleetError
-from fleet.remote import fleetd
+from fleet_worker import fleetd
 
 
 def parsed(*arguments):

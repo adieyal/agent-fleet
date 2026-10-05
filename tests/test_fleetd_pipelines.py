@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from fleet.remote import fleetd
+from fleet_worker import fleetd
 
 NODES = [["invoices"], ["decided", "tied"], ["confident", "review"]]
 

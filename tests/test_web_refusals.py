@@ -11,7 +11,7 @@ from urllib.request import Request, urlopen
 import pytest
 
 from fleet.modules.attention import AttentionItem, StreamContext
-from fleet.remote import fleetd
+from fleet_worker import fleetd
 from fleet.services.live import apply_message
 from test_web_attention import HOSTS, Deck, job
 

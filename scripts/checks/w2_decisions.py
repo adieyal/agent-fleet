@@ -23,7 +23,7 @@ def run_check(directory: Path) -> dict:
     environment = dict(inherited, FLEET_STORE=str(directory / 'store.db'),
         FLEET_CONFIG=str(directory / 'config.json'), FLEET_MANAGEMENT=str(directory / 'management'),
         FLEET_HOME=str(worker), FLEET_REMOTE_HOME=str(worker),
-        FLEET_FLEETD_PATH=str(ROOT / 'packages/fleet/src/fleet/remote/fleetd.py'), PYTHONPATH=str(ROOT),
+        FLEET_FLEETD_PATH=str(ROOT / 'packages/fleet-worker/src/fleet_worker/fleetd.py'), PYTHONPATH=str(ROOT),
         CLAUDE_CONFIG_DIR=str(directory / 'claude-config'))
     environment.pop('FLEET_JOB_ID', None)
     environment.pop('FLEET_JOB_DIR', None)
@@ -65,7 +65,7 @@ print(json.dumps(dict(project=p.id, work_item=w.id)))
     job_file = worker / 'jobs' / job_id / 'job.json'
     # Own the runner as a child of this foreground check: no tmux or detached process.
     with (directory / 'runner.log').open('w') as log:
-        runner = subprocess.Popen([sys.executable, str(ROOT / 'packages/fleet/src/fleet/remote/fleetd.py'), '_run', job_id],
+        runner = subprocess.Popen([sys.executable, str(ROOT / 'packages/fleet-worker/src/fleet_worker/fleetd.py'), '_run', job_id],
             cwd=ROOT, env=environment, stdout=log, stderr=subprocess.STDOUT)
         try:
             deadline = time.monotonic() + 30

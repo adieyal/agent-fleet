@@ -53,6 +53,8 @@ TERMINAL_STATUSES = ("done", "failed", "blocked", "cancelled", "lost")
 AGED_STATUSES = ("done", "cancelled", "lost")
 # `rm` deletes these without --force; others still hold work or a question.
 REMOVABLE_STATUSES = ("done", "failed", "cancelled", "lost")
+WORKER_VERSION = "0.1.0"
+WIRE_PROTOCOL_VERSION = 1
 STREAM_PROTOCOL_VERSION = 3
 DISPATCH_SCHEMA_VERSION = 4
 USAGE_SCHEMA_VERSION = 1
@@ -2605,7 +2607,8 @@ def command_stream(arguments: argparse.Namespace) -> None:
     removals: Dict[Path, int] = {}
     try:
         emit({"type": "hello", "host": os.uname().nodename, "time": now(),
-              "protocol_version": STREAM_PROTOCOL_VERSION})
+              "protocol_version": STREAM_PROTOCOL_VERSION,
+              "wire_protocol_version": WIRE_PROTOCOL_VERSION, "worker_version": WORKER_VERSION})
         while True:
             for observation in input_observations():
                 occurrence = observation["source_event_id"]
@@ -2864,9 +2867,18 @@ def command_configure(arguments: argparse.Namespace) -> None:
           "tmux": shutil.which("tmux") is not None})
 
 
+def command_version(arguments: Any) -> None:
+    emit({"worker_version": WORKER_VERSION, "wire_protocol_version": WIRE_PROTOCOL_VERSION,
+          "stream_protocol_version": STREAM_PROTOCOL_VERSION,
+          "dispatch_schema_version": DISPATCH_SCHEMA_VERSION})
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="fleetd")
     commands = parser.add_subparsers(dest="command", required=True)
+
+    version = commands.add_parser("version", help="worker and protocol versions")
+    version.set_defaults(handler=command_version)
 
     deliver = commands.add_parser("deliver")
     deliver.add_argument("job")

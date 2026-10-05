@@ -162,14 +162,19 @@ access to the real `~/.config/fleet` store and config before opening them.
 
 ## Checkout development
 
-Fleet now uses three uv workspace distributions: library `fleet` under
+Fleet now uses four uv workspace distributions: library `fleet` under
 `packages/fleet/src/fleet`, terminal `fleet_cli` under
-`packages/fleet-cli/src/fleet_cli`, and dashboard `fleet_web` under
-`packages/fleet-web/src/fleet_web` (assets in `static/`). Tests stay at root.
+`packages/fleet-cli/src/fleet_cli`, dashboard `fleet_web` under
+`packages/fleet-web/src/fleet_web` (assets in `static/`), and stdlib worker
+`fleet_worker` under `packages/fleet-worker/src/fleet_worker`. Tests stay at root.
 Use `uv sync --locked`, `uv run fleet ...`, `uv run pytest -q -m "not browser"`
 and `uv run lint-imports` from the checkout. Build with
 `uv build --all-packages --wheel`; install the controller using
-`uv tool install --find-links dist dist/fleet_cli-0.1.0-py3-none-any.whl`.
+`uv tool install --force --reinstall --no-cache --find-links dist dist/fleet_cli-*.whl`.
 The CLI loads the web subcommand from distribution metadata. After upgrading,
-`fleet install HOST` copies the library's standalone `remote/fleetd.py` resource
-and configures the worker; workers do not install the three distributions.
+`fleet install HOST` copies the fleet-worker distribution's standalone `fleet_worker/fleetd.py` resource
+and configures the worker; workers run the copied file on Python 3.8+ without installing workspace distributions.
+
+Build all four wheels, including fleet-worker. Host calls check the wire protocol;
+on a mismatch run `fleet install HOST`. `fleetd.py version` reports worker and
+protocol versions for deployment tooling.

@@ -215,7 +215,7 @@ def test_real_scripted_orchestrator_process(orchestration, tmp_path, monkeypatch
     import os
     import sys
     from fleet_cli import cli
-    from fleet.remote import fleetd
+    from fleet_worker import fleetd
     from fleet.transport import Host
 
     _, store, item, _, _, _, _, root = orchestration

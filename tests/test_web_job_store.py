@@ -19,7 +19,7 @@ import pytest
 
 
 from fleet.container import configured_container
-from fleet.remote import fleetd
+from fleet_worker import fleetd
 from fleet.transport import Host
 
 from fleet.services.live import FleetState, follow_host

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from fleet.remote import fleetd
+from fleet_worker import fleetd
 
 
 def test_trace_availability_survives_pruning(job):

@@ -7,7 +7,7 @@ import sys
 
 import pytest
 
-from fleet.remote import fleetd
+from fleet_worker import fleetd
 
 
 @pytest.mark.parametrize("job_id", [None, "job1"])

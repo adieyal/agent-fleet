@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from fleet.remote import fleetd
+from fleet_worker import fleetd
 
 
 @pytest.fixture

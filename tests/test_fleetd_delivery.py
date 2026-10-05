@@ -4,7 +4,7 @@ import sys
 
 import pytest
 
-from fleet.remote import fleetd
+from fleet_worker import fleetd
 
 
 def test_delivery_key_applies_one_resumed_step(tmp_path, monkeypatch, capsys):

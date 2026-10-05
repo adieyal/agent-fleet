@@ -13,14 +13,14 @@ import pytest
 
 from fleet.container import configured_container
 from fleet.errors import FleetError
-from fleet.remote import fleetd
+from fleet_worker import fleetd
 
 
 CONTROLLER = '''
 import sys
 from fleet.container import configured_container
 from fleet.infrastructure.sqlite.execution import ExecutionRepository
-from fleet.remote import fleetd
+from fleet_worker import fleetd
 
 point, item, payload = sys.argv[1:]
 import json
@@ -125,7 +125,7 @@ def test_killed_dispatch_reconciles_one_job_and_claim(tmp_path, point):
             # Use the real worker reservation without launching a runtime.
             program = '''
 import sys
-from fleet.remote import fleetd
+from fleet_worker import fleetd
 def launch(job):
     with open(fleetd.JOBS_DIRECTORY.parent / "starts", "a") as stream:
         stream.write(job + "\\n")

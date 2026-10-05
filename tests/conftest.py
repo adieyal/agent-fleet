@@ -132,8 +132,8 @@ def isolated_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, empty_store:
     monkeypatch.setattr(transport, "catch_up_sessions", lambda host, since: [])
     # Trace retention tests explicitly restore this helper against their temporary worker.
     monkeypatch.setattr(transport, "keep_run_trace", lambda execution, host, job: None)
-    monkeypatch.setattr("fleet.remote.fleetd.SESSION_RECORDS_DIRECTORY", tmp_path / "fleet-home" / "sessions")
-    monkeypatch.setattr("fleet.remote.fleetd.REMOVALS_DIRECTORY", tmp_path / "fleet-home" / "removals")
+    monkeypatch.setattr("fleet_worker.fleetd.SESSION_RECORDS_DIRECTORY", tmp_path / "fleet-home" / "sessions")
+    monkeypatch.setattr("fleet_worker.fleetd.REMOVALS_DIRECTORY", tmp_path / "fleet-home" / "removals")
 
     def no_worker_documents(*args):
         raise FleetError("test worker document transport is not configured")

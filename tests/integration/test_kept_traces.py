@@ -7,7 +7,7 @@ import pytest
 from fleet.container import configured_container
 from fleet_cli import cli
 from fleet import transport
-from fleet.remote import fleetd
+from fleet_worker import fleetd
 from fleet.transport import FleetError, Host
 from fleet.services.live import FleetState, apply_message
 

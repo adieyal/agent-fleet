@@ -207,7 +207,7 @@ def test_streaming_commands_prepare_connection_before_opening_pipe(home, monkeyp
     remember("home", identity, cli_container=cli_container)
     home.fleetd_command = lambda arguments: arguments
     order = []
-    monkeypatch.setattr(transport, "ensure_master", lambda host: order.append("connect"))
+    monkeypatch.setattr(transport, "worker_version", lambda host: order.append("connect"))
     monkeypatch.setattr(transport, "call", lambda *args, **kwargs: pytest.fail("unexpected listing"))
     monkeypatch.setattr(cli.time, "sleep", lambda seconds: None)
 
@@ -235,7 +235,7 @@ def test_wait_prepares_all_hosts_before_launching_any_waiter(monkeypatch, *, cli
         order.append(host.name)
         if host is second:
             raise FleetError("carbon: SSH control connection check timed out after 10s")
-    monkeypatch.setattr(transport, "ensure_master", prepare)
+    monkeypatch.setattr(transport, "worker_version", prepare)
     monkeypatch.setattr(transport.subprocess, "Popen", lambda *args, **kwargs: pytest.fail("waiter launched before preparation completed"))
     with pytest.raises(FleetError, match="carbon: SSH control connection check timed out"):
         cli.wait_for(["one", "two"], step=None, timeout=None, as_json=False, container=cli_container)

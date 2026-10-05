@@ -7,7 +7,7 @@ from io import StringIO
 
 import pytest
 
-from fleet.remote import fleetd
+from fleet_worker import fleetd
 
 DECISION = {"id": "d1", "work_item": "w1", "question": "Loosen the check?", "answer": "No",
             "principle": "Constitution: anti-goal 2", "actor": "claude", "context": "", "time": 1700000000.5}

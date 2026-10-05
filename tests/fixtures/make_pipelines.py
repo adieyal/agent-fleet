@@ -9,7 +9,7 @@ import random
 import tempfile
 from pathlib import Path
 
-from fleet.remote.fleetd import PipelineTracker
+from fleet_worker.fleetd import PipelineTracker
 
 TIME = 1790400000
 LONG_REASON = "line totals do not add up to the printed total"   # as long as a real pipeline's reasons get
