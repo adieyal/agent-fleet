@@ -8,7 +8,7 @@ import pytest
 
 from fleet.container import configured_container
 from fleet_cli import cli
-from fleet.modules.work.domain import EvidenceSpecification
+from fleet.modules.work import EvidenceSpecification
 
 
 def read(capsys, *args):
