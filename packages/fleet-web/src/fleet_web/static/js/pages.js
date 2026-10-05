@@ -35,6 +35,17 @@
     if (className) el.className = className;
     return el;
   }
+  // Agent actors are "<role>:<uuid>"; show the role and keep the full identity one click away.
+  function actorLabel(actor) {
+    const match = /^([\w-]+):[0-9a-f-]{36}$/.exec(actor);
+    const label = element('strong', match ? (match[1] === 'triage' ? 'agent' : match[1]) : actor);
+    if (!match) return label;
+    label.title = actor;
+    const copy = button('⧉', () => navigator.clipboard?.writeText(actor));
+    copy.className = 'copy-actor'; copy.title = `Copy ${actor}`; copy.setAttribute('aria-label', `Copy ${actor}`);
+    label.append(' ', copy);
+    return label;
+  }
   function button(label, callback) {
     const el = element('button', label);
     el.type = 'button'; el.addEventListener('click', callback); return el;
@@ -311,7 +322,7 @@
           const item = element('div', undefined, 'answer'); item.dataset.messageId = message.id;
           item.dataset.messageType = message.type;
           const time = element('time', relative(message.time), 'meta'); time.title = message.time;
-          item.append(element('strong', message.actor), element('p', message.text), time);
+          item.append(actorLabel(message.actor), element('p', message.text), time);
           if (message.type === 'decision') item.append(element('span', 'Decision · answered and resolved', 'meta'));
           answers.append(item);
         }
