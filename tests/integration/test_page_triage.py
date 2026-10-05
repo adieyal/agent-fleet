@@ -109,7 +109,11 @@ def test_page_brief_queue_reply_and_follow_up(triage):
     services.attention.reply(attention.id, 'Which contracts did you check?', actor='web-user')
     engine.schedule()
     assert len(calls) == 2
-    assert 'Which contracts did you check?' in services.execution.get_action(calls[1].action).payload['steps'][0]['prompt']
+    follow_up = services.execution.get_action(calls[1].action).payload['steps'][0]['prompt']
+    # The brief names the follow-up as the message to answer, after the conversation that led to it.
+    conversation = follow_up.index('Conversation so far')
+    assert follow_up.index(attention.page_annotation.body, conversation) < follow_up.index('agent: All active suppliers match.')
+    assert 'Respond to the latest message from web-user:\nWhich contracts did you check?' in follow_up
     reply_to_run(services, calls[1], attention, 'The signed contracts.')
     # A follow-up arriving while the run is live must survive completion of that run.
     services.attention.reply(attention.id, 'What about historical suppliers?', actor='user')
