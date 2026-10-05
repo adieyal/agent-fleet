@@ -18,6 +18,7 @@ import argparse
 import base64
 import collections
 import contextlib
+import ctypes
 import datetime
 import fcntl
 import hashlib
@@ -53,8 +54,8 @@ TERMINAL_STATUSES = ("done", "failed", "blocked", "cancelled", "lost")
 AGED_STATUSES = ("done", "cancelled", "lost")
 # `rm` deletes these without --force; others still hold work or a question.
 REMOVABLE_STATUSES = ("done", "failed", "cancelled", "lost")
-WORKER_VERSION = "0.1.0"
-WIRE_PROTOCOL_VERSION = 1
+WORKER_VERSION = "0.1.1"
+WIRE_PROTOCOL_VERSION = 2
 STREAM_PROTOCOL_VERSION = 3
 DISPATCH_SCHEMA_VERSION = 4
 USAGE_SCHEMA_VERSION = 1
@@ -819,6 +820,72 @@ class WorkspaceWatch:
         self.thread.join()
 
 
+def enable_child_subreaper() -> None:
+    """Adopt orphaned runtime descendants, including double forks and new sessions.
+
+    Fleet workers run on Linux. Refuse to run without the kernel guarantee rather
+    than silently finishing a step while detached work is still alive.
+    """
+    if not sys.platform.startswith("linux"):
+        raise RuntimeError("step descendant supervision requires Linux")
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.prctl(36, 1, 0, 0, 0) != 0:  # PR_SET_CHILD_SUBREAPER
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error))
+
+
+def runner_children() -> List[int]:
+    """Direct children after the runtime and workspace watcher have stopped."""
+    children = set()
+    for task in Path("/proc/self/task").iterdir():
+        try:
+            children.update(int(pid) for pid in (task / "children").read_text().split())
+        except FileNotFoundError:  # a thread ended during enumeration
+            continue
+    return sorted(children)
+
+
+def wait_for_step_children(job_id: str, step_index: int) -> None:
+    """Keep completion and retries behind a visible, cancellable foreground wait."""
+    previous: List[int] = []
+    cancellation_at: Optional[float] = None
+    try:
+        while True:
+            # Reap exited adopted children before checking for live work. A live
+            # parent accounts for its descendants until they too are adopted.
+            while True:
+                try:
+                    pid, _ = os.waitpid(-1, os.WNOHANG)
+                except ChildProcessError:
+                    break
+                if pid == 0:
+                    break
+            children = runner_children()
+            if not children:
+                return
+            if children != previous:
+                waiting = {"kind": "children_wait", "step": step_index, "pids": children,
+                           "summary": "waiting for descendant processes: " + ", ".join(map(str, children))}
+                with locked_job(job_id) as live_job:
+                    live_job["agent_pid"] = None
+                    live_job["runtime_wait"] = waiting
+                append_event(job_id, waiting)
+                previous = children
+            if read_job(job_id).get("cancelled"):
+                if cancellation_at is None:
+                    cancellation_at = time.monotonic()
+                # Kill parents first; their descendants become our children on
+                # the next poll, including processes with their own session.
+                stop_signal = signal.SIGKILL if time.monotonic() - cancellation_at >= 5 else signal.SIGTERM
+                for pid in children:
+                    with contextlib.suppress(ProcessLookupError):
+                        os.kill(pid, stop_signal)
+            time.sleep(0.1)
+    finally:
+        with locked_job(job_id) as live_job:
+            live_job.pop("runtime_wait", None)
+
+
 def _run_step_attempt(job: JsonObject, step: JsonObject) -> JsonObject:
     job_id = job["id"]
     config = load_config()
@@ -899,6 +966,7 @@ def _run_step_attempt(job: JsonObject, step: JsonObject) -> JsonObject:
             # A Claude write lands after its tool_use line, so every later line checks again.
             mirror.sync()
         exit_code = process.wait()
+    wait_for_step_children(job_id, step["index"])
     refresh_workspace(job_id, job["cwd"])
     runtime.finish(outcome, exit_code, last_text)
     if runtime_error:
@@ -1025,6 +1093,7 @@ def run_job(job_id: str) -> None:
         job["runner_pid"] = os.getpid()
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
     try:
+        enable_child_subreaper()
         while True:
             with locked_job(job_id) as job:
                 if job.get("cancelled"):
@@ -2353,7 +2422,7 @@ def command_deliver(arguments: argparse.Namespace) -> None:
         with locked_job(arguments.job) as job:
             step = next((step for step in job["steps"] if step.get("delivery_key") == arguments.key), None)
             if step is not None:
-                if step["prompt"] != answer:
+                if step.get("original_prompt", step["prompt"]) != answer:
                     fail("delivery key has changed payload")
             else:
                 if not job["session_id"]:
@@ -2473,6 +2542,33 @@ def command_decision(arguments: argparse.Namespace) -> None:
     emit({"schema_version": 1, "id": decision["id"], "status": "held"})
 
 
+def command_edit_step(arguments: argparse.Namespace) -> None:
+    """Serialize prompt replacement with the runner's pending-to-running claim."""
+    prompt = sys.stdin.read()
+    if not prompt.strip():
+        fail("step prompt must not be empty")
+    if not arguments.actor.strip():
+        fail("step edit actor must not be empty")
+    with locked_job(arguments.job) as job:
+        if arguments.step < 0 or arguments.step >= len(job["steps"]):
+            fail(f"job has no step {arguments.step + 1}")
+        step = job["steps"][arguments.step]
+        if "started_at" not in step:
+            fail(f"step {arguments.step + 1} cannot be edited: start timestamp is missing")
+        if step["status"] != "pending" or step["started_at"] is not None:
+            fail(f"step {arguments.step + 1} cannot be edited: only pending steps that have never started are editable "
+                 f"(status: {step['status']})")
+        previous = step["prompt"]
+        if prompt != previous:
+            (JOBS_DIRECTORY / arguments.job / f"brief-{arguments.step}.md").write_text(prompt, encoding="utf-8")
+            step.setdefault("original_prompt", previous)
+            step["prompt"] = prompt
+            append_event(arguments.job, {"kind": "step_edit", "step": arguments.step, "actor": arguments.actor,
+                                         "previous_prompt": previous, "prompt": prompt,
+                                         "summary": f"step {arguments.step + 1} prompt edited by {arguments.actor}"})
+    emit({"job": arguments.job, "step": arguments.step, "status": "edited", "prompt": prompt})
+
+
 def command_add(arguments: argparse.Namespace) -> None:
     if arguments.key is not None:
         add_keyed(arguments)
@@ -2536,8 +2632,10 @@ def add_keyed(arguments: argparse.Namespace) -> None:
             for index, requested in zip(added['steps'], new_steps):
                 expected = make_step(index, requested['prompt'], requested.get('title'),
                                      requested.get('work_item', inherited))
-                if any(job['steps'][index].get(name) != expected.get(name)
-                       for name in ('prompt', 'title', 'work_item')):
+                original = {**job['steps'][index]}
+                if "original_prompt" in original:
+                    original["prompt"] = original["original_prompt"]
+                if any(original.get(name) != expected.get(name) for name in ('prompt', 'title', 'work_item')):
                     fail('add key has changed payload')
             fresh = False
     if fresh:
@@ -2934,6 +3032,12 @@ def main() -> None:
     create.add_argument("--add-dir", action="append", default=[], help="extra directory the claude agent may use (repeatable)")
     create.add_argument("--env", action="append", default=[], help="NAME=value set in the agent's environment (repeatable)")
     create.set_defaults(handler=command_create)
+
+    edit_step = commands.add_parser("edit-step", help="replace an unstarted pending step's prompt from stdin")
+    edit_step.add_argument("job")
+    edit_step.add_argument("step", type=int, help="zero-based step index")
+    edit_step.add_argument("--actor", required=True)
+    edit_step.set_defaults(handler=command_edit_step)
 
     add = commands.add_parser("add")
     add.add_argument("job")

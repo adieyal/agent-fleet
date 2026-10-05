@@ -701,7 +701,7 @@ access to the real `~/.config/fleet` store and config before opening them.
 CLI work reads: `fleet work show WORK_ID` accepts a unique prefix; `--json` includes the full record and linked records.
 Use `fleet status PROJECT --item WORK_ID --depth 1 --open` to scope a tree, limit child depth (0 = roots), and hide complete work. Incomplete descendants remain visible. Unlinked attention has its own heading; an item scope excludes it.
 
-The library checks wire protocol version 1 before each host command, event tail,
+The library checks wire protocol version 2 before each host command, event tail,
 wait and stream, and validates the stream hello. Mismatches report both versions
 and require `fleet install HOST`. `fleetd.py version` reports the worker release,
 wire, stream and dispatch schema versions for deployment tooling. Build all four

@@ -81,6 +81,7 @@ the user asks or an event arrives.
 | Full final message of each step + outbox listing | `fleet result host:id [--step N]` |
 | Fetch files the agent left for you | `fleet pull host:id [dest]` |
 | Send more context mid-job | `fleet push host:id file…` then mention it in the next step |
+| Correct a queued step before it starts | `fleet step edit host:id N --text "…"` or `--file prompt.md` (`N` starts at 1) |
 | Queue follow-up work (restarts an idle job) | `fleet add host:id -s "…"` (`--retry` re-queues failed steps) |
 | Answer a blocked step | `fleet add host:id -s "reply"` (or `fleet answer <attention-id> "reply"`) |
 | Stop | `fleet cancel host:id [--all-steps]` |
@@ -98,6 +99,11 @@ read the `N of M` footer before claiming a complete list. History statuses are
 compare recorded start times; missing starts remain visible without a date filter.
 Terminal jobs retain normalized events on the controller; raw traces remain on
 the worker. `fleet rm` records worker trace removal and preserves retained evidence.
+
+Use `step edit` to replace a queued prompt in place. It preserves the step's title,
+position and work item, updates its readable brief, and records the actor and
+old/new prompts. Only pending steps that have never started can be edited; a
+retried step that already ran is refused too. It does not start a held job.
 
 A step that ends `FLEET_STATUS: blocked` holds its job: later steps wait until
 it is answered. `fleet add host:id -s "reply"` on such a job answers that step

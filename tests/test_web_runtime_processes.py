@@ -22,7 +22,7 @@ def emit(value):
     print(json.dumps(value), flush=True)
 command = sys.argv[1]
 if command == 'version':
-    emit({'wire_protocol_version': 1})
+    emit({'wire_protocol_version': 2})
 elif command == 'ls':
     emit({'jobs': [job()]})
 elif command == 'sessions':
@@ -30,7 +30,7 @@ elif command == 'sessions':
 elif command == 'stream':
     with open(os.environ['TEST_WORKER_STARTS'], 'a') as log:
         log.write(str(os.getpid()) + '\\n')
-    emit({'type': 'hello', 'wire_protocol_version': 1})
+    emit({'type': 'hello', 'wire_protocol_version': 2})
     emit({'type': 'heartbeat'})
     previous = None
     while True:

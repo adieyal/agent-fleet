@@ -51,7 +51,7 @@ def test_close_cancels_silent_host_and_reaps_process(monkeypatch):
         return process
 
     host = SimpleNamespace(name="worker", fleetd_command=lambda _: [sys.executable, "-c", "import time; time.sleep(60)"])
-    monkeypatch.setattr(transport, "worker_version", lambda host: {"wire_protocol_version": 1})
+    monkeypatch.setattr(transport, "worker_version", lambda host: {"wire_protocol_version": 2})
     monkeypatch.setattr(transport, "ensure_master", lambda _: None)
     monkeypatch.setattr(transport.subprocess, "Popen", launch)
     state = SimpleNamespace(hosts=[host], transport=transport, follow_history=lambda stop: stop.wait(),
