@@ -7,8 +7,7 @@ from pathlib import Path
 
 import pytest
 
-
-from fleet.container import configured_container
+from fleet import composition
 from fleet.infrastructure.sqlite import store as sqlite_store
 from fleet.modules.execution import JobObservation, Run, Usage
 
@@ -23,10 +22,10 @@ def p2_migration() -> int:
 
 
 def dispatched(store):
-    workspace = configured_container(store).initialized_workspace()
+    workspace = composition.open_workspace(store)
     project = workspace.move_in(["one"], "demo").project_id
-    item = configured_container(store).work().add(project=project, title='Task', goal='Ship', actor='user')
-    execution = configured_container(store).execution()
+    item = composition.open_work(store).add(project=project, title="Task", goal="Ship", actor="user")
+    execution = composition.open_execution(store)
     run = execution.dispatch(item.id, host="one", runtime="codex", payload={"cwd": "/repo", "steps": ["Ship"]},
                              actor="user", reason="manual", idempotency_key="request").run
     return execution, run
@@ -37,7 +36,7 @@ def run_history(store, run: Run) -> list[dict]:
 
 
 def test_activity_and_observation_time_leave_no_history():
-    store = configured_container().store()
+    store = composition.open_store()
     execution, run = dispatched(store)
     execution.observe(run.host, JobObservation(run.remote_job_id, "running", "codex", START, None, START))
     before = run_history(store, run)
@@ -54,7 +53,7 @@ def test_activity_and_observation_time_leave_no_history():
 
 
 def test_state_changes_keep_their_history_and_a_finished_run_keeps_its_usage():
-    store = configured_container().store()
+    store = composition.open_store()
     execution, run = dispatched(store)
     execution.observe(run.host, JobObservation(run.remote_job_id, "running", "codex", START, None, START))
     before = len(run_history(store, run))
@@ -70,7 +69,7 @@ def test_state_changes_keep_their_history_and_a_finished_run_keeps_its_usage():
 
 
 def test_unrecorded_writes_outside_observations_are_still_refused():
-    store = configured_container().store()
+    store = composition.open_store()
     execution, run = dispatched(store)
     with pytest.raises(ValueError, match="history entry"):
         with store.unit_of_work() as unit:
@@ -98,7 +97,7 @@ def test_migration_moves_observations_out_of_existing_runs(tmp_path: Path, monke
     migrations = sqlite_store.MIGRATIONS
     position = p2_migration()
     monkeypatch.setattr(sqlite_store, "MIGRATIONS", migrations[:position])
-    store = configured_container(path=path).store()
+    store = composition.open_store(path)
     runs = {"live": legacy_run("live", "running", USAGE), "ended": legacy_run("ended", "succeeded", USAGE)}
     with store.unit_of_work() as unit:
         unit.connection.execute("INSERT INTO execution_action (id, record) VALUES ('action', '{}')")
@@ -109,7 +108,7 @@ def test_migration_moves_observations_out_of_existing_runs(tmp_path: Path, monke
     sequence = store.latest_sequence()
 
     monkeypatch.setattr(sqlite_store, "MIGRATIONS", migrations)
-    store = configured_container(path=path).store()
+    store = composition.open_store(path)
     migrated = store.history_after(sequence)
     assert sorted(entry["subject"] for entry in migrated) == ["execution:run:ended", "execution:run:live"]
     assert {entry["actor"] for entry in migrated} == {"migration"}
@@ -119,7 +118,7 @@ def test_migration_moves_observations_out_of_existing_runs(tmp_path: Path, monke
     assert "usage" not in json.loads(records["live"]) and json.loads(records["ended"])["usage"] == USAGE
     assert not any(key in json.loads(record) for record in records.values()
                    for key in ("last_observed", "current_action", "action_observed_at"))
-    execution = configured_container(store).execution()
+    execution = composition.open_execution(store)
     for run in execution.runs():
         assert (run.last_observed, run.current_action, run.action_observed_at, run.usage) == (
             START, "tool", START, Usage(**USAGE))
@@ -134,15 +133,15 @@ def test_migration_moves_observations_out_of_existing_runs(tmp_path: Path, monke
 def test_store_already_migrated_through_main_17_reopens_without_replaying(tmp_path):
     """P2 integration uses main's 15/16/17 history, observations and ownership schema."""
     path = tmp_path / "main-17.db"
-    store = configured_container(path=path).store()
+    store = composition.open_store(path)
     assert store.schema_version() == 17
     execution, run = dispatched(store)
     execution.observe(run.host, JobObservation(run.remote_job_id, "running", "codex", START, None, START))
     before = store.history_after(0)
-    reopened = configured_container(path=path).store()
+    reopened = composition.open_store(path)
     assert reopened.schema_version() == 17
     assert reopened.history_after(0) == before
-    assert configured_container(reopened).execution().get_run(run.id).last_observed == START
+    assert composition.open_execution(reopened).get_run(run.id).last_observed == START
     with sqlite3.connect(path) as connection:
         assert connection.execute("SELECT count(*) FROM execution_run_observation").fetchone()[0] == 1
         assert "subject" in {row[1] for row in connection.execute("PRAGMA table_info(attention_item)")}

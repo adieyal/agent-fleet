@@ -9,10 +9,9 @@ from urllib.request import urlopen
 import pytest
 
 from conftest import FIXTURE
-from fleet.container import configured_container
-from fleet_cli.cli import build_parser
+from fleet.cli import build_parser
 from fleet.modules.execution import ExecutionFacade
-from fleet_web.server import WEB_ROOT
+from fleet.web.server import WEB_ROOT
 
 
 def get(base_url: str, path: str, **query: str) -> dict:
@@ -37,8 +36,8 @@ def test_state_is_the_recorded_fleet(base_url: str, fixture_data: dict[str, Any]
                 if event is not None:
                     assert event.pop("activity_class") == ExecutionFacade.classify_activity(event)
     added = ("project_id", "focus", "work", "audit_run_id")
-
-    execution = configured_container(deck_state.store).execution()
+    from fleet.composition import open_execution
+    execution = open_execution(deck_state.store)
     for host in state["hosts"]:
         for item in host["jobs"] + host["sessions"]:
             run = execution.find_run(host["name"], item["id"])

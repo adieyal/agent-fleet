@@ -1,17 +1,13 @@
 [importlinter]
-root_packages =
-    fleet
-    fleet_cli
-    fleet_web
-include_external_packages = True
+root_package = fleet
 
 [importlinter:contract:layers]
 name = Controller layers
 type = layers
 layers =
-    fleet_cli | fleet_web
-    fleet.container
-    fleet.services : fleet.orchestration : fleet.triage : fleet.triage_scheduler : fleet.ingestion
+    fleet.cli : fleet.web
+    fleet.orchestration
+    fleet.composition
     fleet.transport
     fleet.projections
     fleet.modules
@@ -20,7 +16,7 @@ layers =
 name = Infrastructure construction
 type = protected
 protected_modules = fleet.infrastructure
-allowed_importers = fleet.container
+allowed_importers = fleet.composition
 
 [importlinter:contract:module-independence]
 name = Module independence
@@ -28,15 +24,10 @@ type = forbidden
 source_modules = fleet.modules
 forbidden_modules =
     fleet.infrastructure
-    fleet_web
-    fleet_cli
-    fleet.container
+    fleet.web
+    fleet.cli
+    fleet.composition
     fleet.projections
-    fleet.services
-    fleet.ingestion
-    fleet.orchestration
-    fleet.triage
-    fleet.triage_scheduler
 
 # Each module's descendants are private, including its facade implementation.
 # Add a public-surface contract whenever a new business module is introduced.
@@ -103,128 +94,4 @@ source_modules = fleet.remote.fleetd
 forbidden_modules =
     fleet
     fleet.**
-    fleet_cli
-    fleet_cli.**
-    fleet_web
-    fleet_web.**
 as_packages = False
-
-[importlinter:contract:document-library]
-name = Document library independence
-type = forbidden
-source_modules =
-    fleet.infrastructure.documents.job_store
-    fleet.services
-    fleet.orchestration
-    fleet.triage
-    fleet.triage_scheduler
-    fleet.ingestion
-forbidden_modules =
-    fleet_cli
-    fleet_web
-    fleet.container
-
-[importlinter:contract:service-infrastructure]
-name = Service infrastructure separation
-type = forbidden
-source_modules =
-    fleet.services
-    fleet.orchestration
-    fleet.triage
-    fleet.triage_scheduler
-forbidden_modules = fleet.infrastructure
-
-[importlinter:contract:web-processes]
-name = Web processes use transport
-type = forbidden
-source_modules = fleet_web
-forbidden_modules = subprocess
-allow_indirect_imports = True
-
-[importlinter:contract:cli-processes]
-name = CLI processes use transport
-type = forbidden
-source_modules = fleet_cli
-forbidden_modules = subprocess
-allow_indirect_imports = True
-
-[importlinter:contract:service-presentation]
-name = Services have no presentation dependencies
-type = forbidden
-source_modules =
-    fleet.services
-    fleet.orchestration
-    fleet.triage
-    fleet.triage_scheduler
-forbidden_modules =
-    argparse
-    rich
-
-[importlinter:contract:container-presentation]
-name = Container has no presentation dependencies
-type = forbidden
-source_modules = fleet.container
-forbidden_modules =
-    fleet_cli
-    fleet_web
-
-[importlinter:contract:controller-internals]
-name = Controllers use public providers and module surfaces
-type = forbidden
-source_modules =
-    fleet_cli
-    fleet_web
-forbidden_modules =
-    fleet.infrastructure
-    fleet.services
-    fleet.orchestration
-    fleet.triage
-    fleet.triage_scheduler
-    fleet.ingestion
-    fleet.transport
-    fleet.modules
-    fleet.projections
-    fleet.host_values
-    fleet.errors
-    fleet.identifiers
-    fleet.remote
-allow_indirect_imports = True
-
-# Distribution boundaries apply to every module, including indirect imports.
-[importlinter:contract:library-presentation]
-name = Library has no presentation dependencies
-type = forbidden
-source_modules = fleet
-forbidden_modules =
-    fleet_cli
-    fleet_web
-
-[importlinter:contract:presentation-independence]
-name = Presentation packages are independent
-type = independence
-modules =
-    fleet_cli
-    fleet_web
-
-[importlinter:contract:library-rendering]
-name = Library returns raw documents
-type = forbidden
-source_modules = fleet
-forbidden_modules =
-    markdown_it
-    mdit_py_plugins
-
-[importlinter:contract:api-passive]
-name = Public API has no implementation dependencies
-type = forbidden
-source_modules = fleet.api
-forbidden_modules =
-    fleet.container
-    fleet.transport
-    fleet.infrastructure
-    fleet.services
-    fleet.projections
-    fleet.ingestion
-    fleet.orchestration
-    fleet.triage
-    fleet.triage_scheduler

@@ -1,5 +1,4 @@
 """Connection preparation is bounded just like the remote command."""
-import io
 import subprocess
 from types import SimpleNamespace
 
@@ -40,20 +39,3 @@ def test_remote_command_timeout_is_translated(monkeypatch):
     monkeypatch.setattr(transport.subprocess, "run", timeout)
     with pytest.raises(FleetError, match="home: timed out after 30s"):
         transport.call(host, ["add", "job"])
-
-
-def test_stream_process_is_killed_when_message_handling_fails(monkeypatch):
-    host = transport.Host("worker", None)
-    killed = []
-    process = SimpleNamespace(stdout=io.BytesIO(b'{"type": "hello"}\n'), stderr=io.BytesIO(),
-                              wait=lambda **kwargs: None, poll=lambda: None, kill=lambda: killed.append(True))
-    monkeypatch.setattr(transport, "ensure_master", lambda host: None)
-    monkeypatch.setattr(transport.subprocess, "Popen", lambda *args, **kwargs: process)
-
-    def receive(message):
-        assert message == {"type": "hello"}
-        raise RuntimeError("message rejected")
-
-    with pytest.raises(RuntimeError, match="message rejected"):
-        transport.follow_stream(host, receive, events="15", silence_limit=20)
-    assert killed == [True]

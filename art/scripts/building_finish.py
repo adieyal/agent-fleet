@@ -2,7 +2,7 @@
 
     python3 art/scripts/building_finish.py BUILD_DIR
 
-Crops the spine and lift columns into their bands, writes packages/fleet-web/src/fleet_web/static/assets/world/building/<piece>@<ppm>.webp at 1x, 2x
+Crops the spine and lift columns into their bands, writes fleet/web/assets/world/building/<piece>@<ppm>.webp at 1x, 2x
 and 4x (20, 40 and 80 px/m; the plinths only 1x and 2x) and manifest.json: the camera (the canonical projection), per
 tier the floor and lobby steps in pixels, the backdrop colour, how to stack (stack), and per piece its projection and
 per tier its file, size, anchor pixel, DOM
@@ -17,7 +17,7 @@ import numpy as np
 from PIL import Image
 
 REPO = Path(__file__).resolve().parents[2]
-OUT = REPO / 'packages' / 'fleet-web' / 'src' / 'fleet_web' / 'static' / 'assets' / 'world' / 'building'
+OUT = REPO / 'fleet' / 'web' / 'assets' / 'world' / 'building'
 QUALITY = 88
 MULTS = (1, 2, 4)
 

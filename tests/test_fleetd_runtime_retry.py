@@ -164,7 +164,7 @@ def test_default_backoff_schedule(job, monkeypatch):
 
 
 def test_wait_message_is_visible_in_cli(job, monkeypatch):
-    from fleet_cli.cli import job_label
+    from fleet.cli import job_label
 
     with fleetd.locked_job("job") as live:
         live["steps"][0]["status"] = "running"

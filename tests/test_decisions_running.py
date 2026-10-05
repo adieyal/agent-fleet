@@ -7,15 +7,14 @@ from io import StringIO
 
 import pytest
 
-from fleet.container import configured_container
-from fleet import transport
+from fleet import composition, transport
 from fleet.orchestration import guide
 from fleet.remote import fleetd
 
 
 @pytest.mark.parametrize('scope', ['linked', 'ancestor'])
 def test_decision_retries_after_restart_and_dispatch_excludes_history(project_id, monkeypatch, scope):
-    services = configured_container().services()
+    services = composition.facades()
     epic = services.work.add(project=project_id, title='Epic', goal='Ship', actor='user', kind='epic')
     task = services.work.add(project=project_id, title='Task', goal='Ship', actor='user', parent=epic.id)
     other = services.work.add(project=project_id, title='Other', goal='Ship', actor='user')
@@ -41,8 +40,8 @@ def test_decision_retries_after_restart_and_dispatch_excludes_history(project_id
     assert delivery.decision == recent.id
     assert delivery.status == 'pending'
     assert calls[0][0] == 'receive-decision'
-    from fleet.services.live import FleetState
-    state = FleetState([transport.Host('fake', None)], container=configured_container(store=services.store))
+    from fleet.web.server import FleetState
+    state = FleetState([transport.Host('fake', None)], store=services.store)
     view = state.with_work({'hosts': [dict(name='fake', jobs=[dict(id=run.remote_job_id)], sessions=[])]})
     received, = view['hosts'][0]['jobs'][0]['decisions_since_dispatch']
     assert received['id'] == recent.id
@@ -53,7 +52,7 @@ def test_decision_retries_after_restart_and_dispatch_excludes_history(project_id
         received_keys.append(arguments[-1])
         return {'schema_version': 1, 'key': arguments[-1], 'status': 'applied'}
     monkeypatch.setattr(transport, 'call', online)
-    restarted = configured_container(configured_container().store()).services()
+    restarted = composition.facades(composition.open_store())
     restarted.execution.retry_deliveries()
     assert restarted.execution.deliveries()[0].status == 'applied'
     sequence = restarted.store.latest_sequence()
@@ -99,15 +98,15 @@ def test_worker_receipt_and_step_boundary(tmp_path, monkeypatch, capsys):
     assert 'shown_decisions' not in third
 
 
-def test_fleet_show_lists_received_decisions(monkeypatch, capsys, *, cli_container, override_cli_method):
-    from fleet_cli import cli
+def test_fleet_show_lists_received_decisions(monkeypatch, capsys):
+    from fleet import cli
     job = dict(id='j', project='p', description='Build', agent='codex', status='running',
                steps=[], cwd='/repo', permission='default', events=[],
                decisions_since_dispatch=[dict(id='d1', question='Colour?', answer='Blue',
                                               actor='user', principle='Brief')])
-    override_cli_method('references', 'job', lambda ref: (transport.Host('fake', None), 'j'))
+    monkeypatch.setattr(cli, 'resolve', lambda ref: (transport.Host('fake', None), 'j'))
     monkeypatch.setattr(transport, 'call', lambda *args, **kwargs: job)
-    cli.command_show(argparse.Namespace(job='fake:j', events=0, json=False), container=cli_container)
+    cli.command_show(argparse.Namespace(job='fake:j', events=0, json=False))
     output = capsys.readouterr().out
     for text in ('Decisions since dispatch: 1', 'Colour?', 'Blue', 'Actor: user', 'Principle: Brief'):
         assert text in output

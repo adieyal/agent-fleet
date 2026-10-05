@@ -5,8 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from fleet.container import configured_container
-from fleet_cli import cli
+from fleet import cli, composition
 from fleet.transport import LOCAL_FLEETD_SOURCE
 
 GUIDANCE = dict(project="p", epic=None, constitution=dict(path="constitution.md", revision="abc", version=3),
@@ -21,7 +20,7 @@ def outside_a_job(monkeypatch):
 
 @pytest.fixture
 def tree(project_id):
-    work = configured_container().work()
+    work = composition.open_work()
     epic = work.add(project=project_id, title="Transcriber", goal="Read", kind="epic", actor="user")
     task = work.add(project=project_id, title="Task", goal="Ship", parent=epic.id, actor="user")
     other = work.add(project=project_id, title="Elsewhere", goal="Other", actor="user")
@@ -29,7 +28,9 @@ def tree(project_id):
 
 
 def run_for(work_item: str, guidance: dict | None, key: str = "job"):
-    return configured_container().execution().dispatch(work_item, host='h', runtime='codex', actor='user', reason='Go', idempotency_key=key, remote_job_id=key, guidance=guidance, payload=dict(cwd='/repo', arguments=[], steps=[dict(prompt='Go')], context=None, hold=False)).run
+    return composition.open_execution().dispatch(work_item, host="h", runtime="codex", actor="user", reason="Go",
+        idempotency_key=key, remote_job_id=key, guidance=guidance,
+        payload=dict(cwd="/repo", arguments=[], steps=[dict(prompt="Go")], context=None, hold=False)).run
 
 
 def record(capsys, work_item: str, *extra: str) -> dict:
@@ -45,7 +46,7 @@ def test_record_with_a_run_carries_its_pinned_guidance(tree, capsys):
     assert (decision["principle"], decision["source_run"], decision["guidance"]) == (
         "Constitution: anti-goal 2", run.id, GUIDANCE)
     assert decision["activation"] is None and decision["affected_work_items"] == [tree.task.id]
-    stored = configured_container().decisions().get(decision['id'])
+    stored = composition.open_decisions().get(decision["id"])
     assert stored.guidance == GUIDANCE and stored.context == "flagged line 4"
 
 
@@ -82,7 +83,7 @@ def test_a_job_whose_run_another_store_holds_hands_the_decision_to_its_stream(tr
     assert {key: value for key, value in held.items() if key not in ("id", "time")} == dict(
         work_item=tree.task.id, question="Loosen the check?", answer="No", principle="Constitution: anti-goal 2",
         actor="claude", context="line 4")
-    assert configured_container().decisions().list() == []
+    assert composition.open_decisions().list() == []
 
 
 def test_a_resent_decision_is_a_new_decision_from_the_cli(tree, host_job, capsys):
@@ -128,13 +129,13 @@ def test_blank_principle_or_question_is_refused(tree, capsys, field):
 
 
 def test_a_run_from_another_project_is_refused(tree, capsys):
-    elsewhere = configured_container().initialized_workspace().edit_registry(lambda registry: registry.create('q')).id
-    item = configured_container().work().add(project=elsewhere, title='Q', goal='Q', actor='user')
+    elsewhere = composition.open_workspace().edit_registry(lambda registry: registry.create("q")).id
+    item = composition.open_work().add(project=elsewhere, title="Q", goal="Q", actor="user")
     run = run_for(item.id, None)
     with pytest.raises(SystemExit):
         record(capsys, tree.task.id, "--run", run.id)
     assert "is not in" in capsys.readouterr().err
-    assert configured_container().decisions().list() == []
+    assert composition.open_decisions().list() == []
 
 
 def test_list_by_project_and_epic_newest_first_with_unknown_principles(tree, capsys):

@@ -15,7 +15,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 REPO = Path(__file__).resolve().parents[2]
 L0 = REPO / 'docs' / 'images' / 'concept' / 'l0.png'
-PIECES = REPO / 'packages' / 'fleet-web' / 'src' / 'fleet_web' / 'static' / 'assets' / 'world' / 'building'
+PIECES = REPO / 'fleet' / 'web' / 'assets' / 'world' / 'building'
 # top to bottom, as the concept: (state, plate); a free floor's plate is blank
 FLOORS = [('open-lit', 'North'), ('open-lit', 'Atlas'), ('lab-lit', 'Lab'), ('glass-lit', 'Harbor'),
           ('glass-unlit', 'Delta'), ('free', None)]

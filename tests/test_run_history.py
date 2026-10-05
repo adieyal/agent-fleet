@@ -8,27 +8,25 @@ from urllib.request import urlopen
 
 import pytest
 
-from fleet.container import configured_container
-from fleet_cli import cli
+from fleet import cli, composition
 from fleet.errors import FleetError
 from fleet.modules.execution import JobObservation
 from fleet.projections.run_history import history_runs, run_detail
-from fleet_web.fixture import FixtureLibrary
-from fleet.services.live import FleetState
-from fleet_web.server import make_handler
+from fleet.web.fixture import FixtureLibrary
+from fleet.web.server import FleetState, make_handler
 
 
 @pytest.fixture
 def history():
     now = datetime.now(timezone.utc)
-    store = configured_container().store()
-    workspace = configured_container(store).initialized_workspace()
+    store = composition.open_store()
+    workspace = composition.open_workspace(store)
     project = workspace.edit_registry(lambda registry: registry.create("History")).id
     other = workspace.edit_registry(lambda registry: registry.create("Other")).id
-    work = configured_container(store).work()
+    work = composition.open_work(store)
     root = work.add(project=project, title="Epic", goal="Ship", kind="epic", actor="user")
     child = work.add(project=project, parent=root.id, title="Child", goal="Ship", actor="user")
-    execution = configured_container(store).execution()
+    execution = composition.open_execution(store)
     job = execution.record_observed("carbon", {"id": "job", "run_id": "aabb-1", "description": "Failed job"}, project)
     execution.link("carbon", "job", root.id, actor="user")
     job = execution.observe("carbon", JobObservation("job", "failed", "codex", now - timedelta(days=1), now, now))
@@ -92,9 +90,9 @@ def test_cli_json_footer_empty_state_and_run_details(history, capsys):
     assert detail["run"]["id"] == "aabb-1" and detail["action"]["work_item"] == history[4].id
     assert detail["trace"]["events"]["reason"] == "not recorded for this run"
     with pytest.raises(ValueError, match="matches 2 runs"):
-        run_detail('aabb', history[3], history[2], configured_container(history[0]).library())
+        run_detail("aabb", history[3], history[2], composition.open_library(history[0]))
     with pytest.raises(LookupError):
-        run_detail('missing', history[3], history[2], configured_container(history[0]).library())
+        run_detail("missing", history[3], history[2], composition.open_library(history[0]))
 
 
 @pytest.mark.parametrize("arguments,options", [(["--project", "History"], {"project": "History"}),
@@ -111,13 +109,13 @@ def test_cli_filters_match_projection(history, capsys, arguments, options):
 
 
 def test_run_detail_retains_steps_git_and_unlinked_documents(history, capsys, api):
-
+    from fleet.web.job_store import ProjectDocuments
     execution = history[3]
     run = history[8]
     git = {"base": "a" * 40, "head": "b" * 40, "commit_count": 1,
            "commits": [{"sha": "b" * 40, "subject": "Ship"}], "pushes": [{"ref": "origin/main"}]}
     execution.observe_steps(run.id, [{"index": 0, "title": "Ship", "git": git, "status": "done"}])
-    documents = configured_container().documents()
+    documents = ProjectDocuments()
     scope = documents.label_scope(run.host, run.label or "")
     document = {"id": "REPORT.md", "name": "Report", "kind": "report", "mtime": 1, "size": 4}
     documents.observe(scope, run.host, {"id": run.remote_job_id, "documents": [document]})
@@ -155,8 +153,8 @@ def test_work_filter_includes_a_step_serving_the_item(history):
 
 @pytest.fixture
 def api(history):
-    state = FleetState([], container=configured_container(store=history[0]))
-    server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(state, FixtureLibrary({'hosts': []}, container=configured_container())))
+    state = FleetState([], store=history[0])
+    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(state, FixtureLibrary({"hosts": []})))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     yield f"http://127.0.0.1:{server.server_port}"

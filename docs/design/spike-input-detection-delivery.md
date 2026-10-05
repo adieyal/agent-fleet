@@ -157,7 +157,7 @@ Command: `python3 scripts/spikes/codex_input.py interactive` produced the questi
 
 ## What fleetd sees now
 
-`packages/fleet/src/fleet/remote/fleetd.py` runs each job runner in a private `tmux -L fleet` session (`launch_runner`, lines 488–498), but each agent step is a separate `Popen` with `stdin=DEVNULL` and JSON stdout (`run_step`, lines 385–433). The tmux pane hosts the runner and log pipeline; writing to that pane is **not** writing to Claude or Codex. `agent_command` already uses `--resume` for subsequent Claude steps and `exec resume` for subsequent Codex steps (lines 333–361).
+`fleet/remote/fleetd.py` runs each job runner in a private `tmux -L fleet` session (`launch_runner`, lines 488–498), but each agent step is a separate `Popen` with `stdin=DEVNULL` and JSON stdout (`run_step`, lines 385–433). The tmux pane hosts the runner and log pipeline; writing to that pane is **not** writing to Claude or Codex. `agent_command` already uses `--resume` for subsequent Claude steps and `exec resume` for subsequent Codex steps (lines 333–361).
 
 Interactive sessions are discovered by scanning recent Claude project and Codex rollout transcripts (`SessionTracker`, lines 875–943). They are not fleetd-owned processes. “idle” means 90 seconds without transcript writes, which also happens during a long tool call. `fleet/attention.py` currently raises a session decision only when its latest parsed tool activity is `AskUserQuestion` or `ExitPlanMode` (`WAITING_TOOLS`, lines 30 and 52–61). That misses ordinary text questions, headless permission denials, and Codex questions. A tool call can also become stale if its result is not visible yet.
 

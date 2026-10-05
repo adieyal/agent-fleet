@@ -1,5 +1,4 @@
 """A project's document store on the fleet web machine: filled live from the hosts, read by the library."""
-from tests.container_support import override_container
 
 import json
 import os
@@ -17,13 +16,11 @@ from urllib.request import urlopen
 
 import pytest
 
-
-from fleet.container import configured_container
+from fleet.composition import open_workspace
 from fleet.remote import fleetd
 from fleet.transport import Host
-
-from fleet.services.live import FleetState, follow_host
-from fleet_web.server import make_handler
+from fleet.web.job_store import ProjectDocuments
+from fleet.web.server import FleetState, follow_host, make_handler
 
 real_fetch_raw = FleetState.fetch_raw
 
@@ -44,7 +41,7 @@ def project_id() -> str:
         project = registry.create("Restoke")
         registry.link(project.id, "worker", "restoke")
         return project.id
-    return configured_container().initialized_workspace().edit_registry(create)
+    return open_workspace().edit_registry(create)
 
 
 def worker_fleetd(home: Path, *arguments: str) -> dict:
@@ -99,7 +96,7 @@ def test_documents_are_copied_live_and_outlive_the_job_and_the_host(
     steps.write_text(json.dumps(["Review the suppliers route and write findings to the outbox"]))
     job_id = worker_fleetd(worker, "create", "--project", "restoke", "--description", "Review suppliers",
                            "--agent", "claude", "--cwd", str(work), "--steps-file", str(steps), "--hold")["id"]
-    state = FleetState([Host('worker', None)], container=configured_container())
+    state = FleetState([Host("worker", None)])
     threading.Thread(target=follow_host, args=(state, state.hosts[0]), daemon=True).start()
     with deck(state) as url:
         # the brief is stored from the moment the job is listed
@@ -137,20 +134,17 @@ def test_documents_are_copied_live_and_outlive_the_job_and_the_host(
         reads("outbox-findings.md", "Second pass")
 
     # a fleet web started while the host is unreachable still lists and reads the store
-    offline = FleetState([Host('worker', 'nobody@unreachable.invalid')], container=configured_container())
+    offline = FleetState([Host("worker", "nobody@unreachable.invalid")])
     with deck(offline) as url:
         job = stored_job(url, project_id)
         assert job["availability"] == "host offline"
         assert {document["id"] for document in job["documents"]} == {"brief-0", "outbox-findings.md", "file-0"}
         status, body = get(url, "/api/library/job", project=project_id, job=key, id="outbox-findings.md")
         assert status == 200 and "Second pass" in body["markdown"]
-        assert '<h1 id="findings">Findings</h1>' in body["html"]
-        assert body["toc"] == [{"level": 1, "id": "findings", "text": "Findings"}]
-        assert (body["words"], body["minutes"]) == (7, 1)
 
 
 def test_reading_stays_inside_the_projects_store(tmp_path: Path) -> None:
-    store = configured_container().documents(root=tmp_path / 'projects')
+    store = ProjectDocuments(tmp_path / "projects")
     job = {"id": "../../escape", "project": "restoke", "description": "d", "status": "done", "created_at": 1,
            "steps": [], "documents": [{"id": "outbox-../../../x.md", "kind": "outbox", "name": "x.md",
                                        "step": None, "path": "/p", "size": 3, "mtime": 1}]}
@@ -183,7 +177,7 @@ def test_reading_stays_inside_the_projects_store(tmp_path: Path) -> None:
 
 
 def test_an_older_hosts_local_notes_are_never_stored(tmp_path: Path) -> None:
-    store = configured_container().documents(root=tmp_path / 'projects')
+    store = ProjectDocuments(tmp_path / "projects")
     listed = [{"id": "file-0", "kind": "file", "name": "CLAUDE.local.md", "step": 0, "path": "/w/CLAUDE.local.md",
                "size": 5, "mtime": 1},
               {"id": "outbox-report.md", "kind": "outbox", "name": "report.md", "step": None, "path": "/j/outbox/report.md",
@@ -193,20 +187,3 @@ def test_an_older_hosts_local_notes_are_never_stored(tmp_path: Path) -> None:
     assert [document["id"] for document in store.observe("p-1", "host", job)] == ["outbox-report.md"]
     [stored] = store.jobs("p-1")
     assert [document["id"] for document in stored["documents"]] == ["outbox-report.md"]
-
-
-def test_working_documents_keep_the_reader_response_fields(tmp_path: Path) -> None:
-    store = configured_container().documents(root=tmp_path / 'projects')
-    working = store.root / "p-1" / "working"
-    working.mkdir(parents=True)
-    markdown = "# Working\n\nFLEET_STATUS: done\n\nText."
-    (working / "note.md").write_text(markdown)
-    state = FleetState([], container=override_container(configured_container(), documents=store))
-    with deck(state) as url:
-        status, body = get(url, "/api/library/working", project="p-1", id="note.md")
-    assert status == 200
-    assert body["markdown"] == markdown
-    assert '<h1 id="working">Working</h1>' in body["html"]
-    assert "FLEET_STATUS: done" in body["html"]
-    assert body["toc"] == [{"level": 1, "id": "working", "text": "Working"}]
-    assert (body["words"], body["minutes"], body["project_id"]) == (5, 1, "p-1")

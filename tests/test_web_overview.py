@@ -5,12 +5,11 @@ import os
 import shutil
 from pathlib import Path
 
+import pytest
 
-from fleet.container import configured_container
-from fleet_web.fixture import FixtureLibrary
-from fleet.services.fixtures import FixtureState
-from fleet_web.library import ProjectLibrary
-from fleet.infrastructure.documents.library import library_paths
+from fleet.web.fixture import FixtureLibrary, FixtureState
+from fleet.web.library import ProjectLibrary, library_paths
+from fleet.web.overview import Overview
 from overview_fixture import AGENT_FLEET, RALPH, overview_fixture, repository
 
 
@@ -30,8 +29,9 @@ def ralph_copy(tmp_path: Path, seconds: float = 2 * DAY) -> Path:
 
 
 def restoke(root: Path, jobs: list[dict] | None = None) -> dict:
-    library = ProjectLibrary({'restoke': {'path': str(root), 'recursive': True}}, container=configured_container())   # as Restoke is configured
-    return configured_container().overview().build(name='Restoke', project_id=None, library='restoke', root=library.root('restoke'), documents=library.list(), jobs=jobs or [], read_job=lambda *_: None, attention=[], now=NOW)
+    library = ProjectLibrary({"restoke": {"path": str(root), "recursive": True}})   # as Restoke is configured
+    return Overview().build(name="Restoke", project_id=None, library="restoke", root=library.root("restoke"),
+                            documents=library.list(), jobs=jobs or [], read_job=lambda *_: None, attention=[], now=NOW)
 
 
 def job(job_id: str, status: str, cwd: str, description: str) -> dict:
@@ -127,8 +127,8 @@ def test_a_spike_folder_and_its_running_job_are_active_and_no_running_job_is_oth
 
 
 def test_jobs_link_by_worktree_or_brief_and_the_rest_are_other_work(tmp_path: Path) -> None:
-    state = FixtureState(overview_fixture(repository(tmp_path / 'agent-fleet')), container=configured_container())
-    projects = {project["name"]: project for project in state.library_overview(FixtureLibrary(state.fixture, container=configured_container()))}
+    state = FixtureState(overview_fixture(repository(tmp_path / "agent-fleet")))
+    projects = {project["name"]: project for project in state.library_overview(FixtureLibrary(state.fixture))}
 
     restoke_streams = by_id(projects["Restoke"])
     slice4 = restoke_streams["v2-suppliers-slice4"]            # b7d042's brief names the folder, and it is running
@@ -169,8 +169,8 @@ def test_jobs_link_by_worktree_or_brief_and_the_rest_are_other_work(tmp_path: Pa
 
 def test_the_overview_follows_document_changes_and_reuses_unchanged_parses(tmp_path: Path, monkeypatch) -> None:
     root = ralph_copy(tmp_path)
-    library = ProjectLibrary({'restoke': str(root)}, container=configured_container())
-    overview = configured_container().overview()
+    library = ProjectLibrary({"restoke": str(root)})
+    overview = Overview()
     parses = []
     real_read = Path.read_text
     monkeypatch.setattr(Path, "read_text", lambda self, *a, **k: parses.append(self.name) or real_read(self, *a, **k))
@@ -195,7 +195,7 @@ def test_the_overview_follows_document_changes_and_reuses_unchanged_parses(tmp_p
 
 
 def test_prd_json_reads_as_a_page() -> None:
-    document = ProjectLibrary({'restoke': str(RALPH)}, container=configured_container()).read('restoke', 'v2-suppliers-slice4/prd.json')
+    document = ProjectLibrary({"restoke": str(RALPH)}).read("restoke", "v2-suppliers-slice4/prd.json")
     assert document["kind"] == "prd"
     html = document["html"]
     assert "userStories" not in html and "acceptanceCriteria" not in html
@@ -217,7 +217,7 @@ def test_library_shapes_and_paths(tmp_path: Path) -> None:
     assert sorted(path.relative_to(repo).as_posix() for path in library_paths(repo)) == [
         "README.md", "docs/adr/0001-sqlite-store.md", "docs/adr/0005-storehouse.md", "docs/design/workspace-prd.md"]
 
-    library = ProjectLibrary({'restoke': str(RALPH), 'repo': str(repo)}, container=configured_container())
+    library = ProjectLibrary({"restoke": str(RALPH), "repo": str(repo)})
     secret = tmp_path / "secret.md"
     secret.write_text("private")
     (repo / "docs" / "leak.md").symlink_to(secret)
@@ -234,7 +234,7 @@ def test_a_recursive_library_feeds_the_overview_and_never_shows_local_notes(tmp_
     (root / "v2-suppliers-slice6" / "notes" / "mine.local.md").write_text("# private notes")
     (root / "worktrees" / "v2-slice6").mkdir(parents=True)
     (root / "worktrees" / "v2-slice6" / "README.md").write_text("# a checkout, not a document")
-    library = ProjectLibrary({'restoke': {'path': str(root), 'recursive': True}}, container=configured_container())
+    library = ProjectLibrary({"restoke": {"path": str(root), "recursive": True}})
     documents = library.list()
     ids = {document["id"] for document in documents}
     assert {"v2-suppliers-slice6/notes/format.md", "v2-suppliers/prd.json", "v2-suppliers/logs/REPORT-run2.md"} <= ids
@@ -242,7 +242,8 @@ def test_a_recursive_library_feeds_the_overview_and_never_shows_local_notes(tmp_
     for private in ("CLAUDE.local.md", "v2-suppliers-slice6/notes/mine.local.md"):
         assert library.read("restoke", private) is None
 
-    overview = configured_container().overview().build(name='Restoke', project_id=None, library='restoke', root=library.root('restoke'), documents=documents, jobs=[], read_job=lambda *_: None, attention=[], now=NOW)
+    overview = Overview().build(name="Restoke", project_id=None, library="restoke", root=library.root("restoke"),
+                                documents=documents, jobs=[], read_job=lambda *_: None, attention=[], now=NOW)
     assert {key: stream["state"] for key, stream in by_id(overview).items()} == {
         "v2-review": "paused", "v2-suppliers": "done", "v2-suppliers-slice4": "paused", "v2-suppliers-slice5": "done",
         "v2-suppliers-slice6": "blocked"}
@@ -258,13 +259,14 @@ def test_a_recursive_repository_lists_nested_folders_but_no_local_notes(tmp_path
     (repo / "src" / "deep" / "NOTES.md").write_text("# Deep notes")
     (repo / "CLAUDE.local.md").write_text("# private")
     (repo / "docs" / "adr" / "draft.local.md").write_text("# private")
-    flat = {doc["id"] for doc in ProjectLibrary({'repo': str(repo)}, container=configured_container()).list()}
-    deep = {doc["id"] for doc in ProjectLibrary({'repo': {'path': str(repo), 'recursive': True}}, container=configured_container()).list()}
+    flat = {doc["id"] for doc in ProjectLibrary({"repo": str(repo)}).list()}
+    deep = {doc["id"] for doc in ProjectLibrary({"repo": {"path": str(repo), "recursive": True}}).list()}
     assert "src/deep/NOTES.md" not in flat and "src/deep/NOTES.md" in deep
     assert not [name for name in flat | deep if name.endswith(".local.md")]
-    library = ProjectLibrary({'repo': {'path': str(repo), 'recursive': True}}, container=configured_container())
+    library = ProjectLibrary({"repo": {"path": str(repo), "recursive": True}})
     assert library.read("repo", "src/deep/NOTES.md")["markdown"] == "# Deep notes"
     assert library.read("repo", "CLAUDE.local.md") is None
-    overview = configured_container().overview().build(name='repo', project_id=None, library='repo', root=library.root('repo'), documents=library.list(), jobs=[], read_job=lambda *_: None, attention=[])
+    overview = Overview().build(name="repo", project_id=None, library="repo", root=library.root("repo"),
+                                documents=library.list(), jobs=[], read_job=lambda *_: None, attention=[])
     assert overview["workstreams"] == []
     assert [group["folder"] for group in overview["other_documents"]] == [".", "docs/adr", "docs/design", "src/deep"]

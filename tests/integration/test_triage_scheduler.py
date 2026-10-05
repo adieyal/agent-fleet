@@ -5,8 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-
-from fleet.container import configured_container
+from fleet import composition
 from fleet.errors import FleetError
 from fleet.modules.attention import StreamContext
 from fleet.modules.execution import JobObservation
@@ -110,7 +109,7 @@ def test_unreachable_unknown_retains_reservation_and_escalates(triage):
 
 
 def test_no_mandate_means_no_dispatch(project_id):
-    services = configured_container(configured_container().store()).services()
+    services = composition.facades(composition.open_store())
     services.attention.raise_item(project=project_id, owner='agent', kind='blocker', source='test',
         source_reference='a', headline='a', context_reference='a', actor='user')
     engine = TriageScheduler(services, lambda *a: pytest.fail('dispatch'), None)
@@ -166,12 +165,12 @@ def test_nonlocal_host_rejects_without_consuming_budget(triage):
     assert engine.status(a.project)['budget_left'] == 12
 
 
-def test_cli_status_resolves_registered_project_name(triage, capsys, *, cli_container):
-    from fleet_cli import cli
+def test_cli_status_resolves_registered_project_name(triage, capsys):
+    from fleet import cli
     services, activation, *_ = triage
     a = item(triage)
     project = next(p for p in services.workspace.registry().projects.values() if p.id == activation.project)
-    cli.command_triage_status(SimpleNamespace(project=project.name, json=True), container=cli_container)
+    cli.command_triage_status(SimpleNamespace(project=project.name, json=True))
     result = json.loads(capsys.readouterr().out)
     assert result['project'] == activation.project and result['queue'] == [a.id]
     assert result['live_run'] is None and result['budget_left'] == 12
@@ -250,7 +249,7 @@ def test_observed_failure_dispatch_retry_then_failure_escalates(triage):
     assert len(calls) == 1
     triage_run = services.execution.get_run(calls[0][0])
     triage_action = services.execution.get_action(triage_run.action)
-    controller = ControllerCommands(services, triage_action.activation)
+    controller = ControllerCommands(services.store, triage_action.activation)
     result = controller.execute('retry', dict(item=first.id, reason='Transient fixture failure'))
     retried = services.execution.get_run(result['run'])
     finish(services, retried, 'failed')

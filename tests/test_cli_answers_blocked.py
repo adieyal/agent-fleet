@@ -7,16 +7,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from fleet.container import configured_container
-from fleet_cli import cli
-from fleet import transport
-
+from fleet import cli, transport
+from fleet.composition import open_attention, open_decisions
 from fleet.modules.attention.domain import BLOCKED_SOURCE, StreamContext
 from fleet.remote import fleetd
 
 
 @pytest.fixture
-def worker(tmp_path, monkeypatch, override_cli_method, cli_container):
+def worker(tmp_path, monkeypatch):
     """A job "job" on host "h" whose first of three steps ended blocked; fleetd runs in-process, holding runners."""
     monkeypatch.setattr(fleetd, "JOBS_DIRECTORY", tmp_path / "jobs")
     monkeypatch.setattr(fleetd, "launch_runner", lambda job_id: None)
@@ -47,7 +45,7 @@ def worker(tmp_path, monkeypatch, override_cli_method, cli_container):
         return reply
     monkeypatch.setattr(transport, "call", call)
     monkeypatch.setattr(transport, "host_by_name", lambda name: host)
-    override_cli_method('references', 'job', lambda reference: (host, "job"))
+    monkeypatch.setattr(cli, "resolve", lambda reference: (host, "job"))
     return calls
 
 
@@ -61,7 +59,11 @@ def steps():
 
 
 def blocked_item(project_id):
-    return configured_container().initialized_attention().raise_item(project=project_id, kind='blocker', owner='user', source=BLOCKED_SOURCE, source_reference='h:job:0', headline='step 1 asks: which one?', context_reference='job:h:job', actor='fleet', stream_context=StreamContext(owner_type='job', owner_id='job', host='h', project='p', project_id=project_id, source=BLOCKED_SOURCE, summary='blocked', since=None, step=0))
+    return open_attention().raise_item(project=project_id, kind="blocker", owner="user", source=BLOCKED_SOURCE,
+        source_reference="h:job:0", headline="step 1 asks: which one?", context_reference="job:h:job",
+        actor="fleet", stream_context=StreamContext(owner_type="job", owner_id="job", host="h", project="p",
+                                                    project_id=project_id, source=BLOCKED_SOURCE, summary="blocked",
+                                                    since=None, step=0))
 
 
 def test_fleet_add_answers_the_waiting_step(worker, capsys):
@@ -76,9 +78,9 @@ def test_fleet_add_answers_the_waiting_step(worker, capsys):
     assert "answered" not in capsys.readouterr().out
 
 
-def test_a_retried_answer_is_added_once(worker, capsys, *, cli_container):
+def test_a_retried_answer_is_added_once(worker, capsys):
     for _ in range(2):   # the second is a retry after a lost reply
-        cli.answer_waiting_step(SimpleNamespace(name="h"), "job", 0, [{"prompt": "Use the second."}], "user", container=cli_container)
+        cli.answer_waiting_step(SimpleNamespace(name="h"), "job", 0, [{"prompt": "Use the second."}], "user")
         assert "answered; step 1 continues as step 4" in capsys.readouterr().out
     assert len(steps()) == 4
 
@@ -93,7 +95,7 @@ def test_fleet_add_resolves_the_steps_attention_item_with_the_decks_key(worker, 
     item = blocked_item(project_id)
     add("-s", "Use the second.")
     assert f"--key {item.id}:answer" in " ".join(worker[-1])
-    resolved = configured_container().initialized_attention().get(item.id)
+    resolved = open_attention().get(item.id)
     assert (resolved.state, resolved.resolution_details) == ("resolved", "answered; step 1 continues as step 4")
 
 
@@ -103,7 +105,7 @@ def test_fleet_answer_on_a_blocked_step_takes_the_decks_path(worker, project_id,
     assert json.loads(capsys.readouterr().out) == {"id": item.id,
                                                    "resolution": "answered; step 1 continues as step 4"}
     assert steps()[0][3] == 3 and steps()[-1] == ("Answer to step 1", "Use the second.", "pending", None)
-    assert configured_container().initialized_attention().get(item.id).state == "resolved"
-    [record] = configured_container().decisions().list()
+    assert open_attention().get(item.id).state == "resolved"
+    [record] = open_decisions().list()
     assert (record.attention_item, record.answer, record.actor) == (item.id, 'Use the second.', 'user')
     assert fleetd.derive_status(fleetd.read_job("job")) == "queued"

@@ -12,20 +12,18 @@ from urllib.request import urlopen
 
 import pytest
 
-
-from fleet.container import configured_container
+from fleet.composition import open_store
 from fleet.infrastructure.sqlite import store as sqlite_store
-from fleet.services.live import FleetState
-from fleet_web.server import make_handler
+from fleet.web.server import FleetState, make_handler
 
 
 def test_migrations_are_ordered_and_idempotent(tmp_path: Path) -> None:
     path = tmp_path / "controller.db"
-    store = configured_container(path=path).store()
+    store = open_store(path)
     assert store.schema_version() == len(sqlite_store.MIGRATIONS)
     with store.unit_of_work() as work:
         work.record_change("work:1", "ready", "active", "test")
-    store = configured_container(path=path).store()
+    store = open_store(path)
     assert store.schema_version() == len(sqlite_store.MIGRATIONS)
     assert [(row["sequence"], row["subject"]) for row in store.history_after(0)] == [(1, "work:1")]
 
@@ -33,20 +31,20 @@ def test_migrations_are_ordered_and_idempotent(tmp_path: Path) -> None:
 def test_store_path_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path = tmp_path / "custom" / "fleet.db"
     monkeypatch.setenv("FLEET_STORE", str(path))
-    store = configured_container().store()
+    store = open_store()
     assert store.path == path
     assert path.is_file()
 
 
 def test_pending_migrations_run_in_order(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path = tmp_path / "controller.db"
-    configured_container(path=path).store()
+    open_store(path)
     monkeypatch.setattr(sqlite_store, "MIGRATIONS", sqlite_store.MIGRATIONS + (
         ("CREATE TABLE sample (value TEXT)",),
         ("INSERT INTO sample VALUES ('migrated')",),
     ))
     for _ in range(2):
-        store = configured_container(path=path).store()
+        store = open_store(path)
         assert store.schema_version() == len(sqlite_store.MIGRATIONS)
     with sqlite3.connect(path) as connection:
         assert connection.execute("SELECT value FROM sample").fetchall() == [("migrated",)]
@@ -62,7 +60,7 @@ def test_store_closes_connections(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
         return connection
 
     monkeypatch.setattr(sqlite_store, "connect", track_connection)
-    store = configured_container(path=tmp_path / 'controller.db').store()
+    store = open_store(tmp_path / "controller.db")
     store.schema_version()
     store.history_after(0)
     store.latest_sequence()
@@ -76,7 +74,7 @@ def test_store_closes_connections(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 
 
 def test_rollback_includes_history(tmp_path: Path) -> None:
-    store = configured_container(path=tmp_path / 'controller.db').store()
+    store = open_store(tmp_path / "controller.db")
     with pytest.raises(RuntimeError):
         with store.unit_of_work() as work:
             work.connection.execute("CREATE TABLE sample (value TEXT)")
@@ -89,7 +87,7 @@ def test_rollback_includes_history(tmp_path: Path) -> None:
 
 
 def test_successful_write_requires_history(tmp_path: Path) -> None:
-    store = configured_container(path=tmp_path / 'controller.db').store()
+    store = open_store(tmp_path / "controller.db")
     with pytest.raises(ValueError, match="history entry"):
         with store.unit_of_work() as work:
             work.connection.execute("CREATE TABLE sample (value TEXT)")
@@ -105,7 +103,7 @@ def test_successful_write_requires_history(tmp_path: Path) -> None:
 
 def test_history_is_kept_until_pruned_explicitly(tmp_path: Path) -> None:
     now = datetime(2026, 9, 27, tzinfo=timezone.utc)
-    store = configured_container(path=tmp_path / 'controller.db', clock=lambda : now).store()
+    store = open_store(tmp_path / "controller.db", clock=lambda: now)
     with store.unit_of_work() as work:
         work.record_change("work:1", "ready", "active", "first")
         work.record_change("work:2", "ready", "active", "second")
@@ -130,7 +128,7 @@ def test_history_is_kept_until_pruned_explicitly(tmp_path: Path) -> None:
 
 def test_two_processes_lose_no_write(tmp_path: Path) -> None:
     path = tmp_path / "fleet.db"
-    store = configured_container(path=path).store()
+    store = open_store(path)
     with sqlite3.connect(path) as connection:
         connection.execute("CREATE TABLE counter (value INTEGER NOT NULL)")
         connection.execute("INSERT INTO counter VALUES (0)")
@@ -140,9 +138,9 @@ def test_two_processes_lose_no_write(tmp_path: Path) -> None:
 import sys
 import time
 from pathlib import Path
-from fleet.container import configured_container
+from fleet.composition import open_store
 
-store = configured_container().store()
+store = open_store()
 print('ready', flush=True)
 while not Path(sys.argv[1]).exists():
     time.sleep(0.01)
@@ -190,8 +188,8 @@ for _ in range(int(sys.argv[2])):
 def test_cli_process_change_refreshes_sse(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path = tmp_path / "controller.db"
     monkeypatch.setenv("FLEET_STORE", str(path))
-    store = configured_container().store()
-    state = FleetState([], container=configured_container(store=store))
+    store = open_store()
+    state = FleetState([], store=store)
     stop = threading.Event()
     watcher = threading.Thread(target=state.follow_history, args=(stop,))
     watcher.start()
@@ -205,8 +203,8 @@ def test_cli_process_change_refreshes_sse(tmp_path: Path, monkeypatch: pytest.Mo
             assert stream.readline().startswith(b"data: ")
             assert stream.readline() == b"\n"
             baseline = state.version
-            script = ("from fleet.container import Container\n"
-                      "store = Container().store()\n"
+            script = ("from fleet.cli import open_store\n"
+                      "store = open_store()\n"
                       "with store.unit_of_work() as work:\n"
                       "    work.record_change('work:1', 'ready', 'active', 'cli')\n")
             subprocess.run([sys.executable, "-c", script], env=os.environ.copy(), check=True, timeout=20)

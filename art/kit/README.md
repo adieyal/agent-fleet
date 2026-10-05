@@ -1,7 +1,7 @@
 # The floor kit
 
 The sprites a floor is built from, for the sprite world (`docs/design/sprite-world.md`). The built kit is
-`packages/fleet-web/src/fleet_web/static/assets/world/kit/`: WebP tiers and `manifest.json`. `/prototype/kit` lays it out in a small room: one wall
+`fleet/web/assets/world/kit/`: WebP tiers and `manifest.json`. `/prototype/kit` lays it out in a small room: one wall
 bay as l2, and the rest of the kit around it.
 
 ```
@@ -43,7 +43,7 @@ would stop there in a line. The shell's occlusion planes ground them instead.
 
 ## Manifest
 
-The sprite engine's format (`packages/fleet-web/src/fleet_web/static/js/world/engine.js`), plus:
+The sprite engine's format (`fleet/web/js/world/engine.js`), plus:
 
 - `source` (`blender` or `procedural`), `from` and `doc`;
 - `layer`: `ground` (painted into the ground snapshot: walls, the plan-wall board, footprints), `standing`

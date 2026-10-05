@@ -42,7 +42,7 @@ for scene in "${scenes[@]}"; do
   run bake.py "$scene"
   run export.py "$scene"
   [[ "${PREVIEW:-0}" == 1 ]] && run preview.py "$scene"
-  out="$REPO/packages/fleet-web/src/fleet_web/static/assets/world/$scene"
+  out="$REPO/fleet/web/assets/world/$scene"
   bytes="$(find "$out" -maxdepth 1 -type f -printf '%s\n' | awk '{s += $1} END {print s + 0}')"  # the scene, not its sprites/
   echo "$scene: $((bytes / 1000)) kB"
   if (( bytes > MAX_BYTES )); then

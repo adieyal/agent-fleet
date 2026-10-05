@@ -6,8 +6,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-
-from fleet.container import configured_container
+from fleet.composition import facades, open_store, open_workspace
 from fleet.modules.work import WorkItem
 from fleet.modules.execution import Action, Run
 from fleet.modules.decisions import Decision
@@ -16,10 +15,10 @@ from fleet.projections.decisions import decision_log
 
 
 def seeded():
-    workspace = configured_container().initialized_workspace()
+    workspace = open_workspace()
     keep = workspace.move_in(['home'], 'keep').project_id
     other = workspace.move_in(['home'], 'other').project_id
-    store = configured_container().store()
+    store = open_store()
     now = datetime.now(timezone.utc)
     item = WorkItem('work', other, None, 'task', 'Preserve work', 'Keep audit evidence',
                     'blocked', None, 'Review merge', None, now, now)
@@ -48,7 +47,7 @@ def seeded():
 
 def test_merge_rehomes_work_attention_runs_and_decisions():
     workspace, store, keep, other = seeded()
-    services = configured_container(store).services()
+    services = facades(store)
     original_run = services.execution.repository.get_run('run')
     original_decision = services.decisions.repository.get('decision')
     assert [record['id'] for record in decision_log(services.work, services.decisions, project=other)] == ['decision']

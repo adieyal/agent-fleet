@@ -21,9 +21,8 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT), str(ROOT / "tests")]
 
-from fleet.container import configured_container
-from fleet_web.fixture import FixtureLibrary, FixtureState  # noqa: E402
-from fleet_web.server import make_handler  # noqa: E402
+from fleet.web.fixture import FixtureLibrary, FixtureState  # noqa: E402
+from fleet.web.server import make_handler  # noqa: E402
 from world_zoom import PROBE, TIMER, blur, jumps, percentile, rest, time_to_sharp, zoom  # noqa: E402
 
 FIXTURE = ROOT / "tests" / "fixtures" / "restoke.json"
@@ -48,8 +47,8 @@ STRIP = """(() => {
 
 
 def serve() -> str:
-    state = FixtureState.load(FIXTURE, container=configured_container())
-    server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(state, FixtureLibrary(state.fixture, container=state.container)))
+    state = FixtureState.load(FIXTURE)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(state, FixtureLibrary(state.fixture)))
     server.daemon_threads = True
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return f"http://127.0.0.1:{server.server_port}"

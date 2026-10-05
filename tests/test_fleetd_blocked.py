@@ -1,5 +1,4 @@
 """A step whose agent ends with `FLEET_STATUS: blocked` is blocked, not failed, from the runner to the CLI."""
-from fleet import transport
 import argparse
 import json
 from io import StringIO
@@ -7,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from fleet_cli import cli
+from fleet import cli
 from fleet.modules.execution.domain import JobObservation
 from fleet.remote import fleetd
 
@@ -216,35 +215,35 @@ def test_fleetd_wait_returns_for_a_blocked_job(jobs, capsys):
     assert json.loads(capsys.readouterr().out.strip().splitlines()[-1])["status"] == "blocked"
 
 
-def test_fleet_wait_exits_1_and_says_blocked(monkeypatch, capsys, *, cli_container, override_cli_method):
+def test_fleet_wait_exits_1_and_says_blocked(monkeypatch, capsys):
     finished = {"status": "blocked", "description": "Gather notes",
                 "results": [{"index": 0, "title": "Gather", "status": "blocked", "result": "no access"}]}
     host = SimpleNamespace(name="h", is_local=True, fleetd_command=lambda arguments: arguments)
-    override_cli_method('references', 'job', lambda reference: (host, "job"))
-    monkeypatch.setattr(transport.subprocess, "Popen", lambda command, **kwargs: SimpleNamespace(
+    monkeypatch.setattr(cli, "resolve", lambda reference: (host, "job"))
+    monkeypatch.setattr(cli.subprocess, "Popen", lambda command, **kwargs: SimpleNamespace(
         poll=lambda: 0, stdout=StringIO(json.dumps(finished) + "\n"), terminate=lambda: None))
     with pytest.raises(SystemExit) as exit_info:
-        cli.wait_for(["h:job"], step=None, timeout=None, as_json=False, container=cli_container)
+        cli.wait_for(["h:job"], step=None, timeout=None, as_json=False)
     assert exit_info.value.code == 1
     output = capsys.readouterr().out
     assert "h:job blocked" in output and "⚑ 1. Gather" in output
 
 
-def test_fleet_notify_says_blocked(monkeypatch, capsys, *, cli_container, override_cli_method):
+def test_fleet_notify_says_blocked(monkeypatch, capsys):
     running = {"id": "job", "project": "p", "description": "Gather notes", "status": "running",
                "steps": [{"index": 0, "title": "Gather", "status": "running"}]}
     blocked = {**running, "status": "blocked",
                "steps": [{"index": 0, "title": "Gather", "status": "blocked", "result": "no access"}]}
     reports = [[SimpleNamespace(host=SimpleNamespace(name="h"), jobs=[job], error=None)] for job in (running, blocked)]
-    override_cli_method('jobs', 'selected_hosts', lambda arguments: [])
-    monkeypatch.setattr(transport, "gather", lambda hosts, arguments: reports.pop(0))
+    monkeypatch.setattr(cli, "selected_hosts", lambda arguments: [])
+    monkeypatch.setattr(cli.transport, "gather", lambda hosts, arguments: reports.pop(0))
 
     def sleep(seconds):
         if not reports:
             raise KeyboardInterrupt
     monkeypatch.setattr(cli.time, "sleep", sleep)
     with pytest.raises(KeyboardInterrupt):
-        cli.command_notify(argparse.Namespace(interval=0), container=cli_container)
+        cli.command_notify(argparse.Namespace(interval=0))
     lines = capsys.readouterr().out.splitlines()
     assert lines == ["STEP BLOCKED h:job step 1/1: Gather — no access", "JOB BLOCKED h:job (p): Gather notes"]
 
@@ -253,12 +252,12 @@ def test_a_blocked_job_is_a_failed_run_with_reason_blocked():
     assert JobObservation("job", "blocked", "claude", None, None, None).run_status() == "failed"
 
 
-def test_batch12_notify_reports_host_transitions_once(monkeypatch, capsys, *, cli_container, override_cli_method):
+def test_batch12_notify_reports_host_transitions_once(monkeypatch, capsys):
     from datetime import datetime
     reports = [[SimpleNamespace(host=SimpleNamespace(name='h'), jobs=[], error=error)]
                for error in ('connection refused', 'connection refused', None, None, 'timed out')]
-    override_cli_method('jobs', 'selected_hosts', lambda arguments: [])
-    monkeypatch.setattr(transport, 'gather', lambda *_args: reports.pop(0))
+    monkeypatch.setattr(cli, 'selected_hosts', lambda arguments: [])
+    monkeypatch.setattr(cli.transport, 'gather', lambda *_args: reports.pop(0))
 
     def sleep(_seconds):
         if not reports:
@@ -266,7 +265,7 @@ def test_batch12_notify_reports_host_transitions_once(monkeypatch, capsys, *, cl
 
     monkeypatch.setattr(cli.time, 'sleep', sleep)
     with pytest.raises(KeyboardInterrupt):
-        cli.command_notify(argparse.Namespace(interval=0), container=cli_container)
+        cli.command_notify(argparse.Namespace(interval=0))
     lines = capsys.readouterr().out.splitlines()
     assert len(lines) == 3
     assert lines[1] == 'HOST UP h'

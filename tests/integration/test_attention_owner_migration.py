@@ -2,8 +2,7 @@ import json
 import sqlite3
 from contextlib import closing
 
-
-from fleet.container import configured_container
+from fleet.composition import open_attention, open_store
 from fleet.infrastructure.sqlite.migrations import MIGRATIONS
 
 OWNER_SPLIT = 17  # the migration that splits attention_item.owner into subject and owner
@@ -28,8 +27,8 @@ def test_the_split_moves_job_session_and_run_references_to_subject_and_leaves_ev
     owners = ["job:carbon:ab12", "session:home:s1", "run:r9", "user"]
     old_store(tmp_path / "store.db", owners)
 
-    store = configured_container(path=tmp_path / 'store.db').store()
-    items = {item.id: item for item in configured_container(store).initialized_attention(workspace_path=tmp_path / 'missing.json').list()}
+    store = open_store(tmp_path / "store.db")
+    items = {item.id: item for item in open_attention(store, workspace_path=tmp_path / "missing.json").list()}
 
     assert store.schema_version() >= OWNER_SPLIT
     assert [(items[f"i{n}"].owner, items[f"i{n}"].subject) for n in range(len(owners))] == [
@@ -52,7 +51,7 @@ def test_version_16_upgrade_preserves_p2_observations_and_p3_history(tmp_path):
         connection.execute('INSERT INTO state_history (subject, "from", "to", actor, time, job) '
                            "VALUES ('execution:run:r1', 'pending', 'running', 'codex', 'now', 'job1')")
         connection.commit()
-    store = configured_container(path=path).store()
+    store = open_store(path)
     assert store.schema_version() == OWNER_SPLIT == 17
     with closing(sqlite3.connect(path)) as connection:
         assert json.loads(connection.execute("SELECT record FROM execution_run WHERE id='r1'").fetchone()[0]) == run
@@ -60,4 +59,4 @@ def test_version_16_upgrade_preserves_p2_observations_and_p3_history(tmp_path):
         assert connection.execute("SELECT job FROM state_history WHERE subject='execution:run:r1'").fetchone()[0] == "job1"
         assert connection.execute("SELECT count(*) FROM triage_scheduler").fetchone()[0] == 0
         assert connection.execute("SELECT owner, subject FROM attention_item").fetchone() == ("user", "job:carbon:ab12")
-    assert configured_container(path=path).store().schema_version() == 17
+    assert open_store(path).schema_version() == 17

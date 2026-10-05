@@ -1,4 +1,4 @@
-"""Measuring the world view's zoom (packages/fleet-web/src/fleet_web/static/js/world/): a probe installed on the running engine records, for every
+"""Measuring the world view's zoom (fleet/web/js/world/): a probe installed on the running engine records, for every
 drawn frame, what each sprite was drawn from and where its content landed, so a zoom can be judged for blur (a
 bitmap drawn larger than its own pixels), for jumps (content moving against its world anchor from one draw to the
 next, above all when a tier swaps) and for time to sharp. Shared by tests/test_world_zoom_browser.py and

@@ -1,10 +1,10 @@
 # Robot sprites: deck parity
 
-The world is moving to a 2D canvas sprite runtime with no runtime 3D (decided by the bake-off, `art/bakeoff/`). The androids are Blender-rendered sprites of the robot of `robot-sheet.png`, rendered by `art/scripts/build_robot_sprites.py` into `packages/fleet-web/src/fleet_web/static/assets/world/robot/sprites/`. They must keep every behaviour and look the deck has today.
+The world is moving to a 2D canvas sprite runtime with no runtime 3D (decided by the bake-off, `art/bakeoff/`). The androids are Blender-rendered sprites of the robot of `robot-sheet.png`, rendered by `art/scripts/build_robot_sprites.py` into `fleet/web/assets/world/robot/sprites/`. They must keep every behaviour and look the deck has today.
 
 **v2 (this version)** renders the robot rebuilt from the whole-body model (`art/motion-test/`, approved at rebuild 3): Mixamo clips retargeted onto rigid pieces cut from the model, with the user's posed hands, at 1.081 m, with the floor's one camera. v1 was the RobotExpressive robot with the B1 camera. `robot.glb` and `robot/manifest.json` (the deck's 3D robot) are unchanged.
 
-This document lists what the deck does (`packages/fleet-web/src/fleet_web/static/js/agents.js`, `motion.js`, `looks.js`, `activity.js`, plus the few other places that touch an android) and what the sprite set provides for each, marks each item, and fixes the manifest the floor runtime reads (`sprites/sprites.json`).
+This document lists what the deck does (`fleet/web/js/agents.js`, `motion.js`, `looks.js`, `activity.js`, plus the few other places that touch an android) and what the sprite set provides for each, marks each item, and fixes the manifest the floor runtime reads (`sprites/sprites.json`).
 
 Deck units below are room tiles (an android is `BOT_H` = 2.2 tiles tall; `BK` = 2.2 / 1.7 scales the kit). Angles are the deck's `facing`: 0 points towards the door (+y), π towards the back wall.
 
@@ -168,7 +168,7 @@ Drawn by the runtime; the sprite set supplies anchors.
 
 ## Manifest
 
-`packages/fleet-web/src/fleet_web/static/assets/world/robot/sprites/sprites.json`, written by `build_robot_sprites.py`. The floor runtime (branch `renovate/floor`) reads it. Pixel values are at 1x unless they sit under a resolution key.
+`fleet/web/assets/world/robot/sprites/sprites.json`, written by `build_robot_sprites.py`. The floor runtime (branch `renovate/floor`) reads it. Pixel values are at 1x unless they sit under a resolution key.
 
 ```jsonc
 {
@@ -231,7 +231,7 @@ Rules for the runtime:
 
 ## Preview
 
-`/prototype/robot` (`packages/fleet-web/src/fleet_web/static/prototype/robot.js`, served by the deck, not linked from it) is a reference runtime on one 2D canvas, no WebGL. It reads the camera from the manifest, tints each layer image through its mask the first time it is drawn for a host (and keeps it), colours the face, composites the layers in the order above, and draws a bench of the kit's size with raised chairs from `seat_furniture`. A robot walks round it (in front, round its end, behind), sits down, types and stands up; desks 1 and 3 hold a writing and a reading robot. Every clip, facing, face, kit and look can be picked. `?scene=bench` puts a typist at desk 2 and keeps the walker walking, so it passes behind the bench. Its frame time is measured by `art/scripts/measure_robot_preview.py` in headless Chromium at 1672 × 941, frame rate uncapped:
+`/prototype/robot` (`fleet/web/prototype/robot.js`, served by the deck, not linked from it) is a reference runtime on one 2D canvas, no WebGL. It reads the camera from the manifest, tints each layer image through its mask the first time it is drawn for a host (and keeps it), colours the face, composites the layers in the order above, and draws a bench of the kit's size with raised chairs from `seat_furniture`. A robot walks round it (in front, round its end, behind), sits down, types and stands up; desks 1 and 3 hold a writing and a reading robot. Every clip, facing, face, kit and look can be picked. `?scene=bench` puts a typist at desk 2 and keeps the walker walking, so it passes behind the bench. Its frame time is measured by `art/scripts/measure_robot_preview.py` in headless Chromium at 1672 × 941, frame rate uncapped:
 
 | Mode | Zoom | Sprites | Frame ms (mean) | p95 | fps | Draw ms | Runs (ms) |
 |---|---|---|---|---|---|---|---|

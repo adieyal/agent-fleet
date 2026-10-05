@@ -13,9 +13,8 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from fleet.container import Container
-from fleet_web.fixture import FixtureLibrary, FixtureState
-from fleet_web.server import make_handler
+from fleet.web.fixture import FixtureLibrary, FixtureState
+from fleet.web.server import make_handler
 from shoot_bench import headless_env
 
 REPO = Path(__file__).resolve().parents[2]
@@ -42,8 +41,8 @@ SAMPLE = """async seconds => {
 def main() -> None:
     w, h = (int(v) for v in (sys.argv[1] if len(sys.argv) > 1 else '1440x900').split('x'))
     seconds = float(sys.argv[2]) if len(sys.argv) > 2 else 6
-    state = FixtureState.load(FIXTURE, container=Container())
-    server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(state, FixtureLibrary(state.fixture, container=state.container)))
+    state = FixtureState.load(FIXTURE)
+    server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(state, FixtureLibrary(state.fixture)))
     threading.Thread(target=server.serve_forever, daemon=True).start()
     sizes: dict[str, int] = {}
     try:

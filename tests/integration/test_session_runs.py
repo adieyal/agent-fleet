@@ -2,11 +2,9 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from fleet.container import configured_container
-from fleet_cli import cli
-from fleet import transport
+from fleet import cli, composition, transport
 from fleet.transport import Host, HostReport
-from fleet.services.live import FleetState, apply_message
+from fleet.web.server import FleetState, apply_message
 
 
 def session(identity="session", status="working", updated=200):
@@ -15,8 +13,8 @@ def session(identity="session", status="working", updated=200):
 
 
 def test_sessions_stop_reopen_and_keep_identity_without_claims():
-    store = configured_container().store()
-    execution = configured_container(store).execution()
+    store = composition.open_store()
+    execution = composition.open_execution(store)
     first = execution.observe_session("carbon", session())
     assert first.kind == "session" and first.status == "running"
     assert execution.repository.get_action(first.action).source == "session"
@@ -29,15 +27,15 @@ def test_sessions_stop_reopen_and_keep_identity_without_claims():
     reopened = execution.observe_session("carbon", session(updated=1500))
     assert reopened.id == first.id and reopened.status == "running" and reopened.end is None
     assert execution.observe_session("home", session()).id != first.id
-    restarted = configured_container(configured_container(path=store.path).store()).execution()
+    restarted = composition.open_execution(composition.open_store(store.path))
     assert restarted.repository.find("carbon", "session") == reopened
 
 
 def test_linking_a_session_attaches_existing_action_and_survives_moves():
-    store = configured_container().store()
-    work = configured_container(store).work()
+    store = composition.open_store()
+    work = composition.open_work(store)
     item = work.add(project="p", title="Task", goal="Ship", actor="user")
-    execution = configured_container(store).execution()
+    execution = composition.open_execution(store)
     run = execution.observe_session("carbon", session(), "p")
     linked = execution.link("carbon", "session", item.id, actor="user")
     assert linked.id == run.id and execution.repository.get_action(run.action).work_item == item.id
@@ -48,9 +46,9 @@ def test_linking_a_session_attaches_existing_action_and_survives_moves():
 
 def test_offline_restart_retains_work_until_first_heartbeat(monkeypatch):
     now = [datetime(2026, 10, 1, tzinfo=timezone.utc)]
-    store = configured_container(clock=lambda : now[0]).store()
+    store = composition.open_store(clock=lambda: now[0])
     host = Host("carbon", None)
-    state = FleetState([host], container=configured_container(store=store))
+    state = FleetState([host], store=store)
     apply_message(state, host, {"type": "hello"})
     apply_message(state, host, {"type": "session", "session": session()})
     apply_message(state, host, {"type": "job", "job": {"id": "job", "status": "running", "steps": [], "created_at": 100}})
@@ -62,7 +60,7 @@ def test_offline_restart_retains_work_until_first_heartbeat(monkeypatch):
     apply_message(state, host, {"type": "error", "error": "ssh unavailable"})
     original = state.document()["hosts"][0]
     assert original["jobs"][0]["stale"] and original["sessions"][0]["stale"]
-    restarted = FleetState([host], container=configured_container(store=configured_container(path=store.path, clock=lambda : now[0]).store()))
+    restarted = FleetState([host], store=composition.open_store(store.path, clock=lambda: now[0]))
     offline = restarted.document()["hosts"][0]
     assert offline["down_since"] == original["down_since"]
     assert {item["id"] for item in offline["jobs"]} == {"job"}
@@ -81,15 +79,15 @@ def test_offline_restart_retains_work_until_first_heartbeat(monkeypatch):
     assert len(transitions) == 3
 
 
-def test_notify_reports_each_outage_once_and_recovery(monkeypatch, capsys, *, cli_container, override_cli_method):
+def test_notify_reports_each_outage_once_and_recovery(monkeypatch, capsys):
     host = Host("carbon", None)
     reports = iter([[HostReport(host, [], "ssh unavailable")], [HostReport(host, [], "ssh unavailable")],
                     [HostReport(host, [], None)]])
-    override_cli_method('jobs', 'selected_hosts', lambda args: [host])
+    monkeypatch.setattr(cli, "selected_hosts", lambda args: [host])
     monkeypatch.setattr(transport, "gather", lambda *args: next(reports))
     monkeypatch.setattr(cli.time, "sleep", lambda seconds: None)
     with pytest.raises(StopIteration):
-        cli.command_notify(cli.argparse.Namespace(interval=1), container=cli_container)
+        cli.command_notify(cli.argparse.Namespace(interval=1))
     lines = capsys.readouterr().out.splitlines()
     assert len(lines) == 2
     assert lines[0].startswith("HOST DOWN carbon since ") and lines[0].endswith(": ssh unavailable")

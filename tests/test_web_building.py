@@ -8,12 +8,13 @@ from urllib.request import Request, urlopen
 
 import pytest
 
-from fleet.container import configured_container
-
-from fleet.modules.workspace import Link, Project, Registry
+from fleet import transport
+from fleet.composition import open_workspace
+from fleet.modules.workspace import Registry
+from fleet.infrastructure.config.workspace import decode_workspace
 from workspace_support import persist_registry
-from fleet.api import FleetError, Host
-from fleet_web.server import make_handler
+from fleet.transport import FleetError, Host
+from fleet.web.server import FleetState, make_handler
 
 
 HOSTS = [Host("home", None), Host("gpu", "gpu.example")]
@@ -30,22 +31,17 @@ def config_path(tmp_path, monkeypatch):
 
 def set_config(path, **changes):
     if "capacity" in changes:
-        configured_container().initialized_workspace().set_capacity(changes.pop('capacity'))
+        open_workspace().set_capacity(changes.pop("capacity"))
     if "projects" in changes:
-        persist_registry(Registry(
-            Project(identity, entry["name"], [Link(**link) for link in entry["links"]],
-                    entry["repositories"], entry.get("created_at"))
-            for identity, entry in changes.pop("projects").items()))
+        persist_registry(Registry(decode_workspace({"projects": changes.pop("projects")}).projects))
     if changes:
         path.write_text(json.dumps({**json.loads(path.read_text()), **changes}))
 
 
 def start_deck():
     """A deck as `fleet web` builds it; home has a job for each label, gpu one `agent-fleet` session."""
-    container = configured_container()
-    workspace = container.initialized_workspace()
-    state = container.live_state(HOSTS, {'invoices': 'Invoice analysis'}, workspace.registry,
-                                 workspace, workspace.capacity)
+    state = FleetState(HOSTS, {"invoices": "Invoice analysis"}, open_workspace().registry,
+                       open_workspace(), open_workspace().capacity)
 
     def fill_home(entry):
         entry["ok"], entry["error"] = True, None
@@ -88,7 +84,7 @@ def post(base_url, path, body, **headers):
 
 
 def register(name, *links):
-    registry = configured_container().initialized_workspace().registry()
+    registry = open_workspace().registry()
     project = registry.create(name)
     for host, label in links:
         registry.link(project.id, host, label)
@@ -97,13 +93,13 @@ def register(name, *links):
 
 
 def unregister(project_id):
-    registry = configured_container().initialized_workspace().registry()
+    registry = open_workspace().registry()
     registry.remove(project_id)
     persist_registry(registry)
 
 
 def stored_floors():
-    return configured_container().initialized_workspace().floors_snapshot()
+    return open_workspace().floors_snapshot()
 
 
 # ------------------------------------------------------------------ capacity
@@ -191,7 +187,7 @@ def test_moving_in_registers_links_and_takes_the_lowest_free_floor(deck, config_
 
     status, moved = post(deck, "/api/move-in", {"host": "gpu", "label": "agent-fleet"})
     assert status == 200 and moved["floor"] == 1
-    registry = configured_container().initialized_workspace().registry()
+    registry = open_workspace().registry()
     project = registry.get(moved["project_id"])
     assert project.name == "agent-fleet" and [(link.host, link.label) for link in project.links] == [("gpu", "agent-fleet")]
 
@@ -205,7 +201,7 @@ def test_moving_in_registers_links_and_takes_the_lowest_free_floor(deck, config_
 
 def test_moving_in_uses_the_rooms_display_name(deck):
     status, moved = post(deck, "/api/move-in", {"host": "home", "label": "invoices"})
-    assert status == 200 and configured_container().initialized_workspace().registry().get(moved['project_id']).name == "Invoice analysis"
+    assert status == 200 and open_workspace().registry().get(moved["project_id"]).name == "Invoice analysis"
 
 
 def test_moving_in_a_full_building_changes_nothing(deck, config_path):
@@ -214,7 +210,7 @@ def test_moving_in_a_full_building_changes_nothing(deck, config_path):
     fetch_state(deck)
     status, body = post(deck, "/api/move-in", {"host": "home", "label": "agent-fleet"})
     assert status == 409 and "full" in body["error"]
-    assert len(configured_container().initialized_workspace().registry().projects) == 1
+    assert len(open_workspace().registry().projects) == 1
 
 
 def test_moving_in_refuses_a_linked_label_an_unknown_host_and_other_sites(deck):
@@ -223,13 +219,13 @@ def test_moving_in_refuses_a_linked_label_an_unknown_host_and_other_sites(deck):
     assert post(deck, "/api/move-in", {"host": "nowhere", "label": "restoke"})[0] == 400
     assert post(deck, "/api/move-in", {"host": "home"})[0] == 400
     assert post(deck, "/api/move-in", {"host": "home", "label": "invoices"}, Origin="http://evil.example")[0] == 403
-    assert len(configured_container().initialized_workspace().registry().projects) == 1
+    assert len(open_workspace().registry().projects) == 1
 
 
 def test_moving_in_a_label_on_several_hosts_makes_one_project(deck):
     status, moved = post(deck, "/api/move-in", {"hosts": ["home", "gpu"], "label": "agent-fleet"})
     assert status == 200 and moved["floor"] == 1
-    project = configured_container().initialized_workspace().registry().get(moved['project_id'])
+    project = open_workspace().registry().get(moved["project_id"])
     assert sorted((link.host, link.label) for link in project.links) == [("gpu", "agent-fleet"), ("home", "agent-fleet")]
     assert post(deck, "/api/move-in", {"hosts": [], "label": "restoke"})[0] == 400
     assert post(deck, "/api/move-in", {"hosts": ["home", "nowhere"], "label": "restoke"})[0] == 400
@@ -243,7 +239,7 @@ def options(base_url, label, *hosts):
 
 
 def test_move_in_offers_the_project_a_label_is_linked_to_on_another_host(deck, monkeypatch):
-    monkeypatch.setattr(configured_container().transport(), "repository_remotes", lambda host, directories: {directory: [] for directory in directories})
+    monkeypatch.setattr(transport, "repository_remotes", lambda host, directories: {directory: [] for directory in directories})
     (agent_fleet,) = housed(deck, "agent-fleet")          # "Agent-Fleet", linked on home, floor 1
     register("Unrelated", ("home", "restoke"))
     offered = options(deck, "agent-fleet", "gpu")
@@ -262,7 +258,7 @@ def test_move_in_offers_a_name_match_but_never_links_by_itself(deck):
 
 def test_move_in_offers_a_matching_repository(deck, monkeypatch):
     fleet = register("Fleet")
-    registry = configured_container().initialized_workspace().registry()
+    registry = open_workspace().registry()
     registry.add_repository(fleet, "git@github.com:adieyal/agent-fleet.git")
     persist_registry(registry)
     asked = []
@@ -271,7 +267,7 @@ def test_move_in_offers_a_matching_repository(deck, monkeypatch):
         asked.append((host.name, directories))
         return {directory: ["https://github.com/adieyal/agent-fleet"] for directory in directories}
 
-    monkeypatch.setattr(configured_container().transport(), "repository_remotes", remotes)
+    monkeypatch.setattr(transport, "repository_remotes", remotes)
     offered = options(deck, "agent-fleet", "gpu")
     assert asked == [("gpu", ["/src/agent-fleet"])]
     assert [(c["project_id"], c["reasons"]) for c in offered["candidates"]] == [(fleet, ["repository"])]
@@ -279,7 +275,7 @@ def test_move_in_offers_a_matching_repository(deck, monkeypatch):
     def unreachable(host, directories):
         raise FleetError(f"{host.name}: could not read repository remotes")
 
-    monkeypatch.setattr(configured_container().transport(), "repository_remotes", unreachable)
+    monkeypatch.setattr(transport, "repository_remotes", unreachable)
     offered = options(deck, "agent-fleet", "gpu")
     assert offered["candidates"] == [] and offered["errors"] == ["gpu: could not read repository remotes"]
 
@@ -310,7 +306,7 @@ def test_linking_refuses_what_makes_no_sense(deck, config_path):
 # ------------------------------------------------------------------ merging projects registered by mistake
 def test_merging_keeps_the_older_project_and_frees_the_others_floor(deck):
     older, restoke, newer = housed(deck, "agent-fleet", "restoke", "fleet")
-    registry = configured_container().initialized_workspace().registry()
+    registry = open_workspace().registry()
     registry.unlink("home", "fleet")
     registry.link(newer, "gpu", "agent-fleet")
     registry.add_repository(newer, "git@github.com:adieyal/agent-fleet.git")
@@ -368,7 +364,7 @@ def test_shuttering_frees_the_floor_and_keeps_the_project(deck, config_path):
     assert project["links"] == [{"host": "home", "label": "restoke"}]                 # same ID, same links
     home = next(host for host in document["hosts"] if host["name"] == "home")
     assert next(job for job in home["jobs"] if job["project"] == "restoke")["project_id"] == restoke   # runs still belong
-    assert configured_container().initialized_workspace().shuttered_snapshot()[restoke].floor == 1
+    assert open_workspace().shuttered_snapshot()[restoke].floor == 1
 
     # the free floor is not handed back by itself: a new project moves into it instead
     agent_fleet = register("Agent Fleet", ("home", "agent-fleet"))
@@ -413,7 +409,7 @@ def test_a_full_building_offers_only_shuttering(deck, config_path):
     assert status == 409 and "full" in body["error"]
     assert post(deck, "/api/move-in", {"host": "gpu", "label": "agent-fleet"})[0] == 409
     assert building_of(deck)["capacity"] == 2 and restoke in building_of(deck)["shuttered"]
-    assert len(configured_container().initialized_workspace().registry().projects) == 3
+    assert len(open_workspace().registry().projects) == 3
 
     # clearing a floor on the way in is the one way through
     status, body = post(deck, "/api/restore", {"project": restoke, "shutter": invoices})
@@ -474,20 +470,20 @@ def test_the_storehouse_survives_a_restart(deck, config_path):
 
 # ------------------------------------------------------------------ capacity from the CLI
 def test_capacity_is_set_from_the_cli_only_within_limits(deck, config_path, capsys):
-    from fleet_cli import cli
+    from fleet import cli
     cli.main(["building", "capacity", "8"])
-    assert configured_container().initialized_workspace().capacity() == 8
+    assert open_workspace().capacity() == 8
     assert building_of(deck)["capacity"] == 8
     for bad in ("11", "0"):
         with pytest.raises(SystemExit):
             cli.main(["building", "capacity", bad])
-    assert configured_container().initialized_workspace().capacity() == 8
+    assert open_workspace().capacity() == 8
     assert "hosts" in json.loads(config_path.read_text())   # the rest of the config is kept
 
 
 def test_an_agent_moves_to_a_project_under_its_label_on_that_host(deck, monkeypatch):
     calls = []
-    monkeypatch.setattr(configured_container().transport(), "call", lambda host, arguments, **_: calls.append((host.name, arguments)) or {"id": arguments[1]})
+    monkeypatch.setattr(transport, "call", lambda host, arguments, **_: calls.append((host.name, arguments)) or {"id": arguments[1]})
     invoices = register("Invoice training", ("home", "invoice-training"))
     status, moved = post(deck, "/api/agent/move", {"host": "home", "id": "j0", "project": invoices})
     assert (status, moved["project"], calls) == (200, "invoice-training", [("home", ["mv", "j0", "invoice-training"])])

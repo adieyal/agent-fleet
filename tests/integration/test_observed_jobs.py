@@ -8,11 +8,10 @@ from threading import Barrier
 
 import pytest
 
-from fleet.container import configured_container
-from fleet import transport
-from fleet.ingestion import observe_runs
-
-from fleet.services.live import FleetState, apply_message
+from fleet import composition, transport
+from fleet.web.ingester import observe_runs
+from fleet.web.job_store import DocumentKeeper, ProjectDocuments
+from fleet.web.server import FleetState, apply_message
 
 real_catch_up_jobs = transport.catch_up_jobs
 real_fetch_raw = FleetState.fetch_raw
@@ -27,9 +26,9 @@ def job(**changes):
 
 
 def test_ingester_records_unlinked_job_once_with_workspace_and_foreign_id():
-    store = configured_container().store()
-    execution = configured_container(store).execution()
-    library = configured_container(store).library()
+    store = composition.open_store()
+    execution = composition.open_execution(store)
+    library = composition.open_library(store)
     host = {"name": "carbon", "ok": True, "jobs": {"remote-job": job()}}
     observe_runs(execution, library, host)
     sequence = store.latest_sequence()
@@ -42,27 +41,27 @@ def test_ingester_records_unlinked_job_once_with_workspace_and_foreign_id():
         {"branch": "feat/history", "head": "abc"})
     assert (action.source, action.work_item, action.project) == ("observed", None, None)
     assert execution.claims() == []
-    assert configured_container(configured_container(path=store.path).store()).execution().get_run(run.id) == run
+    assert composition.open_execution(composition.open_store(store.path)).get_run(run.id) == run
 
 
 def test_concurrent_observers_create_one_action_and_run():
-    store = configured_container().store()
+    store = composition.open_store()
     ready = Barrier(2)
 
     def record(_):
-        execution = configured_container(store).execution()
+        execution = composition.open_execution(store)
         ready.wait()
         return execution.record_observed("carbon", job()).id
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         assert list(pool.map(record, range(2))) == ["foreign-run", "foreign-run"]
-    execution = configured_container(store).execution()
+    execution = composition.open_execution(store)
     assert len(execution.actions()) == len(execution.runs()) == 1
     assert execution.claims() == []
 
 
 def test_later_reports_refresh_workspace_without_replacing_identity():
-    execution = configured_container().execution()
+    execution = composition.open_execution()
     first = execution.record_observed("carbon", job())
     updated = execution.record_observed("carbon", job(workspace={"head": "new"}, description="Updated title"))
     assert (updated.id, updated.action) == (first.id, first.action)
@@ -71,9 +70,9 @@ def test_later_reports_refresh_workspace_without_replacing_identity():
 
 
 def test_attach_preserves_run_and_audits_link_then_refuses_relink(project_id):
-    store = configured_container().store()
-    execution = configured_container(store).execution()
-    work = configured_container(store).work()
+    store = composition.open_store()
+    execution = composition.open_execution(store)
+    work = composition.open_work(store)
     task = work.add(project=project_id, title="Task", goal="Ship", actor="user")
     other = work.add(project=project_id, title="Other", goal="Ship", actor="user")
     run = execution.record_observed("carbon", job())
@@ -91,11 +90,11 @@ def test_attach_preserves_run_and_audits_link_then_refuses_relink(project_id):
 
 
 def test_mismatched_projects_are_named_and_link_is_unchanged(project_id):
-    store = configured_container().store()
-    workspace = configured_container(store).initialized_workspace()
+    store = composition.open_store()
+    workspace = composition.open_workspace(store)
     other = workspace.edit_registry(lambda registry: registry.create("Other project"))
-    task = configured_container(store).work().add(project=other.id, title='Task', goal='Ship', actor='user')
-    execution = configured_container(store).execution()
+    task = composition.open_work(store).add(project=other.id, title="Task", goal="Ship", actor="user")
+    execution = composition.open_execution(store)
     run = execution.record_observed("carbon", job(), project_id)
     before = store.latest_sequence()
     with pytest.raises(ValueError) as caught:
@@ -107,19 +106,19 @@ def test_mismatched_projects_are_named_and_link_is_unchanged(project_id):
 
 
 def test_project_link_assigns_only_matching_label_and_moves_retained_documents(project_id, tmp_path, capsys):
-    from fleet_cli import cli
+    from fleet import cli
     config = os.environ["FLEET_CONFIG"]
     with open(config, "w") as handle:
         json.dump({"hosts": {"carbon": {"ssh": None}}}, handle)
 
-    store = configured_container().store()
-    execution = configured_container(store).execution()
+    store = composition.open_store()
+    execution = composition.open_execution(store)
     run = execution.record_observed("carbon", job())
     different = execution.record_observed("home", job(id="other", run_id="other-run"))
-    documents = configured_container().documents()
+    documents = ProjectDocuments()
     scope = documents.label_scope("carbon", "label")
     report = {"id": "report", "kind": "report", "name": "Report", "path": "/report.md", "mtime": 1, "size": 5}
-    keeper = configured_container().document_keeper(documents, lambda *args: {'content': 'Proof'})
+    keeper = DocumentKeeper(documents, lambda *args: {"content": "Proof"})
     keeper.copy("carbon", scope, job(documents=[report]))
     assert (documents.root / "_labels/carbon/label/jobs/carbon-remote-job/report.md").read_text() == "Proof"
     cli.main(["project", "link", project_id, "carbon:label"])
@@ -136,11 +135,11 @@ def test_project_link_assigns_only_matching_label_and_moves_retained_documents(p
 
 
 def test_hello_catches_up_old_finish_and_registered_project(monkeypatch, project_id):
-    store = configured_container().store()
-    workspace = configured_container(store).initialized_workspace()
+    store = composition.open_store()
+    workspace = composition.open_workspace(store)
     workspace.edit_registry(lambda registry: registry.link(project_id, "carbon", "label"))
     host = transport.Host("carbon", None)
-    state = FleetState([host], container=configured_container(store=store))
+    state = FleetState([host], store=store)
     calls = []
 
     def call(worker, arguments, **kwargs):
@@ -170,7 +169,7 @@ def test_real_worker_catch_up_keeps_a_finish_older_than_stream_horizon(monkeypat
     definition["steps"][0].update(title="Finished long ago", prompt="Record jobs", result="Done")
     (directory / "job.json").write_text(json.dumps(definition))
     host = transport.Host("carbon", None)
-    state = FleetState([host], container=configured_container())
+    state = FleetState([host])
     state.keeper.fetch = lambda host, job, document: real_fetch_raw(state, host, job, document)
     apply_message(state, host, {"type": "hello"})
     run, = state.execution.runs()
@@ -179,11 +178,11 @@ def test_real_worker_catch_up_keeps_a_finish_older_than_stream_horizon(monkeypat
 
 
 def test_document_move_merges_a_concurrent_project_copy_without_losing_files(project_id):
-    documents = configured_container().documents()
+    documents = ProjectDocuments()
     scope = documents.label_scope("carbon", "label")
     report = {"id": "report", "kind": "report", "name": "Report", "path": "/report.md", "mtime": 1, "size": 3}
-    older = configured_container().document_keeper(documents, lambda *args: {'content': 'Old'})
-    newer = configured_container().document_keeper(documents, lambda *args: {'content': 'New'})
+    older = DocumentKeeper(documents, lambda *args: {"content": "Old"})
+    newer = DocumentKeeper(documents, lambda *args: {"content": "New"})
     older.copy("carbon", scope, job(documents=[report]))
     newer.copy("carbon", project_id, job(documents=[{**report, "mtime": 2}]))
     assert documents.assign_label("carbon", "label", project_id) == 1
@@ -194,7 +193,7 @@ def test_document_move_merges_a_concurrent_project_copy_without_losing_files(pro
 
 
 def test_stream_keeps_unregistered_label_documents(monkeypatch):
-    state = FleetState([transport.Host('carbon', None)], container=configured_container())
+    state = FleetState([transport.Host("carbon", None)])
     report = {"id": "report", "kind": "report", "name": "Report", "path": "/report.md", "mtime": 1, "size": 5}
     state.keeper.fetch = lambda *args: {"content": "Proof"}
     apply_message(state, state.hosts[0], {"type": "hello"})
@@ -206,7 +205,7 @@ def test_stream_keeps_unregistered_label_documents(monkeypatch):
 
 
 def test_catch_up_failure_is_visible_and_stream_still_records_job(monkeypatch, capsys):
-    state = FleetState([transport.Host('carbon', None)], container=configured_container())
+    state = FleetState([transport.Host("carbon", None)])
 
     def failed(host):
         raise transport.FleetError("offline during catch-up")

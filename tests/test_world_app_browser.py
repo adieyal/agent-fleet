@@ -1,4 +1,4 @@
-"""The sprite-world floor in the app (packages/fleet-web/src/fleet_web/static/js/world/floor-view.js): a view beside the deck, chosen with the header
+"""The sprite-world floor in the app (fleet/web/js/world/floor-view.js): a view beside the deck, chosen with the header
 switch and remembered, the deck staying the default; the project's live jobs at desks they keep; host colour and kit,
 agent face; a robot's click opens its job panel; names only at close zoom, within a text budget; a job that needs you
 has a lantern over its desk."""

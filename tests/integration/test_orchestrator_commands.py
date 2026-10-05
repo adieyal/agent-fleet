@@ -1,19 +1,17 @@
-from fleet.container import configured_container
-from fleet import transport
 import json
 import subprocess
 
 import pytest
 
-
+from fleet import composition
 from fleet.modules.authority import AuthorityRejected
 from fleet.modules.work import EvidenceSpecification
 
 
 @pytest.fixture
 def orchestration(tmp_path):
-    store = configured_container().store()
-    work = configured_container(store).work()
+    store = composition.open_store()
+    work = composition.open_work(store)
     item = work.add(project='p', title='Ship', goal='Ship', actor='user')
     judged = work.add_criterion(item.id, text='Review', verification='judged', actor='user')
     accepted = work.add_criterion(item.id, text='Accept', verification='accepted', actor='user')
@@ -22,17 +20,19 @@ def orchestration(tmp_path):
     root = tmp_path / 'records'
     root.mkdir()
     subprocess.run(['git', '-C', str(root), 'init'], check=True, capture_output=True, timeout=10)
-    records = configured_container(store).records()
+    records = composition.open_records(store)
     records.register('p', root, actor='user')
     records.write_mandate('p', 'mandate.json', json.dumps(dict(goal='Ship', constraints=[],
         escalation_conditions=[], criteria_it_may_judge=[judged.id],
         decision_authority=['dispatch', 'update_progress', 'raise_attention', 'record_decision', 'summary'])),
         key='mandate', actor='user')
-    authority = configured_container(store).authority()
+    authority = composition.open_authority(store)
     activation = authority.activate(item.id, actor='orchestrator', role='orchestrator', mandate_path='mandate.json')
-    run = configured_container(store).execution().dispatch(item.id, actor=activation.actor, activation=activation.id, host='local', runtime='codex', payload={'cwd': str(tmp_path)}, reason='Orchestrate', idempotency_key=activation.id).run
+    run = composition.open_execution(store).dispatch(item.id, actor=activation.actor, activation=activation.id,
+        host='local', runtime='codex', payload={'cwd': str(tmp_path)}, reason='Orchestrate',
+        idempotency_key=activation.id).run
     from fleet.orchestration import ControllerCommands
-    return ControllerCommands(configured_container(store).services(), activation.id), store, item, judged, accepted, checked, run, root
+    return ControllerCommands(store, activation.id), store, item, judged, accepted, checked, run, root
 
 
 def test_scripted_routine_decision_summary_and_projection(orchestration):
@@ -41,14 +41,14 @@ def test_scripted_routine_decision_summary_and_projection(orchestration):
     commands.execute('meet', {'criterion': judged.id, 'evidence': []})
     decision = commands.execute('decide', {'question': 'Approach?', 'answer': 'Use the existing adapter', 'context': 'Routine'})
     commands.execute('summary', dict(purpose='Ship', done='Reviewed', doing='Test', next='Accept'))
-    assert configured_container(store).initialized_attention().list() == []
+    assert composition.open_attention(store).list() == []
     assert decision.activation == commands.activation.id
     assert decision.mandate_version == commands.activation.mandate_version
     assert decision.source_run == run.id
     assert decision.principle is None and decision.guidance is None
     assert commands.execute('state', {})['work_items'][0]['next_step'] == 'Review'
-    assert configured_container(store).work().criterion(judged.id).activation == commands.activation.id
-    intents = configured_container(store).records().intents()
+    assert composition.open_work(store).criterion(judged.id).activation == commands.activation.id
+    intents = composition.open_records(store).intents()
     authored = [entry for entry in intents if entry['source_run'] == run.id]
     assert len(authored) == 2 and all(entry['state'] == 'confirmed' for entry in authored)
     summary = json.loads((root / f'summaries/{item.id}.json').read_text())
@@ -72,16 +72,16 @@ def test_rejected_attempt_is_quiet_until_explicit_proposal(orchestration):
         with pytest.raises(AuthorityRejected):
             commands.execute('meet', {'criterion': criterion.id, 'evidence': []})
     assert store.latest_sequence() == before
-    assert configured_container(store).initialized_attention().list() == []
+    assert composition.open_attention(store).list() == []
     commands.execute('propose', dict(question='Accept?', change='Accept release', reason='Reserved for user'))
-    assert len(configured_container(store).initialized_attention().list()) == 1
+    assert len(composition.open_attention(store).list()) == 1
 
 
 def test_dispatch_and_attention_keep_activation_context(orchestration):
     commands, store, item, _, _, _, _, _ = orchestration
     dispatched = commands.execute('dispatch', dict(host='worker', runtime='codex', payload={'cwd': '/repo'},
         reason='Implement', idempotency_key='implementation'))
-    action = configured_container(store).execution().get_action(dispatched.run.action)
+    action = composition.open_execution(store).get_action(dispatched.run.action)
     assert (action.work_item, action.activation, action.mandate_version) == (
         item.id, commands.activation.id, commands.activation.mandate_version)
     raised = commands.execute('attention', dict(headline='Review', context_reference='review'))
@@ -91,10 +91,10 @@ def test_dispatch_and_attention_keep_activation_context(orchestration):
 def test_successful_run_cannot_close_unevidenced_work(orchestration):
     from fleet.modules.execution import JobObservation
     commands, store, item, _, _, _, run, _ = orchestration
-    configured_container(store).execution().observe(run.host, JobObservation(run.remote_job_id, 'done', 'codex', None, None, None))
+    composition.open_execution(store).observe(run.host, JobObservation(run.remote_job_id, 'done', 'codex', None, None, None))
     with pytest.raises(AuthorityRejected, match='criteria'):
         commands.execute('progress', {'condition': 'complete'})
-    assert configured_container(store).work().get(item.id).condition != 'complete'
+    assert composition.open_work(store).get(item.id).condition != 'complete'
 
 
 @pytest.mark.parametrize('command,payload', [
@@ -113,7 +113,7 @@ def test_every_write_checks_authority(orchestration, monkeypatch, command, paylo
     def reject(name, work_item, **context):
         calls.append((name, context))
         raise AuthorityRejected('test rejection')
-    monkeypatch.setattr(configured_container(store).authority(), 'require', reject)
+    monkeypatch.setattr(composition.open_authority(store), 'require', reject)
     before = store.latest_sequence()
     with pytest.raises(AuthorityRejected, match='test rejection'):
         commands.execute(command, payload)
@@ -123,17 +123,17 @@ def test_every_write_checks_authority(orchestration, monkeypatch, command, paylo
 
 def test_facades_are_shared_per_store(orchestration):
     _, store, _, _, _, _, _, _ = orchestration
-    work = configured_container(store).work()
-    assert work is configured_container(store).work()
-    assert work.records is configured_container(store).records()
-    assert configured_container(store).execution().work is work
+    work = composition.open_work(store)
+    assert work is composition.open_work(store)
+    assert work.records is composition.open_records(store)
+    assert composition.open_execution(store).work is work
 
 
 def test_decision_commit_failure_keeps_atomic_intent(orchestration, monkeypatch):
     commands, store, _, _, _, _, run, _ = orchestration
-    records = configured_container(store).records()
+    records = composition.open_records(store)
     def fail(root, intent, body):
-        reopened = configured_container(configured_container(path=store.path).store()).services()
+        reopened = composition.facades(composition.open_store(store.path))
         decision, = reopened.decisions.list()
         pending = next(entry for entry in reopened.records.intents() if entry['key'] == decision.id)
         assert pending['state'] == 'pending'
@@ -149,7 +149,7 @@ def test_orchestrator_queries_own_run_without_scans(orchestration, monkeypatch):
     commands, store, _, _, _, _, run, _ = orchestration
     def no_scan():
         raise AssertionError('full scan')
-    execution = configured_container(store).execution()
+    execution = composition.open_execution(store)
     monkeypatch.setattr(execution, 'actions', no_scan)
     monkeypatch.setattr(execution, 'runs', no_scan)
     decision = commands.execute('decide', dict(question='Q', answer='A', context='C'))
@@ -167,13 +167,13 @@ def test_decision_rolls_back_when_intent_cannot_be_saved(orchestration, monkeypa
     monkeypatch.setattr(RecordsRepository, 'save', fail)
     with pytest.raises(ValueError, match='intent refused'):
         commands.execute('decide', dict(question='Q', answer='A', context='C'))
-    assert configured_container(store).decisions().list() == []
+    assert composition.open_decisions(store).list() == []
     assert store.latest_sequence() == before
 
 
 def test_decision_recovery_failure_preserves_commit_error(orchestration, monkeypatch):
     commands, store, _, _, _, _, _, _ = orchestration
-    records = configured_container(store).records()
+    records = composition.open_records(store)
     def commit(*args):
         raise ValueError('original commit error')
     def find(*args):
@@ -182,14 +182,14 @@ def test_decision_recovery_failure_preserves_commit_error(orchestration, monkeyp
     monkeypatch.setattr(records.writer, 'find', find)
     with pytest.raises(ValueError, match='original commit error'):
         commands.execute('decide', dict(question='Q', answer='A', context='C'))
-    decision, = configured_container(store).decisions().list()
+    decision, = composition.open_decisions(store).list()
     intent = next(entry for entry in records.intents() if entry['key'] == decision.id)
     assert intent['state'] == 'failed' and intent['error'] == 'original commit error'
 
 
 def test_complete_requires_separate_accept_authority(orchestration):
     commands, store, item, judged, accepted, checked, _, _ = orchestration
-    work = configured_container(store).work()
+    work = composition.open_work(store)
     commands.execute('meet', {'criterion': judged.id, 'evidence': []})
     work.meet(accepted.id, actor='user')
     evidence = checked.specification.reference
@@ -198,34 +198,35 @@ def test_complete_requires_separate_accept_authority(orchestration):
     commands.execute('meet', {'criterion': checked.id, 'evidence': [evidence]})
     with pytest.raises(AuthorityRejected, match='accept'):
         commands.execute('progress', {'condition': 'complete'})
-    records = configured_container(store).records()
+    records = composition.open_records(store)
     mandate = json.loads(records.read('p', 'mandate.json'))
     mandate['decision_authority'].append('accept')
     records.write_mandate('p', 'mandate.json', json.dumps(mandate), key='accept', actor='user')
     # Existing activations retain the old grant.
     with pytest.raises(AuthorityRejected, match='accept'):
         commands.execute('progress', {'condition': 'complete'})
-    activation = configured_container(store).authority().activate(item.id, actor='orchestrator', role='orchestrator', mandate_path='mandate.json')
+    activation = composition.open_authority(store).activate(item.id, actor='orchestrator',
+        role='orchestrator', mandate_path='mandate.json')
     from fleet.orchestration import ControllerCommands
-    ControllerCommands(configured_container(store).services(), activation.id).execute('progress', {'condition': 'complete'})
+    ControllerCommands(store, activation.id).execute('progress', {'condition': 'complete'})
     assert work.get(item.id).condition == 'complete'
 
 
 def test_real_scripted_orchestrator_process(orchestration, tmp_path, monkeypatch, capsys):
     import os
     import sys
-    from fleet_cli import cli
+    from fleet import cli
     from fleet.remote import fleetd
     from fleet.transport import Host
 
     _, store, item, _, _, _, _, root = orchestration
-    workspace = configured_container(store).initialized_workspace()
+    workspace = composition.open_workspace(store)
     project = workspace.edit_registry(lambda registry: registry.create('p')).id
     workspace.edit_registry(lambda registry: registry.link(project, 'controller', 'worker-p'))
-    work = configured_container(store).work()
+    work = composition.open_work(store)
     item = work.add(project=project, title='Ship', goal='Ship', actor='user')
     judged = work.add_criterion(item.id, text='Review', verification='judged', actor='user')
-    records = configured_container(store).records()
+    records = composition.open_records(store)
     mandate = json.loads(records.read('p', 'mandate.json'))
     mandate['criteria_it_may_judge'] = [judged.id]
     root = tmp_path / 'registered-records'
@@ -236,7 +237,7 @@ def test_real_scripted_orchestrator_process(orchestration, tmp_path, monkeypatch
     agent = tmp_path / 'scripted-agent'
     agent.write_text(f'''#!{sys.executable}
 import contextlib, io, json, re, sys
-from fleet_cli import cli
+from fleet import cli
 activation = re.search(r"fleet control ([a-f0-9-]+) COMMAND", sys.argv[2]).group(1)
 with contextlib.redirect_stdout(io.StringIO()):
     cli.main(['control', activation, 'progress', json.dumps(dict(next_step='User review'))])
@@ -250,7 +251,7 @@ print(json.dumps(dict(type='result', subtype='success', result='Routine work rec
     (home / 'config.json').write_text(json.dumps({'claude': str(agent)}))
     monkeypatch.setenv('FLEET_HOME', str(home))
     monkeypatch.setenv('PYTHONPATH', os.getcwd())
-    monkeypatch.setattr(transport, 'host_by_name', lambda name: Host(name, None))
+    monkeypatch.setattr(cli.transport, 'host_by_name', lambda name: Host(name, None))
 
     def call(host, arguments, *, stdin_text=None):
         if arguments[0] == 'start':
@@ -263,13 +264,13 @@ print(json.dumps(dict(type='result', subtype='success', result='Routine work rec
                                check=True, capture_output=True, text=True, timeout=10)
         return json.loads(reply.stdout)
 
-    monkeypatch.setattr(transport, 'call', call)
+    monkeypatch.setattr(cli.transport, 'call', call)
     cli.main(['orchestrate', item.id, '--mandate', 'mandate.json', '--host', 'controller',
               '--runtime', 'claude', '--cwd', str(tmp_path)])
     output = json.loads(capsys.readouterr().out)
-    assert configured_container(store).execution().get_run(output['run']).status == 'succeeded'
-    assert configured_container(store).work().get(item.id).condition != 'complete'
-    decision, = configured_container(store).decisions().list()
+    assert composition.open_execution(store).get_run(output['run']).status == 'succeeded'
+    assert composition.open_work(store).get(item.id).condition != 'complete'
+    decision, = composition.open_decisions(store).list()
     assert decision.source_run == output['run']
-    assert configured_container(store).initialized_attention().list() == []
+    assert composition.open_attention(store).list() == []
     assert json.loads((root / f'summaries/{item.id}.json').read_text())['activation'] == output['activation']

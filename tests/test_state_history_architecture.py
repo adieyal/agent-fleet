@@ -13,10 +13,10 @@ def test_state_history_is_append_only_except_explicit_pruning():
     )
     allowed = []
     violations = []
-    for path in (root / 'packages').rglob('*.py'):
+    for path in (root / 'fleet').rglob('*.py'):
         tree = ast.parse(path.read_text())
         pruning_nodes = set()
-        if path.relative_to(root).as_posix() == 'packages/fleet/src/fleet/infrastructure/sqlite/store.py':
+        if path.relative_to(root).as_posix() == 'fleet/infrastructure/sqlite/store.py':
             for node in ast.walk(tree):
                 if isinstance(node, ast.FunctionDef) and node.name == 'prune_history':
                     pruning_nodes.update(ast.walk(node))

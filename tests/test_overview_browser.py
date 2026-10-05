@@ -8,8 +8,7 @@ import pytest
 from playwright.sync_api import Browser, Page, expect
 
 from conftest import serve_fixture
-from fleet.container import configured_container
-from fleet.services.fixtures import FixtureState
+from fleet.web.fixture import FixtureState
 from overview_fixture import overview_fixture, repository
 from test_deck_browser import PIN_CLOCK, VIEWPORTS
 
@@ -18,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture(scope="module")
 def overview_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
-    state = FixtureState(overview_fixture(repository(tmp_path_factory.mktemp('libraries') / 'agent-fleet')), container=configured_container())
+    state = FixtureState(overview_fixture(repository(tmp_path_factory.mktemp("libraries") / "agent-fleet")))
     with serve_fixture(state) as url:
         yield url
 

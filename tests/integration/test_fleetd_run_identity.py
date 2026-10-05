@@ -10,8 +10,7 @@ import time
 
 import pytest
 
-
-from fleet.container import configured_container
+from fleet import composition
 from fleet.modules.execution import JobObservation
 from fleet.remote import fleetd
 
@@ -72,7 +71,7 @@ def test_run_refuses_changed_payload(worker, capsys, change):
 
 
 def test_killed_local_agent_is_lost_and_releases_claim(worker, capsys):
-    execution = configured_container().execution()
+    execution = composition.open_execution()
     run = execution.dispatch(None, project="p", host="local", runtime="codex",
         payload={"cwd": worker.cwd}, actor="user", reason="test", idempotency_key="key").run
     worker.id, worker.run_id = run.remote_job_id, run.id
@@ -109,7 +108,7 @@ def test_killed_local_agent_is_lost_and_releases_claim(worker, capsys):
     assert execution.runs()[0].reason == "lost"
     assert execution.runs()[0].status == "failed"
     assert not execution.claims()[0].active
-    store = configured_container().store()
+    store = composition.open_store()
     sequence = store.latest_sequence()
     execution.observe("local", observation)
     assert store.latest_sequence() == sequence

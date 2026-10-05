@@ -1,21 +1,19 @@
-from fleet.container import configured_container
-from fleet import transport
 import json
 from types import SimpleNamespace
 
 import pytest
 
-from fleet_cli import cli
+from fleet import cli, composition
 
 
 def test_run_and_library_link_fetch_nothing(monkeypatch, capsys, project_id):
-    configured_container().initialized_workspace().edit_registry(lambda registry: registry.link(project_id, 'fake', 'worker-p'))
+    composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, "fake", "worker-p"))
     def forbidden(*args, **kwargs):
         pytest.fail("linking must not fetch anything")
 
-    monkeypatch.setattr(transport, "call", forbidden)
+    monkeypatch.setattr(cli.transport, "call", forbidden)
     monkeypatch.setattr("urllib.request.urlopen", forbidden)
-    item = configured_container().work().add(project=project_id, title='Task', goal='Ship', actor='user')
+    item = composition.open_work().add(project=project_id, title="Task", goal="Ship", actor="user")
     cli.main(["run", "link", "offline", "job", item.id])
     run = json.loads(capsys.readouterr().out)
     cli.main(["run", "link", "offline", "job", item.id])
@@ -24,7 +22,7 @@ def test_run_and_library_link_fetch_nothing(monkeypatch, capsys, project_id):
     entry = json.loads(capsys.readouterr().out)
     assert entry["availability"] == "external"
     assert entry["title"] is None
-    assert configured_container().library().list()[0].title is None
+    assert composition.open_library().list()[0].title is None
     assert entry["canonical_location"] == "https://example.org/private"
     cli.main(["library", "link", "https://example.org/project", "--project", "p"])
     assert json.loads(capsys.readouterr().out)["work_item"] is None
@@ -32,15 +30,15 @@ def test_run_and_library_link_fetch_nothing(monkeypatch, capsys, project_id):
 
 @pytest.mark.parametrize("start_fails", [False, True])
 def test_send_links_created_job(monkeypatch, capsys, start_fails, project_id):
-    configured_container().initialized_workspace().edit_registry(lambda registry: registry.link(project_id, 'fake', 'worker-p'))
-    item = configured_container().work().add(project=project_id, title='Task', goal='Ship', actor='user')
+    composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, "fake", "worker-p"))
+    item = composition.open_work().add(project=project_id, title="Task", goal="Ship", actor="user")
     calls = []
 
     def call(host, arguments, **kwargs):
         calls.append(arguments[0])
         if arguments[0] in ("start", "reconcile") and start_fails:
             raise cli.FleetError("start unavailable")
-        run, = configured_container().execution().runs()
+        run, = composition.open_execution().runs()
         if arguments[0] == "create":
             assert arguments[arguments.index("--id") + 1] == run.remote_job_id
         return {"id": run.remote_job_id, "run_id": run.id, "schema_version": 4,
@@ -48,8 +46,8 @@ def test_send_links_created_job(monkeypatch, capsys, start_fails, project_id):
                 "start_requested": arguments[0] == "start",
                 "status": "queued", "steps": [{}], "description": "Task"}
 
-    monkeypatch.setattr(transport, "host_by_name", lambda name: SimpleNamespace(name=name))
-    monkeypatch.setattr(transport, "call", call)
+    monkeypatch.setattr(cli.transport, "host_by_name", lambda name: SimpleNamespace(name=name))
+    monkeypatch.setattr(cli.transport, "call", call)
     arguments = ["send", "--host", "fake", "--project", "p", "--description", "Task",
                  "--cwd", "/tmp", "--step", "Do it", "--work-item", item.id, "--json"]
     if start_fails:
@@ -57,7 +55,7 @@ def test_send_links_created_job(monkeypatch, capsys, start_fails, project_id):
             cli.main(arguments)
     else:
         cli.main(arguments)
-    run, = configured_container().execution().runs()
+    run, = composition.open_execution().runs()
     assert (run.host, run.remote_job_id, run.runtime) == ("fake", run.id, "claude")
-    assert configured_container().execution().actions()[0].work_item == item.id
+    assert composition.open_execution().actions()[0].work_item == item.id
     assert calls == (["create", "start", "reconcile"] if start_fails else ["create", "start"])

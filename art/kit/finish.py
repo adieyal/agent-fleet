@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the floor kit (packages/fleet-web/src/fleet_web/static/assets/world/kit/) from its sources:
+"""Build the floor kit (fleet/web/assets/world/kit/) from its sources:
 
 - props from 3D models: art/build/props/ as rendered by art/scripts/render_props.py (on host home);
 - Blender pieces: art/build/kit/ as rendered by art/scripts/build_kit.py (on host home), already anchored;
@@ -22,7 +22,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 KIT = Path(__file__).resolve().parent
 REPO = KIT.parent.parent
 BLENDER = REPO / 'art' / 'build' / 'kit'
-OUT = REPO / 'packages' / 'fleet-web' / 'src' / 'fleet_web' / 'static' / 'assets' / 'world' / 'kit'
+OUT = REPO / 'fleet' / 'web' / 'assets' / 'world' / 'kit'
 B2 = REPO / 'art' / 'bakeoff' / 'B2'
 
 # The canonical camera (artlib.canonical_projection; docs/design/art-direction.md, "Camera"): oblique, yaw 30 deg,

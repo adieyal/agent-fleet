@@ -33,20 +33,11 @@ Claude Code or Codex CLI.
 ```bash
 git clone https://github.com/adieyal/agent-fleet.git
 cd agent-fleet
-uv build --all-packages --wheel
-uv tool install --find-links dist dist/fleet_cli-0.1.0-py3-none-any.whl
+uv tool install .
 
 fleet host add worker --ssh worker  # any SSH target you can already reach
 fleet install worker                # copy the runner and locate agent CLIs
 ```
-
-The checkout is a uv workspace with `fleet` (library), `fleet-cli` (terminal) and
-`fleet-web` (dashboard) distributions. For development, use `uv sync` and
-`uv run fleet ...`. Build all three wheels together for local installation: the
-CLI requires matching library and web distributions. Installing
-`packages/fleet-cli` alone cannot resolve unpublished sibling packages; provide
-the wheel directory as shown above. The dashboard supplies `fleet web` through
-distribution entry points and also has a standalone `fleet-web` command.
 
 Use `fleet host add laptop --local` for this machine. **After upgrading, reinstall
 fleetd on every host with `fleet install <host>`: the wire protocol changed.**
@@ -250,7 +241,7 @@ your project before recording it:
 
 ```python
 import json
-from fleet.container import Container
+from fleet.composition import open_records
 from fleet.modules.records import TRIAGE_PATH
 
 policy = dict(goal="Inspect delegated attention and record findings or escalate",
@@ -261,7 +252,7 @@ policy = dict(goal="Inspect delegated attention and record findings or escalate"
               cwd="WORKING_DIRECTORY", permission="workspace-write", routing={},
               permissions={"allow": [], "escalate": ["Bash"]},
               limits={"retries_per_step": 1, "runs_per_day": 3, "unclaimed_minutes": 30})
-result = Container().records().write_mandate(
+result = open_records().write_mandate(
     "PROJECT_ID", TRIAGE_PATH, json.dumps(policy), key="guide-triage-v1", actor="user"
 )
 assert result["state"] == "confirmed", result
@@ -323,7 +314,7 @@ ID. `write_mandate` validates and commits it; use a new key when changing the bo
 
 ```python
 import json
-from fleet.container import Container
+from fleet.composition import open_records
 
 mandate = {
     "goal": "Review the guide and report the next step",
@@ -332,7 +323,7 @@ mandate = {
     "escalation_conditions": ["Ask the user before publishing"],
     "criteria_it_may_judge": []
 }
-result = Container().records().write_mandate(
+result = open_records().write_mandate(
     "PROJECT_ID", "mandate.json", json.dumps(mandate), key="guide-mandate-v1", actor="user"
 )
 assert result["state"] == "confirmed", result
@@ -483,39 +474,10 @@ setup runs `ssh-agent -D -a %t/fleet-ssh-agent.sock` as
 
 ## Development
 
-The root `pyproject.toml` is a non-built uv workspace; each distribution has its
-own Hatchling project and src package:
-
-```text
-packages/fleet/src/fleet/          # library, container, adapters, standalone fleetd
-packages/fleet-cli/src/fleet_cli/  # terminal entrypoint and metadata plugin loader
-packages/fleet-web/src/fleet_web/  # HTTP entrypoint, rendering and static/ assets
-```
-
-`fleet` imports neither presentation package. `fleet_cli` and `fleet_web` do not
-import each other; the web distribution registers a `fleet.commands` entry point.
-The container owns infrastructure construction. Tests remain at the root.
-
-To upgrade a tool installation from this checkout, build all sibling wheels and
-install them together; `--force` replaces the existing tool environment:
-
-```bash
-uv build --all-packages --wheel
-uv tool install --force --find-links dist dist/fleet_cli-0.1.0-py3-none-any.whl
-fleet install HOST  # repeat for each configured host to update its standalone worker
-```
-
-`fleet install` reads the worker from the installed library's package resources,
-materializes it during rsync, then configures the worker and checks for tmux.
-It copies only `fleetd.py` to `~/.local/share/fleet/fleetd.py`; workers do not need
-the workspace packages or dependency-injector. Install the tool on the controller
-and restart its `fleet web` process after an upgrade to serve the new static files.
-
-
 To try a branch alongside the installed fleetd, set `FLEET_FLEETD_PATH` to a
 separate worker script path (for example `~/.local/share/fleet-branch/fleetd.py`)
 and `FLEET_REMOTE_HOME` to a separate worker state directory (for example
-`~/.fleet-branch`). Copy the branch's `packages/fleet/src/fleet/remote/fleetd.py` to that script path
+`~/.fleet-branch`). Copy the branch's `fleet/remote/fleetd.py` to that script path
 on each target host yourself: `fleet install` updates the normal installation.
 For a local host, `FLEET_FLEETD_PATH` can point directly into the checkout.
 Both variables are controller-side overrides applied to worker invocations; also
@@ -530,15 +492,14 @@ what to build next and what can wait.
 
 ```bash
 uv sync --locked
-uv run --locked pytest -q -m "not browser"
-uv run --locked lint-imports
-uvx ruff@0.13.2 check packages tests
-uv build --all-packages --wheel
+uv run --locked python -m unittest discover -s tests -v
+uvx ruff@0.13.2 check fleet tests
+uv build
 ```
 
 The project code is licensed under [Apache-2.0](LICENSE). Bundled assets have
-their own terms in [asset credits](packages/fleet-web/src/fleet_web/static/assets/CREDITS.md) and the
-[three.js license](packages/fleet-web/src/fleet_web/static/vendor/three/LICENSE).
+their own terms in [asset credits](fleet/web/assets/CREDITS.md) and the
+[three.js license](fleet/web/vendor/three/LICENSE).
 
 
 ## Test suite

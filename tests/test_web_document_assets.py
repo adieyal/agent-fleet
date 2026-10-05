@@ -14,30 +14,25 @@ from urllib.parse import urlencode
 from urllib.request import urlopen
 
 import pytest
-from types import SimpleNamespace
 
-from fleet.container import configured_container
 from fleet.remote import fleetd
 from fleet.transport import FleetError, Host
-from fleet_web.documents import ASSET_READ_LIMIT, fetch_asset, render_markdown
-from fleet_web.library import ProjectLibrary
-from fleet_web.server import make_handler
+from fleet.web.documents import ASSET_READ_LIMIT, fetch_asset, fetch_document, render_markdown
+from fleet.web.library import ProjectLibrary
+from fleet.web.server import make_handler
 
 SVG = b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><script>alert(1)</script></svg>'
 
 
 class JobState:
-    def __init__(self, container=None):
-        self.container = configured_container() if container is None else container
-
     def host_names(self) -> list[str]:
         return ["host"]
 
     def read_document(self, host_name: str, job_id: str, document_id: str) -> dict:
-        return {**self.container.read_document(host=Host(host_name, None), job_id=job_id, document_id=document_id), "host": host_name}
+        return fetch_document(Host(host_name, None), job_id, document_id)
 
     def read_asset(self, host_name: str, job_id: str, document_id: str, asset_path: str) -> tuple[str, bytes]:
-        return fetch_asset(Host(host_name, None), job_id, document_id, asset_path, container=self.container)
+        return fetch_asset(Host(host_name, None), job_id, document_id, asset_path)
 
 
 @contextmanager
@@ -65,7 +60,7 @@ def image_folder(directory: Path, outside: Path) -> None:
 
 
 @pytest.fixture
-def job_server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cli_container) -> Iterator[str]:
+def job_server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
     """A deck whose job assets come from a real `fleetd read-asset` over a job with an outbox report."""
     home = tmp_path / "fleet"
     outbox = home / "jobs" / "job1" / "outbox"
@@ -82,8 +77,8 @@ def job_server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cli_container) -
             raise FleetError(payload["error"])
         return payload
 
-    cli_container.transport.override(SimpleNamespace(call=fleetd_call))
-    with serving(JobState(cli_container)) as url:
+    monkeypatch.setattr("fleet.web.documents.transport.call", fleetd_call)
+    with serving(JobState()) as url:
         yield url + "/api/doc/asset?" + urlencode({"host": "host", "job": "job1", "id": "outbox-report.md"})
 
 
@@ -94,7 +89,7 @@ def library_server(tmp_path: Path) -> Iterator[str]:
     (root / "docs" / "guide.md").write_text("# Guide\n\n![diagram](img/diagram.svg)\n")
     (root / ".private").mkdir()
     (root / ".private" / "hidden.png").write_bytes(b"\x89PNG hidden")
-    with serving(JobState(), ProjectLibrary({'project': str(root)}, container=configured_container())) as url:
+    with serving(JobState(), ProjectLibrary({"project": str(root)})) as url:
         yield url + "/api/library/asset?" + urlencode({"project": "project", "id": "docs/guide.md"})
 
 

@@ -6,5 +6,3 @@ __pycache__/
 art/sources/
 art/build/
 .import_linter_cache/
-
-dist/

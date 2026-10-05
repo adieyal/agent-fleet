@@ -2,8 +2,7 @@ from dataclasses import is_dataclass
 
 import pytest
 
-
-from fleet.container import configured_container
+from fleet.composition import open_attention, open_store, open_work, open_workspace
 from fleet.infrastructure.sqlite.repository import Repository
 from fleet.infrastructure.sqlite.workspace import WorkspaceRepository
 from fleet.modules.workspace import WorkspaceFacade
@@ -14,7 +13,7 @@ def test_workspace_uses_shared_repository():
 
 
 def test_workspace_boundary_records_are_typed():
-    workspace = configured_container().initialized_workspace()
+    workspace = open_workspace()
     result = workspace.move_in(["host"], "demo")
     assert is_dataclass(result)
     assert is_dataclass(workspace.snapshot())
@@ -27,8 +26,8 @@ def test_bound_workspace_and_library_rollback_together():
     from fleet.infrastructure.sqlite.library import LibraryRepository
     from fleet.modules.library import LibraryEntry
 
-    store = configured_container().store()
-    workspace = configured_container(store).initialized_workspace()
+    store = open_store()
+    workspace = open_workspace(store)
     before = workspace.snapshot()
     sequence = store.latest_sequence()
     with pytest.raises(RuntimeError, match="after writes"):
@@ -50,9 +49,9 @@ def test_bound_workspace_and_library_rollback_together():
 
 
 def test_block_failure_after_attention_write_rolls_back(monkeypatch):
-    store = configured_container().store()
-    work = configured_container(store).work()
-    attention = configured_container(store).initialized_attention()
+    store = open_store()
+    work = open_work(store)
+    attention = open_attention(store)
     item = work.add(project="demo", title="Task", goal="Ship", actor="user")
     sequence = store.latest_sequence()
 

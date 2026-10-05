@@ -2,11 +2,10 @@
 to what their host reports (workspace, the step they are on)."""
 import pytest
 
-
-from fleet.container import configured_container
+from fleet.composition import open_attention, open_decisions, open_execution, open_library, open_store, open_work
 from fleet.projections.bench import bench_rooms
 from fleet.projections.project import project_status
-from fleet.ingestion import observe_runs
+from fleet.web.ingester import observe_runs
 
 WORKSPACE = {"toplevel": "/home/adi/wt/feat-x", "linked_worktree": True, "repository": "/home/adi/repo",
              "branch": "feat/x", "detached": False, "head": "abc1234", "dirty": 2, "collected_at": 1_000.0}
@@ -14,8 +13,8 @@ WORKSPACE = {"toplevel": "/home/adi/wt/feat-x", "linked_worktree": True, "reposi
 
 @pytest.fixture
 def plan(project_id):
-    store = configured_container().store()
-    work = configured_container(store).work()
+    store = open_store()
+    work = open_work(store)
     epic = work.add(project=project_id, title="Epic", goal="Ship it", kind="epic", actor="user")
     milestones = [work.add(project=project_id, title=f"M{index}", goal=f"Part {index}", kind="milestone",
                            parent=epic.id, actor="user") for index in (1, 2, 3)]
@@ -23,7 +22,8 @@ def plan(project_id):
 
 
 def dispatch(store, project, item, steps, key):
-    return configured_container(store).execution().dispatch(item.id, host='worker', runtime='claude', project=project, payload={'cwd': '/repo', 'steps': steps}, actor='user', reason='work', idempotency_key=key).run
+    return open_execution(store).dispatch(item.id, host="worker", runtime="claude", project=project,
+        payload={"cwd": "/repo", "steps": steps}, actor="user", reason="work", idempotency_key=key).run
 
 
 def job(run, statuses, items, status="running", at=1_000.0, **fields):
@@ -39,11 +39,13 @@ def job(run, statuses, items, status="running", at=1_000.0, **fields):
 
 
 def observe(store, jobs):
-    observe_runs(configured_container(store).execution(), configured_container(store).library(), {'name': 'worker', 'ok': True, 'jobs': {entry['id']: entry for entry in jobs}})
+    observe_runs(open_execution(store), open_library(store), {"name": "worker", "ok": True,
+                                                              "jobs": {entry["id"]: entry for entry in jobs}})
 
 
 def epic_room(store, project, live):
-    projection = project_status(project, configured_container(store).work(), configured_container(store).initialized_attention(), configured_container(store).execution(), configured_container(store).library(), configured_container(store).decisions())
+    projection = project_status(project, open_work(store), open_attention(store), open_execution(store),
+                                open_library(store), open_decisions(store))
     only, = bench_rooms(projection, live)["rooms"]
     return only
 
@@ -91,7 +93,8 @@ def test_a_job_working_through_milestones_shows_on_each_line_it_served(plan):
 
 def test_a_line_lists_its_running_jobs_then_its_latest_finished_one(plan):
     store, project, epic, milestones = plan
-    task = configured_container(store).work().add(project=project, title='Port list', goal='Port it', parent=milestones[0].id, actor='user')
+    task = open_work(store).add(project=project, title="Port list", goal="Port it", parent=milestones[0].id,
+                                actor="user")
     old, latest, now = (dispatch(store, project, task, [{"prompt": "Do it"}], key) for key in ("a", "b", "c"))
     observe(store, [job(old, ["done"], [None], status="done", at=1_000.0),
                     job(latest, ["failed"], [None], status="failed", at=2_000.0),

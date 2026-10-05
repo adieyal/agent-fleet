@@ -16,5 +16,5 @@ jobs:
       - run: uv python install 3.10
       - run: uv run --locked --python 3.10 playwright install --with-deps chromium
       - run: uv run --locked --python 3.10 pytest -v tests
-      - run: uvx ruff@0.13.2 check packages tests
-      - run: uv build --all-packages
+      - run: uvx ruff@0.13.2 check fleet tests
+      - run: uv build

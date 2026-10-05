@@ -26,7 +26,7 @@ ART = Path(__file__).resolve().parent.parent
 REPO = ART.parent
 SOURCES = ART / 'sources'
 BUILD = ART / 'build'
-WORLD = REPO / 'packages' / 'fleet-web' / 'src' / 'fleet_web' / 'static' / 'assets' / 'world'
+WORLD = REPO / 'fleet' / 'web' / 'assets' / 'world'
 MIN_BLENDER = (4, 2, 0)
 
 
@@ -425,7 +425,7 @@ def canonical_axes() -> tuple[Vector, Vector, Vector]:
 
 
 def canonical_record(px_per_m_1x: float | None = None) -> dict:
-    """The camera as a sprite manifest records it; the world (packages/fleet-web/src/fleet_web/static/js/world/projection.js) checks the axes."""
+    """The camera as a sprite manifest records it; the world (fleet/web/js/world/projection.js) checks the axes."""
     return {'name': 'canonical', 'projection': 'oblique', 'yaw_deg': CANONICAL_YAW,
             'depression_deg': round(CANONICAL_DEPRESSION, 4),
             'axes_px_per_m': [[round(a, 5), round(b, 5)] for a, b in canonical_projection()],

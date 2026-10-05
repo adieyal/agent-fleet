@@ -5,15 +5,14 @@ import shlex
 
 import pytest
 
-from fleet.container import configured_container
-from fleet_cli import cli
+from fleet import cli, composition
 from fleet.modules.attention import ItemResolved
 
 
 @pytest.fixture
 def resolved(project_id):
-    work = configured_container().work().add(project=project_id, title='Build', goal='Ship', actor='user')
-    attention = configured_container().initialized_attention()
+    work = composition.open_work().add(project=project_id, title='Build', goal='Ship', actor='user')
+    attention = composition.open_attention()
     item = attention.raise_item(project=project_id, work_item=work.id, kind='decision', owner='user',
         source='manual', source_reference='resolved-answer', headline='Build in which order?',
         context_reference='brief', actor='author')
@@ -32,9 +31,9 @@ def test_resolution_message(resolved, missing):
             repository.unit.record_change("test:legacy-details", "present", "missing", "test")
     with attention.repository.transaction() as repository:
         repository.save(item, item.state, "host-stream")
-    before = configured_container().store().latest_sequence()
+    before = composition.open_store().latest_sequence()
     with pytest.raises(ItemResolved) as caught:
-        configured_container().decisions().answer(item.id, "Use 'deck' first", actor='user')
+        composition.open_decisions().answer(item.id, "Use 'deck' first", actor='user')
     details = 'details not recorded' if missing else 'Build in this order: API, then deck.'
     assert str(caught.value).splitlines()[0] == (
         f'attention item {item.id[:8]} was resolved by resolver at 2026-10-04 15:02 UTC: {details}')
@@ -42,7 +41,7 @@ def test_resolution_message(resolved, missing):
     assert command[:3] == ['fleet', 'decision', 'record']
     assert command[command.index('--work-item') + 1] == item.work_item
     assert command[command.index('--answer') + 1] == "Use 'deck' first"
-    assert configured_container().store().latest_sequence() == before
+    assert composition.open_store().latest_sequence() == before
 
 
 def test_missing_actor_and_time_are_explicit(resolved):

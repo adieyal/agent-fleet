@@ -1,13 +1,11 @@
 """Run the workspace guide with temporary state and a fake worker."""
-from fleet.container import configured_container
-from fleet import transport
 import json
 import re
 import shlex
 import subprocess
 from pathlib import Path
 
-from fleet_cli import cli
+from fleet import cli, composition
 from fleet.modules.records import TRIAGE_PATH
 
 
@@ -27,7 +25,7 @@ def test_workspace_guide(tmp_path, monkeypatch, capsys):
     def call(host, arguments, **fields):
         assert arguments[0] in ('create', 'start')
         calls.append(arguments)
-        run = configured_container().execution().runs()[-1]
+        run = composition.open_execution().runs()[-1]
         return dict(id=run.remote_job_id, run_id=run.id, schema_version=4,
                     fingerprint=arguments[arguments.index('--fingerprint') + 1],
                     start_requested=arguments[0] == 'start',
@@ -36,15 +34,14 @@ def test_workspace_guide(tmp_path, monkeypatch, capsys):
 
     pushed = []
     monkeypatch.delenv('FLEET_JOB_ID', raising=False)  # the guide is followed outside a fleet job
-    monkeypatch.setattr(transport, 'call', call)
-    from fleet.services.context import Context
-    monkeypatch.setattr(Context, 'push', lambda self, host, job, paths: pushed.append(sorted(Path(p).name for p in paths)))
+    monkeypatch.setattr(cli.transport, 'call', call)
+    monkeypatch.setattr(cli, 'push_context', lambda host, job, paths: pushed.append(sorted(Path(p).name for p in paths)))
     for language, block in re.findall(r'```(bash|python)\n(.*?)```', section, re.S):
         for name, value in values.items():
             block = block.replace(name, value)
         if language == 'python':
             exec(compile(block, 'README mandate', 'exec'), {})
-            records = configured_container().records()
+            records = composition.open_records()
             path = TRIAGE_PATH if 'TRIAGE_PATH' in block else 'mandate.json'
             assert records.mandate_version(values['PROJECT_ID'], path)[0]
             continue
@@ -75,7 +72,7 @@ def test_workspace_guide(tmp_path, monkeypatch, capsys):
     assert pushed == [['CONSTITUTION.md']] * 3  # the guide's constitution reaches each job
     for create in calls[::2]:
         assert create[create.index('--permission') + 1] == 'workspace-write'
-    assert configured_container().work().summary(values['WORK_ID']).purpose == 'Ship the guide'
+    assert composition.open_work().summary(values['WORK_ID']).purpose == 'Ship the guide'
 
 
 def test_readme_describes_store_and_upgrade():

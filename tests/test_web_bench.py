@@ -5,7 +5,8 @@ from urllib.error import HTTPError
 from urllib.request import urlopen
 
 import pytest
-from fleet.container import configured_container
+
+from fleet.composition import open_execution, open_store, open_work
 
 
 def test_bench_endpoint(base_url):
@@ -28,10 +29,10 @@ def test_bench_endpoint(base_url):
     assert invalid.value.code == 400
 
 
-def test_state_work_links_follow_store_changes(base_url, deck_state, monkeypatch, override_web_store):
-    store = configured_container().store()
-    override_web_store(deck_state, store)
-    work = configured_container(store).work()
+def test_state_work_links_follow_store_changes(base_url, deck_state, monkeypatch):
+    store = open_store()
+    monkeypatch.setattr(deck_state, 'store', store)
+    work = open_work(store)
     epic = work.add(project='links', title='Links epic', goal='Deliver', kind='epic', actor='user')
     milestone = work.add(project='links', title='Links slice', goal='Deliver', kind='milestone',
                          parent=epic.id, actor='user')
@@ -40,12 +41,12 @@ def test_state_work_links_follow_store_changes(base_url, deck_state, monkeypatch
         with urlopen(base_url + '/api/state', timeout=5) as response:
             doc = json.load(response)
         job, = [job for host in doc['hosts'] if host['name'] == 'home' for job in host['jobs'] if job['id'] == 'a1c3e9']
-        run = configured_container(store).execution().find_run('home', 'a1c3e9')
+        run = open_execution(store).find_run('home', 'a1c3e9')
         assert job['audit_run_id'] == (run.id if run else None)
         return job['work'] and [node['title'] for node in job['work']['chain']]
 
     assert linked() is None
-    configured_container(store).execution().link('home', 'a1c3e9', milestone.id, actor='user')
+    open_execution(store).link('home', 'a1c3e9', milestone.id, actor='user')
     assert linked() == ['Links epic', 'Links slice']
     work.set(milestone.id, title='Renamed slice', actor='user')
     assert linked() == ['Links epic', 'Renamed slice']

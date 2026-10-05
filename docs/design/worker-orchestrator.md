@@ -4,8 +4,6 @@ Recommend keeping carbon as the sole writer of shared state, first serving contr
 
 This is a findings-only proposal dated 2026-10-04 for milestone `4d907b1f-bed9-41d5-9b12-49118c25ef5d`, epic `98b407bb`, and the shared sandboxed-worker requirement `2cd44e27`. No product implementation, deployment, merge or push is authorized by this study. Source line references describe this checkout; protocol examples below are proposed, not current capabilities. Cadences are configured defaults and call counts are derived from code, not measured production traffic. The brief supplies the topology: carbon owns SQLite, the deck and the controlling session; home cannot initiate a connection to carbon.
 
-The source excerpts below are historical observations from before ADR 0010's workspace split. Current paths are `packages/fleet-cli/src/fleet_cli/cli.py`, `packages/fleet-web/src/fleet_web/server.py`, `packages/fleet/src/fleet/remote/fleetd.py`, and `packages/fleet/src/fleet/ingestion.py`; stream process handling now lives in library transport/services. Keep the dated excerpts as evidence rather than treating their line numbers as current navigation.
-
 ## Comparison and recommendation
 
 | Option | Concrete benefit | What it leaves or adds | Recommendation |

@@ -23,7 +23,7 @@ def run_check(directory: Path) -> dict:
     environment = dict(inherited, FLEET_STORE=str(directory / 'store.db'),
         FLEET_CONFIG=str(directory / 'config.json'), FLEET_MANAGEMENT=str(directory / 'management'),
         FLEET_HOME=str(worker), FLEET_REMOTE_HOME=str(worker),
-        FLEET_FLEETD_PATH=str(ROOT / 'packages/fleet/src/fleet/remote/fleetd.py'), PYTHONPATH=str(ROOT),
+        FLEET_FLEETD_PATH=str(ROOT / 'fleet/remote/fleetd.py'), PYTHONPATH=str(ROOT),
         CLAUDE_CONFIG_DIR=str(directory / 'claude-config'))
     environment.pop('FLEET_JOB_ID', None)
     environment.pop('FLEET_JOB_DIR', None)
@@ -43,14 +43,14 @@ print(json.dumps(dict(type='result', subtype='success', result='Verified. FLEET_
     (worker / 'config.json').write_text(json.dumps({'claude': str(agent)}))
 
     def command(*arguments: str) -> str:
-        return subprocess.run([sys.executable, '-m', 'fleet_cli.cli', *arguments], cwd=ROOT,
+        return subprocess.run([sys.executable, '-m', 'fleet.cli', *arguments], cwd=ROOT,
             env=environment, check=True, capture_output=True, text=True, timeout=30).stdout
 
     seed = subprocess.run([sys.executable, '-c', '''
 import json
-from fleet.container import configured_container
-s = configured_container().services()
-configured_container(s.store).initialized_workspace()
+from fleet.composition import facades, open_workspace
+s = facades()
+open_workspace(s.store)
 p = s.workspace.edit_registry(lambda r: r.create('W2 isolated check'))
 s.workspace.edit_registry(lambda r: r.link(p.id, 'local', 'w2-check'))
 w = s.work.add(project=p.id, title='Decision delivery', goal='Receive mid-job decision', actor='check')
@@ -65,7 +65,7 @@ print(json.dumps(dict(project=p.id, work_item=w.id)))
     job_file = worker / 'jobs' / job_id / 'job.json'
     # Own the runner as a child of this foreground check: no tmux or detached process.
     with (directory / 'runner.log').open('w') as log:
-        runner = subprocess.Popen([sys.executable, str(ROOT / 'packages/fleet/src/fleet/remote/fleetd.py'), '_run', job_id],
+        runner = subprocess.Popen([sys.executable, str(ROOT / 'fleet/remote/fleetd.py'), '_run', job_id],
             cwd=ROOT, env=environment, stdout=log, stderr=subprocess.STDOUT)
         try:
             deadline = time.monotonic() + 30
@@ -114,7 +114,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True, help='directory for collected evidence')
     arguments = parser.parse_args()
-    directory = Path(tempfile.mkdtemp(prefix='w2-decisions-', dir=os.environ["TMPDIR"]))
+    directory = Path(tempfile.mkdtemp(prefix='w2-decisions-', dir='/dev/shm'))
     evidence = run_check(directory)
     arguments.output.mkdir(parents=True, exist_ok=True)
     for name in ('evidence.json', 'agent-step-1.md', 'agent-step-2.md', 'runner.log'):

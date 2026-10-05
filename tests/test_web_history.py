@@ -7,17 +7,16 @@ from urllib.request import urlopen
 
 import pytest
 
-from fleet.container import configured_container
 from fleet.modules.records import TRIAGE_PATH
-from fleet_cli import cli
+from fleet import cli, composition
 
 
 @pytest.fixture
-def item(deck_state, monkeypatch, project_id, override_web_store):
+def item(deck_state, monkeypatch, project_id):
     monkeypatch.delenv("FLEET_JOB_ID", raising=False)
-    store = configured_container().store()
-    override_web_store(deck_state, store)
-    work = configured_container(store).work()
+    store = composition.open_store()
+    monkeypatch.setattr(deck_state, "store", store)
+    work = composition.open_work(store)
     item = work.add(project=project_id, title="Audit", goal="Keep history", actor="user")
     work.set(item.id, actor="claude", next_step="Serve it")
     return item
@@ -57,16 +56,17 @@ def test_bad_requests_say_what_is_wrong(base_url, item):
     assert failure(base_url, subject="zzzz") == (404, "no history for 'zzzz'")
 
 
-def test_attention_history_includes_ownership_and_reasons(base_url, deck_state, monkeypatch, project_id, capsys, override_web_store):
-    store = configured_container().store()
-    override_web_store(deck_state, store)
-    attention = configured_container(store).initialized_attention()
+def test_attention_history_includes_ownership_and_reasons(base_url, deck_state, monkeypatch, project_id, capsys):
+    store = composition.open_store()
+    monkeypatch.setattr(deck_state, 'store', store)
+    attention = composition.open_attention(store)
     # delegation needs the project's confirmed triage policy
     policy = dict(goal='Triage', constraints=[], escalation_conditions=[], criteria_it_may_judge=[],
                   decision_authority=['retry', 'escalate', 'record_decision'], host='carbon', runtime='codex',
                   cwd='/tmp', permission='acceptEdits', routing={}, permissions={'allow': ['Read'], 'escalate': []},
                   limits={'retries_per_step': 2, 'runs_per_day': 12, 'unclaimed_minutes': 30})
-    configured_container(store).services().records.write_mandate(project_id, TRIAGE_PATH, json.dumps(policy), key='policy', actor='user')
+    composition.facades(store).records.write_mandate(project_id, TRIAGE_PATH, json.dumps(policy), key='policy',
+                                                     actor='user')
     item = attention.raise_item(project=project_id, kind='alert', owner='user', source='manual',
         source_reference='ownership-history', headline='Review failure', context_reference='report', actor='reporter')
     other = attention.raise_item(project=project_id, kind='alert', owner='user', source='manual',

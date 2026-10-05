@@ -1,4 +1,4 @@
-"""The floor kit (packages/fleet-web/src/fleet_web/static/assets/world/kit/, built by art/kit/finish.py): the manifest is complete and matches its
+"""The floor kit (fleet/web/assets/world/kit/, built by art/kit/finish.py): the manifest is complete and matches its
 files, every piece asked for is there, tiers agree on scale, the scale is recorded against l1 and l2, and the kit
 scene at /prototype/kit draws without missing files."""
 
@@ -12,7 +12,7 @@ from PIL import Image
 from playwright.sync_api import Browser, Page
 
 REPO = Path(__file__).parent.parent
-KIT = REPO / "packages" / "fleet-web" / "src" / "fleet_web" / "static" / "assets" / "world" / "kit"
+KIT = REPO / "fleet" / "web" / "assets" / "world" / "kit"
 MANIFEST = json.loads((KIT / "manifest.json").read_text())
 SPRITES: dict[str, dict[str, Any]] = MANIFEST["sprites"]
 BUDGET = 6 * 1000 * 1000

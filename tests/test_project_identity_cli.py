@@ -5,12 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from fleet.container import configured_container
-from fleet_cli.cli import main
+from fleet.cli import main
+from fleet.composition import open_store, open_work, open_workspace
 
 
 def register(name):
-    return configured_container().initialized_workspace().edit_registry(lambda registry: registry.create(name)).id
+    return open_workspace().edit_registry(lambda registry: registry.create(name)).id
 
 
 @pytest.mark.parametrize('use_id', [False, True])
@@ -29,8 +29,8 @@ def test_work_and_status_resolve_project(use_id, capsys):
 @pytest.mark.parametrize('ambiguous', [True, False])
 def test_invalid_project_rejected_without_work(command, ambiguous, capsys, monkeypatch):
     candidates = [register('Restoke V2') for _ in range(2)] if ambiguous else []
-    configured_container().initialized_workspace()
-    sequence = configured_container().store().latest_sequence()
+    open_workspace()
+    sequence = open_store().latest_sequence()
     if command == 'seed':
         script = Path(__file__).parents[1] / 'scripts/seed_supplier_slice.py'
         monkeypatch.setattr(sys, 'argv', [str(script), '--project', 'Restoke V2'])
@@ -46,8 +46,8 @@ def test_invalid_project_rejected_without_work(command, ambiguous, capsys, monke
     if ambiguous:
         assert all(identity in error for identity in candidates)
         assert 'fleet project merge' in error
-    assert configured_container().work().list() == []
-    assert configured_container().store().latest_sequence() == sequence
+    assert open_work().list() == []
+    assert open_store().latest_sequence() == sequence
 
 
 def test_seed_explicit_id(monkeypatch):
@@ -56,7 +56,7 @@ def test_seed_explicit_id(monkeypatch):
     script = Path(__file__).parents[1] / 'scripts/seed_supplier_slice.py'
     monkeypatch.setattr(sys, 'argv', [str(script), '--project', identity])
     runpy.run_path(str(script), run_name='__main__')
-    assert {item.project for item in configured_container().work().list()} == {identity}
+    assert {item.project for item in open_work().list()} == {identity}
 
 
 def test_attention_and_library_resolve_unique_name(capsys):

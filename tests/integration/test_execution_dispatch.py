@@ -5,17 +5,16 @@ import sys
 
 import pytest
 
-
-from fleet.container import configured_container
+from fleet import composition
 from fleet.modules.execution import JobObservation
 
 
 def setup_dispatch():
-    store = configured_container().store()
-    workspace = configured_container(store).initialized_workspace()
+    store = composition.open_store()
+    workspace = composition.open_workspace(store)
     project = workspace.move_in(["one", "two"], "demo").project_id
-    item = configured_container(store).work().add(project=project, title='Epic', goal='Ship', kind='epic', actor='user')
-    return store, workspace, item, configured_container(store).execution()
+    item = composition.open_work(store).add(project=project, title="Epic", goal="Ship", kind="epic", actor="user")
+    return store, workspace, item, composition.open_execution(store)
 
 
 def dispatch(execution, item, key="request", host="one"):
@@ -103,8 +102,8 @@ def test_two_processes_claim_each_action_once(tmp_path):
     sequence = store.latest_sequence()
     program = '''
 import sys
-from fleet.container import configured_container
-execution = configured_container().execution()
+from fleet import composition
+execution = composition.open_execution()
 print("ready", flush=True)
 for i in range(24):
     sys.stdin.readline()

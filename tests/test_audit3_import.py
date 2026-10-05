@@ -1,13 +1,12 @@
 """Copied snapshots retain imported attention history without importing it twice."""
 import json
 import pytest
-
-from fleet.container import configured_container
+from fleet.composition import open_store
 from fleet.infrastructure.sqlite.attention_import import import_workspace
 
 
 def test_relocated_workspace_does_not_duplicate_imported_actions(tmp_path):
-    store = configured_container().store()
+    store = open_store()
     first, copied = tmp_path / 'original.json', tmp_path / 'copied.json'
     document = {'attention': {'job:carbon:j:failed:0@1': {'state': 'acknowledged', 'at': 1}}}
     first.write_text(json.dumps(document)); copied.write_text(first.read_text())
@@ -22,7 +21,7 @@ def test_relocated_workspace_does_not_duplicate_imported_actions(tmp_path):
 
 
 def test_relocated_workspace_conflicting_action_is_explicit(tmp_path):
-    store = configured_container().store()
+    store = open_store()
     first, copied = tmp_path / 'original.json', tmp_path / 'copied.json'
     first.write_text(json.dumps({'attention': {'j': {'state': 'acknowledged', 'at': 1}}}))
     copied.write_text(json.dumps({'attention': {'j': {'state': 'snoozed', 'at': 2, 'until': 3}}}))
