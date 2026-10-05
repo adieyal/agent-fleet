@@ -18,6 +18,7 @@ import argparse
 import base64
 import collections
 import contextlib
+import ctypes
 import datetime
 import fcntl
 import hashlib
@@ -53,8 +54,8 @@ TERMINAL_STATUSES = ("done", "failed", "blocked", "cancelled", "lost")
 AGED_STATUSES = ("done", "cancelled", "lost")
 # `rm` deletes these without --force; others still hold work or a question.
 REMOVABLE_STATUSES = ("done", "failed", "cancelled", "lost")
-WORKER_VERSION = "0.1.0"
-WIRE_PROTOCOL_VERSION = 1
+WORKER_VERSION = "0.1.1"
+WIRE_PROTOCOL_VERSION = 2
 STREAM_PROTOCOL_VERSION = 3
 DISPATCH_SCHEMA_VERSION = 4
 USAGE_SCHEMA_VERSION = 1
@@ -819,6 +820,72 @@ class WorkspaceWatch:
         self.thread.join()
 
 
+def enable_child_subreaper() -> None:
+    """Adopt orphaned runtime descendants, including double forks and new sessions.
+
+    Fleet workers run on Linux. Refuse to run without the kernel guarantee rather
+    than silently finishing a step while detached work is still alive.
+    """
+    if not sys.platform.startswith("linux"):
+        raise RuntimeError("step descendant supervision requires Linux")
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.prctl(36, 1, 0, 0, 0) != 0:  # PR_SET_CHILD_SUBREAPER
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error))
+
+
+def runner_children() -> List[int]:
+    """Direct children after the runtime and workspace watcher have stopped."""
+    children = set()
+    for task in Path("/proc/self/task").iterdir():
+        try:
+            children.update(int(pid) for pid in (task / "children").read_text().split())
+        except FileNotFoundError:  # a thread ended during enumeration
+            continue
+    return sorted(children)
+
+
+def wait_for_step_children(job_id: str, step_index: int) -> None:
+    """Keep completion and retries behind a visible, cancellable foreground wait."""
+    previous: List[int] = []
+    cancellation_at: Optional[float] = None
+    try:
+        while True:
+            # Reap exited adopted children before checking for live work. A live
+            # parent accounts for its descendants until they too are adopted.
+            while True:
+                try:
+                    pid, _ = os.waitpid(-1, os.WNOHANG)
+                except ChildProcessError:
+                    break
+                if pid == 0:
+                    break
+            children = runner_children()
+            if not children:
+                return
+            if children != previous:
+                waiting = {"kind": "children_wait", "step": step_index, "pids": children,
+                           "summary": "waiting for descendant processes: " + ", ".join(map(str, children))}
+                with locked_job(job_id) as live_job:
+                    live_job["agent_pid"] = None
+                    live_job["runtime_wait"] = waiting
+                append_event(job_id, waiting)
+                previous = children
+            if read_job(job_id).get("cancelled"):
+                if cancellation_at is None:
+                    cancellation_at = time.monotonic()
+                # Kill parents first; their descendants become our children on
+                # the next poll, including processes with their own session.
+                stop_signal = signal.SIGKILL if time.monotonic() - cancellation_at >= 5 else signal.SIGTERM
+                for pid in children:
+                    with contextlib.suppress(ProcessLookupError):
+                        os.kill(pid, stop_signal)
+            time.sleep(0.1)
+    finally:
+        with locked_job(job_id) as live_job:
+            live_job.pop("runtime_wait", None)
+
+
 def _run_step_attempt(job: JsonObject, step: JsonObject) -> JsonObject:
     job_id = job["id"]
     config = load_config()
@@ -899,6 +966,7 @@ def _run_step_attempt(job: JsonObject, step: JsonObject) -> JsonObject:
             # A Claude write lands after its tool_use line, so every later line checks again.
             mirror.sync()
         exit_code = process.wait()
+    wait_for_step_children(job_id, step["index"])
     refresh_workspace(job_id, job["cwd"])
     runtime.finish(outcome, exit_code, last_text)
     if runtime_error:
@@ -1025,6 +1093,7 @@ def run_job(job_id: str) -> None:
         job["runner_pid"] = os.getpid()
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
     try:
+        enable_child_subreaper()
         while True:
             with locked_job(job_id) as job:
                 if job.get("cancelled"):

@@ -68,7 +68,7 @@ def test_silence_deadline_marks_linked_run_unknown(monkeypatch):
             raise transport.queue.Empty
 
     monkeypatch.setattr(transport.queue, "Queue", Silent)
-    monkeypatch.setattr(transport, "worker_version", lambda host: {"wire_protocol_version": 1})
+    monkeypatch.setattr(transport, "worker_version", lambda host: {"wire_protocol_version": 2})
     monkeypatch.setattr(transport, "ensure_master", lambda host: None)
     monkeypatch.setattr(transport.subprocess, "Popen", lambda command, **kwargs: commands.append(command) or process)
 

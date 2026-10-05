@@ -39,3 +39,32 @@ Run `scripts/checks/phase2-gate.sh` on carbon at the checkpoint to exercise
 local/SSH claims, parallel actions, a dropped create reply and disconnects.
 It creates held jobs and documents the expected result at each step; automated
 tests use isolated controller stores and worker directories instead.
+
+## Wire protocol 2: descendant completion
+
+Worker release 0.1.1 changes step completion semantics. The runner becomes a Linux
+child subreaper before starting an agent. After the agent exits and its workspace
+watcher stops, the runner reaps and waits for all remaining children before
+returning the attempt result, retrying, or starting the next step. Orphaned
+children, including double-forked processes that create their own sessions, are
+adopted by the runner. Runtime success alone no longer completes a step.
+
+For example, an agent that starts `docker build ... > build.log 2>&1 &` and reports
+`FLEET_STATUS: done` leaves the step running until its descendant exits. The
+existing activity field exposes `children_wait`, its PIDs and a waiting summary;
+events record PID changes. There is no automatic wait deadline and no agent
+replay. A service deliberately left running also keeps the step open. Agents
+should run finite work in the foreground and stop services before ending a step.
+
+Cancellation during this wait sends SIGTERM to adopted children, repeats as
+further descendants are adopted, and escalates to SIGKILL after five seconds.
+The runner reaps the children before returning. Descendant exit codes do not
+replace the agent's reported outcome; agents must inspect their own command
+results. Work submitted to an external daemon is outside OS process ancestry.
+The completion guarantee requires Linux `/proc` and child-subreaper support;
+unsupported workers refuse to run rather than silently losing the guarantee.
+
+Wire protocol 2 rejects workers implementing the earlier completion behavior.
+Dispatch schema remains 4 and stream protocol remains 3 because their record
+shapes are unchanged. Upgrade the controller wheels and run `fleet install HOST`
+for each worker before dispatching new jobs.
