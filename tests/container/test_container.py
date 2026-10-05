@@ -46,8 +46,8 @@ def test_provider_overrides_reach_services_and_bound_scopes():
     assert container.jobs().transport is adapter
     with container.unit_of_work() as unit:
         bound = container.bound_services(unit)
-        assert bound.container.transport() is adapter
-        assert bound.container.evidence() is evidence
+        assert configured_container(container.store(), unit).transport() is adapter
+        assert configured_container(container.store(), unit).evidence() is evidence
         assert bound.work is not container.work()
     other = Container()
     fake = object()

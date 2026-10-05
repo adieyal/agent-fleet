@@ -45,7 +45,8 @@ def test_http_handler_uses_overridden_query_provider(cli_container):
     document_reads = []
     cli_container.run_detail.override(providers.Factory(lambda *, identity: {'run': {'id': identity}}))
     documents = SimpleNamespace(run_documents=lambda run: document_reads.append(run) or [])
-    state = SimpleNamespace(container=cli_container, live_jobs=lambda: {}, documents=documents)
+    state = SimpleNamespace(container=cli_container, live_jobs=lambda: {}, documents=documents,
+                            reads=SimpleNamespace(run_detail=cli_container.run_detail))
     server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(state))
     thread = Thread(target=server.serve_forever)
     thread.start()

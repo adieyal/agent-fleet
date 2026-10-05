@@ -5,46 +5,42 @@ from dataclasses import asdict
 from typing import Any
 from fleet.modules.workspace import Registry
 from fleet.projections.workspace import annotate, resolve, registry_config
-from fleet.projections.attention import attention_display
+from fleet.projections.attention import attention_display, attention_items
+from fleet.projections.ports import LiveReaders
 
 
 
 class LiveProjection:
-    def with_attention(self, document: dict[str, Any]) -> dict[str, Any]:
+    reads: LiveReaders
+
+    def with_attention(self, document: dict[str, Any], triage: dict[str, dict]) -> dict[str, Any]:
         """Add stored focus choices and the Attention projection."""
-        services = self.container.services()
-        items = self.container.attention_items(attention=self.attention, hosts=document["hosts"])
-        triage = {project: self.container.triage_scheduler(deliver=None, host=None).status(project)
-                  for project in {item["project_id"] for item in items if item["project_id"]}}
-        for status in triage.values():
-            if status["live_run"]:
-                run = services.execution.get_run(status["live_run"]["id"])
-                status["live_run"].update(host=run.host, remote_job_id=run.remote_job_id)
+        items = attention_items(self.reads.attention, document["hosts"])
         for item in items:
-            if triage.get(item['project_id'], {}).get('policy_error'):
+            if item['project_id'] and triage[item['project_id']]['policy_error']:
                 item['delegable'] = False
                 continue
             try:
-                self.attention.require_delegable(item['id'])
+                self.reads.attention.require_delegable(item['id'])
             except (ValueError, LookupError):
                 item['delegable'] = False
             else:
                 item['delegable'] = True
-        return {**document, "focus": asdict(self.workspace.focus_snapshot()),
+        return {**document, "focus": asdict(self.reads.workspace.focus_snapshot()),
                 "attention": items, "triage": triage}
 
     def with_work(self, document: dict[str, Any]) -> dict[str, Any]:
         """Give each job and session the work item its run is linked to, or null when none is."""
         # Every store write records a history entry, so the latest sequence is the store's revision.
         # Read it before the links so a write in between is picked up by the next request.
-        revision = (self.store, self.store.latest_sequence())
+        revision = self.reads.revision()
         cached = self.work_links
         if cached is None or cached[0] != revision:
-            execution = self.container.execution()
-            cached = self.work_links = (revision, self.container.run_work(execution=execution),
+            execution = self.reads.execution
+            cached = self.work_links = (revision, self.reads.run_work(),
                                        {(run.host, run.remote_job_id): run.id for run in execution.runs()})
         links = cached[1]
-        deliveries = self.container.execution().deliveries()
+        deliveries = self.reads.execution.deliveries()
 
         def decisions(item, run_id):
             entries = {decision['id']: decision for decision in item.get('decisions_since_dispatch', [])}
@@ -94,7 +90,7 @@ def stale_work(host: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
 
 
 
-def live_document(self, projects_error, capacity_error):
+def live_document(self, projects_error, capacity_error, triage):
     registry = self.registry
     with self.changed:
         document = self.with_attention({"time": time.time(), "project_labels": self.project_labels,
@@ -106,14 +102,14 @@ def live_document(self, projects_error, capacity_error):
              "sessions": [annotate(self.workspace, resolve(registry, host.name, stale_work(self.by_host[host.name], session))) for session in
                           sorted(self.by_host[host.name]["sessions"].values(),
                                  key=lambda session: session.get("started_at") or 0)]}
-            for host in self.hosts]})
+            for host in self.hosts]}, triage)
     document = self.with_building(self.with_work(document), registry)
     document["building"]["capacity_error"] = capacity_error
     document["pipelines"] = self.pipelines(registry, self.by_host)
     return document
 
 
-def fixture_document(self):
+def fixture_document(self, triage):
     with self.changed:
         document = self.with_attention({"time": self.fixture["time"], "project_labels": self.project_labels,
                 "projects": [{"id": project_id, **entry} for project_id, entry in registry_config(self.registry).items()],
@@ -121,7 +117,7 @@ def fixture_document(self):
             {**host, "jobs": [annotate(self.workspace, resolve(self.registry, host["name"], job)) for job in host["jobs"]],
              "sessions": [annotate(self.workspace, resolve(self.registry, host["name"], session))
                           for session in host["sessions"]]}
-            for host in self.fixture["hosts"]]})
+            for host in self.fixture["hosts"]]}, triage)
     document = self.with_building(self.with_work(document), self.registry)
     document["building"]["capacity_error"] = None
     document["pipelines"] = self.pipelines(self.registry, {host["name"]: host for host in self.fixture["hosts"]})
@@ -132,6 +128,6 @@ def building_document(self, document, registry):
     """Add the floors registered projects occupy within capacity with each one's focus, the projects in the
     storehouse, and the live projects that have no floor. Project work is not sent with every update: the plan
     panel reads it from /api/bench when it is open."""
-    building = self.container.building_state(workspace=self.workspace, registry=registry, capacity=self.capacity)
+    building = self.reads.building(workspace=self.workspace, registry=registry, capacity=self.capacity)
     return {**document, "building": building,
             "attention_display": attention_display(document["attention"], building, document["projects"])}

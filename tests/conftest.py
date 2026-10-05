@@ -4,6 +4,7 @@ Tests that change a fleet (moving a project in) start their own with serve_fixtu
 """
 
 import json
+from dataclasses import replace
 import os
 import shutil
 import socket
@@ -252,4 +253,9 @@ def override_web_store(request, monkeypatch):
                 overridden.append(provider)
         request.addfinalizer(lambda: [provider.reset_last_overriding() for provider in reversed(overridden)])
         monkeypatch.setattr(state, 'store', store)
+        monkeypatch.setattr(state, 'execution', replacement.execution())
+        monkeypatch.setattr(state, 'decisions', replacement.decisions())
+        monkeypatch.setattr(state, 'triage_status', replacement.triage_scheduler(deliver=None, host=None).status)
+        monkeypatch.setattr(state, 'reads', replace(state.reads, execution=replacement.execution(),
+                                                   revision=lambda: (store, store.latest_sequence())))
     return override

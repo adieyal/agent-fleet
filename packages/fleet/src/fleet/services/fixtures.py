@@ -23,6 +23,8 @@ class FixtureState(LiveWorkspace):
         store = container.store()
         self.store = store
         self.execution = container.execution()
+        self.decisions = container.decisions()
+        self.triage_status = container.triage_scheduler(deliver=None, host=None).status
         self.workspace = container.initialized_workspace(initial=fixture, actor="fixture-user")
         work = container.work()
         identities = {}
@@ -34,6 +36,7 @@ class FixtureState(LiveWorkspace):
         self.capacity = self.workspace.capacity()
         self.attention = container.initialized_attention(
                                         workspace_path=Path(self.attention_directory.name) / "workspace.json")
+        self.reads = container.live_readers(workspace=self.workspace, attention=self.attention)
         self.woken_until = 0.0
         for host in fixture["hosts"]:
             self.attention.observe({**host,
@@ -98,7 +101,8 @@ class FixtureState(LiveWorkspace):
 
     def document(self) -> dict[str, Any]:
         self.registry = self.workspace.registry()
-        return fixture_document(self)
+        with self.changed:
+            return fixture_document(self, self.triage_statuses())
 
     def pipeline_updates(self, after: int) -> list[dict[str, Any]]:
         return self.pipelines(self.registry, {host["name"]: host for host in self.fixture["hosts"]}, after)

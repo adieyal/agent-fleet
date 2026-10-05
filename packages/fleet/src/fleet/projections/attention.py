@@ -93,7 +93,7 @@ def blocked_detail(item) -> dict[str, Any]:
 
 def decision_detail(state, item_id):
     item = state.attention.get(item_id)
-    proposal = state.container.decisions().proposal_for_attention(item.source, item.source_reference)
+    proposal = state.decisions.proposal_for_attention(item.source, item.source_reference)
     return {"id": item.id, "question": item.headline, "context": item.context_reference, "options": item.options,
             "proposal": asdict(proposal) if proposal is not None else None,
             "refusals": refusal_detail(item) if item.refusals else None,

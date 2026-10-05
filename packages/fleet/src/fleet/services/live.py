@@ -43,7 +43,7 @@ class LiveWorkspace(LiveProjects, LiveAttention, LiveProjection, LibraryProjecti
     capacity: int
     pipeline_config: dict[str, dict[str, str]]           # name → {"host", "project": room label}, as configured
     pipeline_runs: dict[tuple[str, str], dict[str, Any]]  # (host, name) → {"run", "baseline", "seq"} as last reported
-    work_links: tuple[tuple[Any, int], dict[tuple[str, str], dict[str, Any]], dict[tuple[str, str], str]] | None = None  # revision, links, run ids
+    work_links: tuple[object, dict[tuple[str, str], dict[str, Any]], dict[tuple[str, str], str]] | None = None  # revision, links, run ids
     pipeline_seq: int
     documents: Any   # each project's injected document store
 
@@ -77,6 +77,17 @@ class LiveWorkspace(LiveProjects, LiveAttention, LiveProjection, LibraryProjecti
             self.version += 1
             self.changed.notify_all()
 
+
+    def triage_statuses(self) -> dict[str, dict]:
+        """Compute scheduler reads in the service layer before projecting a document."""
+        projects = {item.stream_context.project_id if item.stream_context is not None else item.project
+                    for item in self.attention.list()}
+        statuses = {project: self.triage_status(project) for project in projects if project}
+        for status in statuses.values():
+            if status["live_run"]:
+                run = self.execution.get_run(status["live_run"]["id"])
+                status["live_run"].update(host=run.host, remote_job_id=run.remote_job_id)
+        return statuses
 
     def focus_snapshot(self):
         return asdict(self.workspace.focus_snapshot())
@@ -167,6 +178,10 @@ class FleetState(LiveWorkspace):
         self.execution = container.execution()
         self.run_library = container.library()
         self.decisions = container.decisions()
+        self.records = container.records()
+        self.reads = container.live_readers(workspace=self.workspace, attention=self.attention)
+        self.triage_status = container.triage_scheduler(deliver=None, host=None).status
+        self.schedule = container.schedule_triage
         self.woken_until = 0.0
         self.changed = threading.Condition()
         self.version = 0
@@ -222,15 +237,14 @@ class FleetState(LiveWorkspace):
             return {name: (bool(entry["ok"]), set(entry["jobs"])) for name, entry in self.by_host.items()}
 
     def schedule_triage(self) -> None:
-        services = self.container.services()
-        bodies = {intent['id']: json.dumps(asdict(services.decisions.get(intent['key'])), default=str)
-                  for intent in services.records.intents()
+        bodies = {intent['id']: json.dumps(asdict(self.decisions.get(intent['key'])), default=str)
+                  for intent in self.records.intents()
                   if intent['state'] == 'pending' and intent['path'] == f"decisions/{intent['key']}.json"}
         try:
-            services.records.reconcile(bodies)
+            self.records.reconcile(bodies)
         except OSError:
             logging.getLogger(__name__).exception('Records publication remains pending')
-        self.container.triage_scheduler(deliver=lambda run, **options: self.container.deliver_triage(run, **options)).schedule()
+        self.schedule()
 
     def follow_history(self, stop: threading.Event) -> None:
         while not stop.is_set():
@@ -325,7 +339,8 @@ class FleetState(LiveWorkspace):
     def document(self) -> dict[str, Any]:
         projects_error = self.refresh_registry()
         capacity_error = self.refresh_capacity()
-        return live_document(self, projects_error, capacity_error)
+        with self.changed:
+            return live_document(self, projects_error, capacity_error, self.triage_statuses())
 
     def pipeline_updates(self, after: int) -> list[dict[str, Any]]:
         return self.pipelines(self.registry, self.by_host, after)
