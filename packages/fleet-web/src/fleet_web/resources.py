@@ -4,7 +4,10 @@ from fleet.container import Container
 
 def resources(container):
     return container.package_resources(package=__package__, source=__file__,
-                                       member_root='packages/fleet-web/src/fleet_web')
+                                       member_root='packages/fleet-web/src/fleet_web',
+                                       checkout_mounts={'/art/bakeoff/': 'art/bakeoff',
+                                                        '/concept/': 'docs/images/concept'},
+                                       temporary_prefix='fleet-web-static-')
 
 
 _resources = resources(Container)

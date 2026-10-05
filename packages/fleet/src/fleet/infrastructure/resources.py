@@ -20,10 +20,12 @@ def copy_tree(source, target):
 
 
 class PackageResources:
-    def __init__(self, package, source, member_root):
+    def __init__(self, package, source, member_root, checkout_mounts, temporary_prefix):
         self.static = files(package).joinpath("static")
         self.source = source
         self.member_root = member_root
+        self.checkout_mounts = dict(checkout_mounts)
+        self.temporary_prefix = temporary_prefix
 
     def read_static(self, name):
         path = PurePosixPath(name)
@@ -39,7 +41,7 @@ class PackageResources:
         if isinstance(self.static, Path):
             yield self.static.resolve()
         else:
-            with TemporaryDirectory(prefix='fleet-web-static-') as directory:
+            with TemporaryDirectory(prefix=self.temporary_prefix) as directory:
                 root = Path(directory) / 'static'
                 copy_tree(self.static, root)
                 yield root
@@ -51,8 +53,7 @@ class PackageResources:
             if (candidate / self.member_root).resolve() == package:
                 metadata = candidate / 'pyproject.toml'
                 if metadata.is_file() and '[tool.uv.workspace]' in metadata.read_text():
-                    return {'/art/bakeoff/': candidate / 'art/bakeoff',
-                            '/concept/': candidate / 'docs/images/concept'}
+                    return {route: candidate / relative for route, relative in self.checkout_mounts.items()}
         return {}
 
     def build_id(self, root):
