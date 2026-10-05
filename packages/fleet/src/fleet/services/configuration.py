@@ -21,11 +21,11 @@ def validate_paths(command: str) -> list[str]:
         path = Path(os.environ[name])
         if path.exists():
             continue
-        if name == "FLEET_STORE" and command == "web":
+        if name == "FLEET_STORE" and command in ("web", "serve"):
             messages.append(f"Creating new store at {path} (FLEET_STORE)")
         elif name == "FLEET_STORE":
             raise FleetError(f"FLEET_STORE points to a missing file: {path}. Create the store there by running "
-                             f"fleet web once (it creates a missing store), or unset FLEET_STORE to use the "
+                             f"fleet serve once (it creates a missing store), or unset FLEET_STORE to use the "
                              f"default store")
         else:
             raise FleetError(f"FLEET_CONFIG points to a missing file: {path}. Unset FLEET_CONFIG to use the "

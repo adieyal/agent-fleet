@@ -1267,7 +1267,7 @@ COMMAND_GROUPS = {
              "cancel", "mv", "rm", "notify", "run"),
     "Work": ("status", "work", "criterion", "summary", "attention", "answer", "decision", "guidance", "library",
              "history", "triage", "store"),
-    "Projects": ("project", "building", "libraries", "web"),
+    "Projects": ("project", "building", "libraries", "web", "serve"),
     "Hosts": ("hosts", "host", "install", "hooks", "unlock"),
     "Agent-internal": ("orchestrate", "control"),
 }
@@ -1790,6 +1790,12 @@ def build_parser(*, container=None) -> argparse.ArgumentParser:
     unlock.add_argument("--key", help="key path on the host (default: ssh-add's defaults)")
     unlock.set_defaults(handler=command_unlock)
 
+    serve = commands.add_parser("serve", help="own the independent live runtime")
+    serve.add_argument("serve_action", nargs="?", choices=["status"])
+    serve.add_argument("--host", action="append")
+    serve.add_argument("--port", type=int, default=0)
+    serve.set_defaults(handler=command_serve)
+
     web = commands.add_parser("web", help="serve the deck, the web dashboard")
     web.add_argument("--host", action="append")
     web.add_argument("--port", type=int, default=8787)
@@ -1801,6 +1807,35 @@ def build_parser(*, container=None) -> argparse.ArgumentParser:
     return parser
 
 
+def command_serve(arguments, *, container):
+    if arguments.serve_action == 'status':
+        print(json.dumps(container.runtime_status(), indent=2))
+        return
+    import signal
+    import threading
+    settings = container.configuration().web_settings()
+    settings.pop("libraries", None)
+    state = container.live_state(hosts=container.jobs().selected_hosts(arguments.host), **settings)
+    runtime = container.start_live(state=state)
+    listener = None
+    previous = {}
+    try:
+        listener = container.runtime_server(state=state, runtime=runtime, port=arguments.port)
+        for signum in (signal.SIGTERM, signal.SIGINT):
+            previous[signum] = signal.signal(signum, lambda *_: runtime.stop.set())
+        thread = threading.Thread(target=listener.http.serve_forever, daemon=True)
+        thread.start()
+        runtime.stop.wait()
+        listener.http.shutdown()
+        thread.join(timeout=2)
+    finally:
+        if listener is not None:
+            listener.close()
+        runtime.close()
+        for signum, handler in previous.items():
+            signal.signal(signum, handler)
+
+
 def bootstrap_container(container):
     return Container() if container is None else container
 
@@ -1809,6 +1844,9 @@ def main(argv: list[str] | None = None, *, container=None) -> None:
     container = bootstrap_container(container)
     arguments = build_parser(container=container).parse_args(argv)
     try:
+        if arguments.handler is command_serve and arguments.serve_action == "status":
+            arguments.handler(arguments, container=container)
+            return
         for message in container.validate_paths(arguments.command):
             error_console.print(message, markup=False)
         container.store()

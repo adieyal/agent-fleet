@@ -11,6 +11,8 @@ from fleet.projections.live import live_document, building_document
 from fleet.projections.attention import attention_items
 
 import json
+import fcntl
+from pathlib import Path
 import logging
 import pickle
 import sys
@@ -481,14 +483,48 @@ class LiveRuntime:
     def __init__(self, state) -> None:
         self.state = state
         self.stop = threading.Event()
-        self.threads = [threading.Thread(target=state.follow_history, args=(self.stop,), daemon=True)]
-        self.threads.extend(threading.Thread(target=follow_host, args=(state, host, self.stop), daemon=True)
+        self.lock = None
+        self.errors = {}
+        if hasattr(state, "container"):
+            path = Path(state.container.settings()['store_path']).resolve()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            self.lock = open(str(path) + '.runtime.lock', 'a+')
+            try:
+                fcntl.flock(self.lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                self.lock.close()
+                raise FleetError(f"runtime already owned for store {path}") from None
+        self.threads = [self.worker('history-scheduler', state.follow_history, self.stop)]
+        self.threads.extend(self.worker('host:' + host.name, follow_host, state, host, self.stop)
                             for host in state.hosts)
 
-    def close(self) -> None:
+    def worker(self, name, target, *args):
+        def run():
+            try:
+                target(*args)
+                if not self.stop.is_set():
+                    self.errors[name] = 'worker exited unexpectedly'
+            except BaseException as error:
+                self.errors[name] = f'{type(error).__name__}: {error}'
+                logging.getLogger(__name__).exception('Runtime worker %s failed', name)
+        return threading.Thread(name=name, target=run, daemon=True)
+
+    def health(self):
+        workers = {thread.name: {'alive': thread.is_alive(), 'error': self.errors.get(thread.name)}
+                   for thread in self.threads}
+        return {'healthy': all(worker['alive'] and not worker['error'] for worker in workers.values()),
+                'stopping': self.stop.is_set(), 'workers': workers}
+
+    def close(self, timeout=5.0) -> None:
         self.stop.set()
+        deadline = time.monotonic() + timeout
         for thread in self.threads:
-            thread.join()
+            if thread.ident is not None:
+                thread.join(max(0.0, deadline - time.monotonic()))
+        # Never allow a successor while old workers still write. Process exit releases the lock.
+        if self.lock is not None and not any(thread.is_alive() for thread in self.threads):
+            self.lock.close()
+            self.lock = None
 
 
 _start_lock = threading.Lock()
@@ -501,15 +537,12 @@ def start_live(state) -> LiveRuntime:
         if runtime is not None:
             return runtime
         runtime = LiveRuntime(state)
-        started = []
         try:
             for thread in runtime.threads:
                 thread.start()
-                started.append(thread)
         except BaseException:
             runtime.stop.set()
-            for thread in started:
-                thread.join()
+            runtime.close()
             raise
         state._live_runtime = runtime
         return runtime
