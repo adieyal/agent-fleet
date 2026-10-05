@@ -74,7 +74,7 @@ class Authoring:
         return self.finish(intent, revision, None if revision is not None else error)
 
     def reconcile(self, bodies: dict[str, str] | None = None) -> None:
-        for intent in self.repository.list():
+        for intent in self.repository.pending_intents():
             if intent['state'] == 'pending':
                 # Decision bodies belong to Decisions. Only its controller-supplied body may
                 # resume publication; an unrelated recovery must not discard the intent.

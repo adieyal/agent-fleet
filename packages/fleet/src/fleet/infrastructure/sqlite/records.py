@@ -11,6 +11,11 @@ class RecordsRepository(Repository):
     def list(self) -> list[dict]:
         return [json.loads(row['record']) for row in self.rows('SELECT record FROM records_intent ORDER BY rowid')]
 
+    def pending_intents(self) -> list[dict]:
+        return [json.loads(row['record']) for row in self.rows(
+            "SELECT record FROM records_intent INDEXED BY records_pending_intents "
+            "WHERE json_extract(record, '$.state') = 'pending' ORDER BY rowid")]
+
     def by_key(self, project: str, key: str) -> dict | None:
         return next((r for r in self.list() if r['project'] == project and r['key'] == key), None)
 

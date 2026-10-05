@@ -204,3 +204,14 @@ def test_a_projects_first_record_creates_its_management_repository(tmp_path):
     assert records.registered('fresh') and records.read('fresh', 'a.md') == 'body'
     assert subprocess.run(['git', '-C', str(created), 'log', '--format=%s'], capture_output=True, text=True,
                           check=True).stdout.strip() != ''
+
+
+def test_reconcile_does_not_decode_confirmed_history(tmp_path, monkeypatch, empty_store):
+    store, records, _ = setup_records(tmp_path)
+    records.write('p', 'confirmed.md', 'done', key='confirmed', actor='author')
+    before = store.history_after(0)
+    monkeypatch.setattr(records.repository, 'list',
+                        lambda: pytest.fail('idle recovery decoded confirmed history'))
+    records.reconcile()
+    assert records.read('p', 'confirmed.md') == 'done'
+    assert store.history_after(0) == before

@@ -62,6 +62,10 @@ class RecordsFacade:
     def intents(self) -> list[dict]:
         return self.repository.list()
 
+    def pending_intents(self) -> list[dict]:
+        """Pending publications that still require crash recovery."""
+        return self.repository.pending_intents()
+
     def read(self, project: str, path: str, *, revision: str | None = None) -> str | None:
         record = self.repository.current(project, path)
         if record is None:

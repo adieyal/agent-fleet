@@ -23,8 +23,12 @@ class MemoryRepository:
         return next((item for item in self.items.values()
                      if (item.source, item.source_reference) == (source, source_reference)), None)
 
-    def list(self):
-        return list(self.items.values())
+    def list(self, *, project=None, owner=None):
+        return [item for item in self.items.values() if (project is None or item.project == project)
+                and (owner is None or item.owner == owner)]
+
+    def snooze_ends(self):
+        return [item.snooze_until for item in self.items.values() if item.snooze_until is not None]
 
     def save(self, item, previous, actor):
         self.items[item.id] = item
