@@ -140,4 +140,7 @@ MIGRATIONS = (
         # P1 agent ownership and scheduler state, after P3 history and P2 observations.
         'CREATE TABLE triage_scheduler (project TEXT PRIMARY KEY, record TEXT NOT NULL)',
     ),
+    (
+        "ALTER TABLE attention_item ADD COLUMN page_annotation TEXT",
+    ),
 )

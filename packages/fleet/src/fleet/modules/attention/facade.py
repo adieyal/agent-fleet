@@ -8,7 +8,7 @@ from .application import Commands
 from .application.ports import AttentionRepository
 from .application.observations import HostObservation, ingest_attention
 from .application.input_observations import InputObservation, close_refusals, ingest_input
-from .domain import AttentionItem, ItemResolved, OWNERS, Refusal, StreamContext, STATES
+from .domain import AttentionItem, PageAnnotation, ItemResolved, OWNERS, Refusal, StreamContext, STATES
 from .domain.routing import RoutingHistory, route
 from fleet.modules.records import TriageMandate
 
@@ -35,14 +35,14 @@ class AttentionFacade:
                    work_item: str | None = None, run: str | None = None,
                    stream_context: StreamContext | None = None, reopen: bool = False,
                    options: tuple[str, ...] = (), subject: str | None = None,
-                   owner_reason: str | None = None) -> AttentionItem:
+                   owner_reason: str | None = None, page_annotation: PageAnnotation | None = None) -> AttentionItem:
         """Raise an item for its owner (agent or user), about its subject; seen again, it keeps its owner."""
         return self.commands.raise_item(project=project, kind=kind, owner=owner, source=source,
                                         source_reference=source_reference, headline=headline,
                                         context_reference=context_reference, actor=actor,
                                         work_item=work_item, run=run, stream_context=stream_context,
                                         reopen=reopen, options=options, subject=subject,
-                                        owner_reason=owner_reason)
+                                        owner_reason=owner_reason, page_annotation=page_annotation)
 
     def delegate(self, item_id: str, *, actor: str, note: str | None = None) -> AttentionItem:
         """Hand a user's item to the agent; it stays open and listed as the agent's."""

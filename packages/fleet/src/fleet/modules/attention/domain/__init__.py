@@ -85,6 +85,27 @@ def refusal_rules(refusals: tuple[Refusal, ...]) -> list[str] | None:
 
 
 @dataclass(frozen=True)
+class PageAnnotation:
+    comment_id: str
+    page: str
+    revision: str
+    body: str
+    selector: dict | list[dict]
+    creator: str
+    requested_owner: str
+    reason: str
+    headline: str
+    parent: str | None = None
+    version: int = 1
+
+    def __post_init__(self) -> None:
+        for name in ('comment_id', 'page', 'revision', 'body', 'creator', 'reason', 'headline'):
+            required(getattr(self, name), name)
+        if self.version != 1 or self.requested_owner not in OWNERS:
+            raise ValueError('invalid page annotation version or owner')
+
+
+@dataclass(frozen=True)
 class AttentionItem:
     id: str
     project: str
@@ -110,8 +131,12 @@ class AttentionItem:
     owner_reason: str | None = None  # why the item went to its owner, as given with the last hand-over
     owner_actor: str | None = None   # who made the last hand-over; None while the item has its first owner
     owner_at: datetime | None = None
+    page_annotation: PageAnnotation | None = None
 
     def __post_init__(self) -> None:
+        if self.page_annotation is not None and (self.source, self.kind, self.context_reference) != (
+                'page', 'decision', self.page_annotation.page):
+            raise ValueError('page annotations require a page decision and its canonical context')
         for option in self.options:
             required(option, "option")
         for name in ("project", "owner", "source", "source_reference", "headline", "context_reference"):

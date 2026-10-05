@@ -53,11 +53,13 @@ def test_version_16_upgrade_preserves_p2_observations_and_p3_history(tmp_path):
                            "VALUES ('execution:run:r1', 'pending', 'running', 'codex', 'now', 'job1')")
         connection.commit()
     store = configured_container(path=path).store()
-    assert store.schema_version() == OWNER_SPLIT == 17
+    assert OWNER_SPLIT == 17
+    # Page annotation is the next additive migration; require its exact schema as well.
+    assert store.schema_version() == 18
     with closing(sqlite3.connect(path)) as connection:
         assert json.loads(connection.execute("SELECT record FROM execution_run WHERE id='r1'").fetchone()[0]) == run
         assert json.loads(connection.execute("SELECT record FROM execution_run_observation WHERE run='r1'").fetchone()[0]) == observation
         assert connection.execute("SELECT job FROM state_history WHERE subject='execution:run:r1'").fetchone()[0] == "job1"
         assert connection.execute("SELECT count(*) FROM triage_scheduler").fetchone()[0] == 0
-        assert connection.execute("SELECT owner, subject FROM attention_item").fetchone() == ("user", "job:carbon:ab12")
-    assert configured_container(path=path).store().schema_version() == 17
+        assert connection.execute("SELECT owner, subject, page_annotation FROM attention_item").fetchone() == ("user", "job:carbon:ab12", None)
+    assert configured_container(path=path).store().schema_version() == 18

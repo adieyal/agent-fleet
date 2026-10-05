@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import atexit
 import json
+import select
+import socket
 import time
 import webbrowser
 from collections.abc import Callable
@@ -206,6 +208,9 @@ def make_handler(state: Any,
 
         def do_POST(self) -> None:  # noqa: N802 — http.server naming
             path = self.path.split("?", 1)[0]
+            if path.startswith('/api/pages/') and path.rsplit('/', 1)[-1] in ('comments', 'answer'):
+                self.page_write(path)
+                return
             action = path.removeprefix("/api/attention/") if path.startswith("/api/attention/") else None
             if (path not in FLOOR_CHANGES + GUIDANCE_CHANGES + ("/api/focus", "/api/decision/answer", "/api/agent/move")
                     and action not in ATTENTION_ACTIONS + REFUSAL_ACTIONS + JOB_ACTIONS):
@@ -241,6 +246,40 @@ def make_handler(state: Any,
                 else:
                     self.focus(body)
 
+        def page_write(self, path: str) -> None:
+            origin = self.headers.get('Origin')
+            if origin != f'http://{self.headers.get("Host")}':
+                self.error(403, 'an exact same-origin browser write is required')
+                return
+            if self.headers.get('Content-Type', '').split(';')[0].strip() != 'application/json':
+                self.error(415, 'send JSON')
+                return
+            try:
+                length = int(self.headers.get('Content-Length', '0'))
+                if not 0 < length <= 40 * 1024:
+                    self.error(413, 'page write exceeds 40 KiB or is empty')
+                    return
+                body = json.loads(self.rfile.read(length))
+                parts = path.strip('/').split('/')
+                if len(parts) != 5 or not isinstance(body, dict):
+                    raise ValueError('project, slug and JSON object are required')
+                operation = 'comment' if parts[-1] == 'comments' else 'answer'
+                allowed = ({'revision', 'comment_id', 'headline', 'body', 'selector', 'reason', 'owner', 'parent'}
+                           if operation == 'comment' else {'item_id', 'answer'})
+                required = allowed - {'owner', 'parent'} if operation == 'comment' else allowed
+                if body.keys() - allowed or required - body.keys():
+                    raise ValueError('unknown or missing page write fields')
+                result = container.page_change(project=unquote(parts[2]), slug=unquote(parts[3]),
+                                               operation=operation, actor='user', **body)
+            except LookupError as error:
+                self.error(404, str(error))
+                return
+            except (ValueError, FleetError) as error:
+                self.error(400, str(error))
+                return
+            state.bump()
+            self.respond(200, 'application/json', json.dumps(result, default=str).encode())
+
         def pages_view(self, path: str) -> None:
             query = parse_qs(urlsplit(self.path).query)
             api = path.startswith('/api/')
@@ -265,7 +304,7 @@ def make_handler(state: Any,
             else:
                 html = page_document(view) if len(parts) == 3 else page_index(view)
                 self.respond(200, 'text/html; charset=utf-8', html.encode(), headers={
-                    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'"})
+                    'Content-Security-Policy': "default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'"})
 
         def same_origin(self) -> bool:
             """Browsers send Origin on every POST; a page from another site must not change anything."""
@@ -612,10 +651,13 @@ def make_handler(state: Any,
             try:
                 while True:
                     new_version = state.wait_for_change(version, timeout=SSE_PING_INTERVAL, seen_pipelines=pipeline_seq)
+                    # A reader may close while waiting. Detect its FIN before reading state again.
+                    if select.select([self.connection], [], [], 0)[0] and not self.connection.recv(1, socket.MSG_PEEK):
+                        return
                     if new_version != version:
                         time.sleep(SSE_COALESCE)
                         version, pipeline_seq = state.version, state.pipeline_seq
-                        payload = json.dumps({**state.document(), "build": BUILD})   # carries every pipeline as it is now
+                        payload = json.dumps({**state.document(), "build": BUILD, "version": version})   # carries every pipeline as it is now
                         self.wfile.write(f"event: state\ndata: {payload}\n\n".encode())
                     elif state.pipeline_seq != pipeline_seq:
                         updates = state.pipeline_updates(pipeline_seq)

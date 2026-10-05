@@ -1,0 +1,73 @@
+{
+  "package": "@recogito/text-annotator",
+  "version": "4.3.6",
+  "license": "BSD-3-Clause",
+  "git_head": "915225ba6caed2ca04a553969afa7bfb30188084",
+  "tarball": "https://registry.npmjs.org/@recogito/text-annotator/-/text-annotator-4.3.6.tgz",
+  "integrity": "sha512-KSuZ7qZTKQp3b5Ne3Golnn1NRJnvkcuarRRrbqkCT3Cp0hmR+hiENUbnbh7IVN4tvqQw+zpYqAlJMNA1zAFa/Q==",
+  "sha256": {
+    "text-annotator.umd.js": "6462cc414a894d6a58b75921605d52f119c070bcb9c09b66673df95a29fffbda",
+    "text-annotator.css": "5f62815d87cb1da545d5506c5b89a4ea8ee9dc4da22a78df9e566d6aa4fbcabd",
+    "LICENSE": "3ae9fe44013f55ecbb4732180061c6e5ada08e5bb493967cec2c03cd19a6626a",
+    "THIRD_PARTY_LICENSES.txt": "c9f4ab62bef10c88ccd66811e6beabdbe5112b896bd715905f2e80225e96674d"
+  },
+  "transform": "Replace the single process.env.NODE_ENV expression with \"production\" (build-time environment definition).",
+  "upstream_js_sha256": "ecb1b18cb2c461ad0900e1b54e8d2068acaefbfc99b9bfb8ecf13a7167235de9",
+  "bundled": {
+    "@annotorious/core": {
+      "version": "3.9.3",
+      "resolved": "https://registry.npmjs.org/@annotorious/core/-/core-3.9.3.tgz",
+      "integrity": "sha512-98fZbxiP8SIv+0FslQ2B8lH4kKJE4Kj4OAPVuHfLlYCmnhgpQyXbdMFk4NPosLsCrzORYV8ds65SrIPnZEN5gA=="
+    },
+    "colord": {
+      "version": "2.10.0",
+      "resolved": "https://registry.npmjs.org/colord/-/colord-2.10.0.tgz",
+      "integrity": "sha512-AidJptpBJmjTclAp9BkLwJi0T93fo5epJnbaZslpg6QVzpHjAiveF55mE9AcUJiGMqRHgMDY8soMsQtuNYMHfw=="
+    },
+    "debounce": {
+      "version": "3.0.0",
+      "resolved": "https://registry.npmjs.org/debounce/-/debounce-3.0.0.tgz",
+      "integrity": "sha512-64byRbF0/AirwbuHqB3/ZpMG9/nckDa6ZA0yd6UnaQNwbbemCOwvz2sL5sjXLHhZHADyiwLm0M5qMhltUUx+TA=="
+    },
+    "dequal": {
+      "version": "2.0.3",
+      "resolved": "https://registry.npmjs.org/dequal/-/dequal-2.0.3.tgz",
+      "integrity": "sha512-0je+qPKHEMohvfRTCEo3CrPG6cAzAYgmzKyxRiYSSDkS6eGJdyVJm7WaYA5ECaAD9wLB2T4EEeymA5aFVcYXCA=="
+    },
+    "hotkeys-js": {
+      "version": "4.0.8",
+      "resolved": "https://registry.npmjs.org/hotkeys-js/-/hotkeys-js-4.0.8.tgz",
+      "integrity": "sha512-A0nu5ZU7cN8nEx3uGUHrv1WnJvjPFUw4Cfxj8pLyR5AIg14ACP4D0YZ+5JHAPjlvUbPbgok56+XTZWjscYCV4A=="
+    },
+    "nanoevents": {
+      "version": "10.0.0",
+      "resolved": "https://registry.npmjs.org/nanoevents/-/nanoevents-10.0.0.tgz",
+      "integrity": "sha512-PmIJ3BNxOzgVgnS1r/Pvyj6eZx/xUV2JCPogh0brD6smDIwjRlr1KBl9yoRX323PlfaNrBDDnfCgC9SL00OjSg=="
+    },
+    "poll": {
+      "version": "3.2.2",
+      "resolved": "https://registry.npmjs.org/poll/-/poll-3.2.2.tgz",
+      "integrity": "sha512-qckJRcLqqsX72Uu/Sa/GbzWUXB/zZcyMNccwdGFQnYoewnXUdWyMWkHUmaiBAvm950ujJJ15OiFFy+gtBm1K+A=="
+    },
+    "quickselect": {
+      "version": "3.0.0",
+      "resolved": "https://registry.npmjs.org/quickselect/-/quickselect-3.0.0.tgz",
+      "integrity": "sha512-XdjUArbK4Bm5fLLvlm5KpTFOiOThgfWWI4axAZDWg4E/0mKdZyI9tNEfds27qCi1ze/vwTR16kvmmGhRra3c2g=="
+    },
+    "rbush": {
+      "version": "4.0.1",
+      "resolved": "https://registry.npmjs.org/rbush/-/rbush-4.0.1.tgz",
+      "integrity": "sha512-IP0UpfeWQujYC8Jg162rMNc01Rf0gWMMAb2Uxus/Q0qOFw4lCcq6ZnQEZwUoJqWyUGJ9th7JjwI4yIWo+uvoAQ=="
+    },
+    "uuid": {
+      "version": "14.0.2",
+      "resolved": "https://registry.npmjs.org/uuid/-/uuid-14.0.2.tgz",
+      "integrity": "sha512-xZe/16rV4aa+HGSOCiY2YeLT1OybRLrrkL/Rqaq7p7GMVXjFh+6wN4oMYgjFmnSnhY8t6Xpdl2l9qmnHYuMHwQ=="
+    }
+  },
+  "license_sources": {
+    "LICENSE": "https://raw.githubusercontent.com/recogito/text-annotator-js/915225ba6caed2ca04a553969afa7bfb30188084/LICENSE",
+    "@annotorious/core": "https://raw.githubusercontent.com/annotorious/annotorious/48fea477be648296954de48bb278d96413c8879a/LICENSE"
+  },
+  "core_license_sha256": "3ae9fe44013f55ecbb4732180061c6e5ada08e5bb493967cec2c03cd19a6626a"
+}

@@ -489,6 +489,16 @@ def page_query(container, project, slug=None, revision=None):
         return service.index(project) if slug is None else service.read(project, slug, revision)
 
 
+def page_change(container, project, slug, operation, **fields):
+    with container.unit_of_work() as unit:
+        service = _PageService(container.bound_services(unit), container.pages())
+        if operation == 'comment':
+            return service.comment(project, slug, **fields)
+        if operation == 'answer':
+            return service.answer(project, slug, **fields)
+        raise ValueError('unknown page operation')
+
+
 class Container(_containers.DeclarativeContainer):
     resolve_prefix = _providers.Callable(_resolve_prefix)
     validate_paths = _providers.Callable(_validate_paths)
@@ -556,6 +566,7 @@ class Container(_containers.DeclarativeContainer):
     library = _providers.ThreadSafeSingleton(_LibraryFacade, _library_repository, work)
     pages = _providers.ThreadSafeSingleton(_PagesFacade)
     page_view = _providers.Callable(page_query, __self__)
+    page_change = _providers.Callable(page_change, __self__)
     references = _providers.Factory(_make_references, __self__)
     context = _providers.Factory(_make_context, __self__)
     jobs = _providers.Factory(_make_jobs, __self__)

@@ -6,7 +6,7 @@ from typing import Callable
 from uuid import uuid4
 
 from .ports import AttentionRepository
-from ..domain import AttentionItem, ItemResolved, StreamContext, required
+from ..domain import AttentionItem, PageAnnotation, ItemResolved, StreamContext, required
 
 
 class Commands:
@@ -19,11 +19,21 @@ class Commands:
                    work_item: str | None = None, run: str | None = None,
                    stream_context: StreamContext | None = None, reopen: bool = False,
                    options: tuple[str, ...] = (), subject: str | None = None,
-                   owner_reason: str | None = None) -> AttentionItem:
+                   owner_reason: str | None = None, page_annotation: PageAnnotation | None = None) -> AttentionItem:
         required(actor, "actor")
         now = self.clock()
         with self.repository.transaction() as repository:
             previous = repository.find(source, source_reference)
+            if page_annotation is not None and previous is not None:
+                if previous.page_annotation != page_annotation or previous.project != project:
+                    raise ValueError('comment request payload changed')
+                return previous.effective(now)
+            if previous is not None and previous.page_annotation is not None:
+                if (project, kind, headline, context_reference, work_item, run, stream_context) != (
+                        previous.project, previous.kind, previous.headline, previous.context_reference,
+                        previous.work_item, previous.run, previous.stream_context):
+                    raise ValueError('page comment is immutable')
+                return previous.effective(now)
             # Seen again, an item keeps the owner it was handed to; the owner given applies to a new item.
             handed = (dict(owner=previous.owner, owner_reason=previous.owner_reason, owner_actor=previous.owner_actor,
                            owner_at=previous.owner_at) if previous else dict(owner=owner, owner_reason=owner_reason,
@@ -37,7 +47,8 @@ class Commands:
                 resolution_details=previous.resolution_details if previous else None, last_seen=now,
                 acknowledged_at=previous.acknowledged_at if previous else None,
                 resolved_at=previous.resolved_at if previous else None, stream_context=stream_context,
-                options=tuple(options))
+                options=tuple(options), page_annotation=page_annotation if page_annotation is not None else
+                    (previous.page_annotation if previous else None))
             if reopen and previous is not None and previous.state == "resolved":
                 item = replace(item, state="open", snooze_until=None, resolution_details=None,
                                resolved_at=None, acknowledged_at=None)

@@ -1,8 +1,12 @@
 """Read confirmed pages and resolve their records in a controller snapshot."""
 from dataclasses import asdict
 from datetime import timedelta
+from uuid import UUID
+import json
 
-from fleet.modules.pages import PagesFacade, PageNotFound
+from fleet.modules.attention import PageAnnotation
+
+from fleet.modules.pages import PagesFacade, PageNotFound, PageInvalid
 
 
 class PageService:
@@ -49,6 +53,8 @@ class PageService:
         resolved = []
         for node in nodes:
             value = asdict(node)
+            if node.kind == 'prose':
+                value['prose_text'] = self.pages.prose_text(node.text)
             try:
                 if node.kind == 'work':
                     item = work.get(node.attributes['id'])
@@ -79,7 +85,32 @@ class PageService:
             except LookupError as error:
                 value.update(kind='error', error=str(error))
             resolved.append(value)
-        return dict(project=project, slug=slug, title=self.pages.title(nodes, slug), revision=revision,
+        address = f'fleet://projects/{project}/pages/{slug}'
+        answers = self.services.decisions.list()
+        threads = []
+        originals = {revision: nodes}
+        for item in attention.values():
+            annotation = item.page_annotation
+            if annotation is not None and annotation.page == address:
+                selectors = annotation.selector if isinstance(annotation.selector, list) else [annotation.selector]
+                block = selectors[0].get('value') if selectors[0]['type'] == 'FragmentSelector' else None
+                original = None
+                if block is not None:
+                    if annotation.revision not in originals:
+                        originals[annotation.revision] = self.pages.parse(
+                            self.services.records.read(project, path, revision=annotation.revision))
+                    original = originals[annotation.revision]
+                attached = self.pages.attachment(nodes, annotation.selector, original)
+                failed = next((node for node in resolved if node['block'] == block and node['kind'] == 'error'), None)
+                if block is not None and failed is not None and attached['state'] == 'attached':
+                    attached = dict(state='unavailable', block=block,
+                                    reason=f'Anchor unavailable: block {block}: {failed["error"]}')
+                threads.append(dict(id=item.id, headline=item.headline, owner=item.owner, state=item.state,
+                    created=item.last_seen, annotation=asdict(annotation),
+                    attachment=attached,
+                    answers=[asdict(answer) for answer in answers if answer.attention_item == item.id]))
+        threads.sort(key=lambda thread: (str(thread['created']), thread['id']))
+        return dict(threads=threads, project=project, slug=slug, title=self.pages.title(nodes, slug), revision=revision,
                     historical=revision != record['revision'], markdown=markdown, nodes=resolved,
                     snapshot_time=now.isoformat(), state_version=self.services.store.latest_sequence(),
                     address=f'fleet://projects/{project}/pages/{slug}')
@@ -88,3 +119,52 @@ class PageService:
     def check_project(actual, expected, identity):
         if actual != expected:
             raise LookupError(f'Record {identity} belongs to another project')
+
+    def comment(self, project, slug, *, revision, comment_id, headline, body, selector,
+                reason, actor, owner='user', parent=None):
+        for name, value in dict(revision=revision, comment_id=comment_id, headline=headline,
+                                body=body, reason=reason, actor=actor).items():
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f'{name} is required')
+        if owner not in ('user', 'agent'):
+            raise ValueError('owner must be user or agent')
+        try:
+            if str(UUID(comment_id)) != comment_id:
+                raise ValueError('comment_id must be a canonical UUID')
+        except ValueError as error:
+            raise ValueError('comment_id must be a canonical UUID') from error
+        if len(body.encode()) > 8 * 1024 or len(headline.encode()) > 1024 or len(reason.encode()) > 8 * 1024:
+            raise ValueError('comment body/reason exceeds 8 KiB or headline exceeds 1 KiB')
+        if len(headline.split()) > 12:
+            raise ValueError('headline must contain 12 words or fewer')
+        if len(json.dumps(selector).encode()) > 16 * 1024:
+            raise ValueError('selector exceeds 16 KiB')
+        view = self.read(project, slug, revision)
+        self.pages.validate_selector(self.pages.parse(view['markdown']), selector)
+        entries = selector if isinstance(selector, list) else [selector]
+        if entries[0]['type'] == 'FragmentSelector':
+            failed = next((node for node in view['nodes'] if node['block'] == entries[0]['value']
+                           and node['kind'] == 'error'), None)
+            if failed is not None:
+                raise PageInvalid(f'Cannot anchor unresolved directive: {failed["error"]}')
+        if parent is not None:
+            if not isinstance(parent, str):
+                raise ValueError('parent must be an attention ID')
+            previous = self.services.attention.get(parent)
+            if previous.page_annotation is None or previous.page_annotation.page != view['address']:
+                raise ValueError('parent comment belongs to another page')
+        annotation = PageAnnotation(comment_id, view['address'], revision, body, selector,
+                                    actor, owner, reason, headline, parent)
+        item = self.services.attention.raise_item(project=view['project'], kind='decision', owner=owner,
+            source='page', source_reference=f'page:{view["project"]}:{slug}:{comment_id}',
+            headline=headline, context_reference=view['address'], actor=actor,
+            owner_reason=reason, page_annotation=annotation)
+        return dict(id=item.id, state=item.state)
+
+    def answer(self, project, slug, *, item_id, answer, actor):
+        self.pages.path(slug)
+        project = self.services.workspace.resolve_project(project)
+        item = self.services.attention.get(item_id)
+        if item.page_annotation is None or item.page_annotation.page != f'fleet://projects/{project}/pages/{slug}':
+            raise ValueError('answer item does not belong to this page')
+        return asdict(self.services.decisions.answer(item_id, answer, actor=actor))

@@ -4,7 +4,7 @@ from dataclasses import asdict
 from datetime import datetime
 import json
 
-from fleet.modules.attention import (AttentionItem, ImportedAction, Question, QuestionOption, Refusal,
+from fleet.modules.attention import (AttentionItem, PageAnnotation, ImportedAction, Question, QuestionOption, Refusal,
                                     StreamContext)
 
 from .repository import Repository
@@ -21,6 +21,8 @@ def decode(row) -> AttentionItem:
                                 for question in json.loads(values["questions"]))
     if values["stream_context"] is not None:
         values["stream_context"] = StreamContext(**json.loads(values["stream_context"]))
+    if values.get("page_annotation") is not None:
+        values["page_annotation"] = PageAnnotation(**json.loads(values["page_annotation"]))
     for name in TIMES:
         if values[name] is not None:
             values[name] = datetime.fromisoformat(values[name])
@@ -77,6 +79,8 @@ class AttentionRepository(Repository):
         values["questions"] = json.dumps(values["questions"])
         if values["stream_context"] is not None:
             values["stream_context"] = json.dumps(values["stream_context"])
+        if values["page_annotation"] is not None:
+            values["page_annotation"] = json.dumps(values["page_annotation"])
         for name in TIMES:
             if values[name] is not None:
                 values[name] = values[name].isoformat()
