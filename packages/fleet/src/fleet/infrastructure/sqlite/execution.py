@@ -77,6 +77,27 @@ class ExecutionRepository(Repository):
     def deliveries(self) -> list[Delivery]:
         return [Delivery(**json.loads(row["record"])) for row in self.rows("SELECT record FROM execution_delivery ORDER BY rowid")]
 
+    def pending_deliveries(self, *, host: str | None = None, decision: str | None = None,
+                           context_only: bool = False) -> list[Delivery]:
+        query = ("SELECT d.record FROM execution_delivery d INDEXED BY execution_pending_deliveries "
+                 "LEFT JOIN execution_run r ON r.id = json_extract(d.record, '$.run') "
+                 "WHERE json_extract(d.record, '$.status') != 'applied'")
+        parameters = []
+        if host is not None:
+            query += " AND (r.host = ? OR r.id IS NULL)"
+            parameters.append(host)
+        if decision is not None:
+            query += " AND (json_extract(d.record, '$.decision') = ? OR r.id IS NULL)"
+            parameters.append(decision)
+        if context_only:
+            query += " AND d.id GLOB 'context-decision:*'"
+        return [Delivery(**json.loads(row["record"])) for row in self.rows(
+            query + " ORDER BY d.rowid", tuple(parameters))]
+
+    def get_delivery(self, key: str) -> Delivery | None:
+        rows = self.rows("SELECT record FROM execution_delivery WHERE id = ?", (key,))
+        return Delivery(**json.loads(rows[0]["record"])) if rows else None
+
     def save_delivery(self, delivery: Delivery, actor: str) -> None:
         if self.unit is None:
             raise RuntimeError("delivery writes require a transaction")

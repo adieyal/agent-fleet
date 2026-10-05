@@ -53,12 +53,19 @@ class AttentionRepository(Repository):
                          (source, source_reference))
         return decode(rows[0]) if rows else None
 
-    def list(self, *, project: str | None = None, owner: str | None = None) -> list[AttentionItem]:
+    def list(self, *, project: str | None = None, owner: str | None = None,
+             source: str | None = None, subjects: set[str] | None = None,
+             source_reference: str | None = None) -> list[AttentionItem]:
         filters, parameters = [], []
-        for column, value in (("project", project), ("owner", owner)):
+        for column, value in (("project", project), ("owner", owner), ("source", source), ("source_reference", source_reference)):
             if value is not None:
                 filters.append(column + " = ?")
                 parameters.append(value)
+        if subjects is not None:
+            if not subjects:
+                return []
+            filters.append("subject IN (" + ",".join("?" for _ in subjects) + ")")
+            parameters.extend(sorted(subjects))
         where = " WHERE " + " AND ".join(filters) if filters else ""
         return [decode(row) for row in self.rows(
             "SELECT * FROM attention_item" + where + " ORDER BY last_seen, id", tuple(parameters))]

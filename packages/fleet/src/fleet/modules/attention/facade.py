@@ -143,13 +143,15 @@ class AttentionFacade:
         return self.repository.get(item_id).effective(self.clock())
 
     def list(self, *, project: str | None = None, state: str | None = None,
-             owner: str | None = None) -> list[AttentionItem]:
+             owner: str | None = None, source: str | None = None,
+             subjects: set[str] | None = None,
+             source_reference: str | None = None) -> list[AttentionItem]:
         if state is not None and state not in STATES:
             raise ValueError(f"unknown attention state: {state}")
         if owner is not None and owner not in OWNERS:
             raise ValueError(f"owner must be agent or user, not {owner!r}")
         now = self.clock()
-        items = [item.effective(now) for item in self.repository.list(project=project, owner=owner)]
+        items = [item.effective(now) for item in self.repository.list(project=project, owner=owner, source=source, subjects=subjects, source_reference=source_reference)]
         return [item for item in items if (project is None or item.project == project)
                 and (state is None or item.state == state) and (owner is None or item.owner == owner)]
 

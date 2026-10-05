@@ -55,11 +55,11 @@ def test_version_16_upgrade_preserves_p2_observations_and_p3_history(tmp_path):
     store = configured_container(path=path).store()
     assert OWNER_SPLIT == 17
     # Page annotations and replies are additive migrations; require the current schema.
-    assert store.schema_version() == 20
+    assert store.schema_version() == 21
     with closing(sqlite3.connect(path)) as connection:
         assert json.loads(connection.execute("SELECT record FROM execution_run WHERE id='r1'").fetchone()[0]) == run
         assert json.loads(connection.execute("SELECT record FROM execution_run_observation WHERE run='r1'").fetchone()[0]) == observation
         assert connection.execute("SELECT job FROM state_history WHERE subject='execution:run:r1'").fetchone()[0] == "job1"
         assert connection.execute("SELECT count(*) FROM triage_scheduler").fetchone()[0] == 0
         assert connection.execute("SELECT owner, subject, page_annotation FROM attention_item").fetchone() == ("user", "job:carbon:ab12", None)
-    assert configured_container(path=path).store().schema_version() == 20
+    assert configured_container(path=path).store().schema_version() == 21

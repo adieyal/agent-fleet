@@ -280,10 +280,14 @@ class FleetState(LiveWorkspace):
         self.schedule()
 
     def follow_history(self, stop: threading.Event) -> None:
+        # Recover intents for decisions persisted while this controller was offline.
+        if not stop.is_set():
+            self.execution.reconcile_decisions()
         while not stop.is_set():
             self.schedule_triage()
             changes = self.store.history_after(self.history_cursor)
             if changes:
+                self.execution.reconcile_decisions()
                 self.history_cursor = int(changes[-1]["sequence"])
                 self.bump()
             if hasattr(self, "_runtime_worker_success"):
@@ -291,9 +295,17 @@ class FleetState(LiveWorkspace):
             stop.wait(0.25)
 
     def update(self, host_name: str, mutate: Any, *, subjects: set[str] | None = None,
-               ingest: bool = True, heartbeat: bool = False, deleted_jobs: set[str] = frozenset()) -> None:
+               ingest: bool = True, heartbeat: bool = False, deleted_jobs: set[str] = frozenset(), delta: tuple[str, str] | None = None) -> None:
         with self.changed:
-            previous = snapshot(self.by_host[host_name])
+            def selected(entry: dict[str, Any]) -> dict[str, Any]:
+                if delta is None:
+                    return entry
+                group, identity = delta
+                return {**{key: value for key, value in entry.items() if key not in ("jobs", "sessions", "_seen_jobs", "_seen_sessions")},
+                        "jobs": {identity: entry[group][identity]} if group == "jobs" and identity in entry[group] else {},
+                        "sessions": {identity: entry[group][identity]} if group == "sessions" and identity in entry[group] else {}}
+
+            previous = snapshot(selected(self.by_host[host_name]))
             sequence = self.store.latest_sequence()
             mutate(self.by_host[host_name])
             entry = self.by_host[host_name]
@@ -306,21 +318,22 @@ class FleetState(LiveWorkspace):
                 if entry["ok"]:
                     entry.pop("down_since", None)
                 self.execution.record_host(host_name, reachable=entry["ok"], error=entry["error"])
-            self.by_host[host_name] = snapshot(self.by_host[host_name])
+            if delta is None:
+                self.by_host[host_name] = snapshot(self.by_host[host_name])
             retry_deliveries = self.by_host[host_name]["ok"]
 
             def public(value):
                 return {key: item for key, item in value.items() if not key.startswith("_")}
 
-            context_only = public(previous) == public(self.by_host[host_name])
+            context_only = public(previous) == public(selected(self.by_host[host_name]))
             reconciled = False
             if ingest:
-                entry = self.by_host[host_name]
+                entry = selected(self.by_host[host_name])
                 host = {**entry, **{kind: {identity: item for identity, item in entry[kind].items()
                                           if not item.get("stale")} for kind in ("jobs", "sessions")}}
                 self.container.observe_runs(host, self.indexed,
                              lambda job: resolve(self.registry, host_name, job)["project_id"],
-                             observed=self.observed_runs)
+                             observed=self.observed_runs, complete=delta is None)
                 self.container.observe_sessions(host, lambda session: resolve(self.registry, host_name, session)["project_id"])
                 self.container.record_decisions(host,
                                  lambda job: resolve(self.registry, host_name, job)["project_id"], self.taken_decisions)
@@ -331,15 +344,16 @@ class FleetState(LiveWorkspace):
                 # A heartbeat follows a full pass over the host's jobs, so absent jobs are gone.
                 reconciled = self.attention.close_refusals(
                     {**host, "jobs": list(host["jobs"].values()), "sessions": []}, complete=heartbeat) or reconciled
-            if previous != self.by_host[host_name] or self.store.latest_sequence() != sequence or reconciled:
+            if previous != selected(self.by_host[host_name]) or self.store.latest_sequence() != sequence or reconciled:
                 self.version += 1
                 self.changed.notify_all()
         if retry_deliveries:
             if context_only:
-                self.execution.retry_decisions(host_name)
+                self.execution.retry_decisions(host_name, reconcile=False)
             else:
-                self.execution.retry_deliveries(host_name)
-        self.schedule_triage()
+                self.execution.retry_deliveries(host_name, reconcile=False)
+        if delta is None:
+            self.schedule_triage()
 
     def refresh_registry(self) -> str | None:
         try:
@@ -491,32 +505,35 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
         except (FleetError, ValueError, KeyError, OSError) as error:
             print(f"fleet: session catch-up on {host.name} failed: {error}", file=sys.stderr)
     elif kind == "job":
-        job = message["job"]
+        job = snapshot(message["job"])
         def report_job(entry):
             entry["jobs"][job["id"]] = job
             if entry.get("_syncing"):
                 entry["_seen_jobs"].add(job["id"])
         state.update(host.name, report_job,
-                     subjects={f"job:{host.name}:{job['id']}"})
+                     subjects={f"job:{host.name}:{job['id']}"}, delta=("jobs", job["id"]))
         state.keep_documents(host.name, job)
     elif kind == "removed":
         if message.get("reason") == "removed by fleet rm":
             state.execution.removed(host.name, message["id"], at=message.get("removed_at"))
-        state.update(host.name, lambda entry: entry["jobs"].pop(message["id"], None),
+        def remove_job(entry: dict[str, Any]) -> None:
+            entry["jobs"].pop(message["id"], None)
+            state.observed_runs.pop((host.name, message["id"]), None)
+        state.update(host.name, remove_job,
                      subjects={f"job:{host.name}:{message['id']}"},
-                     deleted_jobs={f"job:{host.name}:{message['id']}"} if message.get("reason") in ("deleted", "removed by fleet rm") else frozenset())
+                     deleted_jobs={f"job:{host.name}:{message['id']}"} if message.get("reason") in ("deleted", "removed by fleet rm") else frozenset(), delta=("jobs", message["id"]))
     elif kind == "session":
-        session = message["session"]
+        session = snapshot(message["session"])
         def report_session(entry):
             entry["sessions"][session["id"]] = session
             if entry.get("_syncing"):
                 entry["_seen_sessions"].add(session["id"])
         state.update(host.name, report_session,
-                     subjects={f"session:{host.name}:{session['id']}"})
+                     subjects={f"session:{host.name}:{session['id']}"}, delta=("sessions", session["id"]))
     elif kind == "session_removed":
         state.execution.stop_session(host.name, message["id"])
         state.update(host.name, lambda entry: entry["sessions"].pop(message["id"], None),
-                     subjects={f"session:{host.name}:{message['id']}"})
+                     subjects={f"session:{host.name}:{message['id']}"}, delta=("sessions", message["id"]))
     elif kind == "heartbeat":
         def heartbeat(entry):
             if entry.get("_syncing"):

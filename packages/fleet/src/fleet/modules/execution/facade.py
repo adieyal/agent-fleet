@@ -202,12 +202,12 @@ class ExecutionFacade:
     def deliveries(self) -> list[Delivery]:
         return self.repository.deliveries()
 
-    def retry_deliveries(self, host: str | None = None, *, decision: str | None = None) -> None:
-        self._retry_deliveries(host, decision, context_only=False)
+    def retry_deliveries(self, host: str | None = None, *, decision: str | None = None, reconcile: bool = True) -> None:
+        self._retry_deliveries(host, decision, context_only=False, reconcile=reconcile)
 
-    def retry_decisions(self, host: str | None = None) -> None:
+    def retry_decisions(self, host: str | None = None, *, reconcile: bool = True) -> None:
         """Reconcile decision inboxes on heartbeats without changing blocked-answer retries."""
-        self._retry_deliveries(host, None, context_only=True)
+        self._retry_deliveries(host, None, context_only=True, reconcile=reconcile)
 
     def reconcile_decisions(self) -> None:
         """Persist new decision intents; never contact a host while ingesting its stream."""
@@ -215,8 +215,9 @@ class ExecutionFacade:
             from .application.decision_delivery import reconcile
             reconcile(self, self.decision_source())
 
-    def _retry_deliveries(self, host: str | None, decision: str | None, *, context_only: bool) -> None:
-        self.reconcile_decisions()
+    def _retry_deliveries(self, host: str | None, decision: str | None, *, context_only: bool, reconcile: bool = True) -> None:
+        if reconcile:
+            self.reconcile_decisions()
         if self.send is None:
             raise RuntimeError("input transport is not configured")
         retry_delivery(self.repository, self.work, self.send, host, decision, context_only=context_only)
@@ -330,6 +331,12 @@ class ExecutionFacade:
         return self.repository.steps(run)
 
     def observe_steps(self, run: str, steps: list[dict]) -> None:
+        if steps:
+            self.repository.get_run(run)
+            valid_indices = all(isinstance(step.get("index"), int) and not isinstance(step.get("index"), bool)
+                                and step["index"] >= 0 for step in steps)
+            if valid_indices and self.repository.steps(run) == steps:
+                return
         with self.repository.transaction() as transaction:
             transaction.get_run(run)
             for step in steps:
