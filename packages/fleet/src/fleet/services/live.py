@@ -481,6 +481,8 @@ class LiveRuntime:
     """
 
     def __init__(self, state) -> None:
+        if getattr(state, "is_runtime_subscriber", False):
+            raise FleetError("subscriber cannot own runtime; start fleet serve")
         self.state = state
         self.stop = threading.Event()
         self.lock = None

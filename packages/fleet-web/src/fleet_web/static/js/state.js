@@ -119,7 +119,13 @@ export function applyState(doc) {
     if (pageBuild === null) pageBuild = doc.build;
     else if (doc.build !== pageBuild) { location.reload(); return; }
   }
+  if (doc.runtime) setLive({ ok: doc.runtime.healthy, at: Date.now(),
+    err: doc.runtime.error, runtime: doc.runtime });
   lastDoc = doc;
+  if (doc.runtime && doc.runtime.last_snapshot_at === null) {
+    renderLive(); updateHint();
+    return;   // No runtime projection exists yet; do not invent a building or host state.
+  }
   setPipelines(doc.pipelines);
   applyBuilding(doc);   // from the whole document: dismissed and finished work still counts there
   applyWorkarea(doc);
@@ -219,11 +225,11 @@ export function stream() {
     if (lastDoc) lastDoc.pipelines = pipelines;
   });
   source.addEventListener('ping', () => {
-    setLive({ ok: true, at: Date.now(), err: null });
+    setLive({ ...live, at: Date.now() });
     renderLive();
   });
   source.onerror = () => {
-    setLive({ ok: false, at: live.at, err: 'stream disconnected — reconnecting' });
+    setLive({ ...live, ok: false, err: 'web stream disconnected — reconnecting' });
     renderLive(); updateHint();
   };
 }

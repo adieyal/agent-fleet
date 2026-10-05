@@ -73,8 +73,16 @@ Check on it from the terminal or open the deck:
 
 ```bash
 fleet ls
+# Keep the observer running in its own terminal:
+fleet serve
+# In another terminal:
 fleet web --open
 ```
+
+The deck subscribes to `fleet serve`; it starts no host followers or scheduler.
+Restarting web leaves observation running. If serve is absent, the deck shows
+“Runtime unavailable” and reconnects automatically. `fleet serve status` prints
+owner PID, uptime, worker health and host stream states.
 
 Use `fleet watch` for a live terminal view. When the job finishes, run
 `fleet result worker:<id>` for its reports or `fleet pull worker:<id> ./results`
@@ -86,7 +94,7 @@ synthetic jobs. The demo works even when the configured host is offline.
 Room signs can use friendly names without changing the project identifiers used by
 jobs. Add `"project_labels": {"restoke-analytics": "Bang bang!"}` to
 `~/.config/fleet/config.json` (or the file selected by `FLEET_CONFIG`), then
-restart `fleet web`.
+restart `fleet serve`.
 
 Every CLI project selector accepts a registered project (ID, prefix or name).
 Exact IDs resolve first, then exact unique names, then unique ID prefixes.
@@ -153,8 +161,9 @@ projects and workspace state from `config.json` and `workspace.json` once, keepi
 backups and the original files. Hosts and display settings still use `config.json`.
 
 An explicit `FLEET_CONFIG` must name an existing file; every command fails if it
-is missing. An explicit `FLEET_STORE` must also exist, except that `fleet web`
-initializes a missing store and announces its path. Without these overrides,
+is missing (the read-only `fleet serve status` uses endpoint discovery directly).
+An explicit `FLEET_STORE` must also exist, except that `fleet serve` and `fleet web`
+initialize a missing store and announces its path. Without these overrides,
 first use still creates the store at the default location.
 
 The examples below use a local host. Replace `PROJECT_ID`, `DUPLICATE_ID`, `WORK_ID`,
@@ -163,7 +172,7 @@ Use an existing host directory for `WORKING_DIRECTORY`. `JOB_ID` means an existi
 To experiment independently, set `FLEET_CONFIG`, `FLEET_STORE`, `FLEET_HOME` and
 `FLEET_MANAGEMENT` to paths in a temporary directory before starting. Create the config file first
 (for example, `{"hosts": {"workspace-demo": {"ssh": null}}}`), then run
-`fleet web` once to initialize the store before using the commands below.
+`fleet serve` once to initialize the store before using the commands below.
 
 ```bash
 fleet host add workspace-demo --local
@@ -446,11 +455,16 @@ from real jobs.*
 ## How it works
 
 ```text
-fleet CLI / fleet web ── SSH ──▶ fleetd.py on each host
+fleet CLI / fleet serve ── SSH ──▶ fleetd.py on each host
                                   └─ tmux runner ─▶ claude -p / codex exec
                                      ~/.fleet/jobs/<id>/
                                        job.json, events.jsonl, context/, outbox/
 ```
+
+`fleet web` reads full snapshots from the loopback runtime subscription. It keeps
+controller-local command facades and stored-document reads; fixture/demo mode
+needs no runtime. The [runtime contract](docs/design/runtime-contract.md) describes
+generations, health and stale snapshots.
 
 `fleetd.py` uses the Python standard library. Fleet copies it to each host and runs
 it over SSH. Jobs run in a private tmux server; subsequent steps resume the same

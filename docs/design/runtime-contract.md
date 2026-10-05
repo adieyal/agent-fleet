@@ -1,7 +1,7 @@
 # Independent local runtime, contract v1
 
 One `fleet serve` owns observation and scheduling for a canonical SQLite store. Web
-subscription is the next step; this step also fences legacy embedded web ownership.
+subscribes to the runtime; library clients that request ownership use the same fence.
 The store-adjacent `.runtime.lock` is an OS-held exclusive flock acquired before
 workers start. Duplicate owners fail with `runtime already owned for store PATH`.
 The lock is never deleted: process exit releases ownership, including after crashes.
@@ -50,6 +50,31 @@ flowchart LR
 ```
 
 No schema migration, remote commands, receipts, activation epochs, orchestrator
-leadership or M4 activation is included. Fixture mode is unaffected. Web conversion,
-browser reconnect evidence, systemd units and deployment documentation remain
-subsequent steps; no units are installed by this change.
+leadership or M4 activation is included. Fixture mode is unaffected. Web subscription and browser reconnect evidence are implemented. Systemd units
+and deployment documentation remain subsequent steps; no units are installed.
+
+
+Web adapter behavior (`SubscribedState`): one cancellable subscriber per web process
+reads `/subscribe` and rediscoveries the store endpoint after EOF, timeout, missing
+metadata or generation mismatch. The web facade starts no follower/history worker
+and rejects accidental ingestion. It preserves local command/store/document APIs;
+worker relabel commands wait for serve to observe the result instead of ingesting
+optimistically in web. `--host` on web selects the configured hosts for local
+command routing; live snapshots describe the runtime's authoritative host scope.
+
+The web document adds `runtime`: availability, health, connection (`connected` or
+`reconnected`), generation, runtime state/pipeline counters, last snapshot time,
+error, start command and full worker health. Its SSE `version` is a web-local wake
+counter, incremented for any new generation/state/pipeline/health cursor or loss of
+connection. Clients replace full snapshots; page clients also consider generation
+changes and reconcile controller-local records periodically. Web pings never turn
+an unavailable runtime into a healthy one.
+
+Before the first snapshot, the deck names runtime unavailability and has no live
+projection. On loss, last work remains visible with `stale_reason: runtime
+unavailable`; host stream `ok/error` retain their last observation rather than
+being rewritten as a host failure. A dead runtime worker shows a named failure and
+marks work stale. A host disconnect with a living reconnect loop stays a host error.
+On reconnect, the first valid snapshot unconditionally replaces retained data and
+shows “Runtime reconnected — live updates resumed.” Stored pages remain readable;
+drafts are preserved while page live status names unavailability/worker failure.

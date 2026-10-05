@@ -1,7 +1,7 @@
 """Serves the deck dashboard and pushes live fleet state to it over server-sent events.
 
-Each host has one long-lived `fleetd stream` over ssh; job changes arrive as they
-happen and are fanned out to every connected browser.
+Live reads subscribe to the independent fleet serve runtime; web never owns
+host followers or scheduling. Fixture decks remain self-contained.
 """
 from __future__ import annotations
 
@@ -299,6 +299,8 @@ def make_handler(state: Any,
             except (ValueError, FleetError) as error:
                 self.error(400, str(error))
                 return
+            if hasattr(state, "runtime_status"):
+                view["runtime"] = state.runtime_status()
             if api:
                 if len(parts) == 3:
                     view['directive_html'] = {str(index): directive_html(node)
@@ -652,7 +654,7 @@ def make_handler(state: Any,
             self.end_headers()
             version, pipeline_seq = -1, 0
             try:
-                while True:
+                while not getattr(state, "subscription_closed", False):
                     new_version = state.wait_for_change(version, timeout=SSE_PING_INTERVAL, seen_pipelines=pipeline_seq)
                     # A reader may close while waiting. Detect its FIN before reading state again.
                     if select.select([self.connection], [], [], 0)[0] and not self.connection.recv(1, socket.MSG_PEEK):
@@ -670,7 +672,7 @@ def make_handler(state: Any,
                     else:
                         self.wfile.write(b"event: ping\ndata: {}\n\n")
                     self.wfile.flush()
-            except (BrokenPipeError, ConnectionResetError):
+            except (BrokenPipeError, ConnectionResetError, OSError):
                 return
 
         def respond(self, status: int, content_type: str, body: bytes, *, cache_seconds: int = 0,
@@ -695,12 +697,12 @@ def serve(hosts: list[Host], *, port: int, bind: str, open_browser: bool = False
           libraries: dict[str, Any] | None = None, project_labels: dict[str, str] | None = None,
           pipelines: dict[str, dict[str, str]] | None = None, container=None) -> None:
     container = Container() if container is None else container
-    state = container.live_state(hosts=hosts, project_labels=project_labels, pipelines=pipelines)
-    runtime = container.start_live(state=state)
+    state = container.subscribed_state(hosts=hosts, project_labels=project_labels, pipelines=pipelines)
+    state.start()
     try:
         run_server(make_handler(state, ProjectLibrary(libraries or {}, container=container)), port=port, bind=bind, open_browser=open_browser)
     finally:
-        runtime.close()
+        state.close()
 
 
 def serve_fixture(path: str, *, port: int, bind: str, open_browser: bool = False, container=None) -> None:

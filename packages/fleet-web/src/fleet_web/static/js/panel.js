@@ -537,7 +537,29 @@ document.getElementById('stats').addEventListener('click', ev => {
 export function renderLive() {
   const el = document.getElementById('live');
   if (DEMO) { el.className = 'live demo'; el.innerHTML = '<i></i><span>demo data</span>'; return; }
-  if (live.ok) { el.className = 'live'; el.innerHTML = `<i></i><span>live · ${clock(Date.now() / 1000)}</span>`; }
+  const runtime = live.runtime;
+  const banner = document.getElementById('runtime-status');
+  if (banner) {
+    const failed = runtime && !runtime.healthy;
+    const reconnected = runtime?.available && runtime.healthy && runtime.connection === 'reconnected';
+    banner.hidden = !failed && !reconnected;
+    banner.dataset.state = failed ? 'unavailable' : 'reconnected';
+    if (runtime && !runtime.available) {
+      banner.textContent = runtime.last_snapshot_at === null
+        ? 'Runtime unavailable — start fleet serve. Reconnecting; no snapshot received.'
+        : 'Runtime unavailable — start fleet serve. Reconnecting; last snapshot is stale.';
+    } else if (failed) {
+      const workers = Object.entries(runtime.health?.workers || {})
+        .filter(([, worker]) => !worker.alive || worker.error)
+        .map(([name, worker]) => `${name}: ${worker.error || 'worker stopped'}`);
+      banner.textContent = `Runtime worker failed — ${workers.join('; ')}. Snapshot is stale; check fleet serve status.`;
+    } else if (reconnected) {
+      banner.textContent = 'Runtime reconnected — live updates resumed.';
+    }
+  }
+  if (runtime && !runtime.available) { el.className = 'live bad'; el.innerHTML = '<i></i><span>runtime unavailable</span>'; }
+  else if (runtime && !runtime.healthy) { el.className = 'live bad'; el.innerHTML = '<i></i><span>runtime worker failed</span>'; }
+  else if (live.ok) { el.className = 'live'; el.innerHTML = `<i></i><span>live · ${clock(Date.now() / 1000)}</span>`; }
   else { el.className = 'live bad'; el.innerHTML = `<i></i><span>${everLoaded ? 'server lost · retrying' : 'no server'}</span>`; }
 }
 export function collectEvents() {
@@ -589,6 +611,11 @@ document.getElementById('feedList').addEventListener('click', ev => {
 });
 export function updateHint() {
   const hint = document.getElementById('hint');
+  if (live.runtime && !live.runtime.available && !ents.size) {
+    hint.hidden = false;
+    hint.innerHTML = '<h2>Runtime unavailable</h2><p>Start the observer with <code>fleet serve</code>. This deck reconnects automatically.</p><p>Host status is unknown until the runtime returns.</p>';
+    return;
+  }
   if (ents.size) { hint.hidden = true; return; }
   hint.hidden = false;
   hint.innerHTML = entered && everLoaded
