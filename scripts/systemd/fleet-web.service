@@ -1,0 +1,28 @@
+[Unit]
+Description=Fleet deck runtime subscriber
+Wants=fleet-serve.service
+After=fleet-serve.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=exec
+ExecStart=%h/.local/bin/fleet web --bind 127.0.0.1 --port 8787
+WorkingDirectory=%h
+Environment=FLEET_CONFIG=%h/.config/fleet/config.json
+Environment=FLEET_STORE=%h/.config/fleet/fleet.db
+Environment=FLEET_HOME=%h/.fleet
+Environment=FLEET_MANAGEMENT=%h/.local/share/fleet/management
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONUNBUFFERED=1
+Environment=SSH_AUTH_SOCK=%t/fleet-ssh-agent.sock
+Restart=always
+RestartSec=5s
+TimeoutStopSec=10s
+KillSignal=SIGTERM
+KillMode=control-group
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

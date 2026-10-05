@@ -88,9 +88,9 @@ def test_close_interrupts_reconnect_delay(monkeypatch):
 
 
 @pytest.mark.parametrize("failure", [None, RuntimeError("listener failed")])
-def test_serve_closes_runtime_on_return_and_failure(monkeypatch, failure):
-    state, runtime = object(), Mock()
-    container = SimpleNamespace(live_state=Mock(return_value=state), start_live=Mock(return_value=runtime))
+def test_serve_closes_subscription_on_return_and_failure(monkeypatch, failure):
+    state = Mock()
+    container = SimpleNamespace(subscribed_state=Mock(return_value=state), start_live=Mock())
     monkeypatch.setattr(server, "ProjectLibrary", Mock())
     monkeypatch.setattr(server, "make_handler", Mock())
     monkeypatch.setattr(server, "run_server", Mock(side_effect=failure))
@@ -99,8 +99,9 @@ def test_serve_closes_runtime_on_return_and_failure(monkeypatch, failure):
             server.serve([], port=0, bind="127.0.0.1", container=container)
     else:
         server.serve([], port=0, bind="127.0.0.1", container=container)
-    container.start_live.assert_called_once_with(state=state)
-    runtime.close.assert_called_once_with()
+    container.start_live.assert_not_called()
+    state.start.assert_called_once_with()
+    state.close.assert_called_once_with()
 
 
 def test_cancelled_stream_never_connects_or_launches(monkeypatch):

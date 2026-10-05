@@ -107,6 +107,8 @@ from fleet.services.guidance import write_guidance as _write_guidance
 from fleet.services.hosts import merge_detected as _merge_detected
 from fleet.services.jobs import listing_arguments as _listing_arguments
 from fleet.services.live import FleetState as _FleetState
+from fleet.services.subscription import SubscribedState as _SubscribedState
+from fleet.services.runtime import RuntimeServer as _RuntimeServer, runtime_status as _runtime_status
 from fleet.services.live import start_live as _start_live
 from fleet.services.storage import usage as _usage
 from fleet.triage import TriageCommands as _TriageCommands
@@ -639,6 +641,9 @@ class Container(_containers.DeclarativeContainer):
     live_history_detail = _providers.Callable(_LibraryProjection.history_detail)
     live_history_runs = _providers.Callable(_LibraryProjection.history_runs)
     live_readers = _providers.Factory(make_live_readers, __self__, workspace=workspace, attention=attention)
+    subscribed_state = _providers.Factory(_SubscribedState, container=__self__)
+    runtime_server = _providers.Factory(_RuntimeServer)
+    runtime_status = _providers.Callable(_runtime_status, store=settings.provided["store_path"])
     live_state = _providers.Factory(_FleetState, container=__self__)
     start_live = _providers.Callable(_start_live)
     fixture_data = _providers.Callable(_load_fixture)

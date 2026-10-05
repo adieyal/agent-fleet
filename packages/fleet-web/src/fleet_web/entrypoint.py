@@ -12,7 +12,8 @@ def run(arguments, container):
         serve_fixture(arguments.fixture, container=container, port=arguments.port,
                       bind=arguments.bind, open_browser=arguments.open)
         return
-    hosts = container.jobs().selected_hosts(arguments.host)
+    hosts = (container.jobs().selected_hosts(arguments.host) if arguments.host
+             else container.transport().configured_hosts())
     serve(hosts, container=container, port=arguments.port, bind=arguments.bind,
           open_browser=arguments.open, **container.configuration().web_settings())
 

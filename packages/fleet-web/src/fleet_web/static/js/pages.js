@@ -329,8 +329,15 @@
       const next = await response.json();
       if (!response.ok) throw new Error(next.error);
       if (request !== generation) return;
-      connected = true;
-      status.textContent = unavailable.length ? `Commenting unavailable for prose blocks ${unavailable.join(', ')}: rendered text differs from canonical text.` : next.historical ? 'Page changed: reload for current prose. Comments refer to the displayed revision.' : '';
+      const runtime = next.runtime;
+      connected = !runtime || runtime.healthy;
+      const instruction = unavailable.length ? `Commenting unavailable for prose blocks ${unavailable.join(', ')}: rendered text differs from canonical text.` : next.historical ? 'Page changed: reload for current prose. Comments refer to the displayed revision.' : '';
+      status.textContent = runtime && !runtime.available
+        ? 'Runtime unavailable — start fleet serve. Reconnecting; drafts are kept. Stored records remain readable.'
+        : runtime && !runtime.healthy
+        ? 'Runtime worker failed — check fleet serve status. Drafts are kept.'
+        : runtime?.connection === 'reconnected'
+        ? `Runtime reconnected — live updates resumed. ${instruction}`.trim() : instruction;
       if (force || next.state_version !== view.state_version) {
         for (const [index, html] of Object.entries(next.directive_html)) {
           const wrapper = document.querySelector(`[data-directive-node="${index}"]`);
@@ -374,14 +381,16 @@
   const observer = new ResizeObserver(layoutThreads); observer.observe(threads); observer.observe(composer);
   renderThreads();
   const stream = new EventSource('/api/stream');
-  let seenVersion = null;
+  let seenVersion = null, seenGeneration = null;
   stream.addEventListener('open', () => { seenVersion = null; refresh(true); });
   stream.addEventListener('state', event => {
-    const {version} = JSON.parse(event.data);
+    const {version, runtime} = JSON.parse(event.data);
     if (!Number.isInteger(version)) {
       connected = false; status.textContent = 'Live state version missing: refresh before submitting.'; return;
     }
-    if (seenVersion === null || version > seenVersion) { seenVersion = version; refresh(true); }
+    if (seenVersion === null || version !== seenVersion || runtime?.generation !== seenGeneration) {
+      seenVersion = version; seenGeneration = runtime?.generation; refresh(true);
+    }
   });
   stream.addEventListener('error', () => {
     connected = false; status.textContent = 'Disconnected: drafts are kept; reconnect before submitting.';

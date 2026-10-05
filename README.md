@@ -48,9 +48,9 @@ replace a configured path explicitly, run `fleet install worker --codex
 is executable. If discovery finds no executable, install leaves that runtime
 unset and prints the command needed to configure it.
 
-The checkout is a uv workspace with `fleet` (library), `fleet-cli` (terminal) and
-`fleet-web` (dashboard) distributions. For development, use `uv sync` and
-`uv run fleet ...`. Build all three wheels together for local installation: the
+The checkout is a uv workspace with `fleet` (library), `fleet-cli` (terminal),
+`fleet-web` (dashboard) and `fleet-worker` (host worker) distributions. For development, use `uv sync` and
+`uv run fleet ...`. Build all four wheels together for local installation: the
 CLI requires matching library and web distributions. Installing
 `packages/fleet-cli` alone cannot resolve unpublished sibling packages; provide
 the wheel directory as shown above. The dashboard supplies `fleet web` through
@@ -73,8 +73,16 @@ Check on it from the terminal or open the deck:
 
 ```bash
 fleet ls
+# Keep the observer running in its own terminal:
+fleet serve
+# In another terminal:
 fleet web --open
 ```
+
+The deck subscribes to `fleet serve`; it starts no host followers or scheduler.
+Restarting web leaves observation running. If serve is absent, the deck shows
+“Runtime unavailable” and reconnects automatically. `fleet serve status` prints
+owner PID, uptime, worker health and host stream states.
 
 Use `fleet watch` for a live terminal view. When the job finishes, run
 `fleet result worker:<id>` for its reports or `fleet pull worker:<id> ./results`
@@ -86,7 +94,7 @@ synthetic jobs. The demo works even when the configured host is offline.
 Room signs can use friendly names without changing the project identifiers used by
 jobs. Add `"project_labels": {"restoke-analytics": "Bang bang!"}` to
 `~/.config/fleet/config.json` (or the file selected by `FLEET_CONFIG`), then
-restart `fleet web`.
+restart `fleet serve`.
 
 Every CLI project selector accepts a registered project (ID, prefix or name).
 Exact IDs resolve first, then exact unique names, then unique ID prefixes.
@@ -153,8 +161,9 @@ projects and workspace state from `config.json` and `workspace.json` once, keepi
 backups and the original files. Hosts and display settings still use `config.json`.
 
 An explicit `FLEET_CONFIG` must name an existing file; every command fails if it
-is missing. An explicit `FLEET_STORE` must also exist, except that `fleet web`
-initializes a missing store and announces its path. Without these overrides,
+is missing (the read-only `fleet serve status` uses endpoint discovery directly).
+An explicit `FLEET_STORE` must also exist, except that `fleet serve` and `fleet web`
+initialize a missing store and announces its path. Without these overrides,
 first use still creates the store at the default location.
 
 The examples below use a local host. Replace `PROJECT_ID`, `DUPLICATE_ID`, `WORK_ID`,
@@ -163,7 +172,7 @@ Use an existing host directory for `WORKING_DIRECTORY`. `JOB_ID` means an existi
 To experiment independently, set `FLEET_CONFIG`, `FLEET_STORE`, `FLEET_HOME` and
 `FLEET_MANAGEMENT` to paths in a temporary directory before starting. Create the config file first
 (for example, `{"hosts": {"workspace-demo": {"ssh": null}}}`), then run
-`fleet web` once to initialize the store before using the commands below.
+`fleet serve` once to initialize the store before using the commands below.
 
 ```bash
 fleet host add workspace-demo --local
@@ -222,7 +231,7 @@ a fleet job the decision is linked to the job's run and the guidance versions it
 received; elsewhere give `--run` or leave the versions unknown. When the job's
 run is held by another machine's store (a job on `home` dispatched from the
 controller on `carbon`), the command hands the decision to the host's fleetd and
-prints its id: the controller records it from the job's stream when `fleet web`
+prints its id: the controller records it from the job's stream when `fleet serve`
 next hears from that host, and raises an alert if it cannot. List decisions for
 a project or an epic (`--epic EPIC_ID`), newest first.
 
@@ -446,11 +455,16 @@ from real jobs.*
 ## How it works
 
 ```text
-fleet CLI / fleet web ── SSH ──▶ fleetd.py on each host
+fleet CLI / fleet serve ── SSH ──▶ fleetd.py on each host
                                   └─ tmux runner ─▶ claude -p / codex exec
                                      ~/.fleet/jobs/<id>/
                                        job.json, events.jsonl, context/, outbox/
 ```
+
+`fleet web` reads full snapshots from the loopback runtime subscription. It keeps
+controller-local command facades and stored-document reads; fixture/demo mode
+needs no runtime. The [runtime contract](docs/design/runtime-contract.md) describes
+generations, health and stale snapshots.
 
 `fleetd.py` uses the Python standard library. Fleet copies it to each host and runs
 it over SSH. Jobs run in a private tmux server; subsequent steps resume the same
@@ -489,6 +503,97 @@ setup runs `ssh-agent -D -a %t/fleet-ssh-agent.sock` as
 `~/.config/systemd/user/fleet-ssh-agent.service` with lingering enabled. Run
 `fleet unlock worker` once per boot to add the key to that agent.
 
+
+## Controller deployment with systemd user services
+
+The templates in [`scripts/systemd/fleet-serve.service`](scripts/systemd/fleet-serve.service)
+and [`fleet-web.service`](scripts/systemd/fleet-web.service) run the installed CLI
+in separate user services. Both log stdout/stderr to the journal, restart after an
+unexpected process exit with a five-second delay (an explicit service stop stays
+stopped), and stop retrying after five starts in two minutes. Both allow ten seconds
+to stop; serve handles SIGTERM with a five-second worker-join deadline. A dead internal worker is visible in
+`fleet serve status` and the deck; systemd's process restart policy does not detect
+that by itself. Inspect the named error, then restart serve after addressing it.
+
+Web uses `Wants` and `After` for serve, with no `Requires`, `BindsTo` or `PartOf`:
+stopping/restarting serve leaves web alive to display unavailable/reconnect states,
+and restarting web leaves serve following hosts. `After` orders process startup,
+not snapshot readiness; verify serve status before starting web during cutover.
+Both templates use identical explicit default Fleet paths and the SSH-agent socket
+`%t/fleet-ssh-agent.sock`. `%h` resolves to the service user's home directory.
+If carbon uses different store/config/home/management paths or an SSH agent at
+another socket, edit **both** unit copies to the actual values before enabling.
+The agent service is optional; SSH must already work noninteractively with those
+credentials. These files do not install or unlock an agent. Services do not read
+interactive shell setup: their explicit PATH includes `~/.local/bin` and system
+binaries. For controller-local workers, append any directories containing the
+installed Claude/Codex CLIs (for example an nvm bin directory) to both unit PATHs
+before startup. Check their locations with `command -v claude codex python3 ssh tmux`
+on carbon; remote workers still use their own configured launch environment.
+
+Build on home from the reviewed checkout, then transfer the four wheels and units
+to carbon. The following is a deployment procedure, not an action performed by
+tests or by adding the templates. Use a fresh release directory to avoid picking
+up stale wheels:
+
+```bash
+# On home, from the reviewed checkout:
+release_dir=$(mktemp -d /home/adi/models/tmp/fleet-release.XXXXXX)
+~/.local/bin/uv build --all-packages --wheel --out-dir "$release_dir"
+release_id=$(git rev-parse --short HEAD)
+ssh carbon "mkdir -p ~/fleet-serve-release-$release_id"
+scp "$release_dir"/*.whl scripts/systemd/fleet-{serve,web}.service "carbon:~/fleet-serve-release-$release_id/"
+```
+
+On carbon, close the old terminal-launched `fleet web` process cleanly (Ctrl-C),
+and stop any existing web unit before replacing the installed tool. There must
+be no old embedded observation owner during cutover. Do not remove the lock
+file: ownership is an OS-held flock, released by the owner on clean exit or crash.
+
+```bash
+# On carbon, after the old terminal process has exited:
+# Use the release_id printed/read on home (the reviewed commit short SHA).
+release_dir="$HOME/fleet-serve-release-REVIEWED_COMMIT"
+systemctl --user stop fleet-web.service  # if an existing unit is installed
+systemctl --user stop fleet-serve.service  # for an upgrade of an existing runtime
+~/.local/bin/uv tool install --force --reinstall --no-cache \
+  --find-links "$release_dir" "$release_dir"/fleet_cli-*.whl
+mkdir -p ~/.config/systemd/user
+install -m 0644 "$release_dir/fleet-serve.service" ~/.config/systemd/user/
+install -m 0644 "$release_dir/fleet-web.service" ~/.config/systemd/user/
+# Inspect/edit both installed unit files if paths, credentials or local CLI PATH differ.
+systemd-analyze --user verify ~/.config/systemd/user/fleet-{serve,web}.service
+systemctl --user daemon-reload
+systemctl --user enable fleet-serve.service fleet-web.service
+systemctl --user start fleet-serve.service
+# Wait at most 20 seconds for the loopback endpoint; errors remain visible.
+timeout 20s bash -c 'until ~/.local/bin/fleet serve status; do sleep 0.5; done'
+# Continue only if status reports healthy=true and the expected host workers.
+systemctl --user start fleet-web.service
+systemctl --user status fleet-serve.service fleet-web.service --no-pager
+journalctl --user -u fleet-serve.service -u fleet-web.service -n 100 --no-pager
+loginctl show-user "$USER" -p Linger
+```
+
+Missing first-install units make the initial `stop` commands report “not loaded”;
+that is harmless only after confirming the old terminal owner exited. If linger
+is disabled and logout/boot survival is wanted, enable it with
+`loginctl enable-linger "$USER"` under the host's permissions policy. The supplied
+review found carbon's linger enabled; check again during deployment. Open
+`http://127.0.0.1:8787/` on carbon, or use an SSH tunnel from another machine.
+No worker-wire change is included here; use `fleet install HOST` only when worker
+version/protocol reporting requires upgrading that host.
+
+For diagnosis, `fleet serve status` prints health separately from host connectivity.
+An offline host with a living follower is a host error; `healthy=false` identifies
+a runtime worker failure. If retries hit the start limit, inspect the journal,
+fix the named cause, then run `systemctl --user reset-failed fleet-serve.service`
+and `systemctl --user start fleet-serve.service`. Web can remain running throughout.
+For rollback, disable and stop both new units (`systemctl --user disable --now
+fleet-web.service fleet-serve.service`), install the previous wheel set, then run
+the old `fleet web` in a terminal or restore its previous unit without the serve
+dependency. Never run an embedded web owner alongside serve on the same store.
+
 ## Development
 
 The root `pyproject.toml` is a non-built uv workspace; each distribution has its
@@ -518,7 +623,8 @@ fleet install HOST  # repeat for each configured host to update its standalone w
 materializes it during rsync, then configures the worker and checks for tmux.
 It copies only `fleetd.py` to `~/.local/share/fleet/fleetd.py`; workers do not need
 the workspace packages or dependency-injector. Install the tool on the controller
-and restart its `fleet web` process after an upgrade to serve the new static files.
+and restart `fleet serve` followed by `fleet web` after upgrading both processes.
+For web-only changes, restarting web alone leaves observation uninterrupted.
 
 
 To try a branch alongside the installed fleetd, set `FLEET_FLEETD_PATH` to a
