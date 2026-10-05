@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 
 from fleet.container import configured_container
+from fleet_cli import cli
 from fleet.modules.authority import AuthorityRejected
 from fleet.modules.records import TRIAGE_PATH
 from fleet.orchestration import ControllerCommands
@@ -46,6 +47,18 @@ def test_reply_requires_pinned_authority_and_is_repeatable(triage):
     services.attention.take(attention.id, actor='user', reason='I will answer')
     with pytest.raises(AuthorityRejected, match='agent-owned'):
         commands.execute('reply', dict(item=attention.id, body='Too late'))
+
+
+def test_cli_control_accepts_reply(triage, capsys):
+    services, activation, _, _, body, _ = triage
+    attention = item(triage)
+    active = allow_reply(services, activation.project, body)
+    services.execution.dispatch(None, project=active.project, host='carbon', runtime='codex',
+        payload={'cwd': body['cwd']}, actor=active.actor, activation=active.id,
+        reason='Reply', idempotency_key='reply-cli')
+    cli.main(['control', active.id, 'reply', json.dumps(dict(item=attention.id, body='From the CLI'))])
+    assert json.loads(capsys.readouterr().out)['decision']['source_run']
+    assert [m.body for m in services.attention.get(attention.id).replies] == ['From the CLI']
 
 
 def page_request(triage):

@@ -1474,7 +1474,8 @@ def build_parser(*, container=None) -> argparse.ArgumentParser:
     control = commands.add_parser('control', help='agent-internal: an activated orchestrator changes the store')
     control.add_argument('activation')
     control.add_argument('operation', choices=('state', 'progress', 'meet', 'attention', 'dispatch', 'decide', 'summary', 'propose',
-                                             'retry', 'add_step', 'grant', 'resolve', 'escalate', 'record_decision'))
+                                             'retry', 'add_step', 'grant', 'resolve', 'escalate', 'record_decision',
+                                             'reply'))
     control.add_argument('payload', help='JSON object of command fields')
     control.set_defaults(handler=command_control)
 
