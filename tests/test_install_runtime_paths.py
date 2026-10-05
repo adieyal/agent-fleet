@@ -52,11 +52,19 @@ def test_explicit_override_and_invalid_override(worker):
     assert fleetd.load_config()['codex'] == new
 
 
-def test_detection_finds_nvm_and_local_bin_deterministically(tmp_path):
+@pytest.mark.parametrize("npm_available", [False, True])
+def test_detection_finds_nvm_and_local_bin_deterministically(tmp_path, npm_available):
     first = binary(tmp_path / '.nvm/versions/node/v18/bin/codex')
     binary(tmp_path / '.nvm/versions/node/v20/bin/codex')
     claude = binary(tmp_path / '.local/bin/claude')
-    result = subprocess.run(['/bin/sh', '-c', DETECT_SCRIPT], env={'HOME': str(tmp_path), 'PATH': '/usr/bin:/bin'},
+    tools = tmp_path / 'tools'
+    tools.mkdir()
+    if npm_available:
+        (tmp_path / 'npm-prefix/bin').mkdir(parents=True)
+        npm = tools / 'npm'
+        npm.write_text(f"#!/bin/sh\nprintf '%s\\n' '{tmp_path}/npm-prefix'\n")
+        npm.chmod(0o755)
+    result = subprocess.run(['/bin/sh', '-c', DETECT_SCRIPT], env={'HOME': str(tmp_path), 'PATH': str(tools)},
                             capture_output=True, text=True, check=True)
     from fleet.services.hosts import merge_detected
     assert merge_detected(result.stdout)['codex'] == first
@@ -155,3 +163,22 @@ def test_cli_flags_and_missing_runtime_guidance(capsys):
     output = capsys.readouterr().out
     assert 'fleet install fake --codex PATH' in output
     assert '/chosen/claude' in output
+
+
+def test_detection_surfaces_npm_failure(tmp_path):
+    npm = tmp_path / 'npm'
+    npm.write_text('#!/bin/sh\necho "npm configuration broken" >&2\nexit 42\n')
+    npm.chmod(0o755)
+    result = subprocess.run(['/bin/sh', '-c', DETECT_SCRIPT],
+                            env={'HOME': str(tmp_path), 'PATH': str(tmp_path)},
+                            capture_output=True, text=True)
+    assert result.returncode == 42
+    assert 'npm configuration broken' in result.stderr
+
+
+def test_detection_succeeds_without_tools_or_agents(tmp_path):
+    result = subprocess.run(['/bin/sh', '-c', DETECT_SCRIPT],
+                            env={'HOME': str(tmp_path), 'PATH': str(tmp_path)},
+                            capture_output=True, text=True, check=True)
+    from fleet.services.hosts import merge_detected
+    assert merge_detected(result.stdout) == {'path': str(tmp_path), 'claude': None, 'codex': None}

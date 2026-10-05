@@ -19,11 +19,16 @@ done
 eval "$probe"
 # Stable lexical order within nvm; shell PATH hits above take precedence.
 export LC_ALL=C
-prefix=$(npm prefix -g 2>/dev/null) || prefix=
+prefix=
+if command -v npm >/dev/null; then
+  prefix=$(npm prefix -g) || exit $?
+fi
 for directory in "$HOME/.local/bin" "$HOME"/.nvm/versions/node/*/bin "${prefix:+$prefix/bin}"; do
   [ -d "$directory" ] || continue
   for agent in claude codex; do
-    [ -f "$directory/$agent" ] && [ -x "$directory/$agent" ] && printf '%s=%s\n' "$agent" "$directory/$agent"
+    if [ -f "$directory/$agent" ] && [ -x "$directory/$agent" ]; then
+      printf '%s=%s\n' "$agent" "$directory/$agent" || exit $?
+    fi
   done
 done
 """
@@ -60,7 +65,7 @@ class HostSetup:
         with as_file(self.transport.LOCAL_FLEETD_SOURCE) as source:
             self.transport.rsync([str(source)],
                                  host.rsync_target(os.path.expanduser(destination) if host.is_local else destination), host)
-        detected = self.transport.run_shell(host, DETECT_SCRIPT, capture_output=True, text=True, timeout=60).stdout
+        detected = self.transport.run_shell(host, DETECT_SCRIPT, capture_output=True, text=True, timeout=60, check=True).stdout
         agent_socket = self.transport.run_shell(host, f"test -S {AGENT_SOCKET} && echo {AGENT_SOCKET}",
                                                capture_output=True, text=True, timeout=20).stdout.strip()
         if host.is_local and not agent_socket:
