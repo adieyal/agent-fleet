@@ -54,7 +54,9 @@ class TriageScheduler:
         return dict(project=project, mandate_version=version, policy_error=policy_error,
                     queue=[i.id for i in queued],
                     live_run=None if run is None else dict(id=run, status=self.services.execution.get_run(run).status),
-                    budget_left=None if mandate is None else max(0, mandate.limits['runs_per_day'] - used),
+                    budget_unlimited=mandate is not None and mandate.limits['runs_per_day'] is None,
+                    budget_left=None if mandate is None or mandate.limits['runs_per_day'] is None
+                    else max(0, mandate.limits['runs_per_day'] - used),
                     budget_resets_at=None if mandate is None else reset.isoformat(),
                     oldest_wait_seconds=None if oldest is None else max(0, (now - oldest).total_seconds()),
                     delivery_error=state.get('error'),
@@ -229,7 +231,7 @@ class TriageScheduler:
                 if now - datetime.fromisoformat(waiting[item.id]) >= timedelta(minutes=mandate.limits['unclaimed_minutes']):
                     escalate(item, 'triage item was not claimed before its timeout; fleet web was down or dispatch was unavailable')
                     items.remove(item)
-            if state['used'] >= mandate.limits['runs_per_day']:
+            if mandate.limits['runs_per_day'] is not None and state['used'] >= mandate.limits['runs_per_day']:
                 for item in items:
                     escalate(item, f'triage daily budget exhausted ({state["used"]}/{mandate.limits["runs_per_day"]} runs); resets at {(now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()}')
                 items = []

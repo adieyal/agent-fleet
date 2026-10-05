@@ -310,7 +310,7 @@ def command_triage_status(arguments: argparse.Namespace, *, container) -> None:
         print(f"  {identity} — take back: fleet attention take {identity} --actor ACTOR")
     run = result['live_run']
     print(f"Live run: {run['id'] + ' (' + run['status'] + ')' if run else 'none'}")
-    print(f"Budget: {result['budget_left']} runs left; resets at {result['budget_resets_at']}" if result['budget_left'] is not None else 'Budget: unavailable; policy unreadable' if policy_error else 'Budget: unavailable; no confirmed triage policy')
+    print('Budget: unlimited (no daily run limit)' if result.get('budget_unlimited') else f"Budget: {result['budget_left']} runs left; resets at {result['budget_resets_at']}" if result['budget_left'] is not None else 'Budget: unavailable; policy unreadable' if policy_error else 'Budget: unavailable; no confirmed triage policy')
     wait = result['oldest_wait_seconds']
     print(f"Oldest queue wait: {int(wait)} seconds" if wait is not None else 'Oldest queue wait: not recorded' if result['queue'] else 'Oldest queue wait: no queued items')
     print(f"Delivery error: {result['delivery_error'] or 'none recorded'}")

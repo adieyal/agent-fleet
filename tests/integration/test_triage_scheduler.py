@@ -60,6 +60,26 @@ def test_end_without_action_requeues_once_then_escalates(triage):
     assert 'ended without acting' in services.attention.get(a.id).owner_reason
 
 
+def test_null_daily_limit_never_exhausts(triage):
+    services, activation, _, _, body, _ = triage
+    body['limits']['runs_per_day'] = None
+    services.records.write_mandate(activation.project, TRIAGE_PATH, json.dumps(body), key='unlimited', actor='user')
+    engine, calls = scheduler(triage)
+    for job in ('first', 'second', 'third'):
+        a = item(triage, job=job)
+        engine.schedule()
+        finish(services, services.execution.get_run(calls[-1][0]))
+        engine.schedule()
+        assert 'budget' not in (services.attention.get(a.id).owner_reason or '')
+    assert len(calls) >= 3
+    status = engine.status(activation.project)
+    assert status['budget_unlimited'] is True and status['budget_left'] is None
+    # Only the daily run limit may be switched off.
+    body['limits'] = dict(body['limits'], runs_per_day=12, retries_per_step=None)
+    with pytest.raises(ValueError, match='positive integers'):
+        services.records.write_mandate(activation.project, TRIAGE_PATH, json.dumps(body), key='bad', actor='user')
+
+
 def test_budget_escalates_queue_and_resets_next_day(triage):
     services, activation, _, _, body, _ = triage
     body['limits']['runs_per_day'] = 1

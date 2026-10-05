@@ -196,7 +196,8 @@ class PageService:
         if state.get('handled', {}).get(item.id) == request_token(item):
             return 'Agent replied · thread remains open'
         used = state.get('used', 0) if state.get('day') == self.services.store.clock().date().isoformat() else 0
-        if used >= mandate.limits['runs_per_day']:
+        limit = mandate.limits['runs_per_day']
+        if limit is not None and used >= limit:
             reset = (self.services.store.clock() + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
             return 'Agent reply budget exhausted; resets at ' + reset.isoformat()
         return prefix + 'Agent reply queued'

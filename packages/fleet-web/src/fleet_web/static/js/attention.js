@@ -216,8 +216,9 @@ function triageHealth() {
     const label = projects.find(p => p.id === project)?.name || project;
     const wait = t.oldest_wait_seconds == null ? 'Queue wait not reported' : `oldest wait ${Math.floor(t.oldest_wait_seconds / 60)} min`;
     const budget = t.policy_error ? `Triage policy unreadable; budget unknown; delegation unavailable: ${t.policy_error}`
+      : t.budget_unlimited ? 'no daily run limit'
       : t.budget_left == null ? 'No confirmed triage policy; agent-owned items cannot be serviced' : `${t.budget_left} runs left`;
-    return `<p class="attn-triage-health"><b>${esc(label)}</b> · ${(t.queue || []).length} queued · ${esc(wait)} · ${esc(budget)}${t.budget_resets_at ? ` · budget resets ${esc(t.budget_resets_at)}` : ''}<br>Delivery error: ${esc(t.delivery_error || 'none recorded')} · ${(t.pending_publications || []).length} pending publications${t.live_run ? `<br>Run: ${idChip(t.live_run.id)} · ${esc(t.live_run.status || 'status not reported')}` : '<br>No live triage run'}<br>Inspect: <code>${esc(`fleet triage status ${project}`)}</code> · <code>${esc(`fleet triage policy show ${project}`)}</code>. Take back revokes authority for an item; the process may continue for other items.</p>`;
+    return `<p class="attn-triage-health"><b>${esc(label)}</b> · ${(t.queue || []).length} queued · ${esc(wait)} · ${esc(budget)}${t.budget_resets_at && !t.budget_unlimited ? ` · budget resets ${esc(t.budget_resets_at)}` : ''}<br>Delivery error: ${esc(t.delivery_error || 'none recorded')} · ${(t.pending_publications || []).length} pending publications${t.live_run ? `<br>Run: ${idChip(t.live_run.id)} · ${esc(t.live_run.status || 'status not reported')}` : '<br>No live triage run'}<br>Inspect: <code>${esc(`fleet triage status ${project}`)}</code> · <code>${esc(`fleet triage policy show ${project}`)}</code>. Take back revokes authority for an item; the process may continue for other items.</p>`;
   }).join('');
 }
 function renderGroup(rows, key, name, fold = false) {
