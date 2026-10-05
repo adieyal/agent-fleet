@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from fleet.container import FleetError
+from fleet.api import FleetError
 from fleet_cli import plugins
 from fleet_cli.cli import command_web
 

@@ -6,30 +6,41 @@ happen and are fanned out to every connected browser.
 from __future__ import annotations
 
 import atexit
-from contextlib import ExitStack
 import json
-from dataclasses import asdict
 import time
 import webbrowser
+from collections.abc import Callable
+from contextlib import ExitStack
+from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
+from fleet.api import (
+    FOCUSES,
+    AlreadyHoused,
+    AlreadyShuttered,
+    FleetError,
+    GuidanceConflict,
+    Host,
+    ItemResolved,
+    NotShuttered,
+    NoVacancy,
+)
 from fleet.container import Container
-from fleet.modules.records import GuidanceConflict
-from fleet.modules.attention import ItemResolved
-from fleet.modules.workspace import NoVacancy, FOCUSES, AlreadyShuttered, NotShuttered
-from fleet.projections.bench import bench_rooms, bench_state
-from fleet.projections.history import parse_since
-from fleet.container import FleetError, Host
-from fleet_web.documents import AssetNotImage, AssetTooLarge, DocumentAccessDenied, render_markdown, render_document
+
+from fleet_web.documents import (
+    AssetNotImage,
+    AssetTooLarge,
+    DocumentAccessDenied,
+    render_document,
+    render_markdown,
+)
 from fleet_web.fixture import FixtureLibrary
 from fleet_web.library import ProjectLibrary
-from fleet.modules.workspace import AlreadyHoused
-from fleet.container import FleetState, FixtureState
-
-from fleet_web.resources import static_directory, checkout_folders, build_id as resource_build_id, resources
+from fleet_web.resources import build_id as resource_build_id
+from fleet_web.resources import checkout_folders, resources, static_directory
 
 _resource_stack = ExitStack()
 atexit.register(_resource_stack.close)
@@ -73,7 +84,7 @@ SSE_COALESCE = 0.1  # batch bursts of changes into one push
 
 
 
-def make_handler(state: FleetState | FixtureState,
+def make_handler(state: Any,
                  library: ProjectLibrary | FixtureLibrary | None = None) -> type[BaseHTTPRequestHandler]:
     container = state.container
     static = resources(container)
@@ -136,8 +147,8 @@ def make_handler(state: FleetState | FixtureState,
                     return
                 projection = container.project_status(project=query["project"][0])
                 try:
-                    result = (bench_state(projection, query["slice"][0]) if "slice" in query
-                              else bench_rooms(projection, state.live_jobs()))
+                    result = (container.bench_state(projection, query["slice"][0]) if "slice" in query
+                              else container.bench_rooms(projection, state.live_jobs()))
                 except ValueError as error:
                     self.error(404, str(error))
                     return
@@ -263,7 +274,7 @@ def make_handler(state: FleetState | FixtureState,
                 self.error(400, "subject is required")
                 return
             try:
-                since = parse_since(query["since"]) if query.get("since") else None
+                since = Container().parse_since(query["since"]) if query.get("since") else None
             except ValueError as error:
                 self.error(400, str(error))
                 return

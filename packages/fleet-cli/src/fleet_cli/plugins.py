@@ -1,7 +1,7 @@
 """Resolve optional commands through distribution metadata, without importing sibling packages."""
 from importlib.metadata import entry_points
 
-from fleet.container import FleetError
+from fleet.api import FleetError
 
 
 def load_command(name):

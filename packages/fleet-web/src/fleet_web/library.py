@@ -4,6 +4,7 @@ from typing import Any
 
 from fleet_web.documents import render_markdown
 
+
 def prd_markdown(prd: dict[str, Any], name: str) -> str:
     """A Ralph prd.json as a page: status, objectives, stories with pass marks, open questions, decisions."""
     def items(value: Any) -> list[str]:

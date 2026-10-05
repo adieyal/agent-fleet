@@ -1,7 +1,9 @@
 """Standalone dashboard entrypoint and the CLI's metadata-discovered web command."""
 import argparse
 
-from fleet.container import Container, FleetError, validate_paths
+from fleet.api import FleetError
+from fleet.container import Container
+
 from fleet_web.server import serve, serve_fixture
 
 
@@ -25,7 +27,7 @@ def main(argv=None):
     arguments = parser.parse_args(argv)
     container = Container()
     try:
-        for message in validate_paths('web'):
+        for message in container.validate_paths('web'):
             print(message)
         run(arguments, container)
     except FleetError as error:

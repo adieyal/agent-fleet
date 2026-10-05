@@ -13,25 +13,28 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from fleet.api import (
+    ATTENTION_KINDS,
+    CONDITIONS,
+    KINDS,
+    MAX_CAPACITY,
+    RELATION_TYPES,
+    DispatchRequest,
+    FleetError,
+    Host,
+    HostReport,
+    ItemResolved,
+    Registry,
+    Run,
+    TimeoutExpired,
+)
+from fleet.container import Container
 from rich.console import Console, Group
 from rich.live import Live
 from rich.markup import escape
 from rich.text import Text
 from rich.tree import Tree
 
-from fleet.container import Container
-from fleet.modules import workspace as projects
-from fleet.modules.attention import ItemResolved
-from fleet.projections.history import parse_moment, parse_since
-from fleet.projections.project import filter_status
-from fleet.modules import attention as attention_module
-from fleet.modules.work import CONDITIONS, KINDS, RELATION_TYPES
-from fleet.modules.execution import Run
-from fleet.container import FleetError, Host, HostReport, TimeoutExpired
-from fleet.container import DispatchRequest
-from fleet.container import listing_arguments
-from fleet.container import merge_detected as parse_detected
-from fleet.container import validate_paths, default_actor as actor_identity
 from fleet_cli.plugins import load_command
 
 console = Console()
@@ -163,8 +166,8 @@ def render(reports: list[HostReport], *, group_by: str, brief: bool,
     return Group(*parts)
 
 
-def list_arguments(arguments: argparse.Namespace) -> list[str]:
-    return listing_arguments(since=arguments.since, all_jobs=arguments.all)
+def list_arguments(arguments: argparse.Namespace, *, container=None) -> list[str]:
+    return bootstrap_container(container).listing_arguments(since=arguments.since, all_jobs=arguments.all)
 
 
 def selected_hosts(arguments: argparse.Namespace, *, container) -> list[Host]:
@@ -839,7 +842,7 @@ def command_project_restore(arguments: argparse.Namespace, *, container) -> None
     console.print(f"restored {placement.project_id} {name} to floor {placement.floor}{cleared}", markup=False)
 
 
-def observed_labels(registry: projects.Registry, hosts: list[Host], *, container) -> tuple[list[tuple[str, str, str]], list[str]]:
+def observed_labels(registry: Registry, hosts: list[Host], *, container) -> tuple[list[tuple[str, str, str]], list[str]]:
     return container.projects().observed_labels(registry, hosts)
 
 
@@ -875,8 +878,8 @@ def command_building_capacity(arguments: argparse.Namespace, *, container) -> No
     console.print(f"the building has {arguments.floors} floors")
 
 
-def merge_detected(output: str) -> dict[str, str | None]:
-    return parse_detected(output)
+def merge_detected(output: str, *, container=None) -> dict[str, str | None]:
+    return bootstrap_container(container).merge_detected(output)
 
 
 def command_install(arguments: argparse.Namespace, *, container) -> None:
@@ -935,7 +938,7 @@ def command_status(arguments: argparse.Namespace, *, container) -> None:
     container.initialized_attention()
     projection = container.project_status(project=project)
     try:
-        projection = filter_status(projection, item=work_cli_id(arguments.item, container=container) if arguments.item is not None else None,
+        projection = container.filter_status(projection, item=work_cli_id(arguments.item, container=container) if arguments.item is not None else None,
                                    depth=arguments.depth, only_open=arguments.open)
     except LookupError as error:
         raise FleetError(str(error)) from error
@@ -1006,9 +1009,8 @@ def print_status_item(item: dict[str, Any], depth: int = 0) -> None:
         print_status_item(child, depth + 1)
 
 
-def resolve_cli_id(reference: str, identities: list[str], kind: str) -> str:
-    from fleet.identifiers import resolve_prefix
-    return resolve_prefix(reference, identities, kind)
+def resolve_cli_id(reference: str, identities: list[str], kind: str, *, container=None) -> str:
+    return bootstrap_container(container).resolve_prefix(reference, identities, kind)
 
 
 def work_cli_id(reference: str, *, container) -> str:
@@ -1145,16 +1147,16 @@ def command_decision_list(arguments: argparse.Namespace, *, container) -> None:
         print(f"  Guidance: {'unknown' if entry['guidance'] is None else describe_guidance(entry['guidance'])}")
 
 
-def history_cutoff(text: str) -> datetime:
+def history_cutoff(text: str, *, container=None) -> datetime:
     try:
-        return parse_moment(text)
+        return bootstrap_container(container).parse_moment(text)
     except ValueError as error:
         raise argparse.ArgumentTypeError(str(error)) from error
 
 
-def history_since(text: str) -> datetime:
+def history_since(text: str, *, container=None) -> datetime:
     try:
-        return parse_since(text)
+        return bootstrap_container(container).parse_since(text)
     except ValueError as error:
         raise argparse.ArgumentTypeError(str(error)) from error
 
@@ -1250,12 +1252,12 @@ def command_attention(arguments: argparse.Namespace, *, container) -> None:
 DEFAULT_PERMISSION_HELP = "permission acceptEdits (claude) or workspace-write (codex) unless --permission says otherwise"
 
 
-def default_actor() -> str:
-    return actor_identity()
+def default_actor(*, container=None) -> str:
+    return bootstrap_container(container).default_actor()
 
 
-def add_actor_option(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--actor", default=default_actor(),
+def add_actor_option(parser: argparse.ArgumentParser, *, container) -> None:
+    parser.add_argument("--actor", default=default_actor(container=container),
                         help="who the store records as doing this (default: job:$FLEET_JOB_ID inside a fleet job, "
                              "else user)")
 
@@ -1330,7 +1332,8 @@ def add_step_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--context", "-c", action="append", help="file/dir to copy into the job's context dir")
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_parser(*, container=None) -> argparse.ArgumentParser:
+    container = bootstrap_container(container)
     parser = argparse.ArgumentParser(prog="fleet", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -1365,7 +1368,7 @@ def build_parser() -> argparse.ArgumentParser:
     send.add_argument("--permission", help="claude: acceptEdits|bypassPermissions|plan|default; "
                                            "codex: read-only|workspace-write|danger-full-access; "
                                            "default acceptEdits / workspace-write")
-    add_actor_option(send)
+    add_actor_option(send, container=container)
     send.add_argument("--model", "-m")
     send.add_argument("--allow", action="append",
                       help="claude permission rule to pre-approve, e.g. 'Bash(ss:*)' (repeatable)")
@@ -1393,7 +1396,7 @@ def build_parser() -> argparse.ArgumentParser:
                                                "default acceptEdits / workspace-write")
     dispatch.add_argument("--id")
     dispatch.add_argument("--json", action="store_true")
-    add_actor_option(dispatch)
+    add_actor_option(dispatch, container=container)
     dispatch.set_defaults(handler=command_dispatch_work, permission=None, model=None, allow=None,
                           add_dir=None, env=None, keep_going=False, hold=False, wait=False,
                           context=None, steps_file=None, step_work_items=None)
@@ -1444,7 +1447,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_link.set_defaults(handler=command_run_link)
     resolve_unknown = run.add_parser("resolve-unknown", help="explicitly close an unknown run to permit retry")
     resolve_unknown.add_argument("run")
-    add_actor_option(resolve_unknown)
+    add_actor_option(resolve_unknown, container=container)
     resolve_unknown.set_defaults(handler=command_resolve_unknown)
     retry = run.add_parser(
         "retry", help="retry an action after its run has a known end: starts a new agent on the same host",
@@ -1452,7 +1455,7 @@ def build_parser() -> argparse.ArgumentParser:
                     f"and guidance, and its permission ({DEFAULT_PERMISSION_HELP} when the action named none). "
                     f"The new job is a new run of the same action.")
     retry.add_argument("run")
-    add_actor_option(retry)
+    add_actor_option(retry, container=container)
     retry.set_defaults(handler=command_run_retry)
 
     add = commands.add_parser("add", help="append steps to a job; if a step is blocked, they answer it",
@@ -1464,7 +1467,7 @@ def build_parser() -> argparse.ArgumentParser:
     add.add_argument("--retry", action="store_true", help="also re-queue failed/blocked/cancelled steps")
     add.add_argument("--no-answer", action="store_true",
                      help="append even when a blocked step waits for an answer (by default the steps answer it)")
-    add_actor_option(add)
+    add_actor_option(add, container=container)
     add_step_options(add)
     add.set_defaults(handler=command_add)
 
@@ -1617,7 +1620,7 @@ def build_parser() -> argparse.ArgumentParser:
                     "changed or undone. Optional: a project's first record creates one under fleet's home.")
     add_project_argument(management, 'id')
     management.add_argument('path', help='root of an existing Git working tree')
-    add_actor_option(management)
+    add_actor_option(management, container=container)
     project_restore = project.add_parser("restore", help="bring a shuttered project back from the storehouse to a floor")
     add_project_argument(project_restore, "id")
     add_project_argument(project_restore, "--shutter", metavar="OTHER-ID",
@@ -1682,7 +1685,7 @@ def build_parser() -> argparse.ArgumentParser:
     history = commands.add_parser("history", help="the audit trail: who changed what, and when")
     history.add_argument("--subject", help="a work item, attention item, project, run or other id; "
                                            "a unique id prefix or a subject such as attention:<id> also works")
-    history.add_argument("--since", type=history_since, help="an ISO date or time, or an age such as 12h or 7d")
+    history.add_argument("--since", type=lambda text: history_since(text, container=container), help="an ISO date or time, or an age such as 12h or 7d")
     history.add_argument("--json", action="store_true")
     history.set_defaults(handler=command_history)
     history_commands = history.add_subparsers(dest="history_command")
@@ -1696,7 +1699,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     history_prune = history_commands.add_parser(
         "prune", help="delete entries older than a date; shows what it would delete unless --yes")
-    history_prune.add_argument("--before", required=True, type=history_cutoff,
+    history_prune.add_argument("--before", required=True, type=lambda text: history_cutoff(text, container=container),
                                help="an ISO date or time (UTC unless it names a zone)")
     history_prune.add_argument("--yes", action="store_true", help="delete; without it nothing is deleted")
     history_prune.add_argument("--actor", default="user")
@@ -1711,14 +1714,14 @@ def build_parser() -> argparse.ArgumentParser:
     answer.add_argument("id", help="attention item ID (fleet attention list)")
     answer.add_argument("answer", help="the reply; for an item with options, an option's 1-based number or text")
     answer.add_argument("--next-step", help="also set the work item's next step (decisions only)")
-    add_actor_option(answer)
+    add_actor_option(answer, container=container)
     answer.set_defaults(handler=command_answer)
 
     attention = commands.add_parser("attention", help="stored questions, blockers and alerts").add_subparsers(
         dest="attention_command", required=True)
     attention_add = attention.add_parser("add", help="raise an attention item")
     attention_add.add_argument("headline")
-    attention_add.add_argument("--kind", required=True, choices=attention_module.KINDS)
+    attention_add.add_argument("--kind", required=True, choices=ATTENTION_KINDS)
     for field in ("project", "source", "source-reference", "context-reference", "actor"):
         attention_add.add_argument(f"--{field}", required=True,
                                    help=PROJECT_HELP if field == "project" else None)
@@ -1766,7 +1769,7 @@ def build_parser() -> argparse.ArgumentParser:
     building_parser = commands.add_parser("building", help="the deck's building: how many floors").add_subparsers(
         dest="building_command", required=True)
     building_capacity = building_parser.add_parser(
-        "capacity", help=f"show or set how many projects can be live at once (1 to {projects.MAX_CAPACITY})")
+        "capacity", help=f"show or set how many projects can be live at once (1 to {MAX_CAPACITY})")
     building_capacity.add_argument("floors", nargs="?", type=int)
     building_capacity.set_defaults(handler=command_building_capacity)
 
@@ -1796,11 +1799,15 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def bootstrap_container(container):
+    return Container() if container is None else container
+
+
 def main(argv: list[str] | None = None, *, container=None) -> None:
-    arguments = build_parser().parse_args(argv)
-    container = Container() if container is None else container
+    container = bootstrap_container(container)
+    arguments = build_parser(container=container).parse_args(argv)
     try:
-        for message in validate_paths(arguments.command):
+        for message in container.validate_paths(arguments.command):
             error_console.print(message, markup=False)
         container.store()
         # Worker decisions may belong to a controller's store, so resolve those only

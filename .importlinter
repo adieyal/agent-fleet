@@ -182,6 +182,12 @@ forbidden_modules =
     fleet.triage_scheduler
     fleet.ingestion
     fleet.transport
+    fleet.modules
+    fleet.projections
+    fleet.host_values
+    fleet.errors
+    fleet.identifiers
+    fleet.remote
 allow_indirect_imports = True
 
 # Distribution boundaries apply to every module, including indirect imports.
@@ -207,3 +213,18 @@ source_modules = fleet
 forbidden_modules =
     markdown_it
     mdit_py_plugins
+
+[importlinter:contract:api-passive]
+name = Public API has no implementation dependencies
+type = forbidden
+source_modules = fleet.api
+forbidden_modules =
+    fleet.container
+    fleet.transport
+    fleet.infrastructure
+    fleet.services
+    fleet.projections
+    fleet.ingestion
+    fleet.orchestration
+    fleet.triage
+    fleet.triage_scheduler

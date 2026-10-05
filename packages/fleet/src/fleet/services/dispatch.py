@@ -3,31 +3,11 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
 from uuid import uuid4
 
+from fleet.api import DispatchRequest
 from fleet.orchestration import guide, orchestrator_prompt
 from fleet.transport import FleetError
-
-
-@dataclass
-class DispatchRequest:
-    host: str
-    project: str
-    description: str
-    agent: str
-    cwd: str
-    work_item: str | None
-    permission: str | None
-    model: str | None
-    id: str | None
-    allow: list[str] | None
-    add_dir: list[str] | None
-    env: list[str] | None
-    keep_going: bool
-    context: list[str] | None
-    hold: bool
-    actor: str
 
 
 class Dispatch:

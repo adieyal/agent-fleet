@@ -4,16 +4,18 @@ from __future__ import annotations
 import shlex
 from typing import Any
 
+# Public renderer error/limit exports retained for callers.
+from fleet.api import ASSET_READ_LIMIT as ASSET_READ_LIMIT
+from fleet.api import IMAGE_TYPES as IMAGE_TYPES
+from fleet.api import STATUS_LINE, Host
+from fleet.api import AssetNotImage as AssetNotImage
+from fleet.api import AssetTooLarge as AssetTooLarge
+from fleet.api import DocumentAccessDenied as DocumentAccessDenied
+from fleet.api import FleetError as FleetError
 from markdown_it import MarkdownIt
 from mdit_py_plugins.anchors import anchors_plugin
 from mdit_py_plugins.footnote import footnote_plugin
 from mdit_py_plugins.tasklists import tasklists_plugin
-
-from fleet.container import STATUS_LINE, Host
-# Public renderer error/limit exports retained for callers.
-from fleet.container import (ASSET_READ_LIMIT as ASSET_READ_LIMIT, IMAGE_TYPES as IMAGE_TYPES,
-    AssetNotImage as AssetNotImage, AssetTooLarge as AssetTooLarge,
-    DocumentAccessDenied as DocumentAccessDenied, FleetError as FleetError)
 
 WORDS_PER_MINUTE = 230
 

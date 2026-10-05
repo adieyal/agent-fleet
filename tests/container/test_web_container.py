@@ -9,7 +9,7 @@ from urllib.request import urlopen
 
 from dependency_injector import providers
 
-from fleet.container import Host
+from fleet.api import Host
 from fleet_web.documents import fetch_document
 from fleet_web.library import ProjectLibrary
 from fleet_web.server import make_handler

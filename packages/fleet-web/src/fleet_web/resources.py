@@ -1,6 +1,7 @@
 """Static presentation resources supplied by the library container."""
 from fleet.container import Container
 
+
 def resources(container):
     return container.package_resources(package=__package__, source=__file__,
                                        member_root='packages/fleet-web/src/fleet_web')
