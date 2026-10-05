@@ -4,14 +4,15 @@ import json
 
 import pytest
 
-from fleet import composition
-from fleet.web.ingester import observe_runs
+
+from fleet.container import configured_container
+from fleet.ingestion import observe_runs
 
 
 def test_ingester_persists_steps_once_with_git_and_legacy_reason():
-    store = composition.open_store()
-    execution = composition.open_execution(store)
-    library = composition.open_library(store)
+    store = configured_container().store()
+    execution = configured_container(store).execution()
+    library = configured_container(store).library()
     git = {"base": "a" * 40, "head": "b" * 40, "commit_count": 1,
            "commits": [{"sha": "b" * 40, "at": 2, "subject": "Ship"}], "pushes": [], "base_is_ancestor": True}
     step = {"index": 0, "title": "Implement", "status": "done", "started_at": 1, "finished_at": 2, "git": git}
@@ -40,12 +41,12 @@ def test_ingester_persists_steps_once_with_git_and_legacy_reason():
     assert json.loads(changed["to"])["git"]["pushes"] == step["git"]["pushes"]
     host["jobs"] = {}  # removing the worker's job does not remove its stored steps
     observe_runs(execution, library, host)
-    assert composition.open_execution(composition.open_store(store.path)).steps(run.id)[0]["git"] == step["git"]
+    assert configured_container(configured_container(path=store.path).store()).execution().steps(run.id)[0]["git"] == step["git"]
 
 
 def test_step_writes_validate_run_and_roll_back_an_invalid_index():
-    store = composition.open_store()
-    execution = composition.open_execution(store)
+    store = configured_container().store()
+    execution = configured_container(store).execution()
     with pytest.raises(LookupError):
         execution.observe_steps("missing", [{"index": 0}])
     run = execution.record_observed("carbon", {"id": "job"})

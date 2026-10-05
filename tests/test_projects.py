@@ -3,9 +3,10 @@ import json
 
 import pytest
 
+from fleet.container import configured_container
 from fleet import transport
 from fleet.modules import workspace as projects
-from fleet.composition import open_workspace
+
 from fleet.projections.workspace import registry_config
 from workspace_support import persist_registry
 from fleet.modules.workspace import Link, Registry, Suggestion, normalize_repository
@@ -114,7 +115,7 @@ def test_duplicate_repository_forms_are_stored_once():
 
 def test_registry_round_trips_through_config_keeping_other_keys(config_path):
     config_path.write_text(json.dumps({"hosts": {"home": {}}, "project_labels": {"x": "X"}}))
-    registry = open_workspace().registry()
+    registry = configured_container().initialized_workspace().registry()
     project = registry.create("Agent Fleet", ["git@github.com:adieyal/agent-fleet.git"])
     registry.link(project.id, "home", "agent-fleet")
     persist_registry(registry)
@@ -122,14 +123,14 @@ def test_registry_round_trips_through_config_keeping_other_keys(config_path):
     stored = json.loads(config_path.read_text())
     assert stored["hosts"] == {"home": {}} and stored["project_labels"] == {"x": "X"}
     assert "projects" not in stored
-    assert registry_config(open_workspace().registry())[project.id]["links"] == [{"host": "home", "label": "agent-fleet"}]
-    reloaded = open_workspace().registry()
+    assert registry_config(configured_container().initialized_workspace().registry())[project.id]["links"] == [{"host": "home", "label": "agent-fleet"}]
+    reloaded = configured_container().initialized_workspace().registry()
     assert reloaded.project_for("home", "agent-fleet").id == project.id
 
 
 def test_config_without_projects_loads_empty(config_path):
     config_path.write_text(json.dumps({"hosts": {}, "project_labels": {"x": "X"}}))
-    assert open_workspace().registry().projects == {}
+    assert configured_container().initialized_workspace().registry().projects == {}
 
 
 @pytest.mark.parametrize("entries, message", [
@@ -140,4 +141,4 @@ def test_config_without_projects_loads_empty(config_path):
 def test_inconsistent_config_is_rejected(config_path, entries, message):
     config_path.write_text(json.dumps({"projects": entries}))
     with pytest.raises(FleetError, match=message):
-        open_workspace().registry()
+        configured_container().initialized_workspace().registry()

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PIL import Image
 
-FOLDER = Path(__file__).parent.parent / "fleet" / "web" / "assets" / "world" / "building"
+FOLDER = Path(__file__).parent.parent / "packages" / "fleet-web" / "src" / "fleet_web" / "static" / "assets" / "world" / "building"
 MANIFEST = json.loads((FOLDER / "manifest.json").read_text())
 PIECES = MANIFEST["pieces"]
 

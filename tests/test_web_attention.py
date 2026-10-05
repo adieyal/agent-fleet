@@ -9,11 +9,13 @@ from urllib.request import Request, urlopen
 
 import pytest
 
+from fleet.container import configured_container
 from fleet import transport
-from fleet.composition import open_workspace
-from fleet.composition import open_attention, open_store, open_decisions, open_work
+
+
 from fleet.transport import Host
-from fleet.web.server import FleetState, apply_message, make_handler
+from fleet.services.live import FleetState, apply_message
+from fleet_web.server import make_handler
 
 HOSTS = [Host("home", None), Host("gpu", "gpu.example")]
 
@@ -39,8 +41,7 @@ class Deck:
     """A live deck whose host state the test sets directly, as the host streams would."""
 
     def __init__(self, clock=None):
-        self.state = FleetState(HOSTS, {}, open_workspace().registry, open_workspace(),
-                               store=open_store(clock=clock))
+        self.state = FleetState(HOSTS, {}, configured_container().initialized_workspace().registry, configured_container().initialized_workspace(), container=configured_container(store=configured_container(clock=clock).store()))
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(self.state))
         threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
         self.url = f"http://127.0.0.1:{self.server.server_port}"
@@ -86,7 +87,7 @@ def deck(config_path):
 
 
 def stored_actions(config_path):
-    return {item.id: {"state": item.state} for item in open_attention().list()
+    return {item.id: {"state": item.state} for item in configured_container().initialized_attention().list()
             if item.state in ("acknowledged", "snoozed")}
 
 
@@ -94,7 +95,7 @@ def test_decision_reader_and_answer(deck, monkeypatch):
     from fleet.modules.execution import ExecutionFacade
     deliveries = []
     monkeypatch.setattr(ExecutionFacade, "retry_deliveries", lambda self, **kw: deliveries.append(kw))
-    work = open_work(deck.state.store)
+    work = configured_container(deck.state.store).work()
     item = work.add(project="p", title="Ship", goal="Ship", actor="author")
     work.set(item.id, condition="blocked", actor="author")
     question = deck.state.attention.raise_item(project="p", work_item=item.id,
@@ -116,7 +117,7 @@ def test_decision_reader_and_answer(deck, monkeypatch):
         headers={"Content-Type": "application/json"})
     with urlopen(request, timeout=5) as response:
         assert response.status == 200
-    decision, = open_decisions(deck.state.store).list()
+    decision, = configured_container(deck.state.store).decisions().list()
     assert (decision.actor, decision.answer, decision.attention_item) == ("user", "Scenic", question.id)
     assert deck.state.attention.get(question.id).state == "resolved"
     assert deck.state.attention.get(other.id).state == "open"
@@ -130,11 +131,9 @@ def test_decision_reader_and_answer(deck, monkeypatch):
 
 def test_decision_reader_shows_proposal_without_writes(deck, monkeypatch):
     from types import SimpleNamespace
-    proposal = open_decisions(deck.state.store).propose(
-        SimpleNamespace(project="p", work_item="w", actor="agent", id="activation", mandate_version="v1"),
-        question="Run migration?", change="fleet migrate <database>", reason="Schema needs updating")
+    proposal = configured_container(deck.state.store).decisions().propose(SimpleNamespace(project='p', work_item='w', actor='agent', id='activation', mandate_version='v1'), question='Run migration?', change='fleet migrate <database>', reason='Schema needs updating')
     item, = deck.state.attention.list()
-    decisions = open_decisions(deck.state.store)
+    decisions = configured_container(deck.state.store).decisions()
     assert decisions.proposal_for_attention(item.source, item.source_reference) == proposal
     assert decisions.proposal_for_attention('manual', proposal.id) is None
     assert decisions.proposal_for_attention('proposal', 'missing') is None
@@ -210,7 +209,7 @@ def test_items_resolve_when_their_condition_clears(deck, config_path):
     deck.state.update("home", lambda entry: None, subjects={"job:home:gone"}, deleted_jobs={"job:home:gone"})
     assert deck.state.attention.get(first["home:gone"]["id"]).state == "resolved"
     assert stored_actions(config_path) == {}   # resolved items no longer carry an active action
-    assert all(item.resolution_details for item in open_attention().list())
+    assert all((item.resolution_details for item in configured_container().initialized_attention().list()))
 
     deck.report("home", jobs=[job("f1", "failed", [("failed", 300)])], sessions=[answered])
     again = deck.items()["home:f1"]
@@ -460,7 +459,7 @@ def test_restreamed_resolved_failure_remains_visible(deck, resolution):
     document = deck.state.document()
     assert document["hosts"][0]["jobs"][0]["status"] == "failed"
     assert deck.state.execution.runs()[0].status == "failed"
-    result = subprocess.run([sys.executable, "-m", "fleet.cli", "attention", "list", "--state", "resolved"],
+    result = subprocess.run([sys.executable, "-m", "fleet_cli.cli", "attention", "list", "--state", "resolved"],
                             env=dict(os.environ), capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stderr
     listed, = json.loads(result.stdout)

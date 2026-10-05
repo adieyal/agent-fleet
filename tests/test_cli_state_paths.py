@@ -5,22 +5,22 @@ from pathlib import Path
 import pytest
 from rich.console import Console
 
-from fleet import cli
+from fleet_cli import cli
 
 
 @pytest.mark.parametrize("arguments", [["project", "ls"], ["host", "add", "demo", "--local"], ["web"]])
-def test_missing_config_fails_before_creating_store(tmp_path, monkeypatch, arguments):
+def test_missing_config_fails_before_creating_store(tmp_path, monkeypatch, arguments, override_cli_method, cli_container):
     root = tmp_path / "deleted-preview"
     config = root / "config.json"
     monkeypatch.setenv("FLEET_CONFIG", str(config))
     monkeypatch.setenv("FLEET_STORE", str(root / "fleet.db"))
     errors = Console(record=True, width=300, no_color=True)
     monkeypatch.setattr(cli, "error_console", errors)
-    monkeypatch.setattr(cli, "serve", lambda *args, **kwargs: None)
-    monkeypatch.setattr(cli, "selected_hosts", lambda arguments: [])
+    monkeypatch.setattr(cli, "load_command", lambda name: lambda *args, **kwargs: None)
+    override_cli_method('jobs', 'selected_hosts', lambda arguments: [])
 
     with pytest.raises(SystemExit) as exited:
-        cli.main(arguments)
+        cli.main(arguments, container=cli_container)
 
     assert exited.value.code == 2
     assert "FLEET_CONFIG" in errors.export_text(clear=False)
@@ -56,7 +56,7 @@ def test_web_announces_explicit_store_initialization(tmp_path, monkeypatch):
     monkeypatch.setenv("FLEET_STORE", str(store))
     errors = Console(record=True, width=300, no_color=True)
     monkeypatch.setattr(cli, "error_console", errors)
-    monkeypatch.setattr(cli, "serve", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cli, "load_command", lambda name: lambda *args, **kwargs: None)
 
     cli.main(["web", "--port", "0"])
 

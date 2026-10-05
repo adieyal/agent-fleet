@@ -23,53 +23,36 @@ Attention and Decisions may start as one package if their lifecycles are impleme
 ## Target layout
 
 ```text
-fleet/
-├── __init__.py
-├── cli.py                          # installed `fleet.cli:main`; thin delivery wrapper
-├── composition.py                  # construct adapters and inject them into facades
-├── modules/
-│   ├── __init__.py
-│   ├── workspace/                 # each implemented module has the shape below
-│   ├── work/
-│   ├── execution/
-│   ├── authority/
-│   ├── decisions/
-│   ├── attention/
-│   ├── library/
-│   ├── observations/
-│   └── records/
-├── infrastructure/
-│   ├── sqlite/
-│   │   ├── migrations/            # one ordered schema; tables name their owner
-│   │   ├── unit_of_work.py        # transaction and state-history sequence
-│   │   └── ...                    # persistence adapters implementing module ports
-│   ├── config/                    # host settings and one-time legacy import
-│   ├── ssh/                       # fleetd command and stream transport
-│   ├── git/                       # serialized repository writer
-│   └── documents/                 # constrained local/host document reads
-├── projections/
-│   ├── project.py                 # assemble module-owned read results
-│   ├── building.py                # placement and attention roll-ups for display
-│   └── status.py                  # CLI and deck state documents
-├── web/
-│   ├── server.py                  # HTTP/SSE delivery and static asset serving
-│   ├── ingester.py                # stream process adapter calling module facades
-│   ├── documents.py               # Markdown response rendering
-│   ├── fixture.py                 # demo adapter
-│   ├── index.html
-│   ├── css/  js/  assets/  vendor/ # existing deck assets
-│   └── ...
-└── remote/
-    └── fleetd.py                 # standalone stdlib-only worker installed on hosts
+pyproject.toml                         # non-built uv workspace and root dev tools
+packages/
+├── fleet/src/fleet/
+│   ├── container.py                   # dependency-injector; owns adapter construction
+│   ├── modules/                       # public facades, application ports and domain
+│   ├── infrastructure/                # SQLite, configuration, Git and documents
+│   ├── services/                      # controller workflows
+│   ├── projections/                   # assembled read models
+│   ├── ingestion.py                   # applies worker observations
+│   ├── transport.py                   # worker calls, streams, shell and rsync
+│   └── remote/fleetd.py               # standalone stdlib-only worker
+├── fleet-cli/src/fleet_cli/
+│   ├── cli.py                         # installed fleet console script
+│   └── plugins.py                     # fleet.commands distribution metadata loader
+└── fleet-web/src/fleet_web/
+    ├── entrypoint.py                  # standalone fleet-web and web plugin
+    ├── server.py                      # HTTP/SSE presentation
+    ├── documents.py                   # Markdown response rendering
+    ├── fixture.py                     # fixture presentation
+    └── static/                        # index, CSS, JS, assets, vendor and prototypes
 
 tests/
-├── modules/<name>/               # pure domain and application tests, fake ports
-├── integration/                  # real SQLite, Git, SSH, document adapters
-├── projections/                  # assembled read-contract tests
-└── ...                           # existing CLI, web, worker and browser tests
+├── modules/<name>/                    # domain/application tests with fake ports
+├── integration/                       # SQLite, Git, worker and document adapters
+├── projections/                       # assembled read-contract tests
+├── container/                         # provider overrides and unit bindings
+└── packaging/                         # installed distributions and plugin contract
 ```
 
-The directory `fleet/modules/` substitutes for the skill's `backend/modules/` because this project installs `fleet` as its Python package. `fleet/infrastructure/` is the corresponding external adapter root. `composition.py` performs dependency injection only. SQLite connection handling, migrations, transaction scope and change-log writes live in `infrastructure/sqlite/`; there is no separate controller package containing business behavior. The controller remains the in-process composition of modules and adapters.
+The directory `packages/fleet/src/fleet/modules/` substitutes for the skill's `backend/modules/` because this project installs `fleet` as its Python package. `packages/fleet/src/fleet/infrastructure/` is the corresponding external adapter root. `fleet.container` performs dependency injection only. SQLite connection handling, migrations, transaction scope and change-log writes live in `infrastructure/sqlite/`; there is no separate controller package containing business behavior. The controller remains the in-process composition of modules and adapters.
 
 Projections may assemble already computed module results, group markers for display, and format read documents. Work computes accepted progress, Observations computes freshness, and Attention determines which items are open. A projection cannot create a second completion or freshness policy. The CLI and web server use module facades for commands and projections for reads.
 
@@ -78,7 +61,7 @@ Projections may assemble already computed module results, group markers for disp
 Execution is the example. The names below show the skill's layer boundaries; create individual files only when they contain real behavior.
 
 ```text
-fleet/modules/execution/
+packages/fleet/src/fleet/modules/execution/
 ├── __init__.py                    # supported public import surface
 ├── facade.py                      # sole behavioral entrypoint for callers
 ├── domain/
@@ -101,7 +84,7 @@ fleet/modules/execution/
 
 `__init__.py` exports `ExecutionFacade`, the support DTOs and ports needed by callers and wiring, and module exceptions. It does not export use cases, parsing helpers or private domain types. Facade methods accept caller-friendly inputs and delegate to use cases. Domain code enforces legal transitions with standard-library types. Application code owns workflow order and explicit update semantics. Its ports expose mechanical operations such as `get_run`, `save_run`, and `send_create`, not `decide_failure` or `choose_host`. Adapters implement those ports without policy. Known shapes cross the public boundary as typed DTOs, not nested `dict[str, Any]` values.
 
-Within a module, imports are relative. An external caller imports from `fleet.modules.execution`, never `fleet.modules.execution.application...`. Modules never import `fleet.infrastructure`, `fleet.web`, or `fleet.cli`. Production adapters are constructed in `composition.py` and injected through facade constructors. A module can therefore be tested using fake ports.
+Within a module, imports are relative. An external caller imports from `fleet.modules.execution`, never `fleet.modules.execution.application...`. Modules never import `fleet.infrastructure`, `fleet_web`, or `fleet_cli`. Production adapters are constructed in `fleet.container` and injected through facade constructors. A module can therefore be tested using fake ports.
 
 ## A cross-module command
 
@@ -115,11 +98,11 @@ The dispatch use case records intent before the SSH adapter sends a worker comma
 | --- | --- |
 | `fleet/projects.py`, `fleet/workspace.py`, `fleet/building.py` | Workspace domain/application; JSON import and SQLite writes become infrastructure adapters. |
 | `fleet/attention.py` | Attention policy and use cases; visual marker assembly goes to projections. |
-| `fleet/cli.py` | Retain entrypoint; remove business decisions after facade commands exist. |
+| `packages/fleet-cli/src/fleet_cli/cli.py` | Retain entrypoint; remove business decisions after facade commands exist. |
 | `fleet/transport.py` | SSH and config adapters; transport exceptions translate at the adapter boundary. |
-| `fleet/web/live.py`, state logic in `fleet/web/server.py` | Module-owned state and projections; stream handling goes to `web/ingester.py`. |
-| `fleet/web/library.py`, `fleet/web/documents.py` | Library indexing, constrained document-read adapter, and web Markdown renderer respectively. |
-| `fleet/web/fixture.py` | Demo/test adapter outside business modules. |
-| `fleet/remote/fleetd.py` | Preserve one standalone file and its installation path. |
+| `packages/fleet-web/src/fleet_web/live.py`, state logic in `packages/fleet-web/src/fleet_web/server.py` | Module-owned state and projections; stream handling goes to `web/ingester.py`. |
+| `packages/fleet-web/src/fleet_web/library.py`, `packages/fleet-web/src/fleet_web/documents.py` | Library indexing, constrained document-read adapter, and web Markdown renderer respectively. |
+| `packages/fleet-web/src/fleet_web/fixture.py` | Demo/test adapter outside business modules. |
+| `packages/fleet/src/fleet/remote/fleetd.py` | Preserve one standalone file and its installation path. |
 
 Start with the first [workspace-plan](first-working-workspace-plan.md) increment: implement Workspace's domain, use cases, facade and SQLite port, wire both CLI and web to that facade, then retire the corresponding JSON writes. Add other modules when their records and commands arrive. Do not retain active forwarding aliases in old files once callers have moved.

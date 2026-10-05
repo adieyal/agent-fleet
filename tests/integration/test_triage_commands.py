@@ -2,7 +2,8 @@ import json
 
 import pytest
 
-from fleet import cli, composition
+from fleet.container import configured_container
+from fleet_cli import cli
 from fleet.modules.attention import InputObservation, StreamContext
 from fleet.modules.authority import Activation, AuthorityRejected
 from fleet.modules.execution import GrantResult, JobObservation
@@ -12,8 +13,8 @@ from fleet.orchestration import ControllerCommands, triage_prompt
 
 @pytest.fixture
 def triage(project_id, tmp_path):
-    services = composition.facades(composition.open_store())
-    composition.open_workspace(services.store)
+    services = configured_container(configured_container().store()).services()
+    configured_container(services.store).initialized_workspace()
     body = dict(goal='Triage', constraints=[], escalation_conditions=[], criteria_it_may_judge=[],
                 decision_authority=['retry', 'add_step', 'grant', 'resolve_attention', 'escalate', 'record_decision'],
                 host='carbon', runtime='codex', cwd=str(tmp_path), permission='acceptEdits', routing={},
@@ -35,7 +36,7 @@ def triage(project_id, tmp_path):
         return 'retry submitted' if request.retry else 'added step 2'
 
     services.execution.grant, services.execution.step = grant, step
-    return services, activation, ControllerCommands(services.store, activation.id), calls, body, run
+    return services, activation, ControllerCommands(services, activation.id), calls, body, run
 
 
 def item(triage, status='failed', *, owner='agent', job='j', project=None, work_item=None):
@@ -322,7 +323,8 @@ def test_cli_retry_delivers_the_queued_run(triage, monkeypatch, capsys):
     services.execution.observe('carbon', JobObservation(target.remote_job_id, 'failed', 'codex', None, None, None))
     attention = item(triage, job=target.remote_job_id)
     delivered = []
-    monkeypatch.setattr(cli, 'deliver_dispatch', lambda run, **kwargs: delivered.append(run.id))
+    from fleet.services.dispatch import Dispatch
+    monkeypatch.setattr(Dispatch, 'deliver', lambda self, run, **kwargs: delivered.append(run.id))
     cli.main(['control', activation.id, 'retry', json.dumps(dict(item=attention.id, reason='transient'))])
     result = json.loads(capsys.readouterr().out)
     assert delivered == [result['run']] and delivered[0] != target.id
@@ -378,7 +380,7 @@ def test_mandate_must_authorize_the_specific_command(triage):
     services.execution.dispatch(None, project=activation.project, host='carbon', runtime='codex',
         payload={'cwd': body['cwd']}, actor=restricted.actor, activation=restricted.id,
         reason='Triage', idempotency_key=restricted.id)
-    commands = ControllerCommands(services.store, restricted.id)
+    commands = ControllerCommands(services, restricted.id)
     attention = item(triage)
     before = services.store.latest_sequence()
     with pytest.raises(AuthorityRejected, match='does not authorize retry'):
@@ -406,7 +408,7 @@ def test_undispatched_activation_cannot_send_or_mutate(triage):
     attention = item(triage)
     before = services.store.latest_sequence()
     with pytest.raises(AuthorityRejected, match='source run'):
-        ControllerCommands(services.store, new.id).execute('retry', dict(item=attention.id, reason='transient'))
+        ControllerCommands(services, new.id).execute('retry', dict(item=attention.id, reason='transient'))
     assert calls == [] and services.store.latest_sequence() == before
 
 
@@ -417,7 +419,7 @@ def test_readonly_writer_lock_keeps_decision_pending_and_controller_publishes(tr
     from fleet.infrastructure.git import RepositoryWriter
     from fleet.projections.history import subject_history
     from fleet.triage_scheduler import TriageScheduler
-    from fleet.web.server import FleetState
+    from fleet.services.live import FleetState
 
     services, activation, commands, calls, body, _ = triage
     job = 'legacy'
@@ -453,6 +455,8 @@ def test_readonly_writer_lock_keeps_decision_pending_and_controller_publishes(tr
                for entry in history['entries'] for change in entry['changes'])
     server = FleetState.__new__(FleetState)
     server.store = services.store
+    server.records, server.decisions = services.records, services.decisions
+    server.schedule = lambda: None
     monkeypatch.setattr(TriageScheduler, 'schedule', lambda self: None)
     server.schedule_triage()  # Still sandboxed: pending intent survives repeated reconciliation.
     assert next(entry for entry in services.records.intents() if entry['key'] == decision.id)['state'] == 'pending'
@@ -504,7 +508,7 @@ def test_partial_retry_escalation_respects_revoked_authority(triage, revocation)
         services.execution.dispatch(None, project=activation.project, host='carbon', runtime='codex',
             payload={'cwd': body['cwd']}, actor=other.actor, activation=other.id,
             reason='Triage', idempotency_key=other.id)
-        commands = ControllerCommands(services.store, other.id)
+        commands = ControllerCommands(services, other.id)
     before = services.store.latest_sequence()
     with pytest.raises(AuthorityRejected):
         commands.execute('escalate', dict(item=attention.id, reason='unconfirmed action', principle='mandate'))
@@ -545,7 +549,7 @@ def test_reopened_escalation_insert_failure_preserves_prior_resolution(triage, m
 def test_audit3_unavailable_policy_keeps_deck_state_readable(triage, tmp_path, monkeypatch):
     from pathlib import Path
     from fleet.triage_scheduler import TriageScheduler
-    from fleet.web.server import FleetState
+    from fleet.services.live import FleetState
     services, activation, *_ = triage
     attention = item(triage, owner='user')
     root = Path(services.workspace.management_repository(activation.project))
@@ -558,7 +562,7 @@ def test_audit3_unavailable_policy_keeps_deck_state_readable(triage, tmp_path, m
         return require_delegable(*args, **kwargs)
     monkeypatch.setattr(type(services.attention), 'require_delegable', check_delegation)
     try:
-        state = FleetState([], store=services.store)
+        state = FleetState([], container=configured_container(store=services.store))
         document = state.document()
         status = document['triage'][activation.project]
         assert str(root) in status['policy_error']

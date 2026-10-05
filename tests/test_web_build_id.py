@@ -2,7 +2,7 @@
 import os
 from pathlib import Path
 
-from fleet.web.server import build_id
+from fleet_web.server import build_id
 
 
 def test_the_build_changes_when_a_served_file_changes(tmp_path: Path) -> None:

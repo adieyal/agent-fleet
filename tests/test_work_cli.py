@@ -3,7 +3,7 @@ import subprocess
 
 import pytest
 
-from fleet.cli import main
+from fleet_cli.cli import main
 
 
 def test_work_commands_end_to_end(tmp_path, capsys, project_id):

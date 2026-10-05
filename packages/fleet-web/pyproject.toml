@@ -1,0 +1,27 @@
+[project]
+name = "fleet-web"
+version = "0.1.0"
+description = "Fleet HTTP dashboard and packaged static resources"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+dependencies = ['fleet==0.1.0', 'markdown-it-py>=3', 'mdit-py-plugins>=0.4']
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fleet_web"]
+
+[project.scripts]
+fleet-web = "fleet_web.entrypoint:main"
+
+[project.entry-points."fleet.commands"]
+web = "fleet_web.entrypoint:run"
+
+[tool.hatch.build]
+artifacts = ["src/fleet_web/static/**"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/fleet_web", "pyproject.toml"]

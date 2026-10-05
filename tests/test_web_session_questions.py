@@ -5,8 +5,9 @@ from urllib.request import urlopen
 
 import pytest
 
-from fleet.composition import open_workspace
-from fleet.web.server import apply_message
+
+from fleet.container import configured_container
+from fleet.services.live import apply_message
 from test_web_attention import HOSTS, Deck
 from test_web_refusals import post
 
@@ -42,8 +43,8 @@ def decision(deck, item_id):
 
 
 def test_a_session_question_is_an_item_until_the_terminal_answers_it(deck):
-    project = open_workspace().edit_registry(lambda registry: registry.create("Restoke V2"))
-    open_workspace().edit_registry(lambda registry: registry.link(project.id, "home", "restoke"))
+    project = configured_container().initialized_workspace().edit_registry(lambda registry: registry.create('Restoke V2'))
+    configured_container().initialized_workspace().edit_registry(lambda registry: registry.link(project.id, 'home', 'restoke'))
     deck.state.refresh_registry()   # as every pushed document does
     for _ in range(3):
         apply_message(deck.state, HOSTS[0], asked())
@@ -102,7 +103,7 @@ def test_batch12_stream_and_hook_question_share_one_open_item(deck, order):
 
 def test_legacy_stream_session_question_is_terminal_only(deck):
     from fleet.modules.attention.domain import StreamContext
-    from fleet.composition import open_decisions
+
     item = deck.state.attention.raise_item(project='restoke', kind='decision', owner='user',
         source='stream:home', source_reference='session:home:legacy:question',
         headline='Keep the double fetch behind a flag?', context_reference='session:home:legacy',
@@ -116,4 +117,4 @@ def test_legacy_stream_session_question_is_terminal_only(deck):
     assert status == 400 and 'terminal' in body['error']
     assert deck.state.attention.get(item.id).state == 'open'
     assert deck.state.store.latest_sequence() == sequence
-    assert open_decisions(deck.state.store).list() == []
+    assert configured_container(deck.state.store).decisions().list() == []

@@ -19,7 +19,7 @@ def test_existing_deck_activity_classification(name, summary, expected):
 
 
 def test_demo_observations_use_the_shared_classification():
-    source = (Path(__file__).parents[3] / "fleet/web/js/demo-events.js").read_text()
+    source = (Path(__file__).parents[3] / "packages/fleet-web/src/fleet_web/static/js/demo-events.js").read_text()
     catalog = json.loads(source.split("export const demoEvents = ", 1)[1].rstrip(";\n"))
     for events in catalog.values():
         for event in events:

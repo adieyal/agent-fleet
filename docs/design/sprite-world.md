@@ -4,7 +4,7 @@
 
 ## Decisions this builds on
 
-- **2D canvas, no WebGL.** The world must stay above 60 fps with the GPU disabled (`--disable-gpu`, SwiftShader). The bake-off measured B2 sprites at 4.3 ms a frame without a GPU; the pre-lit glTF variant ran at 6–8 fps (the bake-off in `art/bakeoff/` and `fleet/web/prototype/bakeoff.*`; its report is in fleet job 90208f's outbox).
+- **2D canvas, no WebGL.** The world must stay above 60 fps with the GPU disabled (`--disable-gpu`, SwiftShader). The bake-off measured B2 sprites at 4.3 ms a frame without a GPU; the pre-lit glTF variant ran at 6–8 fps (the bake-off in `art/bakeoff/` and `packages/fleet-web/src/fleet_web/static/prototype/bakeoff.*`; its report is in fleet job 90208f's outbox).
 - **Assets come from three sources**, one per kind of object:
 
   | Kind | Source | Why |
@@ -12,7 +12,7 @@
   | Static props (benches, plants, shelves, lantern, question desk, podium, lobby furniture) | AI, one curated generation each (`art/scripts/gen_sprite.py` via ChatMock), finished by `finish.py` | Closest match to the concept art on the first try; nothing animates |
   | Floors and flat walls | Tiled textures, affine-mapped onto their planes | Exact for an orthographic camera; any length, a few KB |
   | Architecture with volume (wall caps, pilasters, corners, cut wall ends, slab edge, lift bay) | Blender renders from the sprite camera, on host home | Pieces must line up exactly and carry real contact shading |
-  | Robots | Blender paper-doll layers (parallel job, `fleet/web/assets/world/robot/`) | Consistent frames, tint masks and occlusion layers; bake-off B2 frames stand in until they land |
+  | Robots | Blender paper-doll layers (parallel job, `packages/fleet-web/src/fleet_web/static/assets/world/robot/`) | Consistent frames, tint masks and occlusion layers; bake-off B2 frames stand in until they land |
 
 - **Glow is never baked into a sprite.** Lamps, wall washers, lit tiles and the lantern halo are separate sprites switched by state, so light can follow activity.
 
@@ -20,7 +20,7 @@
 
 **World space** is metres on one floor: `x` runs along the back wall from the left wall, `y` runs from the front edge of the floor towards the back wall, `z` is up. This is the bake-off's orientation (Blender, Z up), so bake-off scenes drop in by translation.
 
-**One camera for every sprite and every zoom.** The canonical camera every Fleet render shares (`docs/design/art-direction.md`, "Camera"; `artlib.canonical_camera`): oblique onto a vertical picture plane, yaw 30°, rays falling at atan(1/2), so one metre along x, y and z lands at (0.866, 0.25), (0.5, −0.433) and (0, −1) × px/m, right and down (`fleet/web/js/world/projection.js`). Verticals stay vertical and full length. Blender pieces, the props, the robots and the procedural sprites are all made with it, and there are no AI props left. Every manifest records the camera's axes and the engine refuses one that differs. Changing it means re-rendering everything, so it is fixed. (It was orthographic, pitch 28°, yaw 33° from floor review 1 until the canonical camera, whose verticals were 12% short, and pitch 44.5°, yaw 21.25° before that.) The camera never turns; the prototype's ±15° turn is a 3D-only feature and is dropped.
+**One camera for every sprite and every zoom.** The canonical camera every Fleet render shares (`docs/design/art-direction.md`, "Camera"; `artlib.canonical_camera`): oblique onto a vertical picture plane, yaw 30°, rays falling at atan(1/2), so one metre along x, y and z lands at (0.866, 0.25), (0.5, −0.433) and (0, −1) × px/m, right and down (`packages/fleet-web/src/fleet_web/static/js/world/projection.js`). Verticals stay vertical and full length. Blender pieces, the props, the robots and the procedural sprites are all made with it, and there are no AI props left. Every manifest records the camera's axes and the engine refuses one that differs. Changing it means re-rendering everything, so it is fixed. (It was orthographic, pitch 28°, yaw 33° from floor review 1 until the canonical camera, whose verticals were 12% short, and pitch 44.5°, yaw 21.25° before that.) The camera never turns; the prototype's ±15° turn is a 3D-only feature and is dropped.
 
 With `c = (cx, cy, cz)` the view centre and `ppm` the zoom in screen pixels per metre, a world point `p` lands at:
 
@@ -45,7 +45,7 @@ A **sprite** is an image, drawn at one of several pixel densities, with an **anc
 
 **Footprint.** Every standing object has a box in world space: `[x0, y0, z0, x1, y1, z1]` relative to its anchor point. Footprints drive depth sorting, the navigation grid, contact shadows and the fallback hit box. Objects are rendered in one facing each; a second facing is a second render, never a mirror (with a 21.25° yaw, a mirror shows the wrong side).
 
-**Tint.** Host colours are applied at load: the grey shell multiplied by the host colour through the sprite's tint mask, into a cached bitmap per (sprite, frame sheet, colour). The bake-off's tinting (`fleet/web/prototype/bakeoff.js`, `tinted`) is the method.
+**Tint.** Host colours are applied at load: the grey shell multiplied by the host colour through the sprite's tint mask, into a cached bitmap per (sprite, frame sheet, colour). The bake-off's tinting (`packages/fleet-web/src/fleet_web/static/prototype/bakeoff.js`, `tinted`) is the method.
 
 **State variants** are derived once, cached, and never computed per frame:
 - *stale*: desaturated and lifted towards the fog colour;
@@ -54,7 +54,7 @@ A **sprite** is an image, drawn at one of several pixel densities, with an **anc
 
 ### Manifest
 
-Each asset family has a `manifest.json` beside its files under `fleet/web/assets/world/<family>/` (`arch`, `props`, `textures`, `robot`, `glow`). Every manifest records the camera it was made for; the loader refuses a manifest whose camera differs from the runtime's.
+Each asset family has a `manifest.json` beside its files under `packages/fleet-web/src/fleet_web/static/assets/world/<family>/` (`arch`, `props`, `textures`, `robot`, `glow`). Every manifest records the camera it was made for; the loader refuses a manifest whose camera differs from the runtime's.
 
 ```jsonc
 {
@@ -89,13 +89,13 @@ Each asset family has a `manifest.json` beside its files under `fleet/web/assets
 }
 ```
 
-The robot manifest is defined by the robot job in `docs/design/robot-sprites.md`. The runtime needs from it, per pose and facing: frame sheets with fps and loop flag; `under` and `over` layers for seated poses (the part below and above the desk top); a shell tint mask; the eyes as a separate layer so they can dim; and per-frame anchors for `seat` or `feet`, `hand.R` (held items), `head` (nods and shakes move the head layer) and `bubble` (the action glyph). The v2 set (`fleet/web/assets/world/robot/sprites/sprites.json`, manifest version 2) is what the floor reads; see *Robots* below.
+The robot manifest is defined by the robot job in `docs/design/robot-sprites.md`. The runtime needs from it, per pose and facing: frame sheets with fps and loop flag; `under` and `over` layers for seated poses (the part below and above the desk top); a shell tint mask; the eyes as a separate layer so they can dim; and per-frame anchors for `seat` or `feet`, `hand.R` (held items), `head` (nods and shakes move the head layer) and `bubble` (the action glyph). The v2 set (`packages/fleet-web/src/fleet_web/static/assets/world/robot/sprites/sprites.json`, manifest version 2) is what the floor reads; see *Robots* below.
 
-**The floor kit** (`fleet/web/assets/world/kit/`, built as described in `art/kit/README.md`) is the first family built. Its manifest adds a `layer` hint per sprite (`ground`, `standing` or `light`), named `slots` (seats, lamp and lantern points, the plan wall's tile grid, the lift's indicator), `cells` for sheets of states without a frame rate (an item picks one with `cell`), and a `scale` record measured against l1 and l2. Lamps are separate from benches, and every warm light (desk pool, lit shade, wall-washer scallop, floor spill, lantern halo) is its own additive sprite whose placed item carries an `intensity`, as *Glow* above requires. The engine loads several manifests side by side with a prefix per manifest.
+**The floor kit** (`packages/fleet-web/src/fleet_web/static/assets/world/kit/`, built as described in `art/kit/README.md`) is the first family built. Its manifest adds a `layer` hint per sprite (`ground`, `standing` or `light`), named `slots` (seats, lamp and lantern points, the plan wall's tile grid, the lift's indicator), `cells` for sheets of states without a frame rate (an item picks one with `cell`), and a `scale` record measured against l1 and l2. Lamps are separate from benches, and every warm light (desk pool, lit shade, wall-washer scallop, floor spill, lantern halo) is its own additive sprite whose placed item carries an `intensity`, as *Glow* above requires. The engine loads several manifests side by side with a prefix per manifest.
 
 ### Robots
 
-The v2 robot sprites (`docs/design/robot-sprites.md`) come in through `fleet/web/js/world/robots.js`:
+The v2 robot sprites (`docs/design/robot-sprites.md`) come in through `packages/fleet-web/src/fleet_web/static/js/world/robots.js`:
 - **Composition:** each look (host colour and kit, agent, tone), clip, facing and part becomes one engine sprite (`World.define` with a `compose` source). Its frames are composed from the layers the first time they are drawn: the shell and kit tinted through their masks, the white face multiplied by the agent's colour (dimmed for the stalled and resting tones). The engine then sorts, scales, caches and hit-tests them like any sprite. Composed frames are kept up to 160 MB, least recently drawn first; the 4x set loads only when zoomed close.
 - **Seating:** a seated robot is its `body_low` part attached just before its desk module and its `body_high` part (face, kit, items) just after: the sprites are split at the 0.74 m desk top when rendered. It sits by its `foot` on the floor point under the seat point, 0.159 m behind the desk's far edge. Its chair is the kit's, with the gas lift raised to 0.549 m (`render_props.py`), centred 0.244 m further back (`seat_furniture`).
 - **Seated shadows:** the rebuilt robot's feet hang clear of the floor on the raised chair, so its rendered shadow, on the floor straight under it, showed below the desk's near edge, detached from the robot (the preview's bench scene). A seated robot's shadow is drawn under its chair instead, where the chair's seat would catch it, as a ground sprite. The preview does the same and draws its chairs' five-spoke bases.
@@ -288,12 +288,12 @@ Glow sprites are pre-rendered radial bitmaps per kind and tier, drawn with `glob
 
 ## Routes and motion
 
-The deck's android behaviour (`fleet/web/js/motion.js`) must reach parity, so the runtime separates behaviour from drawing:
+The deck's android behaviour (`packages/fleet-web/src/fleet_web/static/js/motion.js`) must reach parity, so the runtime separates behaviour from drawing:
 
 - **`behaviour`** (renderer-agnostic, extracted from `motion.js`): activity to station (`ACTS`), spot allocation (`allocate`, keeping held spots, overflow, delegates beside their partner), dwell before changing station, pacing and wandering, event reactions (nod, head shake), clip choice, held items, tone. It outputs an agent pose each tick: `{x, y, facing, clip, clipTime, seated, held, nod, tone, bubble}`.
 - **`actors`** (sprite-specific) turns a pose into draw calls: the clip's frame sheet for the nearest rendered facing, the head layer offset for nods, the held item drawn at the frame's `hand.R` anchor, the tone variant, the bubble position for the DOM overlay.
 
-**Built** (`fleet/web/js/behaviour.js`): the rules, not the motion. Presence (finished jobs retire, one that finishes while watched says goodbye and leaves within 30 s; failed and stalled work goes to its lantern; an idle session leaves after half an hour unless a decision waits on it), the activity wanted and the dwell before changing it, reactions (nod, shake), held items, the resting look and crowds. The deck (`state.js`, `motion.js`, `agents.js`) and the world's crew (`world/crew.js`) both call it; each keeps its own motion, spots and clips. Spot allocation, pacing and routes stay renderer-specific: the deck's room plan and the floor's desks are different places.
+**Built** (`packages/fleet-web/src/fleet_web/static/js/behaviour.js`): the rules, not the motion. Presence (finished jobs retire, one that finishes while watched says goodbye and leaves within 30 s; failed and stalled work goes to its lantern; an idle session leaves after half an hour unless a decision waits on it), the activity wanted and the dwell before changing it, reactions (nod, shake), held items, the resting look and crowds. The deck (`state.js`, `motion.js`, `agents.js`) and the world's crew (`world/crew.js`) both call it; each keeps its own motion, spots and clips. Spot allocation, pacing and routes stay renderer-specific: the deck's room plan and the floor's desks are different places.
 
 The three.js deck and the sprite world can then share `behaviour` while both exist. Stations are data: each place in the floor layout declares its spots (`[x, y, facing, sit]`, as `SPOTS` does), so the deck's vocabulary maps onto the new places: *terminal* and *workbench* to bench seats, *whiteboard* to the plan wall, *bookshelf* and *read* to the library, *mail* to the report tray, *dock* to the lift, *await* to standing at the question desk facing the viewer.
 
@@ -315,7 +315,7 @@ Every instance carries a `place` id from the model (floor, room, lane, bench, se
 
 ## Modules
 
-Under `fleet/web/js/world/`, plain ES modules with no dependencies and no build step. Built:
+Under `packages/fleet-web/src/fleet_web/static/js/world/`, plain ES modules with no dependencies and no build step. Built:
 
 | Module | Role |
 |---|---|

@@ -1,4 +1,4 @@
-"""A project's bookshelf opens its library: openProjectLibrary (fleet/web/js/library.js) chooses the project on the
+"""A project's bookshelf opens its library: openProjectLibrary (packages/fleet-web/src/fleet_web/static/js/library.js) chooses the project on the
 overview as its project button would, and the bookcases in a deck room and the shelves on a world floor open it, with
 a hand and a '<project> library' tip on hover."""
 

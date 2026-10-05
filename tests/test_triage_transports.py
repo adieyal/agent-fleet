@@ -4,7 +4,8 @@ from io import StringIO
 
 import pytest
 
-from fleet import composition, transport
+from fleet.container import configured_container
+from fleet import transport
 from fleet.modules.execution import StepRequest
 from fleet.remote import fleetd
 
@@ -69,7 +70,7 @@ def test_step_transport_sends_key_and_validates_worker_confirmation(monkeypatch,
         return dict(schema_version=1, key='key', status='applied', answers=answers, steps=[2])
 
     monkeypatch.setattr(transport, 'call', call)
-    sender = composition.send_step
+    sender = configured_container().step()
     assert sender(request) == 'added step 3 to job j'
     host, arguments, steps = calls[0]
     assert host == 'carbon' and arguments[:2] == ['add', 'j'] and '--key' in arguments
@@ -89,5 +90,5 @@ def test_legacy_retry_transport_is_explicit_and_confirms_job(monkeypatch):
         return dict(id='j', status='queued')
 
     monkeypatch.setattr(transport, 'call', call)
-    assert 'queued' in composition.send_step(StepRequest('carbon', 'j', 'key', retry=True))
+    assert 'queued' in configured_container().step()(StepRequest('carbon', 'j', 'key', retry=True))
     assert calls == [(['add', 'j', '--steps-file', '/dev/stdin', '--retry'], '[]')]

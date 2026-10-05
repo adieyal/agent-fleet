@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-JS = Path(__file__).resolve().parents[1] / "fleet" / "web" / "js"
+JS = Path(__file__).resolve().parents[1] / "packages" / "fleet-web" / "src" / "fleet_web" / "static" / "js"
 pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 
 VERSION = dict(revision="abc", number=2, actor="web-user", time="2026-10-01T09:00:00+02:00", source_run=None)

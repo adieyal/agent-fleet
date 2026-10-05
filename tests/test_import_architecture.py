@@ -12,14 +12,22 @@ import grimp
 
 
 ROOT = Path(__file__).resolve().parents[1]
+SOURCES = {
+    name: ROOT / "packages" / distribution / "src" / name
+    for name, distribution in (
+        ("fleet", "fleet"), ("fleet_cli", "fleet-cli"), ("fleet_web", "fleet-web"))
+}
 
 
 def test_every_python_file_is_in_the_import_graph():
-    graph = grimp.build_graph("fleet", cache_dir=None)
-    for source in (ROOT / "fleet").rglob("*.py"):
-        parts = source.relative_to(ROOT).with_suffix("").parts
-        module = ".".join(parts[:-1] if parts[-1] == "__init__" else parts)
-        assert module in graph.modules, f"{source} needs a discoverable package"
+    graph = grimp.build_graph(*SOURCES, cache_dir=None)
+    for package in SOURCES.values():
+        files = list(package.rglob("*.py"))
+        assert files, f"{package} needs production sources"
+        for source in files:
+            parts = source.relative_to(package.parent).with_suffix("").parts
+            module = ".".join(parts[:-1] if parts[-1] == "__init__" else parts)
+            assert module in graph.modules, f"{source} needs a discoverable package"
 
 
 def test_every_business_module_has_a_public_surface_contract():
@@ -29,16 +37,17 @@ def test_every_business_module_has_a_public_surface_contract():
         section["protected_modules"]: section["allowed_importers"]
         for section in config.values() if section.get("type") == "protected"
     }
-    for package in (ROOT / "fleet/modules").glob("*/__init__.py"):
+    for package in (SOURCES["fleet"] / "modules").glob("*/__init__.py"):
         module = f"fleet.modules.{package.parent.name}"
         assert protected[f"{module}.*"] == module
 
 
 def lint_copy(tmp_path: Path, filename: str = "", statement: str = "") -> subprocess.CompletedProcess:
-    for source in (ROOT / "fleet").rglob("*.py"):
-        target = tmp_path / source.relative_to(ROOT)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, target)
+    for name, package in SOURCES.items():
+        for source in package.rglob("*.py"):
+            target = tmp_path / name / source.relative_to(package)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
     shutil.copyfile(ROOT / ".importlinter", tmp_path / ".importlinter")
     if filename:
         with (tmp_path / filename).open("a") as target:
@@ -56,22 +65,88 @@ def test_production_import_contracts(tmp_path):
 
 
 @pytest.mark.parametrize(("filename", "statement", "contract"), [
-    ("fleet/projections/project.py", "import fleet.composition", "Controller layers"),
-    ("fleet/composition.py", "import fleet.cli", "Controller layers"),
-    ("fleet/cli.py", "import fleet.infrastructure.sqlite", "Infrastructure construction"),
-    ("fleet/cli.py", "import fleet.infrastructure.documents.evidence", "Infrastructure construction"),
-    ("fleet/web/server.py", "import fleet.infrastructure.sqlite", "Infrastructure construction"),
+    ("fleet/projections/guidance.py", "import markdown_it", "Library returns raw documents"),
+    ("fleet_web/server.py", "import fleet.transport", "Controllers use public providers and module surfaces"),
+    ("fleet_web/server.py", "import fleet.services.jobs", "Controllers use public providers and module surfaces"),
+    ("fleet/container.py", "import fleet_web.server", "Container has no presentation dependencies"),
+    ("fleet/services/jobs.py", "import fleet.container", "Document library independence"),
+    ("fleet/projections/project.py", "import fleet.container", "Controller layers"),
+    ("fleet/container.py", "import fleet_cli.cli", "Controller layers"),
+    ("fleet_cli/cli.py", "import fleet.infrastructure.sqlite", "Infrastructure construction"),
+    ("fleet_cli/cli.py", "import fleet.infrastructure.documents.evidence", "Infrastructure construction"),
+    ("fleet_web/server.py", "import fleet.infrastructure.sqlite", "Infrastructure construction"),
     ("fleet/modules/work/__init__.py", "import fleet.infrastructure", "Module independence"),
     ("fleet/modules/work/__init__.py", "import fleet.projections", "Module independence"),
-    ("fleet/cli.py", "import fleet.modules.work.domain", "Work public surface"),
+    ("fleet_cli/cli.py", "import fleet.modules.work.domain", "Work public surface"),
     ("fleet/modules/library/facade.py", "import fleet.modules.work.application", "Work public surface"),
-    ("fleet/composition.py", "import fleet.modules.work.facade", "Work public surface"),
+    ("fleet/container.py", "import fleet.modules.work.facade", "Work public surface"),
     ("fleet/modules/work/domain/__init__.py", "import fleet.modules.work.application", "Module domain layers"),
-    ("fleet/remote/fleetd.py", "import fleet.cli", "Standalone worker"),
+    ("fleet/remote/fleetd.py", "import fleet_cli.cli", "Standalone worker"),
     ("fleet/remote/fleetd.py", "import fleet", "Standalone worker"),
     ("fleet/remote/fleetd.py", "import fleet.remote", "Standalone worker"),
+    ("fleet/infrastructure/documents/job_store.py", "import fleet_web.documents", "Document library independence"),
+    ("fleet/services/documents.py", "import fleet.container", "Document library independence"),
+    ("fleet/services/documents.py", "import fleet.infrastructure.documents.job_store", "Service infrastructure separation"),
+    ("fleet/ingestion.py", "import fleet_web.server", "Document library independence"),
+    ("fleet/modules/work/__init__.py", "import fleet.ingestion", "Module independence"),
+    ("fleet/modules/work/__init__.py", "import fleet.services", "Module independence"),
+    ("fleet_web/server.py", "import subprocess", "Web processes use transport"),
+    ("fleet_cli/cli.py", "import subprocess", "CLI processes use transport"),
+    ("fleet_cli/cli.py", "import fleet_web.documents", "Presentation packages are independent"),
+    ("fleet_web/server.py", "import fleet_cli.cli", "Presentation packages are independent"),
+    ("fleet/triage.py", "import fleet.container", "Controller layers"),
+    ("fleet/triage_scheduler.py", "import fleet_web.server", "Document library independence"),
+    ("fleet/modules/work/__init__.py", "import fleet.triage", "Module independence"),
+    ("fleet/services/dispatch.py", "import argparse", "Services have no presentation dependencies"),
+    ("fleet/errors.py", "import fleet_cli", "Library has no presentation dependencies"),
+    ("fleet/errors.py", "import fleet_web", "Library has no presentation dependencies"),
+    ("fleet_cli/plugins.py", "import fleet_web", "Presentation packages are independent"),
+    ("fleet_web/resources.py", "import fleet_cli", "Presentation packages are independent"),
 ])
 def test_forbidden_import_fails(tmp_path, filename, statement, contract):
     result = lint_copy(tmp_path, filename, statement)
     assert result.returncode == 1, result.stdout + result.stderr
     assert f"{contract} BROKEN" in result.stdout, result.stdout
+
+
+def runtime_cycles(graph):
+    """Tarjan's strongly connected components, excluding trivial singletons."""
+    indexes, low, stack, active, cycles = {}, {}, [], set(), []
+
+    def visit(module):
+        indexes[module] = low[module] = len(indexes)
+        stack.append(module)
+        active.add(module)
+        for dependency in sorted(graph.find_modules_directly_imported_by(module)):
+            if dependency not in indexes:
+                visit(dependency)
+                low[module] = min(low[module], low[dependency])
+            elif dependency in active:
+                low[module] = min(low[module], indexes[dependency])
+        if low[module] == indexes[module]:
+            component = []
+            while True:
+                member = stack.pop()
+                active.remove(member)
+                component.append(member)
+                if member == module:
+                    break
+            if len(component) > 1:
+                cycles.append(sorted(component))
+
+    for module in sorted(graph.modules):
+        if module not in indexes:
+            visit(module)
+    return cycles
+
+
+def test_production_runtime_import_graph_is_acyclic():
+    graph = grimp.build_graph(*SOURCES, cache_dir=None, exclude_type_checking_imports=True)
+    assert runtime_cycles(graph) == []
+
+
+def test_runtime_cycle_guard_detects_reverse_edge():
+    graph = grimp.build_graph(*SOURCES, cache_dir=None, exclude_type_checking_imports=True)
+    graph.add_import(importer="fleet.modules.execution.application.answers", imported="fleet.modules.decisions")
+    assert any("fleet.modules.decisions" in cycle and
+               "fleet.modules.execution.application.answers" in cycle for cycle in runtime_cycles(graph))

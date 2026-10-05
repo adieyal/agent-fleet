@@ -11,7 +11,7 @@ from playwright.sync_api import Browser
 
 from conftest import FIXTURE, serve_fixture
 
-WORLD = Path(__file__).parent.parent / "fleet" / "web" / "assets" / "world"
+WORLD = Path(__file__).parent.parent / "packages" / "fleet-web" / "src" / "fleet_web" / "static" / "assets" / "world"
 # baked 3D scenes; sprite kits (a manifest with "sprites") are tested in test_world_kit.py
 SCENES = sorted(p.name for p in WORLD.iterdir()
                 if (p / "manifest.json").exists() and "glb" in json.loads((p / "manifest.json").read_text()))

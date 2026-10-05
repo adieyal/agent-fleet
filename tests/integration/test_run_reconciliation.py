@@ -3,22 +3,23 @@ from pathlib import Path
 
 import pytest
 
-from fleet import composition
+
+from fleet.container import configured_container
 from fleet.transport import Host
-from fleet.web.server import FleetState, apply_message
+from fleet.services.live import FleetState, apply_message
 
 
 @pytest.mark.parametrize("outcome", ["done", "failed", "blocked", "cancelled"])
 def test_recorded_stream_reconciles_without_changing_work(outcome):
-    store = composition.open_store()
-    work = composition.open_work(store)
+    store = configured_container().store()
+    work = configured_container(store).work()
     item = work.add(project="p", title="Task", goal="Ship", actor="user")
     work.add_criterion(item.id, text="Accept", verification="accepted", actor="user")
     before = (work.get(item.id), work.progress(item.id), work.criteria(item.id))
-    execution = composition.open_execution(store)
+    execution = configured_container(store).execution()
     run = execution.link("worker", "job", item.id, actor="user")
     other = execution.link("other", "job", item.id, actor="user")
-    state = FleetState([Host("worker", None)], store=store)
+    state = FleetState([Host('worker', None)], container=configured_container(store=store))
     host = state.hosts[0]
     messages = [json.loads(line) for line in
                 (Path(__file__).parents[1] / "fixtures/run_reconciliation.jsonl").read_text().splitlines()]
@@ -52,20 +53,20 @@ def test_recorded_stream_reconciles_without_changing_work(outcome):
     assert reconciled.end.timestamp() == 120
     assert execution.runs()[1] == other
     assert (work.get(item.id), work.progress(item.id), work.criteria(item.id)) == before
-    entries = composition.open_library(store).list()
+    entries = configured_container(store).library().list()
     assert {entry.kind for entry in entries} == {"report", "trace"}
     assert all(entry.run == run.id and entry.work_item == item.id and entry.project == "p" for entry in entries)
     trace = next(entry for entry in entries if entry.kind == "trace")
     assert trace.availability == "available"
     final["job"]["trace"]["availability"] = "unavailable"
     apply_message(state, host, final)
-    entries = composition.open_library(composition.open_store()).list()
+    entries = configured_container(configured_container().store()).library().list()
     pruned = next(entry for entry in entries if entry.kind == "trace")
     assert pruned.id == trace.id and pruned.availability == "unavailable"
     sequence, version = store.latest_sequence(), state.version
     apply_message(state, host, final)
     if outcome in ("failed", "blocked"):
-        attention, = composition.open_attention(store).list()
+        attention, = configured_container(store).initialized_attention().list()
         change, = store.history_after(sequence)
         assert change["subject"] == f"attention:{attention.id}"
         assert state.version == version + 1

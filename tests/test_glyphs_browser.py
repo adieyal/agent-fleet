@@ -1,4 +1,4 @@
-"""Action glyphs (fleet/web/js/glyphs.js): the one mapping from an agent's state and latest tool event to the small
+"""Action glyphs (packages/fleet-web/src/fleet_web/static/js/glyphs.js): the one mapping from an agent's state and latest tool event to the small
 picture its bubble shows, run in the browser against the module the deck serves."""
 
 from collections.abc import Iterator
@@ -29,13 +29,13 @@ def tool(name: str, summary: str = "", **extra: Any) -> dict[str, Any]:
 
 
 @pytest.mark.parametrize(("event", "action"), [
-    (tool("Read", "fleet/web/js/agents.js"), "read"),
+    (tool("Read", "packages/fleet-web/src/fleet_web/static/js/agents.js"), "read"),
     (tool("Grep", "actionOf"), "search"),
     (tool("Glob", "**/*.py"), "search"),
     (tool("WebFetch", "https://example.com"), "web"),
     (tool("Edit", "fleet/projects.py"), "edit"),
     (tool("Write", "docs/notes.md"), "doc"),
-    (tool("MultiEdit", "fleet/cli.py"), "edit"),
+    (tool("MultiEdit", "packages/fleet-cli/src/fleet_cli/cli.py"), "edit"),
     (tool("apply_patch", "a.py, b.py"), "edit"),
     (tool("Bash", "cd /src && uv run pytest -q tests"), "test"),
     (tool("Bash", "npm test"), "test"),

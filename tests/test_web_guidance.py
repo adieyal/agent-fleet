@@ -8,8 +8,8 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 import pytest
+from fleet.container import configured_container
 
-from fleet import composition
 
 FIXTURES = Path(__file__).parent / "fixtures" / "guidance"
 CONSTITUTION = (FIXTURES / "invoice-training.constitution.md").read_text()
@@ -17,10 +17,10 @@ CHARTER = (FIXTURES / "epic-positional-transcriber.charter.md").read_text()
 
 
 @pytest.fixture
-def room(base_url, deck_state, monkeypatch, tmp_path, project_id):
-    store = composition.open_store()
-    monkeypatch.setattr(deck_state, "store", store)
-    work = composition.open_work(store)
+def room(base_url, deck_state, monkeypatch, tmp_path, project_id, override_web_store):
+    store = configured_container().store()
+    override_web_store(deck_state, store)
+    work = configured_container(store).work()
     epic = work.add(project=project_id, title="Transcriber", goal="Read", kind="epic", actor="user")
     task = work.add(project=project_id, title="Liquid Mix", goal="Map", parent=epic.id, actor="user")
     repo = tmp_path / "management"
@@ -48,7 +48,7 @@ def refused(room, path, body, **query):
 
 
 def register(room):
-    composition.open_records().register(room["project"], room["repo"], actor="user")
+    configured_container().records().register(room['project'], room['repo'], actor='user')
 
 
 def test_a_project_without_a_repository_shows_nothing_recorded_and_its_first_save_creates_one(room):
@@ -92,7 +92,7 @@ def test_charter_shows_what_it_inherits(room):
 
 def test_decisions_and_promotion(room):
     register(room)
-    decisions = composition.open_decisions()
+    decisions = configured_container().decisions()
     older = decisions.record_guided(room["task"], actor="codex", question="Store fees as freight?",
                                     answer="No, as charge lines", principle="Charter: decision 3")
     newer = decisions.record_guided(room["epic"], actor="claude", question="Rerun the flaky test?",
@@ -115,9 +115,7 @@ def test_decisions_and_promotion(room):
     assert [d["promoted"] for d in get(room, "/api/decisions", epic=room["epic"])["decisions"]] == [False, True]
     code, message = refused(room, "/api/guidance/promote", dict(epic=room["epic"], decision=older.id))
     assert code == 400 and "already in the charter" in message
-    outside = decisions.record_guided(
-        composition.open_work().add(project=room["project"], title="Other", goal="O", actor="user").id,
-        actor="codex", question="Q", answer="A", principle="P")
+    outside = decisions.record_guided(configured_container().work().add(project=room['project'], title='Other', goal='O', actor='user').id, actor='codex', question='Q', answer='A', principle='P')
     assert refused(room, "/api/guidance/promote", dict(epic=room["epic"], decision=outside.id))[0] == 404
 
 
@@ -137,8 +135,8 @@ def test_writes_need_json_from_this_origin(room):
 
 
 def test_batch11_project_decisions_include_root_work_and_exclude_other_projects(room):
-    decisions = composition.open_decisions()
-    work = composition.open_work()
+    decisions = configured_container().decisions()
+    work = configured_container().work()
     root = work.add(project=room['project'], title='Root task', goal='Deliver', actor='user')
     other = work.add(project='another-project', title='Other', goal='Deliver', actor='user')
     own = decisions.record_guided(root.id, actor='agent', question='Use root?', answer='Yes', principle='Scope')

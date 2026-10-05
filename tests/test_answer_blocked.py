@@ -4,13 +4,14 @@ import sys
 
 import pytest
 
+from fleet.container import configured_container
 from fleet import transport
-from fleet.composition import open_execution, open_work
+
 from fleet.infrastructure.answers import send_answer
 from fleet.modules.attention import ItemResolved
 from fleet.modules.execution import AnswerRequest
 from fleet.modules.attention.application.observations import asking
-from fleet.web.server import apply_message
+from fleet.services.live import apply_message
 from test_web_attention import HOSTS, Deck, job
 from test_web_refusals import decision, isolated_worker, post, wait_until_finished
 
@@ -76,7 +77,7 @@ def test_failed_and_stalled_jobs_are_not_answerable(deck):
 def test_answering_adds_a_step_and_resolves(deck):
     deck.report("home", jobs=[blocked()])
     item, sent = only_item(deck), []
-    execution = open_execution(deck.state.store)
+    execution = configured_container(deck.state.store).execution()
     execution.answer = lambda request: sent.append(request) or 2
     details = execution.answer_blocked(item.id, "Yes, exempt it.", actor="user")
     assert details == "answered; step 2 continues as step 3"
@@ -96,7 +97,7 @@ def test_answering_adds_a_step_and_resolves(deck):
                                           ("Go on", "only a blocked job step can be answered here")])
 def test_only_a_blocked_step_takes_an_answer(deck, reply, error):
     deck.report("home", jobs=[job("f1", "failed", [("failed", 100)])])
-    execution = open_execution(deck.state.store)
+    execution = configured_container(deck.state.store).execution()
     execution.answer = lambda request: pytest.fail("nothing is sent")
     with pytest.raises(ValueError, match=error):
         execution.answer_blocked(only_item(deck).id, reply, actor="user")
@@ -137,7 +138,7 @@ def test_an_answer_may_name_the_work_its_step_serves(deck, monkeypatch):
     monkeypatch.setattr(transport, "call", call)
     deck.report("home", jobs=[blocked()])
     item = only_item(deck)
-    milestone = open_work(deck.state.store).add(project="p", title="M2", goal="Next part", actor="user")
+    milestone = configured_container(deck.state.store).work().add(project='p', title='M2', goal='Next part', actor='user')
     assert post(deck, "/api/attention/answer", {"id": item.id, "answer": "Go", "work_item": 3})[0] == 400
     assert post(deck, "/api/attention/answer", {"id": item.id, "answer": "Go", "work_item": "w-missing"})[0] == 404
     assert sent == []
@@ -182,51 +183,51 @@ def test_answering_reaches_the_job_through_fleetd(deck, tmp_path, monkeypatch):
 
 
 def test_batch11_blocked_answer_records_one_decision_after_confirmation(deck):
-    from fleet.composition import open_decisions
+
     deck.report('home', jobs=[blocked()])
     item = only_item(deck)
-    execution = open_execution(deck.state.store)
+    execution = configured_container(deck.state.store).execution()
     execution.answer = lambda request: 2
     execution.answer_blocked(item.id, 'Yes, exempt it.', actor='reviewer')
-    [record] = open_decisions(deck.state.store).list()
+    [record] = configured_container(deck.state.store).decisions().list()
     assert (record.attention_item, record.question, record.answer, record.actor) == (
         item.id, item.headline, 'Yes, exempt it.', 'reviewer')
     assert record.context == item.context_reference and record.principle is None
     from fleet.projections.decisions import decision_log
-    decisions = open_decisions(deck.state.store)
-    assert [d['id'] for d in decision_log(open_work(deck.state.store), decisions, project=item.project)] == [record.id]
-    assert decision_log(open_work(deck.state.store), decisions, project='other') == []
+    decisions = configured_container(deck.state.store).decisions()
+    assert [d['id'] for d in decision_log(configured_container(deck.state.store).work(), decisions, project=item.project)] == [record.id]
+    assert decision_log(configured_container(deck.state.store).work(), decisions, project='other') == []
     with pytest.raises(ItemResolved):
         execution.answer_blocked(item.id, 'Again', actor='reviewer')
-    assert len(open_decisions(deck.state.store).list()) == 1
+    assert len(configured_container(deck.state.store).decisions().list()) == 1
 
 
 def test_batch11_blocked_answer_retains_run_work_and_project_for_unlinked_questions(deck):
-    from fleet.composition import open_decisions
+
     from fleet.projections.decisions import decision_log
     deck.report('home', jobs=[blocked()])
     item = only_item(deck)
-    work = open_work(deck.state.store)
+    work = configured_container(deck.state.store).work()
     task = work.add(project='p', title='Blocked work', goal='Finish', actor='user')
-    execution = open_execution(deck.state.store)
+    execution = configured_container(deck.state.store).execution()
     run = execution.link('home', 'b1', task.id, actor='user')
     execution.answer = lambda request: 2
     execution.answer_blocked(item.id, 'Proceed', actor='user')
-    decisions = open_decisions(deck.state.store)
+    decisions = configured_container(deck.state.store).decisions()
     [record] = decisions.list()
     assert record.source_run == run.id and record.affected_work_items == (task.id,)
     assert [d['id'] for d in decision_log(work, decisions, project='p')] == [record.id]
 
 
 def test_batch11_unconfirmed_answer_records_no_decision(deck):
-    from fleet.composition import open_decisions
+
     deck.report('home', jobs=[blocked()])
     item = only_item(deck)
-    execution = open_execution(deck.state.store)
+    execution = configured_container(deck.state.store).execution()
     def refuse(request):
         raise RuntimeError('worker did not confirm')
     execution.answer = refuse
     with pytest.raises(RuntimeError, match='did not confirm'):
         execution.answer_blocked(item.id, 'Proceed', actor='user')
-    assert open_decisions(deck.state.store).list() == []
+    assert configured_container(deck.state.store).decisions().list() == []
     assert deck.state.attention.get(item.id).state == 'open'

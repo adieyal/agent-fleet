@@ -5,8 +5,8 @@ import sys
 
 import pytest
 
-from fleet import cli
-from fleet.composition import open_store, open_work, open_workspace
+from fleet.container import configured_container
+from fleet_cli import cli
 
 
 SCRIPT = Path(__file__).parents[2] / "scripts/seed_supplier_slice.py"
@@ -15,7 +15,7 @@ SCRIPT = Path(__file__).parents[2] / "scripts/seed_supplier_slice.py"
 
 @pytest.fixture(autouse=True)
 def supplier_project():
-    return open_workspace().edit_registry(lambda registry: registry.create('Restoke V2')).id
+    return configured_container().initialized_workspace().edit_registry(lambda registry: registry.create('Restoke V2')).id
 
 
 def seed(prd=None):
@@ -26,12 +26,12 @@ def seed(prd=None):
 
 def test_supplier_seed_is_repeatable_and_updates(capsys, supplier_project):
     seed()
-    work = open_work()
+    work = configured_container().work()
     before = work.list(project=supplier_project)
-    sequence = open_store().latest_sequence()
+    sequence = configured_container().store().latest_sequence()
     seed()
     assert work.list(project=supplier_project) == before
-    assert open_store().latest_sequence() == sequence
+    assert configured_container().store().latest_sequence() == sequence
     supplier = next(item for item in before if item.title == "Supplier migration")
     work.set(supplier.id, actor="test", goal="stale imported goal")
     seed()
@@ -69,8 +69,8 @@ def test_supplier_seed_status_and_sources(capsys, monkeypatch, supplier_project)
     assert all(item["condition"] == "none" for item in tasks)
     records = json.loads(SCRIPT.with_suffix(".json").read_text())
     assert all(record["sources"] and all(Path(source).is_absolute() for source in record["sources"]) for record in records)
-    assert all("Source: " in item.goal for item in open_work().list(project=supplier_project))
-    assert not any(item.title == "Invoice analysis" for item in open_work().list(project=supplier_project))
+    assert all(('Source: ' in item.goal for item in configured_container().work().list(project=supplier_project)))
+    assert not any((item.title == 'Invoice analysis' for item in configured_container().work().list(project=supplier_project)))
     cli.main(["status", "Restoke V2"])
     output = capsys.readouterr().out
     assert "Slice 6: supplier imports" in output and "Progress: unknown" in output
@@ -82,7 +82,7 @@ def test_slice6_prd_progress_and_repeatability(tmp_path, capsys, supplier_projec
     content = json.loads((SCRIPT.parents[1] / "tests/fixtures/supplier_slice6_prd.json").read_text())
     prd.write_text(json.dumps(content))
     seed()
-    work = open_work()
+    work = configured_container().work()
     original = work.list(project=supplier_project)
     seed(prd)
     milestone = next(item for item in work.list() if item.title == "Slice 6: supplier imports")
@@ -115,11 +115,11 @@ def test_slice6_prd_progress_and_repeatability(tmp_path, capsys, supplier_projec
         assert f"Progress: {count}/15" in capsys.readouterr().out
         before = work.list()
         criteria = work.criteria(milestone.id)
-        sequence = open_store().latest_sequence()
+        sequence = configured_container().store().latest_sequence()
         seed(prd)
         assert work.list() == before
         assert work.criteria(milestone.id) == criteria
-        assert open_store().latest_sequence() == sequence
+        assert configured_container().store().latest_sequence() == sequence
 
 
 @pytest.mark.parametrize("case, reason", [
@@ -141,7 +141,7 @@ def test_prd_criterion_requires_named_true_story(tmp_path, case, reason):
         story["passes"] = "true"
     if case != "missing-file":
         prd.write_text(json.dumps({"userStories": stories}))
-    work = open_work()
+    work = configured_container().work()
     item = work.add(project="test", title="Slice", goal="Import", actor="test")
     reference = str(prd) + "#US-091"
     criterion = work.add_criterion(item.id, text="US-091 passes", verification="checked",

@@ -4,6 +4,7 @@ Tests that change a fleet (moving a project in) start their own with serve_fixtu
 """
 
 import json
+from dataclasses import replace
 import os
 import shutil
 import socket
@@ -18,10 +19,11 @@ from urllib.parse import unquote, urlsplit
 
 import pytest
 
-from fleet.composition import open_store
-from fleet.web.fixture import FixtureLibrary, FixtureState
-from fleet.web.server import make_handler
-from fleet.transport import FleetError
+
+from fleet.container import configured_container
+from fleet_web.fixture import FixtureLibrary
+from fleet_web.server import make_handler
+from fleet.api import FleetError
 
 FIXTURE = Path(__file__).parent / "fixtures" / "restoke.json"
 
@@ -99,7 +101,7 @@ def browser_type_launch_args(browser_type_launch_args: dict[str, Any]) -> dict[s
 @pytest.fixture(scope="session")
 def empty_store(tmp_path_factory: pytest.TempPathFactory) -> Path:
     path = tmp_path_factory.mktemp("store-template") / "fleet.db"
-    open_store(path)
+    configured_container(path=path).store()
     return path
 
 
@@ -125,17 +127,19 @@ def isolated_session_paths(tmp_path_factory: pytest.TempPathFactory, empty_store
 @pytest.fixture(autouse=True)
 def isolated_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, empty_store: Path) -> None:
     # Reconnecting test decks must never read jobs from the user's configured workers.
-    monkeypatch.setattr("fleet.transport.catch_up_jobs", lambda host: [])
-    monkeypatch.setattr("fleet.transport.catch_up_sessions", lambda host, since: [])
+    transport = configured_container().transport()
+    monkeypatch.setattr(transport, "catch_up_jobs", lambda host: [])
+    monkeypatch.setattr(transport, "catch_up_sessions", lambda host, since: [])
     # Trace retention tests explicitly restore this helper against their temporary worker.
-    monkeypatch.setattr("fleet.transport.keep_run_trace", lambda execution, host, job: None)
+    monkeypatch.setattr(transport, "keep_run_trace", lambda execution, host, job: None)
     monkeypatch.setattr("fleet.remote.fleetd.SESSION_RECORDS_DIRECTORY", tmp_path / "fleet-home" / "sessions")
     monkeypatch.setattr("fleet.remote.fleetd.REMOVALS_DIRECTORY", tmp_path / "fleet-home" / "removals")
 
     def no_worker_documents(*args):
         raise FleetError("test worker document transport is not configured")
 
-    monkeypatch.setattr("fleet.web.server.FleetState.fetch_raw", no_worker_documents)
+    # Resolve the implementation through its public provider; integration tests can restore transport.
+    monkeypatch.setattr(configured_container().live_state.provides, "fetch_raw", no_worker_documents)
     path = tmp_path / "fleet.db"
     shutil.copyfile(empty_store, path)
     monkeypatch.setenv("FLEET_STORE", str(path))
@@ -153,9 +157,9 @@ def isolated_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, empty_store:
 
 @pytest.fixture
 def project_id():
-    from fleet.composition import open_workspace
 
-    return open_workspace().edit_registry(lambda registry: registry.create('p')).id
+
+    return configured_container().initialized_workspace().edit_registry(lambda registry: registry.create('p')).id
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -178,10 +182,11 @@ def fixture_data() -> dict[str, Any]:
 
 
 @contextmanager
-def serve_fixture(path: Path | FixtureState) -> Iterator[str]:
+def serve_fixture(path: Any) -> Iterator[str]:
     """A deck server over a recorded fleet; what the browser changes stays in this server's memory."""
-    state = path if isinstance(path, FixtureState) else FixtureState.load(path)
-    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(state, FixtureLibrary(state.fixture)))
+    container = configured_container()
+    state = container.fixture_state(fixture=container.fixture_data(path=path)) if isinstance(path, Path) else path
+    server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(state, FixtureLibrary(state.fixture, container=state.container)))
     server.daemon_threads = True
     thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     thread.start()
@@ -194,12 +199,13 @@ def serve_fixture(path: Path | FixtureState) -> Iterator[str]:
 
 
 @pytest.fixture(scope="session")
-def deck_state() -> FixtureState:
-    return FixtureState.load(FIXTURE)
+def deck_state() -> Any:
+    container = configured_container()
+    return container.fixture_state(fixture=container.fixture_data(path=FIXTURE))
 
 
 @pytest.fixture(scope="session")
-def base_url(deck_state: FixtureState) -> Iterator[str]:
+def base_url(deck_state: Any) -> Iterator[str]:
     with serve_fixture(deck_state) as url:
         yield url
 
@@ -210,3 +216,49 @@ def browser_type_launch_args(browser_type_launch_args: dict[str, Any]) -> dict[s
     fail to start, and the 3D views then never become ready."""
     env = {k: v for k, v in os.environ.items() if k not in ("DISPLAY", "WAYLAND_DISPLAY")}
     return {**browser_type_launch_args, "env": env}
+
+
+@pytest.fixture
+def cli_container():
+    from fleet.container import Container
+    return Container()
+
+
+@pytest.fixture
+def override_cli_method(cli_container):
+    from dependency_injector import providers
+
+    def override(name, method, replacement):
+        provider = getattr(cli_container, name)
+        original = providers.Factory(provider.provides, *provider.args, **provider.kwargs)
+
+        def create():
+            service = original()
+            setattr(service, method, replacement)
+            return service
+
+        provider.override(providers.Factory(create))
+
+    return override
+
+
+@pytest.fixture
+def override_web_store(request, monkeypatch):
+    """Rebind a session deck's providers to a test store, restoring them after the test."""
+    def override(state, store):
+        replacement = configured_container(store)
+        keep = {'settings', 'unit', 'transport', 'documents', 'project_documents',
+                'project_library', 'overview_cache', 'overview', 'fixture_scope'}
+        overridden = []
+        for name, provider in state.container.providers.items():
+            if name not in keep:
+                provider.override(getattr(replacement, name))
+                overridden.append(provider)
+        request.addfinalizer(lambda: [provider.reset_last_overriding() for provider in reversed(overridden)])
+        monkeypatch.setattr(state, 'store', store)
+        monkeypatch.setattr(state, 'execution', replacement.execution())
+        monkeypatch.setattr(state, 'decisions', replacement.decisions())
+        monkeypatch.setattr(state, 'triage_status', replacement.triage_scheduler(deliver=None, host=None).status)
+        monkeypatch.setattr(state, 'reads', replace(state.reads, execution=replacement.execution(),
+                                                   revision=lambda: (store, store.latest_sequence())))
+    return override

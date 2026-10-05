@@ -5,8 +5,10 @@ import subprocess
 import pytest
 from rich.console import Console
 
-from fleet import cli, transport
-from fleet.composition import open_workspace
+from fleet.container import configured_container
+from fleet_cli import cli
+from fleet import transport
+
 from fleet.projections.workspace import registry_config
 from fleet.transport import HostReport
 
@@ -31,7 +33,7 @@ def fleet(monkeypatch):
 
 
 def stored_projects(config_path):
-    return registry_config(open_workspace().registry())
+    return registry_config(configured_container().initialized_workspace().registry())
 
 
 def only_id(config_path):

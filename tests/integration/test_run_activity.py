@@ -2,19 +2,20 @@ import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fleet import composition
+
+from fleet.container import configured_container
 from fleet.transport import Host
-from fleet.web.server import FleetState, apply_message
+from fleet.services.live import FleetState, apply_message
 
 
 def test_stream_records_actions_without_duplicate_history_or_push():
     now = datetime(2026, 9, 28, tzinfo=timezone.utc)
-    store = composition.open_store(clock=lambda: now)
-    work = composition.open_work(store)
+    store = configured_container(clock=lambda : now).store()
+    work = configured_container(store).work()
     item = work.add(project="p", title="Task", goal="Ship", actor="user")
-    execution = composition.open_execution(store)
+    execution = configured_container(store).execution()
     run = execution.link("worker", "job", item.id, actor="user")
-    state = FleetState([Host("worker", None)], store=store)
+    state = FleetState([Host('worker', None)], container=configured_container(store=store))
     transport_calls = []
 
     def retry_deliveries(host):
@@ -50,4 +51,4 @@ def test_stream_records_actions_without_duplicate_history_or_push():
     sequence, version = store.latest_sequence(), state.version
     apply_message(state, state.hosts[0], {'type': 'heartbeat'})
     assert (store.latest_sequence(), state.version) == (sequence, version)
-    assert composition.open_execution(composition.open_store()).get_run(run.id) == recorded
+    assert configured_container(configured_container().store()).execution().get_run(run.id) == recorded

@@ -9,8 +9,9 @@ import pytest
 from playwright.sync_api import Browser, Page, Route, expect
 
 from conftest import FIXTURE, serve_fixture
-from fleet.web.documents import render_markdown
-from fleet.web.fixture import FixtureState
+from fleet.container import configured_container
+from fleet_web.documents import render_markdown
+from fleet.services.fixtures import FixtureState
 from test_deck_browser import PIN_CLOCK, VIEWPORTS, finish_jobs
 
 
@@ -18,7 +19,7 @@ from test_deck_browser import PIN_CLOCK, VIEWPORTS, finish_jobs
 # on the shared one.
 @pytest.fixture(scope="module")
 def own_state() -> FixtureState:
-    return FixtureState.load(FIXTURE)
+    return FixtureState.load(FIXTURE, container=configured_container())
 
 
 @pytest.fixture(scope="module")

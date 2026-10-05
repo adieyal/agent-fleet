@@ -1,11 +1,13 @@
 """Audit 1 batch 8: CLI help says what a command changes, send says what it started, actors are passed through."""
+from fleet.container import configured_container
+from fleet import transport
 import argparse
 import json
 from types import SimpleNamespace
 
 import pytest
 
-from fleet import cli, composition
+from fleet_cli import cli
 
 
 def help_text(capsys, *arguments: str) -> str:
@@ -17,14 +19,14 @@ def help_text(capsys, *arguments: str) -> str:
 def fake_worker(monkeypatch, calls: list) -> None:
     def call(host, arguments, **kwargs):
         calls.append(arguments)
-        run = composition.open_execution().runs()[-1]
+        run = configured_container().execution().runs()[-1]
         return {"id": run.remote_job_id, "run_id": run.id, "schema_version": 4,
                 "fingerprint": arguments[arguments.index("--fingerprint") + 1] if "--fingerprint" in arguments else None,
                 "start_requested": False, "status": "queued", "steps": [{}], "description": "Task",
                 "permission": "acceptEdits"}
 
-    monkeypatch.setattr(cli.transport, "host_by_name", lambda name: SimpleNamespace(name=name))
-    monkeypatch.setattr(cli.transport, "call", call)
+    monkeypatch.setattr(transport, "host_by_name", lambda name: SimpleNamespace(name=name))
+    monkeypatch.setattr(transport, "call", call)
 
 
 @pytest.mark.parametrize("command", [("send",), ("dispatch",), ("run", "retry")])
@@ -74,23 +76,23 @@ def test_every_command_is_in_one_group_and_every_subcommand_has_help(capsys):
 
 
 def test_send_prints_the_run_permission_and_guidance(monkeypatch, capsys, project_id):
-    composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, "fake", "worker-p"))
+    configured_container().initialized_workspace().edit_registry(lambda registry: registry.link(project_id, 'fake', 'worker-p'))
     calls = []
     fake_worker(monkeypatch, calls)
     cli.main(["send", "--project", "p", "--description", "Task", "--step", "Ship", "--host", "fake",
               "--cwd", "/repo", "--hold"])
     output = capsys.readouterr().out
-    run, = composition.open_execution().runs()
+    run, = configured_container().execution().runs()
     assert f"run {run.id[:8]}" in output
     assert "permission acceptEdits" in output
     assert "no guidance" in output
 
 
 def test_runtime_and_agent_are_aliases_on_send_and_dispatch(monkeypatch, project_id):
-    composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, "fake", "worker-p"))
+    configured_container().initialized_workspace().edit_registry(lambda registry: registry.link(project_id, 'fake', 'worker-p'))
     calls = []
     fake_worker(monkeypatch, calls)
-    item = composition.open_work().add(project=project_id, title="Task", goal="Ship", actor="user")
+    item = configured_container().work().add(project=project_id, title='Task', goal='Ship', actor='user')
     cli.main(["send", "--project", "p", "--description", "Task", "--step", "Ship", "--host", "fake",
               "--cwd", "/repo", "--hold", "--json", "--runtime", "codex"])
     cli.main(["dispatch", item.id, "Ship", "--host", "fake", "--cwd", "/repo", "--json", "--agent", "codex"])
@@ -99,26 +101,26 @@ def test_runtime_and_agent_are_aliases_on_send_and_dispatch(monkeypatch, project
 
 
 def test_send_records_the_given_actor(monkeypatch, project_id):
-    composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, "fake", "worker-p"))
+    configured_container().initialized_workspace().edit_registry(lambda registry: registry.link(project_id, 'fake', 'worker-p'))
     fake_worker(monkeypatch, [])
     cli.main(["send", "--project", "p", "--description", "Task", "--step", "Ship", "--host", "fake",
               "--cwd", "/repo", "--hold", "--json", "--actor", "orchestrator"])
-    action, = composition.open_execution().actions()
+    action, = configured_container().execution().actions()
     assert action.actor == "orchestrator"
 
 
 def test_send_inside_a_fleet_job_records_the_job_as_actor(monkeypatch, project_id):
-    composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, "fake", "worker-p"))
+    configured_container().initialized_workspace().edit_registry(lambda registry: registry.link(project_id, 'fake', 'worker-p'))
     fake_worker(monkeypatch, [])
     monkeypatch.setenv("FLEET_JOB_ID", "27563ec6-a70f")
     cli.main(["send", "--project", "p", "--description", "Task", "--step", "Ship", "--host", "fake",
               "--cwd", "/repo", "--hold", "--json"])
-    action, = composition.open_execution().actions()
+    action, = configured_container().execution().actions()
     assert action.actor == "job:27563ec6-a70f"
 
 
-def test_run_retry_and_resolve_unknown_pass_the_actor(monkeypatch, project_id):
-    composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, "fake", "worker-p"))
+def test_run_retry_and_resolve_unknown_pass_the_actor(monkeypatch, project_id, cli_container):
+    configured_container().initialized_workspace().edit_registry(lambda registry: registry.link(project_id, 'fake', 'worker-p'))
     seen = {}
 
     class Execution:
@@ -130,19 +132,17 @@ def test_run_retry_and_resolve_unknown_pass_the_actor(monkeypatch, project_id):
             seen["resolve"] = actor
             return SimpleNamespace(id=run)
 
-    monkeypatch.setattr(cli, "open_execution", Execution)
+    cli_container.execution.override(Execution())
     monkeypatch.setattr(cli, "asdict", lambda value: vars(value))
-    cli.main(["run", "retry", "r1", "--actor", "orchestrator"])
-    cli.main(["run", "resolve-unknown", "r1", "--actor", "orchestrator"])
+    cli.main(["run", "retry", "r1", "--actor", "orchestrator"], container=cli_container)
+    cli.main(["run", "resolve-unknown", "r1", "--actor", "orchestrator"], container=cli_container)
     assert seen == {"retry": "orchestrator", "resolve": "orchestrator"}
 
 
 def test_answer_records_the_given_actor(capsys, project_id):
-    composition.open_workspace().edit_registry(lambda registry: registry.link(project_id, "fake", "worker-p"))
-    work = composition.open_work()
+    configured_container().initialized_workspace().edit_registry(lambda registry: registry.link(project_id, 'fake', 'worker-p'))
+    work = configured_container().work()
     item = work.add(project=project_id, title="Delivery", goal="Ship", actor="author")
-    question = composition.open_attention().raise_item(project=project_id, work_item=item.id, kind="decision",
-        owner="user", source="manual", source_reference="q", headline="Choose", context_reference="doc:1",
-        actor="author")
+    question = configured_container().initialized_attention().raise_item(project=project_id, work_item=item.id, kind='decision', owner='user', source='manual', source_reference='q', headline='Choose', context_reference='doc:1', actor='author')
     cli.main(["answer", question.id, "Direct", "--actor", "orchestrator"])
     assert json.loads(capsys.readouterr().out)["actor"] == "orchestrator"

@@ -1,4 +1,5 @@
 """fleetd reports each job's workspace: the git checkout its cwd is in, read from git and never invented."""
+from fleet import transport
 import json
 import subprocess
 import time
@@ -157,12 +158,12 @@ def test_a_running_step_is_refreshed_periodically(jobs, tmp_path, monkeypatch):
     assert len(calls) == settled   # stopped with the step
 
 
-def shown(monkeypatch, capsys, job):
-    from fleet import cli
-    monkeypatch.setattr(cli, "resolve", lambda reference: (SimpleNamespace(name="carbon"), "job"))
-    monkeypatch.setattr(cli.transport, "call", lambda host, arguments, **kwargs: job)
+def shown(monkeypatch, capsys, job, override_cli_method, cli_container):
+    from fleet_cli import cli
+    override_cli_method('references', 'job', lambda reference: (SimpleNamespace(name="carbon"), "job"))
+    monkeypatch.setattr(transport, "call", lambda host, arguments, **kwargs: job)
     monkeypatch.setattr(cli.console, "width", 200)
-    cli.main(["show", "carbon:job"])
+    cli.main(["show", "carbon:job"], container=cli_container)
     return capsys.readouterr().out
 
 
@@ -173,14 +174,14 @@ def shown_job(**fields):
             **fields}
 
 
-def test_show_names_the_repository_worktree_branch_and_step_work(monkeypatch, capsys):
+def test_show_names_the_repository_worktree_branch_and_step_work(monkeypatch, capsys, cli_container, override_cli_method):
     out = shown(monkeypatch, capsys, shown_job(workspace={
         "toplevel": "/w", "linked_worktree": True, "repository": "/repo", "branch": "feat/x", "detached": False,
-        "head": "abc1234", "dirty": 3, "collected_at": 1.0}, workspace_reason=None))
+        "head": "abc1234", "dirty": 3, "collected_at": 1.0}, workspace_reason=None), cli_container=cli_container, override_cli_method=override_cli_method)
     assert "repo /repo · worktree /w · feat/x @ abc1234 · 3 uncommitted" in out
     assert "[w-1]" in out
 
 
-def test_show_says_why_a_workspace_is_unknown(monkeypatch, capsys):
-    out = shown(monkeypatch, capsys, shown_job(workspace=None, workspace_reason="not a git repository"))
+def test_show_says_why_a_workspace_is_unknown(monkeypatch, capsys, cli_container, override_cli_method):
+    out = shown(monkeypatch, capsys, shown_job(workspace=None, workspace_reason="not a git repository"), cli_container=cli_container, override_cli_method=override_cli_method)
     assert "workspace unknown: not a git repository" in out

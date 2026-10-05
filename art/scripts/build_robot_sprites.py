@@ -13,7 +13,7 @@ whole-body Hunyuan3D model and posed hands (outside the repo; their libraries in
 Mixamo clips (~/.local/state/fleet/renovation/mixamo/) retargeted onto it, the per-clip hand poses and held items
 of rebuilds 2 and 3, the seated robot on the floor kit's chair raised to robot_scale.json's seat height. The script
 runs itself inside Blender (BLENDER, default ~/.local/bin/blender) to render, then packs with Pillow. Output:
-fleet/web/assets/world/robot/sprites/ (atlases per resolution and sprites.json); the format is documented in
+packages/fleet-web/src/fleet_web/static/assets/world/robot/sprites/ (atlases per resolution and sprites.json); the format is documented in
 docs/design/robot-sprites.md.
 
 Render (Cycles on the GPU, the canonical camera every Fleet render shares: artlib.canonical_camera, oblique, yaw 30°,
@@ -41,7 +41,7 @@ REPO = ART.parent
 MOTION = ART / 'motion-test'
 BUILD = ART / 'build' / 'robot_sprites'
 FRAMES_DIR = BUILD / 'frames'
-OUT = REPO / 'fleet' / 'web' / 'assets' / 'world' / 'robot' / 'sprites'
+OUT = REPO / 'packages' / 'fleet-web' / 'src' / 'fleet_web' / 'static' / 'assets' / 'world' / 'robot' / 'sprites'
 
 # Directions: the deck's facing (0 towards the door, which is towards the camera side of the room; π towards
 # the back wall), as a turn of the robot about +Z.

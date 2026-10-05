@@ -1,13 +1,14 @@
 import json
 from urllib.request import urlopen
 
-from fleet.composition import open_work, open_workspace
+
 from test_web_attention import Deck
+from fleet.container import configured_container
 
 
 def test_state_work_and_bench_use_workspace_id():
-    identity = open_workspace().move_in(['home'], 'supplier', name='Supplier').project_id
-    work = open_work()
+    identity = configured_container().initialized_workspace().move_in(['home'], 'supplier', name='Supplier').project_id
+    work = configured_container().work()
     epic = work.add(project=identity, title='Migration', goal='Ship', kind='epic', actor='user')
     work.add(project=identity, title='Slice', goal='Ship', kind='milestone', parent=epic.id, actor='user')
     deck = Deck()

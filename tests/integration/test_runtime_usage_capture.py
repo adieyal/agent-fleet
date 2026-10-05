@@ -5,9 +5,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from fleet import cli, composition
+from fleet.container import configured_container
+from fleet_cli import cli
 from fleet.remote import fleetd
-from fleet.web.ingester import observe_runs
+from fleet.ingestion import observe_runs
 
 
 @pytest.mark.parametrize("agent,tokens,cost", [
@@ -45,15 +46,15 @@ def test_recorded_results_reach_durable_run_without_replay_churn(tmp_path, monke
         assert not any(event["kind"] == "result" and not event["summary"] for event in events)
     summary = fleetd.job_summary(fleetd.read_job("job"), 0)
     assert summary["status"] == "done"
-    store = composition.open_store()
-    work = composition.open_work(store)
+    store = configured_container().store()
+    work = configured_container(store).work()
     item = work.add(project=project_id, title="Usage", goal="Capture", actor="user")
-    execution = composition.open_execution(store)
+    execution = configured_container(store).execution()
     linked = execution.link("host", "job", item.id, actor="user")
-    library = composition.open_library(store)
+    library = configured_container(store).library()
     host = {"ok": True, "name": "host", "jobs": {"job": summary}}
     observe_runs(execution, library, host)
-    run = composition.open_execution(composition.open_store()).get_run(linked.id)
+    run = configured_container(configured_container().store()).execution().get_run(linked.id)
     if tokens is None:
         assert run.usage is None
     else:
@@ -98,9 +99,9 @@ def test_a_codex_step_can_write_the_jobs_extra_directories(tmp_path, monkeypatch
 
 
 def test_a_run_document_is_indexed_again_only_when_it_changes(project_id):
-    store = composition.open_store()
-    item = composition.open_work(store).add(project=project_id, title="Index", goal="Once", actor="user")
-    execution, library = composition.open_execution(store), composition.open_library(store)
+    store = configured_container().store()
+    item = configured_container(store).work().add(project=project_id, title='Index', goal='Once', actor='user')
+    execution, library = configured_container(store).execution(), configured_container(store).library()
     execution.link("host", "job", item.id, actor="user")
     calls = []
     index_run = library.index_run

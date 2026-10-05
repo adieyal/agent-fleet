@@ -9,7 +9,7 @@ import pytest
 
 
 @pytest.mark.parametrize("operation", [
-    "open_store(Path.home() / '.config/fleet/fleet.db')",
+    "configured_container(path=Path.home() / '.config/fleet/fleet.db').store()",
     "sqlite3.connect(str(Path.home() / '.config/fleet/fleet.db'))",
     "sqlite3.connect((Path.home() / '.config/fleet/fleet.db').as_uri(), uri=True)",
     "(Path.home() / '.config/fleet/config.json').read_text()",
@@ -24,7 +24,7 @@ def test_real_config_access_is_rejected_in_subprocess(tmp_path: Path, operation:
     (tmp_path / 'replacement.json').write_text('{}')
     source = f"""import os, sqlite3
 from pathlib import Path
-from fleet.composition import open_store
+from fleet.container import configured_container
 
 def test_forbidden():
     {operation}

@@ -22,8 +22,9 @@ from playwright.sync_api import sync_playwright
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
-from fleet.web.fixture import FixtureLibrary, FixtureState  # noqa: E402
-from fleet.web.server import make_handler  # noqa: E402
+from fleet.container import Container
+from fleet_web.fixture import FixtureLibrary, FixtureState  # noqa: E402
+from fleet_web.server import make_handler  # noqa: E402
 
 VIEWPORT = {'width': 1672, 'height': 941}  # l2.png's size
 UNCAPPED = ['--disable-frame-rate-limit', '--disable-gpu-vsync']
@@ -36,8 +37,8 @@ RENDERER = """() => { const g = document.createElement('canvas').getContext('web
 
 
 def serve() -> tuple[ThreadingHTTPServer, str]:
-    state = FixtureState.load(REPO / 'tests' / 'fixtures' / 'restoke.json')
-    server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(state, FixtureLibrary(state.fixture)))
+    state = FixtureState.load(REPO / 'tests' / 'fixtures' / 'restoke.json', container=Container())
+    server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(state, FixtureLibrary(state.fixture, container=state.container)))
     server.daemon_threads = True
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server, f'http://127.0.0.1:{server.server_port}'

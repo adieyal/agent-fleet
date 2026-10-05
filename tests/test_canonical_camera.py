@@ -90,7 +90,7 @@ def test_every_building_piece_records_the_canonical_projection() -> None:
     """The building's pieces (art/scripts/building_pieces.py) are rendered with canonical_camera, and the manifest the
     view stacks them by says so, piece by piece, with the same screen vectors (no Blender needed)."""
     import json
-    manifest = json.loads((ROOT / 'fleet' / 'web' / 'assets' / 'world' / 'building' / 'manifest.json').read_text())
+    manifest = json.loads((ROOT / 'packages' / 'fleet-web' / 'src' / 'fleet_web' / 'static' / 'assets' / 'world' / 'building' / 'manifest.json').read_text())
     y, t = math.radians(30), 0.5
     want = {'x_px': [math.cos(y), math.sin(y) * t], 'y_px': [math.sin(y), -math.cos(y) * t], 'z_px': [0, -1]}
     assert manifest['pieces']

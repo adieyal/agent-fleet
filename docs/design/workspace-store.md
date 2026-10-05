@@ -2,7 +2,7 @@
 
 Workspace owns project identity, explicit host-label links, capacity, stable floors,
 focus and shutter state in the controller store. CLI and HTTP mutations use
-`open_workspace()` and the same Workspace facade. Registry edits, move-in, merge,
+`Container().initialized_workspace()` and the same Workspace facade. Registry edits, move-in, merge,
 shutter and restore each commit with state history in one unit of work. Repeated
 settlement with unchanged placement produces no history.
 

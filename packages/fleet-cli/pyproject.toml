@@ -1,0 +1,18 @@
+[project]
+name = "fleet-cli"
+version = "0.1.0"
+description = "Fleet command-line interface"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+dependencies = ['fleet==0.1.0', 'fleet-web==0.1.0', 'rich>=13']
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fleet_cli"]
+
+[project.scripts]
+fleet = "fleet_cli.cli:main"

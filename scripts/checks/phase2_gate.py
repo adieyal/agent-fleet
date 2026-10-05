@@ -14,7 +14,8 @@ import textwrap
 import time
 from uuid import uuid4
 
-from fleet import composition, transport
+from fleet.container import configured_container
+from fleet import transport
 from fleet.errors import FleetError
 
 
@@ -102,9 +103,9 @@ copy.mkdir(parents=True)
             h.name: {"ssh": h.ssh_target, "python": h.python} for h in self.hosts}}))
 
     def controller(self):
-        store = composition.open_store()
-        project = composition.open_workspace(store).move_in([h.name for h in self.hosts], "Phase 2 gate").project_id
-        work = composition.open_work(store)
+        store = configured_container().store()
+        project = configured_container(store).initialized_workspace().move_in([h.name for h in self.hosts], 'Phase 2 gate').project_id
+        work = configured_container(store).work()
         item = work.add(project=project, title="Isolated Phase 2", goal="Verify dispatch", kind="epic", actor="user")
         return store, work, item
 
@@ -149,7 +150,7 @@ def existing_checks(environment):
     store, work, item = environment.controller()
     item_id = item.id
     before = (work.get(item_id), work.criteria(item_id), work.progress(item_id))
-    execution = composition.open_execution(store)
+    execution = configured_container(store).execution()
     key = "phase2-" + str(uuid4())
 
     def payload(cwd):
@@ -161,8 +162,8 @@ def existing_checks(environment):
     print("1. Two controller processes contend for one action; expect identical run IDs and four history rows.", flush=True)
     program = '''
     import json, sys
-    from fleet import composition
-    execution = composition.open_execution()
+    from fleet.container import configured_container
+    execution = configured_container().execution()
     print("ready", flush=True)
     sys.stdin.readline()
     for _ in range(24):

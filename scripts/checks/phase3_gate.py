@@ -7,7 +7,8 @@ import tempfile
 import subprocess
 from uuid import uuid4
 
-from fleet import composition
+
+from fleet.container import configured_container
 from fleet.modules.authority import AuthorityRejected
 from fleet.modules.execution import JobObservation
 from fleet.modules.work import EvidenceSpecification
@@ -15,13 +16,13 @@ from fleet.orchestration import ControllerCommands
 
 
 def run_scenario(store, slice_id: str, directory: Path) -> dict:
-    services = composition.facades(store)
+    services = configured_container(store).services()
     parent = services.work.get(slice_id)
     if parent.kind != 'milestone':
         raise ValueError('the slice must be a milestone')
-    store = composition.open_store(directory / 'gate.db')
-    composition.open_workspace(store, initial={})
-    services = composition.facades(store)
+    store = configured_container(path=directory / 'gate.db').store()
+    configured_container(store).initialized_workspace(initial={})
+    services = configured_container(store).services()
     root = directory / 'gate-records'
     subprocess.run(['git', 'init', str(root)], check=True, capture_output=True, timeout=10)
     services.records.register('phase3-gate', root, actor='user')
@@ -36,7 +37,7 @@ def run_scenario(store, slice_id: str, directory: Path) -> dict:
         constraints=[], escalation_conditions=['Reserved acceptance'], criteria_it_may_judge=[judged.id],
         decision_authority=['dispatch', 'update_progress', 'record_decision'])), key=path, actor='user')
     activation = services.authority.activate(item.id, actor='orchestrator', role='orchestrator', mandate_path=path)
-    commands = ControllerCommands(store, activation.id)
+    commands = ControllerCommands(configured_container(store).services(), activation.id)
     run = commands.execute('dispatch', dict(host='phase3-fake-controller', runtime='codex',
         payload={'cwd': str(directory)}, reason='Scripted orchestrator', idempotency_key=activation.id)).run
     before_attention = services.attention.list(project=item.project)
@@ -79,9 +80,9 @@ def run_scenario(store, slice_id: str, directory: Path) -> dict:
     assert services.work.get(item.id).condition != 'complete'
 
     # Reopen everything: the reviewer has only persisted records, never host state.
-    reopened = composition.open_store(store.path)
+    reopened = configured_container(path=store.path).store()
     sequence = reopened.latest_sequence()
-    state = ControllerCommands(reopened, activation.id).execute('state', {})
+    state = ControllerCommands(configured_container(reopened).services(), activation.id).execute('state', {})
     def find(nodes):
         for node in nodes:
             if node['id'] == item.id:
@@ -110,7 +111,7 @@ def main():
         'Does not contact hosts or run an AI agent. No M3 baseline exists yet.')
     parser.add_argument('slice', help='real milestone work-item ID in the configured Fleet store')
     args = parser.parse_args()
-    store = composition.open_store()
+    store = configured_container().store()
     with tempfile.TemporaryDirectory(prefix='fleet-phase3-') as temporary:
         directory = Path(temporary)
         print(json.dumps(run_scenario(store, args.slice, directory), indent=2))

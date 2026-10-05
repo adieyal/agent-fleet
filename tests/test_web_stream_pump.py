@@ -6,12 +6,17 @@ Here the fake stream writes 1 MB after hello and then a marker file; handling he
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
+from fleet import transport
+
 import json
 import sys
 import time
 from pathlib import Path
 
-import fleet.web.server as server
+import pytest
+
+from fleet.services import live as runtime
 
 
 class FakeHost:
@@ -24,14 +29,16 @@ class FakeHost:
         return [sys.executable, "-c", self.script]
 
 
-def test_the_stream_is_drained_while_a_message_is_handled(tmp_path: Path, monkeypatch) -> None:
+@pytest.mark.parametrize("pipe", ["stdout", "stderr"])
+def test_the_stream_is_drained_while_a_message_is_handled(tmp_path: Path, monkeypatch, pipe: str) -> None:
     marker = tmp_path / "written"
     filler = json.dumps({"type": "heartbeat", "pad": "x" * 1000})
     script = (f"import sys, pathlib\n"
               f"print({json.dumps(json.dumps({'type': 'hello'}))}, flush=True)\n"
-              f"for _ in range(1000): print({filler!r})\n"
-              f"sys.stdout.flush()\n"
-              f"pathlib.Path({str(marker)!r}).write_text('done')\n")
+              f"for _ in range(1000): print({filler!r}, file=sys.{pipe})\n"
+              f"sys.{pipe}.flush()\n"
+              f"pathlib.Path({str(marker)!r}).write_text('done')\n"
+              + ("print('worker stream ended', file=sys.stderr, flush=True)\n" if pipe == "stderr" else ""))
     handled: list[str] = []
     waited: list[float] = []
 
@@ -43,10 +50,10 @@ def test_the_stream_is_drained_while_a_message_is_handled(tmp_path: Path, monkey
             waited.append(time.monotonic() - start)
         handled.append(message["type"])
 
-    monkeypatch.setattr(server.transport, "ensure_master", lambda host: None)
-    monkeypatch.setattr(server, "apply_message", apply)
-    reason = server.run_stream(None, FakeHost(script))
+    monkeypatch.setattr(transport, "ensure_master", lambda host: None)
+    monkeypatch.setattr(runtime, "apply_message", apply)
+    reason = runtime.run_stream(SimpleNamespace(transport=transport), FakeHost(script))
 
     assert marker.exists() and waited[0] < 5, "the stream's writer was blocked while hello was handled"
-    assert handled == ["hello"] + ["heartbeat"] * 1000
-    assert reason == "stream ended (exit 0)"
+    assert handled == ["hello"] + (["heartbeat"] * 1000 if pipe == "stdout" else [])
+    assert reason == ("stream ended (exit 0)" if pipe == "stdout" else "worker stream ended")

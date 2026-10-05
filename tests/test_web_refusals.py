@@ -12,7 +12,7 @@ import pytest
 
 from fleet.modules.attention import AttentionItem, StreamContext
 from fleet.remote import fleetd
-from fleet.web.server import apply_message
+from fleet.services.live import apply_message
 from test_web_attention import HOSTS, Deck, job
 
 REQUESTS = [("Bash", "git status --short", "Check worktree state", ["Bash(git status:*)"]),

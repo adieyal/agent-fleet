@@ -8,7 +8,7 @@ These follow the order from before. Each story ends with something working that 
 
 Story 1 needs somewhere durable to live, so part of Phase 0 must come first. Build the smallest version of it:
 
-- a SQLite store with migrations and transactional commands, used by both `fleet/cli.py` and `fleet/web/server.py`;
+- a SQLite store with migrations and transactional commands, used by both `packages/fleet-cli/src/fleet_cli/cli.py` and `packages/fleet-web/src/fleet_web/server.py`;
 - a state-change history table (subject, from, to, actor, time), kept for at least a week, which every later story writes to;
 - the recorded-document path restriction.
 

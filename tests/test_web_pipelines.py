@@ -1,4 +1,5 @@
 """Pipelines on the deck: fleetd's reports kept per host, declared rooms, and the pipeline SSE event."""
+from tests.container_support import override_container
 import json
 import runpy
 import threading
@@ -8,12 +9,14 @@ from urllib.request import urlopen
 
 import pytest
 
+from fleet.container import configured_container
 from fleet import transport
-from fleet.composition import open_workspace
+
 from workspace_support import persist_registry
 from fleet.transport import Host
-from fleet.web.fixture import FixtureState
-from fleet.web.server import FleetState, apply_message, make_handler
+from fleet.services.fixtures import FixtureState
+from fleet.services.live import FleetState, apply_message
+from fleet_web.server import make_handler
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -36,7 +39,7 @@ def online(state: FleetState) -> None:
 
 
 def test_a_declared_pipeline_is_in_the_document_before_any_run(config_path) -> None:
-    state = FleetState([HOME], load_registry=open_workspace().registry, pipelines=DECLARED)
+    state = FleetState([HOME], load_registry=configured_container().initialized_workspace().registry, pipelines=DECLARED, container=configured_container())
     [pipeline] = state.document()["pipelines"]
     assert pipeline == {"host": "home", "pipeline": "invoice-training", "project": "invoice-training",
                         "project_id": None, "declared": True, "host_ok": False, "host_error": "connecting…",
@@ -44,7 +47,7 @@ def test_a_declared_pipeline_is_in_the_document_before_any_run(config_path) -> N
 
 
 def test_reports_are_kept_per_host_and_pipeline(config_path) -> None:
-    state = FleetState([HOME], load_registry=open_workspace().registry, pipelines=DECLARED)
+    state = FleetState([HOME], load_registry=configured_container().initialized_workspace().registry, pipelines=DECLARED, container=configured_container())
     online(state)
     version = state.version
     apply_message(state, HOME, {"type": "pipeline", "pipeline": "invoice-training", "run": RUN, "baseline": None})
@@ -62,11 +65,11 @@ def test_reports_are_kept_per_host_and_pipeline(config_path) -> None:
 
 
 def test_a_declared_pipeline_resolves_its_room_to_a_registered_project(config_path) -> None:
-    registry = open_workspace().registry()
+    registry = configured_container().initialized_workspace().registry()
     project = registry.create("Invoice training")
     registry.link(project.id, "home", "invoice-training")
     persist_registry(registry)
-    state = FleetState([HOME], load_registry=open_workspace().registry, pipelines=DECLARED)
+    state = FleetState([HOME], load_registry=configured_container().initialized_workspace().registry, pipelines=DECLARED, container=configured_container())
     assert state.document()["pipelines"][0]["project_id"] == project.id
 
 
@@ -74,11 +77,10 @@ def test_a_pipeline_label_moves_in_like_any_visitor(config_path, monkeypatch) ->
     """A room held only by a declared pipeline has no working directory to read remotes from; linking it to a
     project it may belong to is offered as for any label, and once linked the pipeline's room is that project's."""
     monkeypatch.setattr(transport, "repository_remotes", lambda host, directories: pytest.fail("no directories"))
-    registry = open_workspace().registry()
+    registry = configured_container().initialized_workspace().registry()
     project = registry.create("Invoice training")
     persist_registry(registry)
-    state = FleetState([HOME], load_registry=open_workspace().registry,
-                       workspace=open_workspace(), pipelines=DECLARED)
+    state = FleetState([HOME], load_registry=configured_container().initialized_workspace().registry, pipelines=DECLARED, container=override_container(configured_container(), workspace=configured_container().initialized_workspace()))
     online(state)
     offered = state.move_in_options("invoice-training", ["home"])
     assert [(c["project_id"], c["reasons"]) for c in offered["candidates"]] == [(project.id, ["name"])]
@@ -88,7 +90,7 @@ def test_a_pipeline_label_moves_in_like_any_visitor(config_path, monkeypatch) ->
 
 
 def test_pipeline_reports_stream_as_their_own_event(config_path) -> None:
-    state = FleetState([HOME], load_registry=open_workspace().registry, pipelines=DECLARED)
+    state = FleetState([HOME], load_registry=configured_container().initialized_workspace().registry, pipelines=DECLARED, container=configured_container())
     server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(state))
     threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
     try:
@@ -125,9 +127,6 @@ def test_the_pipeline_fixture_is_what_its_generator_makes() -> None:
 
 
 def test_a_fixture_serves_its_recorded_pipeline_reports() -> None:
-    state = FixtureState({"time": 1, "hosts": [{"name": "home", "ok": True, "error": None, "jobs": [], "sessions": []}],
-                          "pipelines": DECLARED,
-                          "pipeline_reports": [{"host": "home", "pipeline": "invoice-training", "run": RUN,
-                                                "baseline": None}]})
+    state = FixtureState({'time': 1, 'hosts': [{'name': 'home', 'ok': True, 'error': None, 'jobs': [], 'sessions': []}], 'pipelines': DECLARED, 'pipeline_reports': [{'host': 'home', 'pipeline': 'invoice-training', 'run': RUN, 'baseline': None}]}, container=configured_container())
     [pipeline] = state.document()["pipelines"]
     assert pipeline["run"] == RUN and pipeline["host_ok"]

@@ -1,4 +1,4 @@
-"""Zooming the world floor stays sharp and still (fleet/web/js/world/): every tier of a kit piece or robot frame lands
+"""Zooming the world floor stays sharp and still (packages/fleet-web/src/fleet_web/static/js/world/): every tier of a kit piece or robot frame lands
 where the others do, so a swap moves nothing by more than half a screen pixel; and a wheel zoom draws no sprite from
 a bitmap stretched past its pixels, and swaps tiers without a jump. See tests/world_zoom.py."""
 

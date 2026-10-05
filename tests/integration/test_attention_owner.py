@@ -2,13 +2,14 @@ import json
 
 import pytest
 
-from fleet.composition import open_attention, open_store
+
+from fleet.container import configured_container
 from fleet.modules.attention import ItemResolved, StreamContext
 
 
 @pytest.fixture
 def attention(tmp_path):
-    attention = open_attention(open_store(tmp_path / "store.db"), workspace_path=tmp_path / "missing.json")
+    attention = configured_container(configured_container(path=tmp_path / 'store.db').store()).initialized_attention(workspace_path=tmp_path / 'missing.json')
     attention.mandate = lambda project: object()  # Confirmed availability; these tests cover lifecycle only.
     return attention
 

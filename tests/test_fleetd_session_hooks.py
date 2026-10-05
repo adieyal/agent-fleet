@@ -177,7 +177,7 @@ def test_fleet_hooks_installs_through_the_host_transport(home, tmp_path):
     env.pop("CLAUDE_CONFIG_DIR", None)
     (home / ".claude" / "settings.json").write_text(json.dumps(EXISTING))
     for action in ("install", "uninstall"):
-        result = subprocess.run([sys.executable, "-m", "fleet.cli", "hooks", action, "home"], env=env,
+        result = subprocess.run([sys.executable, "-m", "fleet_cli.cli", "hooks", action, "home"], env=env,
                                 capture_output=True, text=True, timeout=60)
         assert result.returncode == 0, result.stdout + result.stderr
         assert str(home / ".claude" / "settings.json") in "".join(result.stdout.split())   # however it wraps
