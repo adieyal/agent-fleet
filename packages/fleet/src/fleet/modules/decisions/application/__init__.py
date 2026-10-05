@@ -143,24 +143,26 @@ def run_guidance(execution, source_run: str | None) -> dict | None:
 
 
 def record_guided(repository, clock, work_item: str, *, actor: str, question: str, answer: str,
-                  principle: str, context: str, source_run: str | None) -> Decision:
-    """A decision an agent made itself under guidance, without an activation."""
+                  principle: str, context: str, source_run: str | None, recorded_by: str | None = None) -> Decision:
+    """A decision attributed to its maker, with an optional separate audit writer."""
     return insert_guided(repository, str(uuid4()), clock(), work_item, actor=actor, question=question,
-                         answer=answer, principle=principle, context=context, source_run=source_run)
+                         answer=answer, principle=principle, context=context, source_run=source_run, recorded_by=recorded_by)
 
 
 def record_streamed(repository, identity: str, time: datetime, work_item: str, *, actor: str, question: str,
-                    answer: str, principle: str, context: str, source_run: str | None) -> Decision:
+                    answer: str, principle: str, context: str, source_run: str | None, recorded_by: str | None = None) -> Decision:
     """A guided decision made on another host, under the id and time it was made with: recorded once per id."""
     try:
         return repository.get(identity)
     except LookupError:
         return insert_guided(repository, identity, time, work_item, actor=actor, question=question,
-                             answer=answer, principle=principle, context=context, source_run=source_run)
+                             answer=answer, principle=principle, context=context, source_run=source_run, recorded_by=recorded_by)
 
 
 def insert_guided(repository, identity: str, time: datetime, work_item: str, *, actor: str, question: str,
-                  answer: str, principle: str, context: str, source_run: str | None) -> Decision:
+                  answer: str, principle: str, context: str, source_run: str | None, recorded_by: str | None = None) -> Decision:
+    if recorded_by is not None and (not isinstance(recorded_by, str) or not recorded_by.strip()):
+        raise ValueError("recorded_by must be nonblank text")
     if not question.strip() or not principle.strip():
         raise ValueError("question and principle are required")
     with repository.transaction() as transaction:
@@ -172,7 +174,7 @@ def insert_guided(repository, identity: str, time: datetime, work_item: str, *, 
         decision = Decision(identity, None, question, answer, actor, context, (work_item,), time,
                             source_run=source_run, principle=principle,
                             guidance=run_guidance(transaction.execution, source_run))
-        transaction.insert(decision)
+        transaction.insert(decision, recorded_by=recorded_by)
         return decision
 
 

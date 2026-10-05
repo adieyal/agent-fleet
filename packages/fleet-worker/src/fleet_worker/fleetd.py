@@ -2460,7 +2460,14 @@ def command_decision(arguments: argparse.Namespace) -> None:
         fail(f"a decision needs {', '.join(DECISION_FIELDS)} as text and time as epoch seconds")
     if not all(decision[name].strip() for name in DECISION_FIELDS if name != "context"):
         fail(f"a decision's {', '.join(name for name in DECISION_FIELDS if name != 'context')} must not be blank")
+    recorded_by = decision.get("recorded_by")
+    if "recorded_by" in decision and (not isinstance(recorded_by, str) or not recorded_by.strip()):
+        fail("recorded_by must be nonblank text")
+    if getattr(arguments, "recorded_by", None) is not None and arguments.recorded_by != recorded_by:
+        fail("recorded_by flag must match the decision payload")
     decision = {name: decision[name] for name in (*DECISION_FIELDS, "time")}
+    if recorded_by is not None:
+        decision["recorded_by"] = recorded_by
     with locked_job(arguments.job) as job:
         held = next((held for held in job.get("decisions", []) if held["id"] == decision["id"]), None)
         if held is None:
@@ -2911,6 +2918,7 @@ def main() -> None:
     receive.set_defaults(handler=command_receive_decision)
     decision = commands.add_parser("decision", help="hold an agent's decision (JSON object on stdin) on its job")
     decision.add_argument("job")
+    decision.add_argument("--recorded-by", help="audit writer, distinct from the decision maker")
     decision.add_argument("--schema-version", type=int, required=True)
     decision.set_defaults(handler=command_decision)
 

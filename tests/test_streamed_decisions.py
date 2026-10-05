@@ -110,3 +110,14 @@ def test_a_decision_held_by_fleetd_reaches_the_store_through_the_job_stream(worl
     apply_message(state, state.hosts[0], {"type": "job", "job": fleetd.job_summary(fleetd.read_job("job-1"), 0)})
     [decision] = configured_container(world.store).decisions().list()
     assert (decision.id, decision.source_run, decision.guidance) == ("d1", run.id, GUIDANCE)
+
+
+def test_streamed_user_decision_preserves_its_recorder(world):
+    run = dispatch(world, world.task.id, 'job-user')
+    entry = held(world.task.id, actor='user', recorded_by='codex')
+    report(world, {'id': 'job-user', 'decisions': [entry]})
+    report(world, {'id': 'job-user', 'decisions': [entry]}, taken=set())
+    [decision] = configured_container(world.store).decisions().list()
+    assert (decision.actor, decision.source_run) == ('user', run.id)
+    [change] = world.store.history(subjects=('decision:' + decision.id,))
+    assert change['actor'] == 'codex'

@@ -108,6 +108,23 @@ hold the job's run) it prints `Decision <id> handed to the controller via job
 unrecordable one, e.g. an unknown work item, becomes an alert). Check with
 `fleet decision list --project P`.
 
+`--actor` names who made the decision. For your own decision, use
+`--actor codex` or `--actor claude`. When recording a decision the user actually
+made, use `--actor user --recorded-by codex` (or `claude`): the decision lists
+`user`, and audit history keeps the agent who recorded it. For example:
+
+```sh
+fleet decision record --work-item W --question "Ship now?" --answer "Wait for review" \
+  --principle "User instruction" --actor user --recorded-by codex \
+  --context "User said to wait in the current conversation"
+fleet history --subject decision:DECISION_ID
+```
+
+Keep the user's instruction in `--context`; writing "User decision" only in
+`--principle` does not set attribution. Without `--recorded-by`, the decision
+actor is also the audit writer. Use an updated controller and worker for the
+separate recorder. Older workers reject the flag before holding the decision.
+
 To see who changed a work item, attention item or project and from which run,
 run `fleet history --subject <id or prefix> [--since 7d]`. Changes made inside a
 job name the job's run. Never prune history (`fleet history prune`) unless the
