@@ -52,7 +52,9 @@ class SubscribedState(FleetState):
             try:
                 path = endpoint_path(self.container.settings()['store_path'])
                 endpoint = json.loads(path.read_text())
-                with urlopen(f"http://127.0.0.1:{endpoint['port']}/subscribe", timeout=2) as response:
+                # A per-read timeout: a busy runtime rebuilding a large snapshot can go quiet for seconds; a stopped
+                # one closes the connection at once.
+                with urlopen(f"http://127.0.0.1:{endpoint['port']}/subscribe", timeout=15) as response:
                     while not self._stop_subscription.is_set():
                         line = response.readline()
                         if not line:
