@@ -68,3 +68,28 @@ Wire protocol 2 rejects workers implementing the earlier completion behavior.
 Dispatch schema remains 4 and stream protocol remains 3 because their record
 shapes are unchanged. Upgrade the controller wheels and run `fleet install HOST`
 for each worker before dispatching new jobs.
+
+## Queued prompt editing
+
+`edit-step JOB INDEX --actor ACTOR` reads the replacement prompt from stdin; the
+worker index starts at zero. It requires a nonempty prompt and actor. The public
+`Jobs.edit_step(host, job, step, prompt, actor=...)` uses one-based step numbers
+and checks the worker's confirmation. The CLI is
+`fleet step edit HOST:ID N --text TEXT` or `--file PATH`. Files contain UTF-8 text
+and preserve newlines.
+
+The worker checks `status == "pending"` and `started_at is None` under the same
+job lock that changes a step to running. A pending retry that already ran is
+refused. A later step can be edited while an earlier step is running or blocked.
+Editing changes only the prompt and its readable brief; it starts no runner and
+preserves step identity, title, order and work item. `step_edit` events retain
+actor, old prompt and new prompt. Repeating the same prompt while the step is
+still eligible creates no extra edit event.
+
+The first edit retains `original_prompt` for keyed-add and delivery payload
+checks, so replaying the original request preserves the correction and queuing
+occurs once. A different payload still fails. Initial dispatch fingerprints remain unchanged: they identify the original
+create request, and reconciliation or repeated creation must preserve subsequent
+edits. The new command is additive within this branch's unreleased wire-2 worker
+0.1.1 packet; existing dispatch and stream schemas stay at 4 and 3. Deploy both
+audit commits together when installing the updated workers.

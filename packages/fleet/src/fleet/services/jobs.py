@@ -119,6 +119,20 @@ class Jobs:
         job = self.transport.call(host, fleetd_arguments, stdin_text=json.dumps(steps))
         return job, None
 
+    def edit_step(self, host: Host, job_id: str, step: int, prompt: str, *, actor: str) -> dict[str, Any]:
+        """Replace an unstarted step's prompt; public step numbers start at one."""
+        if isinstance(step, bool) or not isinstance(step, int) or step < 1:
+            raise FleetError("step number must be a positive integer")
+        if not prompt.strip():
+            raise FleetError("step prompt must not be empty")
+        if not actor.strip():
+            raise FleetError("step edit actor must not be empty")
+        result = self.transport.call(host, ["edit-step", job_id, str(step - 1), "--actor", actor], stdin_text=prompt)
+        if not isinstance(result, dict) or any(result.get(key) != value for key, value in
+                {"job": job_id, "step": step - 1, "status": "edited", "prompt": prompt}.items()):
+            raise FleetError("worker did not confirm the step edit")
+        return result
+
     def show(self, host: Host, job_id: str, *, events: int | None = None) -> dict:
         arguments = ["show", job_id] + (["--events", str(events)] if events is not None else [])
         return self.transport.call(host, arguments)

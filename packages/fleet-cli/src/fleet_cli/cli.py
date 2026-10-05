@@ -376,6 +376,16 @@ def command_library_link(arguments: argparse.Namespace, *, container) -> None:
     print(json.dumps(asdict(entry)))
 
 
+def command_step_edit(arguments: argparse.Namespace, *, container) -> None:
+    try:
+        prompt = arguments.text if arguments.text is not None else arguments.file.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise FleetError(f"cannot read step prompt file {arguments.file}: {error}") from error
+    host, job_id = resolve(arguments.job, container=container)
+    container.jobs().edit_step(host, job_id, arguments.step, prompt, actor=arguments.actor)
+    console.print(f"{host.name}:{job_id} edited step {arguments.step}", markup=False)
+
+
 def command_add(arguments: argparse.Namespace, *, container) -> None:
     host, job_id = resolve(arguments.job, container=container)
     steps = read_steps(arguments)
@@ -1263,7 +1273,7 @@ def add_actor_option(parser: argparse.ArgumentParser, *, container) -> None:
 
 
 COMMAND_GROUPS = {
-    "Jobs": ("send", "dispatch", "start", "add", "push", "pull", "ls", "watch", "show", "tail", "attach", "wait", "result",
+    "Jobs": ("send", "dispatch", "start", "add", "step", "push", "pull", "ls", "watch", "show", "tail", "attach", "wait", "result",
              "cancel", "mv", "rm", "notify", "run"),
     "Work": ("status", "work", "criterion", "summary", "attention", "answer", "decision", "guidance", "library",
              "history", "triage", "store", "page"),
@@ -1502,6 +1512,17 @@ def build_parser(*, container=None) -> argparse.ArgumentParser:
     retry.add_argument("run")
     add_actor_option(retry, container=container)
     retry.set_defaults(handler=command_run_retry)
+
+    step = commands.add_parser("step", help="manage job steps")
+    step_commands = step.add_subparsers(dest="step_command", required=True)
+    edit = step_commands.add_parser("edit", help="replace a queued step's prompt before it starts")
+    edit.add_argument("job", help="HOST:ID or unique job ID")
+    edit.add_argument("step", type=int, help="step number, starting at 1")
+    source = edit.add_mutually_exclusive_group(required=True)
+    source.add_argument("--text", help="replacement prompt")
+    source.add_argument("--file", type=Path, help="UTF-8 file containing the replacement prompt")
+    add_actor_option(edit, container=container)
+    edit.set_defaults(handler=command_step_edit)
 
     add = commands.add_parser("add", help="append steps to a job; if a step is blocked, they answer it",
                               description="Appends steps to a job and starts it again if it is idle. When a step "
