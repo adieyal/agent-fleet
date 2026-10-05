@@ -78,6 +78,16 @@ class RecordsFacade:
         return {intent['revision'] for intent in self.intents()
                 if intent['project'] == project and intent['path'] == path and intent['state'] == 'confirmed'}
 
+    def document_versions(self, project: str, path: str) -> list[Version]:
+        """Confirmed document writes, including commits whose body did not change."""
+        current = self.document(project, path)
+        if current is None:
+            return []
+        revisions = self.revisions(project, path)
+        entries = [entry for entry in self.writer.log(self.workspace.management_repository(project), None,
+                                                      current['revision']) if entry['revision'] in revisions]
+        return [Version(number=len(entries) - index, **entry) for index, entry in enumerate(entries)]
+
     def write_summary(self, summary, project: str, *, actor: str, source_run: str | None = None) -> None:
         result = self.write(project, f'summaries/{summary.id}.json', json.dumps(asdict(summary), default=str),
                             key=str(uuid4()), actor=actor, source_run=source_run)

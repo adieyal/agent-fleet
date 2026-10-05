@@ -1266,7 +1266,7 @@ COMMAND_GROUPS = {
     "Jobs": ("send", "dispatch", "start", "add", "push", "pull", "ls", "watch", "show", "tail", "attach", "wait", "result",
              "cancel", "mv", "rm", "notify", "run"),
     "Work": ("status", "work", "criterion", "summary", "attention", "answer", "decision", "guidance", "library",
-             "history", "triage", "store"),
+             "history", "triage", "store", "page"),
     "Projects": ("project", "building", "libraries", "web"),
     "Hosts": ("hosts", "host", "install", "hooks", "unlock"),
     "Agent-internal": ("orchestrate", "control"),
@@ -1332,11 +1332,55 @@ def add_step_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--context", "-c", action="append", help="file/dir to copy into the job's context dir")
 
 
+def command_page(arguments: argparse.Namespace, *, container) -> None:
+    fields = {}
+    if arguments.page_command == 'write':
+        try:
+            fields['body'] = arguments.file.read_text(encoding='utf-8') if arguments.file else sys.stdin.read()
+        except (OSError, UnicodeError) as error:
+            raise FleetError(f'Cannot read page: {error}') from error
+        fields.update(actor=arguments.actor, key=arguments.key)
+    elif arguments.page_command == 'show':
+        fields['version'] = arguments.version
+    result = container.page_command(arguments.page_command, arguments.project,
+                                    getattr(arguments, 'slug', None), **fields)
+    if arguments.page_command == 'write':
+        print(f'{result["url"]} revision {result["revision"]}')
+    elif arguments.page_command == 'ls':
+        for page in result['pages']:
+            print(f'{page["slug"]}\t{page["title"]}\t{page["revision"]}\t{page["author"]}\t{page["updated"]}')
+        if not result['pages']:
+            print(result['empty_reason'])
+    elif arguments.json:
+        print(json.dumps(result, default=str))
+    else:
+        sys.stdout.write(result['markdown'])
+
+
 def build_parser(*, container=None) -> argparse.ArgumentParser:
     container = bootstrap_container(container)
     parser = argparse.ArgumentParser(prog="fleet", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
+    pages = commands.add_parser('page', help='write and read confirmed live pages').add_subparsers(dest='page_command', required=True)
+    for operation in ('write', 'ls', 'show'):
+        page = pages.add_parser(operation, help={
+            'write': 'validate Markdown and write a confirmed page revision',
+            'ls': 'list confirmed pages with title, revision, author and time',
+            'show': 'read page Markdown or resolved JSON, optionally at a numbered version',
+        }[operation])
+        page.add_argument('project', metavar='PROJECT')
+        if operation != 'ls':
+            page.add_argument('slug', metavar='SLUG')
+        if operation == 'write':
+            page.add_argument('--file', type=Path, metavar='F', help='UTF-8 Markdown file; otherwise read stdin')
+            page.add_argument('--actor', required=True)
+            page.add_argument('--key', help='idempotency key for retrying the same write')
+        elif operation == 'show':
+            page.add_argument('--version', type=int, metavar='N')
+            page.add_argument('--json', action='store_true', help='resolve blocks as JSON')
+        page.set_defaults(handler=command_page)
+
 
     store_commands = commands.add_parser("store", help="local storage accounting").add_subparsers(dest="store_command", required=True)
     usage = store_commands.add_parser("usage", help="database rows and retained documents and traces")

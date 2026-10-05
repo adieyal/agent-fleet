@@ -1,8 +1,11 @@
 """Read confirmed pages and resolve their records in a controller snapshot."""
 from dataclasses import asdict
 from datetime import timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 import json
+import os
+
+from fleet.errors import FleetError
 
 from fleet.modules.attention import PageAnnotation
 
@@ -26,10 +29,46 @@ class PageService:
             except ValueError:
                 continue
             nodes = self.pages.parse(self.services.records.read(project, record['path']))
+            version = self.services.records.document_versions(project, record['path'])[0]
             result.append(dict(slug=slug, title=self.pages.title(nodes, slug), revision=record['revision'],
-                               url=f'/pages/{project}/{slug}'))
+                               url=f'/pages/{project}/{slug}', author=version.actor, updated=version.time))
         return dict(project=project, pages=sorted(result, key=lambda item: item['slug']),
                     empty_reason=None if result else 'No confirmed pages in this project')
+
+    def write(self, project: str, slug: str, body: str, *, actor: str, key: str | None = None) -> dict:
+        job = os.environ.get('FLEET_JOB_ID')
+        runs = [] if not job else [run for run in self.services.execution.runs() if run.remote_job_id == job]
+        if len(runs) > 1:
+            raise FleetError('Job matches several controller runs; page source run is ambiguous')
+        if job and not runs:
+            raise FleetError('Worker page write refused: put the page in the outbox and report it.')
+        path = self.pages.path(slug)
+        self.pages.validate(body)
+        if not actor.strip():
+            raise ValueError('actor is required')
+        if key is not None and not key.strip():
+            raise ValueError('key is required when supplied')
+        project = self.services.workspace.resolve_project(project)
+        result = self.services.records.write(project, path, body, actor=actor, key=str(uuid4()) if key is None else key,
+                                             source_run=runs[0].id if runs else None)
+        if result['state'] != 'confirmed':
+            raise FleetError(f'Page write {result["state"]}: {result["error"]}')
+        return dict(url=f'/pages/{project}/{slug}', revision=result['revision'])
+
+    def show(self, project: str, slug: str, version: int | None = None) -> dict:
+        path = self.pages.path(slug)
+        project = self.services.workspace.resolve_project(project)
+        record = self.services.records.document(project, path)
+        if record is None:
+            raise PageNotFound(f'Page not found: {project}/{slug}')
+        revision = record['revision']
+        if version is not None:
+            versions = self.services.records.document_versions(project, path)
+            selected = next((item for item in versions if item.number == version), None)
+            if selected is None:
+                raise PageNotFound(f'Page {slug} has no version {version}')
+            revision = selected.revision
+        return self.read(project, slug, revision)
 
     def read(self, project, slug, revision=None):
         path = self.pages.path(slug)

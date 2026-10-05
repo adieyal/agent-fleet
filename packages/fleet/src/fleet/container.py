@@ -69,6 +69,7 @@ from fleet.modules.authority import AuthorityFacade as _AuthorityFacade
 from fleet.modules.decisions import DecisionsFacade as _DecisionsFacade
 from fleet.modules.execution import ExecutionFacade as _ExecutionFacade
 from fleet.modules.library import LibraryFacade as _LibraryFacade
+from fleet.errors import FleetError as _FleetError
 from fleet.modules.records import RecordsFacade as _RecordsFacade
 from fleet.modules.pages import PagesFacade as _PagesFacade
 from fleet.services.pages import PageService as _PageService
@@ -489,6 +490,21 @@ def page_query(container, project, slug=None, revision=None):
         return service.index(project) if slug is None else service.read(project, slug, revision)
 
 
+def page_command(container, operation, project, slug=None, **fields):
+    with container.unit_of_work() as unit:
+        service = _PageService(container.bound_services(unit), container.pages())
+        try:
+            if operation == 'write':
+                return service.write(project, slug, **fields)
+            if operation == 'show':
+                return service.show(project, slug, **fields)
+            if operation == 'ls':
+                return service.index(project)
+            raise ValueError('unknown page command')
+        except (ValueError, LookupError) as error:
+            raise _FleetError(str(error)) from error
+
+
 def page_change(container, project, slug, operation, **fields):
     with container.unit_of_work() as unit:
         service = _PageService(container.bound_services(unit), container.pages())
@@ -565,6 +581,7 @@ class Container(_containers.DeclarativeContainer):
         records, work, decisions, attention, execution)
     library = _providers.ThreadSafeSingleton(_LibraryFacade, _library_repository, work)
     pages = _providers.ThreadSafeSingleton(_PagesFacade)
+    page_command = _providers.Callable(page_command, __self__)
     page_view = _providers.Callable(page_query, __self__)
     page_change = _providers.Callable(page_change, __self__)
     references = _providers.Factory(_make_references, __self__)
