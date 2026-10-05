@@ -216,3 +216,93 @@ def test_catch_up_failure_is_visible_and_stream_still_records_job(monkeypatch, c
     assert "catch-up on carbon failed: offline during catch-up" in capsys.readouterr().err
     apply_message(state, state.hosts[0], {"type": "job", "job": job()})
     assert len(state.execution.runs()) == 1
+
+
+def test_identical_live_reports_do_not_open_per_job_scopes(monkeypatch):
+    state = FleetState([transport.Host('carbon', None)], container=configured_container())
+    jobs = {str(i): job(id=str(i), run_id=f'run-{i}') for i in range(212)}
+    state.schedule_triage = lambda: None
+    state.execution.retry_deliveries = lambda *args: None
+    state.execution.retry_decisions = lambda *args: None
+    state.update('carbon', lambda h: h.update(ok=True, error=None, jobs=jobs))
+    import fleet.container as composition
+    original = composition.bound_services
+    calls = []
+
+    def bound(*args):
+        calls.append(1)
+        return original(*args)
+
+    monkeypatch.setattr(composition, 'bound_services', bound)
+    state.update('carbon', lambda h: None, heartbeat=True)
+    assert len(calls) < 10, f'{len(calls)} transaction scopes for identical report'
+    calls.clear()
+    changed = {**jobs['0'], 'updated_at': 21}
+    state.update('carbon', lambda h: h['jobs'].update({'0': changed}), heartbeat=True)
+    assert len(calls) < 20, f'{len(calls)} transaction scopes for one changed job'
+
+
+def test_cached_payload_reindexes_after_run_link_and_project_resolution(project_id):
+    container = configured_container()
+    execution, library = container.execution(), container.library()
+    observed, indexed = {}, {}
+    host = {'name': 'carbon', 'ok': True, 'jobs': {'remote-job': job(documents=[
+        {'kind': 'report', 'name': 'Proof', 'path': '/report.md'}])}}
+    project = [None]
+
+    def ingest():
+        observe_runs(execution, library, host, indexed, lambda j: project[0], observed=observed)
+
+    ingest()
+    assert library.list() == []
+    task = container.work().add(project=project_id, title='Task', goal='Ship', actor='user')
+    execution.link('carbon', 'remote-job', task.id, actor='codex')
+    ingest()
+    entry, = library.list()
+    assert entry.work_item == task.id
+    project[0] = project_id
+    ingest()
+    assert observed['carbon', 'remote-job'][1] == project_id
+
+
+def test_cached_payload_recovers_after_unavailable_and_mutation():
+    container = configured_container()
+    execution, library = container.execution(), container.library()
+    observed = {}
+    host = {'name': 'carbon', 'ok': True, 'jobs': {'remote-job': job(status='running')}}
+    observe_runs(execution, library, host, observed=observed)
+    host['ok'] = False
+    observe_runs(execution, library, host, observed=observed)
+    assert execution.find_run('carbon', 'remote-job').status == 'unknown outcome'
+    host['ok'] = True
+    observe_runs(execution, library, host, observed=observed)
+    assert execution.find_run('carbon', 'remote-job').status == 'running'
+    host['jobs']['remote-job']['workspace']['head'] = 'changed'
+    observe_runs(execution, library, host, observed=observed)
+    assert execution.find_run('carbon', 'remote-job').workspace['head'] == 'changed'
+
+
+def test_cached_job_documents_keep_step_work_and_refresh_availability(project_id):
+    container = configured_container()
+    work = container.work()
+    parent = work.add(project=project_id, title='Parent', goal='Ship', actor='user')
+    child = work.add(project=project_id, title='Step', goal='Verify', actor='user')
+    execution, library = container.execution(), container.library()
+    observed, indexed = {}, {}
+    payload = job(steps=[{'index': 0, 'status': 'done', 'started_at': 10,
+                         'finished_at': 20, 'work_item': child.id}],
+                  documents=[{'kind': 'report', 'name': 'Step proof', 'path': '/step.md', 'step': 0}],
+                  trace={'path': '/trace.json', 'availability': 'available'})
+    host = {'name': 'carbon', 'ok': True, 'jobs': {'remote-job': payload}}
+    observe_runs(execution, library, host, indexed, observed=observed)
+    execution.link('carbon', 'remote-job', parent.id, actor='codex')
+    observe_runs(execution, library, host, indexed, observed=observed)
+    entries = {entry.kind: entry for entry in library.list()}
+    assert entries['report'].work_item == child.id
+    assert entries['trace'].work_item == parent.id
+    payload['trace']['availability'] = 'unavailable'
+    observe_runs(execution, library, host, indexed, observed=observed)
+    assert next(entry for entry in library.list() if entry.kind == 'trace').availability == 'unavailable'
+    host['jobs'].clear()
+    observe_runs(execution, library, host, indexed, observed=observed)
+    assert observed == {}
