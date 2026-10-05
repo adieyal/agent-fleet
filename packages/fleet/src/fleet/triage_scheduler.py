@@ -234,7 +234,11 @@ class TriageScheduler:
             for name in ('FLEET_STORE', 'FLEET_CONFIG', 'FLEET_HOME', 'FLEET_MANAGEMENT'):
                 if name in os.environ:
                     arguments += ['--env', name + '=' + os.environ[name]]
-            prompt = triage_prompt(activation, mandate, [i.id for i in items])
+            # Page replies are conversational: one quick turn, without the user's skills pulling in detours.
+            pages_only = all(item.page_annotation is not None for item in items)
+            if pages_only:
+                arguments += ['--effort', 'low', '--bare']
+            prompt = triage_prompt(activation, mandate, [i.id for i in items], pages_only=pages_only)
             for item in items:
                 if item.page_annotation is not None:
                     prompt += page_comment_prompt(services, item)

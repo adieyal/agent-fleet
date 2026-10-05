@@ -94,6 +94,10 @@ def test_page_brief_queue_reply_and_follow_up(triage):
     for text in ['supplier-migration', 'Supplier migration', 'markdown', 'resolved_block',
                  'Active supplier slice', attention.page_annotation.body, 'Do not resolve unless asked']:
         assert text in prompt
+    # A page-only run replies in one quick turn.
+    assert 'reply directly, without reading state' in prompt and 'Read state first' not in prompt
+    arguments = services.execution.get_action(calls[0].action).payload['arguments']
+    assert arguments[arguments.index('--effort') + 1] == 'low' and '--bare' in arguments
     reply_to_run(services, calls[0], attention)
     finish(services, calls[0])
     engine.schedule()
