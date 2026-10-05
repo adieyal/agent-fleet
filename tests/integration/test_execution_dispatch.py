@@ -178,3 +178,45 @@ def test_legacy_send_label_cannot_bypass_project_shutter():
         execution.dispatch(None, project="demo", host="one", runtime="codex", payload={"cwd": "/repo"},
                            actor="user", reason="manual", idempotency_key="legacy")
     assert execution.actions() == []
+
+
+def test_project_id_is_never_used_as_a_host_label():
+    _, workspace, item, execution = setup_dispatch()
+    bogus = workspace.edit_registry(lambda registry: registry.create('Mislabelled')).id
+    workspace.edit_registry(lambda registry: registry.link(bogus, 'one', item.project))
+    workspace.shutter(bogus)
+    payload = {'cwd': '/repo', 'arguments': ['create', '--project', 'demo']}
+    run = execution.dispatch(item.id, host='one', runtime='codex', payload=payload,
+        actor='user', reason='manual', idempotency_key='label-collision').run
+    execution.resolve_unknown(run.id, actor='user')
+    assert execution.retry(run.id, actor='user', idempotency_key='retry-label-collision').created
+    workspace.shutter(item.project)
+    with pytest.raises(ValueError, match=f'fleet project restore {item.project}'):
+        execution.dispatch(item.id, host='one', runtime='codex', payload=payload,
+            actor='user', reason='manual', idempotency_key='shuttered-id')
+
+
+def test_dispatch_and_retry_check_the_actual_payload_label():
+    _, workspace, item, execution = setup_dispatch()
+    other = workspace.move_in(['one'], 'other').project_id
+    payload = {'cwd': '/repo', 'arguments': ['create', '--project', 'other']}
+    run = execution.dispatch(item.id, host='one', runtime='codex', payload=payload,
+        actor='user', reason='manual', idempotency_key='actual-label').run
+    execution.resolve_unknown(run.id, actor='user')
+    workspace.shutter(other)
+    with pytest.raises(ValueError, match=f'fleet project restore {other}'):
+        execution.retry(run.id, actor='user', idempotency_key='retry-actual-label')
+    with pytest.raises(ValueError, match=f'fleet project restore {other}'):
+        execution.dispatch(item.id, host='one', runtime='codex', payload=payload,
+            actor='user', reason='manual', idempotency_key='shuttered-label')
+
+
+def test_move_in_refuses_an_existing_project_id_without_changes():
+    store, workspace, item, _ = setup_dispatch()
+    before = workspace.snapshot()
+    sequence = store.latest_sequence()
+    from fleet.errors import FleetError
+    with pytest.raises(FleetError, match='mislabelled job'):
+        workspace.move_in(['three'], item.project, shutter=item.project, name='Bogus')
+    assert workspace.snapshot() == before
+    assert store.latest_sequence() == sequence

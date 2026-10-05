@@ -39,6 +39,7 @@ def test_orchestrate_starts_locally_with_activation_command_set(tmp_path, monkey
     action, = configured_container().execution().actions()
     assert action.activation == result['activation']
     assert [entry[0][0] for entry in calls] == ['create', 'start']
+    assert calls[0][0][calls[0][0].index('--project') + 1] == 'worker-p'
     assert calls[0][0][calls[0][0].index('--permission') + 1] == 'danger-full-access'
     prompt = json.loads(calls[0][1]['stdin_text'])[0]['prompt']
     assert result['activation'] in prompt and 'fleet control' in prompt
@@ -91,3 +92,23 @@ def test_orchestrate_rejects_criterion_outside_work_item(tmp_path, monkeypatch, 
     assert item.id in message
     assert configured_container().store().latest_sequence() == before
     call.assert_not_called()
+
+
+def test_orchestrate_refuses_a_missing_host_link(monkeypatch, capsys, project_id, tmp_path):
+    item = configured_container().work().add(project=project_id, title='Ship', goal='Ship', actor='user')
+    monkeypatch.setattr(transport, 'host_by_name', lambda name: Host(name, None))
+    monkeypatch.setattr(transport, 'call', lambda *a, **kw: pytest.fail('must not contact worker'))
+    import subprocess
+    root = tmp_path / 'records'
+    root.mkdir()
+    subprocess.run(['git', '-C', str(root), 'init', '-q'], check=True)
+    records = configured_container().records()
+    records.register(project_id, root, actor='user')
+    records.write_mandate(project_id, 'mandate.json', json.dumps(dict(goal='Ship', constraints=[],
+        escalation_conditions=[], criteria_it_may_judge=[], decision_authority=['dispatch'])),
+        key='mandate', actor='user')
+    with pytest.raises(SystemExit):
+        cli.main(['orchestrate', item.id, '--mandate', 'mandate.json', '--host', 'controller',
+                  '--runtime', 'codex', '--cwd', '/repo'])
+    assert f'fleet project link {project_id} controller:p' in capsys.readouterr().err
+    assert configured_container().execution().runs() == []

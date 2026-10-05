@@ -281,3 +281,20 @@ def test_scheduler_uses_linked_host_label(triage):
     arguments = action.payload['arguments']
     assert arguments[arguments.index('--project') + 1] == 'agent-fleet'
     assert action.project == triage[1].project
+
+
+def test_scheduler_refuses_a_missing_host_link(request):
+    triage_case = request.getfixturevalue('triage')
+    services, activation, *_ = triage_case
+    attention = item(triage_case)
+    engine, calls = scheduler(triage_case)
+    services.workspace.edit_registry(lambda registry: registry.unlink('carbon', 'agent-fleet'))
+    actions = services.execution.actions()
+    engine.schedule()
+    assert calls == []
+    assert services.execution.actions() == actions
+    state = services.triage_repository.get(activation.project)
+    assert state.get('run') is None and state.get('used', 0) == 0
+    assert 'no link on host carbon' in state['error']
+    assert f'fleet project link {activation.project}' in state['error']
+    assert services.attention.get(attention.id).owner == 'agent'

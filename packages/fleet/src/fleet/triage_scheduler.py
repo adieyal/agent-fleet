@@ -173,9 +173,9 @@ class TriageScheduler:
             host = self.host(mandate.host)
             if not host.is_local:
                 raise ValueError('triage must run on the controller machine')
+            label = services.workspace.host_label(project, mandate.host)
             activation = services.authority.activate(project=project, actor='triage',
                 role='triage', mandate_path=TRIAGE_PATH)
-            label = services.workspace.host_label(project, mandate.host)
             arguments = ['create', '--project', label, '--description', f'Triage: handling {len(items)} items',
                          '--agent', mandate.runtime, '--cwd', mandate.cwd, '--permission', mandate.permission,
                          '--steps-file', '/dev/stdin', '--hold',

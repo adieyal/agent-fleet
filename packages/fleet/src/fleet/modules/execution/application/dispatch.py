@@ -21,9 +21,20 @@ def require_step_work(work, work_item: str, project: str | None) -> None:
         raise ValueError(f"step work item {work_item} is in another project")
 
 
+def worker_label(payload: dict | None) -> str | None:
+    """Read the actual worker label, never infer one from controller identity."""
+    arguments = [] if payload is None else payload.get("arguments", [])
+    if "--project" not in arguments:
+        return None
+    index = arguments.index("--project") + 1
+    if index >= len(arguments):
+        raise ValueError("dispatch --project requires a host label")
+    return arguments[index]
+
+
 def claim(transaction: ExecutionRepository, action: Action, host: str, runtime: str, actor: str,
           key: str, digest: str, remote_job_id: str | None = None) -> DispatchResult:
-    transaction.workspace.require_claims_allowed(action.project, host)
+    transaction.workspace.require_claims_allowed(action.project, host, worker_label(action.payload))
     active = next((claim for claim in transaction.claims() if claim.action == action.id and claim.active), None)
     if active is not None:
         run = next(run for run in transaction.runs() if run.id == active.run)
@@ -59,7 +70,7 @@ def dispatch(repository: ExecutionRepository, work_item: str | None, *, host: st
         existing = transaction.request(idempotency_key, digest)
         if existing is not None:
             return DispatchResult(existing, False)
-        transaction.workspace.require_claims_allowed(project, host)
+        transaction.workspace.require_claims_allowed(project, host, worker_label(payload))
         action = Action(str(uuid4()), work_item, "dispatch", reason, actor, idempotency_key,
                         digest, project, payload,
                         None if authorization is None else authorization.id,

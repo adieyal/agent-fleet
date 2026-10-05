@@ -71,12 +71,17 @@ class WorkspaceFacade:
     def shuttered_snapshot(self) -> dict[str, Shuttered]:
         return self.application.shuttered_snapshot()
 
-    def require_claims_allowed(self, project: str, host: str) -> None:
-        linked = self.registry().project_for(host, project)
+    def require_claims_allowed(self, project: str, host: str, label: str | None = None) -> None:
+        registry = self.registry()
+        # Older stored actions may contain a label instead of a canonical project ID.
+        # Exact project identities always win, including when another link uses that ID.
+        if label is None and project not in registry.projects:
+            label = project
+        linked = None if label is None else registry.project_for(host, label)
         shuttered = self.shuttered_snapshot()
         if project in shuttered or (linked is not None and linked.id in shuttered):
             identity = project if project in shuttered else linked.id
-            raise ValueError(f"project '{project}' is shuttered (in the deck's storehouse), so no work can start in "
+            raise ValueError(f"project '{identity}' is shuttered (in the deck's storehouse), so no work can start in "
                              f"it; restore it with: fleet project restore {identity}, or from the deck")
 
     def focus_lookup(self) -> Callable[[ProjectReference], str]:

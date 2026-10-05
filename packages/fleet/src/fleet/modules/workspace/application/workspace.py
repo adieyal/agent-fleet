@@ -81,6 +81,10 @@ class WorkspaceApplication:
         with self.repository.transaction(self.actor) as state:
             if not hosts or not label:
                 raise FleetError("hosts and a label are required")
+            if label in state.registry.projects:
+                raise FleetError(f"label '{label}' is an existing project's ID; this is almost certainly a "
+                                 "mislabelled job. Use the project's linked host label instead of moving it "
+                                 "in as a new project")
             for host in hosts:
                 if state.registry.project_for(host, label):
                     raise AlreadyHoused(f"{host}:{label} already belongs to a project")
