@@ -67,7 +67,7 @@ def test_snapshot_subscription_offline_health_and_generation(tmp_path):
         state.changed = threading.Condition()
         state.by_host = {'offline': {'ok': False, 'error': 'unreachable'}}
         state.version, state.pipeline_seq = 37, 4
-        state.document = lambda: {'hosts': ['offline']}
+        state.document = lambda: {'hosts': [{'name': 'offline', 'jobs': [], 'sessions': []}]}
         state.snapshot_view = lambda: state
         state.accept_snapshot_view = lambda view: None
         state.pipeline_updates = lambda after: [{'name': 'build', 'seq': 4}]

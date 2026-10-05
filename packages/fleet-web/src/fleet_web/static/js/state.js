@@ -199,12 +199,24 @@ export function applyState(doc) {
 }
 
 // ?open=<host>:<job>:<docId> opens that document in the reader once it shows up on the deck (a link to a document)
+let linkedDocRequest = null;
 let linkedDoc = QS.get('open');
 function openLinkedDoc() {
   if (!linkedDoc) return;
   const [host, job, ...rest] = linkedDoc.split(':'), id = rest.join(':');
   const e = ents.get(host + ':' + job), doc = e && (e.job.documents || []).find(d => d.id === id);
-  if (!doc) return;
+  if (!doc) {
+    if (e?.job.documents_truncated && linkedDocRequest !== linkedDoc) {
+      linkedDocRequest = linkedDoc;
+      fetch(`/api/job-documents?${new URLSearchParams({ host, job })}`)
+        .then(response => { if (!response.ok) throw new Error('Document listing unavailable'); return response.json(); })
+        .then(documents => {
+          const found = documents.find(d => d.id === id);
+          if (found) { linkedDoc = null; openReader(e, found); }
+        }).catch(error => console.error(error));
+    }
+    return;
+  }
   linkedDoc = null;
   openReader(e, doc);
 }

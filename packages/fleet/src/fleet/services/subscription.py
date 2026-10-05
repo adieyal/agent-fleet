@@ -15,6 +15,7 @@ class SubscribedState(FleetState):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._snapshot = None
+        self._lagging = False
         self._cursor = None
         self._available = False
         self._error = 'fleet serve is not connected'
@@ -47,6 +48,24 @@ class SubscribedState(FleetState):
         self.transport.call(host, ['mv', identity, label], timeout=30)
         # The sole runtime follows the resulting observation; no optimistic local ingestion.
 
+    def job_detail(self, host, job):
+        if host not in self.host_names():
+            raise KeyError(host)
+        from urllib.parse import urlencode
+        endpoint = json.loads(endpoint_path(self.container.settings()['store_path']).read_text())
+        query = urlencode({'host': host, 'job': job})
+        with urlopen(f"http://127.0.0.1:{endpoint['port']}/job-detail?{query}", timeout=15) as response:
+            return json.load(response)
+
+    def job_documents(self, host, job):
+        if host not in self.host_names():
+            raise KeyError(host)
+        from urllib.parse import urlencode
+        endpoint = json.loads(endpoint_path(self.container.settings()['store_path']).read_text())
+        query = urlencode({'host': host, 'job': job})
+        with urlopen(f"http://127.0.0.1:{endpoint['port']}/job-documents?{query}", timeout=15) as response:
+            return json.load(response)
+
     def _follow_runtime(self):
         while not self._stop_subscription.is_set():
             try:
@@ -59,6 +78,12 @@ class SubscribedState(FleetState):
                         line = response.readline()
                         if not line:
                             raise OSError('runtime subscription ended')
+                        if line.startswith(b': '):
+                            with self.changed:
+                                lagging = line.startswith(b': rebuilding')
+                                if lagging != self._lagging:
+                                    self._lagging = lagging
+                                    self.bump()
                         if line.startswith(b'data: '):
                             self._accept(json.loads(line[6:]), endpoint['generation'])
             except (OSError, ValueError, KeyError, TypeError, FleetError) as error:
@@ -86,6 +111,7 @@ class SubscribedState(FleetState):
                 self._reconnected = self._had_disconnect
             self._snapshot, self._cursor = value, cursor
             self._available, self._error = True, None
+            self._lagging = False
             self.by_host = by_host
             self.refresh_registry()
             if changed:
@@ -105,7 +131,7 @@ class SubscribedState(FleetState):
         with self.changed:
             health = self._snapshot['health'] if self._snapshot else None
             return {'available': self._available, 'healthy': bool(self._available and health['healthy']),
-                    'connection': 'reconnected' if self._reconnected else 'connected',
+                    'connection': 'lagging' if self._lagging else 'reconnected' if self._reconnected else 'connected',
                     'generation': self._snapshot['generation'] if self._snapshot else None,
                     'sequence': self._snapshot['sequence'] if self._snapshot else None,
                     'pipeline_sequence': self._snapshot['pipeline_sequence'] if self._snapshot else None,

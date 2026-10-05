@@ -106,6 +106,22 @@ def make_handler(state: Any,
                 self.stream()
             elif path == "/api/history/runs" or path.startswith("/api/runs/"):
                 self.run_history(path)
+            elif path == "/api/job-detail":
+                query = parse_qs(urlsplit(self.path).query)
+                try:
+                    detail = state.job_detail(query['host'][0], query['job'][0])
+                except (KeyError, OSError, ValueError) as error:
+                    self.error(404, str(error))
+                    return
+                self.respond(200, "application/json", json.dumps(detail).encode())
+            elif path == "/api/job-documents":
+                query = parse_qs(urlsplit(self.path).query)
+                try:
+                    documents = state.job_documents(query['host'][0], query['job'][0])
+                except (KeyError, OSError, ValueError) as error:
+                    self.error(404, str(error))
+                    return
+                self.respond(200, "application/json", json.dumps(documents).encode())
             elif path == "/api/doc":
                 self.document()
             elif path == "/api/doc/asset":

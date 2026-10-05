@@ -78,3 +78,69 @@ def test_unavailable_restart_reconnect_and_live_pages(page, runtime_deck, reques
     expect(records.locator('#page-connection')).to_contain_text('Runtime worker failed')
     records.close()
     assert errors == []
+
+
+def test_complete_document_listing_and_lagging_indicator(page, runtime_deck, request, monkeypatch):
+    import threading
+    import time
+    from tests.runtime_support import eventually
+    deck = runtime_deck
+    deck.container.initialized_workspace().edit_registry(lambda registry: registry.create('p'))
+    deck.start_runtime()
+    deck.start_web()
+    docs = [dict(id=f'outbox/{i}.md', name=f'{i}.md', kind='outbox', mtime=i, size=10,
+                 path=f'/offline/{i}.md') for i in range(40)]
+    deck.events.put({'type': 'job', 'job': dict(id='docs', project='p', description='Forty documents',
+        status='running', agent='codex', created_at=time.time(), updated_at=time.time(), steps=[], documents=docs)})
+    eventually(lambda: deck.read()['hosts'] and deck.read()['hosts'][0]['jobs'], timeout=15)
+    errors = []
+    page.on('pageerror', lambda error: errors.append(str(error)))
+    page.goto(deck.url)
+    page.locator('#tags .tag', has_text='docs').dispatch_event('click')
+    page.locator('#panelTabs [data-tab="documents"]').click()
+    expect(page.locator('#panelBody [data-doc]')).to_have_count(40)
+    shoot(request, page, 'complete-document-list')
+    entered, release = threading.Event(), threading.Event()
+    original = deck.endpoint._snapshot
+    def slow():
+        entered.set()
+        assert release.wait(10)
+        return original()
+    monkeypatch.setattr(deck.endpoint, '_snapshot', slow)
+    deck.runtime_state.bump()
+    try:
+        assert entered.wait(3)
+        expect(page.locator('#live')).to_contain_text('runtime lagging')
+        shoot(request, page, 'runtime-lagging')
+        assert deck.read()['runtime']['available']
+    finally:
+        release.set()
+    expect(page.locator('#live')).not_to_contain_text('runtime lagging')
+    deck.stop_runtime()
+    expect(page.locator('#panelHead [data-stale]')).to_be_visible()
+    expect(page.locator('#panelBody [data-doc]')).to_have_count(40)
+    shoot(request, page, 'retained-details-stale')
+    assert errors == []
+
+
+def test_full_attention_context_is_loaded_on_demand(page, runtime_deck, request):
+    from tests.runtime_support import eventually
+    deck = runtime_deck
+    project = deck.container.initialized_workspace().edit_registry(lambda registry: registry.create('p')).id
+    context = 'Detailed evidence. ' * 100 + 'COMPLETE CONTEXT END'
+    item = deck.container.attention().raise_item(project=project, kind='decision', owner='user',
+        source='fixture', source_reference='long-context', headline='Read the complete evidence?',
+        context_reference=context, actor='fixture', owner_reason='The user must choose the scope.')
+    deck.start_runtime()
+    deck.start_web()
+    eventually(lambda: deck.read()['runtime']['healthy'], timeout=15)
+    live = next(i for i in deck.read()['attention'] if i['id'] == item.id)
+    assert live['context_truncated'] and len(live['context_reference']) == 80
+    errors = []
+    page.on('pageerror', lambda error: errors.append(str(error)))
+    page.goto(deck.url)
+    page.locator('#needYou').click()
+    page.locator(f'[data-context="{item.id}"]').first.click()
+    expect(page.locator('#rdBody .decision-context')).to_have_text(context)
+    shoot(request, page, 'complete-attention-context')
+    assert errors == []

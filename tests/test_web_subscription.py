@@ -46,7 +46,7 @@ def test_unavailable_then_generation_restart_reconnects_without_counter_comparis
     deck.start_runtime()
     eventually(lambda: deck.read()['runtime']['healthy'])
     deck.job()
-    eventually(lambda: deck.read()['hosts'][0]['jobs'])
+    eventually(lambda: deck.read()['hosts'] and deck.read()['hosts'][0]['jobs'])
     for _ in range(50):
         deck.runtime_state.bump()
     eventually(lambda: deck.read()['runtime']['sequence'] >= 50)
@@ -134,3 +134,49 @@ def test_local_web_command_wakes_authoritative_runtime(runtime_deck):
     eventually(lambda: deck.runtime_state.version > before)
     eventually(lambda: deck.read()['building']['focus'][ids['project']] == 'background')
     assert deck.follow_count == 1
+
+
+def test_slow_rebuild_keeps_subscription_connected_and_reports_lag(runtime_deck, monkeypatch):
+    import threading
+    import time
+    deck = runtime_deck
+    deck.start_runtime()
+    deck.start_web()
+    eventually(lambda: deck.read()['runtime']['healthy'])
+    entered, release = threading.Event(), threading.Event()
+    original = deck.endpoint._snapshot
+    def slow():
+        entered.set()
+        assert release.wait(8)
+        return original()
+    monkeypatch.setattr(deck.endpoint, '_snapshot', slow)
+    deck.runtime_state.bump()
+    try:
+        assert entered.wait(2)
+        eventually(lambda: deck.read()['runtime']['connection'] == 'lagging')
+        time.sleep(2.5)  # Exceeds the old socket read timeout.
+        status = deck.read()['runtime']
+        assert status['available'] and status['healthy']
+        assert status['connection'] == 'lagging'
+    finally:
+        release.set()
+    eventually(lambda: deck.read()['runtime']['connection'] != 'lagging')
+    assert deck.read()['runtime']['healthy']
+
+
+def test_document_listing_on_demand_preserves_all_documents(runtime_deck):
+    from urllib.parse import urlencode
+    deck = runtime_deck
+    deck.start_runtime()
+    deck.start_web()
+    docs = [dict(id=f'outbox/{i}.md', name=f'{i}.md', kind='outbox', mtime=i,
+                 size=10, path=f'/offline/{i}.md') for i in range(40)]
+    deck.events.put({'type': 'job', 'job': dict(id='docs', project='p', description='Documents',
+        status='done', agent='codex', created_at=0, updated_at=0, steps=[], documents=docs)})
+    eventually(lambda: deck.read()['hosts'] and deck.read()['hosts'][0]['jobs'])
+    job = deck.read()['hosts'][0]['jobs'][0]
+    assert len(job['documents']) == 1
+    assert job['documents_count'] == 40
+    assert job['documents_truncated']
+    assert deck.read('/api/job-documents?' + urlencode({'host': 'worker', 'job': 'docs'})) == docs
+    assert 'path' not in job['documents'][0]

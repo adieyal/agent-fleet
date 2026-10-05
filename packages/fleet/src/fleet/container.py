@@ -281,12 +281,14 @@ def bound_services(container, unit):
             raise ValueError("unit belongs to a different store")
         if not hasattr(unit, '_facades'):
             scope = Container()
+            # A parent provider override retains this scope through a reverse link.
+            # Forward calls without registering the parent as an overriding provider.
             for name in ('settings', 'store', 'transport', 'evidence', 'repository_writer', 'project_documents',
                          'send', 'grant', 'answer', 'step'):
-                getattr(scope, name).override(getattr(container, name))
+                getattr(scope, name).override(_providers.Callable(getattr(container, name).__call__))
             for name, provider in container.providers.items():
                 if name != 'unit' and provider.overridden and not getattr(scope, name).overridden:
-                    getattr(scope, name).override(provider.last_overriding)
+                    getattr(scope, name).override(_providers.Callable(provider.last_overriding.__call__))
             scope.unit.override(_providers.Object(unit))
             unit._container = scope
             unit._facades = scope.services()
