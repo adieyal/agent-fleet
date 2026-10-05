@@ -107,3 +107,46 @@ def test_forbidden_import_fails(tmp_path, filename, statement, contract):
     result = lint_copy(tmp_path, filename, statement)
     assert result.returncode == 1, result.stdout + result.stderr
     assert f"{contract} BROKEN" in result.stdout, result.stdout
+
+
+def runtime_cycles(graph):
+    """Tarjan's strongly connected components, excluding trivial singletons."""
+    indexes, low, stack, active, cycles = {}, {}, [], set(), []
+
+    def visit(module):
+        indexes[module] = low[module] = len(indexes)
+        stack.append(module)
+        active.add(module)
+        for dependency in sorted(graph.find_modules_directly_imported_by(module)):
+            if dependency not in indexes:
+                visit(dependency)
+                low[module] = min(low[module], low[dependency])
+            elif dependency in active:
+                low[module] = min(low[module], indexes[dependency])
+        if low[module] == indexes[module]:
+            component = []
+            while True:
+                member = stack.pop()
+                active.remove(member)
+                component.append(member)
+                if member == module:
+                    break
+            if len(component) > 1:
+                cycles.append(sorted(component))
+
+    for module in sorted(graph.modules):
+        if module not in indexes:
+            visit(module)
+    return cycles
+
+
+def test_production_runtime_import_graph_is_acyclic():
+    graph = grimp.build_graph(*SOURCES, cache_dir=None, exclude_type_checking_imports=True)
+    assert runtime_cycles(graph) == []
+
+
+def test_runtime_cycle_guard_detects_reverse_edge():
+    graph = grimp.build_graph(*SOURCES, cache_dir=None, exclude_type_checking_imports=True)
+    graph.add_import(importer="fleet.modules.execution.application.answers", imported="fleet.modules.decisions")
+    assert any("fleet.modules.decisions" in cycle and
+               "fleet.modules.execution.application.answers" in cycle for cycle in runtime_cycles(graph))

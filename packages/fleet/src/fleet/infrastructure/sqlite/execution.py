@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Callable
 
 from fleet.modules.execution import Action, Claim, Delivery, Run, Usage
+from fleet.modules.decisions import Decision
 from fleet.modules.attention import AttentionFacade
 from .repository import Repository
 from .store import Store, UnitOfWork
@@ -68,7 +69,10 @@ class ExecutionRepository(Repository):
     def record_answer_decision(self, decision) -> None:
         if self.unit is None or self.decisions_factory is None:
             raise RuntimeError("answer decision storage requires a transaction")
-        self.decisions_factory(self.unit).insert(decision)
+        self.decisions_factory(self.unit).insert(Decision(
+            decision.id, decision.attention_item, decision.headline, decision.reply, decision.actor,
+            decision.context_reference, decision.work_items, decision.recorded_at,
+            source_run=decision.source_run))
 
     def deliveries(self) -> list[Delivery]:
         return [Delivery(**json.loads(row["record"])) for row in self.rows("SELECT record FROM execution_delivery ORDER BY rowid")]

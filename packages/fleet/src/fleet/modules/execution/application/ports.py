@@ -5,7 +5,7 @@ from fleet.modules.work import WorkFacade
 from fleet.modules.workspace import WorkspaceFacade
 
 from ..domain import Action, Claim, Delivery, Run
-from .dtos import AnswerRequest, GrantRequest, GrantResult, InputResult, StepRequest
+from .dtos import AnswerDecision, AnswerRequest, GrantRequest, GrantResult, InputResult, StepRequest
 
 InputSender = Callable[[Run, Delivery], InputResult]
 GrantSender = Callable[[GrantRequest], GrantResult]  # raises when the worker does not confirm
@@ -18,7 +18,7 @@ class ExecutionRepository(Protocol):
     work: WorkFacade
     workspace: WorkspaceFacade
 
-    def record_answer_decision(self, decision) -> None: ...
+    def record_answer_decision(self, decision: AnswerDecision) -> None: ...
 
     def transaction(self) -> ContextManager["ExecutionRepository"]: ...
     def find(self, host: str, job: str) -> Run | None: ...
