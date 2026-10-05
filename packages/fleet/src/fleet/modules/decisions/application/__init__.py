@@ -48,8 +48,10 @@ def record_attention(repository: DecisionRepository, clock: Callable[[], datetim
     """
     if not principle.strip():
         raise ValueError('principle is required')
-    if effect not in (None, 'resolve', 'escalate'):
+    if effect not in (None, 'resolve', 'escalate', 'reply'):
         raise ValueError('unknown triage attention effect')
+    if effect == 'reply' and command != 'reply_attention':
+        raise AuthorityRejected('thread replies require reply_attention authority')
     with repository.transaction() as transaction:
         item = transaction.attention.get(item_id)
         authorized_item = (escalation_snapshot(transaction, item, activation) if command == 'escalate'
@@ -103,7 +105,9 @@ def record_attention(repository: DecisionRepository, clock: Callable[[], datetim
         if command == 'escalate' and item.state == 'resolved' and authorized_item.state == 'open':
             item = transaction.attention.reopen_for_escalation(item.id, actor=actor)
         if item.owner == 'agent' and item.state != 'resolved' and item.refusals == authorized_item.refusals:
-            if effect == 'resolve':
+            if effect == 'reply':
+                transaction.attention.reply(item.id, answer, actor=actor)
+            elif effect == 'resolve':
                 transaction.attention.resolve(item.id, details=f'{answer}; decision:{decision.id}', actor=actor)
             elif effect == 'escalate':
                 transaction.attention.escalate(item.id, reason=answer.removeprefix('escalated to the user: '), actor=actor)

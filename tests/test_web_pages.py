@@ -457,3 +457,86 @@ def test_cli_replies_stay_open_through_sse_and_explicit_resolution(page, demo_pa
         page.goto('about:blank')
         stop.set()
         watcher.join(timeout=5)
+
+
+@pytest.mark.browser
+def test_agent_replies_to_page_thread_through_runtime_and_sse(page, demo_page, deck_state, monkeypatch):
+    """Real HTTP + SSE + scheduler; only the external agent transport is fake."""
+    from threading import Event, Thread
+    from types import SimpleNamespace
+    from playwright.sync_api import expect
+    from fleet.services.live import FleetState
+    from fleet.modules.records import TRIAGE_PATH
+    from fleet.modules.execution import JobObservation
+    from fleet.triage_scheduler import TriageScheduler
+    from tests.integration.test_page_triage import reply_to_run
+
+    container = configured_container()
+    services = container.services()
+    project = demo_page['project']
+    services.workspace.edit_registry(lambda registry: registry.link(project, 'home', 'supplier-demo'))
+    policy = dict(goal='Answer page comments', constraints=['Do not resolve unless asked'],
+        escalation_conditions=['Outside reply authority'], criteria_it_may_judge=[],
+        decision_authority=['reply_attention', 'escalate'], host='home', runtime='codex',
+        cwd=str(container.store().path.parent), permission='workspace-write', routing={},
+        permissions={'allow': [], 'escalate': ['Bash']},
+        limits={'retries_per_step': 1, 'runs_per_day': 12, 'unclaimed_minutes': 30})
+    services.records.write_mandate(project, TRIAGE_PATH, json.dumps(policy), key='browser-reply-policy', actor='user')
+    calls = []
+
+    def deliver(run, **kwargs):
+        services.execution.observe(run.host, JobObservation(run.remote_job_id, 'running', run.runtime, None, None, None))
+        calls.append(run)
+
+    scheduler = TriageScheduler(services, deliver, lambda name: SimpleNamespace(is_local=True, name=name))
+    monkeypatch.setattr(deck_state, 'history_cursor', container.store().latest_sequence(), raising=False)
+    monkeypatch.setattr(deck_state, 'schedule_triage', scheduler.schedule, raising=False)
+    stop = Event()
+    watcher = Thread(target=FleetState.follow_history, args=(deck_state, stop), daemon=True)
+    watcher.start()
+    page.add_init_script('''const interval = window.setInterval;
+      window.setInterval = (fn, ms, ...args) => ms === 2000 ? 0 : interval(fn, ms, ...args);
+      window.liveVersions = []; const Source = window.EventSource;
+      window.EventSource = class extends Source {
+        constructor(...args) { super(...args); this.addEventListener('state', e => liveVersions.push(JSON.parse(e.data).version)); }
+      };''')
+    errors = []
+    page.on('pageerror', lambda error: errors.append(str(error)))
+    try:
+        page.set_viewport_size(dict(width=1440, height=1100))
+        page.goto(demo_page['url'])
+        page.locator('#supplier-work .block-comment').click()
+        page.locator('#comment-body').fill('Can you verify the supplier contract evidence?')
+        page.get_by_label('Who must respond?').select_option('agent')
+        page.locator('#comment-form').get_by_role('button', name='Comment', exact=True).click()
+        thread = page.locator('.thread').filter(has_text='Can you verify the supplier contract evidence?')
+        expect(thread.get_by_text('Agent replying…', exact=True)).to_be_visible(timeout=15000)
+        assert len(calls) == 1
+        destination = os.environ.get('FLEET_PAGE_SHOTS')
+        if destination:
+            Path(destination).mkdir(parents=True, exist_ok=True)
+            page.screenshot(path=str(Path(destination) / 'M4-agent-replying.png'), full_page=True)
+        attention = services.attention.list(project=project, owner='agent')[0]
+        reply_to_run(services, calls[0], attention, 'All active suppliers match the signed contract mapping.')
+        services.execution.observe('home', JobObservation(calls[0].remote_job_id, 'done', 'codex', None, None, None))
+        expect(thread.get_by_text('All active suppliers match the signed contract mapping.', exact=True)).to_be_visible(timeout=10000)
+        expect(thread.get_by_text('Agent replied · thread remains open', exact=True)).to_be_visible()
+        assert services.attention.get(attention.id).state == 'open'
+        if destination:
+            page.screenshot(path=str(Path(destination) / 'M4-agent-replied.png'), full_page=True)
+        thread.get_by_label('Reply', exact=True).fill('Which contracts did you compare?')
+        thread.get_by_role('button', name='Reply', exact=True).click()
+        expect(thread.get_by_text('Agent replying…', exact=True)).to_be_visible(timeout=15000)
+        assert len(calls) == 2
+        assert 'Which contracts did you compare?' in services.execution.get_action(calls[1].action).payload['steps'][0]['prompt']
+        reply_to_run(services, calls[1], attention, 'The signed contracts for the active supplier list.')
+        services.execution.observe('home', JobObservation(calls[1].remote_job_id, 'done', 'codex', None, None, None))
+        expect(thread.get_by_text('The signed contracts for the active supplier list.', exact=True)).to_be_visible(timeout=10000)
+        assert services.attention.get(attention.id).state == 'open'
+        assert page.evaluate('liveVersions.length') >= 3
+        assert errors == []
+    finally:
+        stop.set()
+        watcher.join(timeout=5)
+        assert not watcher.is_alive()
+        page.goto('about:blank')

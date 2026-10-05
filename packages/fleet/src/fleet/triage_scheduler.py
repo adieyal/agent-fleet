@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import json
 from datetime import datetime, timedelta
 from typing import Callable, TYPE_CHECKING
 
@@ -13,7 +14,8 @@ if TYPE_CHECKING:
 
 from fleet.errors import FleetError
 from fleet.modules.records import TRIAGE_PATH
-from fleet.triage import triage_prompt
+from fleet.triage import triage_prompt, page_comment_prompt
+from fleet.services.page_requests import request_token
 
 
 class TriageScheduler:
@@ -21,10 +23,14 @@ class TriageScheduler:
                  host: Callable[[str], Host] | None) -> None:
         self.services, self.deliver, self.host = services, deliver, host
 
+    request_token = staticmethod(request_token)
+
     @staticmethod
     def queue(services, project: str):
+        handled = services.triage_repository.get(project).get('handled', {})
         return [item for item in services.attention.list(project=project, owner='agent')
-                if item.state in ('open', 'acknowledged')]
+                if item.state in ('open', 'acknowledged') and
+                (item.page_annotation is None or handled.get(item.id) != TriageScheduler.request_token(item))]
 
     def status(self, project: str) -> dict:
         state = self.services.triage_repository.get(project)
@@ -108,7 +114,16 @@ class TriageScheduler:
                 state.update(day=now.date().isoformat(), used=0)
             waiting = state.setdefault('waiting', {})
             untouched = state.setdefault('untouched', {})
+            waiting_requests = state.setdefault('waiting_requests', {})
             for item in items:
+                if item.page_annotation is not None:
+                    token = self.request_token(item)
+                    if waiting_requests.get(item.id) != token:
+                        requested_at = max([item.owner_at or now] +
+                            [reply.time for reply in item.replies if not reply.actor.startswith('triage:')])
+                        waiting[item.id] = requested_at.isoformat()
+                        waiting_requests[item.id] = token
+                        untouched.pop(item.id, None)
                 if item.id not in waiting:
                     waiting[item.id] = (item.owner_at or now).isoformat()
                 elif item.owner_at is not None and item.owner_at > datetime.fromisoformat(waiting[item.id]):
@@ -137,8 +152,19 @@ class TriageScheduler:
                         repository.save(project, state)
                         return run, True
                     return None
-                acted = {d.attention_item for d in services.decisions.list() if d.source_run == run.id}
+                decisions = [d for d in services.decisions.list() if d.source_run == run.id]
+                acted = {d.attention_item for d in decisions}
+                replied = {d.attention_item for d in decisions
+                           if json.loads(d.context).get('command') == 'reply_attention'}
                 for item in items:
+                    if item.page_annotation is not None and item.id in state.get('items', []):
+                        if run.status != 'succeeded':
+                            escalate(item, f'agent reply run {run.id} failed: {run.status}')
+                            continue
+                        if item.id in replied:
+                            state.setdefault('handled', {})[item.id] = state.get('requests', {}).get(item.id)
+                        else:
+                            acted.discard(item.id)
                     if item.id not in state.get('items', []) or item.id in acted:
                         continue
                     untouched[item.id] = untouched.get(item.id, 0) + 1
@@ -147,6 +173,7 @@ class TriageScheduler:
                 for identity in state.get('items', []):
                     waiting[identity] = now.isoformat()
                 state.update(run=None, items=[])
+                repository.save(project, state)
                 items = self.queue(services, project)
             # Include activations launched by another controller before scheduler state existed.
             if not state.get('run'):
@@ -159,6 +186,9 @@ class TriageScheduler:
                                      used=state['used'] + 1, delivery_at=now.isoformat())
                         repository.save(project, state)
                         return None
+            # A page reply needs explicit authority; surface the missing permission in its thread.
+            items = [item for item in items if item.page_annotation is None
+                     or 'reply_attention' in mandate.decision_authority]
             for item in list(items):
                 if now - datetime.fromisoformat(waiting[item.id]) >= timedelta(minutes=mandate.limits['unclaimed_minutes']):
                     escalate(item, 'triage item was not claimed before its timeout; fleet web was down or dispatch was unavailable')
@@ -185,6 +215,9 @@ class TriageScheduler:
                 if name in os.environ:
                     arguments += ['--env', name + '=' + os.environ[name]]
             prompt = triage_prompt(activation, mandate, [i.id for i in items])
+            for item in items:
+                if item.page_annotation is not None:
+                    prompt += page_comment_prompt(services, item)
             guidance_metadata = None
             constitution = services.records.guidance(project)
             if constitution is not None:
@@ -204,6 +237,7 @@ class TriageScheduler:
                 idempotency_key=f'triage:{project}:{items[0].id}:{activation.id}',
                 payload=dict(arguments=arguments, cwd=mandate.cwd, steps=[dict(prompt=prompt, title='Triage')],
                              context=[], hold=False)).run
+            state['requests'] = {i.id: self.request_token(i) for i in items}
             state.update(run=run.id, items=[i.id for i in items], claimed_at=now.isoformat(),
                          delivery_at=now.isoformat(), used=state['used'] + 1, error=None)
             for item in items:

@@ -101,7 +101,7 @@ class Mandate:
 
 
 TRIAGE_PATH = 'mandates/triage.json'
-TRIAGE_COMMANDS = ('retry', 'add_step', 'grant', 'resolve_attention', 'escalate', 'record_decision')
+TRIAGE_COMMANDS = ('retry', 'add_step', 'grant', 'resolve_attention', 'escalate', 'record_decision', 'reply_attention')
 
 
 @dataclass(frozen=True)

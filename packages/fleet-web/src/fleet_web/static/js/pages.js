@@ -277,6 +277,9 @@
         card.addEventListener('focusin', () => focusThread(thread.id, false));
         threads.append(card);
       }
+      let agentStatus = card.querySelector('[data-agent-status]');
+      if (!agentStatus) { agentStatus = element('p', undefined, 'meta'); agentStatus.dataset.agentStatus = ''; agentStatus.setAttribute('role', 'status'); card.querySelector('.thread-body').prepend(agentStatus); }
+      agentStatus.textContent = thread.agent_status || ''; agentStatus.hidden = !thread.agent_status;
       card.querySelector('[data-time]').textContent = relative(thread.created);
       card.classList.toggle('resolved', thread.state === 'resolved');
       card.querySelector('[data-toggle]').hidden = thread.state !== 'resolved';
