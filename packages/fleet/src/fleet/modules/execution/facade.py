@@ -227,6 +227,10 @@ class ExecutionFacade:
     def actions(self) -> list[Action]:
         return self.repository.actions()
 
+    def activated_actions(self) -> list[Action]:
+        """Actions dispatched under an activation, including ended attempts."""
+        return self.repository.activated_actions()
+
     def record_observed(self, host: str, job: dict, project: str | None = None) -> Run:
         return record_observed(self.repository, host, job, project)
 
@@ -291,6 +295,10 @@ class ExecutionFacade:
 
     def runs(self) -> list[Run]:
         return self.repository.runs()
+
+    def active_runs(self) -> list[Run]:
+        """Running and unknown-outcome attempts, including sessions."""
+        return self.repository.active_runs()
 
     def steps(self, run: str) -> list[dict]:
         self.repository.get_run(run)

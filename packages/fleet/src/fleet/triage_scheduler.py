@@ -20,6 +20,7 @@ class TriageScheduler:
     def __init__(self, services: Facades, deliver: Callable[..., object] | None,
                  host: Callable[[str], Host] | None) -> None:
         self.services, self.deliver, self.host = services, deliver, host
+        self._idle_revision = None
 
     @staticmethod
     def queue(services, project: str):
@@ -54,16 +55,25 @@ class TriageScheduler:
                                           if intent['project'] == project and intent['state'] == 'pending'])
 
     def schedule(self) -> None:
+        revision = (self.services.store.latest_sequence(), self.services.store.clock().date())
+        if self._idle_revision == revision:
+            return
+        self._idle_revision = None
         projects = {i.project for i in self.services.attention.list(owner='agent') if i.state != 'resolved'}
+        idle = not projects
         projects.update(self.services.triage_repository.projects())
         # A reservation must be reconciled even after every item was taken back or resolved.
-        projects.update(a.project for a in self.services.execution.actions() if a.activation and
-                        self.services.authority.get(a.activation).role == 'triage')
+        actions = {a.id: a for a in self.services.execution.activated_actions() if a.activation and
+                   self.services.authority.get(a.activation).role == 'triage'}
+        projects.update(a.project for a in actions.values())
+        if idle and actions:
+            idle = not any(run.action in actions for run in self.services.execution.active_runs())
         for project in sorted(projects):
             try:
                 delivery = self.reserve(project)
                 self.services.decisions.publish_triage_guards(project)
             except (FleetError, ValueError, LookupError, OSError, RuntimeError) as error:
+                idle = False
                 self.delivery_error(project, str(error))
                 continue
             if delivery is None:
@@ -74,11 +84,21 @@ class TriageScheduler:
             try:
                 self.deliver(run, reconcile=reconcile)
             except (FleetError, ValueError, LookupError, OSError, RuntimeError) as error:
+                idle = False
                 self.delivery_error(project, str(error))
             else:
                 self.delivery_error(project, None)
+        # With no queued work, live triage attempts or publication retries,
+        # only a store write or UTC budget rollover can require another pass.
+        # Never reuse this result for timed work or across a store generation.
+        if (idle and not any(intent['state'] != 'confirmed' for intent in self.services.records.intents())
+                and self.services.store.latest_sequence() == revision[0]):
+            self._idle_revision = revision
 
     def delivery_error(self, project: str, error: str | None) -> None:
+        current = self.services.triage_repository.get(project)
+        if 'error' in current and current['error'] == error:
+            return
         with self.services.triage_repository.transaction() as scope:
             repository = scope.records
             state = repository.get(project)
@@ -150,11 +170,11 @@ class TriageScheduler:
                 items = self.queue(services, project)
             # Include activations launched by another controller before scheduler state existed.
             if not state.get('run'):
-                for candidate in services.execution.runs():
-                    action = services.execution.get_action(candidate.action)
-                    if (action.project == project and action.activation and
-                            services.authority.get(action.activation).role == 'triage' and
-                            candidate.status in ('running', 'unknown outcome')):
+                actions = {action.id: action for action in services.execution.activated_actions()
+                           if action.project == project and action.activation and
+                           services.authority.get(action.activation).role == 'triage'}
+                for candidate in services.execution.active_runs() if actions else ():
+                    if candidate.action in actions:
                         state.update(run=candidate.id, items=[], claimed_at=now.isoformat(),
                                      used=state['used'] + 1, delivery_at=now.isoformat())
                         repository.save(project, state)

@@ -1,5 +1,7 @@
 """SQLite persistence for the Attention module."""
 
+from __future__ import annotations
+
 from dataclasses import asdict
 from datetime import datetime
 import json
@@ -51,8 +53,19 @@ class AttentionRepository(Repository):
                          (source, source_reference))
         return decode(rows[0]) if rows else None
 
-    def list(self) -> list[AttentionItem]:
-        return [decode(row) for row in self.rows("SELECT * FROM attention_item ORDER BY last_seen, id")]
+    def list(self, *, project: str | None = None, owner: str | None = None) -> list[AttentionItem]:
+        filters, parameters = [], []
+        for column, value in (("project", project), ("owner", owner)):
+            if value is not None:
+                filters.append(column + " = ?")
+                parameters.append(value)
+        where = " WHERE " + " AND ".join(filters) if filters else ""
+        return [decode(row) for row in self.rows(
+            "SELECT * FROM attention_item" + where + " ORDER BY last_seen, id", tuple(parameters))]
+
+    def snooze_ends(self) -> list[datetime]:
+        return [datetime.fromisoformat(row['snooze_until']) for row in self.rows(
+            "SELECT snooze_until FROM attention_item WHERE snooze_until IS NOT NULL")]
 
     def imported_action(self, reference: str) -> ImportedAction | None:
         rows = self.rows("SELECT * FROM attention_imported_action WHERE reference = ?", (reference,))

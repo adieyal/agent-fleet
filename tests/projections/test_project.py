@@ -29,8 +29,9 @@ class ReadAttention:
     def __init__(self, items):
         self.items = items
 
-    def list(self):
-        return self.items
+    def list(self, *, project=None, owner=None):
+        return [item for item in self.items if (project is None or item.project == project)
+                and (owner is None or item.owner == owner)]
 
 
 def item(identity, **changes):

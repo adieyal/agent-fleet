@@ -149,9 +149,14 @@ class AttentionFacade:
         if owner is not None and owner not in OWNERS:
             raise ValueError(f"owner must be agent or user, not {owner!r}")
         now = self.clock()
-        items = [item.effective(now) for item in self.repository.list()]
+        items = [item.effective(now) for item in self.repository.list(project=project, owner=owner)]
         return [item for item in items if (project is None or item.project == project)
                 and (state is None or item.state == state) and (owner is None or item.owner == owner)]
+
+    def next_snooze_after(self, after: float) -> float | None:
+        """Next stored snooze deadline after the last wake, without hydrating items."""
+        return min((end.timestamp() for end in self.repository.snooze_ends()
+                    if end.timestamp() > after), default=None)
 
     def resolve_undoable(self, item_id: str, *, actor: str) -> tuple[AttentionItem, AttentionItem]:
         return self.commands.resolve_undoable(item_id, actor)

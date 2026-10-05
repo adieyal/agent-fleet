@@ -144,7 +144,7 @@ def test_schema_18_upgrade_preserves_annotation_history_and_adds_empty_replies(t
         connection.execute('PRAGMA user_version = 18')
         connection.commit()
     container = configured_container(path=path)
-    assert container.store().schema_version() == 19
+    assert container.store().schema_version() == 20
     item = container.attention().get('old')
     assert item.page_annotation == annotation
     assert item.replies == () and item.state == 'open'

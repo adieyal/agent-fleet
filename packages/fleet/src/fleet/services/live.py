@@ -11,6 +11,7 @@ from fleet.projections.live import live_document, building_document
 from fleet.projections.attention import attention_items
 
 import json
+from copy import copy
 import fcntl
 from pathlib import Path
 import logging
@@ -120,9 +121,7 @@ class LiveWorkspace(LiveProjects, LiveAttention, LiveProjection, LibraryProjecti
         """Also wakes when a snooze ends, so the item comes back on every deck without a reload, and when a pipeline
         report arrives if `seen_pipelines` is given (compare `pipeline_seq` to tell)."""
         now = self.attention.clock().timestamp()
-        ends = [item.snooze_until.timestamp() for item in self.attention.list()
-                if item.snooze_until is not None and item.snooze_until.timestamp() > self.woken_until]
-        ending = min(ends) if ends else None
+        ending = self.attention.next_snooze_after(self.woken_until)
         wait = timeout if ending is None else max(0.0, min(timeout, ending - now))
         with self.changed:
             self.changed.wait_for(lambda: self.version != seen_version or (
@@ -182,8 +181,10 @@ class FleetState(LiveWorkspace):
         self.decisions = container.decisions()
         self.records = container.records()
         self.reads = container.live_readers(workspace=self.workspace, attention=self.attention)
-        self.triage_status = container.triage_scheduler(deliver=None, host=None).status
-        self.schedule = container.schedule_triage
+        scheduler = container.triage_scheduler(deliver=container.deliver_triage,
+                                               host=lambda name: self.transport.host_by_name(name))
+        self.triage_status = scheduler.status
+        self.schedule = scheduler.schedule
         self.woken_until = 0.0
         self.changed = threading.Condition()
         self.version = 0
@@ -240,8 +241,8 @@ class FleetState(LiveWorkspace):
 
     def schedule_triage(self) -> None:
         bodies = {intent['id']: json.dumps(asdict(self.decisions.get(intent['key'])), default=str)
-                  for intent in self.records.intents()
-                  if intent['state'] == 'pending' and intent['path'] == f"decisions/{intent['key']}.json"}
+                  for intent in self.records.pending_intents()
+                  if intent['path'] == f"decisions/{intent['key']}.json"}
         try:
             self.records.reconcile(bodies)
         except OSError:
@@ -337,6 +338,26 @@ class FleetState(LiveWorkspace):
         """Each host's job summaries as last streamed, by (host, job id)."""
         with self.changed:
             return {(host, job["id"]): job for host, entry in self.by_host.items() for job in entry["jobs"].values()}
+
+    def snapshot_view(self) -> FleetState:
+        """Capture the mutable observation inputs; project with a private lock.
+
+        Store readers remain authoritative. Only this generation's host and
+        pipeline inputs are copied, so a long projection cannot stop ingestion.
+        """
+        with self.changed:
+            view = copy(self)
+            view.changed = threading.Condition()
+            view.by_host = snapshot(self.by_host)
+            view.pipeline_runs = snapshot(self.pipeline_runs)
+            return view
+
+    def accept_snapshot_view(self, view: FleetState) -> None:
+        """Retain refreshed read context used by subsequent host ingestion."""
+        with self.changed:
+            self.registry = view.registry
+            self.capacity = view.capacity
+            self.work_links = view.work_links
 
     def document(self) -> dict[str, Any]:
         projects_error = self.refresh_registry()

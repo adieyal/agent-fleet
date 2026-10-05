@@ -103,6 +103,11 @@ class ExecutionRepository(Repository):
     def actions(self) -> list[Action]:
         return [Action(**json.loads(row["record"])) for row in self.rows("SELECT record FROM execution_action ORDER BY rowid")]
 
+    def activated_actions(self) -> list[Action]:
+        return [Action(**json.loads(row["record"])) for row in self.rows(
+            "SELECT record FROM execution_action INDEXED BY execution_activated_actions "
+            "WHERE json_extract(record, '$.activation') IS NOT NULL ORDER BY rowid")]
+
     def get_action(self, identity: str) -> Action:
         rows = self.rows("SELECT record FROM execution_action WHERE id = ?", (identity,))
         if not rows:
@@ -127,6 +132,10 @@ class ExecutionRepository(Repository):
         return [decode_run(row) for row in self.rows(RUN_ROWS +
             " WHERE json_extract(r.record, '$.status') IN ('running', 'unknown outcome')"
             " AND COALESCE(json_extract(r.record, '$.kind'), 'job') = 'job'")]
+
+    def active_runs(self) -> list[Run]:
+        return [decode_run(row) for row in self.rows(RUN_ROWS +
+            " WHERE json_extract(r.record, '$.status') IN ('running', 'unknown outcome') ORDER BY r.rowid")]
 
     def runs(self) -> list[Run]:
         return [decode_run(row) for row in self.rows(RUN_ROWS + " ORDER BY r.rowid")]

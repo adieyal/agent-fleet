@@ -146,4 +146,15 @@ MIGRATIONS = (
     (
         "ALTER TABLE attention_item ADD COLUMN replies TEXT NOT NULL DEFAULT '[]'",
     ),
+    (
+        # Runtime recovery reads must not parse every retained job's payload.
+        "CREATE INDEX execution_activated_actions ON execution_action(id) "
+        "WHERE json_extract(record, '$.activation') IS NOT NULL",
+        "CREATE INDEX execution_run_status ON execution_run(json_extract(record, '$.status'))",
+        "CREATE INDEX attention_owner_project ON attention_item(owner, project)",
+        "CREATE INDEX attention_snooze_ends ON attention_item(snooze_until) "
+        "WHERE snooze_until IS NOT NULL",
+        "CREATE INDEX records_pending_intents ON records_intent(id) "
+        "WHERE json_extract(record, '$.state') = 'pending'",
+    ),
 )
