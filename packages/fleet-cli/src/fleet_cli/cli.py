@@ -227,6 +227,9 @@ def command_send(arguments: argparse.Namespace, *, container) -> None:
 def command_dispatch(arguments: argparse.Namespace, *, container) -> None:
     steps = read_steps(arguments)
     request = DispatchRequest(**{field.name: getattr(arguments, field.name) for field in fields(DispatchRequest)})
+    warning = container.dispatch().floor_warning(request)
+    if warning:
+        error_console.print(warning, markup=False, soft_wrap=True)
     result = container.dispatch().send(request, steps)
     intent, guidance, current, job = (result[name] for name in ('intent', 'guidance', 'current', 'job'))
     if not intent.created:
@@ -722,6 +725,9 @@ def parse_link(text: str, *, container) -> tuple[str, str]:
 def command_project_add(arguments: argparse.Namespace, *, container) -> None:
     project = container.projects().add(arguments.name, arguments.repo or [], arguments.link or [])
     console.print(f"added project [bold]{project.id}[/] {escape(project.name)}")
+    warning = container.initialized_workspace().floor_warning(project.id)
+    if warning:
+        error_console.print(warning, markup=False, soft_wrap=True)
 
 
 def command_project_rename(arguments: argparse.Namespace, *, container) -> None:
@@ -1914,7 +1920,7 @@ def main(argv: list[str] | None = None, *, container=None) -> None:
         arguments.handler(arguments, container=container)
     except FleetError as error:
         error_console.print(f"fleet: {error}", style="red", markup=False,
-                            soft_wrap=isinstance(error.__cause__, ItemResolved))
+                            soft_wrap=isinstance(error.__cause__, ItemResolved) or '\nCurrent floors from the store' in str(error))
         sys.exit(2)
     except TimeoutExpired as error:
         error_console.print(f"fleet: {arguments.command} timed out after {error.timeout}s", style="red", markup=False)

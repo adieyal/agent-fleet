@@ -16,6 +16,10 @@ class Dispatch:
         self.workspace, self.references, self.context = workspace, references, context
         self.controller = controller
 
+    def floor_warning(self, request: DispatchRequest) -> str | None:
+        workspace = self.workspace()
+        return workspace.floor_warning(workspace.resolve_project(request.project))
+
     def prepare(self, arguments: DispatchRequest, steps: list[dict]):
         if arguments.work_item is not None:
             try:
