@@ -62,8 +62,7 @@ def test_small_events_cross_runtime_and_web_without_snapshot_generation(runtime_
     deck.start_web()
     eventually(lambda: deck.subscriber.runtime_status()['healthy'])
     with urlopen(deck.url + '/api/stream', timeout=5) as response:
-        read_event(response, 'state')
-        read_event(response, 'responder')
+        read_event(response, 'state')  # no responder event: nothing is being typed yet
         version = deck.subscriber.version
         sequence = deck.container.store().latest_sequence()
         cached = deck.endpoint.cached_body

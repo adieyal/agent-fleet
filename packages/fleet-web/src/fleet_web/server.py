@@ -675,7 +675,10 @@ def make_handler(state: Any,
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Accel-Buffering", "no")
             self.end_headers()
-            version, pipeline_seq, typing_seq = -1, 0, -1
+            # A new reader only needs a responder event when a draft is being typed as it connects.
+            typing = state.typing_update()
+            version, pipeline_seq = -1, 0
+            typing_seq = -1 if typing['items'] else typing['typing_sequence']
             try:
                 while not getattr(state, "subscription_closed", False):
                     new_version = state.wait_for_change(version, timeout=SSE_PING_INTERVAL, seen_pipelines=pipeline_seq, seen_typing=typing_seq)

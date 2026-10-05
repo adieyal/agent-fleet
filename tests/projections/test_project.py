@@ -151,7 +151,7 @@ def test_runs_on_two_hosts_and_unavailable_trace_preserve_work():
         runtime="codex", status="failed", reason="lost", start=NOW.isoformat(), end=NOW.isoformat(),
         last_observed=(NOW + timedelta(minutes=1)).isoformat(), usage=None, current_action=None,
         action_observed_at=None, step_work=None, kind="job", label=None, title=None, cwd=None, workspace=None,
-        workspace_reason=None, action_glyph=None, action_freshness="unknown", guidance=None)
+        workspace_reason=None, action_glyph=None, action_freshness="unknown", guidance=None, timings=None)
     assert node["library"][0]["availability"] == "unavailable"
     assert len(node["library"]) == 1
     assert node["condition"] == "waiting"
