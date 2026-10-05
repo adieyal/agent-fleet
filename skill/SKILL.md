@@ -178,3 +178,29 @@ and configures the worker; workers run the copied file on Python 3.8+ without in
 Build all four wheels, including fleet-worker. Host calls check the wire protocol;
 on a mismatch run `fleet install HOST`. `fleetd.py version` reports worker and
 protocol versions for deployment tooling.
+
+## Live pages
+
+Write a live page when people need a persistent narrative with current work, attention or runs alongside it.
+Pages live in the project's management repository. Use stable `block` IDs so comments keep their targets.
+Directives occupy separate blocks with blank lines around them:
+
+```markdown
+::work{id=<work UUID> block=migration-work}
+
+::attention{id=<attention UUID> block=scope-question}
+
+::runs{project=p-1234abcd since=7d block=recent-runs}
+```
+
+```sh
+fleet page write PROJECT SLUG --file page.md --actor codex --key unique-write-key
+cat page.md | fleet page write PROJECT SLUG --actor codex
+fleet page ls PROJECT
+fleet page show PROJECT SLUG
+fleet page show PROJECT SLUG --version 1 --json
+```
+
+Write prints the page URL path and confirmed Git revision. Reuse a key only for the same payload.
+Version numbers start at 1; JSON resolves the selected revision's blocks against current Fleet records.
+Worker jobs without the controller store must put the Markdown in their outbox and report it.

@@ -1,6 +1,7 @@
 """Strict, non-executable page syntax."""
 import re
 from dataclasses import dataclass, field
+from uuid import UUID
 
 SLUG = re.compile(r'[a-z0-9]+(?:-[a-z0-9]+)*\Z')
 DIRECTIVE = re.compile(r'::([a-z]+)\{([^{}]*)\}\s*\Z')
@@ -22,6 +23,7 @@ class PageNode:
     attributes: dict[str, str] = field(default_factory=dict)
     block: str | None = None
     error: str | None = None
+    line: int | None = None
 
 
 def page_path(slug: str) -> str:
@@ -99,7 +101,7 @@ def parse(markdown: str) -> list[PageNode]:
         if not error and ((index and lines[index - 1].strip()) or
                           (index + 1 < len(lines) and lines[index + 1].strip())):
             error = f'Directive must occupy a standalone block: {stripped}'
-        nodes.append(PageNode('error' if error else kind, stripped, attrs, block, error))
+        nodes.append(PageNode('error' if error else kind, stripped, attrs, block, error, index + 1))
     flush()
     return nodes
 
@@ -115,3 +117,20 @@ def title(nodes: list[PageNode], slug: str) -> str:
                 elif not fence and (heading := re.match(r'^ {0,3}#{1,6}\s+(.+?)\s*#*$', line)):
                     return heading[1]
     return slug
+
+
+def validate(markdown: str) -> None:
+    """Reject invalid authored directives before creating a record intent."""
+    for node in parse(markdown):
+        error = node.error
+        if node.kind in ('work', 'attention'):
+            identity = node.attributes['id']
+            try:
+                if str(UUID(identity)) != identity:
+                    raise ValueError()
+            except ValueError:
+                error = f'Invalid {node.kind} ID: {identity}'
+        elif node.kind == 'runs' and not re.fullmatch(r'p-[0-9a-f]{8}', node.attributes['project']):
+            error = f'Invalid project ID: {node.attributes["project"]}'
+        if error:
+            raise PageInvalid(f'Line {node.line}: {error}')

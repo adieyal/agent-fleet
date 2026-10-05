@@ -54,11 +54,11 @@ class RepositoryWriter:
             raise ValueError(result.stderr.strip())
         return result.stdout
 
-    def log(self, root: str, path: str, revision: str) -> list[dict]:
+    def log(self, root: str, path: str | None, revision: str) -> list[dict]:
         """Commits that changed path up to revision, newest first."""
         # NUL and SOH separate fields and commits: unlike \x1f and \x1e, str.strip leaves them alone
         output = self.git(root, 'log', '--format=%H%x00%an%x00%aI%x00%(trailers:key=Source-Run,valueonly,separator=)%x01',
-                          revision, '--', path)
+                          revision, *(['--', path] if path is not None else []))
         entries = [line.strip('\n').split('\x00') for line in output.split('\x01') if line.strip()]
         return [dict(revision=revision, actor=actor, time=time, source_run=source_run.strip() or None)
                 for revision, actor, time, source_run in entries]
