@@ -63,6 +63,11 @@ step's final summary. Wait on several with `fleet wait a b c`, or `--any` to
 return on the first. For a long-lived feed of every step/job change across all
 hosts, run `fleet notify` under the Monitor tool.
 
+Don't schedule timed check-ins ("I'll look again at 13:50") or poll with
+`fleet ls`/`fleet show` while a wait is running: the wait, or a blocked-step
+notification from `fleet notify`, is what re-invokes you. Check a job only when
+the user asks or an event arrives.
+
 ## Inspect and steer
 
 | Need | Command |
