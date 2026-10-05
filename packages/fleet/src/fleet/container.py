@@ -219,6 +219,12 @@ class Services:
     def bound(self, unit: _Transaction) -> _Facades:
         return self._bind(unit)
 
+    def attention_job_link(self, host: str, job: str) -> tuple[str, str | None] | None:
+        run = self.execution.find_run(host, job)
+        if run is None:
+            return None
+        return run.id, self.execution.get_action(run.action).work_item
+
     def routing_history(self, context):
         import json
 
@@ -574,7 +580,8 @@ class Container(_containers.DeclarativeContainer):
         workspace, services, settings.provided['management_home'])
     attention = _providers.ThreadSafeSingleton(_AttentionFacade, _attention_repository, store.provided.clock,
         mandate=_providers.Callable(lambda services: lambda project: services.records.triage_mandate(project), services),
-        routing_history=services.provided.routing_history)
+        routing_history=services.provided.routing_history,
+        job_link=services.provided.attention_job_link)
     work = _providers.ThreadSafeSingleton(_WorkFacade, _work_repository, evidence, store.provided.clock,
         records=records, authority=_providers.Callable(callback, services, 'authority'))
     execution = _providers.ThreadSafeSingleton(_ExecutionFacade, _execution_repository, work,

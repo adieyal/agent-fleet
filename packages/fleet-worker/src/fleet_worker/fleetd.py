@@ -2624,6 +2624,7 @@ def command_stream(arguments: argparse.Namespace) -> None:
                 occurrence = observation["source_event_id"]
                 if inputs.get(occurrence) != observation:
                     emit(observation)
+                    sys.stdout.flush()
                     inputs[occurrence] = observation
             seen = set()
             for path in JOBS_DIRECTORY.glob("*/job.json") if JOBS_DIRECTORY.exists() else []:
