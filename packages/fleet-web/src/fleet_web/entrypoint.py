@@ -27,7 +27,6 @@ def main(argv=None):
     try:
         for message in validate_paths('web'):
             print(message)
-        container.store()
         run(arguments, container)
     except FleetError as error:
         parser.exit(2, f'fleet-web: {error}\n')

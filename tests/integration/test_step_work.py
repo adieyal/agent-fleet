@@ -1,3 +1,4 @@
+from fleet.services import live as runtime
 """A job's steps may each serve their own work item: the bench lights each while its step runs, and the run stays
 linked to the job's item, unable to complete any of them."""
 import pytest
@@ -123,9 +124,9 @@ def test_the_deck_state_carries_each_jobs_workspace_and_current_step_work(plan):
     workspace = {"toplevel": "/repo-wt", "linked_worktree": True, "repository": "/repo", "branch": "feat/x",
                  "detached": False, "head": "abc1234", "dirty": 0, "collected_at": 5.0}
     host = Host("worker", None)
-    state = server.FleetState([host], container=configured_container(store=store))
-    server.apply_message(state, host, {"type": "hello"})
-    server.apply_message(state, host, {"type": "job", "job": {
+    state = runtime.FleetState([host], container=configured_container(store=store))
+    runtime.apply_message(state, host, {"type": "hello"})
+    runtime.apply_message(state, host, {"type": "job", "job": {
         "id": run.remote_job_id, "project": "p", "description": "three parts", "status": "running",
         "agent": "claude", "created_at": 1, "updated_at": 2, "documents": [], "cwd": "/repo-wt",
         "workspace": workspace, "workspace_reason": None,

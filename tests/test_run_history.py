@@ -14,7 +14,8 @@ from fleet.errors import FleetError
 from fleet.modules.execution import JobObservation
 from fleet.projections.run_history import history_runs, run_detail
 from fleet_web.fixture import FixtureLibrary
-from fleet_web.server import FleetState, make_handler
+from fleet.services.live import FleetState
+from fleet_web.server import make_handler
 
 
 @pytest.fixture

@@ -10,7 +10,7 @@ import pytest
 from playwright.sync_api import Browser, Page, expect
 
 from fleet.container import configured_container
-from fleet_web.fixture import FixtureState
+from fleet.services.fixtures import FixtureState
 from fleet_web.library import ProjectLibrary
 from fleet_web.server import make_handler
 

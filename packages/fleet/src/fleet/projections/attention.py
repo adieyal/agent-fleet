@@ -1,8 +1,9 @@
 """The deck's attention shape, projected from module records."""
+from dataclasses import asdict
 
 from typing import Any
 
-from fleet.modules.attention import AttentionFacade
+from fleet.modules.attention import refusal_rules, AttentionFacade
 
 
 def attention_items(attention: AttentionFacade, hosts: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -63,3 +64,38 @@ def attention_display(items: list[dict], building: dict, projects: list[dict]) -
             "rooms": {label: marker(rows) for label, rows in rooms.items()},
             "front_desk": [row["id"] for row in items if row["state"] in ("open", "acknowledged")],
             "open_count": sum(row["state"] == "open" and row.get("owned_by") != "agent" for row in items)}
+
+
+def refusal_detail(item) -> dict[str, Any]:
+    context = item.stream_context
+    return {"host": context.host, "job": context.owner_id, "step": context.step, "state": item.state,
+            "resolution": item.resolution_details, "rules": refusal_rules(item.refusals),
+            "requests": [{"tool": refusal.tool, "description": refusal.description, "detail": refusal.detail,
+                          "rules": None if refusal.rules is None else list(refusal.rules),
+                          "denied_by": list(refusal.denied_by)}
+                         for refusal in item.refusals]}
+
+def question_detail(item, projects: dict[str, Any]) -> dict[str, Any]:
+    """A session's question, where it waits, and that only its terminal can answer it."""
+    context = item.stream_context
+    project = projects.get(context.project_id) if context.project_id is not None else None
+    return {"host": context.host, "session": context.owner_id, "cwd": context.cwd,
+            "project": project.name if project is not None else None, "label": context.project,
+            "state": item.state, "resolution": item.resolution_details,
+            "questions": [asdict(question) for question in item.questions]}
+
+def blocked_detail(item) -> dict[str, Any]:
+    """A blocked job step and its final message; message is None when the host's fleetd reported none."""
+    context = item.stream_context
+    return {"host": context.host, "job": context.owner_id, "step": context.step, "message": context.message,
+            "state": item.state, "resolution": item.resolution_details}
+
+
+def decision_detail(state, item_id):
+    item = state.attention.get(item_id)
+    proposal = state.container.decisions().proposal_for_attention(item.source, item.source_reference)
+    return {"id": item.id, "question": item.headline, "context": item.context_reference, "options": item.options,
+            "proposal": asdict(proposal) if proposal is not None else None,
+            "refusals": refusal_detail(item) if item.refusals else None,
+            "session_question": question_detail(item, state.known_projects()) if item.questions or item.at_terminal else None,
+            "blocked": blocked_detail(item) if item.stream_context is not None and item.stream_context.blocked_step else None}

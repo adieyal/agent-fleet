@@ -6,7 +6,7 @@ from fleet.container import configured_container
 from fleet_cli import cli
 from fleet import transport
 from fleet.transport import Host, HostReport
-from fleet_web.server import FleetState, apply_message
+from fleet.services.live import FleetState, apply_message
 
 
 def session(identity="session", status="working", updated=200):

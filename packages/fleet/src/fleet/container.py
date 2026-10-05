@@ -62,6 +62,15 @@ from fleet.projections.project import project_status, run_work, work_detail as p
 from fleet.projections.run_history import history_runs, run_detail, kept_run_detail
 from fleet.projections.workspace import annotate
 
+from fleet.projections.documents import LibraryProjection
+from fleet.infrastructure.resources import PackageResources
+from fleet.services.live import FleetState, start_live
+from fleet.services.fixtures import FixtureState
+from fleet.infrastructure.fixtures import load_fixture, FixtureLibraryReader
+from fleet.projections.guidance import guidance_view, epic_decisions, project_decisions
+from fleet.projections.attention import decision_detail
+
+from fleet.services.guidance import write_guidance, promote_guidance
 
 def store_path() -> Path:
     return Path(os.environ["FLEET_STORE"]) if "FLEET_STORE" in os.environ else transport.config_path().parent / "fleet.db"
@@ -302,6 +311,8 @@ def resolved_work_detail(services, reference):
     return services.container.work_detail(identity=identity)
 
 
+
+
 class Container(containers.DeclarativeContainer):
     __self__ = providers.Self()
     settings = providers.ThreadSafeSingleton(settings)
@@ -404,3 +415,19 @@ class Container(containers.DeclarativeContainer):
     observe_runs = providers.Callable(observe_runs, execution, library)
     observe_sessions = providers.Callable(observe_sessions, execution)
     record_decisions = providers.Callable(record_decisions, decisions, execution, attention)
+
+    package_resources = providers.Factory(PackageResources)
+    live_history_detail = providers.Callable(LibraryProjection.history_detail)
+    live_history_runs = providers.Callable(LibraryProjection.history_runs)
+    live_state = providers.Factory(FleetState, container=__self__)
+    start_live = providers.Callable(start_live)
+    fixture_data = providers.Callable(load_fixture)
+    fixture_state = providers.Factory(FixtureState, container=__self__)
+    fixture_library = providers.Factory(lambda fixture, project_library: FixtureLibraryReader(
+        fixture, project_library(roots=fixture.get('library_roots', {}))), project_library=project_library.provider)
+    guidance_view = providers.Callable(guidance_view, services=services)
+    epic_decisions = providers.Callable(epic_decisions, services=services)
+    project_decisions = providers.Callable(project_decisions, services=services)
+    decision_detail = providers.Callable(decision_detail)
+    write_guidance = providers.Callable(write_guidance, services=services)
+    promote_guidance = providers.Callable(promote_guidance, services=services, promote=promote_decision.provider)

@@ -11,7 +11,7 @@ from fleet.infrastructure.answers import send_answer
 from fleet.modules.attention import ItemResolved
 from fleet.modules.execution import AnswerRequest
 from fleet.modules.attention.application.observations import asking
-from fleet_web.server import apply_message
+from fleet.services.live import apply_message
 from test_web_attention import HOSTS, Deck, job
 from test_web_refusals import decision, isolated_worker, post, wait_until_finished
 

@@ -419,7 +419,7 @@ def test_readonly_writer_lock_keeps_decision_pending_and_controller_publishes(tr
     from fleet.infrastructure.git import RepositoryWriter
     from fleet.projections.history import subject_history
     from fleet.triage_scheduler import TriageScheduler
-    from fleet_web.server import FleetState
+    from fleet.services.live import FleetState
 
     services, activation, commands, calls, body, _ = triage
     job = 'legacy'
@@ -548,7 +548,7 @@ def test_reopened_escalation_insert_failure_preserves_prior_resolution(triage, m
 def test_audit3_unavailable_policy_keeps_deck_state_readable(triage, tmp_path, monkeypatch):
     from pathlib import Path
     from fleet.triage_scheduler import TriageScheduler
-    from fleet_web.server import FleetState
+    from fleet.services.live import FleetState
     services, activation, *_ = triage
     attention = item(triage, owner='user')
     root = Path(services.workspace.management_repository(activation.project))

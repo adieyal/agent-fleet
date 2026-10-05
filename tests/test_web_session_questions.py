@@ -7,7 +7,7 @@ import pytest
 
 
 from fleet.container import configured_container
-from fleet_web.server import apply_message
+from fleet.services.live import apply_message
 from test_web_attention import HOSTS, Deck
 from test_web_refusals import post
 

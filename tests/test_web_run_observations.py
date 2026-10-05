@@ -8,6 +8,7 @@ from urllib.request import urlopen
 
 
 from fleet.transport import Host
+from fleet.services import live as runtime
 from fleet_web import server
 
 
@@ -17,17 +18,17 @@ def test_unscoped_dispatch_observations_keep_deck_available():
     run = execution.dispatch(None, project="p", host="worker", runtime="codex", payload={"cwd": "/repo"},
                              actor="user", reason="manual", idempotency_key="request").run
     host = Host("worker", None)
-    state = server.FleetState([host], container=configured_container(store=store))
+    state = runtime.FleetState([host], container=configured_container(store=store))
     state.keeper.fetch = lambda *args: {"content": "Report"}
     message = {"type": "job", "job": {
         "id": run.remote_job_id, "project": "p", "description": "Task", "status": "done", "agent": "codex",
         "created_at": 1, "updated_at": 2, "steps": [],
         "documents": [{"id": "report", "kind": "report", "name": "Report", "path": "/repo/report.md"}]}}
-    server.apply_message(state, host, {"type": "hello"})
-    server.apply_message(state, host, message)
+    runtime.apply_message(state, host, {"type": "hello"})
+    runtime.apply_message(state, host, message)
     assert state.keeper.settle(5)
     sequence = store.latest_sequence()
-    server.apply_message(state, host, message)
+    runtime.apply_message(state, host, message)
     assert not [row for row in store.history_after(sequence) if row["subject"].startswith("execution:")]
     assert not execution.claims()[0].active
     http = ThreadingHTTPServer(("127.0.0.1", 0), server.make_handler(state))
@@ -49,9 +50,9 @@ def test_silence_deadline_marks_linked_run_unknown(monkeypatch):
     execution = configured_container(store).execution()
     execution.link("worker", "job", work.id, actor="user")
     host = Host("worker", None)
-    state = server.FleetState([host], container=configured_container(store=store))
-    server.apply_message(state, host, {"type": "hello"})
-    server.apply_message(state, host, {"type": "job", "job": {
+    state = runtime.FleetState([host], container=configured_container(store=store))
+    runtime.apply_message(state, host, {"type": "hello"})
+    runtime.apply_message(state, host, {"type": "job", "job": {
         "id": "job", "project": "p", "description": "Task", "status": "running", "agent": "codex",
         "created_at": 1, "updated_at": 2, "steps": [], "documents": []}})
     waits, commands = [], []
@@ -75,12 +76,12 @@ def test_silence_deadline_marks_linked_run_unknown(monkeypatch):
     def finish(seconds):
         raise Finished
 
-    monkeypatch.setattr(server.time, "sleep", finish)
+    monkeypatch.setattr(runtime.time, "sleep", finish)
     try:
-        server.follow_host(state, host)
+        runtime.follow_host(state, host)
     except Finished:
         pass
-    assert waits == [server.STREAM_SILENCE_LIMIT]
+    assert waits == [runtime.STREAM_SILENCE_LIMIT]
     assert "--since-hours" not in commands[0]
     assert execution.runs()[0].status == "unknown outcome"
     http = ThreadingHTTPServer(("127.0.0.1", 0), server.make_handler(state))
@@ -102,25 +103,25 @@ def test_silence_deadline_marks_linked_run_unknown(monkeypatch):
 
 def test_batch12_reconnect_keeps_stale_work_until_complete_snapshot():
     host = Host('worker', None)
-    state = server.FleetState([host], container=configured_container(store=configured_container().store()))
-    server.apply_message(state, host, {'type': 'hello'})
+    state = runtime.FleetState([host], container=configured_container(store=configured_container().store()))
+    runtime.apply_message(state, host, {'type': 'hello'})
     job = {'id': 'one', 'project': 'p', 'description': 'Work', 'agent': 'codex', 'status': 'running',
            'created_at': 1, 'updated_at': 2, 'steps': []}
     for id in ['one', 'two']:
-        server.apply_message(state, host, {'type': 'job', 'job': {**job, 'id': id}})
+        runtime.apply_message(state, host, {'type': 'job', 'job': {**job, 'id': id}})
     session = {'id': 's', 'project': 'p', 'agent': 'claude', 'status': 'idle', 'started_at': 1, 'activity': None}
-    server.apply_message(state, host, {'type': 'session', 'session': session})
-    server.apply_message(state, host, {'type': 'error', 'error': 'offline'})
+    runtime.apply_message(state, host, {'type': 'session', 'session': session})
+    runtime.apply_message(state, host, {'type': 'error', 'error': 'offline'})
     entry = state.document()['hosts'][0]
     assert len(entry['jobs']) == 2 and all(j['stale'] for j in entry['jobs'])
     assert entry['sessions'][0]['stale']
-    server.apply_message(state, host, {'type': 'hello'})
+    runtime.apply_message(state, host, {'type': 'hello'})
     entry = state.document()['hosts'][0]
     assert len(entry['jobs']) == 2 and all(j['stale'] for j in entry['jobs'])
-    server.apply_message(state, host, {'type': 'job', 'job': job})
+    runtime.apply_message(state, host, {'type': 'job', 'job': job})
     entry = state.document()['hosts'][0]
     assert {j['id']: j['stale'] for j in entry['jobs']} == {'one': False, 'two': True}
-    server.apply_message(state, host, {'type': 'heartbeat'})
+    runtime.apply_message(state, host, {'type': 'heartbeat'})
     entry = state.document()['hosts'][0]
     assert [j['id'] for j in entry['jobs']] == ['one'] and entry['jobs'][0]['stale'] is False
     assert entry['sessions'] == []

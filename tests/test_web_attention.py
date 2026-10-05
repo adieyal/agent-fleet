@@ -14,7 +14,8 @@ from fleet import transport
 
 
 from fleet.transport import Host
-from fleet_web.server import FleetState, apply_message, make_handler
+from fleet.services.live import FleetState, apply_message
+from fleet_web.server import make_handler
 
 HOSTS = [Host("home", None), Host("gpu", "gpu.example")]
 

@@ -20,7 +20,8 @@ import pytest
 
 
 from fleet.container import configured_container
-from fleet_web.fixture import FixtureLibrary, FixtureState
+from fleet_web.fixture import FixtureLibrary
+from fleet.services.fixtures import FixtureState
 from fleet_web.server import make_handler
 from fleet.transport import FleetError
 
@@ -136,7 +137,7 @@ def isolated_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, empty_store:
     def no_worker_documents(*args):
         raise FleetError("test worker document transport is not configured")
 
-    monkeypatch.setattr("fleet_web.server.FleetState.fetch_raw", no_worker_documents)
+    monkeypatch.setattr("fleet.services.live.FleetState.fetch_raw", no_worker_documents)
     path = tmp_path / "fleet.db"
     shutil.copyfile(empty_store, path)
     monkeypatch.setenv("FLEET_STORE", str(path))

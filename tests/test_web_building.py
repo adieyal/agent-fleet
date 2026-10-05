@@ -15,7 +15,8 @@ from fleet.modules.workspace import Registry
 from fleet.infrastructure.config.workspace import decode_workspace
 from workspace_support import persist_registry
 from fleet.transport import FleetError, Host
-from fleet_web.server import FleetState, make_handler
+from fleet.services.live import FleetState
+from fleet_web.server import make_handler
 
 
 HOSTS = [Host("home", None), Host("gpu", "gpu.example")]

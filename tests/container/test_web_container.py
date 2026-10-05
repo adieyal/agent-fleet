@@ -12,7 +12,7 @@ from dependency_injector import providers
 from fleet.container import Host
 from fleet_web.documents import fetch_document
 from fleet_web.library import ProjectLibrary
-from fleet_web.server import FleetState, make_handler
+from fleet_web.server import make_handler
 
 
 def test_live_state_resolves_overridden_adapters_once(cli_container):
@@ -26,7 +26,7 @@ def test_live_state_resolves_overridden_adapters_once(cli_container):
         return keeper
 
     cli_container.document_keeper.override(providers.Factory(make_keeper))
-    state = FleetState([], container=cli_container)
+    state = cli_container.live_state(hosts=[])
     assert state.container is cli_container
     assert state.store is cli_container.store()
     assert state.documents is documents and state.keeper is keeper
@@ -101,3 +101,32 @@ def test_fixture_scopes_isolate_paths_and_inherit_overrides(cli_container):
     finally:
         for scope in scopes:
             scope.directory.cleanup()
+
+
+def test_handler_static_resources_can_be_overridden(cli_container):
+    reads = []
+    cli_container.package_resources.override(SimpleNamespace(
+        read_static=lambda name: reads.append(name) or b'<html>injected</html>',
+        app_files=lambda root, directories: {}))
+    state = SimpleNamespace(container=cli_container)
+    make_handler(state)
+    assert reads == ['index.html']
+
+
+def test_recorded_state_and_library_are_raw_without_web_renderers(cli_container):
+    fixture = cli_container.fixture_data(path=Path(__file__).parents[1] / 'fixtures/restoke.json')
+    state = cli_container.fixture_state(fixture=fixture)
+    try:
+        assert state.container is not cli_container
+        assert 'build' not in state.document()
+        key = next(iter(fixture['job_documents']))
+        host, job, document = key.split('/', 2)
+        raw = state.read_document(host, job, document)
+        assert 'content' in raw and 'html' not in raw and 'toc' not in raw
+        reader = state.container.fixture_library(fixture=fixture)
+        listed = reader.list()
+        assert listed
+        raw = reader.read(listed[0]['project'], listed[0]['id'])
+        assert 'content' in raw and 'html' not in raw
+    finally:
+        state.attention_directory.cleanup()

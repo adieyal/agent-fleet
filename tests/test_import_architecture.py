@@ -65,6 +65,7 @@ def test_production_import_contracts(tmp_path):
 
 
 @pytest.mark.parametrize(("filename", "statement", "contract"), [
+    ("fleet/projections/guidance.py", "import markdown_it", "Library returns raw documents"),
     ("fleet_web/server.py", "import fleet.transport", "Controllers use public providers and module surfaces"),
     ("fleet_web/server.py", "import fleet.services.jobs", "Controllers use public providers and module surfaces"),
     ("fleet/container.py", "import fleet_web.server", "Container has no presentation dependencies"),

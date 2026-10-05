@@ -15,7 +15,8 @@ from urllib.request import urlopen
 from fleet.container import configured_container
 from fleet_web.documents import renderer
 from fleet_web.library import ProjectLibrary
-from fleet_web.server import FleetState, make_handler
+from fleet.services.live import FleetState
+from fleet_web.server import make_handler
 
 
 def test_a_recursive_library_reads_every_folder_but_hidden_and_tool_ones(tmp_path):

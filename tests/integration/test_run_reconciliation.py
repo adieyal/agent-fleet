@@ -6,7 +6,7 @@ import pytest
 
 from fleet.container import configured_container
 from fleet.transport import Host
-from fleet_web.server import FleetState, apply_message
+from fleet.services.live import FleetState, apply_message
 
 
 @pytest.mark.parametrize("outcome", ["done", "failed", "blocked", "cancelled"])

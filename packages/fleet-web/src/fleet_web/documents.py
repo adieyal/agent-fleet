@@ -9,9 +9,11 @@ from mdit_py_plugins.anchors import anchors_plugin
 from mdit_py_plugins.footnote import footnote_plugin
 from mdit_py_plugins.tasklists import tasklists_plugin
 
-from fleet.container import (STATUS_LINE, ASSET_READ_LIMIT, IMAGE_TYPES,
-    AssetNotImage, AssetTooLarge, DocumentAccessDenied)
-from fleet.container import FleetError, Host
+from fleet.container import STATUS_LINE, Host
+# Public renderer error/limit exports retained for callers.
+from fleet.container import (ASSET_READ_LIMIT as ASSET_READ_LIMIT, IMAGE_TYPES as IMAGE_TYPES,
+    AssetNotImage as AssetNotImage, AssetTooLarge as AssetTooLarge,
+    DocumentAccessDenied as DocumentAccessDenied, FleetError as FleetError)
 
 WORDS_PER_MINUTE = 230
 
@@ -38,12 +40,17 @@ def outline(markdown: str) -> list[dict[str, Any]]:
 
 def fetch_document(host: Host, job_id: str, document_id: str, *, container) -> dict[str, Any]:
     document = container.read_document(host=host, job_id=job_id, document_id=document_id)
+    return render_document({**document, "host": host.name}, job_id=job_id)
+
+
+def render_document(document, *, job_id):
+    document = document.copy()
     markdown = STATUS_LINE.sub("", document.pop("content")).strip()
     if document.get("media") == "file":
-        command = shlex.join(["fleet", "pull", f"{host.name}:{job_id}"])
+        command = shlex.join(["fleet", "pull", f"{document['host']}:{job_id}"])
         markdown = "The reader cannot preview this file type. It is listed for collection.\n\n" \
                    + f"Copy the job’s outbox to your local fleet-{job_id} directory with:\n\n```sh\n{command}\n```"
-    return {**document, "host": host.name, **render_markdown(markdown)}
+    return {**document, **render_markdown(markdown)}
 
 
 def render_markdown(markdown: str) -> dict[str, Any]:

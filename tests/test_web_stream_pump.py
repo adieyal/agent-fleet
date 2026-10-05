@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-import fleet_web.server as server
+from fleet.services import live as runtime
 
 
 class FakeHost:
@@ -51,8 +51,8 @@ def test_the_stream_is_drained_while_a_message_is_handled(tmp_path: Path, monkey
         handled.append(message["type"])
 
     monkeypatch.setattr(transport, "ensure_master", lambda host: None)
-    monkeypatch.setattr(server, "apply_message", apply)
-    reason = server.run_stream(SimpleNamespace(transport=transport), FakeHost(script))
+    monkeypatch.setattr(runtime, "apply_message", apply)
+    reason = runtime.run_stream(SimpleNamespace(transport=transport), FakeHost(script))
 
     assert marker.exists() and waited[0] < 5, "the stream's writer was blocked while hello was handled"
     assert handled == ["hello"] + (["heartbeat"] * 1000 if pipe == "stdout" else [])

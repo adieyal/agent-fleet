@@ -22,7 +22,8 @@ from fleet.container import configured_container
 from fleet.remote import fleetd
 from fleet.transport import Host
 
-from fleet_web.server import FleetState, follow_host, make_handler
+from fleet.services.live import FleetState, follow_host
+from fleet_web.server import make_handler
 
 real_fetch_raw = FleetState.fetch_raw
 

@@ -1,9 +1,7 @@
 """Render documents supplied by the container's local library reader."""
-from pathlib import Path
 import json
 from typing import Any
 
-from fleet.container import is_private
 from fleet_web.documents import render_markdown
 
 def prd_markdown(prd: dict[str, Any], name: str) -> str:
@@ -60,12 +58,16 @@ class ProjectLibrary:
         document = self.reader.read(project, document_id)
         if document is None:
             return None
-        text = document.pop('content')
-        if document['kind'] == 'prd':
-            try:
-                prd = json.loads(text)
-            except ValueError as error:
-                text = f"# {document_id}\n\nThis prd.json is not valid JSON: {error}"
-            else:
-                text = prd_markdown(prd, document_id) if isinstance(prd, dict) else f"# {document_id}\n\nNot a PRD object."
-        return {**document, **render_markdown(text)}
+        return render_document(document, document_id)
+
+
+def render_document(document, document_id):
+    text = document.pop('content')
+    if document['kind'] == 'prd':
+        try:
+            prd = json.loads(text)
+        except ValueError as error:
+            text = f"# {document_id}\n\nThis prd.json is not valid JSON: {error}"
+        else:
+            text = prd_markdown(prd, document_id) if isinstance(prd, dict) else f"# {document_id}\n\nNot a PRD object."
+    return {**document, **render_markdown(text)}

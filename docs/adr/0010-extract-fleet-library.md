@@ -392,3 +392,41 @@ Final commands, suite summaries, fresh detached-base comparisons, distribution
 manifests, presentation audit and carbon/home upgrade instructions are in the
 extraction fleet job `d541a363-1e51-41e9-8fae-08d69ebd1b94`'s outbox `REPORT.md`.
 No publication, merge, live-store update or real-host deployment occurred.
+
+### Complete web extraction (step 10)
+
+The dashboard's remaining controller state is library-owned. `services.live`
+keeps stream follow/apply, offline snapshots, trace/document retention, polling
+and version notifications. Its shared state delegates project/focus mutations
+to `services.projects`, attention/answer/undo actions to `services.attention`,
+and read-model assembly to `projections.live` and `projections.documents`.
+The workspace settles immediately before its building projection, preserving
+the existing command/read order. `projections.guidance` returns raw Markdown,
+versions, policy and decision summaries; `services.guidance` owns authoring.
+
+Recorded fixture seeding is `services.fixtures.FixtureState`, constructed by
+`Container.fixture_state`. File loading and raw library adapters are in
+`infrastructure.fixtures`, while the existing document scanner and overview
+cache stay in `infrastructure.documents`. Static traversal and startup
+fingerprints use the container's generic `PackageResources` adapter. The
+library passes the package identifier at runtime and never imports `fleet_web`.
+The HTTP adapter retains request parsing/validation, status mapping, SSE framing,
+static serving, Markdown/PRD/HTML decoration and the presentation build ID.
+
+```mermaid
+flowchart LR
+    HTTP[fleet_web handler / renderers] --> DI[fleet.container]
+    DI --> Live[services.live / fixtures]
+    Live --> Actions[services.projects / attention]
+    Live --> Views[projections.live / documents / guidance / overview]
+    DI --> IO[infrastructure documents / fixtures / resources]
+```
+
+`tests/test_web_extraction_boundary.py` rejects web process/persistence imports,
+Store/repository references, store access and filesystem scans, with deliberate
+mutation examples such as `Path(root).rglob('*.md')` and `container.store()`.
+The `Library returns raw documents` import contract rejects Markdown renderer
+dependencies in the library. Provider tests override static resources and verify
+fixture readers return raw content without HTML. Existing integration tests now
+exercise the extracted library state directly; the HTTP tests retain their
+response and status assertions.

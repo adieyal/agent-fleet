@@ -9,7 +9,7 @@ from fleet_cli import cli
 from fleet import transport
 from fleet.remote import fleetd
 from fleet.transport import FleetError, Host
-from fleet_web.server import FleetState, apply_message
+from fleet.services.live import FleetState, apply_message
 
 
 KEEP_TRACE = transport.keep_run_trace

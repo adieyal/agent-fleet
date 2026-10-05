@@ -12,7 +12,7 @@ from fleet.container import configured_container
 from fleet import transport
 from fleet.ingestion import observe_runs
 
-from fleet_web.server import FleetState, apply_message
+from fleet.services.live import FleetState, apply_message
 
 real_catch_up_jobs = transport.catch_up_jobs
 real_fetch_raw = FleetState.fetch_raw

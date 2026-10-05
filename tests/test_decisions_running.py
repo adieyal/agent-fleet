@@ -41,7 +41,7 @@ def test_decision_retries_after_restart_and_dispatch_excludes_history(project_id
     assert delivery.decision == recent.id
     assert delivery.status == 'pending'
     assert calls[0][0] == 'receive-decision'
-    from fleet_web.server import FleetState
+    from fleet.services.live import FleetState
     state = FleetState([transport.Host('fake', None)], container=configured_container(store=services.store))
     view = state.with_work({'hosts': [dict(name='fake', jobs=[dict(id=run.remote_job_id)], sessions=[])]})
     received, = view['hosts'][0]['jobs'][0]['decisions_since_dispatch']

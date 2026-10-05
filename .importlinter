@@ -199,3 +199,11 @@ type = independence
 modules =
     fleet_cli
     fleet_web
+
+[importlinter:contract:library-rendering]
+name = Library returns raw documents
+type = forbidden
+source_modules = fleet
+forbidden_modules =
+    markdown_it
+    mdit_py_plugins

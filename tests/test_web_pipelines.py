@@ -14,8 +14,9 @@ from fleet import transport
 
 from workspace_support import persist_registry
 from fleet.transport import Host
-from fleet_web.fixture import FixtureState
-from fleet_web.server import FleetState, apply_message, make_handler
+from fleet.services.fixtures import FixtureState
+from fleet.services.live import FleetState, apply_message
+from fleet_web.server import make_handler
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
