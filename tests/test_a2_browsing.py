@@ -1,10 +1,12 @@
 import json
 
 import pytest
-from fleet.container import configured_container
 from fleet_cli import cli
 from fleet.modules.execution import JobObservation
-from tests.test_run_history import history, api, filters, get
+from tests.test_run_history import history as history_fixture, api as api_fixture, filters, get
+
+history = history_fixture
+api = api_fixture
 
 
 @pytest.mark.parametrize('state,label', [('queued', 'queued (not started)'), ('stalled', 'stalled (outcome unknown)')])

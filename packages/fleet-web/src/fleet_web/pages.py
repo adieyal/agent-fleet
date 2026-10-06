@@ -51,10 +51,15 @@ header{padding-bottom:8px;margin-bottom:22px;border:0}
 #selection-comment{position:fixed;z-index:10;border-radius:50%;box-shadow:0 2px 10px #0005}
 button:focus-visible,a:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid #a8decc;outline-offset:3px}
 #page-connection:empty{display:none}
+#page-live{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:#a7b5af;white-space:nowrap}
+#page-live i{width:8px;height:8px;border-radius:50%;background:#6b7a75}
+#page-live[data-state=live] i{background:#5fbf8a}#page-live[data-state=degraded] i{background:#d8b778}
+#page-live[data-state=offline] i{background:#e0605a}#page-live[data-state=offline]{color:#f0a19c}
 .anchor-badge{position:absolute;right:-24px;font-size:11px;padding:1px 5px;border-radius:12px}
 .anchor-active{outline:1px solid #a8decc;outline-offset:3px}
 #page-snapshot{margin-top:28px;font-size:11px}
 .thread .meta{font-size:11px}
+.copy-actor{background:none;border:0;padding:0 2px;color:#a7b5af;font-size:12px;cursor:pointer}.copy-actor:hover{color:#e2e8e5}
 .annotation-active{background:#a8decc55!important}
 @media(min-width:900px){.anchor-badge,.detached-badge{display:none}
 }
@@ -141,7 +146,8 @@ def directive_html(node):
 
 def page_document(view):
     body = f'<nav><a href="/">Fleet</a><a href="/pages/{text(view["project"])}">Project pages</a></nav>'
-    body += f'<header><p class="meta page-address">{text(view["address"])} · revision <code>{text(view["revision"])}</code></p>'
+    body += f'<header><p class="meta page-address">{text(view["address"])} · revision <code>{text(view["revision"])}</code>'
+    body += ' · <span id="page-live" data-state="connecting"><i aria-hidden="true"></i><span>Connecting</span></span></p>'
     if view['historical']:
         body += '<p>Historical prose · directive values show current records.</p>'
     body += '</header>'
@@ -152,7 +158,7 @@ def page_document(view):
         else:
             body += f'<div data-directive-node="{index}">{directive_html(node)}</div>'
     body += '</article>'
-    body += '''<aside id="page-margin" aria-label="Page threads"><div id="page-threads"></div><section id="comment-composer" hidden aria-label="New comment"><p id="comment-anchor" class="meta"></p><form id="comment-form"><label class="sr-only" for="comment-body">Comment</label><textarea id="comment-body" name="body" required maxlength="8192" placeholder="Add a comment…"></textarea><div class="composer-actions"><label class="owner-label">To <select name="owner" aria-label="Who must respond?"><option value="user">me</option><option value="agent">agent</option></select></label><button type="submit">Comment</button><button type="button" id="cancel-comment">Cancel</button></div><p class="meta">Requests a response; agent choice does not start a run.</p><p id="comment-error" role="alert"></p></form></section></aside></div><button id="selection-comment" type="button" hidden aria-label="Comment on selection" title="Comment on selection"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 4h16v12H9l-5 4V4Z"/><path d="M8 8h8M8 12h5"/></svg></button><button id="close-threads" type="button" hidden aria-label="Close comments">Close</button>'''
+    body += '''<aside id="page-margin" aria-label="Page threads"><div id="page-threads"></div><section id="comment-composer" hidden aria-label="New comment"><p id="comment-anchor" class="meta"></p><form id="comment-form"><label class="sr-only" for="comment-body">Comment</label><textarea id="comment-body" name="body" required maxlength="8192" placeholder="Add a comment…"></textarea><div class="composer-actions"><label class="owner-label">To <select name="owner" aria-label="Who must respond?"><option value="agent" selected>agent</option><option value="user">me</option></select></label><button type="submit">Comment</button><button type="button" id="cancel-comment">Cancel</button></div><p class="meta">Agent requests queue a bounded triage run under the confirmed project mandate.</p><p id="comment-error" role="alert"></p></form></section></aside></div><button id="selection-comment" type="button" hidden aria-label="Comment on selection" title="Comment on selection"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 4h16v12H9l-5 4V4Z"/><path d="M8 8h8M8 12h5"/></svg></button><button id="close-threads" type="button" hidden aria-label="Close comments">Close</button>'''
     payload = json.dumps(view, default=str).replace('<', r'\u003c').replace('>', r'\u003e').replace('&', r'\u0026')
     body += f'<script type="application/json" id="page-data">{payload}</script>'
     body += f'<footer class="meta" id="page-snapshot">Current records as of {text(view["snapshot_time"])} · state sequence {view["state_version"]}</footer>'

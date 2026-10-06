@@ -231,3 +231,25 @@ def test_batch11_unconfirmed_answer_records_no_decision(deck):
         execution.answer_blocked(item.id, 'Proceed', actor='user')
     assert configured_container(deck.state.store).decisions().list() == []
     assert deck.state.attention.get(item.id).state == 'open'
+
+
+def test_confirmed_answer_clears_blocker_arriving_during_cli_delivery(deck, monkeypatch):
+    def send(host, arguments, **kwargs):
+        deck.report('home', jobs=[blocked()])
+        return {'status': 'applied', 'answers': 1, 'steps': [2]}
+    monkeypatch.setattr(transport, 'call', send)
+    details = deck.state.container.jobs().answer_waiting_step(HOSTS[0], 'b1', 1, [{'prompt': 'Go'}], 'user')
+    assert details == 'answered; step 2 continues as step 3'
+    assert only_item(deck).state == 'resolved'
+
+
+def test_explicit_answer_marker_clears_blocker_even_before_status_refresh(deck):
+    reported = blocked()
+    deck.report('home', jobs=[reported])
+    original = only_item(deck)
+    reported['steps'][1]['answered_by'] = 2
+    reported['steps'].append({'index': 2, 'title': 'Answer', 'status': 'pending',
+                              'started_at': None, 'finished_at': None, 'result': None})
+    deck.report('home', jobs=[reported])
+    assert deck.state.attention.get(original.id).state == 'resolved'
+    assert not [item for item in deck.state.attention.list() if item.kind == 'blocker' and item.state != 'resolved']

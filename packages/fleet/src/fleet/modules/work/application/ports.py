@@ -21,3 +21,5 @@ class WorkRepository(Protocol):
 
 class EvidenceReader(Protocol):
     def get(self, reference: str) -> Evidence | None: ...
+    def check(self, reference: str) -> None:
+        """Raise ValueError when no evidence could ever be read from this reference."""

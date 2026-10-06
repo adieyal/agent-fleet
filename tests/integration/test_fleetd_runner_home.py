@@ -23,7 +23,7 @@ def worker(tmp_path, monkeypatch):
     steps.write_text('["Reply done"]')
     module.command_create(argparse.Namespace(id="job", run_id=None, fingerprint=None,
         schema_version=None, cwd=str(tmp_path), agent="codex", permission="read-only",
-        steps_file=str(steps), project="p", description="test", model=None,
+        steps_file=str(steps), project="p", description="test", model=None, effort=None, bare=False,
         keep_going=False, allowed_tools=None, add_dir=[], env=[], hold=True))
     (tmp_path / "exec").write_text('print(\'{"type":"turn.completed","usage":{}}\')\n')
     (home / "config.json").write_text(json.dumps({"codex": sys.executable}))
@@ -74,3 +74,24 @@ def test_missing_runner_job_records_failure(worker, tmp_path, monkeypatch):
         assert log_path.read_text().startswith("previous launch output\n")
     finally:
         tmux(worker.TMUX_COMMAND, "kill-session", "-t", "fleet-job")
+
+
+def test_runner_bypasses_tmux_default_shell(worker, tmp_path):
+    """A user's shell startup must not run before the fleet runner."""
+    marker = tmp_path / "shell-started"
+    shell = tmp_path / "user-shell"
+    shell.write_text(f'#!/bin/sh\n: > "{marker}"\nexec /bin/sh "$@"\n')
+    shell.chmod(0o755)
+    command = worker.TMUX_COMMAND
+    tmux(command, "new-session", "-d", "-s", "keeper", "/bin/sleep", "60", check=True)
+    tmux(command, "set-option", "-g", "default-shell", str(shell), check=True)
+    try:
+        worker.launch_runner("job")
+        deadline = time.monotonic() + 10
+        while worker.derive_status(worker.read_job("job")) not in worker.TERMINAL_STATUSES:
+            assert time.monotonic() < deadline, "runner did not finish"
+            time.sleep(.01)
+        assert worker.derive_status(worker.read_job("job")) == "done"
+        assert not marker.exists(), "tmux ran the user's shell startup"
+    finally:
+        tmux(command, "kill-server")

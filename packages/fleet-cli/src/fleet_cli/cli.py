@@ -227,6 +227,9 @@ def command_send(arguments: argparse.Namespace, *, container) -> None:
 def command_dispatch(arguments: argparse.Namespace, *, container) -> None:
     steps = read_steps(arguments)
     request = DispatchRequest(**{field.name: getattr(arguments, field.name) for field in fields(DispatchRequest)})
+    warning = container.dispatch().floor_warning(request)
+    if warning:
+        error_console.print(warning, markup=False, soft_wrap=True)
     result = container.dispatch().send(request, steps)
     intent, guidance, current, job = (result[name] for name in ('intent', 'guidance', 'current', 'job'))
     if not intent.created:
@@ -310,7 +313,7 @@ def command_triage_status(arguments: argparse.Namespace, *, container) -> None:
         print(f"  {identity} — take back: fleet attention take {identity} --actor ACTOR")
     run = result['live_run']
     print(f"Live run: {run['id'] + ' (' + run['status'] + ')' if run else 'none'}")
-    print(f"Budget: {result['budget_left']} runs left; resets at {result['budget_resets_at']}" if result['budget_left'] is not None else 'Budget: unavailable; policy unreadable' if policy_error else 'Budget: unavailable; no confirmed triage policy')
+    print('Budget: unlimited (no daily run limit)' if result.get('budget_unlimited') else f"Budget: {result['budget_left']} runs left; resets at {result['budget_resets_at']}" if result['budget_left'] is not None else 'Budget: unavailable; policy unreadable' if policy_error else 'Budget: unavailable; no confirmed triage policy')
     wait = result['oldest_wait_seconds']
     print(f"Oldest queue wait: {int(wait)} seconds" if wait is not None else 'Oldest queue wait: not recorded' if result['queue'] else 'Oldest queue wait: no queued items')
     print(f"Delivery error: {result['delivery_error'] or 'none recorded'}")
@@ -374,6 +377,16 @@ def command_library_link(arguments: argparse.Namespace, *, container) -> None:
     except (ValueError, LookupError) as error:
         raise FleetError(str(error)) from error
     print(json.dumps(asdict(entry)))
+
+
+def command_step_edit(arguments: argparse.Namespace, *, container) -> None:
+    try:
+        prompt = arguments.text if arguments.text is not None else arguments.file.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise FleetError(f"cannot read step prompt file {arguments.file}: {error}") from error
+    host, job_id = resolve(arguments.job, container=container)
+    container.jobs().edit_step(host, job_id, arguments.step, prompt, actor=arguments.actor)
+    console.print(f"{host.name}:{job_id} edited step {arguments.step}", markup=False)
 
 
 def command_add(arguments: argparse.Namespace, *, container) -> None:
@@ -722,6 +735,9 @@ def parse_link(text: str, *, container) -> tuple[str, str]:
 def command_project_add(arguments: argparse.Namespace, *, container) -> None:
     project = container.projects().add(arguments.name, arguments.repo or [], arguments.link or [])
     console.print(f"added project [bold]{project.id}[/] {escape(project.name)}")
+    warning = container.initialized_workspace().floor_warning(project.id)
+    if warning:
+        error_console.print(warning, markup=False, soft_wrap=True)
 
 
 def command_project_rename(arguments: argparse.Namespace, *, container) -> None:
@@ -1098,7 +1114,12 @@ def add_work_parsers(commands) -> None:
     meet.add_argument("id", help="criterion ID")
     meet.add_argument("--evidence", action="append", default=[])
     meet.add_argument("--actor", required=True)
-    summary = commands.add_parser("summary", help="work summaries").add_subparsers(required=True)
+    withdraw = criterion.add_parser("withdraw", help="retire an unmet criterion that can no longer be met")
+    withdraw.set_defaults(handler=command_work, work_operation="withdraw")
+    withdraw.add_argument("id", help="criterion ID")
+    withdraw.add_argument("--reason", required=True)
+    withdraw.add_argument("--actor", required=True)
+    summary =commands.add_parser("summary", help="work summaries").add_subparsers(required=True)
     action = summary.add_parser("set", help="record a new version of a work item's summary (all fields)")
     action.set_defaults(handler=command_work, work_operation="set_summary")
     action.add_argument("id", help="work item ID")
@@ -1117,12 +1138,12 @@ def job_run(job: str, *, container) -> str | None:
 
 def hand_decision_to_job(job: str, arguments: argparse.Namespace, *, container) -> str:
     return container.decision_commands().hand_to_job(job, {name: getattr(arguments, name)
-        for name in ('work_item', 'question', 'answer', 'principle', 'actor', 'context')})
+        for name in ('work_item', 'question', 'answer', 'principle', 'actor', 'context', 'recorded_by')})
 
 
 def command_decision_record(arguments: argparse.Namespace, *, container) -> None:
     decision, identity, job = container.decision_commands().record(**{name: getattr(arguments, name)
-        for name in ('work_item', 'question', 'answer', 'principle', 'actor', 'context', 'run')})
+        for name in ('work_item', 'question', 'answer', 'principle', 'actor', 'context', 'run', 'recorded_by')})
     if decision is None:
         print(f"Decision {identity} handed to the controller via job {job}'s stream; "
               f"it is recorded there when the controller next hears from this host.")
@@ -1263,7 +1284,7 @@ def add_actor_option(parser: argparse.ArgumentParser, *, container) -> None:
 
 
 COMMAND_GROUPS = {
-    "Jobs": ("send", "dispatch", "start", "add", "push", "pull", "ls", "watch", "show", "tail", "attach", "wait", "result",
+    "Jobs": ("send", "dispatch", "start", "add", "step", "push", "pull", "ls", "watch", "show", "tail", "attach", "wait", "result",
              "cancel", "mv", "rm", "notify", "run"),
     "Work": ("status", "work", "criterion", "summary", "attention", "answer", "decision", "guidance", "library",
              "history", "triage", "store", "page"),
@@ -1606,6 +1627,9 @@ def build_parser(*, container=None) -> argparse.ArgumentParser:
     send.add_argument("--model", "-m")
     send.add_argument("--allow", action="append",
                       help="claude permission rule to pre-approve, e.g. 'Bash(ss:*)' (repeatable)")
+    send.add_argument('--allow-profile', choices=('review',),
+                      help='opt-in Claude inspection/test rules; tests execute repository code; '
+                           'adds to --allow and persists on the job')
     send.add_argument("--add-dir", action="append", help="extra directory on the host the claude agent may use (repeatable)")
     send.add_argument("--env", action="append", help="NAME=value set in the agent's environment (repeatable)")
     send.add_argument("--id")
@@ -1629,6 +1653,8 @@ def build_parser(*, container=None) -> argparse.ArgumentParser:
     dispatch.add_argument("--permission", help="runtime permission, as for fleet send; "
                                                "default acceptEdits / workspace-write")
     dispatch.add_argument("--id")
+    dispatch.add_argument('--allow-profile', choices=('review',),
+                          help='opt-in Claude inspection/test rules, as for fleet send')
     dispatch.add_argument("--json", action="store_true")
     add_actor_option(dispatch, container=container)
     dispatch.set_defaults(handler=command_dispatch_work, permission=None, model=None, allow=None,
@@ -1664,7 +1690,8 @@ def build_parser(*, container=None) -> argparse.ArgumentParser:
     control = commands.add_parser('control', help='agent-internal: an activated orchestrator changes the store')
     control.add_argument('activation')
     control.add_argument('operation', choices=('state', 'progress', 'meet', 'attention', 'dispatch', 'decide', 'summary', 'propose',
-                                             'retry', 'add_step', 'grant', 'resolve', 'escalate', 'record_decision'))
+                                             'retry', 'add_step', 'grant', 'resolve', 'escalate', 'record_decision',
+                                             'reply'))
     control.add_argument('payload', help='JSON object of command fields')
     control.set_defaults(handler=command_control)
 
@@ -1691,6 +1718,17 @@ def build_parser(*, container=None) -> argparse.ArgumentParser:
     retry.add_argument("run")
     add_actor_option(retry, container=container)
     retry.set_defaults(handler=command_run_retry)
+
+    step = commands.add_parser("step", help="manage job steps")
+    step_commands = step.add_subparsers(dest="step_command", required=True)
+    edit = step_commands.add_parser("edit", help="replace a queued step's prompt before it starts")
+    edit.add_argument("job", help="HOST:ID or unique job ID")
+    edit.add_argument("step", type=int, help="step number, starting at 1")
+    source = edit.add_mutually_exclusive_group(required=True)
+    source.add_argument("--text", help="replacement prompt")
+    source.add_argument("--file", type=Path, help="UTF-8 file containing the replacement prompt")
+    add_actor_option(edit, container=container)
+    edit.set_defaults(handler=command_step_edit)
 
     add = commands.add_parser("add", help="append steps to a job; if a step is blocked, they answer it",
                               description="Appends steps to a job and starts it again if it is idle. When a step "
@@ -1905,9 +1943,13 @@ def build_parser(*, container=None) -> argparse.ArgumentParser:
     decision_record.add_argument("--answer", required=True)
     decision_record.add_argument("--principle", required=True,
                                  help='the rule relied on, e.g. "Constitution: decide yourself — test-only fixes"')
-    decision_record.add_argument("--actor", required=True)
+    decision_record.add_argument("--actor", required=True,
+                                help="who made the decision; use user for a user-made decision")
+    decision_record.add_argument("--recorded-by",
+                                help="who records it in audit history; e.g. --actor user --recorded-by codex; "
+                                     "when omitted, the actor also records it")
     decision_record.add_argument("--context", default="", help="where the question arose")
-    decision_record.add_argument("--run", help="the run deciding; FLEET_JOB_ID's run when omitted")
+    decision_record.add_argument("--run", help="the source run; FLEET_JOB_ID's run when omitted")
     decision_record.set_defaults(handler=command_decision_record)
     decision_list = decision.add_parser("list", help="decisions on a project's or an epic's work, newest first")
     decision_scope = decision_list.add_mutually_exclusive_group(required=True)
@@ -2095,6 +2137,11 @@ def main(argv: list[str] | None = None, *, container=None) -> None:
     container = bootstrap_container(container)
     arguments = build_parser(container=container).parse_args(argv)
     try:
+        worker = container.worker_job(run=arguments.run if arguments.handler is command_decision_record else None)
+        if container.validate_worker_command(worker, arguments.command,
+                stream_decision=arguments.handler is command_decision_record and arguments.run is None):
+            command_decision_record(arguments, container=container)
+            return
         if arguments.handler is command_serve and arguments.serve_action == "status":
             arguments.handler(arguments, container=container)
             return
@@ -2111,7 +2158,7 @@ def main(argv: list[str] | None = None, *, container=None) -> None:
         arguments.handler(arguments, container=container)
     except FleetError as error:
         error_console.print(f"fleet: {error}", style="red", markup=False,
-                            soft_wrap=isinstance(error.__cause__, ItemResolved))
+                            soft_wrap=isinstance(error.__cause__, ItemResolved) or '\nCurrent floors from the store' in str(error))
         sys.exit(2)
     except TimeoutExpired as error:
         error_console.print(f"fleet: {arguments.command} timed out after {error.timeout}s", style="red", markup=False)

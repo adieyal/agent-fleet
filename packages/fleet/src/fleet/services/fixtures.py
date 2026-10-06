@@ -45,6 +45,9 @@ class FixtureState(LiveWorkspace):
                 "sessions": [resolve(self.registry, host["name"], session) for session in host["sessions"]]})
         self.changed = threading.Condition()
         self.version = 0
+        # The fixture has no responder, but readers of the live stream still ask for typing state.
+        self.typing_seq = 0
+        self.typing = {}
         self.pipeline_config = fixture.get("pipelines", {})
         self.pipeline_runs = {(report["host"], report["pipeline"]): {"run": report.get("run"),
                                                                      "baseline": report.get("baseline"), "seq": 1}

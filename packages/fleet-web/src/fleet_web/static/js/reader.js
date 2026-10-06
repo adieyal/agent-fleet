@@ -183,6 +183,17 @@ export function openAttentionReader(item, scope = null) {
   }
   // the question's form rewrites the prose when it loads, so the referenced document goes in after it
   const req = rd.req;
+  if (item.context_truncated) {
+    rdBody.querySelector('.prose').insertAdjacentHTML('beforeend', '<p data-context-loading>Loading complete context…</p>');
+    fetch('/api/decision?id=' + encodeURIComponent(item.id))
+      .then(response => { if (!response.ok) throw new Error('Context unavailable'); return response.json(); })
+      .then(detail => {
+        if (req === rd.req) openAttentionReader({ ...item, context_reference: detail.context, context_truncated: false }, scope);
+      }).catch(error => {
+        if (req === rd.req) rdBody.querySelector('[data-context-loading]').textContent = `Complete context unavailable: ${error.message}`;
+      });
+    return;
+  }
   const question = item.state !== 'resolved' && (item.kind === 'decision' || item.blocked) ? loadDecision(item.id, req) : null;
   if (item.state !== 'resolved' && !question && item.kind === 'blocker') renderBlockerHelp(rdBody.querySelector('.prose'));
   Promise.resolve(question).then(() => showContextDocument(item.context_reference, req));

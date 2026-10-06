@@ -43,6 +43,8 @@ def test_orchestrate_starts_locally_with_activation_command_set(tmp_path, monkey
     assert calls[0][0][calls[0][0].index('--permission') + 1] == 'danger-full-access'
     prompt = json.loads(calls[0][1]['stdin_text'])[0]['prompt']
     assert result['activation'] in prompt and 'fleet control' in prompt
+    assert 'record both condition and next_step' in prompt
+    assert 'ready for review' in prompt and 'without a known\ntotal it stays unknown' in prompt
     cli.main(['control', result['activation'], 'progress', '{"next_step":"Review"}'])
     assert configured_container().work().get(item.id).next_step == 'Review'
     cli.main(['control', result['activation'], 'state', '{}'])

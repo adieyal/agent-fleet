@@ -9,7 +9,7 @@ from .application.answers import answer
 from .application.permissions import grant
 from .application.ports import AnswerSender, ExecutionRepository, GrantSender, InputSender, StepSender
 from .application.dtos import StepRequest
-from .domain import Action, Claim, Delivery, DispatchResult, JobObservation, Run
+from .domain import Action, Claim, Delivery, DispatchResult, JobObservation, Run, Usage
 from .domain.activity import HOST_FRESHNESS_SECONDS, classify_activity
 from fleet.modules.attention import AttentionItem, refusal_violation
 from .application.dispatch import dispatch, require_step_work, retry, resolve_unknown
@@ -202,12 +202,12 @@ class ExecutionFacade:
     def deliveries(self) -> list[Delivery]:
         return self.repository.deliveries()
 
-    def retry_deliveries(self, host: str | None = None, *, decision: str | None = None) -> None:
-        self._retry_deliveries(host, decision, context_only=False)
+    def retry_deliveries(self, host: str | None = None, *, decision: str | None = None, reconcile: bool = True) -> None:
+        self._retry_deliveries(host, decision, context_only=False, reconcile=reconcile)
 
-    def retry_decisions(self, host: str | None = None) -> None:
+    def retry_decisions(self, host: str | None = None, *, reconcile: bool = True) -> None:
         """Reconcile decision inboxes on heartbeats without changing blocked-answer retries."""
-        self._retry_deliveries(host, None, context_only=True)
+        self._retry_deliveries(host, None, context_only=True, reconcile=reconcile)
 
     def reconcile_decisions(self) -> None:
         """Persist new decision intents; never contact a host while ingesting its stream."""
@@ -215,8 +215,9 @@ class ExecutionFacade:
             from .application.decision_delivery import reconcile
             reconcile(self, self.decision_source())
 
-    def _retry_deliveries(self, host: str | None, decision: str | None, *, context_only: bool) -> None:
-        self.reconcile_decisions()
+    def _retry_deliveries(self, host: str | None, decision: str | None, *, context_only: bool, reconcile: bool = True) -> None:
+        if reconcile:
+            self.reconcile_decisions()
         if self.send is None:
             raise RuntimeError("input transport is not configured")
         retry_delivery(self.repository, self.work, self.send, host, decision, context_only=context_only)
@@ -226,6 +227,10 @@ class ExecutionFacade:
 
     def actions(self) -> list[Action]:
         return self.repository.actions()
+
+    def activated_actions(self) -> list[Action]:
+        """Actions dispatched under an activation, including ended attempts."""
+        return self.repository.activated_actions()
 
     def record_observed(self, host: str, job: dict, project: str | None = None) -> Run:
         return record_observed(self.repository, host, job, project)
@@ -246,6 +251,10 @@ class ExecutionFacade:
         return self.repository.activation_run(activation, idempotency_key)
 
     def dispatch(self, work_item: str | None, *, activation: str | None = None, **arguments) -> DispatchResult:
+        if arguments.get('kind') == 'responder':
+            if activation is None or arguments.get('runtime') != 'codex':
+                raise AuthorityRejected('responder runs require a pinned activation and codex runtime')
+            arguments['started_at'] = self.clock()
         if 'authorization' in arguments:
             raise AuthorityRejected('supply an activation ID')
         if activation is not None:
@@ -254,6 +263,8 @@ class ExecutionFacade:
             arguments['authorization'] = self.authority().require('dispatch', work_item,
                 actor=arguments['actor'], activation=activation)
             authorization = arguments['authorization']
+            if arguments.get('kind') == 'responder' and authorization.role != 'triage':
+                raise AuthorityRejected('responder runs require a triage activation')
             if authorization.role == 'triage':
                 mandate = self.authority().triage_mandate(activation)
                 if (arguments.get('project'), arguments.get('host'), arguments.get('runtime'),
@@ -263,6 +274,25 @@ class ExecutionFacade:
         if self.prepare_dispatch is not None:
             self.prepare_dispatch()
         return dispatch(self.repository, work_item, **arguments)
+
+    def finish_responder(self, run_id: str, *, actor: str, status: str, reason: str | None = None,
+                         timings: dict | None = None, usage: Usage | None = None) -> Run:
+        """Finish a local attempt and release its claim within the caller's transaction."""
+        if status not in ('succeeded', 'failed', 'stopped'):
+            raise ValueError('responder completion requires a terminal status')
+        with self.repository.transaction() as transaction:
+            run = transaction.get_run(run_id)
+            action = transaction.get_action(run.action)
+            if run.kind != 'responder' or action.actor != actor:
+                raise AuthorityRejected('actor does not own this responder run')
+            if run.status != 'running':
+                raise ValueError('responder run is no longer running')
+            now = self.clock()
+            updated = replace(run, status=status, reason=reason, end=now,
+                              last_observed=now, timings=timings, usage=usage)
+            transaction.update(updated, actor)
+            transaction.release_claim(run.id, actor)
+            return updated
 
     def deliver(self, run: Run, call: Callable, push: Callable, *, reconcile: bool = False) -> dict:
         return deliver(self.repository, run, call, push, reconcile=reconcile)
@@ -292,11 +322,21 @@ class ExecutionFacade:
     def runs(self) -> list[Run]:
         return self.repository.runs()
 
+    def active_runs(self) -> list[Run]:
+        """Running and unknown-outcome attempts, including sessions."""
+        return self.repository.active_runs()
+
     def steps(self, run: str) -> list[dict]:
         self.repository.get_run(run)
         return self.repository.steps(run)
 
     def observe_steps(self, run: str, steps: list[dict]) -> None:
+        if steps:
+            self.repository.get_run(run)
+            valid_indices = all(isinstance(step.get("index"), int) and not isinstance(step.get("index"), bool)
+                                and step["index"] >= 0 for step in steps)
+            if valid_indices and self.repository.steps(run) == steps:
+                return
         with self.repository.transaction() as transaction:
             transaction.get_run(run)
             for step in steps:

@@ -29,8 +29,12 @@ class ReadAttention:
     def __init__(self, items):
         self.items = items
 
-    def list(self):
-        return self.items
+    def list(self, *, project=None, owner=None, source=None, subjects=None, source_reference=None):
+        return [item for item in self.items if (project is None or item.project == project)
+                and (owner is None or item.owner == owner)
+                and (source is None or item.source == source)
+                and (subjects is None or item.subject in subjects)
+                and (source_reference is None or item.source_reference == source_reference)]
 
 
 def item(identity, **changes):
@@ -150,7 +154,7 @@ def test_runs_on_two_hosts_and_unavailable_trace_preserve_work():
         runtime="codex", status="failed", reason="lost", start=NOW.isoformat(), end=NOW.isoformat(),
         last_observed=(NOW + timedelta(minutes=1)).isoformat(), usage=None, current_action=None,
         action_observed_at=None, step_work=None, kind="job", label=None, title=None, cwd=None, workspace=None,
-        workspace_reason=None, action_glyph=None, action_freshness="unknown", guidance=None)
+        workspace_reason=None, action_glyph=None, action_freshness="unknown", guidance=None, timings=None)
     assert node["library"][0]["availability"] == "unavailable"
     assert len(node["library"]) == 1
     assert node["condition"] == "waiting"

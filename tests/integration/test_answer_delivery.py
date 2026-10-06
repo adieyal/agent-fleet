@@ -182,3 +182,47 @@ def test_runtime_hook_question_finds_linked_run_and_rolls_back_delivery_intent(m
         {"schema_version": 1, "key": args[args.index("--key") + 1], "status": "applied"})
     configured_container(store).decisions().answer(hook.id, 'Proceed', actor='adi')
     assert configured_container(store).execution().deliveries()[0].run == run.id
+
+
+def test_pending_delivery_query_keeps_insertion_order_and_skips_applied(monkeypatch):
+    from fleet.modules.execution import Delivery
+
+    store, run, _ = question(monkeypatch)
+    repository = ExecutionRepository(store)
+    with repository.transaction() as transaction:
+        transaction.save_delivery(Delivery('z-first', 'one', run.id, 'First'), 'test')
+        transaction.save_delivery(Delivery('a-applied', 'two', run.id, 'Done', status='applied'), 'test')
+        transaction.save_delivery(Delivery('a-last', 'three', run.id, 'Last'), 'test')
+    assert [delivery.key for delivery in repository.pending_deliveries()] == ['z-first', 'a-last']
+
+
+def test_host_retry_reads_only_its_pending_runs_and_tracks_status_changes(monkeypatch):
+    from fleet.modules.execution import Delivery
+    from types import SimpleNamespace
+
+    store, run, _ = question(monkeypatch)
+    execution = configured_container(store).execution()
+    work = execution.get_action(run.action).work_item
+    other = execution.link('other-host', 'other-job', work, actor='test')
+    with execution.repository.transaction() as transaction:
+        transaction.save_delivery(Delivery('other', 'other-decision', other.id, 'Other'), 'test')
+        transaction.save_delivery(Delivery('local', 'local-decision', run.id, 'Local', status='applied'), 'test')
+    get_run = execution.repository.get_run
+    calls = []
+
+    def tracked(identity):
+        calls.append(identity)
+        return get_run(identity)
+
+    monkeypatch.setattr(execution.repository, 'get_run', tracked)
+    execution.send = lambda *args: SimpleNamespace(status='busy', error=None)
+    execution.retry_deliveries('carbon', reconcile=False)
+    assert calls == []
+    with execution.repository.transaction() as transaction:
+        transaction.save_delivery(Delivery('local', 'local-decision', run.id, 'Local'), 'test')
+    execution.retry_deliveries('carbon', reconcile=False)
+    assert calls == [run.id]
+    with execution.repository.transaction() as transaction:
+        transaction.save_delivery(Delivery('local', 'local-decision', run.id, 'Local', status='applied'), 'test')
+    execution.retry_deliveries('carbon', reconcile=False)
+    assert calls == [run.id]

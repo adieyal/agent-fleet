@@ -332,7 +332,7 @@ requires-dist = [
 
 [[package]]
 name = "fleet-worker"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "packages/fleet-worker" }
 
 [[package]]

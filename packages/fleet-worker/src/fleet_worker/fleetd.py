@@ -18,6 +18,7 @@ import argparse
 import base64
 import collections
 import contextlib
+import ctypes
 import datetime
 import fcntl
 import hashlib
@@ -53,8 +54,8 @@ TERMINAL_STATUSES = ("done", "failed", "blocked", "cancelled", "lost")
 AGED_STATUSES = ("done", "cancelled", "lost")
 # `rm` deletes these without --force; others still hold work or a question.
 REMOVABLE_STATUSES = ("done", "failed", "cancelled", "lost")
-WORKER_VERSION = "0.1.0"
-WIRE_PROTOCOL_VERSION = 1
+WORKER_VERSION = "0.1.1"
+WIRE_PROTOCOL_VERSION = 2
 STREAM_PROTOCOL_VERSION = 3
 DISPATCH_SCHEMA_VERSION = 4
 USAGE_SCHEMA_VERSION = 1
@@ -385,6 +386,14 @@ class CodexParser:
 
 
 # The user reads job documents in the Fleet reader, which renders fenced code and Mermaid inline.
+FLEET_READ_TOOLS = [
+    'Bash(fleet --help:*)', 'Bash(fleet status:*)', 'Bash(fleet project ls:*)',
+    'Bash(fleet work show:*)', 'Bash(fleet run show:*)',
+    'Bash(fleet attention list:*)', 'Bash(fleet decision list:*)',
+    'Bash(fleet decision record --help:*)', 'Bash(fleet attention add --help:*)',
+]
+
+
 WRITING_GUIDE = (
     "Markdown documents you write (reports, reviews, plans, notes) are read by a person in a reader that "
     "shows fenced code and ```mermaid diagrams inline. Lead with the conclusion, then the evidence. Make every "
@@ -410,6 +419,12 @@ def job_preamble(job: JsonObject) -> str:
         "the user must act. Delegate existing items only within a confirmed project triage mandate; "
         "fleet attention delegate keeps them open and visible, and fleet attention take revokes agent ownership. "
         "Triage must not complete work or judge criteria.\n"
+        "The controller store may be on another host. fleet decision record --work-item FULL_ID hands "
+        "decisions to the controller through this job's stream. If a store command says to use the controller "
+        "host, write the exact attention or progress request in the outbox and name it in your summary; "
+        "the controller must apply it. Do not register duplicate projects or create a worker store.\n"
+        "If runtime permissions deny a Fleet write, put the exact request in the outbox too; "
+        "read-only Fleet tool allowances do not authorize writes.\n"
         f"{WRITING_GUIDE}"
         "Finish each step with a short plain summary of what you did and anything left open, then a final line "
         "`FLEET_STATUS: done`, `FLEET_STATUS: blocked — <reason>` (you could not do the work, e.g. tools or "
@@ -428,8 +443,11 @@ def _runtime_command(job: JsonObject, step: JsonObject, session_id: Optional[str
                    "--verbose", "--permission-mode", job["permission"]]
         if job.get("model"):
             command += ["--model", job["model"]]
+        if job.get("effort"):
+            command += ["--effort", job["effort"]]
+        # No --bare for claude: it would also skip the input hook passed with --settings below.
         if job.get("allowed_tools"):
-            command += ["--allowedTools", *job["allowed_tools"]]
+            command += ["--allowedTools", *dict.fromkeys([*job["allowed_tools"], *FLEET_READ_TOOLS])]
         if session_id:
             command += ["--resume", session_id]
         command += ["--add-dir", str(JOBS_DIRECTORY / job["id"])]
@@ -442,6 +460,10 @@ def _runtime_command(job: JsonObject, step: JsonObject, session_id: Optional[str
                      "workspace-write": ["--sandbox", "workspace-write"],
                      "danger-full-access": ["--dangerously-bypass-approvals-and-sandbox"]}[job["permission"]]
     model_flags = ["--model", job["model"]] if job.get("model") else []
+    if job.get("effort"):
+        model_flags += ["-c", f'model_reasoning_effort="{job["effort"]}"']
+    if job.get("bare"):
+        model_flags += ["--ignore-user-config"]
     writable_directories = [str(JOBS_DIRECTORY / job["id"]), *job.get("add_dirs", [])]
     if session_id:
         # `exec resume` has neither --sandbox nor --add-dir, so the job's sandbox and its job directory
@@ -812,6 +834,72 @@ class WorkspaceWatch:
         self.thread.join()
 
 
+def enable_child_subreaper() -> None:
+    """Adopt orphaned runtime descendants, including double forks and new sessions.
+
+    Fleet workers run on Linux. Refuse to run without the kernel guarantee rather
+    than silently finishing a step while detached work is still alive.
+    """
+    if not sys.platform.startswith("linux"):
+        raise RuntimeError("step descendant supervision requires Linux")
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.prctl(36, 1, 0, 0, 0) != 0:  # PR_SET_CHILD_SUBREAPER
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error))
+
+
+def runner_children() -> List[int]:
+    """Direct children after the runtime and workspace watcher have stopped."""
+    children = set()
+    for task in Path("/proc/self/task").iterdir():
+        try:
+            children.update(int(pid) for pid in (task / "children").read_text().split())
+        except FileNotFoundError:  # a thread ended during enumeration
+            continue
+    return sorted(children)
+
+
+def wait_for_step_children(job_id: str, step_index: int) -> None:
+    """Keep completion and retries behind a visible, cancellable foreground wait."""
+    previous: List[int] = []
+    cancellation_at: Optional[float] = None
+    try:
+        while True:
+            # Reap exited adopted children before checking for live work. A live
+            # parent accounts for its descendants until they too are adopted.
+            while True:
+                try:
+                    pid, _ = os.waitpid(-1, os.WNOHANG)
+                except ChildProcessError:
+                    break
+                if pid == 0:
+                    break
+            children = runner_children()
+            if not children:
+                return
+            if children != previous:
+                waiting = {"kind": "children_wait", "step": step_index, "pids": children,
+                           "summary": "waiting for descendant processes: " + ", ".join(map(str, children))}
+                with locked_job(job_id) as live_job:
+                    live_job["agent_pid"] = None
+                    live_job["runtime_wait"] = waiting
+                append_event(job_id, waiting)
+                previous = children
+            if read_job(job_id).get("cancelled"):
+                if cancellation_at is None:
+                    cancellation_at = time.monotonic()
+                # Kill parents first; their descendants become our children on
+                # the next poll, including processes with their own session.
+                stop_signal = signal.SIGKILL if time.monotonic() - cancellation_at >= 5 else signal.SIGTERM
+                for pid in children:
+                    with contextlib.suppress(ProcessLookupError):
+                        os.kill(pid, stop_signal)
+            time.sleep(0.1)
+    finally:
+        with locked_job(job_id) as live_job:
+            live_job.pop("runtime_wait", None)
+
+
 def _run_step_attempt(job: JsonObject, step: JsonObject) -> JsonObject:
     job_id = job["id"]
     config = load_config()
@@ -892,6 +980,7 @@ def _run_step_attempt(job: JsonObject, step: JsonObject) -> JsonObject:
             # A Claude write lands after its tool_use line, so every later line checks again.
             mirror.sync()
         exit_code = process.wait()
+    wait_for_step_children(job_id, step["index"])
     refresh_workspace(job_id, job["cwd"])
     runtime.finish(outcome, exit_code, last_text)
     if runtime_error:
@@ -1003,11 +1092,18 @@ def next_step(job: JsonObject) -> Optional[JsonObject]:
     steps = job["steps"]
     if any(step["status"] == "blocked" and step.get("answered_by") is None for step in steps):
         return None
-    answering = {step["answered_by"] for step in steps if step.get("answered_by") is not None}
-    answering |= {index for added in job.get("keyed_additions", []) if added.get("answers") is not None
-                  for index in added["steps"]}
-    pending = [step for step in steps if step["status"] == "pending"]
-    return next((step for step in pending if step["index"] in answering), pending[0] if pending else None)
+    # Appended indices preserve addition order. A newer answer interrupts any remaining
+    # steps of an earlier reply; each reply's own steps still run in their original order.
+    replies = {step["answered_by"]: [step["answered_by"]] for step in steps
+               if step.get("answered_by") is not None}
+    replies.update({added["steps"][0]: added["steps"] for added in job.get("keyed_additions", [])
+                    if added.get("answers") is not None})
+    pending = {step["index"]: step for step in steps if step["status"] == "pending"}
+    for first in sorted(replies, reverse=True):
+        for index in replies[first]:
+            if index in pending:
+                return pending[index]
+    return next(iter(pending.values()), None)
 
 
 def run_job(job_id: str) -> None:
@@ -1018,6 +1114,7 @@ def run_job(job_id: str) -> None:
         job["runner_pid"] = os.getpid()
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
     try:
+        enable_child_subreaper()
         while True:
             with locked_job(job_id) as job:
                 if job.get("cancelled"):
@@ -1068,8 +1165,10 @@ def launch_runner(job_id: str) -> None:
                     if key in os.environ]
     runner_command = shlex.join(["env", *environment, sys.executable, os.path.abspath(__file__), "_run", job_id])
     log_path = JOBS_DIRECTORY / job_id / "runner.log"
+    # Multiple command arguments make tmux exec directly. Its default shell can
+    # run user startup hooks; only a plain POSIX shell is needed for this pipe.
     subprocess.run([*TMUX_COMMAND, "new-session", "-d", "-s", session, "-c", job["cwd"],
-                    f"{runner_command} 2>&1 | tee -a {shlex.quote(str(log_path))}"], check=True,
+                    "/bin/sh", "-c", f"{runner_command} 2>&1 | tee -a {shlex.quote(str(log_path))}"], check=True,
                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for _ in range(50):
         job = read_job(job_id)
@@ -2259,7 +2358,8 @@ def command_create(arguments: argparse.Namespace) -> None:
     if not steps:
         fail("a job needs at least one step")
     job = {"id": job_id, "project": arguments.project, "description": arguments.description,
-           "agent": arguments.agent, "model": arguments.model, "cwd": cwd, "permission": arguments.permission,
+           "agent": arguments.agent, "model": arguments.model, "effort": arguments.effort, "bare": arguments.bare,
+           "cwd": cwd, "permission": arguments.permission,
            "stop_on_failure": not arguments.keep_going, "created_at": now(), "updated_at": now(),
            "allowed_tools": json.loads(arguments.allowed_tools) if arguments.allowed_tools else [],
            "add_dirs": [os.path.abspath(os.path.expanduser(directory)) for directory in arguments.add_dir],
@@ -2343,7 +2443,7 @@ def command_deliver(arguments: argparse.Namespace) -> None:
         with locked_job(arguments.job) as job:
             step = next((step for step in job["steps"] if step.get("delivery_key") == arguments.key), None)
             if step is not None:
-                if step["prompt"] != answer:
+                if step.get("original_prompt", step["prompt"]) != answer:
                     fail("delivery key has changed payload")
             else:
                 if not job["session_id"]:
@@ -2450,7 +2550,14 @@ def command_decision(arguments: argparse.Namespace) -> None:
         fail(f"a decision needs {', '.join(DECISION_FIELDS)} as text and time as epoch seconds")
     if not all(decision[name].strip() for name in DECISION_FIELDS if name != "context"):
         fail(f"a decision's {', '.join(name for name in DECISION_FIELDS if name != 'context')} must not be blank")
+    recorded_by = decision.get("recorded_by")
+    if "recorded_by" in decision and (not isinstance(recorded_by, str) or not recorded_by.strip()):
+        fail("recorded_by must be nonblank text")
+    if getattr(arguments, "recorded_by", None) is not None and arguments.recorded_by != recorded_by:
+        fail("recorded_by flag must match the decision payload")
     decision = {name: decision[name] for name in (*DECISION_FIELDS, "time")}
+    if recorded_by is not None:
+        decision["recorded_by"] = recorded_by
     with locked_job(arguments.job) as job:
         held = next((held for held in job.get("decisions", []) if held["id"] == decision["id"]), None)
         if held is None:
@@ -2461,6 +2568,33 @@ def command_decision(arguments: argparse.Namespace) -> None:
         append_event(arguments.job, {"kind": "job", "status": "decision",
                                      "summary": f"decision recorded: {shorten(decision['question'])}"})
     emit({"schema_version": 1, "id": decision["id"], "status": "held"})
+
+
+def command_edit_step(arguments: argparse.Namespace) -> None:
+    """Serialize prompt replacement with the runner's pending-to-running claim."""
+    prompt = sys.stdin.read()
+    if not prompt.strip():
+        fail("step prompt must not be empty")
+    if not arguments.actor.strip():
+        fail("step edit actor must not be empty")
+    with locked_job(arguments.job) as job:
+        if arguments.step < 0 or arguments.step >= len(job["steps"]):
+            fail(f"job has no step {arguments.step + 1}")
+        step = job["steps"][arguments.step]
+        if "started_at" not in step:
+            fail(f"step {arguments.step + 1} cannot be edited: start timestamp is missing")
+        if step["status"] != "pending" or step["started_at"] is not None:
+            fail(f"step {arguments.step + 1} cannot be edited: only pending steps that have never started are editable "
+                 f"(status: {step['status']})")
+        previous = step["prompt"]
+        if prompt != previous:
+            (JOBS_DIRECTORY / arguments.job / f"brief-{arguments.step}.md").write_text(prompt, encoding="utf-8")
+            step.setdefault("original_prompt", previous)
+            step["prompt"] = prompt
+            append_event(arguments.job, {"kind": "step_edit", "step": arguments.step, "actor": arguments.actor,
+                                         "previous_prompt": previous, "prompt": prompt,
+                                         "summary": f"step {arguments.step + 1} prompt edited by {arguments.actor}"})
+    emit({"job": arguments.job, "step": arguments.step, "status": "edited", "prompt": prompt})
 
 
 def command_add(arguments: argparse.Namespace) -> None:
@@ -2526,8 +2660,10 @@ def add_keyed(arguments: argparse.Namespace) -> None:
             for index, requested in zip(added['steps'], new_steps):
                 expected = make_step(index, requested['prompt'], requested.get('title'),
                                      requested.get('work_item', inherited))
-                if any(job['steps'][index].get(name) != expected.get(name)
-                       for name in ('prompt', 'title', 'work_item')):
+                original = {**job['steps'][index]}
+                if "original_prompt" in original:
+                    original["prompt"] = original["original_prompt"]
+                if any(original.get(name) != expected.get(name) for name in ('prompt', 'title', 'work_item')):
                     fail('add key has changed payload')
             fresh = False
     if fresh:
@@ -2614,6 +2750,7 @@ def command_stream(arguments: argparse.Namespace) -> None:
                 occurrence = observation["source_event_id"]
                 if inputs.get(occurrence) != observation:
                     emit(observation)
+                    sys.stdout.flush()
                     inputs[occurrence] = observation
             seen = set()
             for path in JOBS_DIRECTORY.glob("*/job.json") if JOBS_DIRECTORY.exists() else []:
@@ -2900,6 +3037,7 @@ def main() -> None:
     receive.set_defaults(handler=command_receive_decision)
     decision = commands.add_parser("decision", help="hold an agent's decision (JSON object on stdin) on its job")
     decision.add_argument("job")
+    decision.add_argument("--recorded-by", help="audit writer, distinct from the decision maker")
     decision.add_argument("--schema-version", type=int, required=True)
     decision.set_defaults(handler=command_decision)
 
@@ -2912,6 +3050,9 @@ def main() -> None:
     create.add_argument("--description", required=True)
     create.add_argument("--agent", choices=("claude", "codex"), required=True)
     create.add_argument("--model")
+    create.add_argument("--effort", choices=("low", "medium", "high"), help="reasoning effort for the agent")
+    create.add_argument("--bare", action="store_true",
+                        help="codex: ignore the user's config (skills, plugins, project entries)")
     create.add_argument("--cwd", required=True)
     create.add_argument("--permission")
     create.add_argument("--steps-file", required=True)
@@ -2921,6 +3062,12 @@ def main() -> None:
     create.add_argument("--add-dir", action="append", default=[], help="extra directory the claude agent may use (repeatable)")
     create.add_argument("--env", action="append", default=[], help="NAME=value set in the agent's environment (repeatable)")
     create.set_defaults(handler=command_create)
+
+    edit_step = commands.add_parser("edit-step", help="replace an unstarted pending step's prompt from stdin")
+    edit_step.add_argument("job")
+    edit_step.add_argument("step", type=int, help="zero-based step index")
+    edit_step.add_argument("--actor", required=True)
+    edit_step.set_defaults(handler=command_edit_step)
 
     add = commands.add_parser("add")
     add.add_argument("job")

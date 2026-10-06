@@ -99,6 +99,7 @@ def test_history_names_the_run_whose_job_made_the_change(project_id, monkeypatch
     configured_container().work().set(item.id, actor='claude', condition='ready for review')
     monkeypatch.setenv("FLEET_JOB_ID", "job-unknown-here")
     configured_container().work().set(item.id, actor='claude', next_step='Ship')
+    monkeypatch.delenv('FLEET_JOB_ID')  # Read the controller history outside the unowned worker job.
     capsys.readouterr()
     cli.main(["history", "--subject", f"work:item:{item.id}", "--json"])
     entries = json.loads(capsys.readouterr().out)["entries"]

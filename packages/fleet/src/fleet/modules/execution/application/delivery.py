@@ -25,11 +25,10 @@ def queue(repository: ExecutionRepository, item: AttentionItem, decision: "Decis
 
 def retry(repository: ExecutionRepository, work: WorkFacade, send: InputSender,
           host: str | None, decision: str | None, *, context_only: bool = False) -> None:
-    runs = {run.id: run for run in repository.runs()}
-    for delivery in repository.deliveries():
+    for delivery in repository.pending_deliveries(host=host, decision=decision, context_only=context_only):
         if context_only and not delivery.key.startswith("context-decision:"):
             continue
-        run = runs[delivery.run]
+        run = repository.get_run(delivery.run)
         if delivery.status == "applied" or (host is not None and run.host != host):
             continue
         if decision is not None and delivery.decision != decision:
@@ -38,7 +37,9 @@ def retry(repository: ExecutionRepository, work: WorkFacade, send: InputSender,
         if result.status == "busy":
             continue
         with repository.transaction() as transaction:
-            current = next(item for item in transaction.deliveries() if item.key == delivery.key)
+            current = transaction.get_delivery(delivery.key)
+            if current is None:
+                continue
             if current.status == "applied":
                 continue
             updated = (replace(current, status="applied", error=None) if result.status == "applied" else
@@ -46,13 +47,13 @@ def retry(repository: ExecutionRepository, work: WorkFacade, send: InputSender,
             if updated != current:
                 transaction.save_delivery(updated, "delivery")
             if current.failures < 3 and updated.failures == 3:
-                action = next(action for action in transaction.actions() if action.id == run.action)
+                action = transaction.get_action(run.action)
                 item = work.get(action.work_item)
                 transaction.attention.raise_item(project=item.project, work_item=item.id, run=run.id,
                     kind="alert", owner="user", subject=f"run:{run.id}", source="input-delivery",
                     source_reference=delivery.key, headline="Decision delivery keeps failing" if delivery.key.startswith("context-decision:") else "Answer delivery keeps failing",
                     context_reference=f"decision:{delivery.decision}", actor="delivery")
             if result.status == "applied":
-                for item in transaction.attention.list():
+                for item in transaction.attention.list(source="input-delivery", source_reference=delivery.key):
                     if item.source == "input-delivery" and item.source_reference == delivery.key and item.state != "resolved":
                         transaction.attention.resolve(item.id, details="Answer delivered", actor="delivery")

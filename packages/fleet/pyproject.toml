@@ -5,7 +5,7 @@ description = "Reusable Fleet modules, projections, infrastructure and container
 requires-python = ">=3.10"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
-dependencies = ['dependency-injector>=4.49.1', 'fleet-worker==0.1.0', 'mistune>=3.1,<4']
+dependencies = ['dependency-injector>=4.49.1', 'fleet-worker==0.1.1', 'mistune>=3.1,<4']
 
 [tool.uv.sources]
 fleet-worker = { workspace = true }

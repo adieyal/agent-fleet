@@ -31,9 +31,9 @@ class DecisionsFacade:
         return decision
 
     def record_guided(self, work_item: str, *, actor: str, question: str, answer: str, principle: str,
-                      context: str = "", source_run: str | None = None) -> Decision:
+                      context: str = "", source_run: str | None = None, recorded_by: str | None = None) -> Decision:
         decision = record_guided(self.repository, self.clock, work_item, actor=actor, question=question,
-                             answer=answer, principle=principle, context=context, source_run=source_run)
+                             answer=answer, principle=principle, context=context, source_run=source_run, recorded_by=recorded_by)
         self._deliver()
         return decision
 
@@ -48,7 +48,8 @@ class DecisionsFacade:
         decision = record_attention(self.repository, self.clock, self.records, self.authority(), item_id,
             actor=actor, activation=activation, source_run=source_run, command=command, answer=answer,
             principle=principle, context=context, question=question, effect=effect,
-            completed_item=completed_item, retry_run=retry_run)
+            completed_item=completed_item, retry_run=retry_run,
+            publish=getattr(self.repository, 'unit', None) is None)
         self._deliver()
         return decision
 
@@ -91,10 +92,11 @@ class DecisionsFacade:
                     raise RuntimeError('triage Decision archive not confirmed: ' + str(result['error']))
 
     def record_streamed(self, identity: str, time: datetime, work_item: str, *, actor: str, question: str,
-                        answer: str, principle: str, context: str, source_run: str | None) -> Decision:
+                        answer: str, principle: str, context: str, source_run: str | None,
+                        reconcile: bool = True, recorded_by: str | None = None) -> Decision:
         decision = record_streamed(self.repository, identity, time, work_item, actor=actor, question=question,
-                               answer=answer, principle=principle, context=context, source_run=source_run)
-        if getattr(self.repository, 'unit', None) is None:
+                               answer=answer, principle=principle, context=context, source_run=source_run, recorded_by=recorded_by)
+        if reconcile and getattr(self.repository, 'unit', None) is None:
             self.execution.reconcile_decisions()
         return decision
 

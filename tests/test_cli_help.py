@@ -112,10 +112,14 @@ def test_send_records_the_given_actor(monkeypatch, project_id):
 def test_send_inside_a_fleet_job_records_the_job_as_actor(monkeypatch, project_id):
     configured_container().initialized_workspace().edit_registry(lambda registry: registry.link(project_id, 'fake', 'worker-p'))
     fake_worker(monkeypatch, [])
+    item = configured_container().work().add(project=project_id, title='Parent', goal='Dispatch', actor='user')
+    parent_run = configured_container().execution().dispatch(item.id, host='fake', runtime='codex', actor='user', reason='Go',
+        idempotency_key='parent', remote_job_id='27563ec6-a70f',
+        payload=dict(cwd='/repo', arguments=[], steps=[dict(prompt='Go')], context=None, hold=False)).run
     monkeypatch.setenv("FLEET_JOB_ID", "27563ec6-a70f")
     cli.main(["send", "--project", "p", "--description", "Task", "--step", "Ship", "--host", "fake",
               "--cwd", "/repo", "--hold", "--json"])
-    action, = configured_container().execution().actions()
+    action, = [action for action in configured_container().execution().actions() if action.id != parent_run.action]
     assert action.actor == "job:27563ec6-a70f"
 
 

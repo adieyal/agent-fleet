@@ -7,7 +7,7 @@ from typing import Callable
 from .application import Commands
 from .application.ports import AttentionRepository
 from .application.observations import HostObservation, ingest_attention
-from .application.input_observations import InputObservation, close_refusals, ingest_input
+from .application.input_observations import InputObservation, JobLink, close_refusals, ingest_input
 from .domain import AttentionItem, PageAnnotation, ItemResolved, OWNERS, Refusal, StreamContext, STATES
 from .domain.routing import RoutingHistory, route
 from fleet.modules.records import TriageMandate
@@ -16,12 +16,14 @@ from fleet.modules.records import TriageMandate
 class AttentionFacade:
     def __init__(self, repository: AttentionRepository, clock: Callable[[], datetime], *,
                  mandate: Callable[[str], TriageMandate | None] | None = None,
-                 routing_history: Callable[[StreamContext], RoutingHistory] | None = None) -> None:
+                 routing_history: Callable[[StreamContext], RoutingHistory] | None = None,
+                 job_link: JobLink | None = None) -> None:
         self.repository = repository
         self.clock = clock
         self.commands = Commands(repository, clock)
         self.mandate = mandate
         self.routing_history = routing_history
+        self.job_link = job_link
 
     def route(self, project: str, kind: str, context: StreamContext | None, *,
               refusals: tuple[Refusal, ...] = ()) -> tuple[str, str | None]:
@@ -81,11 +83,14 @@ class AttentionFacade:
         return self.commands.change(item_id, "acknowledged", actor)
 
     def observe_input(self, host: str, observation: InputObservation, *, project_id: str | None = None) -> None:
-        ingest_input(self.repository, host, observation, project_id, router=self.route)
+        link = (self.job_link(host, observation.job_id)
+                if self.job_link is not None and observation.owner_type == "job" and observation.job_id else None)
+        ingest_input(self.repository, host, observation, project_id, router=self.route,
+                     run=link[0] if link else None, work_item=link[1] if link else None)
 
     def close_refusals(self, host: HostObservation, *, complete: bool) -> bool:
-        """Resolve job refusal batches whose step has ended; report whether any were."""
-        return close_refusals(self.repository, host, complete=complete, now=self.clock())
+        """Repair job links and resolve refusals the job has finished or moved past."""
+        return close_refusals(self.repository, host, complete=complete, now=self.clock(), job_link=self.job_link)
 
     def dismiss_refusals(self, item_id: str, *, actor: str) -> AttentionItem:
         item = self.repository.get(item_id)
@@ -143,15 +148,22 @@ class AttentionFacade:
         return self.repository.get(item_id).effective(self.clock())
 
     def list(self, *, project: str | None = None, state: str | None = None,
-             owner: str | None = None) -> list[AttentionItem]:
+             owner: str | None = None, source: str | None = None,
+             subjects: set[str] | None = None,
+             source_reference: str | None = None) -> list[AttentionItem]:
         if state is not None and state not in STATES:
             raise ValueError(f"unknown attention state: {state}")
         if owner is not None and owner not in OWNERS:
             raise ValueError(f"owner must be agent or user, not {owner!r}")
         now = self.clock()
-        items = [item.effective(now) for item in self.repository.list()]
+        items = [item.effective(now) for item in self.repository.list(project=project, owner=owner, source=source, subjects=subjects, source_reference=source_reference)]
         return [item for item in items if (project is None or item.project == project)
                 and (state is None or item.state == state) and (owner is None or item.owner == owner)]
+
+    def next_snooze_after(self, after: float) -> float | None:
+        """Next stored snooze deadline after the last wake, without hydrating items."""
+        return min((end.timestamp() for end in self.repository.snooze_ends()
+                    if end.timestamp() > after), default=None)
 
     def resolve_undoable(self, item_id: str, *, actor: str) -> tuple[AttentionItem, AttentionItem]:
         return self.commands.resolve_undoable(item_id, actor)

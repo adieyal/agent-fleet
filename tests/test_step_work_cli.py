@@ -70,7 +70,7 @@ def create(worker, steps):
     path.write_text(json.dumps(steps))
     fleetd.command_create(argparse.Namespace(
         id="job", run_id=None, fingerprint=None, schema_version=None, project="p", description="D", agent="claude",
-        model=None, cwd=str(worker), permission="default", steps_file=str(path), keep_going=False, hold=True,
+        model=None, effort=None, bare=False, cwd=str(worker), permission="default", steps_file=str(path), keep_going=False, hold=True,
         allowed_tools=None, add_dir=[], env=[]))
     return fleetd.read_job("job")
 

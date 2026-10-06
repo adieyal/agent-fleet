@@ -143,7 +143,7 @@ def test_store_already_migrated_through_main_17_reopens_without_replaying(tmp_pa
     before = store.history_after(0)
     monkeypatch.setattr(sqlite_store, "MIGRATIONS", migrations)
     reopened = configured_container(path=path).store()
-    assert reopened.schema_version() == 20
+    assert reopened.schema_version() == 22
     assert reopened.history_after(0) == before
     assert configured_container(reopened).execution().get_run(run.id).last_observed == START
     with sqlite3.connect(path) as connection:

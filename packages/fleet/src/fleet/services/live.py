@@ -11,6 +11,7 @@ from fleet.projections.live import live_document, building_document
 from fleet.projections.attention import attention_items
 
 import json
+from copy import copy
 import fcntl
 from pathlib import Path
 import logging
@@ -74,6 +75,24 @@ class LiveWorkspace(LiveProjects, LiveAttention, LiveProjection, LibraryProjecti
         self.workspace.settle()
         return building_document(self, document, registry)
 
+    def set_typing(self, item: str, value: dict | None) -> None:
+        """Transient stream state has its own cursor; never invalidates full snapshots."""
+        with self.changed:
+            if value is None:
+                if item not in self.typing:
+                    return
+                self.typing.pop(item)
+            else:
+                if self.typing.get(item) == value:
+                    return
+                self.typing[item] = value
+            self.typing_seq += 1
+            self.changed.notify_all()
+
+    def typing_update(self) -> dict:
+        with self.changed:
+            return {'typing_sequence': self.typing_seq, 'items': snapshot(self.typing)}
+
     def bump(self) -> None:
         """Push a new document to every browser."""
         with self.changed:
@@ -116,17 +135,16 @@ class LiveWorkspace(LiveProjects, LiveAttention, LiveProjection, LibraryProjecti
             self.changed.notify_all()
 
 
-    def wait_for_change(self, seen_version: int, timeout: float, seen_pipelines: int | None = None) -> int:
+    def wait_for_change(self, seen_version: int, timeout: float, seen_pipelines: int | None = None, seen_typing: int | None = None) -> int:
         """Also wakes when a snooze ends, so the item comes back on every deck without a reload, and when a pipeline
         report arrives if `seen_pipelines` is given (compare `pipeline_seq` to tell)."""
         now = self.attention.clock().timestamp()
-        ends = [item.snooze_until.timestamp() for item in self.attention.list()
-                if item.snooze_until is not None and item.snooze_until.timestamp() > self.woken_until]
-        ending = min(ends) if ends else None
+        ending = self.attention.next_snooze_after(self.woken_until)
         wait = timeout if ending is None else max(0.0, min(timeout, ending - now))
         with self.changed:
             self.changed.wait_for(lambda: self.version != seen_version or (
-                seen_pipelines is not None and self.pipeline_seq != seen_pipelines), timeout=wait)
+                seen_pipelines is not None and self.pipeline_seq != seen_pipelines) or (
+                seen_typing is not None and self.typing_seq != seen_typing), timeout=wait)
             if self.version == seen_version and ending is not None and self.attention.clock().timestamp() >= ending:
                 self.woken_until = max(self.woken_until, ending)
                 self.version += 1
@@ -167,8 +185,11 @@ class FleetState(LiveWorkspace):
         self.hosts = hosts
         self.project_labels = project_labels or {}
         self.container = container
+        self.responder = container.responder_worker()
+        self.page_responder = container.page_responder(worker=self.responder)
         self.transport = container.transport()
         self.store = container.store()
+        self.observed_runs: dict = {}  # successful job ingestion, including persisted link context
         self.indexed: dict = {}   # library entries as last indexed (see observe_runs)
         self.taken_decisions: set = set()   # streamed decision ids already handled (see record_decisions)
         self.workspace = workspace if workspace is not None else container.initialized_workspace(actor="web-user")
@@ -182,11 +203,17 @@ class FleetState(LiveWorkspace):
         self.decisions = container.decisions()
         self.records = container.records()
         self.reads = container.live_readers(workspace=self.workspace, attention=self.attention)
-        self.triage_status = container.triage_scheduler(deliver=None, host=None).status
-        self.schedule = container.schedule_triage
+        scheduler = container.triage_scheduler(deliver=container.deliver_triage,
+                                               host=lambda name: self.transport.host_by_name(name),
+                                               responder=self.page_responder.submit)
+        self.triage_status = scheduler.status
+        self.schedule = scheduler.schedule
         self.woken_until = 0.0
         self.changed = threading.Condition()
         self.version = 0
+        self.typing_seq = 0
+        self.typing = {}
+        self.page_responder.on_typing = self.set_typing
         self.history_cursor = self.store.latest_sequence()
         self.by_host: dict[str, dict[str, Any]] = {
             host.name: {"name": host.name, "ok": False, "error": "connecting…", "jobs": {}, "sessions": {}}
@@ -202,7 +229,7 @@ class FleetState(LiveWorkspace):
                 entry = self.by_host[observed["name"]]
                 entry.update(error=observed["error"], down_since=datetime.fromisoformat(observed["since"]).timestamp())
                 for run in self.execution.runs():
-                    if run.host != observed["name"] or run.status not in ("running", "unknown outcome"):
+                    if run.kind == 'responder' or run.host != observed["name"] or run.status not in ("running", "unknown outcome"):
                         continue
                     value = {"id": run.remote_job_id, "project": run.label, "agent": run.runtime, "cwd": run.cwd,
                              "updated_at": run.last_observed.timestamp() if run.last_observed else None,
@@ -217,6 +244,10 @@ class FleetState(LiveWorkspace):
                                              "finished_at": datetime.fromisoformat(step["end"]).timestamp() if step["end"] else None}
                                             for step in self.execution.steps(run.id)])
                         entry["jobs"][run.remote_job_id] = value
+
+    def job_documents(self, host, job):
+        with self.changed:
+            return snapshot(self.by_host[host]['jobs'][job].get('documents', []))
 
     def fetch_raw(self, host_name: str, job_id: str, document_id: str) -> dict[str, Any]:
         """A job document's Markdown as its host serves it, before rendering."""
@@ -240,8 +271,8 @@ class FleetState(LiveWorkspace):
 
     def schedule_triage(self) -> None:
         bodies = {intent['id']: json.dumps(asdict(self.decisions.get(intent['key'])), default=str)
-                  for intent in self.records.intents()
-                  if intent['state'] == 'pending' and intent['path'] == f"decisions/{intent['key']}.json"}
+                  for intent in self.records.pending_intents()
+                  if intent['path'] == f"decisions/{intent['key']}.json"}
         try:
             self.records.reconcile(bodies)
         except OSError:
@@ -269,18 +300,32 @@ class FleetState(LiveWorkspace):
             stop.wait(self.CANVAS_TICK_SECONDS)
 
     def follow_history(self, stop: threading.Event) -> None:
+        # Recover intents for decisions persisted while this controller was offline.
+        if not stop.is_set():
+            self.execution.reconcile_decisions()
         while not stop.is_set():
             self.schedule_triage()
             changes = self.store.history_after(self.history_cursor)
             if changes:
+                self.execution.reconcile_decisions()
                 self.history_cursor = int(changes[-1]["sequence"])
                 self.bump()
+            if hasattr(self, "_runtime_worker_success"):
+                self._runtime_worker_success("history-scheduler")
             stop.wait(0.25)
 
     def update(self, host_name: str, mutate: Any, *, subjects: set[str] | None = None,
-               ingest: bool = True, heartbeat: bool = False, deleted_jobs: set[str] = frozenset()) -> None:
+               ingest: bool = True, heartbeat: bool = False, deleted_jobs: set[str] = frozenset(), delta: tuple[str, str] | None = None) -> None:
         with self.changed:
-            previous = snapshot(self.by_host[host_name])
+            def selected(entry: dict[str, Any]) -> dict[str, Any]:
+                if delta is None:
+                    return entry
+                group, identity = delta
+                return {**{key: value for key, value in entry.items() if key not in ("jobs", "sessions", "_seen_jobs", "_seen_sessions")},
+                        "jobs": {identity: entry[group][identity]} if group == "jobs" and identity in entry[group] else {},
+                        "sessions": {identity: entry[group][identity]} if group == "sessions" and identity in entry[group] else {}}
+
+            previous = snapshot(selected(self.by_host[host_name]))
             sequence = self.store.latest_sequence()
             mutate(self.by_host[host_name])
             entry = self.by_host[host_name]
@@ -293,20 +338,22 @@ class FleetState(LiveWorkspace):
                 if entry["ok"]:
                     entry.pop("down_since", None)
                 self.execution.record_host(host_name, reachable=entry["ok"], error=entry["error"])
-            self.by_host[host_name] = snapshot(self.by_host[host_name])
+            if delta is None:
+                self.by_host[host_name] = snapshot(self.by_host[host_name])
             retry_deliveries = self.by_host[host_name]["ok"]
 
             def public(value):
                 return {key: item for key, item in value.items() if not key.startswith("_")}
 
-            context_only = public(previous) == public(self.by_host[host_name])
+            context_only = public(previous) == public(selected(self.by_host[host_name]))
             reconciled = False
             if ingest:
-                entry = self.by_host[host_name]
+                entry = selected(self.by_host[host_name])
                 host = {**entry, **{kind: {identity: item for identity, item in entry[kind].items()
                                           if not item.get("stale")} for kind in ("jobs", "sessions")}}
                 self.container.observe_runs(host, self.indexed,
-                             lambda job: resolve(self.registry, host_name, job)["project_id"])
+                             lambda job: resolve(self.registry, host_name, job)["project_id"],
+                             observed=self.observed_runs, complete=delta is None)
                 self.container.observe_sessions(host, lambda session: resolve(self.registry, host_name, session)["project_id"])
                 self.container.record_decisions(host,
                                  lambda job: resolve(self.registry, host_name, job)["project_id"], self.taken_decisions)
@@ -317,15 +364,16 @@ class FleetState(LiveWorkspace):
                 # A heartbeat follows a full pass over the host's jobs, so absent jobs are gone.
                 reconciled = self.attention.close_refusals(
                     {**host, "jobs": list(host["jobs"].values()), "sessions": []}, complete=heartbeat) or reconciled
-            if previous != self.by_host[host_name] or self.store.latest_sequence() != sequence or reconciled:
+            if previous != selected(self.by_host[host_name]) or self.store.latest_sequence() != sequence or reconciled:
                 self.version += 1
                 self.changed.notify_all()
         if retry_deliveries:
             if context_only:
-                self.execution.retry_decisions(host_name)
+                self.execution.retry_decisions(host_name, reconcile=False)
             else:
-                self.execution.retry_deliveries(host_name)
-        self.schedule_triage()
+                self.execution.retry_deliveries(host_name, reconcile=False)
+        if delta is None:
+            self.schedule_triage()
 
     def refresh_registry(self) -> str | None:
         try:
@@ -357,6 +405,26 @@ class FleetState(LiveWorkspace):
         """Each host's job summaries as last streamed, by (host, job id)."""
         with self.changed:
             return {(host, job["id"]): job for host, entry in self.by_host.items() for job in entry["jobs"].values()}
+
+    def snapshot_view(self) -> FleetState:
+        """Capture the mutable observation inputs; project with a private lock.
+
+        Store readers remain authoritative. Only this generation's host and
+        pipeline inputs are copied, so a long projection cannot stop ingestion.
+        """
+        with self.changed:
+            view = copy(self)
+            view.changed = threading.Condition()
+            view.by_host = snapshot(self.by_host)
+            view.pipeline_runs = snapshot(self.pipeline_runs)
+            return view
+
+    def accept_snapshot_view(self, view: FleetState) -> None:
+        """Retain refreshed read context used by subsequent host ingestion."""
+        with self.changed:
+            self.registry = view.registry
+            self.capacity = view.capacity
+            self.work_links = view.work_links
 
     def document(self) -> dict[str, Any]:
         projects_error = self.refresh_registry()
@@ -407,7 +475,11 @@ def follow_host(state: FleetState, host: Host, stop: threading.Event | None = No
 
 def run_stream(state: FleetState, host: Host, stop: threading.Event | None = None) -> str:
     """Apply stream messages until the stream ends; return why it ended."""
-    return state.transport.follow_stream(host, lambda message: apply_message(state, host, message),
+    def receive(message):
+        apply_message(state, host, message)
+        if hasattr(state, '_runtime_worker_success'):
+            state._runtime_worker_success('host:' + host.name)
+    return state.transport.follow_stream(host, receive,
                                   events=EVENTS_PER_JOB, silence_limit=STREAM_SILENCE_LIMIT, stop=stop)
 
 def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> None:
@@ -417,6 +489,9 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
                                           if key in message})
         project = resolve(state.registry, host.name, {"project": observation.project})
         state.attention.observe_input(host.name, observation, project_id=project.get("project_id"))
+        entry = state.by_host[host.name]
+        state.attention.close_refusals({**entry, "jobs": list(entry["jobs"].values()), "sessions": []},
+                                      complete=False)
         state.bump()
         return
     if kind == "hello":
@@ -453,32 +528,35 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
         except (FleetError, ValueError, KeyError, OSError) as error:
             print(f"fleet: session catch-up on {host.name} failed: {error}", file=sys.stderr)
     elif kind == "job":
-        job = message["job"]
+        job = snapshot(message["job"])
         def report_job(entry):
             entry["jobs"][job["id"]] = job
             if entry.get("_syncing"):
                 entry["_seen_jobs"].add(job["id"])
         state.update(host.name, report_job,
-                     subjects={f"job:{host.name}:{job['id']}"})
+                     subjects={f"job:{host.name}:{job['id']}"}, delta=("jobs", job["id"]))
         state.keep_documents(host.name, job)
     elif kind == "removed":
         if message.get("reason") == "removed by fleet rm":
             state.execution.removed(host.name, message["id"], at=message.get("removed_at"))
-        state.update(host.name, lambda entry: entry["jobs"].pop(message["id"], None),
+        def remove_job(entry: dict[str, Any]) -> None:
+            entry["jobs"].pop(message["id"], None)
+            state.observed_runs.pop((host.name, message["id"]), None)
+        state.update(host.name, remove_job,
                      subjects={f"job:{host.name}:{message['id']}"},
-                     deleted_jobs={f"job:{host.name}:{message['id']}"} if message.get("reason") in ("deleted", "removed by fleet rm") else frozenset())
+                     deleted_jobs={f"job:{host.name}:{message['id']}"} if message.get("reason") in ("deleted", "removed by fleet rm") else frozenset(), delta=("jobs", message["id"]))
     elif kind == "session":
-        session = message["session"]
+        session = snapshot(message["session"])
         def report_session(entry):
             entry["sessions"][session["id"]] = session
             if entry.get("_syncing"):
                 entry["_seen_sessions"].add(session["id"])
         state.update(host.name, report_session,
-                     subjects={f"session:{host.name}:{session['id']}"})
+                     subjects={f"session:{host.name}:{session['id']}"}, delta=("sessions", session["id"]))
     elif kind == "session_removed":
         state.execution.stop_session(host.name, message["id"])
         state.update(host.name, lambda entry: entry["sessions"].pop(message["id"], None),
-                     subjects={f"session:{host.name}:{message['id']}"})
+                     subjects={f"session:{host.name}:{message['id']}"}, delta=("sessions", message["id"]))
     elif kind == "heartbeat":
         def heartbeat(entry):
             if entry.get("_syncing"):
@@ -507,6 +585,8 @@ class LiveRuntime:
         self.stop = threading.Event()
         self.lock = None
         self.errors = {}
+        self.recoveries = {}
+        state._runtime_worker_success = self.worker_recovered
         if hasattr(state, "container"):
             path = Path(state.container.settings()['store_path']).resolve()
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -519,28 +599,67 @@ class LiveRuntime:
         self.threads = [self.worker('history-scheduler', state.follow_history, self.stop)]
         self.threads.extend(self.worker('host:' + host.name, follow_host, state, host, self.stop)
                             for host in state.hosts)
+        self.responder = getattr(state, 'responder', None)
+        if self.responder is not None:
+            self.threads.append(self.worker('responder', self.responder.run, self.stop, self.worker_recovered))
+        if getattr(state, 'page_responder', None) is not None:
+            self.threads.append(self.worker('page-responder', state.page_responder.run, self.stop, self.worker_recovered))
         if hasattr(state, "follow_canvas") and hasattr(state, "container"):
             self.threads.append(self.worker('canvas-kernel', state.follow_canvas, self.stop))
 
     def worker(self, name, target, *args):
         def run():
-            try:
-                target(*args)
-                if not self.stop.is_set():
-                    self.errors[name] = 'worker exited unexpectedly'
-            except BaseException as error:
-                self.errors[name] = f'{type(error).__name__}: {error}'
-                logging.getLogger(__name__).exception('Runtime worker %s failed', name)
+            delay = 0.25
+            while not self.stop.is_set():
+                if name in self.errors:
+                    self.recoveries[name]['restarts'] += 1
+                    self.recoveries[name]['retrying'] = True
+                started = time.monotonic()
+                try:
+                    target(*args)
+                    if self.stop.is_set():
+                        return
+                    error = 'worker exited unexpectedly'
+                except BaseException as failure:
+                    error = f'{type(failure).__name__}: {failure}'
+                    logging.getLogger(__name__).exception('Runtime worker %s failed; retrying', name)
+                self.errors[name] = error
+                previous = self.recoveries.get(name, {})
+                self.recoveries[name] = {'last_error': error, 'failed_at': time.time(),
+                                        'recovered_at': None, 'retrying': False, 'restarts': previous.get('restarts', 0)}
+                if time.monotonic() - started >= 30:
+                    delay = 0.25
+                if self.stop.wait(delay):
+                    return
+                delay = min(delay * 2, 30)
         return threading.Thread(name=name, target=run, daemon=True)
 
+    def worker_recovered(self, name):
+        if name in self.errors:
+            self.recoveries[name] = {**self.recoveries[name], 'recovered_at': time.time(), 'retrying': False}
+            self.errors.pop(name, None)
+
     def health(self):
-        workers = {thread.name: {'alive': thread.is_alive(), 'error': self.errors.get(thread.name)}
+        workers = {thread.name: {'alive': thread.is_alive(), 'error': self.errors.get(thread.name),
+                                **self.recoveries.get(thread.name, {})}
                    for thread in self.threads}
-        return {'healthy': all(worker['alive'] and not worker['error'] for worker in workers.values()),
+        if self.responder is not None:
+            # Worker liveness and child liveness are distinct. An initializing or
+            # dead child must never report a healthy responder.
+            worker = workers['responder']
+            worker['worker_alive'] = worker['alive']
+            child = self.responder.health()
+            worker.update(child)
+            worker['error'] = self.errors.get('responder') or child.get('error')
+            worker['alive'] = worker['worker_alive'] and child['alive']
+        return {'healthy': all(worker['alive'] and worker.get('ready', True) and not worker['error']
+                               for worker in workers.values()),
                 'stopping': self.stop.is_set(), 'workers': workers}
 
     def close(self, timeout=5.0) -> None:
         self.stop.set()
+        if self.responder is not None:
+            self.responder.close()
         deadline = time.monotonic() + timeout
         for thread in self.threads:
             if thread.ident is not None:

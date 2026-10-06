@@ -17,6 +17,7 @@ from dependency_injector import providers as _providers
 
 from fleet import transport as _transport
 from fleet.infrastructure.answers import send_answer as _send_answer
+from fleet.infrastructure.codex.app_server import CodexAppServer as _CodexAppServer
 from fleet.infrastructure.documents.evidence import (
     FileEvidenceReader as _FileEvidenceReader,
 )
@@ -37,6 +38,7 @@ from fleet.infrastructure.permission_grants import send_grant as _send_grant
 from fleet.infrastructure.resources import PackageResources as _PackageResources
 from fleet.infrastructure.sqlite import Store as _Store
 from fleet.infrastructure.sqlite.canvas import CanvasRepository as _CanvasRepository
+from fleet.infrastructure.sqlite.job_ownership import owns_job as _owns_job
 from fleet.infrastructure.sqlite.attention import (
     AttentionRepository as _AttentionRepository,
 )
@@ -100,6 +102,7 @@ from fleet.projections.run_history import run_detail as _run_detail
 from fleet.projections.workspace import annotate as _annotate
 from fleet.services.configuration import default_actor as _default_actor
 from fleet.services.configuration import validate_paths as _validate_paths
+from fleet.services.configuration import validate_worker_command as _validate_worker_command
 from fleet.services.documents import DocumentKeeper as _DocumentKeeper
 from fleet.services.documents import read_asset as _read_asset
 from fleet.services.documents import read_document as _read_document
@@ -112,6 +115,8 @@ from fleet.services.live import FleetState as _FleetState
 from fleet.services.subscription import SubscribedState as _SubscribedState
 from fleet.services.runtime import RuntimeServer as _RuntimeServer, runtime_status as _runtime_status
 from fleet.services.live import start_live as _start_live
+from fleet.services.responder import ResponderWorker as _ResponderWorker
+from fleet.services.page_responder import PageResponder as _PageResponder
 from fleet.services.storage import usage as _usage
 from fleet.triage import TriageCommands as _TriageCommands
 from fleet.triage_scheduler import TriageScheduler as _TriageScheduler
@@ -137,6 +142,11 @@ def settings():
     return dict(store_path=store_path(), management_home=management_home(),
                 config_path=_transport.config_path(), home=_fleet_home(),
                 clock=None, job=_os.environ.get("FLEET_JOB_ID") or None)
+
+
+def worker_job(run: str | None = None) -> str | None:
+    job = _os.environ.get('FLEET_JOB_ID')
+    return job if job and not _owns_job(store_path(), job, run) else None
 
 
 _scope_lock = _RLock()
@@ -218,6 +228,12 @@ class Services:
     def bound(self, unit: _Transaction) -> _Facades:
         return self._bind(unit)
 
+    def attention_job_link(self, host: str, job: str) -> tuple[str, str | None] | None:
+        run = self.execution.find_run(host, job)
+        if run is None:
+            return None
+        return run.id, self.execution.get_action(run.action).work_item
+
     def routing_history(self, context):
         import json
 
@@ -283,12 +299,14 @@ def bound_services(container, unit):
             raise ValueError("unit belongs to a different store")
         if not hasattr(unit, '_facades'):
             scope = Container()
+            # A parent provider override retains this scope through a reverse link.
+            # Forward calls without registering the parent as an overriding provider.
             for name in ('settings', 'store', 'transport', 'evidence', 'repository_writer', 'project_documents',
                          'send', 'grant', 'answer', 'step'):
-                getattr(scope, name).override(getattr(container, name))
+                getattr(scope, name).override(_providers.Callable(getattr(container, name).__call__))
             for name, provider in container.providers.items():
                 if name != 'unit' and provider.overridden and not getattr(scope, name).overridden:
-                    getattr(scope, name).override(provider.last_overriding)
+                    getattr(scope, name).override(_providers.Callable(provider.last_overriding.__call__))
             scope.unit.override(_providers.Object(unit))
             unit._container = scope
             unit._facades = scope.services()
@@ -464,7 +482,8 @@ def _make_attention_commands(container):
 def _make_decision_commands(container):
     services = container.services()
     from fleet.services.decisions import DecisionCommands
-    return DecisionCommands(services, lambda: initialize_workspace(container), container.references(), container.transport())
+    return DecisionCommands(services, lambda: initialize_workspace(container), container.references(),
+                            container.transport(), container.worker_job)
 
 
 def _make_history(services):
@@ -541,6 +560,8 @@ def page_change(container, project, slug, operation, **fields):
 class Container(_containers.DeclarativeContainer):
     resolve_prefix = _providers.Callable(_resolve_prefix)
     validate_paths = _providers.Callable(_validate_paths)
+    worker_job = _providers.Callable(worker_job)
+    validate_worker_command = _providers.Callable(_validate_worker_command)
     default_actor = _providers.Callable(_default_actor)
     listing_arguments = _providers.Callable(_listing_arguments)
     merge_detected = _providers.Callable(_merge_detected)
@@ -590,7 +611,8 @@ class Container(_containers.DeclarativeContainer):
         workspace, services, settings.provided['management_home'])
     attention = _providers.ThreadSafeSingleton(_AttentionFacade, _attention_repository, store.provided.clock,
         mandate=_providers.Callable(lambda services: lambda project: services.records.triage_mandate(project), services),
-        routing_history=services.provided.routing_history)
+        routing_history=services.provided.routing_history,
+        job_link=services.provided.attention_job_link)
     work = _providers.ThreadSafeSingleton(_WorkFacade, _work_repository, evidence, store.provided.clock,
         records=records, authority=_providers.Callable(callback, services, 'authority'))
     execution = _providers.ThreadSafeSingleton(_ExecutionFacade, _execution_repository, work,
@@ -623,7 +645,7 @@ class Container(_containers.DeclarativeContainer):
     controller_commands = _providers.Factory(_ControllerCommands, services)
     triage_commands = _providers.Factory(_TriageCommands, services)
     triage_scheduler = _providers.Factory(_TriageScheduler, services, deliver=None,
-        host=transport.provided.host_by_name)
+        host=transport.provided.host_by_name, responder=None)
     notifications = _providers.Factory(_Notifications)
     attention_items = _providers.Factory(_attention_items, attention=attention)
     building_state = _providers.Factory(_building_state, workspace=workspace)
@@ -667,6 +689,9 @@ class Container(_containers.DeclarativeContainer):
     runtime_server = _providers.Factory(_RuntimeServer)
     runtime_status = _providers.Callable(_runtime_status, store=settings.provided["store_path"])
     live_state = _providers.Factory(_FleetState, container=__self__)
+    responder_server = _providers.Factory(_CodexAppServer, fleet_home=settings.provided['home'])
+    responder_worker = _providers.Factory(_ResponderWorker, factory=responder_server.provider)
+    page_responder = _providers.Factory(_PageResponder, services=services)
     start_live = _providers.Callable(_start_live)
     fixture_data = _providers.Callable(_load_fixture)
     fixture_state = _providers.Factory(_FixtureState, container=__self__)

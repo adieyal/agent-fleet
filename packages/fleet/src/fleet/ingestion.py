@@ -1,6 +1,7 @@
 """Translate fleetd observations into module commands."""
 
 import sys
+from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Callable
 from urllib.parse import quote
@@ -28,20 +29,39 @@ def step_work(job: dict) -> list[dict] | None:
 
 
 def observe_runs(execution: ExecutionFacade, library: LibraryFacade, host: dict,
-                 indexed: dict | None = None, project_of: Callable[[dict], str | None] | None = None) -> None:
+                 indexed: dict | None = None, project_of: Callable[[dict], str | None] | None = None,
+                 *, observed: dict | None = None, complete: bool = True) -> None:
     """Record the host's jobs as runs, and index each linked run's documents in the library.
 
     `indexed`, kept by the caller across calls, remembers each entry as last indexed so an unchanged one is not
-    written again: hosts report many times a minute, and every job's documents come with every report."""
+    written again: hosts report many times a minute, and every job's documents come with every report.
+
+    `observed` caches successful payloads plus resolved project and persisted run/action state.
+    Point reads of each reported run/action preserve later linking and external run changes.
+    `complete=False` ingests a delta without evicting cached observations of other jobs.
+    Cache entries are copied because worker reports and facade values contain mutable dictionaries.
+    """
     execution.observe_host(host['name'], reachable=host['ok'])
     if not host["ok"]:
         execution.unavailable(host["name"])
         return
-    actions = {action.id: action for action in execution.actions()}
+    actions = {}
+    if observed is not None and complete:
+        for key in list(observed):
+            if key[0] == host["name"] and key[1] not in host["jobs"]:
+                del observed[key]
     for job in host["jobs"].values():
         if job.get("stale"):
             continue
-        run = execution.record_observed(host["name"], job, project_of(job) if project_of else None)
+        project = project_of(job) if project_of else None
+        key = (host["name"], job["id"])
+        existing = execution.find_run(*key)
+        if existing is not None:
+            actions[existing.action] = execution.get_action(existing.action)
+        context = (job, project, existing, actions.get(existing.action) if existing else None)
+        if observed is not None and observed.get(key) == context:
+            continue
+        run = execution.record_observed(host["name"], job, project)
         actions[run.action] = execution.get_action(run.action)
         starts = [step["started_at"] for step in job["steps"] if step["started_at"] is not None]
         ends = [step["finished_at"] for step in job["steps"] if step["finished_at"] is not None]
@@ -79,6 +99,8 @@ def observe_runs(execution: ExecutionFacade, library: LibraryFacade, host: dict,
                               title=title, location=location, availability=availability)
             if indexed is not None:
                 indexed[run.id, kind, location] = (work_item, title, availability)
+        if observed is not None:
+            observed[key] = deepcopy((job, project, run, actions[run.action]))
 
 
 def observe_sessions(execution: ExecutionFacade, host: dict, project_of: Callable[[dict], str | None]) -> None:
@@ -108,7 +130,8 @@ def record_decisions(decisions: DecisionsFacade, execution: ExecutionFacade, att
                 decisions.record_streamed(held["id"], timestamp(held["time"]), held["work_item"],
                     actor=held["actor"], question=held["question"], answer=held["answer"],
                     principle=held["principle"], context=held["context"],
-                    source_run=None if run is None else run.id)
+                    source_run=None if run is None else run.id, reconcile=False,
+                    recorded_by=held.get("recorded_by"))
             except (ValueError, LookupError) as error:
                 project = execution.get_action(run.action).project if run is not None else project_of(job)
                 if project is None:

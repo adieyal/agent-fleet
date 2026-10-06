@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import json
 from datetime import datetime, timedelta
 from typing import Callable, TYPE_CHECKING
 
@@ -13,18 +14,25 @@ if TYPE_CHECKING:
 
 from fleet.errors import FleetError
 from fleet.modules.records import TRIAGE_PATH
-from fleet.triage import triage_prompt
+from fleet.triage import triage_prompt, page_comment_prompt
+from fleet.services.page_requests import request_token
 
 
 class TriageScheduler:
     def __init__(self, services: Facades, deliver: Callable[..., object] | None,
-                 host: Callable[[str], Host] | None) -> None:
+                 host: Callable[[str], Host] | None, responder: Callable[..., object] | None = None) -> None:
         self.services, self.deliver, self.host = services, deliver, host
+        self.responder = responder
+        self._idle_revision = None
+
+    request_token = staticmethod(request_token)
 
     @staticmethod
     def queue(services, project: str):
+        handled = services.triage_repository.get(project).get('handled', {})
         return [item for item in services.attention.list(project=project, owner='agent')
-                if item.state in ('open', 'acknowledged')]
+                if item.state in ('open', 'acknowledged') and
+                (item.page_annotation is None or handled.get(item.id) != TriageScheduler.request_token(item))]
 
     def status(self, project: str) -> dict:
         state = self.services.triage_repository.get(project)
@@ -46,7 +54,9 @@ class TriageScheduler:
         return dict(project=project, mandate_version=version, policy_error=policy_error,
                     queue=[i.id for i in queued],
                     live_run=None if run is None else dict(id=run, status=self.services.execution.get_run(run).status),
-                    budget_left=None if mandate is None else max(0, mandate.limits['runs_per_day'] - used),
+                    budget_unlimited=mandate is not None and mandate.limits['runs_per_day'] is None,
+                    budget_left=None if mandate is None or mandate.limits['runs_per_day'] is None
+                    else max(0, mandate.limits['runs_per_day'] - used),
                     budget_resets_at=None if mandate is None else reset.isoformat(),
                     oldest_wait_seconds=None if oldest is None else max(0, (now - oldest).total_seconds()),
                     delivery_error=state.get('error'),
@@ -54,16 +64,25 @@ class TriageScheduler:
                                           if intent['project'] == project and intent['state'] == 'pending'])
 
     def schedule(self) -> None:
+        revision = (self.services.store.latest_sequence(), self.services.store.clock().date())
+        if self._idle_revision == revision:
+            return
+        self._idle_revision = None
         projects = {i.project for i in self.services.attention.list(owner='agent') if i.state != 'resolved'}
+        idle = not projects
         projects.update(self.services.triage_repository.projects())
         # A reservation must be reconciled even after every item was taken back or resolved.
-        projects.update(a.project for a in self.services.execution.actions() if a.activation and
-                        self.services.authority.get(a.activation).role == 'triage')
+        actions = {a.id: a for a in self.services.execution.activated_actions() if a.activation and
+                   self.services.authority.get(a.activation).role == 'triage'}
+        projects.update(a.project for a in actions.values())
+        if idle and actions:
+            idle = not any(run.action in actions for run in self.services.execution.active_runs())
         for project in sorted(projects):
             try:
                 delivery = self.reserve(project)
                 self.services.decisions.publish_triage_guards(project)
             except (FleetError, ValueError, LookupError, OSError, RuntimeError) as error:
+                idle = False
                 self.delivery_error(project, str(error))
                 continue
             if delivery is None:
@@ -72,13 +91,28 @@ class TriageScheduler:
                 continue
             run, reconcile = delivery
             try:
-                self.deliver(run, reconcile=reconcile)
+                if run.kind == 'responder':
+                    if self.responder is None:
+                        raise FleetError('responder unavailable: scheduler has no serve-owned responder')
+                    self.responder(run, reconcile=reconcile)
+                else:
+                    self.deliver(run, reconcile=reconcile)
             except (FleetError, ValueError, LookupError, OSError, RuntimeError) as error:
+                idle = False
                 self.delivery_error(project, str(error))
             else:
                 self.delivery_error(project, None)
+        # With no queued work, live triage attempts or publication retries,
+        # only a store write or UTC budget rollover can require another pass.
+        # Never reuse this result for timed work or across a store generation.
+        if (idle and not any(intent['state'] != 'confirmed' for intent in self.services.records.intents())
+                and self.services.store.latest_sequence() == revision[0]):
+            self._idle_revision = revision
 
     def delivery_error(self, project: str, error: str | None) -> None:
+        current = self.services.triage_repository.get(project)
+        if 'error' in current and current['error'] == error:
+            return
         with self.services.triage_repository.transaction() as scope:
             repository = scope.records
             state = repository.get(project)
@@ -96,6 +130,9 @@ class TriageScheduler:
                 return None
             version = services.records.mandate_version(project, TRIAGE_PATH)[0]
             def escalate(item, reason: str) -> None:
+                fallback = state.get('fallback', {}).get(item.id)
+                if fallback and fallback['request'] == self.request_token(item):
+                    reason += '; responder escalation: ' + fallback['reason']
                 recovery = (f' Inspect fleet triage policy show {project} and fleet triage status {project}. '
                             'Decide whether to handle this item yourself or restore service and delegate it again.')
                 if 'outcome unknown' in reason:
@@ -108,7 +145,16 @@ class TriageScheduler:
                 state.update(day=now.date().isoformat(), used=0)
             waiting = state.setdefault('waiting', {})
             untouched = state.setdefault('untouched', {})
+            waiting_requests = state.setdefault('waiting_requests', {})
             for item in items:
+                if item.page_annotation is not None:
+                    token = self.request_token(item)
+                    if waiting_requests.get(item.id) != token:
+                        requested_at = max([item.owner_at or now] +
+                            [reply.time for reply in item.replies if not reply.actor.startswith('triage:')])
+                        waiting[item.id] = requested_at.isoformat()
+                        waiting_requests[item.id] = token
+                        untouched.pop(item.id, None)
                 if item.id not in waiting:
                     waiting[item.id] = (item.owner_at or now).isoformat()
                 elif item.owner_at is not None and item.owner_at > datetime.fromisoformat(waiting[item.id]):
@@ -130,6 +176,10 @@ class TriageScheduler:
                             for item in items:
                                 escalate(item, f'triage host unreachable or dispatch unconfirmed: {state["error"]}; run {run.id} outcome unknown')
                     repository.save(project, state)
+                    if run.kind == 'responder':
+                        # Submission is idempotent in the serve-owned queue and
+                        # rehydrates a persisted reservation after serve restart.
+                        return run, True
                     # Retry transport at most once a minute; never create another run for an unknown outcome.
                     last = state.get('delivery_at')
                     if run.status == 'unknown outcome' and (last is None or now - datetime.fromisoformat(last) >= timedelta(minutes=1)):
@@ -137,8 +187,22 @@ class TriageScheduler:
                         repository.save(project, state)
                         return run, True
                     return None
-                acted = {d.attention_item for d in services.decisions.list() if d.source_run == run.id}
+                decisions = [d for d in services.decisions.list() if d.source_run == run.id]
+                acted = {d.attention_item for d in decisions}
+                replied = {d.attention_item for d in decisions
+                           if json.loads(d.context).get('command') == 'reply_attention'}
                 for item in items:
+                    if run.kind == 'responder':
+                        continue  # The local worker already committed the outcome atomically.
+                    if item.page_annotation is not None and item.id in state.get('items', []):
+                        if run.status != 'succeeded':
+                            escalate(item, f'agent reply run {run.id} failed: {run.status}')
+                            continue
+                        if item.id in replied:
+                            state.setdefault('handled', {})[item.id] = state.get('requests', {}).get(item.id)
+                            state.setdefault('fallback', {}).pop(item.id, None)
+                        else:
+                            acted.discard(item.id)
                     if item.id not in state.get('items', []) or item.id in acted:
                         continue
                     untouched[item.id] = untouched.get(item.id, 0) + 1
@@ -147,29 +211,49 @@ class TriageScheduler:
                 for identity in state.get('items', []):
                     waiting[identity] = now.isoformat()
                 state.update(run=None, items=[])
+                repository.save(project, state)
                 items = self.queue(services, project)
             # Include activations launched by another controller before scheduler state existed.
             if not state.get('run'):
-                for candidate in services.execution.runs():
-                    action = services.execution.get_action(candidate.action)
-                    if (action.project == project and action.activation and
-                            services.authority.get(action.activation).role == 'triage' and
-                            candidate.status in ('running', 'unknown outcome')):
+                actions = {action.id: action for action in services.execution.activated_actions()
+                           if action.project == project and action.activation and
+                           services.authority.get(action.activation).role == 'triage'}
+                for candidate in services.execution.active_runs() if actions else ():
+                    if candidate.action in actions:
                         state.update(run=candidate.id, items=[], claimed_at=now.isoformat(),
                                      used=state['used'] + 1, delivery_at=now.isoformat())
                         repository.save(project, state)
                         return None
+            # A page reply needs explicit authority; surface the missing permission in its thread.
+            items = [item for item in items if item.page_annotation is None
+                     or 'reply_attention' in mandate.decision_authority]
             for item in list(items):
                 if now - datetime.fromisoformat(waiting[item.id]) >= timedelta(minutes=mandate.limits['unclaimed_minutes']):
                     escalate(item, 'triage item was not claimed before its timeout; fleet web was down or dispatch was unavailable')
                     items.remove(item)
-            if state['used'] >= mandate.limits['runs_per_day']:
+            if mandate.limits['runs_per_day'] is not None and state['used'] >= mandate.limits['runs_per_day']:
                 for item in items:
                     escalate(item, f'triage daily budget exhausted ({state["used"]}/{mandate.limits["runs_per_day"]} runs); resets at {(now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()}')
                 items = []
             if not items:
                 repository.save(project, state)
                 return None
+            pages_only = all(item.page_annotation is not None for item in items)
+            fallback = state.setdefault('fallback', {})
+            for item in items:
+                if item.id in fallback and fallback[item.id]['request'] != self.request_token(item):
+                    fallback.pop(item.id)
+            local = pages_only and self.responder is not None and mandate.runtime == 'codex'
+            if local:
+                escalated = [item for item in items if item.id in fallback]
+                items = escalated[:1] if escalated else items[:1]
+                local = not escalated
+            elif pages_only:
+                cause = ('scheduler has no serve-owned responder' if self.responder is None else
+                         f'triage mandate runtime {mandate.runtime} does not authorize codex responder')
+                for item in items:
+                    fallback.setdefault(item.id, dict(request=self.request_token(item),
+                        reason='responder unavailable: ' + cause, source_run=None))
             host = self.host(mandate.host)
             if not host.is_local:
                 raise ValueError('triage must run on the controller machine')
@@ -184,7 +268,19 @@ class TriageScheduler:
             for name in ('FLEET_STORE', 'FLEET_CONFIG', 'FLEET_HOME', 'FLEET_MANAGEMENT'):
                 if name in os.environ:
                     arguments += ['--env', name + '=' + os.environ[name]]
-            prompt = triage_prompt(activation, mandate, [i.id for i in items])
+            # Page replies are conversational: one quick turn, without the user's skills pulling in detours.
+            if pages_only:
+                arguments += ['--effort', 'low', '--bare']
+            prompt = ('Reply to the supplied document comment using only this context.\nPinned triage mandate:\n' +
+                      json.dumps(dict(goal=mandate.goal, constraints=mandate.constraints,
+                                      escalation_conditions=mandate.escalation_conditions,
+                                      decision_authority=mandate.decision_authority)) if local else
+                      triage_prompt(activation, mandate, [i.id for i in items], pages_only=pages_only))
+            for item in items:
+                if item.page_annotation is not None:
+                    prompt += page_comment_prompt(services, item, responder=local)
+                    if item.id in fallback:
+                        prompt += '\nResponder escalated this item to fleetd: ' + fallback[item.id]['reason'] + '\n'
             guidance_metadata = None
             constitution = services.records.guidance(project)
             if constitution is not None:
@@ -198,12 +294,19 @@ class TriageScheduler:
                     entry = guidance['charter']
                     prompt += f'\nCharter for {work} ({entry["revision"]}):\n' + services.records.read(
                         project, entry['path'], revision=entry['revision'])
+            payload = dict(cwd=mandate.cwd, steps=[dict(prompt=prompt, title='Triage')], context=[], hold=False)
+            if local:
+                payload['responder'] = dict(item=items[0].id, request=self.request_token(items[0]),
+                                            owner_at=str(items[0].owner_at))
+            else:
+                payload['arguments'] = arguments
+                payload['responder_fallback'] = {item.id: fallback[item.id] for item in items if item.id in fallback}
             run = services.execution.dispatch(None, project=project, host=mandate.host, runtime=mandate.runtime,
                 actor=activation.actor, activation=activation.id, guidance=guidance_metadata,
-                reason=f'Triage: handling {len(items)} items',
+                reason=f'Page comment reply: {items[0].headline}' if local else f'Triage: handling {len(items)} items',
                 idempotency_key=f'triage:{project}:{items[0].id}:{activation.id}',
-                payload=dict(arguments=arguments, cwd=mandate.cwd, steps=[dict(prompt=prompt, title='Triage')],
-                             context=[], hold=False)).run
+                payload=payload, kind='responder' if local else 'job').run
+            state['requests'] = {i.id: self.request_token(i) for i in items}
             state.update(run=run.id, items=[i.id for i in items], claimed_at=now.isoformat(),
                          delivery_at=now.isoformat(), used=state['used'] + 1, error=None)
             for item in items:

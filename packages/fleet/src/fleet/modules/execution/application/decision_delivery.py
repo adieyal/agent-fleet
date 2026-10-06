@@ -14,12 +14,17 @@ if TYPE_CHECKING:
 from ..domain import Delivery
 
 
-def relevant(work: WorkFacade, identity: str | None, decision: "Decision") -> bool:
+def lineage(work: WorkFacade, identity: str | None) -> set[str]:
+    """The work item and its ancestors."""
+    items = set()
     while identity is not None:
-        if identity in decision.affected_work_items:
-            return True
+        items.add(identity)
         identity = work.get(identity).parent
-    return False
+    return items
+
+
+def relevant(work: WorkFacade, identity: str | None, decision: "Decision") -> bool:
+    return not lineage(work, identity).isdisjoint(decision.affected_work_items)
 
 
 def reconcile(execution: "ExecutionFacade", decisions: list["Decision"]) -> None:
@@ -33,10 +38,12 @@ def reconcile(execution: "ExecutionFacade", decisions: list["Decision"]) -> None
         boundary = datetime.fromisoformat(boundary) if boundary else run.start
         if (baseline is None and boundary is None) or action.work_item is None:
             continue
+        # One ancestry walk per run; walking it per decision made each streamed decision cost O(decisions) reads.
+        items = lineage(execution.work, action.work_item)
         for decision in decisions:
             key = f'context-decision:{run.id}:{decision.id}'
             earlier = decision.id in baseline if baseline is not None else decision.time <= boundary
-            if key in existing or earlier or not relevant(execution.work, action.work_item, decision):
+            if key in existing or earlier or items.isdisjoint(decision.affected_work_items):
                 continue
             with execution.repository.transaction() as transaction:
                 if any(d.key == key for d in transaction.deliveries()):

@@ -49,10 +49,17 @@ class Jobs:
         return reports, by_host
 
     def waiting_step(self, host: Host, job_id: str) -> int | None:
-        """The job's blocked step that has no answer yet, if any."""
+        """Observe the unanswered blocked question and return its step index, if any."""
         job = self.transport.call(host, ["show", job_id, "--events", "0"])
-        return next((step["index"] for step in job["steps"]
-                     if step["status"] == "blocked" and step.get("answered_by") is None), None)
+        waiting = next((step["index"] for step in job["steps"]
+                        if step["status"] == "blocked" and step.get("answered_by") is None), None)
+        if waiting is not None:
+            # Observe the actual question before answering, even if the stream has not yet
+            # created it. Its resolved occurrence then also covers late blocked snapshots.
+            observed = resolve_label(self.workspace().registry(), host.name, job)
+            self.attention().observe({"name": host.name, "ok": True, "jobs": [observed], "sessions": []},
+                                     subjects={f"job:{host.name}:{job_id}"})
+        return waiting
 
     def answer_waiting_step(self, host: Host, job_id: str, step: int, steps: list[dict[str, Any]], actor: str) -> str:
         """Add the steps as the answer to the waiting step, as the deck does: they run next, and the open attention
@@ -71,8 +78,13 @@ class Jobs:
             raise FleetError("worker did not confirm the answer")
         continuation = result["steps"][0]
         details = f"answered; step {step + 1} continues as step {continuation + 1}"
-        if item is not None:
-            attention.resolve(item.id, details=details, actor=actor)
+        # The stream can create the blocker while the worker call is in flight.
+        # Resolve from confirmed receipt, including items absent from the initial lookup.
+        for waiting in attention.list():
+            context = waiting.stream_context
+            if (waiting.state != "resolved" and context is not None and context.blocked_step
+                    and (context.host, context.owner_id, context.step) == (host.name, job_id, step)):
+                attention.resolve(waiting.id, details=details, actor=actor)
         return details
 
     def start(self, host: Host, job_id: str) -> dict:
@@ -118,6 +130,20 @@ class Jobs:
         fleetd_arguments = ["add", job_id, "--steps-file", "/dev/stdin"] + (["--retry"] if retry else [])
         job = self.transport.call(host, fleetd_arguments, stdin_text=json.dumps(steps))
         return job, None
+
+    def edit_step(self, host: Host, job_id: str, step: int, prompt: str, *, actor: str) -> dict[str, Any]:
+        """Replace an unstarted step's prompt; public step numbers start at one."""
+        if isinstance(step, bool) or not isinstance(step, int) or step < 1:
+            raise FleetError("step number must be a positive integer")
+        if not prompt.strip():
+            raise FleetError("step prompt must not be empty")
+        if not actor.strip():
+            raise FleetError("step edit actor must not be empty")
+        result = self.transport.call(host, ["edit-step", job_id, str(step - 1), "--actor", actor], stdin_text=prompt)
+        if not isinstance(result, dict) or any(result.get(key) != value for key, value in
+                {"job": job_id, "step": step - 1, "status": "edited", "prompt": prompt}.items()):
+            raise FleetError("worker did not confirm the step edit")
+        return result
 
     def show(self, host: Host, job_id: str, *, events: int | None = None) -> dict:
         arguments = ["show", job_id] + (["--events", str(events)] if events is not None else [])

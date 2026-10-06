@@ -101,7 +101,7 @@ class Mandate:
 
 
 TRIAGE_PATH = 'mandates/triage.json'
-TRIAGE_COMMANDS = ('retry', 'add_step', 'grant', 'resolve_attention', 'escalate', 'record_decision')
+TRIAGE_COMMANDS = ('retry', 'add_step', 'grant', 'resolve_attention', 'escalate', 'record_decision', 'reply_attention')
 
 
 @dataclass(frozen=True)
@@ -144,8 +144,10 @@ class TriageMandate(Mandate):
                 if not isinstance(entries, list) or any(not isinstance(x, str) or not x.strip() for x in entries):
                     raise ValueError('permissions must contain lists of nonempty rules')
             keys(value.limits, ('retries_per_step', 'runs_per_day', 'unclaimed_minutes'), 'limits')
-            if any(type(limit) is not int or limit <= 0 for limit in value.limits.values()):
-                raise ValueError('limits must be positive integers')
+            # runs_per_day may be null: no daily run limit. The other limits always apply.
+            if any((type(limit) is not int or limit <= 0) and not (name == 'runs_per_day' and limit is None)
+                   for name, limit in value.limits.items()):
+                raise ValueError('limits must be positive integers (runs_per_day may be null for no daily limit)')
             return value
         except (TypeError, ValueError) as error:
             raise ValueError(f'invalid triage mandate: {error}') from error

@@ -9,7 +9,8 @@ from fleet.modules.authority import AuthorityRejected
 
 from .application import Commands
 from .application.ports import EvidenceReader, WorkRepository
-from .domain import KINDS, Criterion, EvidenceSpecification, Progress, Relation, Summary, WorkItem, accepted_progress
+from .domain import (KINDS, Criterion, EvidenceSpecification, Progress, Relation, Summary, WorkItem, accepted_progress,
+                     standing)
 
 
 class WorkFacade:
@@ -35,7 +36,7 @@ class WorkFacade:
             if changes.keys() - {'next_step', 'condition', 'resume_condition'}:
                 raise AuthorityRejected('unsupported progress fields')
             if changes.get('condition') == 'complete':
-                criteria = self.criteria(identity)
+                criteria = standing(self.criteria(identity))
                 if not criteria or any(c.state != 'met' for c in criteria):
                     raise AuthorityRejected('completion requires met criteria')
                 self.authority().require('accept', identity, actor=actor, activation=activation)
@@ -96,6 +97,10 @@ class WorkFacade:
             if activation is not None:
                 raise AuthorityRejected(str(error)) from error
             raise
+
+    def withdraw(self, identity: str, *, actor: str, reason: str) -> Criterion:
+        """Retire an unmet criterion that can no longer be met; it stays on record but stops counting."""
+        return self.commands.withdraw(identity, actor=actor, reason=reason)
 
     def criteria(self, identity: str) -> list[Criterion]:
         return [item for item in self.repository.list("criterion") if item.work_item == identity]

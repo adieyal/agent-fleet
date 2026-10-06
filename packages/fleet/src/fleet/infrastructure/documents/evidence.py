@@ -7,6 +7,11 @@ from fleet.modules.work import Evidence
 
 
 class FileEvidenceReader:
+    def check(self, reference: str) -> None:
+        filename = reference.partition("#")[0]
+        if not Path(filename).is_absolute():
+            raise ValueError(f"evidence reference must be an absolute file path, optionally with #story: {reference}")
+
     def get(self, reference: str) -> Evidence | None:
         filename, fragment, story_id = reference.partition("#")
         path = Path(filename)

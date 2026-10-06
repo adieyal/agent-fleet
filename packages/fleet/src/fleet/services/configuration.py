@@ -13,6 +13,20 @@ def default_actor() -> str:
     return f"job:{job}" if job else "user"
 
 
+def validate_worker_command(job: str | None, command: str, *, stream_decision: bool) -> bool:
+    """Return whether to use the job stream; refuse worker access to controller commands."""
+    if job is None:
+        return False
+    if stream_decision:
+        return True
+    raise FleetError(
+        f"job {job} is on a worker without its controller store. "
+        f"Run fleet {command} on the controller host. "
+        "For decisions, fleet decision record --work-item FULL_ID uses the job stream; "
+        "for attention, progress or pages, put the request in the outbox and report it to the controller. "
+        "Do not create a worker store or register a duplicate project.")
+
+
 def validate_paths(command: str) -> list[str]:
     messages = []
     for name in ("FLEET_CONFIG", "FLEET_STORE"):

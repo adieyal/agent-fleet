@@ -60,3 +60,17 @@ def test_an_incomplete_decision_is_refused(job, monkeypatch, capsys, change):
 
 def test_a_job_without_decisions_reports_none(job):
     assert fleetd.job_summary(fleetd.read_job(job), 0)["decisions"] == []
+
+
+def test_worker_retains_user_decision_recorder(job, monkeypatch, capsys):
+    entry = {**DECISION, 'actor': 'user', 'recorded_by': 'codex'}
+    hold(monkeypatch, capsys, job, entry)
+    assert fleetd.read_job(job)['decisions'] == [entry]
+
+
+@pytest.mark.parametrize('recorder', ['', ' ', None, 42])
+def test_worker_rejects_invalid_explicit_recorder(job, monkeypatch, capsys, recorder):
+    with pytest.raises(SystemExit):
+        hold(monkeypatch, capsys, job, {**DECISION, 'recorded_by': recorder})
+    assert 'recorded_by' in capsys.readouterr().out
+    assert 'decisions' not in fleetd.read_job(job)

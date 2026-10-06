@@ -63,6 +63,11 @@ step's final summary. Wait on several with `fleet wait a b c`, or `--any` to
 return on the first. For a long-lived feed of every step/job change across all
 hosts, run `fleet notify` under the Monitor tool.
 
+Don't schedule timed check-ins ("I'll look again at 13:50") or poll with
+`fleet ls`/`fleet show` while a wait is running: the wait, or a blocked-step
+notification from `fleet notify`, is what re-invokes you. Check a job only when
+the user asks or an event arrives.
+
 ## Inspect and steer
 
 | Need | Command |
@@ -76,6 +81,7 @@ hosts, run `fleet notify` under the Monitor tool.
 | Full final message of each step + outbox listing | `fleet result host:id [--step N]` |
 | Fetch files the agent left for you | `fleet pull host:id [dest]` |
 | Send more context mid-job | `fleet push host:id file…` then mention it in the next step |
+| Correct a queued step before it starts | `fleet step edit host:id N --text "…"` or `--file prompt.md` (`N` starts at 1) |
 | Queue follow-up work (restarts an idle job) | `fleet add host:id -s "…"` (`--retry` re-queues failed steps) |
 | Answer a blocked step | `fleet add host:id -s "reply"` (or `fleet answer <attention-id> "reply"`) |
 | Stop | `fleet cancel host:id [--all-steps]` |
@@ -94,6 +100,11 @@ compare recorded start times; missing starts remain visible without a date filte
 Terminal jobs retain normalized events on the controller; raw traces remain on
 the worker. `fleet rm` records worker trace removal and preserves retained evidence.
 
+Use `step edit` to replace a queued prompt in place. It preserves the step's title,
+position and work item, updates its readable brief, and records the actor and
+old/new prompts. Only pending steps that have never started can be edited; a
+retried step that already ran is refused too. It does not start a held job.
+
 A step that ends `FLEET_STATUS: blocked` holds its job: later steps wait until
 it is answered. `fleet add host:id -s "reply"` on such a job answers that step
 (it says so); the reply runs next, then the steps queued behind it. Use
@@ -107,6 +118,23 @@ hold the job's run) it prints `Decision <id> handed to the controller via job
 <job>'s stream`, and `fleet serve` records it once it hears from that host (an
 unrecordable one, e.g. an unknown work item, becomes an alert). Check with
 `fleet decision list --project P`.
+
+`--actor` names who made the decision. For your own decision, use
+`--actor codex` or `--actor claude`. When recording a decision the user actually
+made, use `--actor user --recorded-by codex` (or `claude`): the decision lists
+`user`, and audit history keeps the agent who recorded it. For example:
+
+```sh
+fleet decision record --work-item W --question "Ship now?" --answer "Wait for review" \
+  --principle "User instruction" --actor user --recorded-by codex \
+  --context "User said to wait in the current conversation"
+fleet history --subject decision:DECISION_ID
+```
+
+Keep the user's instruction in `--context`; writing "User decision" only in
+`--principle` does not set attribution. Without `--recorded-by`, the decision
+actor is also the audit writer. Use an updated controller and worker for the
+separate recorder. Older workers reject the flag before holding the decision.
 
 To see who changed a work item, attention item or project and from which run,
 run `fleet history --subject <id or prefix> [--since 7d]`. Changes made inside a
@@ -172,6 +200,25 @@ if executables are installed. Tests use temporary Fleet paths; pytest rejects
 access to the real `~/.config/fleet` store and config before opening them.
 
 ## Persisted work reads
+
+After collecting a worker result, review its evidence and record the work state
+on the controller, not in a worker-local store. Update both condition and next
+step for each work item served by the job's steps. For example, implementation
+that passed its tests but still needs acceptance is ready for review:
+
+```sh
+fleet work set ITEM --condition 'ready for review' --next-step 'Review the report and accept the implementation' --actor codex
+```
+
+Waiting requires `--resume-condition`; blocked names the action needed beyond
+the agent's authority. A commit or a successful run does not accept work.
+Meet criteria with their required evidence and verification authority, then
+record complete only with acceptance authority. An activated orchestrator uses
+`fleet control ACTIVATION progress` within its mandate. Otherwise hand the
+recommendation to the authorized owner. Leave user-accepted criteria to the user.
+Read status again after recording. Progress counts accepted direct milestones
+or met criteria and remains unknown when neither supplies a total; never infer
+completion or a percentage from reports, commits or run status.
 
 `fleet work show ID_OR_PREFIX [--json]` reads work details, ancestors and linked records.
 `fleet status PROJECT [--item ID_OR_PREFIX] [--depth N] [--open] [--json]` scopes the work tree; depth 0 shows only roots. Incomplete descendants of complete items remain visible with `--open`. Item scopes exclude unlinked attention.

@@ -25,7 +25,7 @@ def worker(tmp_path, monkeypatch):
     steps.write_text('["Ship"]')
     return argparse.Namespace(id="job", run_id="run", fingerprint="digest", schema_version=4,
         cwd=str(tmp_path), agent="codex", permission="workspace-write", steps_file=str(steps),
-        project="p", description="Task", model=None, keep_going=False, allowed_tools=None,
+        project="p", description="Task", model=None, effort=None, bare=False, keep_going=False, allowed_tools=None,
         add_dir=[], env=[], hold=True)
 
 

@@ -41,13 +41,13 @@ class DecisionRepository(Repository):
         self.execution = self.execution_factory(unit)
         self.records = self.records_factory(unit)
 
-    def insert(self, decision: Decision) -> None:
+    def insert(self, decision: Decision, *, recorded_by: str | None = None) -> None:
         if self.unit is None:
             raise RuntimeError("decision writes require a transaction")
         payload = json.dumps(asdict(decision), default=lambda value: value.isoformat(), sort_keys=True)
         self.unit.connection.execute("INSERT INTO decisions_decision (id, record) VALUES (?, ?)",
                                      (decision.id, payload))
-        self.unit.record_change(f"decision:{decision.id}", "", payload, decision.actor)
+        self.unit.record_change(f"decision:{decision.id}", "", payload, decision.actor if recorded_by is None else recorded_by)
 
     def get(self, identity: str) -> Decision:
         rows = self.rows("SELECT record FROM decisions_decision WHERE id = ?", (identity,))

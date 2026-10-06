@@ -6,12 +6,20 @@
   const normalize = s => s.replace(space, ' ').replace(/^ | $/g, '');
   const points = s => Array.from(s);
   const status = document.getElementById('page-connection');
+  const indicator = document.getElementById('page-live');
+  // Always-visible connection state; the status line only carries what needs action.
+  function live(state, label, detail = '') {
+    indicator.dataset.state = state;
+    indicator.lastElementChild.textContent = label;
+    indicator.title = detail || label;
+  }
   const composer = document.getElementById('comment-composer');
   const form = document.getElementById('comment-form');
   const threads = document.getElementById('page-threads');
   const annotators = new Map();
   const unavailable = [];
   let view = initial, pending = null, connected = true, generation = 0, activeId = null, selectionDraft = null;
+  let typing = {};
   let canonical = '';
   const offsets = new Map();
   for (const [index, node] of initial.nodes.entries()) {
@@ -27,6 +35,17 @@
     if (value !== undefined) el.textContent = value;
     if (className) el.className = className;
     return el;
+  }
+  // Agent actors are "<role>:<uuid>"; show the role and keep the full identity one click away.
+  function actorLabel(actor) {
+    const match = /^([\w-]+):[0-9a-f-]{36}$/.exec(actor);
+    const label = element('strong', match ? (match[1] === 'triage' ? 'agent' : match[1]) : actor);
+    if (!match) return label;
+    label.title = actor;
+    const copy = button('⧉', () => navigator.clipboard?.writeText(actor));
+    copy.className = 'copy-actor'; copy.title = `Copy ${actor}`; copy.setAttribute('aria-label', `Copy ${actor}`);
+    label.append(' ', copy);
+    return label;
   }
   function button(label, callback) {
     const el = element('button', label);
@@ -277,6 +296,9 @@
         card.addEventListener('focusin', () => focusThread(thread.id, false));
         threads.append(card);
       }
+      let agentStatus = card.querySelector('[data-agent-status]');
+      if (!agentStatus) { agentStatus = element('p', undefined, 'meta'); agentStatus.dataset.agentStatus = ''; agentStatus.setAttribute('role', 'status'); card.querySelector('.thread-body').prepend(agentStatus); }
+      agentStatus.textContent = thread.agent_status || ''; agentStatus.hidden = !thread.agent_status;
       card.querySelector('[data-time]').textContent = relative(thread.created);
       card.classList.toggle('resolved', thread.state === 'resolved');
       card.querySelector('[data-toggle]').hidden = thread.state !== 'resolved';
@@ -301,7 +323,7 @@
           const item = element('div', undefined, 'answer'); item.dataset.messageId = message.id;
           item.dataset.messageType = message.type;
           const time = element('time', relative(message.time), 'meta'); time.title = message.time;
-          item.append(element('strong', message.actor), element('p', message.text), time);
+          item.append(actorLabel(message.actor), element('p', message.text), time);
           if (message.type === 'decision') item.append(element('span', 'Decision · answered and resolved', 'meta'));
           answers.append(item);
         }
@@ -311,6 +333,7 @@
         link.addEventListener('click', () => focusThread(thread.annotation.parent)); card.querySelector('.thread-body').append(link);
       }
     }
+    renderTyping();
     renderHighlights(); renderBadges();
     if (activeId) focusThread(activeId, false, false);
     layoutThreads();
@@ -338,6 +361,9 @@
         ? 'Runtime worker failed — check fleet serve status. Drafts are kept.'
         : runtime?.connection === 'reconnected'
         ? `Runtime reconnected — live updates resumed. ${instruction}`.trim() : instruction;
+      if (runtime && !runtime.available) live('offline', 'Runtime unavailable', runtime.error || '');
+      else if (runtime && !runtime.healthy) live('degraded', 'Degraded', 'A fleet serve worker failed; see fleet serve status');
+      else live('live', 'Live', `Updated ${new Date().toLocaleTimeString()}`);
       if (force || next.state_version !== view.state_version) {
         for (const [index, html] of Object.entries(next.directive_html)) {
           const wrapper = document.querySelector(`[data-directive-node="${index}"]`);
@@ -351,6 +377,7 @@
     } catch (error) {
       if (request !== generation) return;
       connected = false; status.textContent = `Disconnected: ${error.message}. Drafts are kept; refresh before submitting.`;
+      live('offline', 'Disconnected', error.message);
     }
   }
   for (const container of document.querySelectorAll('[data-prose-node]')) {
@@ -380,20 +407,56 @@
   addEventListener('resize', layoutThreads);
   const observer = new ResizeObserver(layoutThreads); observer.observe(threads); observer.observe(composer);
   renderThreads();
+  function renderTyping() {
+    for (const thread of view.threads) {
+      const card = document.getElementById(`thread-${thread.id}`);
+      if (!card) continue;
+      const progress = typing[thread.id];
+      // A confirmed reply wins even if its store refresh beats the clear event.
+      const replied = progress && thread.replies.some(reply =>
+        reply.actor.startsWith('triage:') && !progress.reply_ids.includes(reply.id));
+      const active = connected && progress && thread.owner === 'agent' && thread.owner_at === progress.owner_at && thread.state !== 'resolved' && !replied;
+      let partial = card.querySelector('[data-agent-typing]');
+      if (active) {
+        if (!partial) {
+          partial = element('div', undefined, 'answer'); partial.dataset.agentTyping = '';
+          partial.append(element('strong', 'agent'), element('p'));
+          card.querySelector('[data-answers]').append(partial);
+        }
+        partial.lastElementChild.textContent = progress.text;
+        card.querySelector('[data-agent-status]').textContent = 'Agent typing…';
+        card.querySelector('[data-agent-status]').hidden = false;
+      } else {
+        partial?.remove();
+        const label = card.querySelector('[data-agent-status]');
+        label.textContent = thread.agent_status || ''; label.hidden = !thread.agent_status;
+      }
+    }
+    layoutThreads();
+  }
   const stream = new EventSource('/api/stream');
+  stream.addEventListener('responder', event => {
+    const update = JSON.parse(event.data);
+    typing = update.items;
+    renderTyping();
+    if (!Object.keys(typing).length) refresh(true);
+  });
   let seenVersion = null, seenGeneration = null;
   stream.addEventListener('open', () => { seenVersion = null; refresh(true); });
   stream.addEventListener('state', event => {
     const {version, runtime} = JSON.parse(event.data);
     if (!Number.isInteger(version)) {
-      connected = false; status.textContent = 'Live state version missing: refresh before submitting.'; return;
+      connected = false; status.textContent = 'Live state version missing: refresh before submitting.';
+      live('offline', 'Disconnected', 'Live state version missing'); return;
     }
     if (seenVersion === null || version !== seenVersion || runtime?.generation !== seenGeneration) {
       seenVersion = version; seenGeneration = runtime?.generation; refresh(true);
     }
   });
   stream.addEventListener('error', () => {
-    connected = false; status.textContent = 'Disconnected: drafts are kept; reconnect before submitting.';
+    connected = false; typing = {}; renderTyping();
+    status.textContent = 'Disconnected: drafts are kept; reconnect before submitting.';
+    live('offline', 'Disconnected', 'Live stream lost; reconnecting');
   });
   // Reconcile time-window values between state events as well.
   const timer = setInterval(() => refresh(true), 2000);

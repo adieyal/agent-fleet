@@ -206,3 +206,24 @@ def test_a_project_settings_deny_rule_is_found_in_the_jobs_directory(tmp_path, m
     assert fleetd.deny_rules_matching("Bash", {"command": "cd x && git push origin main"}, str(tmp_path / "project")) == [
         f"Bash(git push:*) in {project}"]
     assert fleetd.deny_rules_matching("Bash", {"command": "git pull"}, str(tmp_path / "project")) == []
+
+
+def test_input_stream_flushes_before_scanning_jobs(tmp_path, monkeypatch):
+    import io
+    monkeypatch.setattr(fleetd, "FLEET_HOME", tmp_path)
+    monkeypatch.setattr(fleetd, "JOBS_DIRECTORY", tmp_path / "jobs")
+    fleetd.record_input_hook({"hook_event_name": "PermissionRequest", "session_id": "s",
+                             "tool_name": "Bash", "tool_input": {}}, project="p")
+    class Output(io.StringIO):
+        flushed = ""
+        def flush(self):
+            self.flushed = self.getvalue()
+    output = Output()
+    monkeypatch.setattr(sys, "stdout", output)
+    def scan(self):
+        assert '"type": "input_observation"' in output.flushed
+        raise BrokenPipeError()
+    monkeypatch.setattr(fleetd.SessionTracker, "scan", scan)
+    monkeypatch.setattr(fleetd.os, "close", lambda _: None)
+    fleetd.command_stream(argparse.Namespace(since_hours=24, events=0, session_interval=1,
+                                            heartbeat=1, interval=1))

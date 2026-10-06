@@ -39,7 +39,7 @@ def record(run: Run, execution: ExecutionFacade, work: WorkFacade) -> dict:
     value["model"] = (action.payload or {}).get("model")
     value["work_title"] = work.get(action.work_item).title if action.work_item else None
     host = next((entry for entry in execution.hosts() if entry["name"] == run.host), None)
-    value["offline_since"] = host["since"] if host and not host["reachable"] else None
+    value["offline_since"] = host["since"] if run.kind != 'responder' and host and not host["reachable"] else None
     value["duration_seconds"] = (run.end - run.start).total_seconds() if run.start and run.end else None
     recorded_git = [step["git"] for step in execution.steps(run.id) if "commit_count" in step["git"]]
     value["commit_count"] = sum(git["commit_count"] for git in recorded_git) if recorded_git else None
@@ -57,8 +57,8 @@ def history_runs(execution: ExecutionFacade, work: WorkFacade, workspace: Worksp
     for name, value in (("project", project), ("work_item", work_item), ("host", host), ("status", status), ("kind", kind)):
         if value is not None and not value.strip():
             raise ValueError(f"{name} must not be empty")
-    if kind is not None and kind not in ("job", "session"):
-        raise ValueError("kind must be job or session")
+    if kind is not None and kind not in ("job", "session", "responder"):
+        raise ValueError("kind must be job, session or responder")
     statuses = set(status.split(",")) if status else None
     if statuses is not None and statuses - STATUSES:
         raise ValueError(f"unknown run status: {', '.join(sorted(statuses - STATUSES))}")

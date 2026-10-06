@@ -217,7 +217,7 @@ def test_fleetd_wait_returns_for_a_blocked_job(jobs, capsys):
 
 
 def test_fleet_wait_exits_1_and_says_blocked(monkeypatch, capsys, *, cli_container, override_cli_method):
-    monkeypatch.setattr(transport, "worker_version", lambda host: {"wire_protocol_version": 1})
+    monkeypatch.setattr(transport, "worker_version", lambda host: {"wire_protocol_version": 2})
     finished = {"status": "blocked", "description": "Gather notes",
                 "results": [{"index": 0, "title": "Gather", "status": "blocked", "result": "no access"}]}
     host = SimpleNamespace(name="h", is_local=True, fleetd_command=lambda arguments: arguments)
@@ -276,3 +276,13 @@ def test_batch12_notify_reports_host_transitions_once(monkeypatch, capsys, *, cl
         assert detail == error
         assert prefix.startswith('HOST DOWN h since ')
         assert datetime.fromisoformat(prefix.removeprefix('HOST DOWN h since ')).tzinfo is not None
+
+
+def test_answer_to_blocked_reply_runs_before_remaining_reply_steps(jobs, monkeypatch):
+    job = jobs(['first', 'queued', 'first reply', 'remaining reply', 'answer to reply'])
+    job['steps'][0].update(status='blocked', answered_by=2)
+    job['steps'][2].update(status='blocked', answered_by=4)
+    job['keyed_additions'] = [dict(key='reply', answers=0, steps=[2, 3]),
+                              dict(key='nested', answers=2, steps=[4])]
+    (fleetd.JOBS_DIRECTORY / 'job' / 'job.json').write_text(json.dumps(job))
+    assert run_recording_order(monkeypatch) == [4, 3, 1]

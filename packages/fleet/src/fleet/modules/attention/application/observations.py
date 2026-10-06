@@ -85,7 +85,7 @@ def ingest_attention(attention: "AttentionFacade", host: HostObservation, *,
         return False
     source = f"stream:{host['name']}"
     references = set()
-    existing = {occurrence_key(item.source_reference): item for item in attention.list() if item.source == source}
+    existing = {occurrence_key(item.source_reference): item for item in attention.list(source=source, subjects=subjects) if item.source == source}
 
     def record(work: WorkObservation, owner_type: str, occurrence: str, kind: str,
                reason: str, summary: str, since: float | None, *, step: int | None = None,
@@ -118,6 +118,11 @@ def ingest_attention(attention: "AttentionFacade", host: HostObservation, *,
         wanted = {"stalled": ("running",), "lost": ("running", "failed")}.get(job["status"], (job["status"],))
         step = next((step for step in job.get("steps", [])
                      if step.get("status") in wanted and step.get("answered_by") is None), None)
+        if (job["status"] == "blocked" and step is None
+                and any(candidate["status"] == "blocked" for candidate in job.get("steps", []))):
+            # Every explicitly blocked step has an answer; a lagging job status must not
+            # replace its resolved question with an unanswerable job-level blocker.
+            continue
         since = step.get("started_at") if step else job.get("updated_at")
         occurrence = f"{step['index']}@{since}" if step else f"@{since}"
         summary = f"step {step['index'] + 1} {job['status']}: {step['title']}" if step else f"job {job['status']}"
@@ -131,7 +136,9 @@ def ingest_attention(attention: "AttentionFacade", host: HostObservation, *,
         if activity.get("kind") != "tool" or activity.get("name") not in WAITING_TOOLS:
             continue
         if activity['name'] == 'AskUserQuestion' and hook_covers_question(
-                attention.list(), host['name'], session['id'], activity.get('ts')):
+                attention.list(source=f"runtime-input:{host['name']}",
+                               subjects={f"session:{host['name']}:{session['id']}"}),
+                host['name'], session['id'], activity.get('ts')):
             continue
         summary = f"{session['agent']} {WAITING_TOOLS[activity['name']]}"
         if activity.get("summary"):

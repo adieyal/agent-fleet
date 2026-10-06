@@ -12,7 +12,9 @@ from fleet.modules.attention import StreamContext
 from fleet.modules.execution import JobObservation
 from fleet.modules.records import TRIAGE_PATH
 from fleet.triage_scheduler import TriageScheduler
-from tests.integration.test_triage_commands import triage, item
+from tests.integration.test_triage_commands import triage as triage_fixture, item
+
+triage = triage_fixture
 
 
 def scheduler(triage):
@@ -56,6 +58,26 @@ def test_end_without_action_requeues_once_then_escalates(triage):
     assert len(calls) == 2
     assert services.attention.get(a.id).owner == 'user'
     assert 'ended without acting' in services.attention.get(a.id).owner_reason
+
+
+def test_null_daily_limit_never_exhausts(triage):
+    services, activation, _, _, body, _ = triage
+    body['limits']['runs_per_day'] = None
+    services.records.write_mandate(activation.project, TRIAGE_PATH, json.dumps(body), key='unlimited', actor='user')
+    engine, calls = scheduler(triage)
+    for job in ('first', 'second', 'third'):
+        a = item(triage, job=job)
+        engine.schedule()
+        finish(services, services.execution.get_run(calls[-1][0]))
+        engine.schedule()
+        assert 'budget' not in (services.attention.get(a.id).owner_reason or '')
+    assert len(calls) >= 3
+    status = engine.status(activation.project)
+    assert status['budget_unlimited'] is True and status['budget_left'] is None
+    # Only the daily run limit may be switched off.
+    body['limits'] = dict(body['limits'], runs_per_day=12, retries_per_step=None)
+    with pytest.raises(ValueError, match='positive integers'):
+        services.records.write_mandate(activation.project, TRIAGE_PATH, json.dumps(body), key='bad', actor='user')
 
 
 def test_budget_escalates_queue_and_resets_next_day(triage):
@@ -298,3 +320,82 @@ def test_scheduler_refuses_a_missing_host_link(request):
     assert 'no link on host carbon' in state['error']
     assert f'fleet project link {activation.project}' in state['error']
     assert services.attention.get(attention.id).owner == 'agent'
+
+
+def test_idle_scheduler_does_not_lookup_historical_run_actions(triage, monkeypatch):  # noqa: F811
+    from fleet.infrastructure.sqlite.execution import ExecutionRepository
+    services, *_, source = triage
+    engine, calls = scheduler(triage)
+    lookups = []
+    original = ExecutionRepository.get_action
+    def get_action(repository, identity):
+        lookups.append(identity)
+        return original(repository, identity)
+    monkeypatch.setattr(ExecutionRepository, 'get_action', get_action)
+    engine.schedule()
+    engine.schedule()
+    assert calls == []
+    assert source.action not in lookups
+
+
+def test_scheduler_queue_decodes_only_its_owned_items(triage, monkeypatch):  # noqa: F811
+    import fleet.infrastructure.sqlite.attention as persistence
+    services = triage[0]
+    agent = item(triage, job='agent')
+    item(triage, job='user', owner='user')
+    decoded = []
+    original = persistence.decode
+    def decode(row):
+        decoded.append(row['id'])
+        return original(row)
+    monkeypatch.setattr(persistence, 'decode', decode)
+    assert [i.id for i in TriageScheduler.queue(services, agent.project)] == [agent.id]
+    assert decoded == [agent.id]
+
+
+def test_unchanged_delivery_health_avoids_write_scope(triage, monkeypatch):  # noqa: F811
+    services = triage[0]
+    engine, _ = scheduler(triage)
+    engine.delivery_error(triage[1].project, None)
+    monkeypatch.setattr(services.triage_repository, 'transaction',
+                        lambda: pytest.fail('unchanged delivery health opened a write scope'))
+    engine.delivery_error(triage[1].project, None)
+
+
+def test_idle_schedule_reuses_only_same_store_revision_and_day(triage, monkeypatch):  # noqa: F811
+    services = triage[0]
+    engine, calls = scheduler(triage)
+    engine.schedule()  # Establish durable day/error/default fields.
+    engine.schedule()
+    reserves = []
+    original = engine.reserve
+    def reserve(project):
+        reserves.append(project)
+        return original(project)
+    monkeypatch.setattr(engine, 'reserve', reserve)
+    engine.schedule()
+    assert reserves == []
+    now = services.store.clock()
+    services.store.clock = lambda: now + timedelta(days=1)
+    engine.schedule()
+    assert reserves == [triage[1].project]
+    assert services.triage_repository.get(triage[1].project)['day'] == services.store.clock().date().isoformat()
+    services.attention.commands.clock = services.store.clock
+    item(triage, job='new-generation')
+    engine.schedule()
+    assert len(calls) == 1
+
+
+def test_no_queue_unknown_run_still_retries_on_time(triage):  # noqa: F811
+    services = triage[0]
+    attention = item(triage)
+    engine, calls = scheduler(triage)
+    engine.schedule()
+    services.attention.take(attention.id, actor='user', reason='handle manually')
+    engine.schedule()
+    now = services.store.clock()
+    services.store.clock = lambda: now + timedelta(minutes=1)
+    engine.schedule()
+    assert len(calls) == 2
+    assert calls[0][0] == calls[1][0]
+    assert calls[1][1] == {'reconcile': True}

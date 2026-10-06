@@ -38,12 +38,15 @@ def link(repository: ExecutionRepository, work: WorkFacade, host: str, job: str,
 def record_observed(repository: ExecutionRepository, host: str, job: dict,
                     project: str | None) -> Run:
     """Record an externally observed job once, without reserving a claim."""
+    fields = {field: job[key] for field, key in (
+        ("label", "project"), ("title", "description"), ("cwd", "cwd"),
+        ("workspace", "workspace"), ("workspace_reason", "workspace_reason")) if key in job}
+    existing = repository.find(host, job["id"])
+    if existing is not None and all(getattr(existing, field) == value for field, value in fields.items()):
+        return existing
     with repository.transaction() as transaction:
         existing = transaction.find(host, job["id"])
         if existing is not None:
-            fields = {field: job[key] for field, key in (
-                ("label", "project"), ("title", "description"), ("cwd", "cwd"),
-                ("workspace", "workspace"), ("workspace_reason", "workspace_reason")) if key in job}
             updated = replace(existing, **fields)
             if updated != existing:
                 transaction.update(updated, "fleetd")
@@ -117,7 +120,7 @@ def stop_session(repository: ExecutionRepository, host: str, identity: str) -> R
 def observe(repository: ExecutionRepository, host: str, observation: JobObservation) -> Run | None:
     with repository.transaction() as transaction:
         run = transaction.find(host, observation.job)
-        if run is None:
+        if run is None or run.kind != 'job':
             return None
         updated = replace(run, status=observation.run_status(), reason=observation.status if observation.status in ("lost", "blocked", "queued", "stalled") else None,
                           runtime=observation.runtime, start=observation.start, end=observation.end,
@@ -139,7 +142,7 @@ def unavailable(repository: ExecutionRepository, host: str) -> bool:
     changed = False
     with repository.transaction() as transaction:
         for run in transaction.runs():
-            if run.host == host and run.status == "running":
+            if run.host == host and run.kind != 'responder' and run.status == "running":
                 transaction.update(replace(run, status="unknown outcome", reason=None), "fleetd")
                 changed = True
     return changed

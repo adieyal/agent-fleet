@@ -10,6 +10,7 @@ from fleet.errors import FleetError
 from .application import Repository
 from .application.workspace import WorkspaceApplication
 from .domain.projects import Registry
+from .domain.placement import floor_warning
 from .domain.records import Focus, Shuttered, WorkspaceSnapshot, ProjectReference, Placement, MergeResult
 
 T = TypeVar("T")
@@ -71,18 +72,21 @@ class WorkspaceFacade:
     def shuttered_snapshot(self) -> dict[str, Shuttered]:
         return self.application.shuttered_snapshot()
 
+    def floor_warning(self, project: str) -> str | None:
+        return floor_warning(self.snapshot(), project)
+
     def require_claims_allowed(self, project: str, host: str, label: str | None = None) -> None:
-        registry = self.registry()
+        snapshot = self.snapshot()
+        registry = Registry(snapshot.projects)
         # Older stored actions may contain a label instead of a canonical project ID.
         # Exact project identities always win, including when another link uses that ID.
         if label is None and project not in registry.projects:
             label = project
         linked = None if label is None else registry.project_for(host, label)
-        shuttered = self.shuttered_snapshot()
+        shuttered = snapshot.shuttered
         if project in shuttered or (linked is not None and linked.id in shuttered):
             identity = project if project in shuttered else linked.id
-            raise ValueError(f"project '{identity}' is shuttered (in the deck's storehouse), so no work can start in "
-                             f"it; restore it with: fleet project restore {identity}, or from the deck")
+            raise ValueError(f"No work can start. {floor_warning(snapshot, identity)}")
 
     def focus_lookup(self) -> Callable[[ProjectReference], str]:
         """Read focus once for a batch; obtain a new lookup for each request."""

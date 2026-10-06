@@ -88,7 +88,8 @@ class Run:
     # step's own: pending, running, done, failed, blocked, cancelled), "start", "end" (ISO times or None)}.
     # They attribute the run's activity to that work while the run stays linked to its action's item.
     step_work: list[dict] | None = None
-    # What ran: a fleet job, or an interactive session (whose remote job ID is its session ID).
+    # What ran: a fleet job, interactive session, or serve-owned responder turn.
+    # Responder remote_job_id is its reservation ID; protocol IDs live in timings.
     kind: str = "job"
     # The job's or session's host-local project label, its description or title, and its working directory.
     label: str | None = None
@@ -98,13 +99,15 @@ class Run:
     workspace: dict | None = None
     workspace_reason: str | None = None
     trace: dict | None = None
+    # Local responder protocol IDs and timings, never a fleetd observation.
+    timings: dict | None = None
 
     def __post_init__(self) -> None:
         if not self.host.strip() or not self.remote_job_id.strip():
             raise ValueError("host and remote job ID are required")
         if self.status not in ("running", "succeeded", "failed", "stopped", "unknown outcome"):
             raise ValueError("unknown run status")
-        if self.kind not in ("job", "session"):
+        if self.kind not in ("job", "session", "responder"):
             raise ValueError("unknown run kind")
 
 

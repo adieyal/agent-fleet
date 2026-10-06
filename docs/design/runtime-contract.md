@@ -16,13 +16,29 @@ against other users on the same machine. No command or authority API is exposed.
 - `GET /health`: `generation`, owner `pid`, `uptime_seconds`, `healthy`, `stopping`,
   `workers` (named history-scheduler and host followers: `alive`, `error`), and
   `hosts` (stream `ok`, `error`, `down_since`). An offline host does not make its
-  follower dead. Worker exceptions or unexpected return remain visible.
+  follower dead. Worker exceptions or unexpected returns retry with exponential backoff from 250 ms
+  to 30 seconds. Health keeps `last_error`, `failed_at`, `restarts`, `retrying` and
+  `recovered_at`; active `error` clears after a successful history pass or host
+  observation, rather than merely when a retry starts.
 - `GET /snapshot`: `contract_version: 1`, runtime UUID `generation`, state
   `sequence`, `pipeline_sequence`, `observed_at` (Unix seconds), `health`, existing
-  live projection `document`, and all existing `pipelines` projections.
+  live projection `document`, and all existing `pipelines` projections. Jobs carry
+  one latest document card, `documents_count` when nonzero, and
+  `documents_truncated` when more cards exist. Step titles and results are previews;
+  per-step git audit and full decision text are loaded on demand. `details_revision`
+  invalidates the selected job's detail cache; `details_truncated` marks that read.
+  Empty optional collections and false preview/attention flags may be omitted.
+  Long attention `context_reference` values have an 80-character preview and
+  `context_truncated: true`; `/api/decision` on web returns the complete context.
+- `GET /job-detail?host=&job=`: the complete projected job, including all document
+  metadata, decisions and step audit, from the current cached generation.
+- `GET /job-documents?host=&job=`: complete current host document metadata.
 - `GET /subscribe`: SSE `event: snapshot`, with the same complete DTO as JSON in
-  `data`. Always sends an initial snapshot, then sends after change or a one-second
-  freshness/health interval. State and pipelines are captured under the state's
+  `data`. Always sends an initial snapshot, then sends only when state/pipeline counters or worker/host health change.
+  One-second SSE comments keep idle streams alive. A single shared daemon builder
+  allows `: rebuilding snapshot` comments during slow projection; web retains its
+  last snapshot and reports `connection: lagging`. Its read timeout is 15 seconds.
+  Full replacements keep generation reconnect simple; there is no delta merge. State and pipelines are captured under the state's
   condition lock. SQLite history polling wakes clients after external writes.
 
 For example, cursor `(generation A, sequence 37)` followed by `(generation B,

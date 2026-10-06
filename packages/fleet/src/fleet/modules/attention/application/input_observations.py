@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from .observations import HostObservation
 
 Router = Callable[..., tuple[str, str | None]]
+JobLink = Callable[[str, str], tuple[str, str | None] | None]
 
 
 
@@ -110,7 +111,8 @@ def hook_covers_question(items: list[AttentionItem], host: str, session: str, si
 
 
 def ingest_input(repository: AttentionRepository, host: str, observation: InputObservation,
-                 project_id: str | None, *, router: Router | None = None) -> None:
+                 project_id: str | None, *, router: Router | None = None,
+                 run: str | None = None, work_item: str | None = None) -> None:
     if observation.schema_version != 1:
         raise ValueError("unsupported input observation schema version")
     if observation.runtime != "claude":
@@ -127,7 +129,7 @@ def ingest_input(repository: AttentionRepository, host: str, observation: InputO
     if observation.owner_type == "job":
         if observation.step_index is None:
             raise ValueError("a job's input observation requires its step")
-        ingest_refusal(repository, host, observation, project_id, router=router)
+        ingest_refusal(repository, host, observation, project_id, router=router, run=run, work_item=work_item)
         return
     owner = f"{observation.owner_type}:{host}:{owner_id}"
     source = f"runtime-input:{host}"
@@ -176,7 +178,8 @@ def ingest_input(repository: AttentionRepository, host: str, observation: InputO
 
 
 def ingest_refusal(repository: AttentionRepository, host: str, observation: InputObservation,
-                   project_id: str | None, *, router: Router | None = None) -> None:
+                   project_id: str | None, *, router: Router | None = None,
+                   run: str | None = None, work_item: str | None = None) -> None:
     """Gather a job's refused request into its step's batch, folding in any per-request item left from before."""
     step = observation.step_index
     assert step is not None and observation.job_id is not None
@@ -189,6 +192,10 @@ def ingest_refusal(repository: AttentionRepository, host: str, observation: Inpu
             transaction.save(single.transition("resolved", seen, details=f"folded into step {step + 1}'s refusals"),
                              single.state, "runtime-hook")
         batch = transaction.find(source, f"{owner}:step:{step}")
+        if batch is not None and run is not None and (batch.run, batch.work_item) != (run, work_item):
+            linked = replace(batch, run=run, work_item=work_item)
+            transaction.save(linked, batch.state, "runtime-hook")
+            batch = linked
         if batch is not None and batch.state == "resolved":
             return
         refusals = batch.refusals if batch is not None else ()
@@ -220,7 +227,7 @@ def ingest_refusal(repository: AttentionRepository, host: str, observation: Inpu
                                           router(project, 'decision', context, refusals=refusals))
             batch = AttentionItem(
                 id=str(uuid4()), project=project,
-                work_item=None, run=None, kind="decision", owner=routed_owner,
+                work_item=work_item, run=run, kind="decision", owner=routed_owner,
                 owner_reason=owner_reason, owner_at=last_seen, owner_actor="runtime-hook", subject=owner, source=source,
                 source_reference=f"{owner}:step:{step}", headline=headline,
                 context_reference=batch_context(refusals), state="open", snooze_until=None,
@@ -233,12 +240,13 @@ def ingest_refusal(repository: AttentionRepository, host: str, observation: Inpu
 
 
 def close_refusals(repository: AttentionRepository, host: "HostObservation", *, complete: bool,
-                   now: datetime) -> bool:
+                   now: datetime, job_link: JobLink | None = None) -> bool:
     """Resolve refusal batches the job has moved past; nothing is left to answer there.
 
     A batch stays answerable after its own step ends, since that is when a refused step is
     usually noticed and allowing it queues a continuation. It closes once a later step of the
-    job has started, or once the job is gone. `complete` means the host has reported every job it still keeps since reconnecting, so a
+    job has started, once the job finishes successfully or is cancelled/lost, or once it is gone.
+    `complete` means the host has reported every job it still keeps since reconnecting, so a
     batch whose job is absent belongs to a job that finished long ago or was removed, and a
     per-request job item that was not folded on replay is superseded.
     """
@@ -247,24 +255,36 @@ def close_refusals(repository: AttentionRepository, host: "HostObservation", *, 
     source = f"runtime-input:{host['name']}"
     jobs = {job["id"]: job for job in host["jobs"]}
     closing = []
-    for item in repository.list():
+    linking = []
+    subjects = None if complete else {f"job:{host['name']}:{identity}" for identity in jobs}
+    for item in repository.list(source=source, subjects=subjects):
         context = item.stream_context
-        if item.source != source or item.state == "resolved" or context is None or context.owner_type != "job":
+        if item.source != source or context is None or context.owner_type != "job":
+            continue
+        link = job_link(host["name"], context.owner_id) if job_link else None
+        if link is not None and (item.run, item.work_item) != link:
+            linking.append((item.id, link))
+        if item.state == "resolved":
             continue
         job = jobs.get(context.owner_id)
         if context.step is None:
             details = "superseded: job refusals are gathered per step" if complete else None
         elif job is None:
             details = "refused; job finished or removed" if complete else None
+        elif job["status"] in ("done", "cancelled", "lost"):
+            details = "refused; job finished"
         else:
             later = [step["index"] for step in job["steps"] if step["index"] > context.step
                      and (step["status"] == "running" or step.get("started_at") is not None)]
             details = f"refused; the job went on to step {max(later) + 1}" if later else None
         if details is not None:
             closing.append((item.id, details))
-    if not closing:
+    if not closing and not linking:
         return False
     with repository.transaction() as transaction:
+        for item_id, (run, work_item) in linking:
+            item = transaction.get(item_id)
+            transaction.save(replace(item, run=run, work_item=work_item), item.state, "runtime-hook")
         for item_id, details in closing:
             item = transaction.get(item_id)
             if item.state != "resolved":

@@ -8,6 +8,7 @@ import pytest
 from fleet.container import configured_container
 from fleet_cli import cli
 from fleet.transport import LOCAL_FLEETD_SOURCE
+from fleet_worker import WIRE_PROTOCOL_VERSION
 
 GUIDANCE = dict(project="p", epic=None, constitution=dict(path="constitution.md", revision="abc", version=3),
                 charter=None)
@@ -93,6 +94,15 @@ def test_a_resent_decision_is_a_new_decision_from_the_cli(tree, host_job, capsys
     assert first["id"] != second["id"]
 
 
+def test_worker_decision_never_opens_or_creates_controller_store(host_job, tmp_path, monkeypatch, capsys):
+    store = tmp_path / 'unavailable-controller' / 'fleet.db'
+    monkeypatch.setenv('FLEET_STORE', str(store))
+    hand(capsys, 'full-controller-work-item-id')
+    [held] = json.loads(host_job.read_text())['decisions']
+    assert held['work_item'] == 'full-controller-work-item-id'
+    assert not store.parent.exists()
+
+
 def test_a_named_run_is_recorded_here_even_inside_a_job(tree, host_job, capsys):
     run = run_for(tree.task.id, GUIDANCE)
     assert record(capsys, tree.task.id, "--run", run.id)["source_run"] == run.id
@@ -169,3 +179,64 @@ def test_list_by_project_and_epic_newest_first_with_unknown_principles(tree, cap
 def test_list_with_no_decisions(tree, capsys):
     cli.main(["decision", "list", "--project", tree.project])
     assert capsys.readouterr().out == "No decisions recorded.\n"
+
+
+def test_user_is_already_a_valid_decision_actor(tree, capsys):
+    decision = record(capsys, tree.task.id, '--actor', 'user')
+    assert decision['actor'] == 'user'
+
+
+def test_user_decision_keeps_agent_recorder_in_history(tree, capsys):
+    decision = record(capsys, tree.task.id, '--actor', 'user', '--recorded-by', 'codex')
+    assert decision['actor'] == 'user'
+    store = configured_container().store()
+    [change] = store.history(subjects=('decision:' + decision['id'],))
+    assert change['actor'] == 'codex'
+    assert json.loads(change['to'])['actor'] == 'user'
+    cli.main(['history', '--subject', 'decision:' + decision['id'], '--json'])
+    history = json.loads(capsys.readouterr().out)
+    assert history['entries'][0]['actor'] == 'codex'
+
+
+def test_worker_cli_hands_both_attribution_roles_to_controller(tree, host_job, capsys):
+    cli.main(['decision', 'record', '--work-item', tree.task.id, '--question', 'Ship now?',
+              '--answer', 'Wait', '--principle', 'User instruction', '--actor', 'user',
+              '--recorded-by', 'codex'])
+    assert 'handed to the controller' in capsys.readouterr().out
+    [held] = json.loads(host_job.read_text())['decisions']
+    assert (held['actor'], held['recorded_by']) == ('user', 'codex')
+
+
+def test_older_worker_rejects_separate_recorder_without_holding_decision(tree, host_job, capsys, monkeypatch, tmp_path):
+    worker = tmp_path / 'old-fleetd.py'
+    worker.write_text(f"""import argparse
+import json
+import sys
+from pathlib import Path
+if sys.argv[1:] == ['version']:
+    print(json.dumps({{'wire_protocol_version': {WIRE_PROTOCOL_VERSION}}}))
+    raise SystemExit(0)
+parser = argparse.ArgumentParser()
+parser.add_argument('command', choices=['decision'])
+parser.add_argument('job')
+parser.add_argument('--schema-version', type=int)
+parser.parse_args()
+Path(__file__).with_suffix('.held').write_text(sys.stdin.read())
+print(json.dumps({{'id': 'old-held'}}))
+""")
+    monkeypatch.setenv('FLEET_FLEETD_PATH', str(worker))
+    with pytest.raises(SystemExit):
+        cli.main(['decision', 'record', '--work-item', tree.task.id, '--question', 'Ship now?',
+                  '--answer', 'Wait', '--principle', 'User instruction', '--actor', 'user',
+                  '--recorded-by', 'codex'])
+    assert '--recorded-by' in capsys.readouterr().err
+    assert not worker.with_suffix('.held').exists()
+    assert 'decisions' not in json.loads(host_job.read_text())
+
+
+@pytest.mark.parametrize('recorder', ['', ' '])
+def test_blank_recorder_never_writes_a_decision(tree, capsys, recorder):
+    with pytest.raises(SystemExit):
+        record(capsys, tree.task.id, '--actor', 'user', '--recorded-by', recorder)
+    assert 'recorded_by must be nonblank' in capsys.readouterr().err
+    assert configured_container().decisions().list() == []

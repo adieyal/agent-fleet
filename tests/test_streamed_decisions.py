@@ -110,3 +110,54 @@ def test_a_decision_held_by_fleetd_reaches_the_store_through_the_job_stream(worl
     apply_message(state, state.hosts[0], {"type": "job", "job": fleetd.job_summary(fleetd.read_job("job-1"), 0)})
     [decision] = configured_container(world.store).decisions().list()
     assert (decision.id, decision.source_run, decision.guidance) == ("d1", run.id, GUIDANCE)
+
+
+@pytest.mark.parametrize("restart", [False, True])
+def test_streamed_decision_reconciles_on_history_worker_instead_of_job_message(world, monkeypatch, restart):
+    import threading
+
+    run = dispatch(world, world.task.id, 'job-1')
+    state = FleetState([transport.Host('home', None)], container=configured_container(store=world.store))
+    state.schedule_triage = lambda: None
+    state.keep_documents = lambda *args: None
+    state.by_host['home']['ok'] = True
+    reconcile = state.execution.reconcile_decisions
+
+    def forbidden():
+        pytest.fail('job ingestion reconciled the entire decision store')
+
+    monkeypatch.setattr(state.execution, 'reconcile_decisions', forbidden)
+    now = datetime.now(timezone.utc).timestamp()
+    apply_message(state, state.hosts[0], {'type': 'job', 'job': {
+        'id': 'job-1', 'project': world.project, 'status': 'running', 'agent': 'codex',
+        'steps': [{'index': 0, 'title': 'Build', 'status': 'running',
+                   'started_at': now, 'finished_at': None}], 'documents': [], 'updated_at': now,
+        'decisions': [held(world.task.id, time=now + 1)]}})
+    assert state.execution.deliveries() == []
+    if restart:
+        monkeypatch.setattr(state.execution, 'reconcile_decisions', reconcile)
+        state = FleetState([transport.Host('home', None)], container=configured_container(store=world.store))
+        state.schedule_triage = lambda: None
+        reconcile = state.execution.reconcile_decisions
+    stop = threading.Event()
+
+    def reconcile_once():
+        assert not state.changed._is_owned()
+        reconcile()
+        stop.set()
+
+    monkeypatch.setattr(state.execution, 'reconcile_decisions', reconcile_once)
+    state.follow_history(stop)
+    delivery, = state.execution.deliveries()
+    assert (delivery.decision, delivery.run, delivery.status) == ('d1', run.id, 'pending')
+
+
+def test_streamed_user_decision_preserves_its_recorder(world):
+    run = dispatch(world, world.task.id, 'job-user')
+    entry = held(world.task.id, actor='user', recorded_by='codex')
+    report(world, {'id': 'job-user', 'decisions': [entry]})
+    report(world, {'id': 'job-user', 'decisions': [entry]}, taken=set())
+    [decision] = configured_container(world.store).decisions().list()
+    assert (decision.actor, decision.source_run) == ('user', run.id)
+    [change] = world.store.history(subjects=('decision:' + decision.id,))
+    assert change['actor'] == 'codex'

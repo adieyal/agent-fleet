@@ -84,6 +84,33 @@ Restarting web leaves observation running. If serve is absent, the deck shows
 “Runtime unavailable” and reconnects automatically. `fleet serve status` prints
 owner PID, uptime, worker health and host stream states.
 
+Serve also owns a persistent `codex app-server` for the page-comment responder.
+It requires `codex` on `PATH` and readable `auth.json` in the launching user's
+`CODEX_HOME`, or `~/.codex` when unset. It creates a lean profile and a separate
+HOME under `$FLEET_HOME/responder`, symlinking the source auth file. The
+`workers.responder` status reports child PID, Codex version, readiness, restart
+errors and last-turn timing and tokens. Missing binary or auth makes the worker
+unhealthy with its cause visible; serve retries with backoff. Startup initializes
+an ephemeral thread without making a model call.
+
+Page-only triage queues use this responder when the confirmed triage mandate
+authorizes `reply_attention` and uses Codex. Each attempt reserves a run-budget
+slot and a pinned activation. Replies become Decisions linked to a stored
+`responder` run with timing and token usage, and leave the thread open. Follow-ups
+reuse the item's app-server thread; after a process restart a fresh thread gets
+the complete conversation. User take-back discards pending replies. A request
+that needs tools, or an unavailable responder, goes to the existing fleetd triage
+path with the reason visible in the page's agent status. That fallback reserves
+its own budget slot; budget exhaustion returns the item to the user. Mixed
+page/job queues keep the fleetd route. `fleet history runs --kind responder`
+and `fleet run show <run-id> --json` expose the local attempts and measurements.
+
+While a responder turn is running, the page shows `Agent typing…` and partial
+reply text. These updates live only in serve memory and use small SSE events,
+throttled to roughly 100 ms, without rebuilding the deck snapshot. The recorded
+reply replaces the partial message. Disconnecting removes partial text;
+reconnecting receives the current transient state. Drafts stay intact.
+
 Use `fleet watch` for a live terminal view. When the job finishes, run
 `fleet result worker:<id>` for its reports or `fleet pull worker:<id> ./results`
 for outbox files. `fleet wait worker:<id>` blocks until it finishes.
@@ -524,6 +551,33 @@ runtime errors such as HTTP 401 are not retried.
 Claude jobs default to `acceptEdits`; Codex jobs default to `workspace-write`. Use
 `fleet send --permission` when a job needs a different mode.
 
+Claude review jobs can opt into common inspection and test commands with
+`--allow-profile review`, on either `send` or `dispatch`:
+
+```sh
+fleet dispatch WORK_ITEM "Inspect changes and run tests" --host home \
+  --runtime claude --cwd /path/to/repo --allow-profile review
+```
+
+The profile includes common file inspection commands, Git status/diff/log/show,
+pytest and lint-imports runners, `make test|lint|check`, Docker
+ps/images/inspect/logs/version/info, and Fleet reads/help. It includes `cd` so a
+chain such as `cd /path/to/repo && uv run pytest -q` can use those rules. Every
+component of a chained command still needs its own permission.
+
+This is an opt-in command allowlist, not a read-only sandbox. Tests and Make
+targets execute repository code and can write files; command-prefix rules do not
+constrain every argument. General Bash, arbitrary Python or shell scripts, Git
+writes, Docker builds/runs and Fleet writes are not included. Add an intentional
+extra rule with `fleet send --allow 'Bash(docker build:*)'` when needed. Existing
+runtime deny rules still apply.
+
+Fleet expands the profile before dispatch, merges and deduplicates explicit
+`--allow` rules, and stores the exact rules on the job. Later steps and retries use
+that snapshot, including on workers that know only `--allowed-tools`. No profile
+is selected by default; without the flag existing permissions are unchanged.
+The profile applies only to Claude. Codex jobs use their existing sandbox modes.
+
 ### Dashboard access
 
 `fleet web` binds to `127.0.0.1` by default. Its `/api/state`, `/api/stream`, and
@@ -715,7 +769,7 @@ access to the real `~/.config/fleet` store and config before opening them.
 CLI work reads: `fleet work show WORK_ID` accepts a unique prefix; `--json` includes the full record and linked records.
 Use `fleet status PROJECT --item WORK_ID --depth 1 --open` to scope a tree, limit child depth (0 = roots), and hide complete work. Incomplete descendants remain visible. Unlinked attention has its own heading; an item scope excludes it.
 
-The library checks wire protocol version 1 before each host command, event tail,
+The library checks wire protocol version 2 before each host command, event tail,
 wait and stream, and validates the stream hello. Mismatches report both versions
 and require `fleet install HOST`. `fleetd.py version` reports the worker release,
 wire, stream and dispatch schema versions for deployment tooling. Build all four

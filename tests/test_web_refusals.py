@@ -198,7 +198,7 @@ def isolated_worker(tmp_path, monkeypatch):
     steps.write_text('["Review the repository"]')
     module.command_create(argparse.Namespace(id="j1", run_id=None, fingerprint=None, schema_version=None,
         cwd=str(tmp_path), agent="claude", permission="default", steps_file=str(steps), project="restoke",
-        description="Restoke review", model=None, keep_going=False, allowed_tools='["Bash(ls:*)"]',
+        description="Restoke review", model=None, effort=None, bare=False, keep_going=False, allowed_tools='["Bash(ls:*)"]',
         add_dir=[], env=[], hold=True))
     return module
 
@@ -239,7 +239,9 @@ def test_allowing_reaches_the_job_through_fleetd(deck, tmp_path, monkeypatch, ca
         assert job_file["steps"][1]["status"] == "done"
         first, continued = [json.loads(line) for line in (tmp_path / "worker" / "argv.jsonl").read_text().splitlines()]
         allowed = continued[continued.index("--allowedTools") + 1:continued.index("--resume")]
-        assert allowed == job_file["allowed_tools"]
+        assert allowed == list(dict.fromkeys([*job_file["allowed_tools"], *worker.FLEET_READ_TOOLS]))
+        assert 'Bash(fleet:*)' not in allowed
+        assert 'Bash(fleet decision record:*)' not in allowed
         assert continued[continued.index("--resume") + 1] == "s1"
         # The same grant again (a lost reply retried) queues nothing more.
         capsys.readouterr()
@@ -275,3 +277,37 @@ def test_a_request_a_deny_rule_refuses_is_not_offered_as_allowable(deck, monkeyp
     assert status == 200 and sent == [["Bash(ls:*)"]]
     assert body["resolution"] == ("allowed for job j1: Bash(ls:*); step 2 continues as step 3; still not allowed: "
                                   "curl -s https://example.com (denied by Bash(curl:*) in /home/me/.claude/settings.json)")
+
+
+@pytest.mark.parametrize("status", ["done", "cancelled", "lost"])
+@pytest.mark.parametrize("replay_after_finish", [False, True])
+def test_finished_job_closes_its_refusals(deck, status, replay_after_finish):
+    if not replay_after_finish:
+        apply_message(deck.state, HOSTS[0], refusal("r1"))
+    apply_message(deck.state, HOSTS[0], {"type": "job", "job": job("j1", status, [("done", 100), ("done", 150)])})
+    if replay_after_finish:
+        apply_message(deck.state, HOSTS[0], refusal("r1"))
+    [batch] = [item for item in deck.state.attention.list() if item.refusals]
+    assert batch.state == "resolved"
+    assert batch.resolution_details == "refused; job finished"
+
+
+def test_refusal_links_to_known_run_and_work(deck):
+    execution = deck.state.execution
+    work = deck.state.container.work()
+    task = work.add(project="restoke", title="test", goal="test", actor="test")
+    run = execution.link("home", "j1", task.id, actor="test")
+    apply_message(deck.state, HOSTS[0], refusal("r1"))
+    [batch] = [item for item in deck.state.attention.list() if item.refusals]
+    assert (batch.run, batch.work_item) == (run.id, task.id)
+
+
+def test_job_report_links_an_earlier_unlinked_refusal(deck):
+    apply_message(deck.state, HOSTS[0], refusal("r1"))
+    [batch] = [item for item in deck.state.attention.list() if item.refusals]
+    assert batch.run is None
+    task = deck.state.container.work().add(project="restoke", title="test", goal="test", actor="test")
+    run = deck.state.execution.link("home", "j1", task.id, actor="test")
+    apply_message(deck.state, HOSTS[0], {"type": "job", "job": job("j1", "running", [("done", 100), ("running", 150)])})
+    linked = deck.state.attention.get(batch.id)
+    assert (linked.run, linked.work_item) == (run.id, task.id)

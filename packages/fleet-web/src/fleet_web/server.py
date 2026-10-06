@@ -116,6 +116,22 @@ def make_handler(state: Any,
                 self.stream()
             elif path == "/api/history/runs" or path.startswith("/api/runs/"):
                 self.run_history(path)
+            elif path == "/api/job-detail":
+                query = parse_qs(urlsplit(self.path).query)
+                try:
+                    detail = state.job_detail(query['host'][0], query['job'][0])
+                except (KeyError, OSError, ValueError) as error:
+                    self.error(404, str(error))
+                    return
+                self.respond(200, "application/json", json.dumps(detail).encode())
+            elif path == "/api/job-documents":
+                query = parse_qs(urlsplit(self.path).query)
+                try:
+                    documents = state.job_documents(query['host'][0], query['job'][0])
+                except (KeyError, OSError, ValueError) as error:
+                    self.error(404, str(error))
+                    return
+                self.respond(200, "application/json", json.dumps(documents).encode())
             elif path == "/api/doc":
                 self.document()
             elif path == "/api/doc/asset":
@@ -777,10 +793,13 @@ def make_handler(state: Any,
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Accel-Buffering", "no")
             self.end_headers()
+            # A new reader only needs a responder event when a draft is being typed as it connects.
+            typing = state.typing_update()
             version, pipeline_seq = -1, 0
+            typing_seq = -1 if typing['items'] else typing['typing_sequence']
             try:
                 while not getattr(state, "subscription_closed", False):
-                    new_version = state.wait_for_change(version, timeout=SSE_PING_INTERVAL, seen_pipelines=pipeline_seq)
+                    new_version = state.wait_for_change(version, timeout=SSE_PING_INTERVAL, seen_pipelines=pipeline_seq, seen_typing=typing_seq)
                     # A reader may close while waiting. Detect its FIN before reading state again.
                     if select.select([self.connection], [], [], 0)[0] and not self.connection.recv(1, socket.MSG_PEEK):
                         return
@@ -796,6 +815,10 @@ def make_handler(state: Any,
                             self.wfile.write(f"event: pipeline\ndata: {json.dumps(update)}\n\n".encode())
                     else:
                         self.wfile.write(b"event: ping\ndata: {}\n\n")
+                    typing = state.typing_update()
+                    if typing['typing_sequence'] != typing_seq:
+                        typing_seq = typing['typing_sequence']
+                        self.wfile.write(f"event: responder\ndata: {json.dumps(typing)}\n\n".encode())
                     self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError, OSError):
                 return

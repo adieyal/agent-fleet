@@ -39,3 +39,57 @@ Run `scripts/checks/phase2-gate.sh` on carbon at the checkpoint to exercise
 local/SSH claims, parallel actions, a dropped create reply and disconnects.
 It creates held jobs and documents the expected result at each step; automated
 tests use isolated controller stores and worker directories instead.
+
+## Wire protocol 2: descendant completion
+
+Worker release 0.1.1 changes step completion semantics. The runner becomes a Linux
+child subreaper before starting an agent. After the agent exits and its workspace
+watcher stops, the runner reaps and waits for all remaining children before
+returning the attempt result, retrying, or starting the next step. Orphaned
+children, including double-forked processes that create their own sessions, are
+adopted by the runner. Runtime success alone no longer completes a step.
+
+For example, an agent that starts `docker build ... > build.log 2>&1 &` and reports
+`FLEET_STATUS: done` leaves the step running until its descendant exits. The
+existing activity field exposes `children_wait`, its PIDs and a waiting summary;
+events record PID changes. There is no automatic wait deadline and no agent
+replay. A service deliberately left running also keeps the step open. Agents
+should run finite work in the foreground and stop services before ending a step.
+
+Cancellation during this wait sends SIGTERM to adopted children, repeats as
+further descendants are adopted, and escalates to SIGKILL after five seconds.
+The runner reaps the children before returning. Descendant exit codes do not
+replace the agent's reported outcome; agents must inspect their own command
+results. Work submitted to an external daemon is outside OS process ancestry.
+The completion guarantee requires Linux `/proc` and child-subreaper support;
+unsupported workers refuse to run rather than silently losing the guarantee.
+
+Wire protocol 2 rejects workers implementing the earlier completion behavior.
+Dispatch schema remains 4 and stream protocol remains 3 because their record
+shapes are unchanged. Upgrade the controller wheels and run `fleet install HOST`
+for each worker before dispatching new jobs.
+
+## Queued prompt editing
+
+`edit-step JOB INDEX --actor ACTOR` reads the replacement prompt from stdin; the
+worker index starts at zero. It requires a nonempty prompt and actor. The public
+`Jobs.edit_step(host, job, step, prompt, actor=...)` uses one-based step numbers
+and checks the worker's confirmation. The CLI is
+`fleet step edit HOST:ID N --text TEXT` or `--file PATH`. Files contain UTF-8 text
+and preserve newlines.
+
+The worker checks `status == "pending"` and `started_at is None` under the same
+job lock that changes a step to running. A pending retry that already ran is
+refused. A later step can be edited while an earlier step is running or blocked.
+Editing changes only the prompt and its readable brief; it starts no runner and
+preserves step identity, title, order and work item. `step_edit` events retain
+actor, old prompt and new prompt. Repeating the same prompt while the step is
+still eligible creates no extra edit event.
+
+The first edit retains `original_prompt` for keyed-add and delivery payload
+checks, so replaying the original request preserves the correction and queuing
+occurs once. A different payload still fails. Initial dispatch fingerprints remain unchanged: they identify the original
+create request, and reconciliation or repeated creation must preserve subsequent
+edits. The new command is additive within this branch's unreleased wire-2 worker
+0.1.1 packet; existing dispatch and stream schemas stay at 4 and 3. Deploy both
+audit commits together when installing the updated workers.
