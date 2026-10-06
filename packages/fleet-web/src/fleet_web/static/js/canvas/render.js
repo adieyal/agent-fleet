@@ -4,7 +4,7 @@ import {
   itemPosition, regionRect,
 } from './geometry.js';
 import { EPIC_STAGE, LEVELS, STATUS, act, bind, clock, codeLines, esc, lighten, plural, statusColor, tint, who } from './util.js';
-import { PALETTE, PALETTE_NAMES, attentionCard, renderWidget, reportSummary } from './widgets.js';
+import { PALETTE, PALETTE_NAMES, attentionCard, refusedList, renderWidget, reportSummary } from './widgets.js';
 
 const ICON = (path) => `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
 const ICONS = {
@@ -341,6 +341,10 @@ function sessionInspector(model, ui, item) {
   if (run && !active && run.outcome) summary.push(`The last run ended: ${run.outcome}.`);
   const messages = (model.messages['task:' + item.id] || []).slice(-6);
   const budget = item.budget;
+  // A refused command and a question are different stops: only refusals can be allowed.
+  const refused = model.attention.filter((entry) => entry.item === item.id && entry.answer === 'refusal');
+  const refusing = item.status === 'struggling' || refused.length > 0;
+  const blockedAsks = model.attention.filter((entry) => entry.item === item.id && entry.answer === 'blocked');
   return `<span class="cv-label">Session · run ${esc(run ? (run.fleet_run || run.id).slice(0, 12) : 'none')}</span>
     <span style="font-size: 18px; font-weight: 600; line-height: 1.3">${esc((run ? run.role + ' ' + (run.agent || '') + ' · ' : '') + item.title)}</span>
     <span class="cv-pill" style="color: ${statusColor(item.status)}">${esc(STATUS[item.status][0])}</span>
@@ -351,7 +355,8 @@ function sessionInspector(model, ui, item) {
     <span class="cv-label">Do something</span>
     <div class="cv-row"><button class="cv-btn" ${act('op', { op: item.paused ? 'run.resume' : 'run.pause', args: { item: item.id } })}>${item.paused ? 'Resume' : 'Pause'}</button>
       ${!active && item.stage && item.stage !== 'done' ? `<button class="cv-btn" ${act('op', { op: 'run.request', args: { item: item.id, role: run ? run.role : 'builder' } })}>Request a ${esc(run ? run.role : 'builder')} run</button>` : ''}</div>
-    ${stuck ? `<div class="cv-box warn"><span style="font-size: 13px">Allow the refused commands for:</span><div class="cv-row">
+    ${blockedAsks.length ? `<span class="cv-label">Its question</span>${blockedAsks.map((entry) => attentionCard(model, entry)).join('')}` : ''}
+    ${refusing ? `<div class="cv-box warn"><span style="font-size: 13px">It was refused:</span>${refused.map(refusedList).join('') || '<span class="cv-small cv-muted">The refused commands are not recorded on this run.</span>'}<span style="font-size: 13px">Allow them for:</span><div class="cv-row">
       <button class="cv-btn primary" ${act('op', { op: 'run.permit', args: { item: item.id, scope: 'run' } })}>This run</button>
       <button class="cv-btn" ${act('op', { op: 'run.permit', args: { item: item.id, scope: 'space' } })}>This space</button>
       <button class="cv-btn" ${act('op', { op: 'run.permit', args: { item: item.id, scope: 'everywhere' } })}>Everywhere</button></div></div>` : ''}

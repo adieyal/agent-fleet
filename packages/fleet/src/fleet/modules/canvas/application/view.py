@@ -229,7 +229,10 @@ def read_model(engine, *, person: str, events: list[dict], last_seq: int, layout
                           "item": item.work_item if item.work_item in engine.items else by_job.get(item.subject),
                           "epic": None, "ok": item.options[0] if item.options else "Done",
                           "alt": item.options[1] if len(item.options) > 1 else None, "canvas": False,
-                          "options": list(item.options), "time": item.last_seen.isoformat()
+                          "options": list(item.options),
+                          "refused": [{"tool": refusal.tool, "detail": refusal.detail or refusal.description,
+                                       "denied": bool(refusal.denied_by)} for refusal in item.refusals],
+                          "time": item.last_seen.isoformat()
                           if hasattr(item.last_seen, "isoformat") else None})
     views = [view | {"compiled": code_view(compile_view(view["code"]))} for view in engine.all("view").values()
              if not view.get("personal") or view["personal"] == person]

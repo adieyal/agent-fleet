@@ -39,6 +39,10 @@ export function attentionCards(model, ui, attention) {
 // reply, a job's refused permissions, or a terminal question that can only be answered at its terminal.
 export const drafts = {};
 
+export function refusedList(entry) {
+  return (entry.refused || []).map((refusal) => `<span class="cv-mono cv-small" style="white-space: pre-wrap; word-break: break-all">${esc(refusal.tool)}: ${esc(refusal.detail.slice(0, 300))}${refusal.denied ? ' · a deny rule refuses this' : ''}</span>`).join('');
+}
+
 export function attentionCard(model, entry) {
   const item = entry.item ? model.items.find((other) => other.id === entry.item) : null;
   const epic = entry.epic ? model.epics.find((other) => other.id === entry.epic) : null;
@@ -48,7 +52,7 @@ export function attentionCard(model, entry) {
     controls = `${entry.message ? `<span class="cv-small cv-soft" style="white-space: pre-line">${esc(entry.message.slice(0, 600))}</span>` : ''}
       <div class="cv-row" style="flex-wrap: nowrap"><input class="cv-input" aria-label="Reply to the agent" data-draft="${esc(entry.id)}" value="${esc(drafts[entry.id] || '')}" placeholder="Reply to the agent"><button class="cv-btn primary sm" ${act('answerBlocked', { id: entry.id })}>Send</button></div>`;
   } else if (entry.answer === 'refusal') {
-    controls = `<div class="cv-row"><button class="cv-btn primary sm" ${act('op', { op: 'attention.allow', args: { id: entry.id } })}>Allow for this job</button><button class="cv-btn sm" ${act('op', { op: 'attention.dismiss', args: { id: entry.id } })}>Dismiss</button></div>`;
+    controls = `${refusedList(entry)}<div class="cv-row"><button class="cv-btn primary sm" ${act('op', { op: 'attention.allow', args: { id: entry.id } })}>Allow for this job</button><button class="cv-btn sm" ${act('op', { op: 'attention.dismiss', args: { id: entry.id } })}>Dismiss</button></div>`;
   } else if (entry.answer === 'terminal') {
     controls = '<span class="cv-small cv-muted">A session asked this at its terminal; answer it there.</span>';
   } else if (entry.answer === 'decision' && entry.options && entry.options.length) {
