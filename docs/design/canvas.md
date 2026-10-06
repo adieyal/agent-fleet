@@ -81,8 +81,8 @@ is the part before the bracket.
 | `run.request(item, role)` | Queues the run. Stage `dispatch builder` and `dispatch tester` lines call it. |
 | `run.start(run, agent)` | The scheduler does this every tick. The manual form checks capacity, dependencies and tester independence. |
 | `dep.add` / `dep.remove` | `cycle` |
-| `attention.resolve(id, choice)` | Records the decision with the actor, then approves (satisfying `you approve`) or sends the work back. Approvals answered elsewhere (the deck, `fleet answer`) are applied on the next tick. |
-| `run.pause` / `resume` / `permit(scope)` / `reassign(agent)` | Pausing cancels the job (`fleet cancel`). Resuming re-queues it. Permitting grants the run's refused rules: with `space` or `everywhere` the rules are also added to future dispatches. Reassigning stops the run and queues it for the other agent. |
+| `attention.resolve(id, choice)` | Records the decision with the actor, then approves (satisfying `you approve`) or sends the work back. Only a person can answer an Approve or Accept; an agent is refused with `not_permitted`. Approvals answered elsewhere (the deck, `fleet answer`) are applied on the next tick. |
+| `run.pause` / `resume` / `permit(scope)` / `reassign(agent)` | Pausing cancels the job (`fleet cancel`). Resuming re-queues it. Permitting grants the run's refused rules: with `space` the rules are also added to future dispatches in this space; there is no `everywhere` scope until Fleet has a shared rule to hold it. Only a person can permit. Reassigning stops the run and queues it for the other agent. |
 | `message.send(target, text)` | Stores the message. An instruction is stored as guidance on its target. The orchestrator replies from records and offers proposals. |
 | `proposal.resolve(id, adopt)` | Applies the proposal's operations in one transaction. |
 | `region.propose(rect, name)` then `region.create` | The name is interpreted as code (`defaults.zone_code`). You adopt it as enforced, guidance or label. |

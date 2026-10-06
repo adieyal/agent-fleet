@@ -310,10 +310,14 @@ class CanvasService:
 
         def mark(engine):
             record = engine.get("run", run["id"])
-            if record is not None:
-                record["permitted"] = True
-                record["permit_error"] = error
-            if run.get("permit") in ("space", "everywhere") and rules:
+            if record is None:
+                return
+            if error is not None:
+                engine.permit_failed(run["id"], error)
+                return
+            record["permitted"] = True
+            record["permit_error"] = None
+            if run.get("permit") == "space" and rules:
                 settings = engine.get("settings", "main") or engine.put("settings", "main",
                                                                          {"id": "main", "agents": {}, "allow": []})
                 settings["allow"] = sorted(set(settings.get("allow", [])) | set(rules))
