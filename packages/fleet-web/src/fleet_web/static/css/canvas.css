@@ -125,6 +125,7 @@ a:hover { color: var(--accent2); }
 .cv-live-note { display: flex; flex-direction: column; gap: 2px; font-size: 12px; line-height: 1.4; color: var(--soft); }
 .cv-clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .cv-live-row { display: flex; flex-direction: column; gap: 2px; padding: 6px 0; border-top: 1px solid #222c30; font-size: 13px; line-height: 1.45; }
+.cv-brief { margin: 6px 0 0; max-height: 420px; overflow: auto; white-space: pre-wrap; word-break: break-word; font-family: var(--mono); font-size: 12px; line-height: 1.5; color: var(--soft); }
 .cv-bar { height: 5px; background: var(--line); border-radius: 3px; overflow: hidden; }
 .cv-bar > div { height: 100%; background: #5f7f78; }
 .cv-bar.thick { height: 8px; border-radius: 4px; }

@@ -18,7 +18,7 @@ const ui = {
   cmdDraft: '', cmdError: '', convoHidden: false, sending: false, sessDraft: '', sessError: '',
   specEditing: false, specDraft: '', criteriaEditing: null, critDraft: '', chEditing: false, chDraft: '', chError: '',
   chClause: '', chClauseErr: '', clauseRule: '', agentEditing: null, agentHost: '', agentCwd: '',
-  collapsedEpics: [], pending: {}, live: { ok: true }, error: null,
+  collapsedEpics: [], pending: {}, live: { ok: true }, error: null, briefs: {},
 };
 let model = null;
 let spacesList = null;
@@ -534,6 +534,18 @@ const actions = {
     await op('attention.resolve', canvas ? { id, choice } : { id, answer });
   },
   op({ op: name, args }) { return op(name, args); },
+  async showBrief(runId) {
+    ui.briefs[runId] = { loading: true };
+    paint();
+    try {
+      const response = await fetch(`/api/canvas/brief?space=${encodeURIComponent(space)}&run=${encodeURIComponent(runId)}`);
+      const body = await response.json();
+      ui.briefs[runId] = response.ok ? body : { error: body.error || `could not read the brief (${response.status})` };
+    } catch (error) {
+      ui.briefs[runId] = { error: `could not read the brief: ${error.message}` };
+    }
+    paint();
+  },
   recordRevision(id) {
     const commit = window.prompt('Commit that holds this work (already merged):');
     if (commit && commit.trim()) return op('revision.record', { item: id, commit: commit.trim() });

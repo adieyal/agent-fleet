@@ -370,6 +370,10 @@ def make_handler(state: Any,
                     if not query.get("kind") or not query.get("id"):
                         raise ValueError("kind and id are required")
                     result = {"versions": canvas.versions(query["space"], query["kind"], query["id"])}
+                elif path == "/api/canvas/brief":
+                    if not query.get("run"):
+                        raise ValueError("run is required")
+                    result = canvas.brief(query["space"], query["run"])
                 else:
                     self.error(404, "not found")
                     return

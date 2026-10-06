@@ -149,6 +149,11 @@ def catch_up_jobs(host: Host) -> list[dict]:
     return call(host, ["ls", "--all", "--events", "0"], timeout=30)["jobs"]
 
 
+def job_steps(host: Host, job_id: str) -> list[dict]:
+    """A job's steps as the worker holds them, prompts included."""
+    return call(host, ["show", job_id, "--events", "0"], timeout=30)["steps"]
+
+
 def recent_events(host: Host, job_id: str, count: int) -> list[dict]:
     """A job's latest events; the catch-up listing carries none, to stay small across every retained job."""
     return call(host, ["show", job_id, "--events", str(count)], timeout=30)["events"]

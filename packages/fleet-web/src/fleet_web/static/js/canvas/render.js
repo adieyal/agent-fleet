@@ -284,6 +284,16 @@ function liveTimeline(live) {
   return `<div class="cv-box"><span class="cv-label">What the agent is doing</span>${step ? `<span class="cv-small cv-soft">${esc(step)}${live.stale ? ' · host not reporting' : ''}</span>` : ''}${rows || '<span class="cv-muted">No updates from the agent yet.</span>'}</div>`;
 }
 
+// The prompts the agent was given, read from its job on the host when asked for.
+function briefSection(brief, runId) {
+  const head = '<span class="cv-label">What the agent was given</span>';
+  if (!brief) return `<div class="cv-box">${head}<button class="cv-btn sm" style="align-self: flex-start" ${act('showBrief', runId)}>Show the brief</button></div>`;
+  if (brief.loading) return `<div class="cv-box">${head}<span class="cv-muted">Reading the job on its host…</span></div>`;
+  if (brief.error) return `<div class="cv-box">${head}<span class="cv-err">${esc(brief.error)}</span><button class="cv-btn sm" style="align-self: flex-start" ${act('showBrief', runId)}>Try again</button></div>`;
+  if (!brief.steps.length) return `<div class="cv-box">${head}<span class="cv-muted">${esc(brief.reason || 'The job has no steps.')}</span></div>`;
+  return `<div class="cv-box">${head}<span class="cv-mono cv-small cv-muted">${esc(brief.job)}</span>${brief.steps.map((step) => `<details ${step.index === 0 ? 'open' : ''}><summary class="cv-small">Step ${step.index + 1}: ${esc(step.title || '')} · ${esc(step.status || '')}</summary><pre class="cv-brief">${esc(step.prompt || '(no prompt recorded)')}</pre></details>`).join('')}</div>`;
+}
+
 function recentFor(model, id) {
   return model.log.filter((event) => event.subject === id).slice(-6).reverse();
 }
@@ -369,6 +379,7 @@ function sessionInspector(model, ui, item) {
     <div class="cv-box"><span class="cv-label">Summary for you</span>${summary.map((line) => `<span style="font-size: 14px; line-height: 1.5">${esc(line)}</span>`).join('') || '<span class="cv-muted">No agent has run on this task yet.</span>'}
       <span style="font-size: 11px; color: var(--faint)">Written from the run's records, not the raw transcript.</span></div>
     ${liveTimeline(run && run.live)}
+    ${run && run.job ? briefSection(ui.briefs[run.id], run.id) : ''}
     <span class="cv-label">Do something</span>
     <div class="cv-row"><button class="cv-btn" ${act('op', { op: item.paused ? 'run.resume' : 'run.pause', args: { item: item.id } })}>${item.paused ? 'Resume' : 'Pause'}</button>
       ${!active && item.stage && item.stage !== 'done' ? `<button class="cv-btn" ${act('op', { op: 'run.request', args: { item: item.id, role: run ? run.role : 'builder' } })}>Request a ${esc(run ? run.role : 'builder')} run</button>` : ''}</div>
