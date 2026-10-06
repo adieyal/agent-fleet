@@ -8,6 +8,7 @@ import pytest
 from fleet.container import configured_container
 from fleet_cli import cli
 from fleet.transport import LOCAL_FLEETD_SOURCE
+from fleet_worker import WIRE_PROTOCOL_VERSION
 
 GUIDANCE = dict(project="p", epic=None, constitution=dict(path="constitution.md", revision="abc", version=3),
                 charter=None)
@@ -208,12 +209,12 @@ def test_worker_cli_hands_both_attribution_roles_to_controller(tree, host_job, c
 
 def test_older_worker_rejects_separate_recorder_without_holding_decision(tree, host_job, capsys, monkeypatch, tmp_path):
     worker = tmp_path / 'old-fleetd.py'
-    worker.write_text("""import argparse
+    worker.write_text(f"""import argparse
 import json
 import sys
 from pathlib import Path
 if sys.argv[1:] == ['version']:
-    print(json.dumps({'wire_protocol_version': 1}))
+    print(json.dumps({{'wire_protocol_version': {WIRE_PROTOCOL_VERSION}}}))
     raise SystemExit(0)
 parser = argparse.ArgumentParser()
 parser.add_argument('command', choices=['decision'])
@@ -221,7 +222,7 @@ parser.add_argument('job')
 parser.add_argument('--schema-version', type=int)
 parser.parse_args()
 Path(__file__).with_suffix('.held').write_text(sys.stdin.read())
-print(json.dumps({'id': 'old-held'}))
+print(json.dumps({{'id': 'old-held'}}))
 """)
     monkeypatch.setenv('FLEET_FLEETD_PATH', str(worker))
     with pytest.raises(SystemExit):
