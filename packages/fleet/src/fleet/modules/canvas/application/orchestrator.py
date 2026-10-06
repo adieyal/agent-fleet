@@ -13,6 +13,13 @@ WHY = re.compile(r"why|stuck|slow|status|what.*doing|progress|update|how.*going|
 RULE = re.compile(r"\buse\b|don.?t|do not|skip|instead|prefer|avoid|stop|make sure|always|never|should|must")
 
 
+def deterministic(text: str) -> bool:
+    """Commands implemented as explicit Adopt/Discard proposals."""
+    lower = text.lower()
+    return bool(re.search(r"cost|spend|expensive|money|budget|\bpark|pause|hold|later\b|swimlane|lanes|board|who.*working|show me", lower)
+                or (re.search(r"epic", lower) and re.search(r"start|new|create|open", lower)))
+
+
 def reply(kernel, text: str, target: dict | None) -> dict:
     """{who, text, guidance: bool, proposals: [(desc, operations)]}."""
     lower = text.lower()

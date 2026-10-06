@@ -642,7 +642,7 @@ function messageBar(model, ui, left, right, bottom) {
       ${(message.proposals || []).map((id) => proposals[id]).filter(Boolean).map((proposal) => `<div class="cv-prop"><span>${esc(proposal.desc)}</span>${proposal.state === 'open'
         ? `<button class="cv-btn primary sm" ${act('proposal', { id: proposal.id, adopt: true })}>Adopt</button><button class="cv-btn sm" ${act('proposal', { id: proposal.id, adopt: false })}>Discard</button>`
         : `<span class="cv-mono cv-small" style="color: var(--accent2)">${proposal.state === 'adopted' ? 'Adopted' : 'Discarded'}</span>`}</div>`).join('')}</div>`).join('')}
-    ${ui.sending ? `<span class="cv-small cv-muted">${esc(target ? target.label.split(' · ')[0] : 'The orchestrator')} is replying…</span>` : ''}</div>` : '';
+    ${ui.sending || messages.some(message => ['pending', 'streaming'].includes(message.status)) ? `<span class="cv-small cv-muted">${esc(target ? target.label.split(' · ')[0] : 'The orchestrator')} is replying…</span>` : ''}</div>` : '';
   return `<div class="cv-msgbar" data-overlay="1" style="left: ${left}px; right: ${right}px; bottom: ${bottom}px"><div class="cv-msgbar-inner">${convo}
     <form class="cv-cmd" data-submit="sendCmd"><span class="to">To: ${esc(target ? target.label : 'the orchestrator')}</span>
       ${target ? `<button type="button" class="cv-btn link" style="font-size: 12px; color: var(--muted)" ${act('toOrchestrator')} aria-label="Send to the orchestrator instead">orchestrator instead</button>` : ''}
