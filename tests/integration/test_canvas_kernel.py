@@ -367,3 +367,56 @@ def test_layout_is_personal_and_unlogged(space):
     space.canvas.layout(space.project, "someone", "epic:abc", {"x": 99, "y": 99})
     assert state(space)["layout"] == {"epic:abc": {"x": 10, "y": 20}}
     assert len(state(space)["log"]) == before
+
+
+def test_real_runs_follow_their_fleet_run(space, monkeypatch):
+    class Dispatch:
+        def send(self, request, steps):
+            return {"intent": SimpleNamespace(run=SimpleNamespace(id="fleet-run", host="worker", remote_job_id=request.id))}
+
+    space.canvas.dispatch = lambda: Dispatch()
+    ok(space, "agent.configure", agent="claude", mode="dispatch", host="worker", cwd="/src/app")
+    ok(space, "agent.configure", agent="codex", mode="dispatch", host="worker", cwd="/src/app")
+    identity = task(space, criteria=["Tests pass"], stage="first")
+    space.canvas.tick(space.project)
+    fleet = SimpleNamespace(status="running", reason=None, usage={"cost_usd": 0.42}, start=None, end=None,
+                            runtime="claude", current_action="Editing facade.py")
+    open_items = []
+    real_ports = space.canvas.ports
+
+    def ports(facades, project):
+        bound = real_ports(facades, project)
+        bound.run = lambda run_id: fleet if run_id == "fleet-run" else None
+        bound.run_attention = lambda run_id: open_items
+        return bound
+
+    monkeypatch.setattr(space.canvas, "ports", ports)
+    space.canvas.tick(space.project)
+    card = item(space, identity)
+    assert card["status"] == "working" and card["spent"] == 0.42
+    assert card["run"]["fleet"]["current_action"] == "Editing facade.py"
+    open_items.append(SimpleNamespace(id="a1", state="open", refusals=("pytest",), headline="pytest refused"))
+    space.canvas.tick(space.project)
+    card = item(space, identity)
+    assert card["status"] == "struggling" and card["run"]["excerpt"] == "pytest refused"
+    unblock = next(entry for entry in state(space)["attention"] if entry["kind"] == "Unblock")
+    assert unblock["item"] == identity
+    open_items.clear()
+    fleet.status, fleet.reason = "failed", "blocked"
+    space.canvas.tick(space.project)
+    assert item(space, identity)["status"] == "blocked"
+    fleet.status, fleet.reason = "succeeded", None
+    space.canvas.tick(space.project)
+    card = item(space, identity)
+    assert card["facts"]["submitted"] and card["stage"] == "approve"
+
+
+def test_layout_set_is_an_operation_too(space):
+    result = op(space, "layout.set", object="epic:e1", props={"x": 5, "y": 6})
+    assert result["ok"]
+    assert state(space)["layout"] == {"epic:e1": {"x": 5, "y": 6}}
+
+
+def test_host_answers_name_an_attention_item_of_this_space(space):
+    result = op(space, "attention.answer", id="missing", answer="Use the warm image")
+    assert result["refused"] and result["code"] == "invalid"

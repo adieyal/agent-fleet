@@ -194,6 +194,31 @@ A job step whose agent finished its turn saying it needs its supervisor (`FLEET_
 **Session question**:
 A question an interactive session asks the person at its terminal, with the options it offers. It is an attention item so it is not missed, but it is answered only in that terminal; the item closes when the session has its answer.
 
+### Canvas
+
+**Canvas**:
+A space shown as a workflow board with bands, regions, epics, documents and views, at `/canvas`. Every gesture on it is one kernel operation, the same one the CLI and agents send. The store stays authoritative: a refused gesture snaps back, and the refusal names its source line. See [docs/design/canvas.md](docs/design/canvas.md).
+
+**Decision language**:
+The short snippets that govern a space's stages, regions, epic workflow, views, schedule and reading page. Each line is compiled (the kernel runs it), guidance (an agent interprets and cites it) or off (a label). An unrecognised line is never an error; it becomes guidance.
+
+**Stage**:
+A column of the delivery workflow. Its code runs when an item enters it, and its exit conditions decide when the item may move on. A workflow change is a new workflow version. Work in flight either migrates to it or finishes under the version it started with.
+
+**Region**:
+An area of the canvas whose code applies to what is dragged into or out of it, such as Parked or Now. It is enforced, guidance only, or a label. Its colour and position are presentation and are not versioned.
+_Avoid_: Zone, except in code headers
+
+**Band**:
+A card's priority on the board: Now, Next or Later. The schedule can limit how many unfinished items a band holds.
+_Avoid_: Priority (a separate high, normal or low setting that regions can set)
+
+**Run request**:
+A queued run of a role (builder, tester) for a work item, raised by stage code. The scheduler starts it when its dependencies are done and an agent has capacity, and its card shows why it has not started.
+
+**Guidance line**:
+A line of code Fleet does not compile, or any line of an object set to guidance. It reaches the agent that owns the item, in the run's brief with its source (`stage implement v2, line 4`), and the agent cites it when it changes a step.
+
 ### Records
 
 **Project home**:

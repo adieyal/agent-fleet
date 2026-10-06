@@ -505,6 +505,18 @@ const actions = {
     await op('attention.resolve', canvas ? { id, choice } : { id, answer });
   },
   op({ op: name, args }) { return op(name, args); },
+  answerBlocked({ id }) {
+    const input = document.getElementById('ans-' + id);
+    const answer = input ? input.value.trim() : '';
+    if (!answer) { toast('Write a reply first.', { tone: 'info' }); return; }
+    return op('attention.answer', { id, answer });
+  },
+  answerDecision({ id }) {
+    const input = document.getElementById('ans-' + id);
+    const answer = input ? input.value.trim() : '';
+    if (!answer) { toast('Write an answer first.', { tone: 'info' }); return; }
+    return op('attention.resolve', { id, answer });
+  },
   reader(object) {
     Object.assign(ui, { mode: 'reader', readerObj: object, pageEditing: false });
     if (ui.drawer === 'select') ui.drawer = null;
@@ -711,6 +723,13 @@ app.addEventListener('change', (event) => {
 });
 
 document.addEventListener('keydown', (event) => {
+  const handle = event.target.closest && event.target.closest('[data-drag]');
+  if (handle && (event.key === 'Enter' || event.key === ' ') && event.target === handle && model) {
+    event.preventDefault();
+    const [kind, ...rest] = handle.getAttribute('data-drag').split(':');
+    click({ kind, id: rest.join(':') });
+    return;
+  }
   if (event.key !== 'Escape') return;
   if (ui.naming || ui.regionProposal || ui.insert || ui.decomp) {
     if (ui.regionProposal) actions.discardRegion(); else Object.assign(ui, { naming: null, insert: null, decomp: null });

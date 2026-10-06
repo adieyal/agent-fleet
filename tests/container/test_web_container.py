@@ -113,7 +113,7 @@ def test_handler_static_resources_can_be_overridden(cli_container):
         app_files=lambda root, directories: {}))
     state = SimpleNamespace(container=cli_container)
     make_handler(state)
-    assert reads == ['index.html']
+    assert reads == ['index.html', 'canvas.html']
 
 
 def test_recorded_state_and_library_are_raw_without_web_renderers(cli_container):

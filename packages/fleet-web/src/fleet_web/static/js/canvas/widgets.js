@@ -32,11 +32,32 @@ export function scopedItems(model, ui) {
 
 export function attentionCards(model, ui, attention) {
   if (!attention.length) return '<span class="cv-muted">Nothing needs a decision from you.</span>';
-  return attention.map((entry) => `<div class="cv-stack" style="padding: 8px 0; border-top: 1px solid #222c30">
-    <span style="font-weight: 500">${esc(entry.text)}</span>
-    <div class="cv-row"><button class="cv-btn primary sm" ${act('resolve', { id: entry.id, choice: 'approve', canvas: entry.canvas, answer: entry.ok })}>${esc(entry.ok)}</button>
-    ${entry.alt ? `<button class="cv-btn sm" ${act('resolve', { id: entry.id, choice: 'back', canvas: entry.canvas, answer: entry.alt, kind: entry.kind, item: entry.item })}>${esc(entry.alt)}</button>` : ''}</div>
-  </div>`).join('');
+  return attention.map((entry) => attentionCard(model, entry)).join('');
+}
+
+// One thing waiting for you, answered the way it has to be: an approval, a decision's options, a blocked step's
+// reply, a job's refused permissions, or a terminal question that can only be answered at its terminal.
+export function attentionCard(model, entry) {
+  const item = entry.item ? model.items.find((other) => other.id === entry.item) : null;
+  const epic = entry.epic ? model.epics.find((other) => other.id === entry.epic) : null;
+  const where = `<span class="cv-mono" style="font-size: 11px; color: var(--muted)">raised by ${esc(entry.why)}${epic ? ' · epic ' + esc(epic.title) : ''}${item && !epic ? ' · ' + esc(item.title) : ''}</span>`;
+  let controls;
+  if (entry.answer === 'blocked') {
+    controls = `${entry.message ? `<span class="cv-small cv-soft" style="white-space: pre-line">${esc(entry.message.slice(0, 600))}</span>` : ''}
+      <label class="cv-sr" for="ans-${esc(entry.id)}">Reply</label>
+      <div class="cv-row" style="flex-wrap: nowrap"><input id="ans-${esc(entry.id)}" class="cv-input" placeholder="Reply to the agent"><button class="cv-btn primary sm" ${act('answerBlocked', { id: entry.id })}>Send</button></div>`;
+  } else if (entry.answer === 'refusal') {
+    controls = `<div class="cv-row"><button class="cv-btn primary sm" ${act('op', { op: 'attention.allow', args: { id: entry.id } })}>Allow for this job</button><button class="cv-btn sm" ${act('op', { op: 'attention.dismiss', args: { id: entry.id } })}>Dismiss</button></div>`;
+  } else if (entry.answer === 'terminal') {
+    controls = '<span class="cv-small cv-muted">A session asked this at its terminal; answer it there.</span>';
+  } else if (entry.answer === 'decision' && entry.options && entry.options.length) {
+    controls = `<div class="cv-row">${entry.options.map((option) => `<button class="cv-btn sm" ${act('resolve', { id: entry.id, choice: 'approve', canvas: false, answer: option })}>${esc(option)}</button>`).join('')}</div>`;
+  } else if (entry.answer === 'decision') {
+    controls = `<label class="cv-sr" for="ans-${esc(entry.id)}">Answer</label><div class="cv-row" style="flex-wrap: nowrap"><input id="ans-${esc(entry.id)}" class="cv-input" placeholder="Your answer"><button class="cv-btn primary sm" ${act('answerDecision', { id: entry.id })}>Answer</button></div>`;
+  } else {
+    controls = `<div class="cv-row"><button class="cv-btn primary sm" ${act('resolve', { id: entry.id, choice: 'approve', canvas: true, kind: entry.kind, item: entry.item })}>${esc(entry.ok)}</button>${entry.alt ? `<button class="cv-btn sm" ${act('resolve', { id: entry.id, choice: 'back', canvas: true, kind: entry.kind, item: entry.item })}>${esc(entry.alt)}</button>` : ''}</div>`;
+  }
+  return `<div class="cv-box" data-key="attn-${esc(entry.id)}"><span style="font-weight: 500">${esc(entry.text)}</span>${where}${controls}</div>`;
 }
 
 export function renderWidget(model, ui, view, attention, drag) {
@@ -146,7 +167,7 @@ export function renderWidget(model, ui, view, attention, drag) {
   const context = model.context.some((entry) => entry.kind === 'view' && entry.doc === view.id);
   return `<div class="cv-widget ${view.type === 'note' ? 'note' : ''} ${selected ? 'sel' : ''}" data-key="w-${esc(view.id)}"
     style="left: ${at.x}px; top: ${at.y}px; width: ${width}px">
-    <div class="cv-widget-head" data-drag="widget:${esc(view.id)}"><b>${esc(view.title)}</b><span class="cv-chip">${esc(PALETTE_NAMES[view.type] || view.type)} · v${view.version}${view.personal ? ' · yours' : ''}${context ? ' · in context' : ''}</span></div>
+    <div class="cv-widget-head" tabindex="0" data-drag="widget:${esc(view.id)}"><b>${esc(view.title)}</b><span class="cv-chip">${esc(PALETTE_NAMES[view.type] || view.type)} · v${view.version}${view.personal ? ' · yours' : ''}${context ? ' · in context' : ''}</span></div>
     <div class="cv-widget-body">${body}${guidance.length ? `<span style="font-size: 11px; color: var(--guide)">~ Guidance an agent will try to honour: ${esc(guidance.join('; '))}</span>` : ''}</div>
   </div>`;
 }

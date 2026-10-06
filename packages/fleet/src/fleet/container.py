@@ -500,6 +500,7 @@ def _make_canvas(container):
     from fleet.services.canvas import CanvasService
     store = container.store()
     return CanvasService(lambda: canvas_scope(container), reader=lambda: _CanvasFacade(_CanvasRepository(store), store.clock),
+                         facades=container.services,
                          workspace=lambda: initialize_workspace(container),
                          dispatch=container.dispatch, jobs=container.jobs, execution=container.execution,
                          transport=container.transport())

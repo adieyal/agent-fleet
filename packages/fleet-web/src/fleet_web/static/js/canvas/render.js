@@ -4,7 +4,7 @@ import {
   itemPosition, regionRect,
 } from './geometry.js';
 import { EPIC_STAGE, LEVELS, STATUS, act, bind, clock, codeLines, esc, lighten, plural, statusColor, tint, who } from './util.js';
-import { PALETTE, PALETTE_NAMES, attentionCards, renderWidget, reportSummary, scopedItems } from './widgets.js';
+import { PALETTE, PALETTE_NAMES, attentionCard, renderWidget, reportSummary } from './widgets.js';
 
 const ICON = (path) => `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
 const ICONS = {
@@ -124,7 +124,7 @@ function world(model, ui) {
     const hover = ui.dropTarget === 'zone:' + region.id;
     const sub = region.sub ? `<span class="cv-zone-sub" style="font-weight: ${region.sub.tone === 'context' ? 400 : 600}; color: ${region.sub.tone === 'full' ? 'var(--amber)' : region.sub.tone === 'context' ? '#a9cfd8' : 'var(--accent2)'}">${esc(region.sub.text)}</span>` : '';
     parts.push(`<div class="cv-zone" data-key="z-${esc(region.id)}" style="left: ${rect.x}px; top: ${rect.y}px; width: ${rect.w}px; height: ${rect.h}px; background: ${tint(color, region.color ? 0.1 : 0.06)}; border: 2px ${level[1]} ${color}${selected || hover ? '; box-shadow: 0 0 0 3px rgba(232,228,218,0.35)' : ''}">
-      <div class="cv-zone-head" data-drag="zone:${esc(region.id)}"><span class="cv-zone-name" style="color: ${light}">${esc(region.name)}</span>
+      <div class="cv-zone-head" tabindex="0" data-drag="zone:${esc(region.id)}"><span class="cv-zone-name" style="color: ${light}">${esc(region.name)}</span>
       <span class="cv-zone-level" style="color: ${light}">${level[0]} · &lt;/&gt; v${region.version} · ${esc(who(region.written_by))}</span>${sub}</div></div>`);
   }
   parts.push(`<div class="cv-frame" style="left: ${frame.x}px; top: ${frame.y}px; width: ${frame.w}px; height: ${frame.h}px"></div>`);
@@ -136,7 +136,7 @@ function world(model, ui) {
       <span>${limit !== undefined ? `${open} of ${limit}${open >= limit ? ' · full' : ''}` : `${open} open`}</span></div>`);
   }
   const queued = model.schedule.queue.length;
-  parts.push(`<div class="cv-sched ${sel.kind === 'sched' ? 'sel' : ''}" data-drag="sched:main" style="left: ${frame.x + frame.w - 460}px; top: ${frame.y - 98}px">
+  parts.push(`<div class="cv-sched ${sel.kind === 'sched' ? 'sel' : ''}" tabindex="0" data-drag="sched:main" style="left: ${frame.x + frame.w - 460}px; top: ${frame.y - 98}px">
     <div class="cv-between"><span class="cv-label accent">Scheduler · v${model.schedule.version}</span><span class="cv-mono cv-small cv-muted">${queued} queued</span></div>
     <div class="cv-row">${model.schedule.slots.map((slot) => `<span class="cv-slot ${!slot.ready ? 'unset' : slot.busy >= slot.cap ? 'full' : ''}" title="${slot.ready ? '' : 'No host set up for this agent'}">${esc(slot.agent)} ${slot.busy}/${slot.cap}${slot.ready ? '' : ' · not set up'}</span>`).join('')}</div></div>`);
   parts.push(`<div class="cv-frame-label" style="left: ${frame.x}px; top: ${frame.y - 40}px"><b>Delivery workflow v${model.workflow.version}</b><span>${esc(model.workflow.flow)}</span></div>`);
@@ -145,14 +145,14 @@ function world(model, ui) {
     const selected = sel.kind === 'stage' && sel.id === col.id;
     const hover = ui.dropTarget === 'col:' + col.id;
     parts.push(`<div class="cv-col ${stage ? '' : 'done'} ${selected ? 'sel' : ''} ${hover ? 'drop' : ''}" data-key="c-${esc(col.id)}" style="left: ${col.x}px; top: ${col.y}px; width: ${col.w}px; height: ${col.h}px">
-      <div class="cv-col-head" ${stage ? `data-drag="col:${esc(col.id)}"` : ''} style="cursor: ${stage ? 'pointer' : 'default'}">
+      <div class="cv-col-head" ${stage ? `tabindex="0" data-drag="col:${esc(col.id)}"` : ''} style="cursor: ${stage ? 'pointer' : 'default'}">
         <div class="cv-between"><b>${esc(stage ? stage.name : 'Done')}</b>${stage ? `<span class="cv-chip">&lt;/&gt; v${stage.version} · ${esc(who(stage.written_by))}${stage.added_in > 1 ? ' · new in v' + stage.added_in : ''}</span>` : ''}</div>
         <span class="sub">${esc(stage ? stage.exit_text : 'terminal')}</span></div></div>`);
   }
   const doc = (id, width, inner) => {
     const at = docPosition(model, layout, id, drag);
     const inContext = model.context.some((entry) => entry.kind === 'doc' && entry.doc === id);
-    return `<div class="cv-doc ${inContext ? 'ctx' : ''}" data-key="d-${id}" data-drag="doc:${id}" style="left: ${at.x}px; top: ${at.y}px; width: ${width}px">${inner}${inContext ? '<span class="cv-small" style="color: #a9cfd8">¶ every agent here reads this</span>' : ''}</div>`;
+    return `<div class="cv-doc ${inContext ? 'ctx' : ''}" data-key="d-${id}" tabindex="0" data-drag="doc:${id}" style="left: ${at.x}px; top: ${at.y}px; width: ${width}px">${inner}${inContext ? '<span class="cv-small" style="color: #a9cfd8">¶ every agent here reads this</span>' : ''}</div>`;
   };
   const done = model.items.filter((item) => item.stage === 'done').length;
   const waitingCriteria = model.items.filter((item) => item.status === 'waiting-criteria');
@@ -167,7 +167,7 @@ function world(model, ui) {
   if (ui.tool === 'region') parts.push(`<div class="cv-hint-big" style="left: ${frame.x + frame.w + 60}px; top: ${frame.y + frame.h + 20}px; width: 520px">Drag anywhere on empty canvas to draw a region</div>`);
   for (const block of model.blocks) {
     const at = blockPosition(block, drag);
-    parts.push(`<div class="cv-block" data-key="b-${esc(block.id)}" data-drag="block:${esc(block.id)}" style="left: ${at.x}px; top: ${at.y}px">
+    parts.push(`<div class="cv-block" data-key="b-${esc(block.id)}" tabindex="0" data-drag="block:${esc(block.id)}" style="left: ${at.x}px; top: ${at.y}px">
       <span class="cv-label accent">New stage</span><span style="font-size: 18px; font-weight: 600">${esc(block.name)}</span>
       <span class="cv-small cv-soft">code drafted by ${esc(block.by)} · drag into the workflow</span></div>`);
   }
@@ -182,7 +182,7 @@ function world(model, ui) {
       + (epic.criteria.length && (epic.stage === 'shape' || (epic.stage === 'deliver' && epic.gaps)) ? ` · ${plural(epic.gaps, 'criterion', 'criteria')} uncovered` : '');
     const kids = epic.children.map((id) => itemOf(model, id)).filter(Boolean);
     parts.push(`<div class="cv-epic ${ui.focus && ui.focus !== epic.id ? 'dim' : ''}" data-key="e-${esc(epic.id)}" style="left: ${at.x}px; top: ${at.y}px; min-height: ${rect.h}px; border-color: ${selected || ui.focus === epic.id || hover ? epic.color : 'var(--line2)'}">
-      <div class="cv-epic-head" data-drag="epic:${esc(epic.id)}">
+      <div class="cv-epic-head" tabindex="0" data-drag="epic:${esc(epic.id)}">
         <div class="cv-between"><span class="cv-label" style="color: ${epic.color}">Epic · ${esc(epic.ref)}</span>${epic.attention ? `<span class="cv-attn-pill">${epic.attention} need you</span>` : ''}</div>
         <span class="cv-epic-name">${esc(epic.title)}</span>
         <span style="font-size: 13px; font-weight: 600; color: ${stage[1]}">${esc(label)}</span>
@@ -226,7 +226,7 @@ function world(model, ui) {
     const state = STATUS[item.status][0] + (item.run && item.status === 'working' ? ` · ${item.run.role} ${item.run.agent}` : '');
     const classes = ['cv-card', selected ? 'sel' : '', dragging ? 'dragging' : '', pending ? 'pending' : '',
       ui.linkFrom === item.id ? 'linkfrom' : '', !dragging && ui.focus && item.epic !== ui.focus ? 'dim' : ''].join(' ');
-    parts.push(`<div class="${classes}" data-key="t-${esc(item.id)}" data-drag="task:${esc(item.id)}" style="left: ${at.x}px; top: ${at.y}px; border-left: 4px solid ${epic ? epic.color : 'var(--dim)'}">
+    parts.push(`<div class="${classes}" data-key="t-${esc(item.id)}" tabindex="0" data-drag="task:${esc(item.id)}" style="left: ${at.x}px; top: ${at.y}px; border-left: 4px solid ${epic ? epic.color : 'var(--dim)'}">
       <span class="cv-card-title">${esc(item.title)}</span>
       <span class="cv-card-state" style="color: ${color}">${esc(state)}</span>
       ${compact ? '' : `<span class="cv-card-hint">${esc(item.next)}</span>
@@ -499,16 +499,6 @@ function drawerBody(model, ui) {
   return null;
 }
 
-export function attentionCard(model, entry) {
-  const item = entry.item ? itemOf(model, entry.item) : null;
-  const epic = entry.epic ? epicOf(model, entry.epic) : null;
-  const options = !entry.canvas && entry.options && entry.options.length > 2 ? entry.options : null;
-  return `<div class="cv-box"><span style="font-weight: 500">${esc(entry.text)}</span>
-    <span class="cv-mono" style="font-size: 11px; color: var(--muted)">raised by ${esc(entry.why)}${epic ? ' · epic ' + esc(epic.title) : ''}${item && !epic ? ' · ' + esc(item.title) : ''}</span>
-    <div class="cv-row">${options ? options.map((option) => `<button class="cv-btn sm" ${act('resolve', { id: entry.id, choice: 'approve', canvas: false, answer: option })}>${esc(option)}</button>`).join('')
-    : `<button class="cv-btn primary" ${act('resolve', { id: entry.id, choice: 'approve', canvas: entry.canvas, answer: entry.ok, kind: entry.kind, item: entry.item })}>${esc(entry.ok)}</button>${entry.alt ? `<button class="cv-btn" ${act('resolve', { id: entry.id, choice: 'back', canvas: entry.canvas, answer: entry.alt, kind: entry.kind, item: entry.item })}>${esc(entry.alt)}</button>` : ''}`}</div></div>`;
-}
-
 // ---------------------------------------------------------------- the reader
 function reader(model, ui) {
   const object = ui.readerObj;
@@ -573,7 +563,7 @@ function charterSection(model, ui) {
       <div class="cv-row"><button class="cv-btn primary" ${act('saveNorthStar')}>Save as a new version</button><button class="cv-btn" ${act('cancelNorthStar')}>Cancel</button></div>`
     : `<div class="cv-row" style="align-items: flex-start"><p style="flex: 1 1 360px; font-size: 20px; line-height: 1.45; font-weight: 500">${esc(charter.north_star || 'No north star yet.')}</p><button class="cv-btn sm" ${act('editNorthStar')}>Edit</button></div>`}
     <span class="cv-label">Constitution</span>
-    ${charter.clauses.map((clause, index) => `<div class="cv-row" style="gap: 6px 12px; align-items: baseline; padding: 8px 0; border-top: 1px solid #222c30"><span style="flex: 1 1 360px; font-size: 15px">${esc(clause.text)}</span><span class="cv-mono cv-small" style="color: ${clause.kind === 'enforced' ? 'var(--guide)' : 'var(--muted)'}">${clause.kind === 'enforced' ? 'Enforced by ' + esc(clause.rule) : 'Guidance · agents cite it'}</span><button class="cv-btn sm" ${act('op', { op: 'charter.update', args: { patch: { remove_clause: index }, base: charter.version } })} aria-label="Remove clause">Remove</button></div>`).join('')}
+    ${charter.clauses.map((clause, index) => `<div class="cv-row" style="gap: 6px 12px; align-items: baseline; padding: 8px 0; border-top: 1px solid #222c30"><span style="flex: 1 1 360px; font-size: 15px">${esc(clause.text)}</span><span class="cv-mono cv-small" style="color: ${clause.kind === 'enforced' ? 'var(--guide)' : 'var(--muted)'}">${clause.kind === 'enforced' ? 'Enforced by ' + esc(clause.rule) : 'Guidance · agents cite it'}</span>${clause.kind === 'guidance' ? `<button class="cv-btn sm" ${act('op', { op: 'item.create', args: { title: `Make enforceable: ${clause.text}`.slice(0, 200), goal: `Compile the charter clause “${clause.text}” into a named kernel rule, or say why it must stay guidance.` } })}>Make enforceable</button>` : ''}<button class="cv-btn sm" ${act('op', { op: 'charter.update', args: { patch: { remove_clause: index }, base: charter.version } })} aria-label="Remove clause">Remove</button></div>`).join('')}
     <div class="cv-row" style="align-items: flex-end; gap: 8px"><div class="cv-stack" style="flex: 1 1 300px; gap: 4px"><label for="cl-r" class="cv-small cv-soft">Add a clause</label><input id="cl-r" class="cv-input" ${bind('chClause')} value="${esc(ui.chClause)}" placeholder="Prefer reversible changes over fast ones"></div>
       <select class="cv-input" style="flex: 0 0 auto; width: auto" ${bind('clauseRule')} aria-label="Enforced by"><option value="">Guidance (agents cite it)</option>${model.rules.map((rule) => `<option value="${esc(rule)}" ${ui.clauseRule === rule ? 'selected' : ''}>Enforced: ${esc(rule)}</option>`).join('')}</select>
       <button class="cv-btn" style="min-height: 40px" ${act('addClause')}>Add</button></div>

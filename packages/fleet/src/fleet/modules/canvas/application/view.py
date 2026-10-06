@@ -201,12 +201,23 @@ def read_model(engine, *, person: str, events: list[dict], last_seq: int, layout
                           "ok": "Accept" if record["kind"] == "Accept" else "Allow for this run"
                           if record["kind"] == "Unblock" else "Approve",
                           "alt": "Open session" if record["kind"] == "Unblock" else "Send back", "canvas": True,
+                          "answer": "canvas",
                           "time": record.get("time")})
     known = {record.get("fleet") for record in engine.all("attn").values()}
     for item in other_attention:
         if item.id in known or item.owner != "user" or item.state == "resolved":
             continue
+        context = item.stream_context
+        if item.refusals:
+            answer = "refusal"
+        elif item.questions or getattr(item, "at_terminal", False):
+            answer = "terminal"
+        elif context is not None and context.blocked_step:
+            answer = "blocked"
+        else:
+            answer = "decision"
         attention.append({"id": item.id, "fleet": item.id, "kind": item.kind.capitalize(), "text": item.headline,
+                          "answer": answer, "message": getattr(context, "message", None) if answer == "blocked" else None,
                           "why": f"{item.source} · {item.kind}", "item": item.work_item if item.work_item in engine.items else None,
                           "epic": None, "ok": item.options[0] if item.options else "Done",
                           "alt": item.options[1] if len(item.options) > 1 else None, "canvas": False,

@@ -132,6 +132,8 @@ class Ticking(Kernel):
                     run["queue_reason"] = f"Host unreachable; outcome unknown ({fleet.reason})"
             elif status == "succeeded":
                 self.finish(run, True)
+            elif status == "failed" and fleet.reason == "blocked":
+                self.sync_blocked(run)
             elif status == "failed":
                 self.finish(run, False, fleet.reason or "failed")
             elif status == "stopped":
@@ -172,6 +174,16 @@ class Ticking(Kernel):
                                            "time": iso(self.now)})
         if run["state"] == "running":
             self.drop("attn", "perm-" + run["item"])
+
+    def sync_blocked(self, run: dict) -> None:
+        """A step that ended `FLEET_STATUS: blocked` holds its job until someone answers it: blocked, not failed."""
+        items = [item for item in self.ports.run_attention(run["fleet_run"]) if item.state != "resolved"]
+        before = run["state"]
+        run["state"] = "blocked"
+        run["excerpt"] = items[0].headline if items else "Waiting for an answer to its question"
+        if before != "blocked":
+            self.log(f"run {run['fleet_run'][:8]}", 0, f"{self.title(run['item'])}: blocked ({run['excerpt']})", "refuse",
+                     subject=run["item"], actor="kernel")
 
     def sync_simulated(self, run: dict) -> None:
         if run.get("cancel"):

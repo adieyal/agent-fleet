@@ -17,13 +17,14 @@ from fleet.transport import FleetError
 
 Scope = Callable[[], AbstractContextManager[tuple[Any, CanvasFacade]]]
 INTERNAL = "scheduler"
+HOST_OPERATIONS = ("attention.answer", "attention.allow", "attention.dismiss")
 
 
 class CanvasService:
-    def __init__(self, scope: Scope, *, reader: Callable[[], CanvasFacade], workspace: Callable[[], Any], dispatch: Callable[[], Any],
+    def __init__(self, scope: Scope, *, reader: Callable[[], CanvasFacade], facades: Callable[[], Any], workspace: Callable[[], Any], dispatch: Callable[[], Any],
                  jobs: Callable[[], Any], execution: Callable[[], Any], transport: Any) -> None:
         self.scope, self.workspace, self.dispatch, self.jobs, self.transport = scope, workspace, dispatch, jobs, transport
-        self.execution, self.reader = execution, reader
+        self.execution, self.reader, self.facades = execution, reader, facades
 
     # ---- wiring
     def ports(self, facades, space: str) -> Ports:
@@ -56,6 +57,11 @@ class CanvasService:
         """The one write path. Returns the operation's result, or the refusal in the contract's shape."""
         space, _ = self.project(space)
         args = args or {}
+        if op == "layout.set":
+            return {"ok": True, "op": op, "op_id": op_id, "toasts": [],
+                    "result": self.layout(space, actor, args.get("object"), args.get("props"))}
+        if op in HOST_OPERATIONS:
+            return self.host_operation(space, op, args, actor=actor, op_id=op_id)
         try:
             with self.scope() as (facades, canvas):
                 return canvas.execute(space, self.ports(facades, space), actor=actor, op=op, args=args, op_id=op_id)
@@ -63,6 +69,44 @@ class CanvasService:
             return self.refused(space, refusal, actor=actor, op=op, op_id=op_id)
         except (ValueError, LookupError) as error:
             return self.refused(space, Refused("invalid", str(error)), actor=actor, op=op, op_id=op_id)
+
+    def host_operation(self, space: str, op: str, args: dict, *, actor: str, op_id: str | None) -> dict:
+        """Answers that reach a job on its host: a blocked step's reply, or allowing or dismissing its refusals."""
+        identity = args.get("id")
+        if not isinstance(identity, str) or not identity:
+            return self.refused(space, Refused("invalid", "id names the attention item"), actor=actor, op=op, op_id=op_id)
+        if op_id is not None:
+            previous = self.reader().repository.op_result(op_id)
+            if previous is not None:
+                return previous | {"replayed": True}
+        try:
+            item = self.facades().attention.get(identity)
+            if item.project != space:
+                raise LookupError("that attention item belongs to another project")
+            if op == "attention.answer":
+                answer = args.get("answer")
+                if not isinstance(answer, str) or not answer.strip():
+                    raise ValueError("answer is the reply to send")
+                detail = self.execution().answer_blocked(identity, answer.strip(), actor=actor)
+                text = f"answered “{item.headline}”: {answer.strip()[:120]}"
+            elif op == "attention.allow":
+                detail = self.execution().grant_permissions(identity, "refused", actor=actor)
+                text = f"allowed the refused requests of “{item.headline}”"
+            else:
+                detail = self.facades().attention.dismiss_refusals(identity, actor=actor).resolution_details
+                text = f"dismissed the refused requests of “{item.headline}”"
+        except (FleetError, ValueError, LookupError, RuntimeError, OSError) as error:
+            return self.refused(space, Refused("invalid", str(error) or type(error).__name__), actor=actor, op=op,
+                                op_id=op_id)
+        body = {"ok": True, "op": op, "op_id": op_id, "result": {"id": identity, "resolution": detail}, "toasts": []}
+
+        with self.scope() as (facades, canvas):
+            engine = canvas.engine(space, self.ports(facades, space), actor=actor)
+            engine.log("you" if actor in ("user", "web-user") else actor, 0, text, "info", subject=item.work_item)
+            body["seq"] = canvas.commit(space, engine)
+            if op_id is not None:
+                canvas.repository.remember_op(op_id, space, op, body)
+        return body
 
     def refused(self, space: str, refusal: Refused, *, actor: str, op: str, op_id: str | None) -> dict:
         with self.scope() as (_, canvas):
@@ -96,10 +140,10 @@ class CanvasService:
     # ---- reads
     def state(self, space: str, *, person: str) -> dict:
         space, name = self.project(space)
-        with self.scope() as (facades, canvas):
-            other = [item for item in facades.attention.list(project=space) if item.state != "resolved"]
-            return canvas.read(space, self.ports(facades, space), person=person, project_name=name,
-                               other_attention=other)
+        facades = self.facades()  # a read takes no write lock: each query reads the store as it is
+        other = [item for item in facades.attention.list(project=space) if item.state != "resolved"]
+        return self.reader().read(space, self.ports(facades, space), person=person, project_name=name,
+                                  other_attention=other)
 
     def spaces(self) -> list[dict]:
         identities = self.reader().spaces()
