@@ -25,7 +25,7 @@ def shoot(request, page, name):
 
 
 @pytest.mark.browser
-def test_unavailable_restart_reconnect_and_live_pages(page, runtime_deck, request):
+def test_unavailable_restart_reconnect_and_live_pages(page, runtime_deck, request, monkeypatch):
     deck = runtime_deck
     ids = seed_page(deck.container)
     deck.start_web()
@@ -72,10 +72,16 @@ def test_unavailable_restart_reconnect_and_live_pages(page, runtime_deck, reques
     expect(page.locator('#legendBody')).to_contain_text('host network offline')
     expect(page.locator('#live')).not_to_contain_text('runtime unavailable')
     expect(banner).not_to_contain_text('Runtime worker failed')
+    # A single queued error recovers on the next retry, before SSE may observe it.
+    # Keep this worker broken while checking the failed-worker presentation.
+    def broken_stream(*args, **kwargs):
+        raise RuntimeError('follower broke')
+    monkeypatch.setattr(deck.container.transport(), 'follow_stream', broken_stream)
     deck.events.put(RuntimeError('follower broke'))
     expect(banner).to_contain_text('Runtime worker failed — host:worker: RuntimeError: follower broke')
     expect(page.locator('#live')).to_contain_text('runtime worker failed')
     expect(records.locator('#page-connection')).to_contain_text('Runtime worker failed')
+    shoot(request, page, 'runtime-worker-failed')
     records.close()
     assert errors == []
 

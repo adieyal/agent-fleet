@@ -14,6 +14,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
@@ -153,6 +154,14 @@ def isolated_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, empty_store:
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-config"))
     # Run inside a fleet job, the CLI records the job as the actor; a test decides that itself
     monkeypatch.delenv("FLEET_JOB_ID", raising=False)
+
+
+@pytest.fixture
+def isolated_tmux_directory(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    # Unix socket addresses must stay short even when pytest's basetemp is long.
+    with TemporaryDirectory(prefix="fleet-tmux-", dir="/tmp") as directory:
+        monkeypatch.setenv("TMUX_TMPDIR", directory)
+        yield
 
 
 @pytest.fixture

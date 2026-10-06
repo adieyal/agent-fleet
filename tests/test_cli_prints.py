@@ -11,6 +11,12 @@ import pytest
 from fleet_cli import cli
 
 
+@pytest.fixture(autouse=True)
+def content_console_width(monkeypatch, tmp_path):
+    # These tests check message content, independent of terminal and temporary-path width.
+    monkeypatch.setattr(cli.console, "width", len(str(tmp_path)) + 200)
+
+
 def run(capsys, *arguments: str) -> tuple[str, str]:
     cli.main(list(arguments))
     captured = capsys.readouterr()
