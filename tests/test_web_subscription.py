@@ -98,8 +98,10 @@ def test_external_page_change_and_pipeline_only_change_wake_subscriber(runtime_d
     assert page['runtime']['healthy']
     before = deck.subscriber.version
     deck.events.put({'type': 'pipeline', 'pipeline': 'build', 'run': {'status': 'running'}, 'baseline': None})
-    eventually(lambda: deck.subscriber.version > before)
-    assert deck.read()['pipelines'][0]['run']['status'] == 'running'
+    # Health and store updates also advance the subscriber version. Wait for this event's payload.
+    pipelines = eventually(lambda: deck.read()['pipelines'])
+    assert pipelines[0]['run']['status'] == 'running'
+    assert deck.subscriber.version > before
 
 
 def test_subscriber_rejects_contract_mismatch_and_cannot_ingest(runtime_deck):

@@ -149,8 +149,8 @@ for index in range(24):
 
 @pytest.fixture
 def contention_store(monkeypatch):
-    # SQLite locking is real; volatile storage keeps 48 durable commits fast under disk contention.
-    with TemporaryDirectory(prefix="fleet-workspace-", dir=os.environ["TMPDIR"]) as directory:
+    # SQLite locking is real; TMPDIR can select volatile storage for the 48 durable commits.
+    with TemporaryDirectory(prefix="fleet-workspace-", dir=os.environ.get("TMPDIR")) as directory:
         monkeypatch.setenv("FLEET_STORE", str(Path(directory) / "fleet.db"))
         yield
 
