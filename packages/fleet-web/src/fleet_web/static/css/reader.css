@@ -227,4 +227,10 @@
   .rd-grid{--rd-size:17px;padding:28px 20px 110px}
   .prose table{font-size:14px}
   .prose th,.prose td{padding:8px 11px}
+  .rd-actions:has(.rd-step:not([hidden])){flex:1 0 100%;flex-wrap:wrap;justify-content:flex-end}
+  .rd-actions .rd-step:not([hidden]){width:100%;justify-content:center;margin-right:0}
+}
+@media (prefers-reduced-motion:reduce){
+  .rd-scrim,.rd-sheet{animation:none}
+  .rd-skel i{animation:none}
 }

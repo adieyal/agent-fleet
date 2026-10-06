@@ -724,10 +724,6 @@ body[data-readonly] :is(.focus-switch,#attnPanel .aa,#dismiss){display:none}
   .sk-chart{overflow-x:auto}
   .sk-side{width:auto;border-left:0;border-top:1px solid var(--rd-rule);overflow:visible}
 }
-@media (prefers-reduced-motion:reduce){
-  .rd-scrim,.rd-sheet{animation:none}
-  .rd-skel i{animation:none}
-}
 
 /* ---------- the workarea (L3): a room's benches, flat and minimal until the baked scene replaces it */
 #workarea{position:fixed;inset:0;z-index:55;display:flex;align-items:center;justify-content:center;background:rgb(3,6,12)}
@@ -1229,12 +1225,6 @@ body[data-readonly] #attnPanel[data-scope=all] .aa{display:flex}
 [data-audit-history] button{background:#1e2c40;color:#e2e8f0;border:1px solid #475569;border-radius:5px;padding:6px 10px;cursor:pointer}
 #itemHistoryPanel header{box-shadow:0 -20px 0 var(--panel-solid)}
 [data-triage-policy] pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:0}[data-triage-policy] dd{margin:0 0 12px}[data-triage-policy] dt{font-weight:600}[data-room-policy]{padding:16px;border:1px solid var(--line);border-radius:12px}
-
-/* Audit 2 batch 1: keep attention navigation and reader actions within phone width. */
-@media (max-width:760px){
-  .rd-actions:has(.rd-step:not([hidden])){flex:1 0 100%;flex-wrap:wrap;justify-content:flex-end}
-  .rd-actions .rd-step:not([hidden]){width:100%;justify-content:center;margin-right:0}
-}
 
 /* Audit 2 batch 2: Deck-log buttons and explicit absent-subject availability. */
 #feed .feed-open{display:flex;align-items:baseline;gap:8px;width:100%;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;min-width:0}
