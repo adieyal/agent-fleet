@@ -116,3 +116,21 @@ class Commands:
             relation = Relation(str(uuid4()), from_item, to_item, type)
             repository.save("relation", relation, actor)
         return relation
+
+    def unrelate(self, from_item: str, to_item: str, *, type: str, actor: str) -> list[Relation]:
+        """Remove every relation of this type from one item to the other; removing none is not an error."""
+        required(actor, "actor")
+        with self.repository.transaction() as repository:
+            found = [relation for relation in repository.list("relation")
+                     if (relation.from_item, relation.to_item, relation.type) == (from_item, to_item, type)]
+            for relation in found:
+                repository.delete("relation", relation.id, actor)
+        return found
+
+    def remove_criterion(self, identity: str, *, actor: str) -> Criterion:
+        """Withdraw a criterion; its history keeps what it was and any evidence it cited."""
+        required(actor, "actor")
+        with self.repository.transaction() as repository:
+            criterion = repository.get("criterion", identity)
+            repository.delete("criterion", identity, actor)
+        return criterion

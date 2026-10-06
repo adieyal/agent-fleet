@@ -72,9 +72,12 @@ ATTENTION_ACTIONS = ("acknowledge", "snooze", "reopen", "resolve", "undo-resolve
 REFUSAL_ACTIONS = ("allow", "dismiss")   # a job step's permission refusals
 JOB_ACTIONS = ("answer",)   # a blocked job step's question
 GUIDANCE_CHANGES = ("/api/guidance", "/api/guidance/promote")
+CANVAS_CHANGES = ("/api/canvas/op", "/api/canvas/layout", "/api/canvas/compile", "/api/canvas/init")
+CANVAS_PERSON = "user"  # the deck is one person's; every canvas write names them
 FLOOR_CHANGES = ("/api/move-in", "/api/link", "/api/merge", "/api/shutter", "/api/restore")
 SSE_PING_INTERVAL = 10
 SSE_COALESCE = 0.1  # batch bursts of changes into one push
+CANVAS_POLL = 1.5  # how often a canvas stream looks for kernel ticks that changed only the event log
 
 
 
@@ -94,6 +97,7 @@ def make_handler(state: Any,
     read_static = static.read_static
     # Read once so a running server keeps serving the page and code that match its API.
     index_page = read_static("index.html")
+    canvas_page = read_static("canvas.html")
     app_files = static.app_files(WEB_ROOT, APP_DIRECTORIES)
     library = library or ProjectLibrary({}, container=container)
 
@@ -102,6 +106,12 @@ def make_handler(state: Any,
             path = self.path.split("?", 1)[0]
             if path.startswith("/pages/") or path.startswith("/api/pages/") or path == "/api/pages":
                 self.pages_view(path)
+            elif path == "/canvas" or path.startswith("/canvas/"):
+                self.respond(200, "text/html; charset=utf-8", canvas_page)
+            elif path == "/api/canvas/stream":
+                self.canvas_stream()
+            elif path.startswith("/api/canvas"):
+                self.canvas_read(path)
             elif path == "/api/stream":
                 self.stream()
             elif path == "/api/history/runs" or path.startswith("/api/runs/"):
@@ -229,7 +239,8 @@ def make_handler(state: Any,
                 self.page_write(path)
                 return
             action = path.removeprefix("/api/attention/") if path.startswith("/api/attention/") else None
-            if (path not in FLOOR_CHANGES + GUIDANCE_CHANGES + ("/api/focus", "/api/decision/answer", "/api/agent/move")
+            if (path not in FLOOR_CHANGES + GUIDANCE_CHANGES + CANVAS_CHANGES
+                    + ("/api/focus", "/api/decision/answer", "/api/agent/move")
                     and action not in ATTENTION_ACTIONS + REFUSAL_ACTIONS + JOB_ACTIONS):
                 self.respond(404, "text/plain", b"not found")
             elif not self.same_origin():
@@ -242,7 +253,9 @@ def make_handler(state: Any,
                 except ValueError:
                     body = None
                 body = body if isinstance(body, dict) else {}
-                if path == "/api/decision/answer":
+                if path in CANVAS_CHANGES:
+                    self.canvas_write(path, body)
+                elif path == "/api/decision/answer":
                     self.answer(body)
                 elif action in REFUSAL_ACTIONS:
                     self.refusals(action, body)
@@ -333,6 +346,111 @@ def make_handler(state: Any,
                 html = page_document(view) if len(parts) == 3 else page_index(view)
                 self.respond(200, 'text/html; charset=utf-8', html.encode(), headers={
                     'Content-Security-Policy': "default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'"})
+
+        def canvas_read(self, path: str) -> None:
+            """GET /api/canvas?space= — the read model; /api/canvas/spaces — spaces and projects;
+            /api/canvas/events?space=&after= — the event log; /api/canvas/versions?space=&kind=&id= — old code."""
+            query = {key: values[0] for key, values in parse_qs(urlsplit(self.path).query).items()}
+            canvas = container.canvas()
+            try:
+                if path == "/api/canvas/spaces":
+                    projects = container.initialized_workspace().registry().projects
+                    result = {"spaces": canvas.spaces(),
+                              "projects": [{"id": identity, "name": project.name}
+                                           for identity, project in sorted(projects.items(),
+                                                                           key=lambda pair: pair[1].name.lower())]}
+                elif not query.get("space"):
+                    raise ValueError("space is required")
+                elif path == "/api/canvas":
+                    result = canvas.state(query["space"], person=CANVAS_PERSON)
+                elif path == "/api/canvas/events":
+                    result = {"events": canvas.events(query["space"], after=int(query.get("after", "0") or 0),
+                                                      limit=min(int(query.get("limit", "500") or 500), 2000))}
+                elif path == "/api/canvas/versions":
+                    if not query.get("kind") or not query.get("id"):
+                        raise ValueError("kind and id are required")
+                    result = {"versions": canvas.versions(query["space"], query["kind"], query["id"])}
+                else:
+                    self.error(404, "not found")
+                    return
+            except LookupError as error:
+                self.error(404, str(error.args[0]) if error.args else "not found")
+                return
+            except (ValueError, FleetError) as error:
+                self.error(400, str(error))
+                return
+            self.respond(200, "application/json", json.dumps(result, default=str).encode())
+
+        def canvas_stream(self) -> None:
+            """GET /api/canvas/stream?space= — a small `change` event whenever the store or the space's event log
+            moves, so the canvas refetches its read model; pings keep the connection open."""
+            query = {key: values[0] for key, values in parse_qs(urlsplit(self.path).query).items()}
+            space = query.get("space", "")
+            canvas = container.canvas()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Accel-Buffering", "no")
+            self.end_headers()
+            version, seen, idle = -1, None, 0.0
+            try:
+                while not getattr(state, "subscription_closed", False):
+                    new_version = state.wait_for_change(version, timeout=CANVAS_POLL)
+                    if select.select([self.connection], [], [], 0)[0] and not self.connection.recv(1, socket.MSG_PEEK):
+                        return
+                    try:
+                        latest = canvas.last_seq(space) if space else 0
+                    except (LookupError, ValueError, FleetError):
+                        latest = seen
+                    if new_version != version or latest != seen:
+                        version, seen, idle = new_version, latest, 0.0
+                        payload = json.dumps({"version": version, "seq": seen})
+                        self.wfile.write(f"event: change\ndata: {payload}\n\n".encode())
+                    else:
+                        idle += CANVAS_POLL
+                        if idle >= SSE_PING_INTERVAL:
+                            idle = 0.0
+                            self.wfile.write(b"event: ping\ndata: {}\n\n")
+                    self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                return
+
+        def canvas_write(self, path: str, body: dict[str, Any]) -> None:
+            """POST /api/canvas/op {"space", "op", "args", "op_id"} — one kernel operation; a refusal answers 409
+            with the code, message and source line. /layout {"space", "object", "props"} — personal arrangement.
+            /compile {"text", "level"} — read a snippet without saving it. /init {"space", "example"}."""
+            canvas = container.canvas()
+            try:
+                if path == "/api/canvas/compile":
+                    if not isinstance(body.get("text"), str):
+                        raise ValueError("text is required")
+                    self.respond(200, "application/json",
+                                 json.dumps(canvas.compile_preview(body["text"], body.get("level") or "enforced")).encode())
+                    return
+                if not isinstance(body.get("space"), str) or not body["space"]:
+                    raise ValueError("space is required")
+                if path == "/api/canvas/op":
+                    if not isinstance(body.get("op"), str) or not isinstance(body.get("args", {}), dict):
+                        raise ValueError("op and args are required")
+                    op_id = body.get("op_id")
+                    if op_id is not None and (not isinstance(op_id, str) or not 0 < len(op_id) <= 80):
+                        raise ValueError("op_id is a short client-generated id")
+                    result = canvas.operation(body["space"], body["op"], body.get("args", {}), actor=CANVAS_PERSON,
+                                              op_id=op_id)
+                elif path == "/api/canvas/layout":
+                    result = canvas.layout(body["space"], CANVAS_PERSON, body.get("object"), body.get("props"))
+                else:
+                    result = canvas.init(body["space"], actor=CANVAS_PERSON, example=bool(body.get("example")),
+                                         seconds=int(body.get("seconds") or 45))
+            except LookupError as error:
+                self.error(404, str(error.args[0]) if error.args else "not found")
+                return
+            except (ValueError, FleetError) as error:
+                self.error(400, str(error))
+                return
+            state.bump()
+            self.respond(409 if result.get("refused") else 200, "application/json",
+                         json.dumps(result, default=str).encode())
 
         def same_origin(self) -> bool:
             """Browsers send Origin on every POST; a page from another site must not change anything."""

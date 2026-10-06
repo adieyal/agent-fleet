@@ -276,3 +276,15 @@ Close a thread explicitly with `fleet attention resolve ID --details "reason" --
 re-open it with `fleet attention reopen ID --actor codex`. A reply to a resolved thread keeps it resolved.
 `fleet answer ID "answer" --actor codex` still records a decision and resolves a decision item
 (or answers a blocked step). The page offers this as the secondary **Answer & resolve** action.
+
+## The canvas and its guidance
+
+When a step's prompt is a canvas brief ("You are the builder for the work item …"), it lists guidance lines with their
+sources, such as `[stage implement v2, line 4] use the warm image`. Follow them, and when one changes what you do, cite
+its source in your summary. Rules in force outrank the decision scope: when the brief says to ask before a kind of
+decision, end the step with `FLEET_STATUS: blocked — <your question>` rather than deciding.
+
+With the controller's CLI, `fleet canvas can PROJECT KIND` answers whether you may decide (`decide`, `tell` or `ask`)
+an `impl`, `deps`, `ops`, `destructive`, `interface`, `arch`, `scope` or `process` decision. `fleet canvas show
+PROJECT` gives the board as text. `fleet canvas op PROJECT OP --args JSON` sends the same operations the canvas does,
+recorded under your actor. Regions may refuse agents, or turn an agent's move into a proposal for the user.

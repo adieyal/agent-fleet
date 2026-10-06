@@ -37,6 +37,7 @@ from fleet.infrastructure.job_steps import send_step as _send_step
 from fleet.infrastructure.permission_grants import send_grant as _send_grant
 from fleet.infrastructure.resources import PackageResources as _PackageResources
 from fleet.infrastructure.sqlite import Store as _Store
+from fleet.infrastructure.sqlite.canvas import CanvasRepository as _CanvasRepository
 from fleet.infrastructure.sqlite.job_ownership import owns_job as _owns_job
 from fleet.infrastructure.sqlite.attention import (
     AttentionRepository as _AttentionRepository,
@@ -68,6 +69,7 @@ from fleet.ingestion import observe_sessions as _observe_sessions
 from fleet.ingestion import record_decisions as _record_decisions
 from fleet.modules.attention import AttentionFacade as _AttentionFacade
 from fleet.modules.authority import AuthorityFacade as _AuthorityFacade
+from fleet.modules.canvas import CanvasFacade as _CanvasFacade
 from fleet.modules.decisions import DecisionsFacade as _DecisionsFacade
 from fleet.modules.execution import ExecutionFacade as _ExecutionFacade
 from fleet.modules.library import LibraryFacade as _LibraryFacade
@@ -504,6 +506,25 @@ def make_live_readers(container, workspace: _WorkspaceFacade, attention: _Attent
                         overview=container.overview())
 
 
+@_contextmanager
+def canvas_scope(container):
+    """One controller transaction holding the canvas records and the facades bound to it."""
+    with container.unit_of_work() as unit:
+        services = container.bound_services(unit)
+        store = container.store()
+        yield services, _CanvasFacade(_CanvasRepository(store, unit), store.clock)
+
+
+def _make_canvas(container):
+    from fleet.services.canvas import CanvasService
+    store = container.store()
+    return CanvasService(lambda: canvas_scope(container), reader=lambda: _CanvasFacade(_CanvasRepository(store), store.clock),
+                         facades=container.services,
+                         workspace=lambda: initialize_workspace(container),
+                         dispatch=container.dispatch, jobs=container.jobs, execution=container.execution,
+                         transport=container.transport())
+
+
 def page_query(container, project, slug=None, revision=None):
     with container.unit_of_work() as unit:
         services = container.bound_services(unit)
@@ -605,6 +626,7 @@ class Container(_containers.DeclarativeContainer):
         records, work, decisions, attention, execution)
     library = _providers.ThreadSafeSingleton(_LibraryFacade, _library_repository, work)
     pages = _providers.ThreadSafeSingleton(_PagesFacade)
+    canvas = _providers.Factory(_make_canvas, __self__)
     page_command = _providers.Callable(page_command, __self__)
     page_view = _providers.Callable(page_query, __self__)
     page_change = _providers.Callable(page_change, __self__)

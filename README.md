@@ -479,6 +479,47 @@ not access to files through the local dashboard.
 *The reader opens a report from the synthetic demo. The same view works for files
 from real jobs.*
 
+## Run work from the canvas
+
+![Fleet canvas with the workflow board, an Inbox region and a task's inspector](docs/images/fleet-canvas.png)
+
+*The canvas on the example project, with simulated agents. A run waits on a dependency, and the inspector lists the
+facts its stage's exit code checks.*
+
+The canvas, at `/canvas` in `fleet web` (or **canvas** in the deck header), is a second way into the same records.
+It shows one project's work as a workflow board, with Now, Next and Later bands, regions, epics, documents and
+views. Each stage, region, schedule and view carries a short snippet of Fleet's decision language:
+
+```text
+zone "Parked"
+  on enter:
+    pause runs
+    set budget 0
+  agents:
+    may not move items out
+    revisit weekly and say why each item is still parked
+```
+
+Fleet compiles each line it recognises (✓) and runs it exactly. It keeps every other line as guidance (~), which
+agents receive with its source and cite.
+
+Every gesture is one kernel operation. Dragging a card to another column asks to move it. If the move is refused, the
+card snaps back, and the message names the stage, version and line that refused it.
+
+```bash
+fleet canvas init my-project                 # a starting workflow, scheduler, Inbox and charter
+fleet canvas agent my-project claude --host worker --cwd ~/src/app
+fleet serve                                  # ticks the kernel and starts queued runs
+fleet canvas show my-project                 # the same reading, in the terminal
+fleet canvas op my-project item.move --args '{"item": "ab12", "stage": "implement"}'
+```
+
+To try the canvas without a host, run `fleet canvas init my-project --example`. It seeds an example project whose
+agents are simulated. Stage code queues runs, and the scheduler starts them as agent capacity allows: through
+`fleet send` on the agent's host, or as a simulation. Approvals arrive in **Needs you** and in the reader's
+`::needs-you`. The design, the operation contract and what is not built yet are in
+[docs/design/canvas.md](docs/design/canvas.md).
+
 ## How it works
 
 ```text
