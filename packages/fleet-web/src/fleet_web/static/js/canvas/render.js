@@ -314,6 +314,7 @@ function taskInspector(model, ui, item) {
     <div class="cv-box"><span class="cv-label">What happens next</span><span style="font-size: 15px; line-height: 1.5">${esc(item.next_long)}</span>
       ${approval ? `<div class="cv-row"><button class="cv-btn primary" ${act('resolve', { id: approval.id, choice: 'approve', canvas: true })}>Approve</button><button class="cv-btn" ${act('resolve', { id: approval.id, choice: 'back', canvas: true })}>Send back</button></div>` : ''}
       ${canRetry ? `<div class="cv-row"><button class="cv-btn" ${act('op', { op: 'run.request', args: { item: item.id, role: last.role } })}>Run the ${esc(last.role)} again</button></div>` : ''}
+      ${item.stage && item.stage !== 'done' && !item.facts.submitted ? `<div class="cv-row"><button class="cv-btn sm" ${act('recordRevision', item.id)}>Record a merged commit as its revision</button></div>` : ''}
       ${!item.stage ? `<div class="cv-row"><button class="cv-btn" ${act('op', { op: 'item.move', args: { item: item.id, stage: model.workflow.stages[0] ? model.workflow.stages[0].id : 'done' } })}>Start it in ${esc(stageName(model, model.workflow.stages[0] && model.workflow.stages[0].id))}</button></div>` : ''}
     </div>
     ${asks.length ? `<span class="cv-label">Needs you</span>${asks.map((entry) => attentionCard(model, entry)).join('')}` : ''}

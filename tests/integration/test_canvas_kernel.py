@@ -160,6 +160,17 @@ def test_an_approval_answered_outside_the_canvas_is_applied(space):
     assert item(space, identity)["stage"] == "implement"
 
 
+def test_a_person_records_a_merged_commit_as_the_revision(space):
+    identity = task(space, criteria=["Tests pass"], stage="first")
+    refused = op(space, "revision.record", actor="agent:codex", item=identity, commit="8f4a0df")
+    assert refused["refused"] and refused["code"] == "not_permitted"
+    ok(space, "revision.record", item=identity, commit="8f4a0df")
+    card = item(space, identity)
+    assert card["facts"]["submitted"] and card["facts"]["revision"] == "commit:8f4a0df"
+    ok(space, "item.move", item=identity, stage="approve")
+    assert item(space, identity)["stage"] == "approve"
+
+
 def test_a_stage_can_be_removed_once_no_work_sits_in_it(space):
     simulate(space, seconds=1)
     ok(space, "stage.draft")

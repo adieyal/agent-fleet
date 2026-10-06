@@ -534,6 +534,11 @@ const actions = {
     await op('attention.resolve', canvas ? { id, choice } : { id, answer });
   },
   op({ op: name, args }) { return op(name, args); },
+  recordRevision(id) {
+    const commit = window.prompt('Commit that holds this work (already merged):');
+    if (commit && commit.trim()) return op('revision.record', { item: id, commit: commit.trim() });
+    return undefined;
+  },
   async answerBlocked({ id }) {
     const answer = (drafts[id] || '').trim();
     if (!answer) { toast('Write a reply first.', { tone: 'info' }); return; }

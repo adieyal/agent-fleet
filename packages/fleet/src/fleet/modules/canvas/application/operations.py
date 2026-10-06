@@ -42,7 +42,7 @@ class Engine(Ticking):
     OPERATIONS = (
         "item.move", "item.set_band", "item.reparent", "item.cover", "item.create", "epic.create",
         "region.enter", "region.exit", "region.propose", "region.create", "region.configure", "region.remove",
-        "run.request", "run.start", "run.pause", "run.resume", "run.permit", "run.reassign",
+        "revision.record", "run.request", "run.start", "run.pause", "run.resume", "run.permit", "run.reassign",
         "dep.add", "dep.remove", "attention.resolve", "message.send", "proposal.resolve",
         "code.compile", "stage.draft", "workflow.insert", "workflow.remove", "criteria.set", "charter.update", "epic.decompose",
         "view.place", "view.configure", "view.remove", "context.add", "context.remove", "reader.mark_seen",
@@ -419,6 +419,22 @@ class Engine(Ticking):
             raise Refused("invalid", f"no host is set up for {agent}")
         self.assign(run, agent, busy + 1, capacity[agent], self.who_source(), 0)
         return {"run": run["id"], "agent": agent}
+
+    def op_revision_record(self, args: dict) -> dict:
+        """A person records work merged outside a run (a commit) as the task's submitted revision."""
+        if not is_person(self.actor):
+            raise Refused("not_permitted", "only a person records a revision; agents submit one by finishing a run")
+        identity = self.resolve_item(text_arg(args, "item"))
+        state = self.require_card(identity)
+        commit = text_arg(args, "commit", limit=80)
+        if not state.get("stage") or state["stage"] == "done":
+            raise Refused("invalid", f"{self.title(identity)} is not in the workflow")
+        facts = state["facts"]
+        facts["submitted"] = True
+        facts["revision"] = f"commit:{commit}"
+        self.log(self.who_source(), 0, f"recorded commit {commit} as the revision for {self.title(identity)}", "info",
+                 subject=identity)
+        return {"revision": facts["revision"]}
 
     def op_run_pause(self, args: dict) -> dict:
         identity = self.resolve_item(text_arg(args, "item"))
