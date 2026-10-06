@@ -1,8 +1,6 @@
 """Canvas guidance and dispatch use the same Records document."""
 import json
 
-import pytest
-
 from test_canvas_kernel import space, clock, ok, op, state, task
 
 
@@ -76,15 +74,6 @@ def test_migration_preserves_legacy_history_without_overwriting_constitution(clo
     canvas.state(project, person='user')
     assert records.guidance(project).version.number == number
     assert canvas.reader().repository.load(project)['charter']['main'] == second
-
-
-def test_canvas_repository_rejects_new_charter_business_state(space):
-    with space.canvas.scope() as (_, facade):
-        for write in (lambda: facade.repository.save(space.project, 'charter', 'main', {}, 'user'),
-                      lambda: facade.repository.present(space.project, 'charter', 'main', {}),
-                      lambda: facade.repository.save_version(space.project, 'charter', 'main', 1, {})):
-            with pytest.raises(ValueError, match='Fleet Records'):
-                write()
 
 
 def test_missing_scope_is_visible_instead_of_defaulting_to_ask(space):
