@@ -1,9 +1,10 @@
 // The canvas: a client of the Fleet kernel. Every gesture sends one operation; the store is authoritative,
 // moves are shown at once and snap back with the refusal's message and source line when the kernel refuses.
-import { CG, CW, FX, bandAt, columnRects, epicRect, frameRect, inside, itemPosition, docPosition, epicPosition } from './geometry.js';
+import { CG, CW, FX, bandAt, columnRects, frameRect, inside, itemPosition, docPosition, epicPosition } from './geometry.js';
 import { morph } from './morph.js';
 import { emptyPage, epicOf, itemOf, recipient, render, uninitialisedPage } from './render.js';
 import { uid } from './util.js';
+import { drafts } from './widgets.js';
 
 const app = document.getElementById('app');
 const space = decodeURIComponent((location.pathname.match(/^\/canvas\/([^/]+)/) || [])[1] || '');
@@ -75,6 +76,7 @@ async function load() {
   }
   missing = false;
   model = await response.json();
+  model.layout = model.layout || {};
   if (ui.selected && !selectionExists()) { ui.selected = null; if (ui.drawer === 'select') ui.drawer = null; }
   document.title = `${model.name} · Fleet canvas`;
   paint();
@@ -170,7 +172,15 @@ function centreOn(point, zoom = 0.8) {
 }
 
 function epicAt(point) {
-  return model.epics.find((epic, index) => inside(point, epicRect(model, model.layout, epic, index, ui.zoom)));
+  // Hit-test the epic boxes as drawn: their height follows their content.
+  const rect = viewport().getBoundingClientRect();
+  const client = { x: rect.left + ui.pan.x + point.x * ui.zoom, y: rect.top + ui.pan.y + point.y * ui.zoom };
+  return model.epics.find((epic) => {
+    const element = app.querySelector(`[data-key="e-${CSS.escape(epic.id)}"]`);
+    if (!element) return false;
+    const box = element.getBoundingClientRect();
+    return client.x >= box.left && client.x <= box.right && client.y >= box.top && client.y <= box.bottom;
+  });
 }
 
 function regionAt(point) {
@@ -217,6 +227,7 @@ app.addEventListener('pointerdown', (event) => {
     const fixed = !MOVABLE.includes(kind);
     const origin = fixed ? null : objectPosition(kind, id);
     press = { mode: 'press', kind, id, fixed, sx: event.clientX, sy: event.clientY, w0: point, origin, moved: false, pointer: event.pointerId };
+    try { viewport().setPointerCapture(event.pointerId); } catch (error) { /* capture is a convenience */ }
     return;
   }
   press = { mode: 'pan', sx: event.clientX, sy: event.clientY, px: ui.pan.x, py: ui.pan.y, moved: false, pointer: event.pointerId };
@@ -292,6 +303,13 @@ window.addEventListener('pointerup', (event) => {
   if (!current.moved) { click(current); return; }
   if (current.fixed) return;
   drop(current, toWorld(event));
+});
+
+window.addEventListener('pointercancel', () => {
+  if (!press) return;
+  press = null;
+  Object.assign(ui, { drag: null, dropTarget: null, ghost: null, drawing: null });
+  paint();
 });
 
 function dropTargetAt(kind, point) {
@@ -398,7 +416,7 @@ function drop(current, point) {
   }
   if (kind === 'block') {
     if (inside(point, frameRect(model))) {
-      const index = Math.max(0, Math.min(model.workflow.stages.length, Math.round((point.x - FX - 16) / (CW + CG))));
+      const index = Math.max(0, Math.min(model.workflow.stages.length, Math.round((point.x - FX - 110 - CW / 2 + (CW + CG) / 2) / (CW + CG))));
       const block = model.blocks.find((entry) => entry.id === id);
       ui.drag = null;
       ui.insert = { block: id, index, compiled: null };
@@ -505,17 +523,17 @@ const actions = {
     await op('attention.resolve', canvas ? { id, choice } : { id, answer });
   },
   op({ op: name, args }) { return op(name, args); },
-  answerBlocked({ id }) {
-    const input = document.getElementById('ans-' + id);
-    const answer = input ? input.value.trim() : '';
+  async answerBlocked({ id }) {
+    const answer = (drafts[id] || '').trim();
     if (!answer) { toast('Write a reply first.', { tone: 'info' }); return; }
-    return op('attention.answer', { id, answer });
+    const result = await op('attention.answer', { id, answer });
+    if (result && !result.refused) { delete drafts[id]; paint(); }
   },
-  answerDecision({ id }) {
-    const input = document.getElementById('ans-' + id);
-    const answer = input ? input.value.trim() : '';
+  async answerDecision({ id }) {
+    const answer = (drafts[id] || '').trim();
     if (!answer) { toast('Write an answer first.', { tone: 'info' }); return; }
-    return op('attention.resolve', { id, answer });
+    const result = await op('attention.resolve', { id, answer });
+    if (result && !result.refused) { delete drafts[id]; paint(); }
   },
   reader(object) {
     Object.assign(ui, { mode: 'reader', readerObj: object, pageEditing: false });
@@ -579,11 +597,12 @@ const actions = {
   },
   editAgent(agent) {
     const setting = agent ? model.settings.agents[agent] || {} : {};
-    Object.assign(ui, { agentEditing: agent, agentHost: setting.host || '', agentCwd: setting.cwd || '' });
+    Object.assign(ui, { agentEditing: agent, agentHost: setting.host || '', agentCwd: setting.cwd || '',
+      agentRuntime: setting.runtime || (agent === 'codex' ? 'codex' : 'claude') });
     paint();
   },
   async saveAgent(agent) {
-    const result = await op('agent.configure', { agent, mode: 'dispatch', host: ui.agentHost, cwd: ui.agentCwd });
+    const result = await op('agent.configure', { agent, mode: 'dispatch', host: ui.agentHost, cwd: ui.agentCwd, runtime: ui.agentRuntime });
     if (result && !result.refused) { ui.agentEditing = null; paint(); }
   },
   async simulateAgent(agent) {
@@ -714,6 +733,8 @@ app.addEventListener('input', (event) => {
     if (key === 'nameDraft' && ui.nameError) { ui.nameError = ''; paint(); }
     if (target.hasAttribute('data-preview')) schedulePreview();
   }
+  const draft = target.getAttribute && target.getAttribute('data-draft');
+  if (draft) drafts[draft] = target.value;
   const note = target.getAttribute && target.getAttribute('data-note');
   if (note) saveNote(note, target.value);
 });
@@ -730,6 +751,8 @@ document.addEventListener('keydown', (event) => {
     click({ kind, id: rest.join(':') });
     return;
   }
+  const pressable = event.target.closest && event.target.closest('[data-act][role=button]');
+  if (pressable && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); pressable.click(); return; }
   if (event.key !== 'Escape') return;
   if (ui.naming || ui.regionProposal || ui.insert || ui.decomp) {
     if (ui.regionProposal) actions.discardRegion(); else Object.assign(ui, { naming: null, insert: null, decomp: null });

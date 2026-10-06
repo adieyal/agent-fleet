@@ -325,6 +325,8 @@ class Engine(Ticking):
             raise Refused("invalid", "level is enforced, guidance or label")
         if any(region["name"].lower() == name.lower() for region in self.all("region").values()):
             raise Refused("invalid", f"there is already a region called {name}")
+        if args.get("color") is not None and args.get("color") not in ZONE_COLORS:
+            raise Refused("invalid", "choose one of the region colours")
         code = args.get("code") or defaults.zone_code(name)
         if header_of(code) != f'zone "{name}"':
             raise Refused("invalid", f'the region\'s code must start with zone "{name}"')

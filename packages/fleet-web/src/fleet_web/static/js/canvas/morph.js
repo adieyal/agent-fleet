@@ -59,7 +59,15 @@ function morphNode(from, to) {
   for (const attribute of Array.from(to.attributes)) {
     if (from.getAttribute(attribute.name) !== attribute.value) from.setAttribute(attribute.name, attribute.value);
   }
-  if (from.tagName === 'INPUT' || from.tagName === 'TEXTAREA' || from.tagName === 'SELECT') {
+  if (from.tagName === 'INPUT' && (from.type === 'checkbox' || from.type === 'radio')) {
+    from.checked = to.hasAttribute('checked');
+  } else if (from.tagName === 'SELECT') {
+    morphChildren(from, to);
+    const chosen = to.querySelector('option[selected]');
+    const value = chosen ? chosen.value : (to.querySelector('option') || { value: '' }).value;
+    if (!focused && from.value !== value) from.value = value;
+    return;
+  } else if (from.tagName === 'INPUT' || from.tagName === 'TEXTAREA') {
     const value = to.tagName === 'TEXTAREA' ? to.textContent : to.getAttribute('value') ?? '';
     if (!focused && from.value !== value) from.value = value;
     if (from.tagName === 'TEXTAREA') return;

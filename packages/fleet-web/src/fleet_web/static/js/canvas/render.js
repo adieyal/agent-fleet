@@ -118,12 +118,13 @@ function world(model, ui) {
   for (const region of model.regions) {
     const rect = regionRect(region, drag);
     const level = LEVELS[region.level] || LEVELS.enforced;
-    const color = region.color || level[2];
-    const light = region.color ? lighten(color, 0.45) : level[3];
+    const custom = /^#[0-9a-f]{6}$/i.test(region.color || '') ? region.color : null;
+    const color = custom || level[2];
+    const light = custom ? lighten(color, 0.45) : level[3];
     const selected = sel.kind === 'zone' && sel.id === region.id;
     const hover = ui.dropTarget === 'zone:' + region.id;
     const sub = region.sub ? `<span class="cv-zone-sub" style="font-weight: ${region.sub.tone === 'context' ? 400 : 600}; color: ${region.sub.tone === 'full' ? 'var(--amber)' : region.sub.tone === 'context' ? '#a9cfd8' : 'var(--accent2)'}">${esc(region.sub.text)}</span>` : '';
-    parts.push(`<div class="cv-zone" data-key="z-${esc(region.id)}" style="left: ${rect.x}px; top: ${rect.y}px; width: ${rect.w}px; height: ${rect.h}px; background: ${tint(color, region.color ? 0.1 : 0.06)}; border: 2px ${level[1]} ${color}${selected || hover ? '; box-shadow: 0 0 0 3px rgba(232,228,218,0.35)' : ''}">
+    parts.push(`<div class="cv-zone" data-key="z-${esc(region.id)}" style="left: ${rect.x}px; top: ${rect.y}px; width: ${rect.w}px; height: ${rect.h}px; background: ${tint(color, custom ? 0.1 : 0.06)}; border: 2px ${level[1]} ${color}${selected || hover ? '; box-shadow: 0 0 0 3px rgba(232,228,218,0.35)' : ''}">
       <div class="cv-zone-head" tabindex="0" data-drag="zone:${esc(region.id)}"><span class="cv-zone-name" style="color: ${light}">${esc(region.name)}</span>
       <span class="cv-zone-level" style="color: ${light}">${level[0]} · &lt;/&gt; v${region.version} · ${esc(who(region.written_by))}</span>${sub}</div></div>`);
   }
@@ -387,6 +388,7 @@ function schedInspector(model, ui) {
     return `<div class="cv-item-row"><div class="cv-between"><b>${esc(slot.agent)}</b><span class="cv-mono cv-small ${setting ? '' : 'cv-muted'}">${esc(describe)}</span></div>
       ${editing ? `<div class="cv-stack"><label class="cv-small cv-soft" for="ag-host">Host</label><input id="ag-host" class="cv-input" ${bind('agentHost')} value="${esc(ui.agentHost)}" placeholder="worker">
         <label class="cv-small cv-soft" for="ag-cwd">Checkout on that host</label><input id="ag-cwd" class="cv-input" ${bind('agentCwd')} value="${esc(ui.agentCwd)}" placeholder="~/src/project">
+        <label class="cv-small cv-soft" for="ag-rt">Runs as</label><select id="ag-rt" class="cv-input" ${bind('agentRuntime')}>${['claude', 'codex'].map((runtime) => `<option value="${runtime}" ${ui.agentRuntime === runtime ? 'selected' : ''}>${runtime}</option>`).join('')}</select>
         <div class="cv-row"><button class="cv-btn primary sm" ${act('saveAgent', slot.agent)}>Dispatch here</button><button class="cv-btn sm" ${act('simulateAgent', slot.agent)}>Simulate instead</button>${setting ? `<button class="cv-btn sm danger" ${act('op', { op: 'agent.configure', args: { agent: slot.agent, remove: true } })}>Remove</button>` : ''}<button class="cv-btn sm" ${act('editAgent', null)}>Cancel</button></div></div>`
         : `<button class="cv-btn sm" style="align-self: flex-start" ${act('editAgent', slot.agent)}>${setting ? 'Change' : 'Set up'}</button>`}</div>`;
   }).join('');
