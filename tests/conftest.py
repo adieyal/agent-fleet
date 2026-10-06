@@ -130,6 +130,7 @@ def isolated_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, empty_store:
     # Reconnecting test decks must never read jobs from the user's configured workers.
     transport = configured_container().transport()
     monkeypatch.setattr(transport, "catch_up_jobs", lambda host: [])
+    monkeypatch.setattr(transport, "recent_events", lambda host, job_id, count: [])
     monkeypatch.setattr(transport, "catch_up_sessions", lambda host, since: [])
     # Trace retention tests explicitly restore this helper against their temporary worker.
     monkeypatch.setattr(transport, "keep_run_trace", lambda execution, host, job: None)

@@ -151,6 +151,7 @@ class LiveWorkspace(LiveProjects, LiveAttention, LiveProjection, LibraryProjecti
             return self.version
 
 EVENTS_PER_JOB = "15"
+ACTIVE_JOB_STATUSES = ("pending", "queued", "running", "blocked", "stalled")
 STREAM_SILENCE_LIMIT = 20
 RECONNECT_DELAY = 3
 
@@ -505,6 +506,13 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
         state.update(host.name, hello, ingest=False)
         try:
             jobs = state.transport.catch_up_jobs(host)
+            # Jobs still in progress get their recent events, so what their agent last said survives a reconnect.
+            for job in jobs:
+                if job.get("status") in ACTIVE_JOB_STATUSES:
+                    try:
+                        job["events"] = state.transport.recent_events(host, job["id"], int(EVENTS_PER_JOB))
+                    except (FleetError, ValueError, KeyError, OSError) as error:
+                        print(f"fleet: events for {host.name}:{job['id']} not caught up: {error}", file=sys.stderr)
             def catch_jobs(entry):
                 entry["jobs"].update({job["id"]: job for job in jobs})
                 entry["_seen_jobs"].update(job["id"] for job in jobs)

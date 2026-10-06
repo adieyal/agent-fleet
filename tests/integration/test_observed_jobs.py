@@ -218,6 +218,25 @@ def test_catch_up_failure_is_visible_and_stream_still_records_job(monkeypatch, c
     assert len(state.execution.runs()) == 1
 
 
+def test_catch_up_brings_recent_events_for_jobs_still_in_progress(monkeypatch):
+    state = FleetState([transport.Host('carbon', None)], container=configured_container())
+    asked = []
+
+    def recent_events(host, job_id, count):
+        asked.append(job_id)
+        return [{"kind": "text", "summary": "Writing the report.", "ts": 30}]
+
+    monkeypatch.setattr(transport, "catch_up_jobs", lambda host: [
+        job(id="working", status="running", steps=[{"index": 0, "status": "running", "started_at": 10}]),
+        job(id="finished")])
+    monkeypatch.setattr(transport, "recent_events", recent_events)
+    apply_message(state, state.hosts[0], {"type": "hello"})
+    assert asked == ["working"]
+    live = state.live_jobs()
+    assert live[("carbon", "working")]["events"][0]["summary"] == "Writing the report."
+    assert "events" not in live[("carbon", "finished")]
+
+
 def test_identical_live_reports_do_not_open_per_job_scopes(monkeypatch):
     state = FleetState([transport.Host('carbon', None)], container=configured_container())
     jobs = {str(i): job(id=str(i), run_id=f'run-{i}') for i in range(212)}
