@@ -94,3 +94,102 @@ def test_compile_preview_reads_code_without_saving(deck):
     assert status == 200 and [line["marker"] for line in body["lines"]] == ["", "", "✓", "~"]
     status, body = post(deck, "/api/canvas/compile", {"text": "nothing here"})
     assert status == 200 and "header" in body["error"]
+
+
+@pytest.fixture
+def epic_tasks(deck):
+    """Two epics and a loose task, isolated from the user's Fleet store."""
+    post(deck, "/api/canvas/init", {"space": deck.project})
+
+    def operation(name, **args):
+        status, body = post(deck, "/api/canvas/op", {"space": deck.project, "op": name, "args": args})
+        assert status == 200, body
+        return body["result"]
+
+    epic = operation("epic.create", title="Release", criteria=["Ship docs"])["epic"]
+    other = operation("epic.create", title="Other epic")["epic"]
+    child = operation("item.create", title="Write release docs", epic=epic)["item"]
+    sibling = operation("item.create", title="Check release docs", epic=epic)["item"]
+    outside = operation("item.create", title="Unrelated task", epic=other)["item"]
+    loose = operation("item.create", title="Loose task")["item"]
+    return SimpleNamespace(epic=epic, other=other, child=child, sibling=sibling, outside=outside, loose=loose)
+
+
+def test_collapsed_epic_render_hides_only_its_tasks(deck, epic_tasks):
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node is required to exercise the canvas renderer")
+    model = json.loads(get(deck, f"/api/canvas?space={deck.project}")[1])
+    model["deps"] = [{"from": epic_tasks.child, "to": epic_tasks.outside},
+                     {"from": epic_tasks.outside, "to": epic_tasks.loose}]
+    module = Path(__file__).resolve().parents[1] / "packages/fleet-web/src/fleet_web/static/js/canvas/render.js"
+    script = """
+import { readFileSync } from 'node:fs';
+const { render } = await import(process.argv[1]);
+const { model, epic } = JSON.parse(readFileSync(0, 'utf8'));
+const ui = { mode: 'canvas', pan: {x: 0, y: 0}, zoom: 0.56, pending: {}, live: {ok: true} };
+const expanded = render(model, ui);
+const collapsed = render(model, {...ui, collapsedEpics: [epic]});
+console.log(JSON.stringify({expanded, collapsed}));
+"""
+    result = subprocess.run([node, "--input-type=module", "-e", script, module.as_uri()],
+                            input=json.dumps({"model": model, "epic": epic_tasks.epic}),
+                            text=True, capture_output=True, check=True)
+    pages = json.loads(result.stdout)
+    for identity in (epic_tasks.child, epic_tasks.sibling):
+        assert f'data-key="t-{identity}"' in pages["expanded"]
+        assert f'data-key="t-{identity}"' not in pages["collapsed"]
+    for identity in (epic_tasks.outside, epic_tasks.loose):
+        assert f'data-key="t-{identity}"' in pages["collapsed"]
+    assert f'data-key="e-{epic_tasks.epic}"' in pages["collapsed"]
+    assert f'data-key="a-{epic_tasks.child}-{epic_tasks.outside}"' not in pages["collapsed"]
+    assert f'data-key="a-{epic_tasks.outside}-{epic_tasks.loose}"' in pages["collapsed"]
+    assert 'aria-expanded="false"' in pages["collapsed"]
+    assert "2 tasks hidden" in pages["collapsed"]
+    assert pages["expanded"].count('class="cv-kid"') == 3
+    assert pages["collapsed"].count('class="cv-kid"') == 1
+    assert "Write release docs" not in pages["collapsed"]
+    assert "Check release docs" not in pages["collapsed"]
+
+
+def test_epic_task_toggle_persists_and_expands_on_enter(deck, epic_tasks, page, request):
+    from pathlib import Path
+    from playwright.sync_api import expect
+
+    page.goto(f"{deck.url}/canvas/{deck.project}")
+    page.set_viewport_size({"width": 1440, "height": 1000})
+    expect(page.locator(f'[data-key="e-{epic_tasks.epic}"]')).to_have_count(1)
+    # Position the epic in the viewport without changing shared layout.
+    page.evaluate("""(project) => localStorage.setItem('fleet-canvas:' + project,
+        JSON.stringify({pan: {x: 0, y: 120 - parseFloat(document.querySelector('.cv-epic').style.top) * 0.56},
+                        zoom: 0.56, mode: 'canvas'}))""", deck.project)
+    page.reload()
+    epic = page.locator(f'[data-key="e-{epic_tasks.epic}"]')
+    child = page.locator(f'[data-key="t-{epic_tasks.child}"]')
+    expect(child).to_have_count(1)
+    epic.get_by_role("button", name="Hide tasks (2)").click()
+    expect(child).to_have_count(0)
+    expect(epic.get_by_role("button", name="Show tasks (2)")).to_have_attribute("aria-expanded", "false")
+    expect(page.locator(f'[data-key="t-{epic_tasks.outside}"]')).to_have_count(1)
+    page.reload()
+    expect(child).to_have_count(0)
+    shots = request.config.getoption("--shots")
+    if shots:
+        directory = Path(shots)
+        directory.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(directory / "epic-collapsed.png"), full_page=True)
+    epic.get_by_role("button", name="Show tasks (2)").click()
+    expect(child).to_have_count(1)
+    epic.get_by_role("button", name="Hide tasks (2)").click()
+    # Enter epic is also available in its inspector when its child list is hidden.
+    epic.locator('[data-drag^="epic:"]').click()
+    page.locator('.cv-drawer').get_by_role("button", name="Enter epic", exact=True).click()
+    expect(child).to_have_count(1)
+    if shots:
+        page.screenshot(path=str(directory / "epic-expanded.png"), full_page=True)
+    page.reload()
+    expect(child).to_have_count(1)
