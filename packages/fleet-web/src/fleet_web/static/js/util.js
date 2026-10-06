@@ -50,6 +50,12 @@ export function store(area, key, value) {
   try { if (value === undefined) return window[area].getItem(key); window[area].setItem(key, value); } catch (err) { /* storage unavailable */ }
   return null;
 }
+export function fallbackCopy(text, done) {
+  const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); done(); } catch (err) { /* nothing else to try */ }
+  ta.remove();
+}
 
 export function offlineLabel(item, compact = false) {
   const since = item.stale_since ?? item.offline_since;
