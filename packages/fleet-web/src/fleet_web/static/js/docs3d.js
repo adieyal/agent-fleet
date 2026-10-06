@@ -7,6 +7,8 @@ import { age, hash, mix, rr } from './util.js';
 import { G, M, _col, _m4, _m4b, _q, _sc, _v, _w, canvasTex, scene } from './scene.js';
 import { ents } from './model.js';
 import { PRESS, placer, roomByName, rooms } from './rooms.js';
+import { DOC_KIND, INPUT_KINDS, docsOf, inputDocsOf, jobDocSequence, kindOf } from './doc-kinds.js';
+export { DOC_KIND, docsOf, inputDocsOf, jobDocSequence, kindOf };
 
 // ------------------------------------------------------------------ documents in 3D
 // Every job with documents gets a tray on its room's press, tinted by host; its documents stack in it,
@@ -215,16 +217,6 @@ export function dashedLine(a, b, color, t, arc) {
 
 // ------------------------------------------------------------------ documents: what the agents produced
 // (the 3D document objects and printer come next; the panel and reader already use this metadata)
-export const DOC_KIND = {
-  report: { label: 'Report', glyph: '▤' },
-  file:   { label: 'File',   glyph: '✎' },
-  outbox: { label: 'Outbox', glyph: '⇪' },
-  brief:   { label: 'Brief',   glyph: '☰' },
-  context: { label: 'Context', glyph: '⧉' },
-  prd:     { label: 'PRD',     glyph: '☰' },   // a Ralph prd.json in a project library, read as a page
-};
-// what the job was given rather than what it produced: listed and readable, but never printed onto the press
-const INPUT_KINDS = new Set(['brief', 'context']);
 // a document changed this recently, on a running job, is still being written
 export const DOC_UPDATING_SECONDS = 60;
 const seenDocs = new Set();
@@ -232,18 +224,9 @@ const docFx = new Map();                            // doc key → { entKey, sta
 export let hoverDoc = null;                                // { key } of the document under the pointer
 
 export function docKey(e, doc) { return e.key + ':' + doc.id; }
-export function docsOf(job) { return (job.documents || []).filter(d => !INPUT_KINDS.has(d.kind)).sort((a, b) => (a.mtime || 0) - (b.mtime || 0)); }
-// step briefs in step order, then context files by name
-export function inputDocsOf(job) {
-  const inputs = (job.documents || []).filter(d => INPUT_KINDS.has(d.kind));
-  return [...inputs.filter(d => d.kind === 'brief').sort((a, b) => (a.step ?? 0) - (b.step ?? 0)), ...inputs.filter(d => d.kind === 'context')];
-}
-// The order the panel lists a job's documents in, and the reader steps through: produced newest first, then inputs.
-export function jobDocSequence(job) { return [...docsOf(job).reverse(), ...inputDocsOf(job)]; }
 export function isUpdating(job, doc) {
   return job.status === 'running' && !INPUT_KINDS.has(doc.kind) && doc.mtime != null && Date.now() / 1000 - doc.mtime < DOC_UPDATING_SECONDS;
 }
-export function kindOf(doc) { return DOC_KIND[doc.kind] ? doc.kind : 'file'; }
 export function fmtSize(n) { if (!n && n !== 0) return ''; if (n < 1024) return n + ' B'; if (n < 1048576) return (n / 1024).toFixed(n < 10240 ? 1 : 0) + ' KB'; return (n / 1048576).toFixed(1) + ' MB'; }
 export function docMeta(doc) { return [doc.step != null ? `step ${doc.step + 1}` : '', fmtSize(doc.size), doc.mtime ? age(doc.mtime) + ' ago' : ''].filter(Boolean).join(' · '); }
 

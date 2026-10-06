@@ -4,7 +4,7 @@ import { archivedPanes, readArchivedDocument } from './archived-run.js';
 
 import * as THREE from 'three';
 import { BOT_H, DEBUG, DEMO, PI, QS } from './env.js';
-import { age, clock, duration, esc, offlineLabel, mix, store, trunc } from './util.js';
+import { age, clock, duration, esc, fallbackCopy, offlineLabel, mix, store, trunc } from './util.js';
 import { AGENT_COLOR, TOOL_ICON, hostLook } from './looks.js';
 import { isSession, shortId } from './activity.js';
 import { ROBOT, renderer } from './scene.js';
@@ -493,12 +493,7 @@ panel.addEventListener('click', ev => {
   if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text, done));
   else fallbackCopy(text, done);
 });
-export function fallbackCopy(text, done) {
-  const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
-  document.body.appendChild(ta); ta.select();
-  try { document.execCommand('copy'); done(); } catch (err) { /* nothing else to try */ }
-  ta.remove();
-}
+export { fallbackCopy };
 // An id shown by its first 8 characters; clicking copies the whole id.
 export const idChip = id => `<button type="button" class="id-chip" data-copy-id="${esc(id)}" title="Copy ${esc(id)}" aria-label="Copy id ${esc(id)}">${esc(shortId(id))}</button>`;
 document.addEventListener('click', ev => {

@@ -5,6 +5,7 @@ import { morph } from './morph.js';
 import { emptyPage, epicOf, itemOf, recipient, render, uninitialisedPage } from './render.js';
 import { uid } from './util.js';
 import { drafts } from './widgets.js';
+import { openJobDocument } from './reader.js';
 
 const app = document.getElementById('app');
 const space = decodeURIComponent((location.pathname.match(/^\/canvas\/([^/]+)/) || [])[1] || '');
@@ -18,7 +19,7 @@ const ui = {
   cmdDraft: '', cmdError: '', convoHidden: false, sending: false, sessDraft: '', sessError: '',
   specEditing: false, specDraft: '', criteriaEditing: null, critDraft: '', chEditing: false, chDraft: '', chError: '',
   chClause: '', chClauseErr: '', clauseRule: '', agentEditing: null, agentHost: '', agentCwd: '',
-  collapsedEpics: [], pending: {}, live: { ok: true }, error: null, docs: {}, docView: null,
+  collapsedEpics: [], pending: {}, live: { ok: true }, error: null, docs: {},
 };
 let model = null;
 let spacesList = null;
@@ -546,18 +547,9 @@ const actions = {
     }
     paint();
   },
-  async openDoc({ host, job, id }) {
-    if (ui.docView && ui.docView.id === id && ui.docView.job === job) { ui.docView = null; paint(); return; }
-    ui.docView = { host, job, id, loading: true };
-    paint();
-    try {
-      const response = await fetch('/api/doc?' + new URLSearchParams({ host, job, id }));
-      const body = await response.json();
-      ui.docView = response.ok ? { host, job, id, doc: body } : { host, job, id, error: body.error || `could not read it (${response.status})` };
-    } catch (error) {
-      ui.docView = { host, job, id, error: `could not read it: ${error.message}` };
-    }
-    paint();
+  openDoc({ run, host, job, id, agent }) {
+    const state = ui.docs[run];
+    if (state && state.list) openJobDocument(host, job, state.list, id, agent);
   },
   recordRevision(id) {
     const commit = window.prompt('Commit that holds this work (already merged):');

@@ -5,6 +5,7 @@ import {
 } from './geometry.js';
 import { EPIC_STAGE, LEVELS, STATUS, act, bind, clock, codeLines, esc, lighten, plural, statusColor, tint, who } from './util.js';
 import { PALETTE, PALETTE_NAMES, attentionCard, refusedList, renderWidget, reportSummary } from './widgets.js';
+import { DOC_KIND, docsOf, inputDocsOf, kindOf } from '../doc-kinds.js';
 
 const ICON = (path) => `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
 const ICONS = {
@@ -284,9 +285,8 @@ function liveTimeline(live) {
   return `<div class="cv-box"><span class="cv-label">What the agent is doing</span>${step ? `<span class="cv-small cv-soft">${esc(step)}${live.stale ? ' · host not reporting' : ''}</span>` : ''}${rows || '<span class="cv-muted">No updates from the agent yet.</span>'}</div>`;
 }
 
-const GIVEN_KINDS = ['brief', 'context'];
-
-// What the agent was given (step briefs, context files) and produced (reports, its outbox), read from its job.
+// What the agent was given (step briefs, context files) and produced (reports, its outbox), read from its job and
+// listed in the deck's order; each opens in the deck's reader.
 function documentsSection(ui, run) {
   const head = '<span class="cv-label">Documents</span>';
   const ref = { run: run.id, host: run.host, job: run.job };
@@ -294,22 +294,10 @@ function documentsSection(ui, run) {
   if (!state) return `<div class="cv-box">${head}<button class="cv-btn sm" style="align-self: flex-start" ${act('showDocs', ref)}>Show what it was given and produced</button></div>`;
   if (state.loading) return `<div class="cv-box">${head}<span class="cv-muted">Reading the job on ${esc(run.host)}…</span></div>`;
   if (state.error) return `<div class="cv-box">${head}<span class="cv-err">${esc(state.error)}</span><button class="cv-btn sm" style="align-self: flex-start" ${act('showDocs', ref)}>Try again</button></div>`;
-  const group = (title, docs) => docs.length ? `<span class="cv-small cv-soft">${title}</span>${docs.map((doc) => {
-    const open = ui.docView && ui.docView.job === run.job && ui.docView.id === doc.id;
-    return `<button class="cv-doc-link ${open ? 'on' : ''}" aria-expanded="${open}" ${act('openDoc', { host: run.host, job: run.job, id: doc.id })}>${esc(doc.name)}</button>${open ? docView(ui.docView) : ''}`;
-  }).join('')}` : '';
-  const given = state.list.filter((doc) => GIVEN_KINDS.includes(doc.kind));
-  const produced = state.list.filter((doc) => !GIVEN_KINDS.includes(doc.kind));
-  return `<div class="cv-box">${head}<span class="cv-mono cv-small cv-muted">${esc(run.host)}:${esc(run.job)}</span>${group('Given', given)}${group('Produced', produced)}${state.list.length ? '' : '<span class="cv-muted">The job has no documents.</span>'}</div>`;
-}
-
-function docView(view) {
-  if (view.loading) return '<div class="cv-doc"><span class="cv-muted">Reading…</span></div>';
-  if (view.error) return `<div class="cv-doc"><span class="cv-err">${esc(view.error)}</span></div>`;
-  const asset = (path) => '/api/doc/asset?' + new URLSearchParams({ host: view.host, job: view.job, id: view.id, path });
-  // Rendered by the server's document reader; images it links to are served beside the document.
-  const html = view.doc.html.replace(/<img src="([^"]+)"/g, (match, src) => /^[a-z]+:|^\//i.test(src) ? match : `<img src="${asset(src)}"`);
-  return `<div class="cv-doc">${view.doc.truncated ? '<span class="cv-small cv-muted">Shortened: the document is long.</span>' : ''}${html}</div>`;
+  const job = { documents: state.list };
+  const group = (title, docs) => docs.length ? `<span class="cv-small cv-soft">${title}</span>${docs.map((doc) =>
+    `<button class="cv-doc-link" ${act('openDoc', { ...ref, id: doc.id, agent: run.agent })}><span class="cv-mono cv-small cv-muted">${esc(DOC_KIND[kindOf(doc)].label)}</span> ${esc(doc.name)}</button>`).join('')}` : '';
+  return `<div class="cv-box">${head}<span class="cv-mono cv-small cv-muted">${esc(run.host)}:${esc(run.job)}</span>${group('Produced', docsOf(job).reverse())}${group('Given', inputDocsOf(job))}${state.list.length ? '' : '<span class="cv-muted">The job has no documents.</span>'}</div>`;
 }
 
 function recentFor(model, id) {

@@ -2,7 +2,7 @@
 // The vendored libraries load only when a document needs them.
 
 import { esc } from './util.js';
-import { fallbackCopy } from './panel.js';
+import { fallbackCopy } from './util.js';
 
 const DIAGRAMS = { mermaid: 'mermaid', dot: 'dot', graphviz: 'dot' };
 let highlighter = null, mermaidLoad = null, vizLoad = null, mermaidQueue = Promise.resolve(), diagramSeq = 0;
