@@ -235,8 +235,15 @@ def read_model(engine, *, person: str, events: list[dict], last_seq: int, layout
     guidance: dict[str, list] = {}
     for entry in engine.all("guidance").values():
         guidance.setdefault(entry["target"], []).append(entry)
+    mine = set(engine.items)
+    decisions = sorted((decision for decision in engine.ports.decisions.list()
+                        if mine & set(decision.affected_work_items or ())), key=lambda decision: decision.time, reverse=True)
+    decision_rows = [{"id": decision.id, "actor": decision.actor, "question": decision.question, "answer": decision.answer,
+                      "principle": decision.principle, "time": decision.time.isoformat() if hasattr(decision.time, "isoformat")
+                      else decision.time, "items": [identity for identity in decision.affected_work_items if identity in mine]}
+                     for decision in decisions[:30]]
     return {
-        "space": engine.space, "name": project_name, "person": person, "now": engine.now.isoformat(), "seq": last_seq,
+        "space": engine.space, "name": project_name, "decisions": decision_rows, "person": person, "now": engine.now.isoformat(), "seq": last_seq,
         "workflow": {"version": workflow["version"] if workflow else 0, "stages": stages, "pinned": pinned,
                      "flow": " → ".join([stage["name"] for stage in stages] + ["Done"])},
         "blocks": list(engine.all("block").values()),

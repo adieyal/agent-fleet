@@ -454,6 +454,11 @@ from real jobs.*
 
 ## Run work from the canvas
 
+![Fleet canvas with the workflow board, an Inbox region and a task's inspector](docs/images/fleet-canvas.png)
+
+*The canvas on the example project, with simulated agents. A run waits on a dependency, and the inspector lists the
+facts its stage's exit code checks.*
+
 The canvas, at `/canvas` in `fleet web` (or **canvas** in the deck header), is a second way into the same records.
 It shows one project's work as a workflow board, with Now, Next and Later bands, regions, epics, documents and
 views. Each stage, region, schedule and view carries a short snippet of Fleet's decision language:

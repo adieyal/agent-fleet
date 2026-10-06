@@ -572,6 +572,10 @@ function charterSection(model, ui) {
     <span class="cv-soft" style="font-size: 14px">What agents may decide on their own here. Rules in force outrank it.</span>
     ${kinds.map((kind) => `<div class="cv-row" style="gap: 6px 14px; padding: 8px 0; border-top: 1px solid #222c30"><div class="cv-stack" style="flex: 1 1 220px; gap: 0"><span style="font-weight: 500">${esc(kind[1])}</span><span class="cv-small cv-muted">${esc(kind[2])}</span></div>
       <div class="cv-row" style="gap: 4px">${levels.map((level) => `<button class="cv-level ${level[0]}" aria-pressed="${charter.scope[kind[0]] === level[0]}" ${act('op', { op: 'charter.update', args: { patch: { scope: { [kind[0]]: level[0] } }, base: charter.version } })}>${level[1]}</button>`).join('')}</div></div>`).join('')}
+    <span class="cv-label" style="margin-top: 6px">Decisions made here</span>
+    ${(model.decisions || []).length ? model.decisions.slice(0, 12).map((decision) => `<div class="cv-item-row"><span style="font-size: 15px">${esc(decision.question)}: <b>${esc(decision.answer)}</b></span>
+      <span class="cv-small cv-muted">${esc(who(decision.actor))} · ${clock(decision.time)}${decision.principle ? ' · under ' + esc(decision.principle) : ''}</span></div>`).join('')
+    : '<span class="cv-small cv-muted">None yet. Decisions you and agents make on this space\'s work appear here, with the rule they relied on.</span>'}
   </section>`;
 }
 
