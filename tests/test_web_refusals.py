@@ -180,7 +180,6 @@ def isolated_worker(tmp_path, monkeypatch):
     """This machine as a worker: fleetd in its own FLEET_HOME, tmux server and a stand-in for claude."""
     home = tmp_path / "worker"
     monkeypatch.setenv("FLEET_HOME", str(home))
-    monkeypatch.setenv("TMUX_TMPDIR", str(tmp_path))
     monkeypatch.setenv("FLEET_FLEETD_PATH", fleetd.__file__)
     spec = importlib.util.spec_from_file_location("worker_fleetd", fleetd.__file__)
     module = importlib.util.module_from_spec(spec)
@@ -213,7 +212,7 @@ def wait_until_finished(worker):
 
 @pytest.mark.parametrize("scope, rules", [("refused", ["Bash(git status:*)", "Bash(ls:*)", "Read(//etc/restoke.conf)"]),
                                           ("bash", ["Bash"])])
-def test_allowing_reaches_the_job_through_fleetd(deck, tmp_path, monkeypatch, capsys, scope, rules):
+def test_allowing_reaches_the_job_through_fleetd(deck, tmp_path, monkeypatch, capsys, scope, rules, isolated_tmux_directory):
     worker = isolated_worker(tmp_path, monkeypatch)
     try:
         # Step 1 runs and is refused three things, recorded by the hook as Claude would call it.

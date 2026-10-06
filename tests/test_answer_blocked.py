@@ -155,7 +155,7 @@ def test_an_unconfirmed_answer_leaves_the_item_open(deck, monkeypatch):
     assert deck.state.attention.get(item.id).state == "open"
 
 
-def test_answering_reaches_the_job_through_fleetd(deck, tmp_path, monkeypatch):
+def test_answering_reaches_the_job_through_fleetd(deck, tmp_path, monkeypatch, isolated_tmux_directory):
     worker = isolated_worker(tmp_path, monkeypatch)
     try:
         # The stand-in claude says done; record the first step as having ended blocked with a question.

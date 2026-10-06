@@ -12,10 +12,9 @@ from fleet_worker import fleetd
 
 
 @pytest.fixture
-def worker(tmp_path, monkeypatch):
+def worker(tmp_path, monkeypatch, isolated_tmux_directory):
     home = tmp_path / "worker home"
     monkeypatch.setenv("FLEET_HOME", str(home))
-    monkeypatch.setenv("TMUX_TMPDIR", str(tmp_path))
     spec = importlib.util.spec_from_file_location("isolated_fleetd", fleetd.__file__)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
