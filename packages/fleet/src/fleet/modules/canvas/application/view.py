@@ -257,7 +257,10 @@ def read_model(engine, *, person: str, events: list[dict], last_seq: int, layout
                           if hasattr(item.last_seen, "isoformat") else None})
     views = [view | {"compiled": code_view(compile_view(view["code"]))} for view in engine.all("view").values()
              if not view.get("personal") or view["personal"] == person]
-    charter = engine.get("charter", "main") or {"version": 0, "north_star": "", "clauses": [], "scope": dict(defaults.SCOPE)}
+    constitution = engine.ports.guidance.guidance(engine.space)
+    charter = engine.get("charter", "main") or {
+        "version": engine.guidance_base, "north_star": "", "clauses": [], "scope": {},
+        "constitution": "" if constitution is None else constitution.body}
     page = engine.get("page", "main") or {"markdown": defaults.PAGE.format(name=project_name), "version": 0}
     seen = (engine.get("seen", person) or {}).get("seq", 0)
     messages: dict[str, list] = {}

@@ -70,8 +70,10 @@ class Engine(Ticking):
         self.put("region", "inbox", {"id": "inbox", "name": "Inbox", "code": defaults.INBOX, "level": "enforced",
                                      "version": 1, "rect": {"x": 1500, "y": 120, "w": 340, "h": 300}, "color": None,
                                      "written_by": author, "adopted_by": self.actor, "created_at": iso(self.now)})
-        self.put("charter", "main", {"id": "main", "version": 1, "north_star": args.get("north_star") or "",
-                                     "clauses": [], "scope": dict(defaults.SCOPE), "written_by": self.actor})
+        if self.get("charter", "main") is None:
+            self.put("charter", "main", {"id": "main", "version": self.guidance_base + 1,
+                                         "north_star": args.get("north_star") or "", "clauses": [],
+                                         "scope": dict(defaults.SCOPE), "written_by": self.actor})
         self.put("page", "main", {"id": "main", "markdown": defaults.PAGE.format(name=name), "version": 1})
         self.put("spec", "main", {"id": "main", "text": args.get("spec") or "", "version": 1})
         self.put("settings", "main", {"id": "main", "agents": {}, "allow": []})
@@ -600,7 +602,9 @@ class Engine(Ticking):
             raise Refused("invalid", "kind is one of " + ", ".join(SCOPE_KINDS))
         charter = self.get("charter", "main")
         scope = (charter or {}).get("scope", {})
-        level = scope.get(kind, "ask")
+        if kind not in scope:
+            raise Refused('not_found', f'no decision scope for {kind} in the project constitution')
+        level = scope[kind]
         rule = args.get("rule")
         for clause in (charter or {}).get("clauses", []):
             if clause.get("kind") == "enforced" and defaults.RULES.get(clause.get("rule")) == kind and \
@@ -928,8 +932,7 @@ class Engine(Ticking):
     def op_charter_update(self, args: dict) -> dict:
         charter = self.get("charter", "main")
         if charter is None:
-            charter = self.put("charter", "main", {"id": "main", "version": 1, "north_star": "", "clauses": [],
-                                                   "scope": dict(defaults.SCOPE)})
+            charter = {"id": "main", "version": self.guidance_base, "north_star": "", "clauses": [], "scope": {}}
         base = args.get("base")
         if base is not None and base != charter["version"]:
             raise Refused("version_conflict", f"the charter is at v{charter['version']}, newer than v{base}",
@@ -975,6 +978,7 @@ class Engine(Ticking):
             return {"version": charter["version"]}
         charter["version"] += 1
         charter["written_by"] = self.actor
+        self.put('charter', 'main', charter)
         self.snapshot("charter", "main")
         for text in said:
             self.log(self.who_source(), 0, f"{text} (charter v{charter['version']})", "info")
@@ -1210,6 +1214,13 @@ class Engine(Ticking):
         cited += [(f"guidance from {entry['author']} on the {entry['target'].split(':')[0]}", entry["text"])
                   for entry in self.all("guidance").values() if entry["target"] in keys]
         charter = self.get("charter", "main") or {}
+        constitution = self.ports.guidance.guidance(self.space)
+        if constitution is not None:
+            lines += ["", f"Project constitution v{constitution.version.number}:", constitution.body]
+        if epic:
+            epic_guidance = self.ports.guidance.guidance(self.space, epic)
+            if epic_guidance is not None:
+                lines += ["", f"Epic charter v{epic_guidance.version.number}:", epic_guidance.body]
         cited += [(f"charter v{charter.get('version')}, clause {index + 1}", clause["text"])
                   for index, clause in enumerate(charter.get("clauses", [])) if clause.get("kind") == "guidance"]
         if cited:

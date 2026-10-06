@@ -614,14 +614,16 @@ function charterSection(model, ui) {
   const charter = model.charter;
   const kinds = model.scope_labels;
   const levels = [['decide', 'Agents decide'], ['tell', 'Decide, then tell me'], ['ask', 'Ask me first']];
-  const agentsDecide = kinds.filter((kind) => charter.scope[kind[0]] !== 'ask').length;
+  const agentsDecide = kinds.filter((kind) => ['decide', 'tell'].includes(charter.scope[kind[0]])).length;
   return `<section style="gap: 12px"><div class="cv-between" style="flex-wrap: wrap"><h2>Charter</h2><span class="cv-mono cv-small cv-muted">charter v${charter.version} · ${plural(charter.clauses.length, 'clause')} · agents decide ${agentsDecide} of ${kinds.length} kinds</span></div>
     <span class="cv-label accent">North star</span>
     ${ui.chEditing ? `<label for="ns-r" class="cv-small cv-soft">The outcome this space exists to produce</label><input id="ns-r" class="cv-input" ${bind('chDraft')} value="${esc(ui.chDraft)}">
       ${ui.chError ? `<span class="cv-err">${esc(ui.chError)}</span>` : ''}
       <div class="cv-row"><button class="cv-btn primary" ${act('saveNorthStar')}>Save as a new version</button><button class="cv-btn" ${act('cancelNorthStar')}>Cancel</button></div>`
     : `<div class="cv-row" style="align-items: flex-start"><p style="flex: 1 1 360px; font-size: 20px; line-height: 1.45; font-weight: 500">${esc(charter.north_star || 'No north star yet.')}</p><button class="cv-btn sm" ${act('editNorthStar')}>Edit</button></div>`}
-    <span class="cv-label">Constitution</span>
+    <p class="cv-soft">Edits save a new version of Fleet's project constitution. All clients and dispatched jobs use this guidance.</p>
+    <details><summary>Read the project constitution</summary><pre style="white-space: pre-wrap; overflow-wrap: anywhere">${esc(charter.constitution || 'No project constitution recorded.')}</pre></details>
+    <span class="cv-label">Space clauses</span>
     ${charter.clauses.map((clause, index) => `<div class="cv-row" style="gap: 6px 12px; align-items: baseline; padding: 8px 0; border-top: 1px solid #222c30"><span style="flex: 1 1 360px; font-size: 15px">${esc(clause.text)}</span><span class="cv-mono cv-small" style="color: ${clause.kind === 'enforced' ? 'var(--guide)' : 'var(--muted)'}">${clause.kind === 'enforced' ? 'Enforced by ' + esc(clause.rule) : 'Guidance · agents cite it'}</span>${clause.kind === 'guidance' ? `<button class="cv-btn sm" ${act('op', { op: 'item.create', args: { title: `Make enforceable: ${clause.text}`.slice(0, 200), goal: `Compile the charter clause “${clause.text}” into a named kernel rule, or say why it must stay guidance.` } })}>Make enforceable</button>` : ''}<button class="cv-btn sm" ${act('op', { op: 'charter.update', args: { patch: { remove_clause: index }, base: charter.version } })} aria-label="Remove clause">Remove</button></div>`).join('')}
     <div class="cv-row" style="align-items: flex-end; gap: 8px"><div class="cv-stack" style="flex: 1 1 300px; gap: 4px"><label for="cl-r" class="cv-small cv-soft">Add a clause</label><input id="cl-r" class="cv-input" ${bind('chClause')} value="${esc(ui.chClause)}" placeholder="Prefer reversible changes over fast ones"></div>
       <select class="cv-input" style="flex: 0 0 auto; width: auto" ${bind('clauseRule')} aria-label="Enforced by"><option value="">Guidance (agents cite it)</option>${model.rules.map((rule) => `<option value="${esc(rule)}" ${ui.clauseRule === rule ? 'selected' : ''}>Enforced: ${esc(rule)}</option>`).join('')}</select>
