@@ -165,20 +165,6 @@ class CanvasService:
         space, _ = self.project(space)
         return self.reader().repository.last_event(space)
 
-    def brief(self, space: str, run_id: str) -> dict:
-        """What the run's agent was given, read back from its job on the host: each step's prompt, as sent."""
-        space, _ = self.project(space)
-        run = self.reader().repository.load(space).get("run", {}).get(run_id)
-        if run is None:
-            raise LookupError(f"no run {run_id} in this space")
-        if not run.get("host") or not run.get("job"):
-            return {"run": run_id, "job": None, "steps": [], "reason": "this run has not started on a host"}
-        host = self.transport.host_by_name(run["host"])
-        steps = self.transport.job_steps(host, run["job"])
-        return {"run": run_id, "job": f"{run['host']}:{run['job']}",
-                "steps": [{"index": step.get("index"), "title": step.get("title"), "status": step.get("status"),
-                           "prompt": step.get("prompt")} for step in steps]}
-
     def versions(self, space: str, kind: str, identity: str) -> list[dict]:
         space, _ = self.project(space)
         return self.reader().versions(space, kind, identity)

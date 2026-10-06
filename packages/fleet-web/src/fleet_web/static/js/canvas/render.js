@@ -284,14 +284,32 @@ function liveTimeline(live) {
   return `<div class="cv-box"><span class="cv-label">What the agent is doing</span>${step ? `<span class="cv-small cv-soft">${esc(step)}${live.stale ? ' · host not reporting' : ''}</span>` : ''}${rows || '<span class="cv-muted">No updates from the agent yet.</span>'}</div>`;
 }
 
-// The prompts the agent was given, read from its job on the host when asked for.
-function briefSection(brief, runId) {
-  const head = '<span class="cv-label">What the agent was given</span>';
-  if (!brief) return `<div class="cv-box">${head}<button class="cv-btn sm" style="align-self: flex-start" ${act('showBrief', runId)}>Show the brief</button></div>`;
-  if (brief.loading) return `<div class="cv-box">${head}<span class="cv-muted">Reading the job on its host…</span></div>`;
-  if (brief.error) return `<div class="cv-box">${head}<span class="cv-err">${esc(brief.error)}</span><button class="cv-btn sm" style="align-self: flex-start" ${act('showBrief', runId)}>Try again</button></div>`;
-  if (!brief.steps.length) return `<div class="cv-box">${head}<span class="cv-muted">${esc(brief.reason || 'The job has no steps.')}</span></div>`;
-  return `<div class="cv-box">${head}<span class="cv-mono cv-small cv-muted">${esc(brief.job)}</span>${brief.steps.map((step) => `<details ${step.index === 0 ? 'open' : ''}><summary class="cv-small">Step ${step.index + 1}: ${esc(step.title || '')} · ${esc(step.status || '')}</summary><pre class="cv-brief">${esc(step.prompt || '(no prompt recorded)')}</pre></details>`).join('')}</div>`;
+const GIVEN_KINDS = ['brief', 'context'];
+
+// What the agent was given (step briefs, context files) and produced (reports, its outbox), read from its job.
+function documentsSection(ui, run) {
+  const head = '<span class="cv-label">Documents</span>';
+  const ref = { run: run.id, host: run.host, job: run.job };
+  const state = ui.docs[run.id];
+  if (!state) return `<div class="cv-box">${head}<button class="cv-btn sm" style="align-self: flex-start" ${act('showDocs', ref)}>Show what it was given and produced</button></div>`;
+  if (state.loading) return `<div class="cv-box">${head}<span class="cv-muted">Reading the job on ${esc(run.host)}…</span></div>`;
+  if (state.error) return `<div class="cv-box">${head}<span class="cv-err">${esc(state.error)}</span><button class="cv-btn sm" style="align-self: flex-start" ${act('showDocs', ref)}>Try again</button></div>`;
+  const group = (title, docs) => docs.length ? `<span class="cv-small cv-soft">${title}</span>${docs.map((doc) => {
+    const open = ui.docView && ui.docView.job === run.job && ui.docView.id === doc.id;
+    return `<button class="cv-doc-link ${open ? 'on' : ''}" aria-expanded="${open}" ${act('openDoc', { host: run.host, job: run.job, id: doc.id })}>${esc(doc.name)}</button>${open ? docView(ui.docView) : ''}`;
+  }).join('')}` : '';
+  const given = state.list.filter((doc) => GIVEN_KINDS.includes(doc.kind));
+  const produced = state.list.filter((doc) => !GIVEN_KINDS.includes(doc.kind));
+  return `<div class="cv-box">${head}<span class="cv-mono cv-small cv-muted">${esc(run.host)}:${esc(run.job)}</span>${group('Given', given)}${group('Produced', produced)}${state.list.length ? '' : '<span class="cv-muted">The job has no documents.</span>'}</div>`;
+}
+
+function docView(view) {
+  if (view.loading) return '<div class="cv-doc"><span class="cv-muted">Reading…</span></div>';
+  if (view.error) return `<div class="cv-doc"><span class="cv-err">${esc(view.error)}</span></div>`;
+  const asset = (path) => '/api/doc/asset?' + new URLSearchParams({ host: view.host, job: view.job, id: view.id, path });
+  // Rendered by the server's document reader; images it links to are served beside the document.
+  const html = view.doc.html.replace(/<img src="([^"]+)"/g, (match, src) => /^[a-z]+:|^\//i.test(src) ? match : `<img src="${asset(src)}"`);
+  return `<div class="cv-doc">${view.doc.truncated ? '<span class="cv-small cv-muted">Shortened: the document is long.</span>' : ''}${html}</div>`;
 }
 
 function recentFor(model, id) {
@@ -379,7 +397,7 @@ function sessionInspector(model, ui, item) {
     <div class="cv-box"><span class="cv-label">Summary for you</span>${summary.map((line) => `<span style="font-size: 14px; line-height: 1.5">${esc(line)}</span>`).join('') || '<span class="cv-muted">No agent has run on this task yet.</span>'}
       <span style="font-size: 11px; color: var(--faint)">Written from the run's records, not the raw transcript.</span></div>
     ${liveTimeline(run && run.live)}
-    ${run && run.job ? briefSection(ui.briefs[run.id], run.id) : ''}
+    ${run && run.job ? documentsSection(ui, run) : ''}
     <span class="cv-label">Do something</span>
     <div class="cv-row"><button class="cv-btn" ${act('op', { op: item.paused ? 'run.resume' : 'run.pause', args: { item: item.id } })}>${item.paused ? 'Resume' : 'Pause'}</button>
       ${!active && item.stage && item.stage !== 'done' ? `<button class="cv-btn" ${act('op', { op: 'run.request', args: { item: item.id, role: run ? run.role : 'builder' } })}>Request a ${esc(run ? run.role : 'builder')} run</button>` : ''}</div>

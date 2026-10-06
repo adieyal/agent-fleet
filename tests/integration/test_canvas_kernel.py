@@ -499,33 +499,6 @@ def test_layout_set_is_an_operation_too(space):
     assert state(space)["layout"] == {"epic:e1": {"x": 5, "y": 6}}
 
 
-def test_a_runs_brief_is_read_back_from_its_job_on_the_host(space, monkeypatch):
-    class Dispatch:
-        def send(self, request, steps):
-            return {"intent": SimpleNamespace(run=SimpleNamespace(id="fleet-run", host="worker", remote_job_id=request.id))}
-
-    space.canvas.dispatch = lambda: Dispatch()
-    ok(space, "agent.configure", agent="claude", mode="dispatch", host="worker", cwd="/src/app")
-    identity = task(space, criteria=["Tests pass"], stage="first")
-    space.canvas.tick(space.project)
-    run = item(space, identity)["run"]
-    asked = []
-
-    class Transport:
-        def host_by_name(self, name):
-            return SimpleNamespace(name=name)
-
-        def job_steps(self, host, job):
-            asked.append((host.name, job))
-            return [{"index": 0, "title": "Build", "status": "running", "prompt": "You are the builder.", "env": {}}]
-
-    space.canvas.transport = Transport()
-    brief = space.canvas.brief(space.project, run["id"])
-    assert asked == [("worker", run["job"])]
-    assert brief["job"] == f"worker:{run['job']}"
-    assert brief["steps"] == [{"index": 0, "title": "Build", "status": "running", "prompt": "You are the builder."}]
-
-
 def test_host_answers_name_an_attention_item_of_this_space(space):
     result = op(space, "attention.answer", id="missing", answer="Use the warm image")
     assert result["refused"] and result["code"] == "invalid"

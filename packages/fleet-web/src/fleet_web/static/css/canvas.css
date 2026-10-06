@@ -125,7 +125,13 @@ a:hover { color: var(--accent2); }
 .cv-live-note { display: flex; flex-direction: column; gap: 2px; font-size: 12px; line-height: 1.4; color: var(--soft); }
 .cv-clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .cv-live-row { display: flex; flex-direction: column; gap: 2px; padding: 6px 0; border-top: 1px solid #222c30; font-size: 13px; line-height: 1.45; }
-.cv-brief { margin: 6px 0 0; max-height: 420px; overflow: auto; white-space: pre-wrap; word-break: break-word; font-family: var(--mono); font-size: 12px; line-height: 1.5; color: var(--soft); }
+.cv-doc-link { all: unset; cursor: pointer; padding: 4px 0; font-size: 13px; color: var(--text); border-top: 1px solid #222c30; overflow-wrap: anywhere; }
+.cv-doc-link:hover, .cv-doc-link.on { color: var(--accent); }
+.cv-doc-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cv-doc { max-height: 480px; overflow: auto; padding: 8px 10px; border-radius: 6px; background: #12191c; font-size: 13px; line-height: 1.55; color: var(--soft); overflow-wrap: anywhere; }
+.cv-doc pre, .cv-doc code { font-family: var(--mono); font-size: 12px; white-space: pre-wrap; }
+.cv-doc img { max-width: 100%; height: auto; border-radius: 4px; }
+.cv-doc h1, .cv-doc h2, .cv-doc h3 { font-size: 15px; margin: 12px 0 6px; color: var(--text); }
 .cv-bar { height: 5px; background: var(--line); border-radius: 3px; overflow: hidden; }
 .cv-bar > div { height: 100%; background: #5f7f78; }
 .cv-bar.thick { height: 8px; border-radius: 4px; }

@@ -18,7 +18,7 @@ const ui = {
   cmdDraft: '', cmdError: '', convoHidden: false, sending: false, sessDraft: '', sessError: '',
   specEditing: false, specDraft: '', criteriaEditing: null, critDraft: '', chEditing: false, chDraft: '', chError: '',
   chClause: '', chClauseErr: '', clauseRule: '', agentEditing: null, agentHost: '', agentCwd: '',
-  collapsedEpics: [], pending: {}, live: { ok: true }, error: null, briefs: {},
+  collapsedEpics: [], pending: {}, live: { ok: true }, error: null, docs: {}, docView: null,
 };
 let model = null;
 let spacesList = null;
@@ -534,15 +534,28 @@ const actions = {
     await op('attention.resolve', canvas ? { id, choice } : { id, answer });
   },
   op({ op: name, args }) { return op(name, args); },
-  async showBrief(runId) {
-    ui.briefs[runId] = { loading: true };
+  async showDocs({ run, host, job }) {
+    ui.docs[run] = { loading: true };
     paint();
     try {
-      const response = await fetch(`/api/canvas/brief?space=${encodeURIComponent(space)}&run=${encodeURIComponent(runId)}`);
+      const response = await fetch('/api/job-documents?' + new URLSearchParams({ host, job }));
       const body = await response.json();
-      ui.briefs[runId] = response.ok ? body : { error: body.error || `could not read the brief (${response.status})` };
+      ui.docs[run] = response.ok ? { list: body } : { error: body.error || `could not list the documents (${response.status})` };
     } catch (error) {
-      ui.briefs[runId] = { error: `could not read the brief: ${error.message}` };
+      ui.docs[run] = { error: `could not list the documents: ${error.message}` };
+    }
+    paint();
+  },
+  async openDoc({ host, job, id }) {
+    if (ui.docView && ui.docView.id === id && ui.docView.job === job) { ui.docView = null; paint(); return; }
+    ui.docView = { host, job, id, loading: true };
+    paint();
+    try {
+      const response = await fetch('/api/doc?' + new URLSearchParams({ host, job, id }));
+      const body = await response.json();
+      ui.docView = response.ok ? { host, job, id, doc: body } : { host, job, id, error: body.error || `could not read it (${response.status})` };
+    } catch (error) {
+      ui.docView = { host, job, id, error: `could not read it: ${error.message}` };
     }
     paint();
   },
