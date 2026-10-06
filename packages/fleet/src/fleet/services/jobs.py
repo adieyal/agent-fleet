@@ -49,10 +49,17 @@ class Jobs:
         return reports, by_host
 
     def waiting_step(self, host: Host, job_id: str) -> int | None:
-        """The job's blocked step that has no answer yet, if any."""
+        """Observe the unanswered blocked question and return its step index, if any."""
         job = self.transport.call(host, ["show", job_id, "--events", "0"])
-        return next((step["index"] for step in job["steps"]
-                     if step["status"] == "blocked" and step.get("answered_by") is None), None)
+        waiting = next((step["index"] for step in job["steps"]
+                        if step["status"] == "blocked" and step.get("answered_by") is None), None)
+        if waiting is not None:
+            # Observe the actual question before answering, even if the stream has not yet
+            # created it. Its resolved occurrence then also covers late blocked snapshots.
+            observed = resolve_label(self.workspace().registry(), host.name, job)
+            self.attention().observe({"name": host.name, "ok": True, "jobs": [observed], "sessions": []},
+                                     subjects={f"job:{host.name}:{job_id}"})
+        return waiting
 
     def answer_waiting_step(self, host: Host, job_id: str, step: int, steps: list[dict[str, Any]], actor: str) -> str:
         """Add the steps as the answer to the waiting step, as the deck does: they run next, and the open attention
@@ -71,8 +78,13 @@ class Jobs:
             raise FleetError("worker did not confirm the answer")
         continuation = result["steps"][0]
         details = f"answered; step {step + 1} continues as step {continuation + 1}"
-        if item is not None:
-            attention.resolve(item.id, details=details, actor=actor)
+        # The stream can create the blocker while the worker call is in flight.
+        # Resolve from confirmed receipt, including items absent from the initial lookup.
+        for waiting in attention.list():
+            context = waiting.stream_context
+            if (waiting.state != "resolved" and context is not None and context.blocked_step
+                    and (context.host, context.owner_id, context.step) == (host.name, job_id, step)):
+                attention.resolve(waiting.id, details=details, actor=actor)
         return details
 
     def start(self, host: Host, job_id: str) -> dict:

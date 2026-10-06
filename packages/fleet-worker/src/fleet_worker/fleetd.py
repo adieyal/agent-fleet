@@ -1010,11 +1010,18 @@ def next_step(job: JsonObject) -> Optional[JsonObject]:
     steps = job["steps"]
     if any(step["status"] == "blocked" and step.get("answered_by") is None for step in steps):
         return None
-    answering = {step["answered_by"] for step in steps if step.get("answered_by") is not None}
-    answering |= {index for added in job.get("keyed_additions", []) if added.get("answers") is not None
-                  for index in added["steps"]}
-    pending = [step for step in steps if step["status"] == "pending"]
-    return next((step for step in pending if step["index"] in answering), pending[0] if pending else None)
+    # Appended indices preserve addition order. A newer answer interrupts any remaining
+    # steps of an earlier reply; each reply's own steps still run in their original order.
+    replies = {step["answered_by"]: [step["answered_by"]] for step in steps
+               if step.get("answered_by") is not None}
+    replies.update({added["steps"][0]: added["steps"] for added in job.get("keyed_additions", [])
+                    if added.get("answers") is not None})
+    pending = {step["index"]: step for step in steps if step["status"] == "pending"}
+    for first in sorted(replies, reverse=True):
+        for index in replies[first]:
+            if index in pending:
+                return pending[index]
+    return next(iter(pending.values()), None)
 
 
 def run_job(job_id: str) -> None:

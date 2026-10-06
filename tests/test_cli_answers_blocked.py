@@ -107,3 +107,37 @@ def test_fleet_answer_on_a_blocked_step_takes_the_decks_path(worker, project_id,
     [record] = configured_container().decisions().list()
     assert (record.attention_item, record.answer, record.actor) == (item.id, 'Use the second.', 'user')
     assert fleetd.derive_status(fleetd.read_job("job")) == "queued"
+
+
+def test_fleet_add_records_resolution_before_late_blocked_snapshot(worker):
+    reported = fleetd.job_summary(fleetd.read_job('job'), 0)
+    attention = configured_container().initialized_attention()
+    assert attention.list() == []
+    add('-s', 'Use the second.')
+    attention.observe({'name': 'h', 'ok': True, 'jobs': [reported], 'sessions': []})
+    blockers = [item for item in attention.list() if item.stream_context and item.stream_context.blocked_step]
+    assert blockers and all(item.state == 'resolved' for item in blockers)
+
+
+@pytest.mark.parametrize('channel', ['add', 'answer', 'deck'])
+def test_every_answer_path_resolves_and_runs_before_queued_steps(worker, project_id, capsys, monkeypatch, tmp_path, channel):
+    from test_fleetd_blocked import run_recording_order
+    from test_web_attention import Deck
+    from test_web_refusals import post
+    item = blocked_item(project_id)
+    if channel == 'add':
+        add('-s', 'Use the second.')
+    elif channel == 'answer':
+        cli.main(['answer', item.id, 'Use the second.'])
+    else:
+        deck = Deck()
+        try:
+            status, _ = post(deck, '/api/attention/answer', {'id': item.id, 'answer': 'Use the second.'})
+            assert status == 200
+        finally:
+            deck.close()
+    assert configured_container().initialized_attention().get(item.id).state == 'resolved'
+    monkeypatch.setattr(fleetd, 'CONFIG_PATH', tmp_path / 'config.json')
+    monkeypatch.setattr(fleetd, 'collect_workspace', lambda cwd: (None, 'not a git repository'))
+    monkeypatch.setattr(fleetd, 'begin_step_git', lambda cwd: {'reason': 'git mocked for answer ordering test'})
+    assert run_recording_order(monkeypatch) == [3, 1, 2]
