@@ -146,4 +146,24 @@ MIGRATIONS = (
     (
         "ALTER TABLE attention_item ADD COLUMN replies TEXT NOT NULL DEFAULT '[]'",
     ),
+    (
+        # The canvas kernel: versioned code-carrying records per space, their old versions, an append-only event
+        # log with actor and source line, idempotent operation results, and per-person layout.
+        """CREATE TABLE canvas_record (
+            space TEXT NOT NULL, kind TEXT NOT NULL, id TEXT NOT NULL, record TEXT NOT NULL,
+            PRIMARY KEY (space, kind, id))""",
+        """CREATE TABLE canvas_version (
+            space TEXT NOT NULL, kind TEXT NOT NULL, id TEXT NOT NULL, version INTEGER NOT NULL,
+            record TEXT NOT NULL, PRIMARY KEY (space, kind, id, version))""",
+        "CREATE TABLE canvas_event (seq INTEGER PRIMARY KEY AUTOINCREMENT, space TEXT NOT NULL, record TEXT NOT NULL)",
+        "CREATE INDEX canvas_event_space ON canvas_event(space, seq)",
+        """CREATE TRIGGER canvas_event_no_update BEFORE UPDATE ON canvas_event
+           BEGIN SELECT RAISE(ABORT, 'the canvas event log is append-only'); END""",
+        """CREATE TRIGGER canvas_event_no_delete BEFORE DELETE ON canvas_event
+           BEGIN SELECT RAISE(ABORT, 'the canvas event log is append-only'); END""",
+        "CREATE TABLE canvas_op (id TEXT PRIMARY KEY, space TEXT NOT NULL, op TEXT NOT NULL, result TEXT NOT NULL)",
+        """CREATE TABLE canvas_layout (
+            space TEXT NOT NULL, person TEXT NOT NULL, object TEXT NOT NULL, record TEXT NOT NULL,
+            PRIMARY KEY (space, person, object))""",
+    ),
 )

@@ -42,6 +42,8 @@ header{position:fixed;top:0;left:0;right:0;height:52px;display:flex;align-items:
 .view-toggle{flex:none;display:flex;padding:2px;border:1px solid rgba(56,189,248,.35);border-radius:999px;background:rgba(56,189,248,.06)}
 .view-toggle button{border:0;background:none;padding:3px 10px;border-radius:999px;font:500 12px var(--mono);letter-spacing:.04em;color:var(--muted);cursor:pointer}
 .view-toggle button[aria-pressed=true]{background:rgba(56,189,248,.18);color:var(--run)}
+.canvas-link{flex:none;padding:3px 10px;border:1px solid rgba(56,189,248,.35);border-radius:999px;font:500 12px var(--mono);letter-spacing:.04em;color:var(--muted);text-decoration:none}
+.canvas-link:hover{color:var(--run)}
 .view-toggle button:focus-visible{outline:1px solid var(--run)}
 #libraryOpen{flex:none;border:1px solid var(--line2);border-radius:8px;background:rgba(56,189,248,.08);color:var(--text);
   padding:6px 10px;font:600 12px var(--sans);cursor:pointer}

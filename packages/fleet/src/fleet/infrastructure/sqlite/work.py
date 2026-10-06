@@ -67,6 +67,17 @@ class WorkRepository(Repository):
             (record.id, payload))
         self.unit.record_change(f"work:{kind}:{record.id}", previous[0]["record"] if previous else "", payload, actor)
 
+    def delete(self, kind: str, identity: str, actor: str) -> None:
+        if kind not in ("relation", "criterion"):
+            raise ValueError("only relations and criteria can be removed")
+        if self.unit is None:
+            raise RuntimeError("work writes require a transaction")
+        previous = self.rows(f"SELECT record FROM work_{kind} WHERE id = ?", (identity,))
+        if not previous:
+            raise LookupError(f"no work {kind} '{identity}'")
+        self.unit.connection.execute(f"DELETE FROM work_{kind} WHERE id = ?", (identity,))
+        self.unit.record_change(f"work:{kind}:{identity}", previous[0]["record"], "", actor)
+
     def retire_summary(self, identity: str, actor: str) -> None:
         with self.transaction() as repository:
             unit = repository.unit

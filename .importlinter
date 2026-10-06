@@ -241,3 +241,9 @@ name = Pages public surface
 type = protected
 protected_modules = fleet.modules.pages.*
 allowed_importers = fleet.modules.pages
+
+[importlinter:contract:canvas-public]
+name = Canvas public surface
+type = protected
+protected_modules = fleet.modules.canvas.*
+allowed_importers = fleet.modules.canvas

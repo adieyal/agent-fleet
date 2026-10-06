@@ -1267,7 +1267,7 @@ COMMAND_GROUPS = {
              "cancel", "mv", "rm", "notify", "run"),
     "Work": ("status", "work", "criterion", "summary", "attention", "answer", "decision", "guidance", "library",
              "history", "triage", "store", "page"),
-    "Projects": ("project", "building", "libraries", "web", "serve"),
+    "Projects": ("project", "building", "libraries", "web", "serve", "canvas"),
     "Hosts": ("hosts", "host", "install", "hooks", "unlock"),
     "Agent-internal": ("orchestrate", "control"),
 }
@@ -1357,6 +1357,195 @@ def command_page(arguments: argparse.Namespace, *, container) -> None:
         sys.stdout.write(result['markdown'])
 
 
+CANVAS_TONES = {"refuse": "red", "op": "green", "guide": "yellow", "info": None}
+
+
+def canvas_result(result: dict, *, as_json: bool) -> None:
+    """Print an operation's result; a refusal names the code and source line and exits 3."""
+    if as_json:
+        print(json.dumps(result, default=str))
+    elif result.get("refused"):
+        source = result.get("source") or {}
+        where = f" ({source['object']} v{source['version']}, line {source['line']})" if source.get("object") else ""
+        error_console.print(f"refused [{result['code']}]{where}: {result['message']}", style="red", markup=False)
+    else:
+        detail = result.get("result") or {}
+        console.print(f"{result.get('op')}: ok" + (f" {json.dumps(detail, default=str)}" if detail else ""),
+                      markup=False, highlight=False)
+        for toast in result.get("toasts") or []:
+            console.print(toast, style="yellow", markup=False)
+    if result.get("refused"):
+        sys.exit(3)
+
+
+def read_text(path: Path | None) -> str:
+    try:
+        return path.read_text(encoding="utf-8") if path else sys.stdin.read()
+    except (OSError, UnicodeError) as error:
+        raise FleetError(f"Cannot read code: {error}") from error
+
+
+def command_canvas(arguments: argparse.Namespace, *, container) -> None:
+    canvas = container.canvas()
+    action = arguments.canvas_command
+    if action == "ls":
+        spaces = canvas.spaces()
+        for space in spaces:
+            print(f"{space['id']}\t{space['name']}")
+        if not spaces:
+            print("No project has a canvas yet; fleet canvas init PROJECT gives one a canvas.")
+        return
+    if action == "check":
+        compiled = canvas.compile_preview(read_text(arguments.file), arguments.level)
+        if arguments.json or "error" in compiled:
+            print(json.dumps(compiled))
+            if "error" in compiled:
+                sys.exit(3)
+            return
+        for line in compiled["lines"]:
+            note = f"   ~ {line['note']}" if line.get("note") else ""
+            console.print(f"{line['n']:>3} {line['marker'] or ' '} {line['raw']}{note}", markup=False, highlight=False)
+        print(f"{compiled['compiled']} compiled, {compiled['guided']} guidance")
+        return
+    if action == "init":
+        canvas_result(canvas.init(arguments.project, actor=arguments.actor, north_star=arguments.north_star,
+                                  example=arguments.example, seconds=arguments.seconds), as_json=arguments.json)
+        return
+    if action == "tick":
+        result = canvas.tick(arguments.project)
+        if arguments.json:
+            print(json.dumps(result, default=str))
+        else:
+            for entry in result["outbox"]:
+                print(json.dumps(entry, default=str))
+            print("ticked")
+        return
+    if action == "show":
+        model = canvas.state(arguments.project, person=arguments.actor)
+        if arguments.json:
+            print(json.dumps(model, default=str))
+            return
+        console.print(f"{model['name']} · workflow v{model['workflow']['version']}: {model['workflow']['flow']}",
+                      markup=False, highlight=False)
+        slots = ", ".join(f"{slot['agent']} {slot['busy']}/{slot['cap']}" + ("" if slot["ready"] else " (no host)")
+                          for slot in model["schedule"]["slots"])
+        console.print(f"schedule v{model['schedule']['version']}: {slots}", markup=False, highlight=False)
+        titles = {item["id"]: item["title"] for item in model["items"]}
+        for epic in model["epics"]:
+            console.print(f"epic {epic['title']} · {epic['stage_label']} · {epic['done']} of {len(epic['children'])} "
+                          f"done, {epic['gaps']} criteria uncovered", markup=False, highlight=False)
+        for item in model["items"]:
+            stage = item["stage"] or "-"
+            console.print(f"  {item['id'][:8]}  {stage:<10} {item['status_label']:<20} {item['title']} · {item['next']}",
+                          markup=False, highlight=False)
+        for entry in model["attention"]:
+            subject = titles.get(entry.get("item") or "", "")
+            console.print(f"needs you: {entry['text']} ({entry['why']}) id {entry['id']}" +
+                          (f" · {subject}" if subject else ""), style="yellow", markup=False, highlight=False)
+        return
+    if action == "log":
+        events = canvas.events(arguments.project, after=arguments.after, limit=arguments.limit)
+        if arguments.json:
+            print(json.dumps(events, default=str))
+            return
+        for event in events:
+            source = event["source"] + (f":{event['line']}" if event.get("line") else "")
+            console.print(f"{event['seq']:>6} {event['time'][11:19]} {source:<28} {event['text']}",
+                          style=CANVAS_TONES.get(event.get("tone")), markup=False, highlight=False)
+        return
+    if action == "op":
+        try:
+            args = json.loads(arguments.args) if arguments.args else {}
+        except ValueError as error:
+            raise FleetError(f"--args must be a JSON object: {error}") from error
+        op, args = arguments.op, args
+    elif action == "compile":
+        target = {"kind": arguments.kind, "id": arguments.id}
+        op, args = "code.compile", {"object": target, "text": read_text(arguments.file), "base": arguments.base}
+    elif action == "agent":
+        op = "agent.configure"
+        args = {"agent": arguments.agent, "remove": arguments.remove,
+                "mode": "simulate" if arguments.simulate else "dispatch", "seconds": arguments.seconds,
+                "host": arguments.host, "cwd": arguments.cwd, "runtime": arguments.runtime,
+                "permission": arguments.permission, "model": arguments.model}
+    elif action == "message":
+        target = None
+        if arguments.to:
+            kind, _, identity = arguments.to.partition(":")
+            target = {"kind": kind, "id": identity}
+        op, args = "message.send", {"text": arguments.text, "target": target}
+    elif action == "can":
+        op, args = "decision.check", {"kind": arguments.kind, "rule": arguments.rule}
+    else:
+        op, args = "attention.resolve", {"id": arguments.id, "choice": "back" if arguments.back else "approve"}
+    canvas_result(canvas.operation(arguments.project, op, args, actor=arguments.actor, op_id=arguments.op_id),
+                  as_json=arguments.json)
+
+
+def add_canvas_parsers(commands, *, container) -> None:
+    canvas = commands.add_parser("canvas", help="the canvas: workflow, regions, scheduler and decision language",
+                                 description="Every canvas gesture is one kernel operation; these commands send the "
+                                             "same operations, so a decision made here is the same as one made on "
+                                             "the canvas. Open the canvas itself at /canvas in fleet web.")
+    actions = canvas.add_subparsers(dest="canvas_command", required=True)
+
+    def action(name, help_text, *, project=True, write=False, json_flag=True):
+        parser = actions.add_parser(name, help=help_text)
+        if project:
+            add_project_argument(parser, "project", metavar="PROJECT")
+        if write:
+            add_actor_option(parser, container=container)
+            parser.add_argument("--op-id", dest="op_id", help="client-generated id: a retried write applies once")
+        else:
+            parser.add_argument("--actor", default="user", help=argparse.SUPPRESS)
+        if json_flag:
+            parser.add_argument("--json", action="store_true")
+        parser.set_defaults(handler=command_canvas)
+        return parser
+
+    action("ls", "list projects with a canvas", project=False, json_flag=False)
+    init = action("init", "give a project a canvas: a starting workflow, scheduler, Inbox and charter", write=True)
+    init.add_argument("--north-star", help="the outcome the space exists to produce")
+    init.add_argument("--example", action="store_true",
+                      help="seed the embeddings-service example on simulated agents")
+    init.add_argument("--seconds", type=int, default=45, help="how long an example simulated run takes")
+    action("show", "the space as the canvas reads it: work, stages, next steps and what needs you")
+    log = action("log", "the event log: what ran, from which line, by whom")
+    log.add_argument("--after", type=int, default=0, metavar="SEQ")
+    log.add_argument("--limit", type=int, default=200)
+    action("tick", "run the kernel once: follow runs, advance work, schedule and start queued runs")
+    op = action("op", "send one kernel operation, such as item.move or region.enter", write=True)
+    op.add_argument("op", metavar="OPERATION")
+    op.add_argument("--args", help='its arguments as a JSON object, e.g. \'{"item": "ab12", "stage": "test"}\'')
+    compile_ = action("compile", "compile new code for a stage, zone, schedule, epic workflow or view", write=True)
+    compile_.add_argument("kind", choices=["stage", "zone", "schedule", "epicflow", "view"])
+    compile_.add_argument("id", nargs="?", help="stage id, zone id or @Name, or view id (schedule and epicflow take none)")
+    compile_.add_argument("--file", type=Path, metavar="F", help="the snippet; otherwise read stdin")
+    compile_.add_argument("--base", type=int, metavar="N", help="the version you edited; a newer one is refused")
+    check = action("check", "show how Fleet reads a snippet, line by line, without saving it", project=False)
+    check.add_argument("--file", type=Path, metavar="F", help="the snippet; otherwise read stdin")
+    check.add_argument("--level", choices=["enforced", "guidance", "label"], default="enforced")
+    agent = action("agent", "say how an agent named in the schedule runs work here", write=True)
+    agent.add_argument("agent", metavar="AGENT", help="the name the schedule uses, such as claude or codex")
+    agent.add_argument("--host", help="the host to dispatch to")
+    agent.add_argument("--cwd", help="the checkout on that host")
+    agent.add_argument("--runtime", choices=["claude", "codex"], help="defaults to the agent's name")
+    agent.add_argument("--permission", help="the job permission mode")
+    agent.add_argument("--model")
+    agent.add_argument("--simulate", action="store_true", help="simulate runs instead of dispatching them")
+    agent.add_argument("--seconds", type=int, default=20, help="a simulated run's length")
+    agent.add_argument("--remove", action="store_true")
+    message = action("message", "write to the orchestrator, or to an object with --to", write=True)
+    message.add_argument("text")
+    message.add_argument("--to", metavar="KIND:ID", help="task:ID, epic:ID, stage:ID, zone:ID or view:ID")
+    answer = action("answer", "approve, or send back, something waiting in Needs you", write=True)
+    answer.add_argument("id", metavar="ID", help="the item's id from fleet canvas show")
+    answer.add_argument("--back", action="store_true", help="send it back instead of approving")
+    can = action("can", "may an agent decide this kind of thing here? prints decide, tell or ask", write=True)
+    can.add_argument("kind", choices=["impl", "deps", "ops", "destructive", "interface", "arch", "scope", "process"])
+    can.add_argument("--rule", help="a kernel rule the decision touches")
+
+
 def build_parser(*, container=None) -> argparse.ArgumentParser:
     container = bootstrap_container(container)
     parser = argparse.ArgumentParser(prog="fleet", description=__doc__,
@@ -1380,6 +1569,7 @@ def build_parser(*, container=None) -> argparse.ArgumentParser:
             page.add_argument('--version', type=int, metavar='N')
             page.add_argument('--json', action='store_true', help='resolve blocks as JSON')
         page.set_defaults(handler=command_page)
+    add_canvas_parsers(commands, container=container)
 
 
     store_commands = commands.add_parser("store", help="local storage accounting").add_subparsers(dest="store_command", required=True)
@@ -1868,7 +2058,15 @@ def command_serve(arguments, *, container):
     import threading
     settings = container.configuration().web_settings()
     settings.pop("libraries", None)
-    state = container.live_state(hosts=container.jobs().selected_hosts(arguments.host), **settings)
+    try:
+        hosts = container.jobs().selected_hosts(arguments.host)
+    except FleetError:
+        # With no hosts, a store with canvases still needs its kernel to tick (simulated agents, schedules).
+        if arguments.host or not container.canvas().spaces():
+            raise
+        hosts = []
+        error_console.print("fleet serve: no hosts configured; running the canvas kernel only", markup=False)
+    state = container.live_state(hosts=hosts, **settings)
     runtime = container.start_live(state=state)
     listener = None
     previous = {}

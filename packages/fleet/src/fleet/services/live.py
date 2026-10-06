@@ -248,6 +248,26 @@ class FleetState(LiveWorkspace):
             logging.getLogger(__name__).exception('Records publication remains pending')
         self.schedule()
 
+    CANVAS_TICK_SECONDS = 2.0
+
+    def follow_canvas(self, stop: threading.Event) -> None:
+        """Run the canvas kernel's tick for every space with a canvas: follow runs, advance work, schedule and
+        carry queued runs to their hosts. A failing space is logged and retried; it never stops the others."""
+        log = logging.getLogger(__name__)
+        while not stop.is_set():
+            try:
+                canvas = self.container.canvas()
+                for space in canvas.spaces():
+                    if stop.is_set():
+                        break
+                    try:
+                        canvas.tick(space["id"])
+                    except Exception:
+                        log.exception("Canvas tick failed for %s", space["id"])
+            except Exception:
+                log.exception("Canvas tick failed")
+            stop.wait(self.CANVAS_TICK_SECONDS)
+
     def follow_history(self, stop: threading.Event) -> None:
         while not stop.is_set():
             self.schedule_triage()
@@ -499,6 +519,8 @@ class LiveRuntime:
         self.threads = [self.worker('history-scheduler', state.follow_history, self.stop)]
         self.threads.extend(self.worker('host:' + host.name, follow_host, state, host, self.stop)
                             for host in state.hosts)
+        if hasattr(state, "follow_canvas") and hasattr(state, "container"):
+            self.threads.append(self.worker('canvas-kernel', state.follow_canvas, self.stop))
 
     def worker(self, name, target, *args):
         def run():

@@ -134,6 +134,12 @@ class WorkFacade:
     def relate(self, from_item: str, to_item: str, *, actor: str, type: str = "depends-on") -> Relation:
         return self.commands.relate(from_item, to_item, type=type, actor=actor)
 
+    def unrelate(self, from_item: str, to_item: str, *, actor: str, type: str = "depends-on") -> list[Relation]:
+        return self.commands.unrelate(from_item, to_item, type=type, actor=actor)
+
+    def remove_criterion(self, identity: str, *, actor: str) -> Criterion:
+        return self.commands.remove_criterion(identity, actor=actor)
+
     def relations(self, identity: str) -> list[Relation]:
         return [item for item in self.repository.list("relation") if identity in (item.from_item, item.to_item)]
 
