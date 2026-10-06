@@ -59,3 +59,5 @@ class Ports:
     run: Callable[[str], Any | None]
     run_attention: Callable[[dict], list]
     transaction: Callable[[], AbstractContextManager] | None = None
+    # What the host last streamed about a job (steps, recent events); None where no live runtime is attached.
+    live_job: Callable[[str, str], dict | None] | None = None

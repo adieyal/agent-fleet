@@ -17,7 +17,28 @@ def run_view(engine, run: dict) -> dict:
     return {key: run.get(key) for key in ("id", "item", "role", "state", "agent", "builder", "queued_at", "queue_reason",
                                           "fleet_run", "host", "job", "error", "started_at", "ended_at", "outcome",
                                           "simulated", "excerpt", "refusals", "cost", "progress", "force_agent",
-                                          "permit")} | {"elapsed": elapsed} | fleet_view(engine, run)
+                                          "permit")} | {"elapsed": elapsed} | fleet_view(engine, run) | live_view(engine, run)
+
+
+LIVE_EVENTS = 8
+
+
+def live_view(engine, run: dict) -> dict:
+    """What the agent is doing, from its job as the host last streamed it: the step it is on and what it last said."""
+    lookup = engine.ports.live_job
+    job = lookup(run["host"], run["job"]) if lookup and run.get("host") and run.get("job") else None
+    if job is None:
+        return {"live": None}
+    steps = job.get("steps") or []
+    current = next((step for step in steps if step.get("status") == "running"), steps[-1] if steps else None)
+    updates = [{"kind": event.get("kind"), "status": event.get("status"), "text": event.get("summary"),
+                "time": event.get("ts")}
+               for event in job.get("events") or [] if event.get("kind") in ("text", "step") and event.get("summary")]
+    return {"live": {"status": job.get("status"), "updated_at": job.get("updated_at"),
+                     "step": None if current is None else {"number": current["index"] + 1, "of": len(steps),
+                                                           "title": current.get("title"), "status": current.get("status")},
+                     "latest": next((update["text"] for update in reversed(updates) if update["kind"] == "text"), None),
+                     "updates": updates[-LIVE_EVENTS:], "stale": bool(job.get("stale"))}}
 
 
 def stamp(value):

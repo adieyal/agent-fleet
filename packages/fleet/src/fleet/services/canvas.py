@@ -141,12 +141,15 @@ class CanvasService:
         return result
 
     # ---- reads
-    def state(self, space: str, *, person: str) -> dict:
+    def state(self, space: str, *, person: str, live_jobs: dict | None = None) -> dict:
+        """The read model; `live_jobs` maps (host, job id) to what the runtime last streamed about each job."""
         space, name = self.project(space)
         facades = self.facades()  # a read takes no write lock: each query reads the store as it is
         other = [item for item in facades.attention.list(project=space) if item.state != "resolved"]
-        return self.reader().read(space, self.ports(facades, space), person=person, project_name=name,
-                                  other_attention=other)
+        ports = self.ports(facades, space)
+        if live_jobs is not None:
+            ports.live_job = lambda host, job: live_jobs.get((host, job))
+        return self.reader().read(space, ports, person=person, project_name=name, other_attention=other)
 
     def spaces(self) -> list[dict]:
         identities = self.reader().spaces()

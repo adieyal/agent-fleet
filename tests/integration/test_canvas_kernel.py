@@ -442,6 +442,30 @@ def test_a_blocked_jobs_question_reaches_its_card(space, monkeypatch):
     assert entry["item"] == identity
 
 
+def test_a_running_card_shows_what_its_agent_last_said(space):
+    class Dispatch:
+        def send(self, request, steps):
+            return {"intent": SimpleNamespace(run=SimpleNamespace(id="fleet-run", host="worker", remote_job_id=request.id))}
+
+    space.canvas.dispatch = lambda: Dispatch()
+    ok(space, "agent.configure", agent="claude", mode="dispatch", host="worker", cwd="/src/app")
+    identity = task(space, criteria=["Tests pass"], stage="first")
+    space.canvas.tick(space.project)
+    job = item(space, identity)["run"]["job"]
+    assert item(space, identity)["run"]["live"] is None
+    streamed = {"status": "running", "updated_at": "2026-10-06T09:00:00Z", "steps": [
+        {"index": 0, "title": "Plan", "status": "done"}, {"index": 1, "title": "Build", "status": "running"}],
+        "events": [{"kind": "tool", "summary": "pytest -q", "ts": 1.0},
+                   {"kind": "text", "summary": "Tests pass; writing the report.", "ts": 2.0}]}
+    card = next(entry for entry in space.canvas.state(space.project, person="user",
+                                                     live_jobs={("worker", job): streamed})["items"]
+                if entry["id"] == identity)
+    live = card["run"]["live"]
+    assert live["step"] == {"number": 2, "of": 2, "title": "Build", "status": "running"}
+    assert live["latest"] == "Tests pass; writing the report."
+    assert [update["text"] for update in live["updates"]] == ["Tests pass; writing the report."]
+
+
 def test_layout_set_is_an_operation_too(space):
     result = op(space, "layout.set", object="epic:e1", props={"x": 5, "y": 6})
     assert result["ok"]

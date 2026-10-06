@@ -224,6 +224,7 @@ function world(model, ui) {
     const color = statusColor(item.status);
     const pending = ui.pending[item.id];
     const stuck = (item.status === 'struggling' || item.status === 'blocked') && item.run && item.run.excerpt;
+    const live = item.run && item.run.live;
     const state = STATUS[item.status][0] + (item.run && item.status === 'working' ? ` · ${item.run.role} ${item.run.agent}` : '');
     const classes = ['cv-card', selected ? 'sel' : '', dragging ? 'dragging' : '', pending ? 'pending' : '',
       ui.linkFrom === item.id ? 'linkfrom' : '', !dragging && ui.focus && item.epic !== ui.focus ? 'dim' : ''].join(' ');
@@ -233,6 +234,7 @@ function world(model, ui) {
       ${compact ? '' : `<span class="cv-card-hint">${esc(item.next)}</span>
       <span class="cv-card-epic" style="color: ${epic ? epic.color : 'var(--faint)'}">${esc(epic ? 'Epic · ' + epic.title : 'No epic')}</span>
       ${stuck ? `<div class="cv-excerpt ${item.status === 'blocked' ? 'blocked' : ''}"><span>${esc(item.run.excerpt)}</span><button class="cv-btn link" style="color: inherit; font-size: 12px; align-self: flex-start" ${act('session', { id: item.id })}>Open session</button></div>` : ''}
+      ${!stuck && live && (live.latest || live.step) ? `<div class="cv-live-note">${live.step ? `<span class="cv-mono cv-small cv-muted">Step ${live.step.number} of ${live.step.of}${live.stale ? ' · host not reporting' : ''}</span>` : ''}${live.latest ? `<span class="cv-clamp">${esc(live.latest)}</span>` : ''}</div>` : ''}
       <div class="cv-bar"><div style="width: ${item.progress}%; background: ${item.status === 'paused' ? '#7d6a99' : item.status === 'done' ? '#6cc9ad' : '#5f7f78'}"></div></div>
       ${item.badges.length ? `<div class="cv-row" style="gap: 4px">${item.badges.map((badge) => `<span class="cv-tag">${esc(badge)}</span>`).join('')}</div>` : ''}`}
     </div>`);
@@ -268,6 +270,14 @@ function codeEditor(ui, id, label, button) {
 }
 
 const LEGEND = '<span class="cv-small cv-muted"><span style="color: var(--accent)">✓ compiled</span>: the kernel runs it exactly. <span style="color: var(--guide)">~ guidance</span>: an agent interprets it and cites the line. <span style="color: var(--faint)">· off</span>: a label.</span>';
+
+// What the agent has been saying, newest first, as its host last streamed the job.
+function liveTimeline(live) {
+  if (!live) return '';
+  const step = live.step ? `Step ${live.step.number} of ${live.step.of}: ${live.step.title || ''} · ${live.step.status || ''}` : '';
+  const rows = live.updates.slice().reverse().map((update) => `<div class="cv-live-row"><span class="cv-mono cv-small cv-muted">${update.time ? new Date(update.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}${update.kind === 'step' ? ' · step ' + esc(update.status || '') : ''}</span><span>${esc(update.text)}</span></div>`).join('');
+  return `<div class="cv-box"><span class="cv-label">What the agent is doing</span>${step ? `<span class="cv-small cv-soft">${esc(step)}${live.stale ? ' · host not reporting' : ''}</span>` : ''}${rows || '<span class="cv-muted">No updates from the agent yet.</span>'}</div>`;
+}
 
 function recentFor(model, id) {
   return model.log.filter((event) => event.subject === id).slice(-6).reverse();
@@ -352,6 +362,7 @@ function sessionInspector(model, ui, item) {
       ${budget ? `<div class="cv-bar" style="height: 6px"><div style="width: ${Math.min(100, Math.round((item.spent || 0) / budget * 100))}%; background: ${stuck ? 'var(--amber)' : '#5f7f78'}"></div></div>` : ''}</div>` : ''}
     <div class="cv-box"><span class="cv-label">Summary for you</span>${summary.map((line) => `<span style="font-size: 14px; line-height: 1.5">${esc(line)}</span>`).join('') || '<span class="cv-muted">No agent has run on this task yet.</span>'}
       <span style="font-size: 11px; color: var(--faint)">Written from the run's records, not the raw transcript.</span></div>
+    ${liveTimeline(run && run.live)}
     <span class="cv-label">Do something</span>
     <div class="cv-row"><button class="cv-btn" ${act('op', { op: item.paused ? 'run.resume' : 'run.pause', args: { item: item.id } })}>${item.paused ? 'Resume' : 'Pause'}</button>
       ${!active && item.stage && item.stage !== 'done' ? `<button class="cv-btn" ${act('op', { op: 'run.request', args: { item: item.id, role: run ? run.role : 'builder' } })}>Request a ${esc(run ? run.role : 'builder')} run</button>` : ''}</div>

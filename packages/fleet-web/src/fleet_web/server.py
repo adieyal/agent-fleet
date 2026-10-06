@@ -362,7 +362,7 @@ def make_handler(state: Any,
                 elif not query.get("space"):
                     raise ValueError("space is required")
                 elif path == "/api/canvas":
-                    result = canvas.state(query["space"], person=CANVAS_PERSON)
+                    result = canvas.state(query["space"], person=CANVAS_PERSON, live_jobs=state.live_jobs())
                 elif path == "/api/canvas/events":
                     result = {"events": canvas.events(query["space"], after=int(query.get("after", "0") or 0),
                                                       limit=min(int(query.get("limit", "500") or 500), 2000))}
