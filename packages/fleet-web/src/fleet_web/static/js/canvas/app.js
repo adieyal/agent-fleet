@@ -18,7 +18,7 @@ const ui = {
   cmdDraft: '', cmdError: '', convoHidden: false, sending: false, sessDraft: '', sessError: '',
   specEditing: false, specDraft: '', criteriaEditing: null, critDraft: '', chEditing: false, chDraft: '', chError: '',
   chClause: '', chClauseErr: '', clauseRule: '', agentEditing: null, agentHost: '', agentCwd: '',
-  pending: {}, live: { ok: true }, error: null,
+  collapsedEpics: [], pending: {}, live: { ok: true }, error: null,
 };
 let model = null;
 let spacesList = null;
@@ -26,11 +26,11 @@ let missing = false;
 
 try {
   const saved = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
-  if (saved && saved.pan && typeof saved.zoom === 'number') Object.assign(ui, { pan: saved.pan, zoom: saved.zoom, mode: saved.mode || 'canvas' });
+  if (saved && saved.pan && typeof saved.zoom === 'number') Object.assign(ui, { pan: saved.pan, zoom: saved.zoom, mode: saved.mode || 'canvas', collapsedEpics: Array.isArray(saved.collapsedEpics) ? saved.collapsedEpics.filter((id) => typeof id === 'string') : [] });
 } catch (error) { /* a private window keeps no per-viewer conveniences */ }
 
 function remember() {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify({ pan: ui.pan, zoom: ui.zoom, mode: ui.mode })); } catch (error) { /* ignore */ }
+  try { localStorage.setItem(STORE_KEY, JSON.stringify({ pan: ui.pan, zoom: ui.zoom, mode: ui.mode, collapsedEpics: ui.collapsedEpics })); } catch (error) { /* ignore */ }
 }
 
 // ---------------------------------------------------------------- rendering
@@ -515,7 +515,18 @@ const actions = {
   fit() { ui.zoom = 0.56; ui.pan = { x: 16, y: 8 }; remember(); paint(); },
   mode(mode) { ui.mode = mode; if (mode === 'reader' && ui.drawer === 'select') ui.drawer = null; remember(); paint(); },
   exitFocus() { ui.focus = null; paint(); },
-  enterEpic(id) { ui.focus = id; ui.selected = null; if (ui.drawer === 'select') ui.drawer = null; paint(); },
+  toggleEpicTasks(id) {
+    const collapsed = ui.collapsedEpics.includes(id);
+    ui.collapsedEpics = collapsed ? ui.collapsedEpics.filter((value) => value !== id) : [...ui.collapsedEpics, id];
+    if (!collapsed) {
+      const selected = ui.selected && itemOf(model, ui.selected.id);
+      if (selected && selected.epic === id) { ui.selected = { kind: 'epic', id }; }
+      const linking = ui.linkFrom && itemOf(model, ui.linkFrom);
+      if (linking && linking.epic === id) ui.linkFrom = null;
+    }
+    remember(); paint();
+  },
+  enterEpic(id) { ui.collapsedEpics = ui.collapsedEpics.filter((value) => value !== id); remember(); ui.focus = id; ui.selected = null; if (ui.drawer === 'select') ui.drawer = null; paint(); },
   select(target) { if (ui.mode === 'reader') ui.mode = 'canvas'; select(target); },
   session({ id }) { select({ kind: 'session', id }); },
   async resolve({ id, choice, canvas, answer, kind, item }) {

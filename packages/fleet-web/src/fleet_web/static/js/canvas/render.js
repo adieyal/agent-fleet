@@ -114,6 +114,7 @@ function world(model, ui) {
   const zoom = ui.zoom, drag = ui.drag, sel = ui.selected || {};
   const layout = model.layout || {};
   const frame = frameRect(model), cols = columnRects(model), bands = bandLayout(model);
+  const hiddenTask = (item) => item.epic && (ui.collapsedEpics || []).includes(item.epic);
   const parts = [];
   for (const region of model.regions) {
     const rect = regionRect(region, drag);
@@ -177,12 +178,13 @@ function world(model, ui) {
     const rect = epicRect(model, layout, epic, index, zoom);
     const selected = sel.kind === 'epic' && sel.id === epic.id;
     const hover = ui.dropTarget === 'epic:' + epic.id;
+    const collapsed = (ui.collapsedEpics || []).includes(epic.id);
     const full = zoom >= 0.5;
     const stage = EPIC_STAGE[epic.stage] || EPIC_STAGE.shape;
     const label = stage[0] + (!epic.criteria.length ? ' · no acceptance criteria yet' : '')
       + (epic.criteria.length && (epic.stage === 'shape' || (epic.stage === 'deliver' && epic.gaps)) ? ` · ${plural(epic.gaps, 'criterion', 'criteria')} uncovered` : '');
     const kids = epic.children.map((id) => itemOf(model, id)).filter(Boolean);
-    parts.push(`<div class="cv-epic ${ui.focus && ui.focus !== epic.id ? 'dim' : ''}" data-key="e-${esc(epic.id)}" style="left: ${at.x}px; top: ${at.y}px; min-height: ${rect.h}px; border-color: ${selected || ui.focus === epic.id || hover ? epic.color : 'var(--line2)'}">
+    parts.push(`<div class="cv-epic ${ui.focus && ui.focus !== epic.id ? 'dim' : ''}" data-key="e-${esc(epic.id)}" style="left: ${at.x}px; top: ${at.y}px; min-height: ${collapsed ? 180 : rect.h}px; border-color: ${selected || ui.focus === epic.id || hover ? epic.color : 'var(--line2)'}">
       <div class="cv-epic-head" tabindex="0" data-drag="epic:${esc(epic.id)}">
         <div class="cv-between"><span class="cv-label" style="color: ${epic.color}">Epic · ${esc(epic.ref)}</span>${epic.attention ? `<span class="cv-attn-pill">${epic.attention} need you</span>` : ''}</div>
         <span class="cv-epic-name">${esc(epic.title)}</span>
@@ -190,7 +192,9 @@ function world(model, ui) {
         <div class="cv-bar" style="height: 6px"><div style="width: ${epic.average}%; background: ${epic.color}"></div></div>
         <span class="cv-mono cv-small cv-soft">${epic.done} of ${kids.length} done · ${epic.working} working · ${epic.waiting} waiting or paused</span>
       </div>
-      ${full ? `<div class="cv-epic-body">
+      <div class="cv-row" style="padding: 10px 16px"><button class="cv-btn" aria-expanded="${!collapsed}" ${act('toggleEpicTasks', epic.id)}>${collapsed ? 'Show tasks' : 'Hide tasks'} (${kids.length})</button></div>
+      ${collapsed ? `<span class="cv-small cv-muted" style="display: block; padding: 0 16px 10px">${plural(kids.length, 'task')} hidden</span>` : ''}
+      ${full && !collapsed ? `<div class="cv-epic-body">
         ${kids.map((item) => `<button class="cv-kid" ${act('select', { kind: 'task', id: item.id })}><span style="font-size: 13px">${esc(item.title)}</span><span style="color: ${statusColor(item.status)}">${esc(STATUS[item.status][0])}</span></button>`).join('')}
         <span style="font-size: 12px; color: ${epic.gaps ? 'var(--amber)' : 'var(--accent)'}">${epic.criteria.length ? (epic.gaps ? `${epic.gaps} of ${epic.criteria.length} criteria not yet covered by a task with criteria` : 'Every criterion is covered by a child task') : 'No acceptance criteria yet'}</span>
         <div class="cv-row"><button class="cv-btn" ${act('enterEpic', epic.id)}>Enter epic</button><button class="cv-btn" ${act('select', { kind: 'epic', id: epic.id })}>Criteria and workflow</button></div>
@@ -204,7 +208,7 @@ function world(model, ui) {
   }
   for (const dep of model.deps) {
     const first = itemOf(model, dep.from), waits = itemOf(model, dep.to);
-    if (!first || !waits) continue;
+    if (!first || !waits || hiddenTask(first) || hiddenTask(waits)) continue;
     const a = itemPosition(model, layout, first, drag), b = itemPosition(model, layout, waits, drag);
     const x1 = a.x + CARD_W, y1 = a.y + 44, x2 = b.x - 6, y2 = b.y + 44;
     const minx = Math.min(x1, x2) - 80, miny = Math.min(y1, y2) - 80, w = Math.abs(x2 - x1) + 160, h = Math.abs(y2 - y1) + 160;
@@ -217,6 +221,7 @@ function world(model, ui) {
   }
   const compact = zoom < 0.55;
   for (const item of model.items) {
+    if (hiddenTask(item)) continue;
     const at = itemPosition(model, layout, item, drag);
     const dragging = drag && drag.kind === 'task' && drag.id === item.id && drag.moved;
     const selected = (sel.kind === 'task' || sel.kind === 'session') && sel.id === item.id;
