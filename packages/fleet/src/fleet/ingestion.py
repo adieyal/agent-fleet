@@ -130,7 +130,8 @@ def record_decisions(decisions: DecisionsFacade, execution: ExecutionFacade, att
                 decisions.record_streamed(held["id"], timestamp(held["time"]), held["work_item"],
                     actor=held["actor"], question=held["question"], answer=held["answer"],
                     principle=held["principle"], context=held["context"],
-                    source_run=None if run is None else run.id, reconcile=False)
+                    source_run=None if run is None else run.id, reconcile=False,
+                    recorded_by=held.get("recorded_by"))
             except (ValueError, LookupError) as error:
                 project = execution.get_action(run.action).project if run is not None else project_of(job)
                 if project is None:

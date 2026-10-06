@@ -469,6 +469,9 @@ def apply_message(state: FleetState, host: Host, message: dict[str, Any]) -> Non
                                           if key in message})
         project = resolve(state.registry, host.name, {"project": observation.project})
         state.attention.observe_input(host.name, observation, project_id=project.get("project_id"))
+        entry = state.by_host[host.name]
+        state.attention.close_refusals({**entry, "jobs": list(entry["jobs"].values()), "sessions": []},
+                                      complete=False)
         state.bump()
         return
     if kind == "hello":

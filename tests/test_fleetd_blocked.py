@@ -276,3 +276,13 @@ def test_batch12_notify_reports_host_transitions_once(monkeypatch, capsys, *, cl
         assert detail == error
         assert prefix.startswith('HOST DOWN h since ')
         assert datetime.fromisoformat(prefix.removeprefix('HOST DOWN h since ')).tzinfo is not None
+
+
+def test_answer_to_blocked_reply_runs_before_remaining_reply_steps(jobs, monkeypatch):
+    job = jobs(['first', 'queued', 'first reply', 'remaining reply', 'answer to reply'])
+    job['steps'][0].update(status='blocked', answered_by=2)
+    job['steps'][2].update(status='blocked', answered_by=4)
+    job['keyed_additions'] = [dict(key='reply', answers=0, steps=[2, 3]),
+                              dict(key='nested', answers=2, steps=[4])]
+    (fleetd.JOBS_DIRECTORY / 'job' / 'job.json').write_text(json.dumps(job))
+    assert run_recording_order(monkeypatch) == [4, 3, 1]

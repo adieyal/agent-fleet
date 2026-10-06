@@ -118,6 +118,11 @@ def ingest_attention(attention: "AttentionFacade", host: HostObservation, *,
         wanted = {"stalled": ("running",), "lost": ("running", "failed")}.get(job["status"], (job["status"],))
         step = next((step for step in job.get("steps", [])
                      if step.get("status") in wanted and step.get("answered_by") is None), None)
+        if (job["status"] == "blocked" and step is None
+                and any(candidate["status"] == "blocked" for candidate in job.get("steps", []))):
+            # Every explicitly blocked step has an answer; a lagging job status must not
+            # replace its resolved question with an unanswerable job-level blocker.
+            continue
         since = step.get("started_at") if step else job.get("updated_at")
         occurrence = f"{step['index']}@{since}" if step else f"@{since}"
         summary = f"step {step['index'] + 1} {job['status']}: {step['title']}" if step else f"job {job['status']}"

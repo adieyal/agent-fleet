@@ -1138,12 +1138,12 @@ def job_run(job: str, *, container) -> str | None:
 
 def hand_decision_to_job(job: str, arguments: argparse.Namespace, *, container) -> str:
     return container.decision_commands().hand_to_job(job, {name: getattr(arguments, name)
-        for name in ('work_item', 'question', 'answer', 'principle', 'actor', 'context')})
+        for name in ('work_item', 'question', 'answer', 'principle', 'actor', 'context', 'recorded_by')})
 
 
 def command_decision_record(arguments: argparse.Namespace, *, container) -> None:
     decision, identity, job = container.decision_commands().record(**{name: getattr(arguments, name)
-        for name in ('work_item', 'question', 'answer', 'principle', 'actor', 'context', 'run')})
+        for name in ('work_item', 'question', 'answer', 'principle', 'actor', 'context', 'run', 'recorded_by')})
     if decision is None:
         print(f"Decision {identity} handed to the controller via job {job}'s stream; "
               f"it is recorded there when the controller next hears from this host.")
@@ -1753,9 +1753,13 @@ def build_parser(*, container=None) -> argparse.ArgumentParser:
     decision_record.add_argument("--answer", required=True)
     decision_record.add_argument("--principle", required=True,
                                  help='the rule relied on, e.g. "Constitution: decide yourself — test-only fixes"')
-    decision_record.add_argument("--actor", required=True)
+    decision_record.add_argument("--actor", required=True,
+                                help="who made the decision; use user for a user-made decision")
+    decision_record.add_argument("--recorded-by",
+                                help="who records it in audit history; e.g. --actor user --recorded-by codex; "
+                                     "when omitted, the actor also records it")
     decision_record.add_argument("--context", default="", help="where the question arose")
-    decision_record.add_argument("--run", help="the run deciding; FLEET_JOB_ID's run when omitted")
+    decision_record.add_argument("--run", help="the source run; FLEET_JOB_ID's run when omitted")
     decision_record.set_defaults(handler=command_decision_record)
     decision_list = decision.add_parser("list", help="decisions on a project's or an epic's work, newest first")
     decision_scope = decision_list.add_mutually_exclusive_group(required=True)

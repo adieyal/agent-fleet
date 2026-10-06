@@ -150,3 +150,14 @@ def test_streamed_decision_reconciles_on_history_worker_instead_of_job_message(w
     state.follow_history(stop)
     delivery, = state.execution.deliveries()
     assert (delivery.decision, delivery.run, delivery.status) == ('d1', run.id, 'pending')
+
+
+def test_streamed_user_decision_preserves_its_recorder(world):
+    run = dispatch(world, world.task.id, 'job-user')
+    entry = held(world.task.id, actor='user', recorded_by='codex')
+    report(world, {'id': 'job-user', 'decisions': [entry]})
+    report(world, {'id': 'job-user', 'decisions': [entry]}, taken=set())
+    [decision] = configured_container(world.store).decisions().list()
+    assert (decision.actor, decision.source_run) == ('user', run.id)
+    [change] = world.store.history(subjects=('decision:' + decision.id,))
+    assert change['actor'] == 'codex'

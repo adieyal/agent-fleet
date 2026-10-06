@@ -29,22 +29,30 @@ class DecisionCommands:
                     "context": data["context"], "time": time.time()}
         if not all(decision[name].strip() for name in ("work_item", "question", "answer", "principle", "actor")):
             raise FleetError("work item, question, answer, principle and actor are required")
-        held = self.transport.call(Host(os.uname().nodename, None), ["decision", job, "--schema-version", "1"],
+        arguments = ["decision", job, "--schema-version", "1"]
+        recorded_by = data.get("recorded_by")
+        if recorded_by is not None:
+            if not isinstance(recorded_by, str) or not recorded_by.strip():
+                raise FleetError("recorded_by must be nonblank text")
+            decision["recorded_by"] = recorded_by
+            # An older worker rejects this flag before it can strip attribution from the payload.
+            arguments += ["--recorded-by", recorded_by]
+        held = self.transport.call(Host(os.uname().nodename, None), arguments,
                               stdin_text=json.dumps(decision))
         return held["id"]
 
     def record(self, *, work_item: str, question: str, answer: str, principle: str,
-               actor: str, context: str, run: str | None):
+               actor: str, context: str, run: str | None, recorded_by: str | None = None):
         job = os.environ.get("FLEET_JOB_ID")
         run = run if run is not None or job is None or self.worker_job() else self.job_run(job)
         if run is None and job is not None:
             identity = self.hand_to_job(job, dict(work_item=work_item, question=question, answer=answer,
-                                                 principle=principle, actor=actor, context=context))
+                                                 principle=principle, actor=actor, context=context, recorded_by=recorded_by))
             return None, identity, job
         work_item = self.references.work(work_item)
         try:
             decision = self.services.decisions.record_guided(work_item, actor=actor, question=question,
-                answer=answer, principle=principle, context=context, source_run=run)
+                answer=answer, principle=principle, context=context, source_run=run, recorded_by=recorded_by)
         except (ValueError, LookupError) as error:
             raise FleetError(str(error)) from error
         return decision, None, None
