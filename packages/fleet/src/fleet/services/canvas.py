@@ -12,7 +12,7 @@ from contextlib import AbstractContextManager
 from typing import Any, Callable
 
 from fleet.api import DispatchRequest
-from fleet.modules.canvas import CanvasFacade, Ports, Refused, defaults
+from fleet.modules.canvas import CanvasFacade, Ports, Refused
 from fleet.transport import FleetError
 
 Scope = Callable[[], AbstractContextManager[tuple[Any, CanvasFacade]]]

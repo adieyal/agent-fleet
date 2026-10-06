@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 from ..domain import defaults
-from ..domain.language import DIRECTIVES, VIEW_TYPES, compile_code, compile_view, describe, parse_page
-from .kernel import ACTIVE_RUN, BUSY_RUN, is_person, parse_time
+from ..domain.language import DIRECTIVES, VIEW_TYPES, compile_view, describe, parse_page
+from .kernel import BUSY_RUN, parse_time
 
 TASK_STATUS = {"working": "Working", "idle": "Idle", "waiting-you": "Waiting on you",
                "waiting-criteria": "Waiting: no criteria", "paused": "Paused", "done": "Done",
@@ -20,6 +20,10 @@ def run_view(engine, run: dict) -> dict:
                                           "permit")} | {"elapsed": elapsed} | fleet_view(engine, run)
 
 
+def stamp(value):
+    return value.isoformat() if hasattr(value, "isoformat") else value
+
+
 def fleet_view(engine, run: dict) -> dict:
     """What the real run on its host reports: its status, current activity and when it was last seen."""
     if not run.get("fleet_run"):
@@ -27,7 +31,6 @@ def fleet_view(engine, run: dict) -> dict:
     fleet = engine.ports.run(run["fleet_run"])
     if fleet is None:
         return {"fleet": None}
-    stamp = lambda value: value.isoformat() if hasattr(value, "isoformat") else value
     return {"fleet": {"status": fleet.status, "reason": fleet.reason, "current_action": getattr(fleet, "current_action", None),
                       "last_observed": stamp(getattr(fleet, "last_observed", None)),
                       "start": stamp(getattr(fleet, "start", None)), "end": stamp(getattr(fleet, "end", None)),

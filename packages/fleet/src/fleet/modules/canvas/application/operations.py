@@ -9,7 +9,7 @@ from ..domain.language import (BANDS, LEVELS, SCOPE_KINDS, SCOPE_LEVELS, VIEW_DE
                                compile_code, compile_schedule, compile_view, header_of, replace_header_version,
                                view_code)
 from . import orchestrator
-from .kernel import ACTIVE_RUN, ZONE_COLORS, Refused, is_person, iso
+from .kernel import ZONE_COLORS, Refused, is_person, iso
 from .tick import Ticking
 
 CODE_KINDS = {"stage": "stage", "zone": "region", "region": "region", "schedule": "schedule",
