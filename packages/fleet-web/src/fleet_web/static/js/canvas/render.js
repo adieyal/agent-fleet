@@ -689,7 +689,7 @@ function messageBar(model, ui, left, right, bottom) {
   const convo = !ui.convoHidden && messages.length ? `<div class="cv-convo" role="log" aria-label="Conversation">
     <div class="cv-between"><span class="cv-label">Conversation · ${esc(target ? target.label : 'orchestrator')}</span><button class="cv-btn sm" ${act('hideConvo')}>Hide</button></div>
     ${messages.map((message) => `<div class="cv-stack" style="gap: 4px"><span class="who ${who(message.who) === 'you' ? 'you' : ''}">${esc(who(message.who) === 'you' ? 'You' : message.who)} · ${clock(message.time)}</span><span class="text">${esc(message.text)}</span>
-      ${(message.proposals || []).map((id) => proposals[id]).filter(Boolean).map((proposal) => `<div class="cv-prop"><span>${esc(proposal.desc)}</span>${proposal.state === 'open'
+      ${(message.proposals || []).map((id) => proposals[id]).filter(Boolean).map((proposal) => `<div class="cv-prop"><span>${esc(proposal.desc)}</span><pre style="flex-basis:100%;max-height:140px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere">${esc(JSON.stringify(proposal.operations, null, 2))}</pre>${proposal.state === 'open'
         ? `<button class="cv-btn primary sm" ${act('proposal', { id: proposal.id, adopt: true })}>Adopt</button><button class="cv-btn sm" ${act('proposal', { id: proposal.id, adopt: false })}>Discard</button>`
         : `<span class="cv-mono cv-small" style="color: var(--accent2)">${proposal.state === 'adopted' ? 'Adopted' : 'Discarded'}</span>`}</div>`).join('')}</div>`).join('')}
     ${ui.sending || messages.some(message => ['pending', 'streaming'].includes(message.status)) ? `<span class="cv-small cv-muted">${esc(target ? target.label.split(' · ')[0] : 'The orchestrator')} is replying…</span>` : ''}</div>` : '';

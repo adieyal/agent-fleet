@@ -10,7 +10,7 @@ from .application.kernel import Refused
 from .application.view import read_model
 
 QUIET = ("reader.mark_seen", "decision.check", "note.dismiss")
-NO_TICK = ("decision.check", "reader.mark_seen", "note.dismiss", "space.init", "tick")
+NO_TICK = ("decision.check", "reader.mark_seen", "note.dismiss", "space.init", "tick", "message.send")
 
 
 class CanvasFacade:
@@ -35,7 +35,7 @@ class CanvasFacade:
         if op != "space.init" and engine.get("workflow", "main") is None:
             raise Refused("not_found", f"project {space} has no canvas yet; run fleet canvas init {space}")
         result = engine.apply(op, args)
-        if op not in NO_TICK:
+        if op not in NO_TICK and not (op == "proposal.resolve" and args.get("adopt") is False):
             engine.tick()
         sequence = self.commit(space, engine)
         body = {"ok": True, "op": op, "op_id": op_id, "result": result, "seq": sequence,

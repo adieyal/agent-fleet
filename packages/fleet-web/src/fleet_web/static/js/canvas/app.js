@@ -659,7 +659,12 @@ const actions = {
     if (result && !result.refused) { ui.decomp = null; paint(); }
   },
   closeDecomp() { ui.decomp = null; paint(); },
-  proposal({ id, adopt }) { return op('proposal.resolve', { id, adopt }); },
+  proposal({ id, adopt }) {
+    const proposal = model.proposals.find((entry) => entry.id === id);
+    const deletes = adopt && proposal.operations.some((operation) => operation.op === 'item.delete');
+    if (deletes && !window.confirm(`${proposal.desc}\nConfirm deletion?`)) return;
+    return op('proposal.resolve', { id, adopt, confirm_delete: !!deletes });
+  },
   hideConvo() { ui.convoHidden = true; paint(); },
   toOrchestrator() { ui.selected = null; if (ui.drawer === 'select') ui.drawer = null; paint(); },
   togglePage() { Object.assign(ui, { pageEditing: !ui.pageEditing, pageDraft: model.page.markdown }); paint(); },
