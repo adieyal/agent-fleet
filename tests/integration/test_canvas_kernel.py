@@ -62,6 +62,136 @@ def simulate(space, seconds=10):
         ok(space, "agent.configure", agent=agent, mode="simulate", seconds=seconds)
 
 
+def chat_proposal(space, text, **args):
+    reply = ok(space, "message.send", text=text, **args)
+    assert len(reply["proposals"]) == 1
+    return next(p for p in state(space)["proposals"] if p["id"] == reply["proposals"][0])
+
+
+def test_chat_create_and_discard_do_not_change_tasks_before_adoption(space):
+    proposal = chat_proposal(space, "create task Write tests")
+    assert state(space)["items"] == []
+    assert proposal["operations"] == [{"op": "item.create", "args": {"title": "Write tests", "region": "inbox"}}]
+    ok(space, "proposal.resolve", id=proposal["id"], adopt=False)
+    assert state(space)["items"] == []
+    proposal = chat_proposal(space, "add task Write tests")
+    ok(space, "proposal.resolve", id=proposal["id"], adopt=True)
+    assert state(space)["items"][0]["title"] == "Write tests"
+    assert state(space)["items"][0]["region"] == "inbox"
+
+
+def test_chat_and_discard_do_not_tick_ready_work(space, clock):
+    simulate(space, seconds=10)
+    identity = task(space, "Running task", criteria=["Pass tests"], stage="first")
+    clock.advance(20)
+    before = item(space, identity)
+    proposal = chat_proposal(space, "create task Another task")
+    assert item(space, identity) == before
+    ok(space, "proposal.resolve", id=proposal["id"], adopt=False)
+    assert item(space, identity) == before
+    ok(space, "tick")
+    assert item(space, identity) != before
+
+
+def test_chat_edit_selected_task_and_reject_stale_preview(space):
+    identity = task(space, "Old title")
+    proposal = chat_proposal(space, "rename this to New title", target={"kind": "task", "id": identity})
+    assert item(space, identity)["title"] == "Old title"
+    ok(space, "proposal.resolve", id=proposal["id"], adopt=True)
+    assert item(space, identity)["title"] == "New title"
+    proposal = chat_proposal(space, f"edit task {identity} to Final title")
+    ok(space, "item.edit", item=identity, title="Changed elsewhere")
+    refusal = op(space, "proposal.resolve", id=proposal["id"], adopt=True)
+    assert refusal["code"] == "version_conflict"
+    assert item(space, identity)["title"] == "Changed elsewhere"
+    assert state(space)["log"][-1]["tone"] == "refuse"
+
+
+def test_chat_moves_use_workflow_gates(space):
+    identity = task(space, "Write tests")
+    proposal = chat_proposal(space, "move task Write tests to Implement")
+    assert item(space, identity)["stage"] is None
+    assert op(space, "proposal.resolve", id=proposal["id"], adopt=True)["code"] == "stage_skipped"
+    proposal = chat_proposal(space, "move task Write tests to Plan")
+    ok(space, "proposal.resolve", id=proposal["id"], adopt=True)
+    assert item(space, identity)["stage"] == "plan"
+    proposal = chat_proposal(space, "move task Write tests to Implement")
+    assert op(space, "proposal.resolve", id=proposal["id"], adopt=True)["code"] == "exit_condition_unmet"
+    assert item(space, identity)["stage"] == "plan"
+
+
+def test_chat_parked_moves_pause_and_require_replanning_on_return(space, clock):
+    identity = task(space, "Write tests")
+    ok(space, "item.move", item=identity, stage="plan")
+    ok(space, "region.create", name="Parked", level="enforced", rect={"x": 1, "y": 1, "w": 200, "h": 200})
+    proposal = chat_proposal(space, "move task Write tests to Parked")
+    assert item(space, identity)["region"] is None
+    ok(space, "proposal.resolve", id=proposal["id"], adopt=True)
+    assert item(space, identity)["status"] == "paused"
+    clock.advance(15 * 24 * 3600)
+    proposal = chat_proposal(space, "move task Write tests to Plan")
+    ok(space, "proposal.resolve", id=proposal["id"], adopt=True)
+    assert item(space, identity)["region"] is None
+    assert item(space, identity)["stage"] == "plan"
+    assert any("re-plan required" in entry["text"] for entry in state(space)["log"])
+
+
+def test_chat_delete_requires_separate_confirmation_and_preserves_audit(space):
+    identity = task(space, "Write tests")
+    proposal = chat_proposal(space, "delete task Write tests")
+    assert item(space, identity)["title"] == "Write tests"
+    assert op(space, "proposal.resolve", id=proposal["id"], adopt=True)["code"] == "not_permitted"
+    assert op(space, "proposal.resolve", id=proposal["id"], adopt=True, confirm_delete=True,
+              actor="codex")["code"] == "not_permitted"
+    assert op(space, "item.delete", item=identity)["code"] == "not_permitted"
+    ok(space, "proposal.resolve", id=proposal["id"], adopt=True, confirm_delete=True)
+    assert state(space)["items"] == []
+    assert space.container.work().get(identity).condition == "dropped"
+    assert any('deleted "Write tests"' in entry["text"] for entry in state(space)["log"])
+
+
+@pytest.mark.parametrize("message_text", ["move task Missing to Plan", "delete task Missing", "delete",
+                                     "move task Duplicate to Plan", "move task Other to Moon",
+                                     "create task " + "x" * 201])
+def test_chat_rejects_unknown_ambiguous_and_malformed_requests(space, message_text):
+    task(space, "Duplicate")
+    task(space, "Duplicate")
+    task(space, "Other")
+    before = state(space)["items"]
+    reply = ok(space, "message.send", text=message_text)
+    assert reply["proposals"] == []
+    assert state(space)["items"] == before
+
+
+def test_chat_delete_refuses_active_work(space):
+    identity = task(space, "Busy")
+    ok(space, "run.request", item=identity, role="builder")
+    proposal = chat_proposal(space, "delete task Busy")
+    refusal = op(space, "proposal.resolve", id=proposal["id"], adopt=True, confirm_delete=True)
+    assert refusal["code"] == "not_permitted"
+    assert item(space, identity)["title"] == "Busy"
+
+
+@pytest.mark.parametrize("linked", ["child", "dependency"])
+def test_chat_delete_refuses_linked_tasks(space, linked):
+    identity = task(space, "Linked")
+    if linked == "child":
+        space.container.work().add(project=space.project, title="Child", goal="Child", parent=identity, actor="user")
+    else:
+        other = task(space, "Dependency")
+        ok(space, "dep.add", **{"from": identity, "to": other})
+    proposal = chat_proposal(space, "delete task Linked")
+    refusal = op(space, "proposal.resolve", id=proposal["id"], adopt=True, confirm_delete=True)
+    assert refusal["code"] == "not_permitted"
+    assert space.container.work().get(identity).condition != "dropped"
+
+
+def test_chat_preserves_existing_epic_proposals(space):
+    proposal = chat_proposal(space, "create epic for Release")
+    assert proposal["operations"] == [{"op": "epic.create", "args": {"title": "Release"}}]
+    assert state(space)["epics"] == []
+
+
 def test_init_is_idempotent_and_starts_the_default_workflow(space):
     again = space.canvas.init(space.project, actor="user")
     assert again["result"] == {"created": False}

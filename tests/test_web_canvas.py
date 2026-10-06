@@ -56,6 +56,58 @@ def test_the_canvas_page_and_an_uninitialised_space(deck):
     assert missing.value.code == 404
 
 
+def test_chat_task_previews_adoption_and_delete_confirmation(deck, page, request):
+    from pathlib import Path
+    from playwright.sync_api import expect
+
+    assert post(deck, "/api/canvas/init", {"space": deck.project})[0] == 200
+    page.set_viewport_size({"width": 1440, "height": 1000})
+    page.goto(f"{deck.url}/canvas/{deck.project}")
+
+    def send(text):
+        page.locator("#cmd").fill(text)
+        page.locator("#cmd").press("Enter")
+        expect(page.locator(".cv-prop").last).to_be_visible()
+
+    def model():
+        return json.loads(get(deck, f"/api/canvas?space={deck.project}")[1])
+
+    send("create task Browser task")
+    expect(page.locator(".cv-prop").last.locator("pre")).to_contain_text('"op": "item.create"')
+    assert model()["items"] == []
+    shots = request.config.getoption("--shots")
+    if shots:
+        Path(shots).mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(Path(shots) / "chat-create-preview.png"), full_page=True)
+    page.locator(".cv-prop").last.get_by_role("button", name="Discard", exact=True).click()
+    expect(page.locator(".cv-prop").last).to_contain_text("Discarded")
+    assert model()["items"] == []
+    send("create task Browser task")
+    page.locator(".cv-prop").last.get_by_role("button", name="Adopt", exact=True).click()
+    expect(page.locator(".cv-prop").last).to_contain_text("Adopted")
+    identity = model()["items"][0]["id"]
+    send(f"rename task {identity} to Renamed task")
+    assert model()["items"][0]["title"] == "Browser task"
+    page.locator(".cv-prop").last.get_by_role("button", name="Adopt", exact=True).click()
+    expect(page.locator(".cv-prop").last).to_contain_text("Adopted")
+    assert model()["items"][0]["title"] == "Renamed task"
+    send(f"move task {identity} to Plan")
+    assert model()["items"][0]["stage"] is None
+    page.locator(".cv-prop").last.get_by_role("button", name="Adopt", exact=True).click()
+    expect(page.locator(".cv-prop").last).to_contain_text("Adopted")
+    assert model()["items"][0]["stage"] == "plan"
+    send(f"delete task {identity}")
+    page.once("dialog", lambda dialog: dialog.dismiss())
+    page.locator(".cv-prop").last.get_by_role("button", name="Adopt", exact=True).click()
+    assert len(model()["items"]) == 1
+    if shots:
+        page.screenshot(path=str(Path(shots) / "chat-delete-preview.png"), full_page=True)
+    page.once("dialog", lambda dialog: dialog.accept())
+    page.locator(".cv-prop").last.get_by_role("button", name="Adopt", exact=True).click()
+    expect(page.locator(".cv-prop").last).to_contain_text("Adopted")
+    assert model()["items"] == []
+
+
 def test_operations_refusals_and_layout_over_http(deck):
     before = deck.state.version
     status, body = post(deck, "/api/canvas/init", {"space": deck.project})

@@ -9,12 +9,17 @@ from __future__ import annotations
 
 import re
 
+from .kernel import Kernel
+
 WHY = re.compile(r"why|stuck|slow|status|what.*doing|progress|update|how.*going|\?$")
 RULE = re.compile(r"\buse\b|don.?t|do not|skip|instead|prefer|avoid|stop|make sure|always|never|should|must")
 
 
 def reply(kernel, text: str, target: dict | None) -> dict:
     """{who, text, guidance: bool, proposals: [(desc, operations)]}."""
+    action = task_reply(kernel, text, target)
+    if action is not None:
+        return action
     lower = text.lower()
     is_why, is_rule = bool(WHY.search(lower)), bool(RULE.search(lower))
     if target and target.get("kind") in ("task", "session"):
@@ -54,6 +59,78 @@ def reply(kernel, text: str, target: dict | None) -> dict:
                 "text": "Recorded as guidance on it. If it should be enforced rather than interpreted, edit its code, "
                         "or tell me what to change and I'll draft it."}
     return space_reply(kernel, text, lower, is_why)
+
+
+def task_reply(kernel: Kernel, text: str, target: dict | None) -> dict | None:
+    """Parse explicit task requests, refusing ambiguous references rather than guessing."""
+    def answer(body: str, operations: list[dict] | None = None) -> dict:
+        return {"who": "orchestrator", "text": body, "guidance": False,
+                "proposals": [(body, operations)] if operations else []}
+
+    request = text.strip().rstrip(".!?")
+    if re.match(r'^(?:create|new|add)\s+(?:an?\s+)?epic\b', request, re.I):
+        return None
+    create = re.fullmatch(r'(?:create|add|new) (?:a )?task\s*:?\s+(.+)', request, re.I)
+    if create:
+        title = create[1].strip().strip('"')
+        if not title or len(title) > 200:
+            return answer("A task title must contain 1 to 200 characters.")
+        placement = kernel.placement_region()
+        destination = f'in "{placement["name"]}"' if placement else "without a region"
+        args = {"title": title}
+        if placement:
+            args["region"] = placement["id"]
+        return answer(f'Create task "{title}" {destination}.', [{"op": "item.create", "args": args}])
+    match = re.fullmatch(r'(rename|edit|move|delete|remove)\s+(?:task\s+)?(.+)', request, re.I)
+    if not match:
+        if re.match(r'^(?:create|add|new|rename|edit|move|delete|remove)\b', request, re.I):
+            return answer('Name a task and an exact change. For example: "create task Write tests" or "move task Write tests to Plan".')
+        return None
+    verb, reference = match[1].lower(), match[2].strip()
+    value = None
+    if verb in ("rename", "edit", "move"):
+        parts = re.split(r'\s+to\s+', reference, maxsplit=1, flags=re.I)
+        if len(parts) != 2:
+            return answer('Use "rename task <title or id> to <new title>" or "move task <title or id> to <stage or region>".')
+        reference, value = parts[0].strip(), parts[1].strip().strip('"')
+    reference = reference.strip('"')
+    cards = kernel.card_ids()
+    if reference.lower() in ("this", "this task", "it") and target and target.get("kind") in ("task", "session"):
+        matches = [target["id"]] if target["id"] in cards else []
+    else:
+        matches = [identity for identity in cards if identity == reference or kernel.title(identity).lower() == reference.lower()]
+        if not matches:
+            matches = [identity for identity in cards if identity.startswith(reference)]
+    if len(matches) != 1:
+        return answer("Task reference is ambiguous; use its full id." if matches else f'No task matches "{reference}".')
+    identity = matches[0]
+    title = kernel.title(identity)
+    args = {"item": identity}
+    if verb in ("rename", "edit"):
+        if not value or len(value) > 200:
+            return answer("A task title must contain 1 to 200 characters.")
+        args["title"] = value
+        operation = "item.edit"
+        description = f'Rename "{title}" to "{value}".'
+    elif verb == "move":
+        destinations = [("item.move", "stage", stage["id"]) for stage in kernel.all("stage").values()
+                        if value.lower() in (stage["id"].lower(), stage["name"].lower())]
+        if value.lower() == "done":
+            destinations.append(("item.move", "stage", "done"))
+        destinations += [("region.enter", "region", region["id"]) for region in kernel.all("region").values()
+                         if value.lower() in (region["id"].lower(), region["name"].lower())]
+        if len(destinations) != 1:
+            return answer(f'Destination "{value}" is unknown or ambiguous; name one existing stage or region.')
+        operation, field, destination = destinations[0]
+        args[field] = destination
+        description = f'Move "{title}" to "{value}". Workflow gates and region rules apply on adoption.'
+    else:
+        operation = "item.delete"
+        description = f'Delete "{title}" from the canvas. Its work record and audit history are retained as dropped. Explicit confirmation is required.'
+    state = kernel.state(identity)
+    args["expected"] = {"title": title, "goal": kernel.items[identity].goal,
+                        "stage": state.get("stage"), "region": state.get("region")}
+    return answer(description, [{"op": operation, "args": args}])
 
 
 def space_reply(kernel, text: str, lower: str, is_why: bool) -> dict:

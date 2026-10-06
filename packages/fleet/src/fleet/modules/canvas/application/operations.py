@@ -40,7 +40,7 @@ def rect_arg(args: dict) -> dict:
 
 class Engine(Ticking):
     OPERATIONS = (
-        "item.move", "item.set_band", "item.reparent", "item.cover", "item.create", "epic.create",
+        "item.move", "item.set_band", "item.reparent", "item.cover", "item.create", "item.edit", "item.delete", "epic.create",
         "region.enter", "region.exit", "region.propose", "region.create", "region.configure", "region.remove",
         "run.request", "run.start", "run.pause", "run.resume", "run.permit", "run.reassign",
         "dep.add", "dep.remove", "attention.resolve", "message.send", "proposal.resolve",
@@ -91,6 +91,36 @@ class Engine(Ticking):
         return result or {}
 
     # ---- items
+    def op_item_edit(self, args: dict) -> dict:
+        identity = self.resolve_item(text_arg(args, "item"))
+        self.require_card(identity)
+        if self.items[identity].condition == "dropped":
+            raise Refused("not_found", "that task has been deleted")
+        title = text_arg(args, "title", limit=200)
+        previous = self.title(identity)
+        self.items[identity] = self.ports.work.set(identity, actor=self.actor, title=title)
+        self.log(self.who_source(), 0, f'renamed "{previous}" to "{title}"', "info", subject=identity)
+        return {"item": identity, "title": title}
+
+    def op_item_delete(self, args: dict) -> dict:
+        identity = self.resolve_item(text_arg(args, "item"))
+        self.require_card(identity)
+        if not is_person(self.actor) or args.get("confirmed") is not True:
+            raise Refused("not_permitted", "Deleting a task requires explicit confirmation by a person")
+        if self.items[identity].condition == "dropped":
+            raise Refused("invalid", "that task is already deleted")
+        if self.active_run(identity) is not None:
+            raise Refused("not_permitted", "Stop the task's active run before deleting it")
+        if any(child.parent == identity for child in self.items.values()):
+            raise Refused("not_permitted", "Move this task's children before deleting it")
+        if self.ports.work.relations(identity):
+            raise Refused("not_permitted", "Remove this task's relations before deleting it")
+        self.close_attn("ap-" + identity, "task deleted")
+        self.items[identity] = self.ports.work.set(identity, actor=self.actor, condition="dropped")
+        self.log(self.who_source(), 0, f'deleted "{self.title(identity)}" from canvas; work history retained',
+                 "info", subject=identity)
+        return {"item": identity, "condition": "dropped"}
+
     def op_item_move(self, args: dict) -> dict:
         identity = self.resolve_item(text_arg(args, "item"))
         state = self.require_card(identity)
@@ -625,9 +655,24 @@ class Engine(Ticking):
             proposal["state"] = "discarded"
             self.log(self.who_source(), 0, f"discarded proposal: {proposal['desc']}", "info")
             return {"state": "discarded"}
+        if not is_person(self.actor):
+            raise Refused("not_permitted", "Only a person may adopt a proposal")
+        if any(operation["op"] == "item.delete" for operation in proposal["operations"]):
+            if args.get("confirm_delete") is not True:
+                raise Refused("not_permitted", "Confirm deletion explicitly before adopting")
         results = []
         for operation in deepcopy(proposal["operations"]):
             arguments = dict(operation["args"])
+            expected = arguments.pop("expected", None)
+            if expected is not None:
+                identity = arguments["item"]
+                state = self.require_card(identity)
+                current = {"title": self.title(identity), "goal": self.items[identity].goal,
+                           "stage": state.get("stage"), "region": state.get("region")}
+                if self.items[identity].condition == "dropped" or current != expected:
+                    raise Refused("version_conflict", "Task changed since this preview; discard it and request a new one")
+            if operation["op"] == "item.delete":
+                arguments["confirmed"] = True
             if operation["op"] == "region.create":
                 arguments["level"] = args.get("level") or arguments.get("level") or "enforced"
                 arguments.setdefault("written_by", proposal["author"])
