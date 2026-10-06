@@ -72,6 +72,23 @@ def test_runtime_unavailable_is_a_conversation_failure(chat_deck):
     assert reply['proposals'] == []
 
 
+def test_task_preview_works_without_responder_and_replay_preserves_it(chat_deck):
+    deck = chat_deck
+    deck.start_web()
+    before = model(deck)
+    sent = send(deck, 'create task Write tests', op_id='create-1')
+    assert not sent['result'].get('agent_request')
+    preview = model(deck)
+    proposal = next(p for p in preview['proposals'] if p['id'] == sent['result']['proposals'][0])
+    assert proposal['operations'] == [
+        {'op': 'item.create', 'args': {'title': 'Write tests', 'region': 'inbox'}}]
+    assert proposal['state'] == 'open'
+    assert preview['items'] == before['items']
+    assert send(deck, 'create task Write tests', op_id='create-1')['replayed'] is True
+    assert model(deck)['proposals'] == preview['proposals']
+    assert deck.subscriber.responder.server is None
+
+
 def test_pending_question_recovers_and_partial_reply_is_not_replayed(chat_deck):
     deck = chat_deck
     canvas = deck.container.canvas()

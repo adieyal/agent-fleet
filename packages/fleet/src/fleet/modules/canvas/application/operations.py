@@ -629,14 +629,18 @@ class Engine(Ticking):
         label = "the orchestrator" if target is None else self.target_label(target)
         self.log(self.who_source(), 0, f"to {label}: {text}", "info",
                  subject=target.get("id") if target and target["kind"] in ("task", "epic") else None)
-        if target is None and not orchestrator.deterministic(text):
+        # Parse task commands before routing questions. The parser also owns
+        # malformed-command replies, which must never become agent requests.
+        answer = orchestrator.task_reply(self, text, target)
+        if answer is None and target is None and not orchestrator.deterministic(text):
             theirs = self.new_id("msg")
             self.put("message", theirs, {"id": theirs, "key": key, "who": "orchestrator · codex",
                                          "text": "Waiting for the responder…", "time": iso(self.now),
                                          "question": text, "proposals": [], "order": order + 1,
                                          "status": "pending"})
             return {"reply": theirs, "proposals": [], "agent_request": True}
-        answer = orchestrator.reply(self, text, target)
+        if answer is None:
+            answer = orchestrator.reply(self, text, target)
         if answer["guidance"] and target is not None:
             guide = self.new_id("guide")
             self.put("guidance", guide, {"id": guide, "target": key, "text": text, "author": self.actor,

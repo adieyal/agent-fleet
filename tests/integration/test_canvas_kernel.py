@@ -64,6 +64,7 @@ def simulate(space, seconds=10):
 
 def chat_proposal(space, text, **args):
     reply = ok(space, "message.send", text=text, **args)
+    assert not reply.get("agent_request")
     assert len(reply["proposals"]) == 1
     return next(p for p in state(space)["proposals"] if p["id"] == reply["proposals"][0])
 
@@ -159,6 +160,7 @@ def test_chat_rejects_unknown_ambiguous_and_malformed_requests(space, message_te
     task(space, "Other")
     before = state(space)["items"]
     reply = ok(space, "message.send", text=message_text)
+    assert not reply.get("agent_request")
     assert reply["proposals"] == []
     assert state(space)["items"] == before
 
