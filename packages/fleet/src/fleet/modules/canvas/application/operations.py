@@ -449,7 +449,7 @@ class Engine(Ticking):
         run = self.active_run(identity)
         if run is None or run["state"] not in ("struggling", "blocked"):
             raise Refused("invalid", f"{self.title(identity)} has no run waiting for a permission")
-        run["permit"] = scope
+        run.update(permit=scope, permitted=False, permit_error=None, permit_item=None)
         attn = self.get("attn", "perm-" + identity)
         if attn is not None:
             run["permit_item"] = attn.get("fleet")
@@ -473,6 +473,10 @@ class Engine(Ticking):
         role = run["role"]
         if run["state"] == "queued":
             run["force_agent"] = agent
+        elif run["state"] == "starting" and not run.get("fleet_run"):
+            run.update(state="stopped", outcome="reassigned", dispatch=False, ended_at=iso(self.now))
+            new = self.request_run(identity, role, self.who_source(), 0)
+            new["force_agent"] = agent
         else:
             run["cancel"], run["pause"] = True, False
             run["state"] = "stopped"
@@ -767,7 +771,7 @@ class Engine(Ticking):
                  f"by {self.who()}): {flow}", "info")
         for card in affected:
             if migration == "move":
-                self.drop("attn", "ap-" + card)
+                self.close_attn("ap-" + card, f"migrated to workflow v{workflow['version']}")
                 self.enter_stage(card, identity, f"migrated to workflow v{workflow['version']} by {self.who()}")
             else:
                 self.state(card)["pin"] = old_version
@@ -959,7 +963,7 @@ class Engine(Ticking):
     def op_view_remove(self, args: dict) -> dict:
         view = self.need("view", text_arg(args, "view"), "view")
         self.drop("view", view["id"])
-        for key in [key for key, entry in self.all("context").items() if entry["kind"] == "view" and entry["id"] == view["id"]]:
+        for key in [key for key, entry in self.all("context").items() if entry["kind"] == "view" and entry["doc"] == view["id"]]:
             self.drop("context", key)
         self.log(f"view {view['type']}", 0, f"{self.who()} removed “{view['title']}”", "info")
         return {}

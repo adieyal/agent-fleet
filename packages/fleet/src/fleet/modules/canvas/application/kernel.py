@@ -22,6 +22,12 @@ from .ports import Ports
 STATUSES = ("working", "idle", "waiting-you", "waiting-criteria", "paused", "done", "struggling", "blocked", "queued")
 ACTIVE_RUN = ("queued", "starting", "running", "struggling", "blocked")
 BUSY_RUN = ("starting", "running", "struggling", "blocked")
+# A run's outbox: what the service still has to do on its host. A requeued run starts with none of it done.
+FRESH_OUTBOX = {"dispatch": False, "cancel": False, "cancel_sent": False, "cancel_error": None, "pause": False,
+                "permit": None, "permitted": False, "permit_error": None, "permit_item": None, "error": None,
+                "retry_at": None}
+# Readings that change while a run works; they are observations, not state changes, so they leave no history.
+OBSERVED_RUN_FIELDS = ("progress", "cost", "excerpt", "refusals")
 ROLES = ("builder", "tester", "decomposer")
 EPIC_COLORS = ("#8fb7e6", "#e3a76f", "#b5d36a", "#d47fa6", "#9b86d1", "#d9c25a", "#6cc9ad", "#e07a6a")
 ZONE_COLORS = ("#5d8f84", "#6a9cc4", "#9b86d1", "#d47fa6", "#e3a76f", "#d9c25a", "#7fb069", "#e07a6a", "#8a979b")
@@ -58,6 +64,10 @@ def iso(moment: datetime) -> str:
 
 def parse_time(value: str | None) -> datetime | None:
     return None if not value else datetime.fromisoformat(value)
+
+
+def strip(run: dict) -> dict:
+    return {key: value for key, value in run.items() if key not in OBSERVED_RUN_FIELDS}
 
 
 def short(text: str, words: int = 12) -> str:
@@ -110,7 +120,10 @@ class Kernel:
             now, before = self.records.get(kind, {}), self.original.get(kind, {})
             for identity in set(now) | set(before):
                 if now.get(identity) != before.get(identity):
-                    found.append((kind, identity, now.get(identity), (kind, identity) in self.presentation))
+                    observed = (kind == "run" and now.get(identity) is not None and before.get(identity) is not None
+                                and strip(now[identity]) == strip(before[identity]))
+                    found.append((kind, identity, now.get(identity),
+                                  observed or (kind, identity) in self.presentation))
         return sorted(found, key=lambda change: (change[0], change[1]))
 
     def new_id(self, prefix: str) -> str:
@@ -317,7 +330,7 @@ class Kernel:
             "requested_by": source, "fleet_run": None, "host": None, "job": None, "dispatch": False,
             "cancel": False, "permit": None, "error": None, "retry_at": None, "started_at": None,
             "ended_at": None, "outcome": None, "simulated": False, "revision": state["facts"].get("revision"),
-            "force_agent": None, "independent": False})
+            "force_agent": None, "independent": False, "attempt": 1})
         verb = {"builder": "dispatch builder", "tester": "dispatch tester", "decomposer": "dispatch decomposer"}[role]
         extra = f" (must be independent of builder {state.get('builder')})" if role == "tester" and state.get("builder") else ""
         self.log(source, line, f"{verb} requested for {self.title(identity)} (queued for the scheduler){extra}", "op",
@@ -326,9 +339,9 @@ class Kernel:
 
     def stop_runs(self, identity: str, why: str, *, pause: bool) -> None:
         for run in self.runs_for(identity):
-            if run["state"] == "queued":
-                run["state"] = "paused" if pause else "stopped"
-                run["ended_at"] = iso(self.now)
+            if run["state"] == "queued" or (run["state"] == "starting" and not run.get("fleet_run")):
+                # Nothing is on a host yet, so nothing needs cancelling there.
+                run.update(state="paused" if pause else "stopped", ended_at=iso(self.now), dispatch=False)
             else:
                 run["cancel"] = True
                 run["pause"] = pause
@@ -420,16 +433,19 @@ class Kernel:
         attn_id = ("ep-" if is_epic else "ap-") + identity
         if self.get("attn", attn_id) is None:
             stage = record.get("id") if kind == "stage" else None
-            fleet_item = self.ports.attention.raise_item(
-                project=self.space, kind="decision", owner="user", source="canvas",
-                source_reference=f"canvas:{self.space}:{attn_id}:{uuid4().hex[:8]}", headline=short(question),
-                context_reference=f"fleet://projects/{self.space}/work/{identity}", actor=self.actor,
-                work_item=identity, options=("Accept" if is_epic else "Approve", "Send back"))
+            fleet_item = self.raise_approval(attn_id, question, identity, is_epic)
             self.put("attn", attn_id, {"id": attn_id, "kind": "Accept" if is_epic else "Approve", "text": question,
                                        "item": None if is_epic else identity, "epic": identity if is_epic else None,
                                        "stage": stage, "why": f"{src} · line {line} · ask you",
                                        "fleet": fleet_item.id, "time": iso(self.now)})
         self.log(src, line, f"ask you: {question}", "op", subject=identity)
+
+    def raise_approval(self, attn_id: str, question: str, identity: str, is_epic: bool):
+        return self.ports.attention.raise_item(
+            project=self.space, kind="decision", owner="user", source="canvas",
+            source_reference=f"canvas:{self.space}:{attn_id}:{uuid4().hex[:8]}", headline=short(question),
+            context_reference=f"fleet://projects/{self.space}/work/{identity}", actor=self.actor,
+            work_item=identity, options=("Accept" if is_epic else "Approve", "Send back"))
 
     def enter_stage(self, identity: str, stage: str, why: str) -> None:
         state = self.state(identity)
@@ -492,13 +508,30 @@ class Kernel:
     def resume(self, identity: str, src: str, line: int) -> None:
         state = self.state(identity)
         was = state.get("paused")
+        if was and state.get("paused_by") == "budget" and state.get("budget"):
+            spent = sum(run.get("cost") or 0 for run in self.runs_for(identity, active=False))
+            state["budget"] = round(spent + state["budget"], 2)
+            self.log(src, line, f"budget raised to ${state['budget']:g} to resume {self.title(identity)}", "op",
+                     subject=identity)
         state["paused"], state["paused_by"] = False, None
         for run in self.all("run").values():
-            if run["item"] == identity and run["state"] == "paused":
-                run.update(state="queued", queue_reason="Resumed; waiting for the scheduler", cancel=False,
-                           fleet_run=None, host=None, job=None, dispatch=False, ended_at=None)
+            if run["item"] != identity:
+                continue
+            if run["state"] == "paused":
+                self.requeue(run)
+            elif run.get("cancel") and run["state"] in BUSY_RUN:
+                if run.get("cancel_sent"):
+                    run["requeue"] = True  # the host is stopping it; queue it again once it has stopped
+                else:
+                    run.update(cancel=False, pause=False, queue_reason="")
         if was or line:
             self.log(src, line, f"resume runs → {self.title(identity)}", "op", subject=identity)
+
+    def requeue(self, run: dict) -> None:
+        """Queue a stopped run again as a new attempt, so its next start is a new job rather than a replay."""
+        run.update(state="queued", queue_reason="Resumed; waiting for the scheduler", fleet_run=None, host=None,
+                   job=None, ended_at=None, started_at=None, requeue=False, attempt=run.get("attempt", 1) + 1,
+                   **FRESH_OUTBOX)
 
     # ---- regions
     def region_of(self, identity: str) -> dict | None:
@@ -577,6 +610,10 @@ class Kernel:
         if stage not in compiled.stages:
             return
         children = self.children(epic)
+        if state.get("held") is not None:
+            if state["held"] == self.epic_signature(epic):
+                return
+            state["held"] = None
         for line in compiled.ops("when", stage=stage):
             if line.op == "covered" and (self.gaps(epic) or not self.criteria.get(epic)):
                 return
@@ -599,6 +636,11 @@ class Kernel:
             self.log(src, line.n, f"guidance passed to the epic owner: “{line.text}”", "guide", subject=epic)
         for line in compiled.ops("enter", stage=following):
             self.apply_line("epicflow", record, line, epic)
+
+    def epic_signature(self, epic: str) -> list:
+        """What would make an epic sent back worth moving on again: its children, their stages, its criteria."""
+        return sorted([child, self.state(child).get("stage") or "", ",".join(sorted(self.state(child).get("covers", [])))]
+                      for child in self.children(epic)) + [sorted(c.id for c in self.criteria.get(epic, []))]
 
     def decompose(self, epic: str, *, author: str) -> dict | None:
         """Propose a child task for each epic criterion no child covers; adopting it creates them."""

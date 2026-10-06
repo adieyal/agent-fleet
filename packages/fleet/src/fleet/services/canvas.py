@@ -183,7 +183,7 @@ class CanvasService:
         outbox = self.reader().outbox(space)
         done = []
         for run in outbox:
-            if run.get("dispatch") and not run.get("fleet_run"):
+            if run.get("dispatch") and not run.get("fleet_run") and run["state"] == "starting" and not run.get("cancel"):
                 done.append(self.start(space, run))
             elif run.get("cancel") and run.get("fleet_run") and not run.get("cancel_sent"):
                 done.append(self.cancel(space, run))
@@ -210,7 +210,8 @@ class CanvasService:
             request = DispatchRequest(
                 host=settings["host"], project=space, description=f"{run['role']}: {title}"[:200],
                 agent=settings.get("runtime") or run["agent"], cwd=settings["cwd"], work_item=run["item"],
-                permission=settings.get("permission"), model=settings.get("model"), id=run["id"],
+                permission=settings.get("permission"), model=settings.get("model"),
+                id=f"{run['id']}-{run.get('attempt', 1)}",
                 allow=allow or None, add_dir=None, env=None, keep_going=False, context=None, hold=False,
                 actor=INTERNAL)
             sent = self.dispatch().send(request, [{"prompt": brief}])

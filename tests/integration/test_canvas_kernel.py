@@ -357,7 +357,7 @@ def test_dispatch_starts_real_runs_and_retries_a_failure(space, monkeypatch):
     assert card["run"]["fleet_run"] == "fleet-run-1" and card["run"]["host"] == "worker"
     request, steps = sent[-1]
     assert (request.host, request.agent, request.cwd, request.work_item) == ("worker", "claude", "/src/app", identity)
-    assert request.id == card["run"]["id"] and request.permission == "acceptEdits"
+    assert request.id == card["run"]["id"] + "-1" and request.permission == "acceptEdits"
     assert steps[0]["prompt"].startswith("You are the builder")
 
 
@@ -420,3 +420,130 @@ def test_layout_set_is_an_operation_too(space):
 def test_host_answers_name_an_attention_item_of_this_space(space):
     result = op(space, "attention.answer", id="missing", answer="Use the warm image")
     assert result["refused"] and result["code"] == "invalid"
+
+
+def dispatching(space):
+    started, cancelled = [], []
+
+    class Dispatch:
+        def send(self, request, steps):
+            started.append(request.id)
+            return {"intent": SimpleNamespace(run=SimpleNamespace(id=f"fleet-{len(started)}", host="worker",
+                                                                  remote_job_id=request.id))}
+
+    class Jobs:
+        def cancel(self, host, job, *, all_steps):
+            cancelled.append(job)
+
+    space.canvas.dispatch = lambda: Dispatch()
+    space.canvas.jobs = lambda: Jobs()
+    space.canvas.transport = SimpleNamespace(host_by_name=lambda name: name)
+    ok(space, "agent.configure", agent="claude", mode="dispatch", host="worker", cwd="/src")
+    return started, cancelled
+
+
+def test_a_run_can_be_paused_again_after_it_resumes(space, monkeypatch):
+    started, cancelled = dispatching(space)
+    real_ports = space.canvas.ports
+
+    def ports(facades, project):
+        bound = real_ports(facades, project)
+        jobs = {f"fleet-{index + 1}": job for index, job in enumerate(started)}
+        bound.run = lambda run_id: SimpleNamespace(status="stopped" if jobs.get(run_id) in cancelled else "running",
+                                                   reason=None, usage=None) if run_id in jobs else None
+        bound.run_attention = lambda run_id: []
+        return bound
+
+    monkeypatch.setattr(space.canvas, "ports", ports)
+    identity = task(space, criteria=["a"], stage="first")
+    space.canvas.tick(space.project)
+    ok(space, "run.pause", item=identity)
+    space.canvas.tick(space.project)
+    space.canvas.tick(space.project)
+    ok(space, "run.resume", item=identity)
+    space.canvas.tick(space.project)
+    assert item(space, identity)["run"]["state"] == "starting"
+    space.canvas.tick(space.project)
+    assert item(space, identity)["status"] == "working"
+    ok(space, "run.pause", item=identity)
+    space.canvas.tick(space.project)
+    assert len(set(started)) == 2 and started[1].endswith("-2") and len(cancelled) == 2
+
+
+def test_pausing_before_the_run_reaches_its_host_dispatches_nothing(space):
+    started, cancelled = dispatching(space)
+    identity = task(space, criteria=["a"], stage="first")
+    assert item(space, identity)["run"]["state"] == "starting"
+    ok(space, "run.pause", item=identity)
+    space.canvas.tick(space.project)
+    assert started == [] and cancelled == [] and item(space, identity)["status"] == "paused"
+
+
+def test_the_tick_operation_ticks_once(space):
+    now = ok(space, "region.create", name="Now", rect={"x": 0, "y": 0, "w": 600, "h": 300})["region"]
+    nxt = ok(space, "region.create", name="Next", rect={"x": 700, "y": 0, "w": 300, "h": 500})["region"]
+    for index in range(3):
+        identity = task(space, f"Queued {index}")
+        ok(space, "region.enter", region=nxt, item=identity)
+    ok(space, "region.configure", region=now, level="label")
+    ok(space, "region.configure", region=now, level="enforced")
+    pulled = [entry for entry in state(space)["items"] if entry["region"] == now]
+    before = len(pulled)
+    ok(space, "tick")
+    assert len([entry for entry in state(space)["items"] if entry["region"] == now]) <= before + 1
+
+
+def test_resuming_a_spent_budget_grants_a_fresh_allowance(space):
+    simulate(space, seconds=100)
+    identity = task(space, criteria=["a"], stage="first")
+    with space.canvas.scope() as (facades, canvas):
+        engine = canvas.engine(space.project, space.canvas.ports(facades, space.project), actor="user")
+        engine.state(identity)["budget"] = 0.5
+        canvas.commit(space.project, engine)
+    space.clock.advance(60)
+    ok(space, "tick")
+    card = item(space, identity)
+    assert card["status"] == "paused" and card["paused_by"] == "budget"
+    ok(space, "run.resume", item=identity)
+    ok(space, "tick")
+    card = item(space, identity)
+    assert card["status"] == "working" and card["budget"] == pytest.approx(1.1)
+
+
+def test_an_approval_closed_without_an_answer_is_reopened(space):
+    simulate(space, seconds=1)
+    identity = task(space, criteria=["a"], stage="first")
+    space.clock.advance(2)
+    ok(space, "tick")
+    approval = next(entry for entry in state(space)["attention"] if entry["item"] == identity)
+    space.container.attention().resolve(approval["fleet"], details="tidied away", actor="user")
+    ok(space, "tick")
+    assert item(space, identity)["stage"] == "approve"
+    again = next(entry for entry in state(space)["attention"] if entry["item"] == identity)
+    assert again["fleet"] != approval["fleet"] and space.container.attention().get(again["fleet"]).state == "open"
+    assert "asked again" in state(space)["log"][-1]["text"]
+
+
+def test_sending_an_epic_back_follows_its_own_workflow(space):
+    ok(space, "code.compile", object={"kind": "epicflow"}, text='epic workflow v1\nstage shape\n  exit when:\n'
+       '    every criterion covered by a child\nstage build\n  exit when:\n    all children in done\nstage accept\n'
+       '  on enter:\n    ask you "Accept {item}?"\n  exit when:\n    you approve')
+    epic = ok(space, "epic.create", title="E", criteria=["c"])["epic"]
+    criterion = state(space)["epics"][0]["criteria"][0]["id"]
+    simulate(space, seconds=1)
+    child = task(space, "Child", epic=epic, criteria=["x"], covers=[criterion], stage="first")
+    space.clock.advance(2)
+    ok(space, "tick")
+    ok(space, "attention.resolve", id=next(entry["id"] for entry in state(space)["attention"] if entry["item"] == child),
+       choice="approve")
+    accept = next(entry for entry in state(space)["attention"] if entry["epic"] == epic and entry["kind"] == "Accept")
+    ok(space, "attention.resolve", id=accept["id"], choice="back")
+    assert state(space)["epics"][0]["stage"] == "build"
+
+
+def test_removing_a_view_takes_it_out_of_context(space):
+    context = ok(space, "region.create", name="Context for agents", rect={"x": 0, "y": 0, "w": 400, "h": 300})["region"]
+    view = ok(space, "view.place", type="note", x=10, y=10)["view"]
+    ok(space, "context.add", doc={"kind": "view", "id": view, "title": "Note"}, region=context)
+    ok(space, "view.remove", view=view)
+    assert state(space)["context"] == []

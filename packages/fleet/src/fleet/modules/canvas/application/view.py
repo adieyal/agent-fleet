@@ -29,8 +29,9 @@ def fleet_view(engine, run: dict) -> dict:
         return {"fleet": None}
     stamp = lambda value: value.isoformat() if hasattr(value, "isoformat") else value
     return {"fleet": {"status": fleet.status, "reason": fleet.reason, "current_action": getattr(fleet, "current_action", None),
-                      "last_observed": stamp(getattr(fleet, "last_observed", None)), "start": stamp(fleet.start),
-                      "end": stamp(fleet.end), "runtime": fleet.runtime, "title": getattr(fleet, "title", None)}}
+                      "last_observed": stamp(getattr(fleet, "last_observed", None)),
+                      "start": stamp(getattr(fleet, "start", None)), "end": stamp(getattr(fleet, "end", None)),
+                      "runtime": getattr(fleet, "runtime", None), "title": getattr(fleet, "title", None)}}
 
 
 def item_view(engine, identity: str) -> dict:

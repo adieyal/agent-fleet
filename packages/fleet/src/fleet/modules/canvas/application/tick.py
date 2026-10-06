@@ -73,7 +73,14 @@ class Ticking(Kernel):
                 continue
             answers = [decision.answer for decision in self.ports.decisions.list()
                        if decision.attention_item == record["fleet"]]
-            choice = "approve" if answers and answers[-1].strip().lower() in APPROVALS else "back"
+            if not answers:
+                # Closed without a decision (dismissed or resolved by hand): the workflow still needs one.
+                subject = record.get("item") or record.get("epic")
+                record["fleet"] = self.raise_approval(attn_id, record["text"], subject, bool(record.get("epic"))).id
+                self.log("kernel", 0, f"asked again: “{record['text']}” was closed without an answer, and the "
+                         "workflow still waits for one", "info", subject=subject, actor="kernel")
+                continue
+            choice = "approve" if answers[-1].strip().lower() in APPROVALS else "back"
             self.drop("attn", attn_id)
             self.settle(record, choice, actor="user" if answers else self.actor, answered_elsewhere=True)
 
@@ -88,9 +95,13 @@ class Ticking(Kernel):
                 self.log("you", 0, f"accepted epic {self.title(epic)}{how}", "info", subject=epic, actor=actor)
                 self.epic_step(epic)
             else:
-                state["stage"] = "deliver"
-                self.log("you", 0, f"sent epic {self.title(epic)} back to Deliver{how}", "info", subject=epic,
-                         actor=actor)
+                stages = list(self.epic_compiled().stages)
+                here = stages.index(state["stage"]) if state["stage"] in stages else len(stages)
+                state["stage"] = stages[max(0, here - 1)] if stages else "shape"
+                state["approved"] = False
+                state["held"] = self.epic_signature(epic)
+                self.log("you", 0, f"sent epic {self.title(epic)} back to {state['stage'].capitalize()}{how}", "info",
+                         subject=epic, actor=actor)
             return
         identity = record["item"]
         if identity not in self.items:
@@ -137,7 +148,9 @@ class Ticking(Kernel):
             elif status == "failed":
                 self.finish(run, False, fleet.reason or "failed")
             elif status == "stopped":
-                if run.get("cancel"):
+                if run.get("requeue"):
+                    self.requeue(run)
+                elif run.get("cancel"):
                     run["state"] = "paused" if run.get("pause") else "stopped"
                     run["ended_at"] = iso(self.now)
                     run["cancel"] = False
@@ -386,8 +399,12 @@ class Ticking(Kernel):
         run = self.get("run", run_id)
         if run is None:
             return
-        run.update(dispatch=False, fleet_run=fleet_run, host=host, job=job, error=None,
-                   queue_reason="Starting on " + host)
+        run.update(dispatch=False, fleet_run=fleet_run, host=host, job=job, error=None)
+        if run["state"] != "starting":
+            # Paused, stopped or reassigned while the start was on its way: cancel what just started.
+            run.update(cancel=True, cancel_sent=False)
+            return
+        run["queue_reason"] = "Starting on " + host
 
     def active_states(self) -> tuple[str, ...]:
         return ACTIVE_RUN

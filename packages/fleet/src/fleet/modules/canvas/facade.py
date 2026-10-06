@@ -10,7 +10,7 @@ from .application.kernel import Refused
 from .application.view import read_model
 
 QUIET = ("reader.mark_seen", "decision.check", "note.dismiss")
-NO_TICK = ("decision.check", "reader.mark_seen", "note.dismiss", "space.init")
+NO_TICK = ("decision.check", "reader.mark_seen", "note.dismiss", "space.init", "tick")
 
 
 class CanvasFacade:
@@ -101,5 +101,5 @@ class CanvasFacade:
     def outbox(self, space: str) -> list[dict]:
         """Run requests waiting on the host side: dispatch, cancel or permit."""
         runs = self.repository.load(space).get("run", {})
-        return [run for run in runs.values() if (run.get("dispatch") and not run.get("fleet_run"))
+        return [run for run in runs.values() if (run.get("dispatch") and not run.get("fleet_run") and run["state"] == "starting")
                 or (run.get("cancel") and run.get("fleet_run")) or (run.get("permit") and not run.get("permitted"))]
