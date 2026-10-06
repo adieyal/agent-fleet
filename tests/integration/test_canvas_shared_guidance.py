@@ -45,6 +45,42 @@ def test_edit_from_another_client_updates_reader_and_rejects_stale_canvas(space)
     assert records.space_guidance(space.project)['north_star'] == 'Edited from CLI'
 
 
+def test_canvas_history_reads_records_versions_and_authors(space):
+    records = space.container.records()
+    original = records.guidance(space.project)
+    ok(space, 'charter.update', patch={'north_star': 'Shared outcome'}, actor='user')
+    first = records.guidance(space.project)
+    ok(space, 'charter.update', patch={'add_clause': 'Preserve provenance'}, actor='codex')
+    latest = records.guidance(space.project)
+    history = space.canvas.versions(space.project, 'charter', 'main')
+    assert [entry['version'] for entry in history] == [latest.version.number, first.version.number,
+                                                     original.version.number]
+    assert [entry['body'] for entry in history] == [latest.body, first.body, original.body]
+    assert [entry['revision'] for entry in history] == [version.revision
+                                                       for version in records.guidance_history(space.project)]
+    assert [entry['written_by'] for entry in history[:2]] == ['codex', 'user']
+    assert 'Preserve provenance' in history[0]['body']
+    assert 'Preserve provenance' not in history[1]['body']
+    assert records.guidance(space.project, number=first.version.number).body == first.body
+
+
+def test_migration_does_not_overwrite_existing_fleet_guidance(space):
+    records = space.container.records()
+    ok(space, 'charter.update', patch={'north_star': 'Authoritative Fleet outcome'})
+    before = records.guidance(space.project)
+    legacy = {'id': 'main', 'version': 9, 'north_star': 'Stale canvas outcome',
+              'clauses': [], 'scope': {'destructive': 'decide'}, 'written_by': 'legacy-user'}
+    with space.canvas.scope() as (_, facade):
+        unit = facade.repository.require_unit()
+        unit.connection.execute('INSERT INTO canvas_record (space, kind, id, record) VALUES (?, ?, ?, ?)',
+                                (space.project, 'charter', 'main', json.dumps(legacy)))
+        unit.record_change('legacy-charter-fixture', '', json.dumps(legacy), 'test')
+    assert state(space)['charter']['north_star'] == 'Authoritative Fleet outcome'
+    assert records.guidance(space.project).version.revision == before.version.revision
+    assert records.guidance(space.project).body == before.body
+    assert space.canvas.reader().repository.load(space.project)['charter']['main'] == legacy
+
+
 def test_migration_preserves_legacy_history_without_overwriting_constitution(clock):
     from fleet.container import configured_container
     container = configured_container(clock=clock)
