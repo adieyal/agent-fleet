@@ -160,6 +160,22 @@ def test_an_approval_answered_outside_the_canvas_is_applied(space):
     assert item(space, identity)["stage"] == "implement"
 
 
+def test_a_stage_can_be_removed_once_no_work_sits_in_it(space):
+    simulate(space, seconds=1)
+    ok(space, "stage.draft")
+    ok(space, "workflow.insert", block="test", index=2)
+    identity = task(space, criteria=["Tests pass"], stage="first")
+    space.clock.advance(2)
+    ok(space, "tick")
+    assert item(space, identity)["stage"] == "test"
+    refused = op(space, "workflow.remove", stage="test")
+    assert refused["refused"] and refused["code"] == "invalid"
+    ok(space, "item.move", item=identity, stage="implement")
+    result = ok(space, "workflow.remove", stage="test")
+    assert [stage["id"] for stage in state(space)["workflow"]["stages"]] == ["plan", "implement", "approve"]
+    assert result["version"] == 3
+
+
 def test_testers_go_to_an_agent_other_than_the_builder(space):
     simulate(space, seconds=1)
     ok(space, "stage.draft")

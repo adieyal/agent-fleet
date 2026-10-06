@@ -44,7 +44,7 @@ class Engine(Ticking):
         "region.enter", "region.exit", "region.propose", "region.create", "region.configure", "region.remove",
         "run.request", "run.start", "run.pause", "run.resume", "run.permit", "run.reassign",
         "dep.add", "dep.remove", "attention.resolve", "message.send", "proposal.resolve",
-        "code.compile", "stage.draft", "workflow.insert", "criteria.set", "charter.update", "epic.decompose",
+        "code.compile", "stage.draft", "workflow.insert", "workflow.remove", "criteria.set", "charter.update", "epic.decompose",
         "view.place", "view.configure", "view.remove", "context.add", "context.remove", "reader.mark_seen",
         "page.update", "spec.update", "note.dismiss", "agent.configure", "decision.check", "tick", "space.init",
     )
@@ -787,6 +787,32 @@ class Engine(Ticking):
                 self.log(f"workflow v{workflow['version']}", 0, f"{self.title(card)} pinned to workflow v{old_version} "
                          f"by {self.who()}", "info", subject=card)
         return {"version": workflow["version"], "affected": affected}
+
+    def op_workflow_remove(self, args: dict) -> dict:
+        """Take a stage out of the workflow. Its code stays, so work pinned to an older version can still finish."""
+        identity = text_arg(args, "stage")
+        workflow = self.workflow()
+        if identity not in workflow["stages"]:
+            raise Refused("not_found", f"the workflow has no stage called {identity}")
+        if len(workflow["stages"]) == 1:
+            raise Refused("invalid", "the workflow needs at least one stage")
+        inside = [card for card in self.card_ids() if self.state(card).get("stage") == identity
+                  and not self.state(card).get("pin")]
+        if inside:
+            raise Refused("invalid", f"move {', '.join(self.title(card) for card in inside)} out of "
+                                     f"{self.stage_name(identity)} first")
+        old_version = workflow["version"]
+        history = workflow.setdefault("history", [])
+        if not any(entry["version"] == old_version for entry in history):
+            history.append({"version": old_version, "stages": list(workflow["stages"])})
+        workflow["stages"] = [stage for stage in workflow["stages"] if stage != identity]
+        workflow["version"] = old_version + 1
+        history.append({"version": workflow["version"], "stages": list(workflow["stages"])})
+        self.snapshot("workflow", "main")
+        flow = " → ".join(self.stage_name(stage).lower() for stage in workflow["stages"])
+        self.log(f"workflow v{workflow['version']}", 0, f"removed {self.stage_name(identity)} ({self.who()}): {flow}",
+                 "info")
+        return {"version": workflow["version"]}
 
     def make_room(self, stages: int) -> None:
         """The board grows by one column: shift what sits to its right so nothing ends up under it."""

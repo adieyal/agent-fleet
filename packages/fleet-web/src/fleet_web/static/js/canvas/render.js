@@ -462,7 +462,11 @@ function inspector(model, ui) {
   if (!sel) return null;
   if (sel.kind === 'task') { const item = itemOf(model, sel.id); return item ? ['Task', taskInspector(model, ui, item)] : null; }
   if (sel.kind === 'session') { const item = itemOf(model, sel.id); return item ? ['Session', sessionInspector(model, ui, item)] : null; }
-  if (sel.kind === 'stage') { const stage = model.workflow.stages.find((entry) => entry.id === sel.id); return stage ? ['Stage code', codeInspector(model, ui, 'stage', stage)] : null; }
+  if (sel.kind === 'stage') {
+    const stage = model.workflow.stages.find((entry) => entry.id === sel.id);
+    return stage ? ['Stage code', codeInspector(model, ui, 'stage', stage)
+      + `<div class="cv-row"><button class="cv-btn sm" ${act('op', { op: 'workflow.remove', args: { stage: stage.id } })}>Remove ${esc(stage.name)} from the workflow</button></div>`] : null;
+  }
   if (sel.kind === 'zone') { const region = model.regions.find((entry) => entry.id === sel.id); return region ? ['Region code', codeInspector(model, ui, 'zone', region)] : null; }
   if (sel.kind === 'sched') return ['Scheduler', schedInspector(model, ui)];
   if (sel.kind === 'epic') { const epic = epicOf(model, sel.id); return epic ? ['Epic', epicInspector(model, ui, epic)] : null; }
