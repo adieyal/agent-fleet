@@ -1,5 +1,6 @@
 """The canvas kernel against a real controller store: every gesture is one operation the kernel accepts or
 refuses, refusals name their source line, and runs move through the scheduler."""
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -547,3 +548,98 @@ def test_removing_a_view_takes_it_out_of_context(space):
     ok(space, "context.add", doc={"kind": "view", "id": view, "title": "Note"}, region=context)
     ok(space, "view.remove", view=view)
     assert state(space)["context"] == []
+
+
+def test_only_a_person_answers_approval_gates(space):
+    simulate(space, seconds=1)
+    identity = task(space, criteria=["Tests pass"], stage="first")
+    space.clock.advance(2)
+    ok(space, "tick")
+    approval = next(entry for entry in state(space)["attention"] if entry["item"] == identity)
+    refused = op(space, "attention.resolve", actor="job:abc", id=approval["id"], choice="approve")
+    assert refused["refused"] and refused["code"] == "not_permitted" and refused["source"]["object"] == "workflow"
+    assert item(space, identity)["stage"] == "approve"
+    assert space.container.attention().get(approval["fleet"]).state == "open"
+    ok(space, "attention.resolve", id=approval["id"], choice="approve")
+    assert item(space, identity)["stage"] == "done"
+
+
+def test_a_tester_cannot_be_reassigned_to_its_builder(space):
+    simulate(space, seconds=1)
+    ok(space, "stage.draft")
+    ok(space, "workflow.insert", block="test", index=2)
+    identity = task(space, criteria=["Tests pass"], stage="first")
+    space.clock.advance(2)
+    ok(space, "tick")
+    assert item(space, identity)["run"]["role"] == "tester"
+    refused = op(space, "run.reassign", item=identity, agent="claude")
+    assert refused["refused"] and refused["code"] == "not_permitted" and refused["source"]["object"] == "schedule"
+    with space.canvas.scope() as (facades, canvas):
+        engine = canvas.engine(space.project, space.canvas.ports(facades, space.project), actor="test")
+        run = {"role": "tester", "force_agent": "claude", "builder": "claude", "item": identity, "independent": True}
+        agent, reason = engine.pick_agent(run, {"claude": 2, "codex": 1}, {}, {"claude": {}, "codex": {}},
+                                          engine.schedule().options)
+    assert agent is None and "independently" in reason
+
+
+class Refusing:
+    """Facades whose attention item `a1` refused `Bash(pytest)`."""
+
+    def __init__(self, facades):
+        self.facades = facades
+        refused = SimpleNamespace(refusals=[SimpleNamespace(rules=("Bash(pytest)",))])
+        self.attention = SimpleNamespace(get=lambda item_id: refused if item_id == "a1" else facades.attention.get(item_id))
+
+    def __getattr__(self, name):
+        return getattr(self.facades, name)
+
+
+def test_a_failed_grant_asks_again_and_everywhere_is_refused(space, monkeypatch):
+    class Dispatch:
+        def send(self, request, steps):
+            return {"intent": SimpleNamespace(run=SimpleNamespace(id="fleet-run", host="worker", remote_job_id=request.id))}
+
+    space.canvas.dispatch = lambda: Dispatch()
+    ok(space, "agent.configure", agent="claude", mode="dispatch", host="worker", cwd="/src/app")
+    identity = task(space, criteria=["Tests pass"], stage="first")
+    space.canvas.tick(space.project)
+    fleet = SimpleNamespace(status="running", reason=None, usage={}, start=None, end=None, runtime="claude",
+                            current_action=None)
+    open_items = [SimpleNamespace(id="a1", state="open", refusals=("pytest",), headline="pytest refused")]
+    real_ports = space.canvas.ports
+
+    def ports(facades, project):
+        bound = real_ports(facades, project)
+        bound.run = lambda run_id: fleet
+        bound.run_attention = lambda run_id: open_items
+        return bound
+
+    monkeypatch.setattr(space.canvas, "ports", ports)
+    space.canvas.tick(space.project)
+    assert item(space, identity)["status"] == "struggling"
+    refused = op(space, "run.permit", item=identity, scope="everywhere")
+    assert refused["refused"] and refused["code"] == "invalid"
+    agent = op(space, "run.permit", actor="job:abc", item=identity, scope="run")
+    assert agent["refused"] and agent["code"] == "not_permitted"
+
+    def unreachable(item_id):
+        raise RuntimeError("host worker is unreachable")
+
+    @contextmanager
+    def scope():
+        with real_scope() as (facades, canvas):
+            yield Refusing(facades), canvas
+
+    real_scope = space.canvas.scope
+    monkeypatch.setattr(space.canvas, "grant", unreachable)
+    monkeypatch.setattr(space.canvas, "scope", scope)
+    ok(space, "run.permit", item=identity, scope="space")
+    assert not any(entry["kind"] == "Unblock" for entry in state(space)["attention"])
+    space.canvas.tick(space.project)
+    unblock = next(entry for entry in state(space)["attention"] if entry["kind"] == "Unblock")
+    assert unblock["fleet"] == "a1" and "unreachable" in unblock["why"]
+    with real_scope() as (facades, canvas):
+        run = canvas.engine(space.project, real_ports(facades, space.project), actor="test").active_run(identity)
+    assert run["permitted"] and "unreachable" in run["permit_error"]
+    assert space.canvas.reader().outbox(space.project) == []
+    assert (state(space)["settings"].get("allow") or []) == []

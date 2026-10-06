@@ -353,7 +353,7 @@ class Ticking(Kernel):
             candidates = [builder] + [agent for agent in capacity if agent != builder]
         else:
             candidates = list(capacity)
-        candidates = [agent for agent in candidates if agent in capacity]
+        candidates = [agent for agent in candidates if agent in capacity and not (independent and agent == builder)]
         if not candidates:
             if independent:
                 return None, f"Queued: needs an agent other than {builder} to test independently; the schedule has none"
@@ -394,6 +394,22 @@ class Ticking(Kernel):
                    queue_reason=f"Could not start on its host: {error}. Retrying in a minute")
         self.log("scheduler", 0, f"could not start {run['role']} for {self.title(run['item'])}: {error}", "refuse",
                  subject=run["item"], actor="scheduler")
+
+    def permit_failed(self, run_id: str, error: str) -> None:
+        """A grant that did not reach its host: ask again, so Allow can be retried."""
+        run = self.get("run", run_id)
+        if run is None:
+            return
+        run.update(permitted=True, permit_error=error)
+        identity = run["item"]
+        if run.get("permit_item") and run["state"] in ("struggling", "blocked") and self.get("attn", "perm-" + identity) is None:
+            self.put("attn", "perm-" + identity, {
+                "id": "perm-" + identity, "kind": "Unblock", "item": identity, "epic": None,
+                "text": f"Unblock {run['role']} {run.get('agent')} on {self.title(identity)}?",
+                "why": f"allowing failed: {error}", "fleet": run["permit_item"], "run": run["id"],
+                "time": iso(self.now)})
+        self.log("scheduler", 0, f"could not allow the refused commands for {self.title(identity)}: {error}", "refuse",
+                 subject=identity, actor="scheduler")
 
     def dispatched(self, run_id: str, fleet_run: str, host: str, job: str) -> None:
         run = self.get("run", run_id)

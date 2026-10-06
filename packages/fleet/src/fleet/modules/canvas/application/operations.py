@@ -446,8 +446,9 @@ class Engine(Ticking):
         identity = self.resolve_item(text_arg(args, "item"))
         self.require_card(identity)
         scope = text_arg(args, "scope")
-        if scope not in ("run", "space", "everywhere"):
-            raise Refused("invalid", "scope is run, space or everywhere")
+        if scope not in ("run", "space"):
+            raise Refused("invalid", "scope is run or space; Fleet has no shared rule to allow commands everywhere")
+        self.require_person("allow refused commands")
         run = self.active_run(identity)
         if run is None or run["state"] not in ("struggling", "blocked"):
             raise Refused("invalid", f"{self.title(identity)} has no run waiting for a permission")
@@ -456,10 +457,9 @@ class Engine(Ticking):
         if attn is not None:
             run["permit_item"] = attn.get("fleet")
             self.drop("attn", "perm-" + identity)
-        what = {"run": "for this run only", "space": "for runs in this space",
-                "everywhere": "everywhere (a rule version bump)"}[scope]
+        what = {"run": "for this run only", "space": "for runs in this space"}[scope]
         self.log(self.who_source(), 0, f"allowed the refused commands {what}; {self.title(identity)} continues",
-                 "op" if scope == "everywhere" else "info", subject=identity)
+                 "info", subject=identity)
         return {"run": run["id"], "scope": scope}
 
     def op_run_reassign(self, args: dict) -> dict:
@@ -471,6 +471,13 @@ class Engine(Ticking):
         run = self.active_run(identity)
         if run is None:
             raise Refused("invalid", f"{self.title(identity)} has no run to reassign")
+        policy = self.schedule().options
+        builder = run.get("builder") or self.state(identity).get("builder")
+        if run["role"] == "tester" and agent == builder and (policy["independent_testers"] or run.get("independent")):
+            record = self.get("schedule", "main") or {"version": 1}
+            raise Refused("not_permitted", f"the tester must be independent of builder {builder}",
+                          source={"object": "schedule", "version": record["version"],
+                                  "line": policy["lines"].get("independence", 0)})
         was = run.get("agent")
         role = run["role"]
         if run["state"] == "queued":
@@ -532,6 +539,10 @@ class Engine(Ticking):
             return {"decision": decision.id}
         if choice not in ("approve", "back"):
             raise Refused("invalid", "choice is approve or back")
+        if record["kind"] in ("Approve", "Accept"):
+            gate = (self.source("epicflow", self.get("epicflow", "main") or {"version": 1, "id": "main"})
+                    if record["kind"] == "Accept" else self.source("workflow", self.workflow()))
+            self.require_person(f"answer “{record['text']}”", gate)
         if record["kind"] == "Unblock":
             if choice == "approve":
                 return self.op_run_permit({"item": record["item"], "scope": "run"})
@@ -1143,6 +1154,12 @@ class Engine(Ticking):
                 else:
                     lines.append(f"- {entry['title']}")
         return "\n".join(lines)
+
+    def require_person(self, what: str, source: dict | None = None) -> None:
+        """Gates that say `you` are answered by a person; an agent proposes instead."""
+        if not is_person(self.actor):
+            raise Refused("not_permitted", f"Only you can {what}; {self.actor} may ask for it in Needs you.",
+                          source=source)
 
     # ---- words
     def who(self) -> str:

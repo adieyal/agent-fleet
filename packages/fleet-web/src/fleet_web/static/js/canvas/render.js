@@ -335,7 +335,7 @@ function sessionInspector(model, ui, item) {
   if (run && run.state === 'queued') summary.push(run.queue_reason || 'Waiting for the scheduler.');
   if (stuck) summary.push(`${run.excerpt || 'It needs a permission or an answer'}. Retrying will not help; it needs a permission, an answer or a different agent.`);
   if (item.status === 'paused') summary.push('Paused. Nothing is running and nothing is being spent.');
-  if (run && run.permit) summary.push(`Refused commands allowed ${run.permit === 'run' ? 'for this run' : run.permit === 'space' ? 'for runs in this space' : 'everywhere'}.`);
+  if (run && run.permit) summary.push(`Refused commands allowed ${run.permit === 'run' ? 'for this run' : 'for runs in this space'}.`);
   if (run && !active && run.outcome) summary.push(`The last run ended: ${run.outcome}.`);
   const messages = (model.messages['task:' + item.id] || []).slice(-6);
   const budget = item.budget;
@@ -351,8 +351,7 @@ function sessionInspector(model, ui, item) {
       ${!active && item.stage && item.stage !== 'done' ? `<button class="cv-btn" ${act('op', { op: 'run.request', args: { item: item.id, role: run ? run.role : 'builder' } })}>Request a ${esc(run ? run.role : 'builder')} run</button>` : ''}</div>
     ${stuck ? `<div class="cv-box warn"><span style="font-size: 13px">Allow the refused commands for:</span><div class="cv-row">
       <button class="cv-btn primary" ${act('op', { op: 'run.permit', args: { item: item.id, scope: 'run' } })}>This run</button>
-      <button class="cv-btn" ${act('op', { op: 'run.permit', args: { item: item.id, scope: 'space' } })}>This space</button>
-      <button class="cv-btn" ${act('op', { op: 'run.permit', args: { item: item.id, scope: 'everywhere' } })}>Everywhere</button></div></div>` : ''}
+      <button class="cv-btn" ${act('op', { op: 'run.permit', args: { item: item.id, scope: 'space' } })}>This space</button></div></div>` : ''}
     <div class="cv-stack" style="gap: 4px"><label for="sess-msg" class="cv-small cv-soft">Send the agent a message</label>
       <div class="cv-row" style="flex-wrap: nowrap"><input id="sess-msg" class="cv-input" ${bind('sessDraft')} value="${esc(ui.sessDraft)}" placeholder="Use the warm image; don't rebuild cold"><button class="cv-btn" ${act('sendSession', item.id)}>Send</button></div>
       ${ui.sessError ? `<span class="cv-err">${esc(ui.sessError)}</span>` : ''}</div>
