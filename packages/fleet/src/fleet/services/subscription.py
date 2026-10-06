@@ -2,7 +2,7 @@
 import json
 import threading
 import time
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 from fleet.errors import FleetError
 from fleet.services.live import FleetState, snapshot
@@ -40,6 +40,18 @@ class SubscribedState(FleetState):
 
     def follow_history(self, stop):
         raise FleetError('subscriber cannot own history or scheduling; start fleet serve')
+
+    def submit_canvas_question(self, space: str, identity: str) -> None:
+        try:
+            endpoint = json.loads(endpoint_path(self.container.settings()['store_path']).read_text())
+            request = Request(f"http://127.0.0.1:{endpoint['port']}/canvas-question",
+                data=json.dumps({'generation': endpoint['generation'], 'space': space, 'message': identity}).encode(),
+                headers={'Content-Type': 'application/json'}, method='POST')
+            with urlopen(request, timeout=5) as response:
+                if json.load(response) != {'accepted': True}:
+                    raise ValueError('runtime did not accept the question')
+        except (OSError, ValueError, KeyError) as error:
+            raise FleetError('fleet serve is unavailable: ' + str(error)) from error
 
     def update(self, *args, **kwargs):
         raise FleetError('subscriber cannot ingest host observations; start fleet serve')

@@ -78,7 +78,10 @@ for line in sys.stdin:
         # Old and unrelated events must not contaminate the current turn.
         event('item/agentMessage/delta', {**active, 'turnId': 'old', 'delta': 'WRONG'})
         event('item/agentMessage/delta', {**active, 'threadId': 'other', 'delta': 'WRONG'})
-        reply = json.dumps({'reply': 'pong', 'escalate': False, 'reason': ''})
+        body = {'reply': 'pong', 'escalate': False, 'reason': ''}
+        if set(params['outputSchema']['properties']) == {'reply'}:
+            body = {'reply': 'Inbox task is in Later.'}
+        reply = json.dumps(body)
         for delta in [reply[:12], reply[12:]]:
             event('item/agentMessage/delta', {**active, 'itemId': 'answer', 'delta': delta})
         item = {'id': 'answer', 'type': 'agentMessage', 'text': reply}

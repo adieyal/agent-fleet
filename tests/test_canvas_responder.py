@@ -57,6 +57,7 @@ def test_context_stream_and_read_only_output():
     assert canvas.message["status"] == "completed"
     assert canvas.message["text"] == "Inbox task has no band assigned."
     assert canvas.message["proposals"] == []
+    assert canvas.updates[0]["text"] == "Inbox task has no band"
     assert len(changes) == 2
 
 
@@ -75,3 +76,15 @@ class BadServer:
 
     def turn(self, *args, **kwargs):
         raise AssertionError("unavailable server must not receive a turn")
+
+
+@pytest.mark.parametrize("response", ['{"reply":"Applied","operations":[{"op":"item.create"}]}',
+                                      '{"reply":""}', '{"reply":42}', 'not json'])
+def test_invalid_or_executable_output_is_rejected(response):
+    canvas = Canvas()
+    server = SimpleNamespace(start_thread=lambda: 'thread',
+                             turn=lambda *args, **kwargs: SimpleNamespace(status='completed', text=response))
+    answer(canvas, SimpleNamespace(client=lambda: server), 'project', 'reply', 'question', lambda: None)
+    assert canvas.message['status'] == 'failed'
+    assert canvas.message['text'].startswith('Responder unavailable:')
+    assert canvas.message['proposals'] == []

@@ -187,6 +187,8 @@ class FleetState(LiveWorkspace):
         self.container = container
         self.responder = container.responder_worker()
         self.page_responder = container.page_responder(worker=self.responder)
+        from fleet.services.canvas_responder import CanvasResponder
+        self.canvas_responder = CanvasResponder(container.canvas(), self.responder, self.bump)
         self.transport = container.transport()
         self.store = container.store()
         self.observed_runs: dict = {}  # successful job ingestion, including persisted link context
@@ -604,6 +606,8 @@ class LiveRuntime:
             self.threads.append(self.worker('responder', self.responder.run, self.stop, self.worker_recovered))
         if getattr(state, 'page_responder', None) is not None:
             self.threads.append(self.worker('page-responder', state.page_responder.run, self.stop, self.worker_recovered))
+        if getattr(state, 'canvas_responder', None) is not None:
+            self.threads.append(self.worker('canvas-responder', state.canvas_responder.run, self.stop, self.worker_recovered))
         if hasattr(state, "follow_canvas") and hasattr(state, "container"):
             self.threads.append(self.worker('canvas-kernel', state.follow_canvas, self.stop))
 

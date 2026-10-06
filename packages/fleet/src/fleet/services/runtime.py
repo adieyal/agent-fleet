@@ -1,4 +1,4 @@
-"""Local, full-snapshot runtime read contract; no command acceptance."""
+"""Local runtime reads and bounded persisted canvas-question notification."""
 import hashlib
 import json
 import os
@@ -47,6 +47,29 @@ class RuntimeServer:
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *args):
                 pass
+
+            def do_POST(self):
+                if self.path != '/canvas-question':
+                    self.send_error(404)
+                    return
+                # Browser pages cannot directly invoke this loopback interface.
+                if self.headers.get('Origin') is not None:
+                    self.send_error(403)
+                    return
+                try:
+                    length = int(self.headers.get('Content-Length', '0'))
+                    if not 0 < length <= 4096:
+                        raise ValueError('invalid request size')
+                    body = json.loads(self.rfile.read(length))
+                    if (not isinstance(body, dict) or set(body) != {'generation', 'space', 'message'}
+                            or any(not isinstance(value, str) or not value for value in body.values())
+                            or body['generation'] != owner.generation):
+                        raise ValueError('invalid canvas request or stale runtime generation')
+                    state.canvas_responder.submit(body['space'], body['message'])
+                except (ValueError, LookupError, FleetError) as error:
+                    self.send_error(400, str(error))
+                    return
+                self.reply({'accepted': True})
 
             def do_GET(self):
                 if self.path == '/health':

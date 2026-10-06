@@ -448,6 +448,17 @@ def make_handler(state: Any,
             except (ValueError, FleetError) as error:
                 self.error(400, str(error))
                 return
+            request = result.get("result", {})
+            if path == "/api/canvas/op" and request.get("agent_request") and not result.get("replayed"):
+                try:
+                    if getattr(state, 'is_runtime_subscriber', False):
+                        state.submit_canvas_question(body['space'], request['reply'])
+                    elif getattr(state, 'canvas_responder', None) is not None:
+                        state.canvas_responder.submit(body['space'], request['reply'])
+                    else:
+                        raise FleetError('fleet serve is unavailable')
+                except (FleetError, OSError, ValueError) as error:
+                    canvas.responder_unavailable(body['space'], request['reply'], str(error))
             state.bump()
             self.respond(409 if result.get("refused") else 200, "application/json",
                          json.dumps(result, default=str).encode())

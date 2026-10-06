@@ -12,7 +12,7 @@ from contextlib import AbstractContextManager
 from typing import Any, Callable
 
 from fleet.api import DispatchRequest
-from fleet.modules.canvas import CanvasFacade, Ports, Refused
+from fleet.modules.canvas import CanvasFacade, Engine, Ports, Refused
 from fleet.transport import FleetError
 
 Scope = Callable[[], AbstractContextManager[tuple[Any, CanvasFacade]]]
@@ -199,6 +199,13 @@ class CanvasService:
             engine = canvas.engine(space, self.ports(facades, space), actor=INTERNAL)
             change(engine)
             canvas.commit(space, engine)
+
+    def responder_unavailable(self, space: str, identity: str, reason: str) -> None:
+        def update(engine: Engine) -> None:
+            message = engine.need("message", identity, "message")
+            if message.get("status") == "pending":
+                message.update(text="Responder unavailable: " + reason, status="failed")
+        self.kernel_step(space, update)
 
     def start(self, space: str, run: dict) -> dict:
         try:

@@ -583,6 +583,13 @@ class Engine(Ticking):
         label = "the orchestrator" if target is None else self.target_label(target)
         self.log(self.who_source(), 0, f"to {label}: {text}", "info",
                  subject=target.get("id") if target and target["kind"] in ("task", "epic") else None)
+        if target is None and not orchestrator.deterministic(text):
+            theirs = self.new_id("msg")
+            self.put("message", theirs, {"id": theirs, "key": key, "who": "orchestrator · codex",
+                                         "text": "Waiting for the responder…", "time": iso(self.now),
+                                         "question": text, "proposals": [], "order": order + 1,
+                                         "status": "pending"})
+            return {"reply": theirs, "proposals": [], "agent_request": True}
         answer = orchestrator.reply(self, text, target)
         if answer["guidance"] and target is not None:
             guide = self.new_id("guide")
