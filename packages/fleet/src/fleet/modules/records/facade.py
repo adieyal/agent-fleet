@@ -9,6 +9,7 @@ from .application import Authoring
 from .application.ports import RecordWriter
 from .domain import CONSTITUTION, GUIDANCE_FILES, Guidance, GuidanceConflict, Mandate, Version, charter_path, in_force
 from .domain import TRIAGE_PATH, TriageMandate
+from .domain.space_guidance import space_guidance, with_space_guidance
 
 
 class RecordsFacade:
@@ -159,6 +160,7 @@ class RecordsFacade:
         newer current version refuses the write."""
         if not body.strip():
             raise ValueError('guidance is empty')
+        space_guidance(body)
         path = self.guidance_path(project, epic)
         self.provide(project, actor=actor)
         current = self.guidance(project, epic)
@@ -171,6 +173,25 @@ class RecordsFacade:
         if result['state'] != 'confirmed':
             raise ValueError(result['error'])
         return self.guidance(project, epic)
+
+    def space_guidance(self, project: str) -> dict | None:
+        """Canvas projection of the current constitution, with its authoritative version."""
+        guidance = self.guidance(project)
+        if guidance is None:
+            return None
+        value = space_guidance(guidance.body)
+        if value is None:
+            return None
+        return value | {'id': 'main', 'version': guidance.version.number,
+                        'written_by': guidance.version.actor, 'constitution': guidance.body}
+
+    def write_space_guidance(self, project: str, value: dict, *, actor: str,
+                             base: int | None = None) -> dict:
+        """Edit only the structured section, preserving all other constitution text."""
+        current = self.guidance(project)
+        body = '' if current is None else current.body
+        self.write_guidance(project, with_space_guidance(body, value), actor=actor, base=base)
+        return self.space_guidance(project)
 
     def promote(self, project: str, epic: str, text: str, *, marker: str, actor: str) -> Guidance:
         """Add text to the charter's decisions in force as a new version; marker identifies what was promoted,

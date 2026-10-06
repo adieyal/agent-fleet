@@ -18,7 +18,15 @@ class CanvasFacade:
         self.repository, self.clock = repository, clock
 
     def engine(self, space: str, ports: Ports, *, actor: str, op_id: str | None = None) -> Engine:
-        engine = Engine(space, self.repository.load(space), ports, now=self.clock(), actor=actor, op_id=op_id)
+        records = self.repository.load(space)
+        # Old charter rows are an archive after migration, never an authority.
+        records.pop('charter', None)
+        charter = ports.guidance.space_guidance(space)
+        if charter is not None:
+            records['charter'] = {'main': charter}
+        engine = Engine(space, records, ports, now=self.clock(), actor=actor, op_id=op_id)
+        constitution = ports.guidance.guidance(space)
+        engine.guidance_base = 0 if constitution is None else constitution.version.number
         engine.last_seq = self.repository.last_event(space)
         return engine
 
@@ -46,11 +54,17 @@ class CanvasFacade:
 
     def commit(self, space: str, engine: Engine) -> int:
         for kind, identity, record, presentation in engine.changes():
+            if kind == 'charter':
+                engine.ports.guidance.write_space_guidance(space, record, actor=engine.actor,
+                                                         base=engine.guidance_base)
+                continue
             if presentation:
                 self.repository.present(space, kind, identity, record)
             else:
                 self.repository.save(space, kind, identity, record, engine.actor)
         for kind, identity, version, record in engine.versions:
+            if kind == 'charter':
+                continue
             self.repository.save_version(space, kind, identity, version, record)
         sequence = self.repository.last_event(space)
         for event in engine.events:

@@ -50,6 +50,13 @@ class DecisionsPort(Protocol):
     def list(self) -> list: ...
 
 
+class GuidancePort(Protocol):
+    def guidance(self, project: str, epic: str | None = None, *, number: int | None = None) -> Any: ...
+    def space_guidance(self, project: str) -> dict | None: ...
+    def write_space_guidance(self, project: str, value: dict, *, actor: str,
+                             base: int | None = None) -> dict: ...
+
+
 @dataclass
 class Ports:
     """Facades bound to the same transaction as the canvas records, plus read-only run lookups."""
@@ -58,6 +65,7 @@ class Ports:
     decisions: DecisionsPort
     run: Callable[[str], Any | None]
     run_attention: Callable[[dict], list]
+    guidance: GuidancePort
     transaction: Callable[[], AbstractContextManager] | None = None
     # What the host last streamed about a job (steps, recent events); None where no live runtime is attached.
     live_job: Callable[[str, str], dict | None] | None = None

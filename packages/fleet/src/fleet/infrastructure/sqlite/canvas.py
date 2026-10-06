@@ -26,6 +26,8 @@ class CanvasRepository(Repository):
         return self.unit
 
     def save(self, space: str, kind: str, identity: str, record: dict | None, actor: str) -> None:
+        if kind == 'charter':
+            raise ValueError('charters belong to Fleet Records guidance, not canvas records')
         unit = self.require_unit()
         previous = self.rows("SELECT record FROM canvas_record WHERE space = ? AND kind = ? AND id = ?",
                              (space, kind, identity))
@@ -44,6 +46,8 @@ class CanvasRepository(Repository):
 
     def present(self, space: str, kind: str, identity: str, record: dict) -> None:
         """Presentation (a region's colour or position, a note's text): no version, no history entry."""
+        if kind == 'charter':
+            raise ValueError('charters belong to Fleet Records guidance, not canvas records')
         unit = self.require_unit()
         unit.record_observation(
             "INSERT INTO canvas_record (space, kind, id, record) VALUES (?, ?, ?, ?) "
@@ -51,6 +55,8 @@ class CanvasRepository(Repository):
             (space, kind, identity, encode(record)))
 
     def save_version(self, space: str, kind: str, identity: str, version: int, record: dict) -> None:
+        if kind == 'charter':
+            raise ValueError('charter versions belong to Fleet Records guidance history')
         self.require_unit().record_observation(
             "INSERT OR REPLACE INTO canvas_version (space, kind, id, version, record) VALUES (?, ?, ?, ?, ?)",
             (space, kind, identity, version, encode(record)))

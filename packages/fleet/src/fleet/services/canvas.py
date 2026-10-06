@@ -14,6 +14,7 @@ from typing import Any, Callable
 from fleet.api import DispatchRequest
 from fleet.modules.canvas import CanvasFacade, Engine, Ports, Refused
 from fleet.transport import FleetError
+from fleet.modules.records import GuidanceConflict
 
 Scope = Callable[[], AbstractContextManager[tuple[Any, CanvasFacade]]]
 INTERNAL = "scheduler"
@@ -43,7 +44,7 @@ class CanvasService:
                     if item.run == run["fleet_run"] or (job is not None and item.subject == job)]
 
         return Ports(work=facades.work, attention=attention, decisions=facades.decisions, run=run,
-                     run_attention=run_attention)
+                     run_attention=run_attention, guidance=facades.records)
 
     def project(self, reference: str) -> tuple[str, str]:
         workspace = self.workspace()
@@ -60,6 +61,7 @@ class CanvasService:
         """The one write path. Returns the operation's result, or the refusal in the contract's shape."""
         space, _ = self.project(space)
         args = args or {}
+        self.migrate_guidance(space, actor=actor)
         if op == "layout.set":
             return {"ok": True, "op": op, "op_id": op_id, "toasts": [],
                     "result": self.layout(space, actor, args.get("object"), args.get("props"))}
@@ -70,6 +72,10 @@ class CanvasService:
                 return canvas.execute(space, self.ports(facades, space), actor=actor, op=op, args=args, op_id=op_id)
         except Refused as refusal:
             return self.refused(space, refusal, actor=actor, op=op, op_id=op_id)
+        except GuidanceConflict as error:
+            current = self.facades().records.space_guidance(space)
+            return self.refused(space, Refused('version_conflict', str(error), current=current),
+                                actor=actor, op=op, op_id=op_id)
         except (ValueError, LookupError) as error:
             return self.refused(space, Refused("invalid", str(error)), actor=actor, op=op, op_id=op_id)
 
@@ -141,9 +147,38 @@ class CanvasService:
         return result
 
     # ---- reads
+    def migrate_guidance(self, space: str, *, actor: str) -> None:
+        """Copy legacy snapshots to Records once; retain canvas rows as an inert archive.
+
+        An existing Fleet section is authoritative. Legacy rows remain available
+        for audit, but cannot overwrite edits made through another client.
+        """
+        legacy = self.reader().repository.load(space).get('charter', {}).get('main')
+        if legacy is None or self.facades().records.space_guidance(space) is not None:
+            return
+        with self.scope() as (facades, canvas):
+            if facades.records.space_guidance(space) is not None:
+                return
+            versions = list(reversed(canvas.versions(space, 'charter', 'main')))
+            if not versions or versions[-1] != legacy:
+                versions.append(legacy)
+            for value in versions:
+                current = facades.records.guidance(space)
+                base = 0 if current is None else current.version.number
+                previous = facades.records.space_guidance(space)
+                keys = ('north_star', 'clauses', 'scope')
+                if previous is not None and all(previous[key] == value[key] for key in keys):
+                    continue
+                facades.records.write_space_guidance(space, value,
+                                                    actor=value.get('written_by') or actor, base=base)
+            canvas.repository.append_event(space, {'time': canvas.clock().isoformat(), 'actor': actor,
+                'source': 'fleet guidance', 'line': 0, 'text': 'migrated canvas charter history into constitution',
+                'tone': 'info', 'subject': None, 'op_id': None})
+
     def state(self, space: str, *, person: str, live_jobs: dict | None = None) -> dict:
         """The read model; `live_jobs` maps (host, job id) to what the runtime last streamed about each job."""
         space, name = self.project(space)
+        self.migrate_guidance(space, actor=person)
         facades = self.facades()  # a read takes no write lock: each query reads the store as it is
         other = [item for item in facades.attention.list(project=space) if item.state != "resolved"]
         ports = self.ports(facades, space)
@@ -167,6 +202,12 @@ class CanvasService:
 
     def versions(self, space: str, kind: str, identity: str) -> list[dict]:
         space, _ = self.project(space)
+        if kind == 'charter':
+            self.migrate_guidance(space, actor='migration')
+            records = self.facades().records
+            return [{'version': version.number, 'body': records.guidance(space, number=version.number).body,
+                     'written_by': version.actor, 'revision': version.revision}
+                    for version in records.guidance_history(space)]
         return self.reader().versions(space, kind, identity)
 
     def compile_preview(self, text: str, level: str = "enforced") -> dict:
