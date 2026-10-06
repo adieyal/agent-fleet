@@ -387,7 +387,7 @@ def test_real_runs_follow_their_fleet_run(space, monkeypatch):
     def ports(facades, project):
         bound = real_ports(facades, project)
         bound.run = lambda run_id: fleet if run_id == "fleet-run" else None
-        bound.run_attention = lambda run_id: open_items
+        bound.run_attention = lambda run: open_items
         return bound
 
     monkeypatch.setattr(space.canvas, "ports", ports)
@@ -409,6 +409,37 @@ def test_real_runs_follow_their_fleet_run(space, monkeypatch):
     space.canvas.tick(space.project)
     card = item(space, identity)
     assert card["facts"]["submitted"] and card["stage"] == "approve"
+
+
+def test_a_blocked_jobs_question_reaches_its_card(space, monkeypatch):
+    class Dispatch:
+        def send(self, request, steps):
+            return {"intent": SimpleNamespace(run=SimpleNamespace(id="fleet-run", host="worker", remote_job_id=request.id))}
+
+    space.canvas.dispatch = lambda: Dispatch()
+    ok(space, "agent.configure", agent="claude", mode="dispatch", host="worker", cwd="/src/app")
+    identity = task(space, criteria=["Tests pass"], stage="first")
+    space.canvas.tick(space.project)
+    job = item(space, identity)["run"]["job"]
+    real_ports = space.canvas.ports
+
+    def ports(facades, project):
+        bound = real_ports(facades, project)
+        bound.run = lambda run_id: SimpleNamespace(status="failed", reason="blocked", usage=None, start=None, end=None,
+                                                   runtime="claude", current_action=None)
+        return bound
+
+    monkeypatch.setattr(space.canvas, "ports", ports)
+    # A job's state raises attention about the job itself, with no Fleet run link.
+    question = space.container.attention().raise_item(
+        project=space.project, kind="blocker", owner="user", source="host-stream:worker",
+        source_reference=f"job:worker:{job}:blocked:0", headline="step 1 asks: Which cache?",
+        context_reference=f"job:worker:{job}", actor="host-stream", subject=f"job:worker:{job}")
+    space.canvas.tick(space.project)
+    card = item(space, identity)
+    assert card["status"] == "blocked" and card["run"]["excerpt"] == "step 1 asks: Which cache?"
+    entry = next(entry for entry in state(space)["attention"] if entry["fleet"] == question.id)
+    assert entry["item"] == identity
 
 
 def test_layout_set_is_an_operation_too(space):
@@ -451,7 +482,7 @@ def test_a_run_can_be_paused_again_after_it_resumes(space, monkeypatch):
         jobs = {f"fleet-{index + 1}": job for index, job in enumerate(started)}
         bound.run = lambda run_id: SimpleNamespace(status="stopped" if jobs.get(run_id) in cancelled else "running",
                                                    reason=None, usage=None) if run_id in jobs else None
-        bound.run_attention = lambda run_id: []
+        bound.run_attention = lambda run: []
         return bound
 
     monkeypatch.setattr(space.canvas, "ports", ports)

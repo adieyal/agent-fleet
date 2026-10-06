@@ -57,5 +57,5 @@ class Ports:
     attention: AttentionPort
     decisions: DecisionsPort
     run: Callable[[str], Any | None]
-    run_attention: Callable[[str], list]
+    run_attention: Callable[[dict], list]
     transaction: Callable[[], AbstractContextManager] | None = None

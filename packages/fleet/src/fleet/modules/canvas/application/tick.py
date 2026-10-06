@@ -158,7 +158,7 @@ class Ticking(Kernel):
                     self.finish(run, False, fleet.reason or "stopped")
 
     def sync_running(self, run: dict) -> None:
-        items = [item for item in self.ports.run_attention(run["fleet_run"]) if item.state != "resolved"]
+        items = [item for item in self.ports.run_attention(run) if item.state != "resolved"]
         refusals = [item for item in items if item.refusals]
         others = [item for item in items if not item.refusals]
         before = run["state"]
@@ -190,7 +190,7 @@ class Ticking(Kernel):
 
     def sync_blocked(self, run: dict) -> None:
         """A step that ended `FLEET_STATUS: blocked` holds its job until someone answers it: blocked, not failed."""
-        items = [item for item in self.ports.run_attention(run["fleet_run"]) if item.state != "resolved"]
+        items = [item for item in self.ports.run_attention(run) if item.state != "resolved"]
         before = run["state"]
         run["state"] = "blocked"
         run["excerpt"] = items[0].headline if items else "Waiting for an answer to its question"

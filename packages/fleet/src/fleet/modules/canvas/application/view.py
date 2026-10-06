@@ -208,6 +208,9 @@ def read_model(engine, *, person: str, events: list[dict], last_seq: int, layout
                           "answer": "canvas",
                           "time": record.get("time")})
     known = {record.get("fleet") for record in engine.all("attn").values()}
+    # Attention raised from a job's state names the job, not the Fleet run, so match it to the run that dispatched it.
+    by_job = {f"job:{run['host']}:{run['job']}": run["item"] for run in engine.all("run").values()
+              if run.get("host") and run.get("job")}
     for item in other_attention:
         if item.id in known or item.owner != "user" or item.state == "resolved":
             continue
@@ -222,7 +225,8 @@ def read_model(engine, *, person: str, events: list[dict], last_seq: int, layout
             answer = "decision"
         attention.append({"id": item.id, "fleet": item.id, "kind": item.kind.capitalize(), "text": item.headline,
                           "answer": answer, "message": getattr(context, "message", None) if answer == "blocked" else None,
-                          "why": f"{item.source} · {item.kind}", "item": item.work_item if item.work_item in engine.items else None,
+                          "why": f"{item.source} · {item.kind}",
+                          "item": item.work_item if item.work_item in engine.items else by_job.get(item.subject),
                           "epic": None, "ok": item.options[0] if item.options else "Done",
                           "alt": item.options[1] if len(item.options) > 1 else None, "canvas": False,
                           "options": list(item.options), "time": item.last_seen.isoformat()

@@ -276,6 +276,7 @@ function recentFor(model, id) {
 function taskInspector(model, ui, item) {
   const epic = item.epic ? epicOf(model, item.epic) : null;
   const approval = model.attention.find((entry) => entry.item === item.id && entry.kind === 'Approve');
+  const asks = model.attention.filter((entry) => entry.item === item.id && !entry.canvas);
   const region = item.region ? model.regions.find((entry) => entry.id === item.region) : null;
   const where = [epic ? `Epic ${epic.title}` : null, item.stage ? `In ${stageName(model, item.stage)} · workflow v${item.pin || model.workflow.version}` : 'Not in the workflow',
     region ? `in region ${region.name}` : null, `owner ${item.owner || 'unassigned'}`, item.budget != null ? `budget $${item.budget}` : null, item.spent ? `spent $${item.spent.toFixed(2)}` : null]
@@ -300,6 +301,7 @@ function taskInspector(model, ui, item) {
       ${canRetry ? `<div class="cv-row"><button class="cv-btn" ${act('op', { op: 'run.request', args: { item: item.id, role: last.role } })}>Run the ${esc(last.role)} again</button></div>` : ''}
       ${!item.stage ? `<div class="cv-row"><button class="cv-btn" ${act('op', { op: 'item.move', args: { item: item.id, stage: model.workflow.stages[0] ? model.workflow.stages[0].id : 'done' } })}>Start it in ${esc(stageName(model, model.workflow.stages[0] && model.workflow.stages[0].id))}</button></div>` : ''}
     </div>
+    ${asks.length ? `<span class="cv-label">Needs you</span>${asks.map((entry) => attentionCard(model, entry)).join('')}` : ''}
     <div class="cv-row"><button class="cv-btn" ${act('reader', { kind: 'task', id: item.id })}>Open in reader</button><button class="cv-btn" ${act('session', { id: item.id })}>Session details (advanced)</button></div>
     <span class="cv-label">Facts the workflow checks</span>
     ${facts.map((fact) => `<div class="cv-fact"><span>${fact[0]}</span><span class="v ${fact[1] ? 'yes' : ''}">${fact[1] ? 'yes' : 'no'}</span></div>`).join('')}

@@ -36,8 +36,11 @@ class CanvasService:
             except LookupError:
                 return None
 
-        def run_attention(identity: str) -> list:
-            return [item for item in attention.list(project=space) if item.run == identity]
+        def run_attention(run: dict) -> list:
+            # Attention raised from a job's state carries the job as its subject and no run link.
+            job = f"job:{run['host']}:{run['job']}" if run.get("host") and run.get("job") else None
+            return [item for item in attention.list(project=space)
+                    if item.run == run["fleet_run"] or (job is not None and item.subject == job)]
 
         return Ports(work=facades.work, attention=attention, decisions=facades.decisions, run=run,
                      run_attention=run_attention)
